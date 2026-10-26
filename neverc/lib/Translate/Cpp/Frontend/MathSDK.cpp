@@ -1,5 +1,3 @@
-#include "llvm/Support/raw_ostream.h"
-#include <cstdlib>
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/AST/Attr.h"
@@ -7594,12 +7592,6 @@ static std::optional<QualType> functionalNotFnNestedQueryResultSource(
 
 enum class UtilityTupleQueryMode { Construction, CatSignature, PairConstruction, NotFnSignature, BindSignature };
 
-static bool traceBindGraphMethodFailure(const char *Method, unsigned Line, bool Active) {
-  const char *Trace = std::getenv("NEVERC_CPP_BIND_SOURCE_PACKET");
-  if (Active && Trace && Trace[0] && Trace[0] != '0')
-    llvm::errs() << "NCT_BIND_GRAPH_METHOD_FAILURE method=" << Method << " line=" << Line << "\n";
-  return false;
-}
 class UtilityTupleQueryGraph
     : public RecursiveASTVisitor<UtilityTupleQueryGraph> {
   const State &S;
@@ -9371,19 +9363,19 @@ class UtilityTupleQueryGraph
         Use->isDependentType() || !Use->isTypeAlias() || !family(Alias) ||
         Alias->getName() != "__make_indices_imp" ||
         !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__utility/integer_sequence.h"))
-      return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      return false;
     const auto *Declaration = Alias->getTemplatedDecl();
     const auto *Parameters = Alias->getTemplateParameters();
     if (!Declaration || !family(Declaration) || !Declaration->getTypeSourceInfo() ||
         Parameters->size() != 2 || Use->template_arguments().size() != 2)
-      return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      return false;
     const auto *Ep = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Sp = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1));
     for (const auto *Parameter : {Ep, Sp})
       if (!Parameter || Parameter->hasDefaultArgument() || Parameter->isParameterPack() ||
           !family(Parameter) || !Context.hasSameType(Parameter->getType(), Context.getSizeType()) ||
           !Parameter->getTypeSourceInfo() ||
-          !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+          !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
     // Inspect the original alias DSL, without admitting the location-less
     // compiler builtin as a general declaration or template name.
     const auto *Original = dyn_cast<DependentTemplateSpecializationType>(
@@ -9406,7 +9398,7 @@ class UtilityTupleQueryGraph
         !Builtin || !Builtin->isImplicit() || !Builtin->getLocation().isInvalid() ||
         !Builtin->getDeclContext()->isTranslationUnit() ||
         Builtin->getBuiltinTemplateKind() != BTK__make_integer_seq ||
-        SequenceUse->template_arguments().size() != 3) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        SequenceUse->template_arguments().size() != 3) return false;
     const auto &SequenceArguments = SequenceUse->template_arguments();
     const auto *Sequence = SequenceArguments[0].getKind() == TemplateArgument::Template
         ? dyn_cast_or_null<ClassTemplateDecl>(SequenceArguments[0].getAsTemplate().getAsTemplateDecl()) : nullptr;
@@ -9421,14 +9413,14 @@ class UtilityTupleQueryGraph
         : TemplateSpecializationTypeLoc();
     if (!OriginalLoc || OriginalLoc.getTypePtr() != Original || !SequenceLoc ||
         SequenceLoc.getTypePtr() != SequenceUse || SequenceLoc.getNumArgs() != 3)
-      return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      return false;
     for (const auto L : {Location.getBeginLoc(), Location.getEndLoc(),
                          OriginalLoc.getTemplateNameLoc(), SequenceLoc.getTemplateNameLoc(),
                          SequenceLoc.getArgLoc(0).getTemplateNameLoc(),
                          Difference ? Difference->getOperatorLoc() : SourceLocation(),
                          Left ? Left->getLocation() : SourceLocation(),
                          Right ? Right->getLocation() : SourceLocation()})
-      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return false;
     if (!Sequence || Sequence->getName() != "__integer_sequence" || !family(Sequence) ||
         !cstddefOrigin(S, SM, Sequence->getLocation(), "libcxx", "__utility/integer_sequence.h") ||
         SequenceArguments[1].getKind() != TemplateArgument::Type ||
@@ -9436,12 +9428,12 @@ class UtilityTupleQueryGraph
         !TraverseType(SequenceArguments[1].getAsType()) ||
         !Difference || Difference->getOpcode() != BO_Sub ||
         !Left || Left->getDecl() != Ep || !Right || Right->getDecl() != Sp ||
-        !Context.hasSameType(Difference->getType(), Context.getSizeType())) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !Context.hasSameType(Difference->getType(), Context.getSizeType())) return false;
     const auto *SizeSource = SequenceLoc.getArgLoc(1).getTypeSourceInfo();
     const auto *OriginalOffset = dyn_cast<DeclRefExpr>(Original->template_arguments()[0].getAsExpr());
     if (!SizeSource || !TraverseTypeLoc(SizeSource->getTypeLoc()) ||
         !cstddefOrigin(S, SM, OriginalOffset->getLocation(), "libcxx", "__utility/integer_sequence.h"))
-      return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      return false;
     const auto *SequenceParameters = Sequence->getTemplateParameters();
     const auto *IndexType = SequenceParameters->size() == 2
         ? dyn_cast<TemplateTypeParmDecl>(SequenceParameters->getParam(0)) : nullptr;
@@ -9451,15 +9443,15 @@ class UtilityTupleQueryGraph
     if (!IndexType || IndexType->hasDefaultArgument() || IndexType->isParameterPack() ||
         !Values || !Values->isParameterPack() || Values->hasDefaultArgument() ||
         !ValueType || ValueType->getDecl() != IndexType ||
-        !family(IndexType) || !family(Values)) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !family(IndexType) || !family(Values)) return false;
     const auto *SequenceDefinition = Sequence->getTemplatedDecl()->getDefinition();
     if (!SequenceDefinition || !family(SequenceDefinition) ||
-        !SequenceDefinition->field_empty() || SequenceDefinition->getNumBases()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !SequenceDefinition->field_empty() || SequenceDefinition->getNumBases()) return false;
     const TypeAliasTemplateDecl *ToIndices = nullptr;
     for (const auto *Member : SequenceDefinition->decls())
       if (const auto *Template = dyn_cast<TypeAliasTemplateDecl>(Member);
           Template && Template->getName() == "__to_tuple_indices") {
-        if (ToIndices) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        if (ToIndices) return false;
         ToIndices = Template;
       }
     const auto *ToParameters = ToIndices ? ToIndices->getTemplateParameters() : nullptr;
@@ -9488,7 +9480,7 @@ class UtilityTupleQueryGraph
           cstddefOrigin(S, SM, Indices->getLocation(), "libcxx", "__utility/integer_sequence.h")) ||
         !Addition || Addition->getOpcode() != BO_Add || !ValueReference ||
         ValueReference->getDecl() != Values || !OffsetReference ||
-        OffsetReference->getDecl() != Offset || !ToDeclaration->getTypeSourceInfo()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        OffsetReference->getDecl() != Offset || !ToDeclaration->getTypeSourceInfo()) return false;
     auto IndicesLoc = ToDeclaration->getTypeSourceInfo()->getTypeLoc();
     for (unsigned I = 0; I <= 8 && IndicesLoc &&
          !IndicesLoc.getAs<TemplateSpecializationTypeLoc>(); ++I)
@@ -9496,12 +9488,12 @@ class UtilityTupleQueryGraph
     const auto IndexTemplateLoc = IndicesLoc.getAs<TemplateSpecializationTypeLoc>();
     if (!IndexTemplateLoc || IndexTemplateLoc.getTypePtr() != IndicesUse ||
         !cstddefOrigin(S, SM, IndexTemplateLoc.getTemplateNameLoc(), "libcxx", "__utility/integer_sequence.h"))
-      return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      return false;
     for (const auto L : {ToDeclaration->getTypeSourceInfo()->getTypeLoc().getBeginLoc(),
                          ToDeclaration->getTypeSourceInfo()->getTypeLoc().getEndLoc(),
                          Addition->getOperatorLoc(), ValueReference->getLocation(),
                          OffsetReference->getLocation()})
-      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return false;
     const auto *IndexParameters = Indices->getTemplateParameters();
     const auto *IndexPack = IndexParameters->size() == 1
         ? dyn_cast<NonTypeTemplateParmDecl>(IndexParameters->getParam(0)) : nullptr;
@@ -9514,7 +9506,7 @@ class UtilityTupleQueryGraph
         !cstddefOrigin(S, SM, IndexDefinition->getLocation(), "libcxx", "__tuple/tuple_indices.h") ||
         !IndexDefinition->field_empty() ||
         IndexDefinition->getNumBases() || IndexDefinition->isUnion() ||
-        IndexDefinition->isDynamicClass()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        IndexDefinition->isDynamicClass()) return false;
     uint64_t End = 0, Start = 0;
     auto Concrete = [&](const TemplateArgument &Argument, uint64_t &Value) {
       const llvm::APSInt *Integer = nullptr;
@@ -9525,15 +9517,15 @@ class UtilityTupleQueryGraph
       } else if (Argument.getKind() == TemplateArgument::Expression) {
         const auto *Expression = dyn_cast<ConstantExpr>(Argument.getAsExpr());
         if (!Expression || Expression->getResultStorageKind() == ConstantResultStorageKind::None ||
-            Expression->getAPValueResult().getKind() != APValue::Int) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+            Expression->getAPValueResult().getKind() != APValue::Int) return false;
         Stored = Expression->getResultAsAPSInt(); Integer = &Stored; Type = Expression->getType();
       }
       if (!Integer || !Context.hasSameType(Type, Context.getSizeType()) ||
-          Integer->isNegative() || Integer->getLimitedValue(65537) > 65536) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+          Integer->isNegative() || Integer->getLimitedValue(65537) > 65536) return false;
       Value = Integer->getZExtValue(); return true;
     };
     if (!Concrete(Use->template_arguments()[0], End) ||
-        !Concrete(Use->template_arguments()[1], Start) || Start > End) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !Concrete(Use->template_arguments()[1], Start) || Start > End) return false;
     const auto *ActualTo = Use->getAliasedType()->getAs<TemplateSpecializationType>();
     const auto *ActualAlias = ActualTo ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         ActualTo->getTemplateName().getAsTemplateDecl()) : nullptr;
@@ -9551,13 +9543,13 @@ class UtilityTupleQueryGraph
         (Result->getSpecializationKind() != TSK_ImplicitInstantiation &&
          Result->getSpecializationKind() != TSK_Undeclared) ||
         !Result->getSpecializedTemplateOrPartial().is<ClassTemplateDecl *>() ||
-        Result->getSpecializedTemplate()->getCanonicalDecl() != Indices->getCanonicalDecl()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        Result->getSpecializedTemplate()->getCanonicalDecl() != Indices->getCanonicalDecl()) return false;
     // The final empty metadata specialization may remain lazy. Its actual
     // family, original primary definition and every index are authenticated;
     // this query neither asks Sema for a definition nor consumes a layout.
     if (const auto *Definition = Result->getDefinition())
       if (!family(Definition) || !Definition->field_empty() || Definition->getNumBases() ||
-          Definition->isUnion() || Definition->isDynamicClass()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+          Definition->isUnion() || Definition->isDynamicClass()) return false;
     const auto &ActualArguments = ActualSequence->getTemplateArgs();
     const auto &ResultArguments = Result->getTemplateArgs();
     if (ActualArguments.size() != 2 || ActualArguments[0].getKind() != TemplateArgument::Type ||
@@ -9565,12 +9557,12 @@ class UtilityTupleQueryGraph
         ActualArguments[1].getKind() != TemplateArgument::Pack ||
         ActualArguments[1].pack_size() != End - Start || ResultArguments.size() != 1 ||
         ResultArguments[0].getKind() != TemplateArgument::Pack ||
-        ResultArguments[0].pack_size() != End - Start) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        ResultArguments[0].pack_size() != End - Start) return false;
     for (unsigned I = 0; I < End - Start; ++I) {
       uint64_t Generated = 0, Index = 0;
       if (!step() || !Concrete(ActualArguments[1].pack_elements()[I], Generated) ||
           !Concrete(ResultArguments[0].pack_elements()[I], Index) ||
-          Generated != I || Index != Start + I) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+          Generated != I || Index != Start + I) return false;
     }
     return true;
   }
@@ -10616,11 +10608,11 @@ public:
       std::function<bool(const CallExpr *)> CallSource,
       std::function<bool(const DeclRefExpr *)> VariableSource) {
     if (Mode != UtilityTupleQueryMode::BindSignature || BindMetadata || !step() ||
-        !TypeSource || !RecordSource || !CallSource || !VariableSource) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !TypeSource || !RecordSource || !CallSource || !VariableSource) return false;
     const auto Actual = describeFunctionalBindStorage(S, SM, Storage.Record, Context);
     if (!Actual || Actual->Record != Storage.Record || Actual->Callable != Storage.Callable ||
         Actual->BoundArguments != Storage.BoundArguments ||
-        !Context.hasSameType(Actual->CallableType, Storage.CallableType)) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !Context.hasSameType(Actual->CallableType, Storage.CallableType)) return false;
     BindMetadata = *Actual;
     BindTypeSource = std::move(TypeSource);
     BindRecordSource = std::move(RecordSource);
@@ -10631,25 +10623,25 @@ public:
     for (const auto *Field : Actual->Arguments.Record->fields())
       if (const auto *Record = Field->getType()->getAsCXXRecordDecl()) Records.push_back(Record);
     for (const auto &Element : Actual->Arguments.Elements) {
-      if (!Element.Field || Element.EmptyBase) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!Element.Field || Element.EmptyBase) return false;
       const auto *Leaf = dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext());
-      if (!Leaf) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!Leaf) return false;
       Records.push_back(Leaf);
       if (const auto *Wrapper = Element.getType()->getAsCXXRecordDecl()) {
-        if (!approvedFunctionalReferenceRecord(S, SM, Wrapper, Context)) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        if (!approvedFunctionalReferenceRecord(S, SM, Wrapper, Context)) return false;
         Records.push_back(Wrapper);
       }
     }
     for (std::size_t I = 0; I < Records.size(); ++I) {
       const auto *Record = Records[I];
-      if (!Record || !step() || Records.size() > 64) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!Record || !step() || Records.size() > 64) return false;
       if (!BindPhysicalRecords.insert(Record->getCanonicalDecl()).second) continue;
       const auto *Definition = Record->getDefinition();
       if (!Definition || Definition->isDependentContext() || Definition->isUnion() ||
-          Definition->isDynamicClass() || Definition->getNumVBases()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+          Definition->isDynamicClass() || Definition->getNumVBases()) return false;
       for (const auto &Base : Definition->bases()) {
         const auto *Child = Base.getType()->getAsCXXRecordDecl();
-        if (Base.isVirtual() || !Child) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        if (Base.isVirtual() || !Child) return false;
         Records.push_back(Child);
       }
       for (const auto *Field : Definition->fields())
@@ -10657,7 +10649,7 @@ public:
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record)) {
         const auto *Primary = Instance->getSpecializedTemplate();
-        if (!Primary) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        if (!Primary) return false;
         BindMetadataRecords.insert(Primary->getTemplatedDecl()->getCanonicalDecl());
       }
     }
@@ -10667,7 +10659,7 @@ public:
                                   const TypeSourceInfo *Underlying) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !Use || !Use->isTypeAlias() || !Underlying || !step() ||
-        !Context.hasSameType(Underlying->getType(), Use->getAliasedType())) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !Context.hasSameType(Underlying->getType(), Use->getAliasedType())) return false;
     const auto *Alias = dyn_cast_or_null<TypeAliasTemplateDecl>(
         Use->getTemplateName().getAsTemplateDecl());
     if (!Alias || Alias->getName() != "__make_indices_imp")
@@ -10675,37 +10667,37 @@ public:
     // This DSL authenticates the original alias, both original parameter
     // spellings, the builtin declaration, and every generated sequence/index.
     // The separately retained substituted TSI still has its own obligations.
-    if (!catIndexAlias(Use, Alias)) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
-    {
-      const char *Trace = std::getenv("NEVERC_CPP_BIND_SOURCE_PACKET");
-      if (Trace && Trace[0] && Trace[0] != '0') {
-        llvm::errs() << "NCT_BIND_INDEX_UNDERLYING_BEGIN type=" << Underlying->getType().getAsString() << "\n";
-        Underlying->getType().dump(llvm::errs(), Context);
-        llvm::errs() << "NCT_BIND_INDEX_UNDERLYING_END\n";
-      }
-    }
+    if (!catIndexAlias(Use, Alias)) return false;
     const auto OriginalLoc = Alias->getTemplatedDecl()->getTypeSourceInfo()
         ->getTypeLoc().getAs<DependentTemplateSpecializationTypeLoc>();
     const auto OriginalSequence = OriginalLoc
         ? OriginalLoc.getQualifierLoc().getTypeLoc().getAs<TemplateSpecializationTypeLoc>()
         : TemplateSpecializationTypeLoc();
-    const auto ActualLoc = Underlying->getTypeLoc().getAs<DependentTemplateSpecializationTypeLoc>();
-    const auto ActualSequence = ActualLoc
-        ? ActualLoc.getQualifierLoc().getTypeLoc().getAs<TemplateSpecializationTypeLoc>()
+    const auto ActualElaborated = Underlying->getTypeLoc().getAs<ElaboratedTypeLoc>();
+    const auto ActualLoc = ActualElaborated
+        ? ActualElaborated.getNamedTypeLoc().getAs<TemplateSpecializationTypeLoc>()
         : TemplateSpecializationTypeLoc();
-    if (!OriginalLoc || !OriginalSequence || !ActualLoc || !ActualSequence ||
-        ActualLoc.getNumArgs() != 1 || ActualSequence.getNumArgs() != 3 ||
-        ActualLoc.getTypePtr()->template_arguments().size() != 1 ||
-        ActualSequence.getTypePtr()->template_arguments().size() != 3 ||
-        ActualLoc.getTypePtr()->getIdentifier() != OriginalLoc.getTypePtr()->getIdentifier() ||
-        ActualLoc.getTemplateNameLoc() != OriginalLoc.getTemplateNameLoc() ||
-        ActualSequence.getTemplateNameLoc() != OriginalSequence.getTemplateNameLoc()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+    const auto ActualSequence = ActualElaborated
+        ? ActualElaborated.getQualifierLoc().getTypeLoc().getAs<TemplateSpecializationTypeLoc>()
+        : TemplateSpecializationTypeLoc();
+    if (!OriginalLoc || !OriginalSequence) return false;
+    if (!ActualElaborated || !ActualLoc || !ActualSequence) return false;
+    if (ActualLoc.getNumArgs() != 1 || ActualSequence.getNumArgs() != 3) return false;
+    const auto *ActualAlias = dyn_cast_or_null<TypeAliasTemplateDecl>(
+        ActualLoc.getTypePtr()->getTemplateName().getAsTemplateDecl());
+    const auto *ExpectedTo = Use->getAliasedType()->getAs<TemplateSpecializationType>();
+    if (!ActualAlias || !ActualLoc.getTypePtr()->isTypeAlias() || !ExpectedTo ||
+        ActualAlias != ExpectedTo->getTemplateName().getAsTemplateDecl() ||
+        ActualAlias->getIdentifier() != OriginalLoc.getTypePtr()->getIdentifier() ||
+        !family(ActualAlias)) return false;
+    if (ActualLoc.getTemplateNameLoc() != OriginalLoc.getTemplateNameLoc()) return false;
+    if (ActualSequence.getTemplateNameLoc() != OriginalSequence.getTemplateNameLoc()) return false;
     const auto *Builtin = dyn_cast_or_null<BuiltinTemplateDecl>(
         ActualSequence.getTypePtr()->getTemplateName().getAsTemplateDecl());
     if (!Builtin || Builtin != OriginalSequence.getTypePtr()->getTemplateName().getAsTemplateDecl() ||
         Builtin->getBuiltinTemplateKind() != BTK__make_integer_seq ||
         !Builtin->isImplicit() || Builtin->getLocation().isValid() ||
-        !Builtin->getDeclContext()->isTranslationUnit()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !Builtin->getDeclContext()->isTranslationUnit()) return false;
     const auto ActualArguments = ActualSequence.getTypePtr()->template_arguments();
     const auto OriginalArguments = OriginalSequence.getTypePtr()->template_arguments();
     const auto *Parameters = Alias->getTemplateParameters();
@@ -10715,8 +10707,12 @@ public:
         ? ActualArguments[0].getAsTemplate().getAsTemplateDecl() : nullptr;
     const auto *ExpectedSequence = OriginalArguments[0].getKind() == TemplateArgument::Template
         ? OriginalArguments[0].getAsTemplate().getAsTemplateDecl() : nullptr;
-    const auto *Difference = ActualArguments[2].getKind() == TemplateArgument::Expression
-        ? dyn_cast<BinaryOperator>(ActualArguments[2].getAsExpr()->IgnoreParens()) : nullptr;
+    const auto *DifferenceSource = ActualArguments[2].getKind() == TemplateArgument::Expression
+        ? ActualArguments[2].getAsExpr() : nullptr;
+    const Expr *DifferenceCore = DifferenceSource ? DifferenceSource->IgnoreParens() : nullptr;
+    if (const auto *Cache = dyn_cast_or_null<ConstantExpr>(DifferenceCore))
+      DifferenceCore = Cache->getSubExpr()->IgnoreParens();
+    const auto *Difference = dyn_cast_or_null<BinaryOperator>(DifferenceCore);
     const auto *OriginalDifference = OriginalArguments[2].getKind() == TemplateArgument::Expression
         ? dyn_cast<BinaryOperator>(OriginalArguments[2].getAsExpr()->IgnoreParens()) : nullptr;
     const auto Offset = ActualLoc.getTypePtr()->template_arguments()[0];
@@ -10726,22 +10722,25 @@ public:
         !Difference || !OriginalDifference || Difference->getOpcode() != BO_Sub ||
         Difference->getOperatorLoc() != OriginalDifference->getOperatorLoc() ||
         !Context.hasSameType(Difference->getType(), Context.getSizeType()) ||
-        Offset.getKind() != TemplateArgument::Expression) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        Offset.getKind() != TemplateArgument::Expression) return false;
     for (const auto Site : {Underlying->getTypeLoc().getBeginLoc(),
                             Underlying->getTypeLoc().getEndLoc(),
+                            ActualElaborated.getElaboratedKeywordLoc(),
                             ActualLoc.getTemplateNameLoc(), ActualSequence.getTemplateNameLoc(),
                             ActualSequence.getArgLoc(0).getTemplateNameLoc(),
                             Difference->getOperatorLoc()})
       if (!step() || !cstddefOrigin(S, SM, Site, "libcxx", "__utility/integer_sequence.h"))
-        return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        return false;
     auto Bound = [&](const Expr *Expression, const NonTypeTemplateParmDecl *Parameter,
                      unsigned Slot) {
-      const auto *Substitution = Expression
-          ? dyn_cast<SubstNonTypeTemplateParmExpr>(Expression->IgnoreParenImpCasts()) : nullptr;
+      const Expr *Core = Expression ? Expression->IgnoreParenImpCasts() : nullptr;
+      if (const auto *Cache = dyn_cast_or_null<ConstantExpr>(Core))
+        Core = Cache->getSubExpr()->IgnoreParenImpCasts();
+      const auto *Substitution = dyn_cast_or_null<SubstNonTypeTemplateParmExpr>(Core);
       if (!Substitution || Substitution->getParameter() != Parameter ||
           !family(Substitution->getAssociatedDecl()) || !family(Parameter) ||
           !Context.hasSameType(Expression->getType(), Context.getSizeType()) ||
-          !TraverseStmt(const_cast<Expr *>(Expression))) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+          !TraverseStmt(const_cast<Expr *>(Expression))) return false;
       const auto &Argument = Use->template_arguments()[Slot];
       llvm::APSInt Expected;
       if (Argument.getKind() == TemplateArgument::Integral) {
@@ -10749,9 +10748,9 @@ public:
       } else if (Argument.getKind() == TemplateArgument::Expression) {
         const auto *Constant = dyn_cast<ConstantExpr>(Argument.getAsExpr());
         if (!Constant || Constant->getResultStorageKind() == ConstantResultStorageKind::None ||
-            Constant->getAPValueResult().getKind() != APValue::Int) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+            Constant->getAPValueResult().getKind() != APValue::Int) return false;
         Expected = Constant->getResultAsAPSInt();
-      } else return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      } else return false;
       // The original graph and exact substituted parameter identity were
       // checked first. This fold only binds the retained converted value.
       Expr::EvalResult Value;
@@ -10760,12 +10759,12 @@ public:
     };
     if (!Bound(Difference->getLHS(), Ep, 0) ||
         !Bound(Difference->getRHS(), Sp, 1) ||
-        !Bound(Offset.getAsExpr(), Sp, 1)) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !Bound(Offset.getAsExpr(), Sp, 1)) return false;
     const auto *Size = ActualSequence.getArgLoc(1).getTypeSourceInfo();
     if (!Size || !Context.hasSameType(Size->getType(), Context.getSizeType()) ||
         !TraverseTypeLoc(Size->getTypeLoc()) ||
         !TraverseTemplateName(ActualArguments[0].getAsTemplate()) ||
-        !TraverseStmt(const_cast<BinaryOperator *>(Difference))) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !TraverseStmt(const_cast<Expr *>(DifferenceSource))) return false;
     return !Failed;
   }
   bool bindFunctionalBindTupleTags(const FunctionalBindFactorySource &Factory,
@@ -10774,29 +10773,29 @@ public:
         !BindTupleTagSlices.empty() || Factory.Storage.Record != BindMetadata->Record ||
         Factory.BoundConstruction != Tuple.Tuple || !Tuple.Implementation ||
         Tuple.Implementation->getNumArgs() != BindMetadata->Arguments.Elements.size() + 4)
-      return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      return false;
     const auto Count = BindMetadata->Arguments.Elements.size();
     const auto Tags = describeFunctionalBindTupleTagSources(S, SM, Factory, Context);
-    if (!Tags || Tags->size() != 4) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+    if (!Tags || Tags->size() != 4) return false;
     const auto *Constructor = Tuple.Tuple->getConstructor();
     const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
     const auto *TupleRecord = dyn_cast<ClassTemplateSpecializationDecl>(BindMetadata->Arguments.Record);
-    if (!Primary || !TupleRecord || !family(Primary)) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+    if (!Primary || !TupleRecord || !family(Primary)) return false;
     std::set<const NamedDecl *> InputPacks, StoredPacks;
     std::set<const FunctionTemplateDecl *> Templates;
     for (const auto *Current = Primary; Current;) {
       if (!step() || !Templates.insert(Current).second || !family(Current) ||
-          !Current->getTemplateParameters()->size()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+          !Current->getTemplateParameters()->size()) return false;
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
       InputPacks.insert(Pack);
       Current = Current->getInstantiatedFromMemberTemplate();
     }
     for (const auto *Current : TupleRecord->getSpecializedTemplate()->redecls()) {
       if (!step() || !family(Current) || Current->getTemplateParameters()->size() != 1)
-        return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        return false;
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
       StoredPacks.insert(Pack);
     }
     std::vector<const TypeSourceInfo *> WrittenTags;
@@ -10814,10 +10813,10 @@ public:
           !Record->field_empty() || Record->getNumBases() || Record->isUnion() ||
           Record->isDynamicClass() || !Record->hasTrivialDestructor() ||
           !family(Selected) || !family(Record) ||
-          !Context.hasSameType(Written->getType(), Construction->getType())) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+          !Context.hasSameType(Written->getType(), Construction->getType())) return false;
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record);
-      if (!Instance) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!Instance) return false;
       BindMetadataRecords.insert(Instance->getSpecializedTemplate()->getTemplatedDecl()->getCanonicalDecl());
       WrittenTags.push_back(Written);
       if (!(I % 2)) continue;
@@ -10835,7 +10834,7 @@ public:
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Location.getArgLoc(0).getArgument().getAsType(),
                                Context.getRecordType(BindMetadata->Arguments.Record)) ||
-          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return false;
       for (unsigned J = 1; J < Slots; ++J) {
         const auto Argument = Location.getArgLoc(J);
         const auto Kind = Argument.getArgument().getKind();
@@ -10845,25 +10844,25 @@ public:
         const auto &Expected = I == 1 || J == 2 ? InputPacks : StoredPacks;
         if (!Pack || Pack->isValueDependent() || Pack->getPackLength() != Count ||
             !Expected.count(Pack->getPack()) || !family(Pack->getPack()) ||
-            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return false;
       }
       if (!BindTupleTagSlices.emplace(Slice->getCanonicalDecl(),
-              std::make_pair(Use, I == 1 ? 0U : unsigned(Count))).second) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+              std::make_pair(Use, I == 1 ? 0U : unsigned(Count))).second) return false;
     }
     // Bind both exact slices before traversing their actual original TypeLocs.
     // The retained Sema packets still close defaults and selected partials.
     for (const auto *Written : WrittenTags)
-      if (!TraverseTypeLoc(Written->getTypeLoc())) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!TraverseTypeLoc(Written->getTypeLoc())) return false;
     return !Failed;
   }
   bool bindFunctionalBindSpecialMember(const CXXMethodDecl *Method, bool Default = false) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Method ||
         Method->getParent()->isDependentContext() ||
         !BindMetadataRecords.count(Method->getParent()->getCanonicalDecl()) ||
-        !Method->isTrivial()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+        !Method->isTrivial()) return false;
     if (Default) {
       const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
-      if (!Constructor || !Constructor->isDefaultConstructor()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!Constructor || !Constructor->isDefaultConstructor()) return false;
     }
     const bool Complete = specialMember(Method, 0, Default) && !Failed;
     if (!Complete) Failed = true;
@@ -10871,17 +10870,17 @@ public:
   }
 
   bool bindFunctionalBindStorageSource() {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step()) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step()) return false;
     for (const auto *Record : BindPhysicalRecords) {
       const auto *Definition = Record->getDefinition();
-      if (!Definition || !family(Definition)) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+      if (!Definition || !family(Definition)) return false;
       for (const auto &Base : Definition->bases())
         if (!Base.getTypeSourceInfo() || Base.isVirtual() ||
-            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
       for (const auto *Field : Definition->fields())
         if (!family(Field) || Field->isBitField() || Field->isMutable() ||
             !Field->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return traceBindGraphMethodFailure(__func__, __LINE__, Mode == UtilityTupleQueryMode::BindSignature);
+            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return false;
     }
     return !Failed;
   }
@@ -12339,15 +12338,6 @@ public:
   }
   bool TraverseTypeLoc(TypeLoc Location) {
     if (Location.isNull()) return true;
-    auto TraceBindTypeLocFailure = [&](unsigned Line) {
-      const char *Trace = std::getenv("NEVERC_CPP_BIND_SOURCE_PACKET");
-      if (Mode == UtilityTupleQueryMode::BindSignature && Trace && Trace[0] && Trace[0] != '0')
-        llvm::errs() << "NCT_BIND_TYPELOC_FAILURE line=" << Line
-                     << " type=" << Location.getType().getAsString()
-                     << " begin=" << Location.getBeginLoc().printToString(SM)
-                     << " end=" << Location.getEndLoc().printToString(SM) << "\n";
-      return false;
-    };
     if (catMetadataMode())
       if (const auto Wrapper = Location.getAs<ElaboratedTypeLoc>())
         if (const auto Named = Wrapper.getNamedTypeLoc().getAs<TemplateSpecializationTypeLoc>()) {
@@ -12363,7 +12353,7 @@ public:
               if (L.isInvalid()) return false;
               const auto Origin = S.sdkFile(SM, L);
               if ((!Origin || Origin->Root != "libcxx") &&
-                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) return TraceBindTypeLocFailure(__LINE__);
+                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) return false;
             }
             return TraverseTemplateSpecializationTypeLoc(Named);
           }
@@ -12387,12 +12377,10 @@ public:
       if ((!Origin || Origin->Root != "libcxx") &&
           !(Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults &&
             functionalNotFnFactorySplitTypeEnd(
-                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return TraceBindTypeLocFailure(__LINE__);
+                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return false;
     }
-    if (!TraverseType(Location.getType())) return TraceBindTypeLocFailure(__LINE__);
-    if (!RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location))
-      return TraceBindTypeLocFailure(__LINE__);
-    return true;
+    return TraverseType(Location.getType()) &&
+           RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location);
   }
   bool TraverseTemplateArgumentLoc(const TemplateArgumentLoc &Location) {
     const auto &Argument = Location.getArgument();
@@ -12710,15 +12698,8 @@ public:
     return family(Operation);
   }
   bool VisitCallExpr(CallExpr *E) {
-    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata) {
-      const bool Complete = BindCallSource && BindCallSource(E);
-      const char *Trace = std::getenv("NEVERC_CPP_BIND_SOURCE_PACKET");
-      if (!Complete && Trace && Trace[0] && Trace[0] != '0')
-        llvm::errs() << "NCT_BIND_METADATA_CALL_FAILURE callee="
-                     << (E->getDirectCallee() ? E->getDirectCallee()->getQualifiedNameAsString() : "<dependent>")
-                     << " location=" << E->getExprLoc().printToString(SM) << "\n";
-      return Complete;
-    }
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata)
+      return BindCallSource && BindCallSource(E);
     const auto *F = E->getDirectCallee();
     if (Mode == UtilityTupleQueryMode::NotFnSignature &&
         (NotFnOperationQuery || NotFnOperationInvokeSignatureActive) &&
@@ -14166,15 +14147,7 @@ std::optional<FunctionalBindStorage>
 describeFunctionalBindStorage(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record,
                               const ASTContext &Context) {
-  // Observational only: all original guards and returned values remain intact.
-  auto TraceFailure = [&](unsigned Point) -> std::optional<FunctionalBindStorage> {
-    const char *Trace = std::getenv("NEVERC_CPP_BIND_SOURCE_PACKET");
-    if (Trace && Trace[0] && Trace[0] != '0')
-      llvm::errs() << "NCT_BIND_DESCRIPTOR_FAILURE describeFunctionalBindStorage line=" << Point << "\n";
-    return std::nullopt;
-  };
-
-  if (!S.coreV2() || !Record) return TraceFailure(__LINE__);
+  if (!S.coreV2() || !Record) return std::nullopt;
   // Reuse only the declaration-family locator. Its mode-specific not_fn
   // expression, default and exception routines do not prove any bind source.
   NotFnSelectedSource Check(S, SM, Context);
@@ -14182,13 +14155,13 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
                                        {"__functional/bind.h"});
   if (!Instance || Instance->getNumBases() != 1 ||
       std::distance(Instance->field_begin(), Instance->field_end()) != 2 ||
-      !Instance->hasTrivialDestructor()) return TraceFailure(__LINE__);
+      !Instance->hasTrivialDestructor()) return std::nullopt;
   const auto &TemplateArguments = Instance->getTemplateArgs();
   if (TemplateArguments.size() != 2 ||
       TemplateArguments[0].getKind() != TemplateArgument::Type ||
       TemplateArguments[1].getKind() != TemplateArgument::Pack ||
       TemplateArguments[1].pack_size() < 1 ||
-      TemplateArguments[1].pack_size() > 2) return TraceFailure(__LINE__);
+      TemplateArguments[1].pack_size() > 2) return std::nullopt;
 
   auto DecayedValue = [&](QualType Type) -> QualType {
     if (Type.isNull()) return {};
@@ -14218,25 +14191,25 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
            Check.family(Value, {"__functional/bind.h"});
   };
   if (!StorageField(Callable, "__f_") ||
-      !StorageField(Bound, "__bound_args_")) return TraceFailure(__LINE__);
+      !StorageField(Bound, "__bound_args_")) return std::nullopt;
   const auto CallableType = Callable->getType();
   const auto OriginalCallable = DecayedValue(TemplateArguments[0].getAsType());
   if (CallableType.isNull() || CallableType.hasQualifiers() ||
       CallableType->isDependentType() || !CallableType->isFunctionPointerType() ||
       OriginalCallable.isNull() ||
-      !Context.hasSameType(CallableType, OriginalCallable)) return TraceFailure(__LINE__);
+      !Context.hasSameType(CallableType, OriginalCallable)) return std::nullopt;
   const auto *Prototype = CallableType->getPointeeType()->getAs<FunctionProtoType>();
   if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
       Prototype->getNumParams() != TemplateArguments[1].pack_size())
-    return TraceFailure(__LINE__);
+    return std::nullopt;
   const auto Result = Prototype->getReturnType();
   if (!Result->isVoidType() &&
       !ScalarValue(Result->isReferenceType() ? Result->getPointeeType() : Result))
-    return TraceFailure(__LINE__);
+    return std::nullopt;
   for (const auto Parameter : Prototype->param_types())
     if (!ScalarValue(Parameter->isReferenceType()
                          ? Parameter->getPointeeType() : Parameter))
-      return TraceFailure(__LINE__);
+      return std::nullopt;
 
   const auto &Base = *Instance->bases_begin();
   const auto *Weak = Check.record(Base.getType(), "__weak_result_type",
@@ -14246,7 +14219,7 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
       Weak->getTemplateArgs().size() != 1 ||
       Weak->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Weak->getTemplateArgs()[0].getAsType(), CallableType))
-    return TraceFailure(__LINE__);
+    return std::nullopt;
   // A noexcept callback can select the generic weak-result chain. Its
   // selected partial/default/base sources are independent later obligations.
   const auto *Tuple = Check.record(Bound->getType(), "tuple",
@@ -14254,18 +14227,18 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
   auto Arguments = Tuple ? approvedUtilityTupleRecord(S, SM, Tuple, Context)
                          : std::nullopt;
   if (!Arguments || Arguments->Elements.size() != TemplateArguments[1].pack_size())
-    return TraceFailure(__LINE__);
+    return std::nullopt;
   unsigned Index = 0;
   for (const auto &Argument : TemplateArguments[1].pack_elements()) {
-    if (Argument.getKind() != TemplateArgument::Type) return TraceFailure(__LINE__);
+    if (Argument.getKind() != TemplateArgument::Type) return std::nullopt;
     const auto Value = DecayedValue(Argument.getAsType());
     if (Value.isNull() ||
         !Context.hasSameType(Value, Arguments->Elements[Index++].getType()))
-      return TraceFailure(__LINE__);
+      return std::nullopt;
     if (ScalarValue(Value)) continue;
     const auto Reference = approvedFunctionalReferenceRecord(
         S, SM, Value->getAsCXXRecordDecl(), Context);
-    if (!Reference || !ScalarValue(Reference->ReferentType)) return TraceFailure(__LINE__);
+    if (!Reference || !ScalarValue(Reference->ReferentType)) return std::nullopt;
   }
 
   // Retain the real ABI offsets rather than copying reference_wrapper's
@@ -14279,7 +14252,7 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
       BoundOffset % 8 ||
       CallableOffset + Context.getTypeSize(CallableType) > BoundOffset ||
       BoundOffset + Context.getTypeSize(Bound->getType()) > Size * 8)
-    return TraceFailure(__LINE__);
+    return std::nullopt;
   return FunctionalBindStorage{Instance, Weak, Callable, Bound, CallableType,
       std::move(*Arguments), CallableOffset, BoundOffset, Size,
       uint64_t(Layout.getAlignment().getQuantity())};
@@ -14290,14 +14263,6 @@ std::optional<FunctionalBindFactorySource>
 describeFunctionalBindFactorySource(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
-  // Observational only: all original guards and returned values remain intact.
-  auto TraceFailure = [&](unsigned Point) -> std::optional<FunctionalBindFactorySource> {
-    const char *Trace = std::getenv("NEVERC_CPP_BIND_SOURCE_PACKET");
-    if (Trace && Trace[0] && Trace[0] != '0')
-      llvm::errs() << "NCT_BIND_DESCRIPTOR_FAILURE describeFunctionalBindFactorySource line=" << Point << "\n";
-    return std::nullopt;
-  };
-
   const auto *Factory = Call ? Call->getDirectCallee() : nullptr;
   const auto Storage = describeFunctionalBindStorage(
       S, SM, Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context);
@@ -14307,7 +14272,7 @@ describeFunctionalBindFactorySource(
       Factory->isVariadic() || Factory->getNumParams() != Call->getNumArgs() ||
       Call->getNumArgs() != Storage->Arguments.Elements.size() + 1 ||
       !Context.hasSameType(Call->getType(), Factory->getReturnType()))
-    return TraceFailure(__LINE__);
+    return std::nullopt;
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Primary = Factory->getPrimaryTemplate();
   const auto *Arguments = Factory->getTemplateSpecializationArgs();
@@ -14316,7 +14281,7 @@ describeFunctionalBindFactorySource(
       Arguments->get(0).getKind() != TemplateArgument::Type ||
       Arguments->get(1).getKind() != TemplateArgument::Pack ||
       Arguments->get(1).pack_size() + 1 != Factory->getNumParams() ||
-      !Check.family(Factory, {"__functional/bind.h"})) return TraceFailure(__LINE__);
+      !Check.family(Factory, {"__functional/bind.h"})) return std::nullopt;
   auto DeducedParameter = [&](unsigned Index) -> QualType {
     const auto &Argument = Index ? Arguments->get(1).pack_elements()[Index - 1]
                                  : Arguments->get(0);
@@ -14330,7 +14295,7 @@ describeFunctionalBindFactorySource(
         !Context.hasSameType(Factory->getParamDecl(Index)->getType(), Expected) ||
         !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
                                         Expected->getPointeeType()))
-      return TraceFailure(__LINE__);
+      return std::nullopt;
   }
   // The pinned bind factory has exactly its local result alias and return.
   // This description retains the alias as part of the original function body;
@@ -14347,7 +14312,7 @@ describeFunctionalBindFactorySource(
       ResultAlias->getDeclContext() != Factory || !ResultAlias->getTypeSourceInfo() ||
       !Context.hasSameType(ResultAlias->getUnderlyingType(), Factory->getReturnType()) ||
       !Check.family(ResultAlias, {"__functional/bind.h"}))
-    return TraceFailure(__LINE__);
+    return std::nullopt;
   const auto *Construction = Check.construction(Return->getRetValue());
   const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
   const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody())
@@ -14359,12 +14324,12 @@ describeFunctionalBindFactorySource(
       Constructor->getParent()->getCanonicalDecl() != Storage->Record->getCanonicalDecl() ||
       Constructor->getNumParams() != Factory->getNumParams() ||
       Construction->getNumArgs() != Factory->getNumParams() ||
-      !Check.family(Constructor, {"__functional/bind.h"})) return TraceFailure(__LINE__);
+      !Check.family(Constructor, {"__functional/bind.h"})) return std::nullopt;
   std::vector<const CallExpr *> FactoryForwards;
   for (unsigned Index = 0; Index < Factory->getNumParams(); ++Index) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(Construction->getArg(Index), Factory->getParamDecl(Index),
-                          "__functional/bind.h", Forward)) return TraceFailure(__LINE__);
+                          "__functional/bind.h", Forward)) return std::nullopt;
     FactoryForwards.push_back(Forward);
   }
   const CXXConstructExpr *WeakConstruction = nullptr, *BoundConstruction = nullptr;
@@ -14379,17 +14344,17 @@ describeFunctionalBindFactorySource(
           !Construct || Construct->getNumArgs() || !Selected ||
           !Selected->isDefaultConstructor() || !Selected->isTrivial() ||
           !Check.family(Selected, {"__functional/weak_result_type.h"}))
-        return TraceFailure(__LINE__);
+        return std::nullopt;
       WeakConstruction = Construct;
     } else if (Initializer->isMemberInitializer() &&
                Initializer->getMember() == Storage->Callable) {
-      if (CallableInitializer) return TraceFailure(__LINE__);
+      if (CallableInitializer) return std::nullopt;
       CallableInitializer = Initializer->getInit();
     } else if (Initializer->isMemberInitializer() &&
                Initializer->getMember() == Storage->BoundArguments) {
-      if (BoundConstruction) return TraceFailure(__LINE__);
+      if (BoundConstruction) return std::nullopt;
       BoundConstruction = Check.construction(Initializer->getInit());
-    } else return TraceFailure(__LINE__);
+    } else return std::nullopt;
   }
   const auto *BoundConstructor = BoundConstruction
       ? BoundConstruction->getConstructor() : nullptr;
@@ -14399,7 +14364,7 @@ describeFunctionalBindFactorySource(
       BoundConstructor->getNumParams() != Storage->Arguments.Elements.size() ||
       BoundConstructor->getParent()->getCanonicalDecl() !=
           Storage->Arguments.Record->getCanonicalDecl() ||
-      !Check.family(BoundConstructor, {"tuple"})) return TraceFailure(__LINE__);
+      !Check.family(BoundConstructor, {"tuple"})) return std::nullopt;
   const CallExpr *CallableForward = nullptr;
   const Expr *ForwardedCallable = Check.stripped(CallableInitializer);
   if (const auto *Decay = dyn_cast_or_null<ImplicitCastExpr>(ForwardedCallable);
@@ -14412,17 +14377,17 @@ describeFunctionalBindFactorySource(
         !Parameter->getPointeeType()->isFunctionType() ||
         !Context.hasSameType(Decay->getSubExpr()->getType(), Parameter->getPointeeType()) ||
         !Context.hasSameType(Decay->getType(), Storage->CallableType))
-      return TraceFailure(__LINE__);
+      return std::nullopt;
     ForwardedCallable = Decay->getSubExpr();
   }
   if (!Check.forwarding(ForwardedCallable, Constructor->getParamDecl(0),
-                        "__functional/bind.h", CallableForward)) return TraceFailure(__LINE__);
+                        "__functional/bind.h", CallableForward)) return std::nullopt;
   std::vector<const CallExpr *> BoundForwards;
   for (unsigned Index = 0; Index < Storage->Arguments.Elements.size(); ++Index) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(BoundConstruction->getArg(Index),
                           Constructor->getParamDecl(Index + 1),
-                          "__functional/bind.h", Forward)) return TraceFailure(__LINE__);
+                          "__functional/bind.h", Forward)) return std::nullopt;
     BoundForwards.push_back(Forward);
   }
   return FunctionalBindFactorySource{*Storage, Call, Factory, Construction,
@@ -14434,14 +14399,6 @@ std::optional<FunctionalBindCallSource>
 describeFunctionalBindCallSource(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
-  // Observational only: all original guards and returned values remain intact.
-  auto TraceFailure = [&](unsigned Point) -> std::optional<FunctionalBindCallSource> {
-    const char *Trace = std::getenv("NEVERC_CPP_BIND_SOURCE_PACKET");
-    if (Trace && Trace[0] && Trace[0] != '0')
-      llvm::errs() << "NCT_BIND_DESCRIPTOR_FAILURE describeFunctionalBindCallSource line=" << Point << "\n";
-    return std::nullopt;
-  };
-
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee())
                             : nullptr;
@@ -14449,7 +14406,7 @@ describeFunctionalBindCallSource(
       Call->getNumArgs() != 1 || Method->getNumParams() || Method->isStatic() ||
       Method->isVariadic() || Method->isDeleted() || Method->isVolatile() ||
       Method->getRefQualifier() != RQ_None || Method->getAccess() != AS_public ||
-      !S.owns(SM, Call->getExprLoc())) return TraceFailure(__LINE__);
+      !S.owns(SM, Call->getExprLoc())) return std::nullopt;
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Object = Check.stripped(Call->getArg(0));
   const auto Storage = describeFunctionalBindStorage(
@@ -14465,7 +14422,7 @@ describeFunctionalBindCallSource(
       Method->isConst() != Object->getType().isConstQualified() ||
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()) ||
-      !Check.family(Method, {"__functional/bind.h"})) return TraceFailure(__LINE__);
+      !Check.family(Method, {"__functional/bind.h"})) return std::nullopt;
   const auto *Apply = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(Method)));
   const auto *ApplyFunction = Apply ? Apply->getDirectCallee() : nullptr;
   if (!Apply || !ApplyFunction || !ApplyFunction->getIdentifier() ||
@@ -14473,7 +14430,7 @@ describeFunctionalBindCallSource(
       ApplyFunction->getNumParams() != 4 || !ApplyFunction->getPrimaryTemplate() ||
       ApplyFunction->isVariadic() ||
       !Check.location(Apply->getExprLoc(), {"__functional/bind.h"}) ||
-      !Check.family(ApplyFunction, {"__functional/bind.h"})) return TraceFailure(__LINE__);
+      !Check.family(ApplyFunction, {"__functional/bind.h"})) return std::nullopt;
   auto MemberSlot = [&](const Expr *Expression, const FieldDecl *Field,
                         const ParmVarDecl *Parameter) {
     const auto *Member = dyn_cast_or_null<MemberExpr>(Check.stripped(Expression));
@@ -14488,7 +14445,7 @@ describeFunctionalBindCallSource(
   };
   if (!MemberSlot(Apply->getArg(0), Storage->Callable, ApplyFunction->getParamDecl(0)) ||
       !MemberSlot(Apply->getArg(1), Storage->BoundArguments, ApplyFunction->getParamDecl(1)))
-    return TraceFailure(__LINE__);
+    return std::nullopt;
   const auto *Indices = Check.construction(Check.core(Apply->getArg(2)));
   const auto *IndexRecord = Indices ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
       Indices->getType()->getAsCXXRecordDecl()) : nullptr;
@@ -14500,24 +14457,24 @@ describeFunctionalBindCallSource(
       IndexPattern->getNumBases() || !IndexPattern->field_empty() ||
       !Check.family(IndexRecord, {"__tuple/tuple_indices.h", "__utility/integer_sequence.h"}) ||
       !Context.hasSameType(Indices->getType(), ApplyFunction->getParamDecl(2)->getType()))
-    return TraceFailure(__LINE__);
+    return std::nullopt;
   const auto &IndexArguments = IndexRecord->getTemplateArgs();
   if (IndexArguments.size() != 1 || IndexArguments[0].getKind() != TemplateArgument::Pack ||
-      IndexArguments[0].pack_size() != Storage->Arguments.Elements.size()) return TraceFailure(__LINE__);
+      IndexArguments[0].pack_size() != Storage->Arguments.Elements.size()) return std::nullopt;
   unsigned Index = 0;
   for (const auto &Argument : IndexArguments[0].pack_elements()) {
     if (Argument.getKind() != TemplateArgument::Integral ||
         Argument.getAsIntegral().isNegative() ||
         Argument.getAsIntegral().getLimitedValue(65) != Index++ ||
         !Context.hasSameType(Argument.getIntegralType(), Context.getSizeType()))
-      return TraceFailure(__LINE__);
+      return std::nullopt;
   }
   const auto *Empty = Check.construction(Check.core(Apply->getArg(3)));
   const auto EmptyStorage = Empty ? approvedUtilityTupleRecord(
       S, SM, Empty->getType()->getAsCXXRecordDecl(), Context) : std::nullopt;
   if (!Empty || Empty->getNumArgs() || !EmptyStorage || !EmptyStorage->Elements.empty() ||
       !Context.hasSameType(ApplyFunction->getParamDecl(3)->getType(),
-                           Context.getRValueReferenceType(Empty->getType()))) return TraceFailure(__LINE__);
+                           Context.getRValueReferenceType(Empty->getType()))) return std::nullopt;
   const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(ApplyFunction)));
   const auto *InvokeFunction = Invoke ? Invoke->getDirectCallee() : nullptr;
   if (!Invoke || !InvokeFunction || !InvokeFunction->getIdentifier() ||
@@ -14525,14 +14482,14 @@ describeFunctionalBindCallSource(
       Invoke->getNumArgs() != Storage->Arguments.Elements.size() + 1 ||
       InvokeFunction->getNumParams() != Invoke->getNumArgs() ||
       !Check.location(Invoke->getExprLoc(), {"__functional/bind.h"}) ||
-      !Check.family(InvokeFunction, {"__type_traits/invoke.h"})) return TraceFailure(__LINE__);
+      !Check.family(InvokeFunction, {"__type_traits/invoke.h"})) return std::nullopt;
   auto ParameterReference = [&](const Expr *Expression, const ParmVarDecl *Parameter) {
     const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Expression));
     return Reference && Reference->getDecl() == Parameter &&
         Context.hasSameType(Reference->getType(), Parameter->getType().getNonReferenceType());
   };
   if (!ParameterReference(Invoke->getArg(0), ApplyFunction->getParamDecl(0)))
-    return TraceFailure(__LINE__);
+    return std::nullopt;
   std::vector<FunctionalBindArgumentSource> Arguments;
   for (unsigned I = 0; I < Storage->Arguments.Elements.size(); ++I) {
     const auto Stored = Storage->Arguments.Elements[I].getType();
@@ -14544,7 +14501,7 @@ describeFunctionalBindCallSource(
         !Check.location(Unwrap->getExprLoc(), {"__functional/bind.h"}) ||
         !Check.family(UnwrapFunction, {"__functional/bind.h"}) ||
         !ParameterReference(Unwrap->getArg(1), ApplyFunction->getParamDecl(3)))
-      return TraceFailure(__LINE__);
+      return std::nullopt;
     const auto Wrapper = approvedFunctionalReferenceRecord(
         S, SM, Stored->getAsCXXRecordDecl(), Context);
     const auto *Copy = Wrapper ? Check.construction(Check.core(Unwrap->getArg(0))) : nullptr;
@@ -14563,12 +14520,12 @@ describeFunctionalBindCallSource(
         GetArguments->get(1).pack_size() != Storage->Arguments.Elements.size() ||
         !Context.hasSameType(GetFunction->getReturnType(), Context.getLValueReferenceType(Bound)) ||
         !ParameterReference(Get->getArg(0), ApplyFunction->getParamDecl(1)) ||
-        !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return TraceFailure(__LINE__);
+        !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return std::nullopt;
     unsigned ArgumentIndex = 0;
     for (const auto &Argument : GetArguments->get(1).pack_elements()) {
       if (Argument.getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Argument.getAsType(),
-              Storage->Arguments.Elements[ArgumentIndex++].getType())) return TraceFailure(__LINE__);
+              Storage->Arguments.Elements[ArgumentIndex++].getType())) return std::nullopt;
     }
     std::optional<FunctionalReferenceAccessCall> Access;
     QualType Forwarded;
@@ -14583,25 +14540,25 @@ describeFunctionalBindCallSource(
           Access->Wrapper.Record->getCanonicalDecl() != Wrapper->Record->getCanonicalDecl() ||
           !ParameterReference(Access->Object, UnwrapFunction->getParamDecl(0)) ||
           !Context.hasSameType(UnwrapFunction->getParamDecl(0)->getType(), Stored))
-        return TraceFailure(__LINE__);
+        return std::nullopt;
       Forwarded = Context.getLValueReferenceType(Wrapper->ReferentType);
     } else {
       Forwarded = Context.getLValueReferenceType(Bound);
       if (Copy || !ParameterReference(Check.returned(UnwrapFunction),
                                      UnwrapFunction->getParamDecl(0)) ||
           !Context.hasSameType(UnwrapFunction->getParamDecl(0)->getType(), Forwarded))
-        return TraceFailure(__LINE__);
+        return std::nullopt;
     }
     if (!Context.hasSameType(UnwrapFunction->getReturnType(), Forwarded) ||
         !Context.hasSameType(InvokeFunction->getParamDecl(I + 1)->getType(), Forwarded))
-      return TraceFailure(__LINE__);
+      return std::nullopt;
     Arguments.push_back(FunctionalBindArgumentSource{Get, Unwrap, Copy, Access, Forwarded});
   }
   const auto *Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(InvokeFunction)));
   if (!Target || Target->getDirectCallee() || Target->getNumArgs() != Arguments.size() ||
       !Context.hasSameUnqualifiedType(Target->getCallee()->getType(), Storage->CallableType) ||
       !Context.hasSameType(Target->getType(), Method->getReturnType().getNonReferenceType()) ||
-      Target->getValueKind() != Expr::getValueKindForType(Method->getReturnType())) return TraceFailure(__LINE__);
+      Target->getValueKind() != Expr::getValueKindForType(Method->getReturnType())) return std::nullopt;
   // The selected bullet-7 __invoke body forwards with explicit reference
   // casts, not calls to std::forward. Retain each original cast and its written
   // TypeSourceInfo for the independently completed source graph.
@@ -14625,9 +14582,9 @@ describeFunctionalBindCallSource(
     Casts.push_back(Cast);
     return true;
   };
-  if (!InvokeCast(Target->getCallee(), InvokeFunction->getParamDecl(0))) return TraceFailure(__LINE__);
+  if (!InvokeCast(Target->getCallee(), InvokeFunction->getParamDecl(0))) return std::nullopt;
   for (unsigned I = 0; I < Arguments.size(); ++I)
-    if (!InvokeCast(Target->getArg(I), InvokeFunction->getParamDecl(I + 1))) return TraceFailure(__LINE__);
+    if (!InvokeCast(Target->getArg(I), InvokeFunction->getParamDecl(I + 1))) return std::nullopt;
   return FunctionalBindCallSource{*Storage, Operator, Method, Object, Apply, Invoke,
       Target, Indices, Empty, std::move(Arguments), std::move(Casts)};
 }
@@ -16289,6 +16246,110 @@ describeFunctionalBindDestructionSource(
 }
 
 
+std::optional<FunctionalBindDeclvalSource>
+describeFunctionalBindDeclvalSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    QualType Input, const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Template = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Primary = Template ? Template->getTemplatedDecl() : nullptr;
+  const auto *Parameters = Template ? Template->getTemplateParameters() : nullptr;
+  const auto *Parameter = Parameters && Parameters->size() == 1
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+  const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!S.coreV2() || Input.isNull() || Input->isVoidType() || Input->isDependentType() ||
+      !Call || Call->getNumArgs() || Call->isTypeDependent() || Call->isValueDependent() ||
+      !Function || isa<CXXMethodDecl>(Function) || !Function->getIdentifier() ||
+      Function->getName() != "declval" || Function->isVariadic() || Function->getNumParams() ||
+      Function->isDeleted() || Function->isInvalidDecl() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Primary || !Parameter || Parameter->isParameterPack() || Parameter->hasDefaultArgument() ||
+      Parameter->getIndex() || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Input) ||
+      !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() || !Function->getTypeSourceInfo() ||
+      !Primary->getTypeSourceInfo() || !Check.family(Function, {"__utility/declval.h"}) ||
+      !Check.family(Parameter, {"__utility/declval.h"}) ||
+      !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+  const auto Result = Input->isReferenceType() ? Input : Context.getRValueReferenceType(Input);
+  if (!Context.hasSameType(Function->getReturnType(), Result) ||
+      !Context.hasSameType(Call->getType(), Result.getNonLValueExprType(Context)) ||
+      Call->getValueKind() != Expr::getValueKindForType(Result)) return std::nullopt;
+  const auto *Return = dyn_cast<DecltypeType>(Function->getReturnType().getTypePtr());
+  const auto *HelperCall = Return ? dyn_cast<CallExpr>(Check.stripped(Return->getUnderlyingExpr())) : nullptr;
+  const auto *Helper = HelperCall ? HelperCall->getDirectCallee() : nullptr;
+  const auto *HelperArguments = Helper ? Helper->getTemplateSpecializationArgs() : nullptr;
+  const auto *HelperPrimary = Helper ? Helper->getPrimaryTemplate() : nullptr;
+  const auto *Zero = HelperCall && HelperCall->getNumArgs() == 1
+      ? dyn_cast<IntegerLiteral>(HelperCall->getArg(0)) : nullptr;
+  if (!Helper || !HelperPrimary || isa<CXXMethodDecl>(Helper) || !Helper->getIdentifier() ||
+      Helper->getName() != "__declval" || Helper->isVariadic() || Helper->hasBody() ||
+      Helper->isDeleted() || Helper->isInvalidDecl() || Helper->getNumParams() != 1 ||
+      Helper->getParamDecl(0)->hasDefaultArg() || !Helper->getTypeSourceInfo() ||
+      Helper->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !HelperArguments || HelperArguments->size() != 1 ||
+      HelperArguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(HelperArguments->get(0).getAsType(), Input) ||
+      !Context.hasSameType(Helper->getParamDecl(0)->getType(), Context.IntTy) ||
+      !Context.hasSameType(Helper->getReturnType(), Result) ||
+      !Context.hasSameType(HelperCall->getType(), Result.getNonLValueExprType(Context)) ||
+      HelperCall->getValueKind() != Expr::getValueKindForType(Result) ||
+      !Zero || !Zero->getValue().isZero() || !Context.hasSameType(Zero->getType(), Context.IntTy) ||
+      !Check.family(Helper, {"__utility/declval.h"}) ||
+      !Check.location(HelperCall->getExprLoc(), {"__utility/declval.h"})) return std::nullopt;
+  const auto *PrimaryReturn = dyn_cast<DecltypeType>(Primary->getReturnType().getTypePtr());
+  const auto *PrimaryCall = PrimaryReturn
+      ? dyn_cast<CallExpr>(Check.stripped(PrimaryReturn->getUnderlyingExpr())) : nullptr;
+  const auto *Lookup = PrimaryCall
+      ? dyn_cast<UnresolvedLookupExpr>(PrimaryCall->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  const auto *PrimaryZero = PrimaryCall && PrimaryCall->getNumArgs() == 1
+      ? dyn_cast<IntegerLiteral>(PrimaryCall->getArg(0)) : nullptr;
+  if (!Lookup || Lookup->requiresADL() || Lookup->getNumDecls() != 2 ||
+      !Lookup->hasExplicitTemplateArgs() || Lookup->getNumTemplateArgs() != 1 ||
+      Lookup->getName().getNameKind() != DeclarationName::Identifier ||
+      Lookup->getName().getAsIdentifierInfo()->getName() != "__declval" ||
+      !PrimaryZero || !PrimaryZero->getValue().isZero() ||
+      !Context.hasSameType(PrimaryZero->getType(), Context.IntTy)) return std::nullopt;
+  const auto &Written = Lookup->template_arguments()[0];
+  const auto *WrittenType = Written.getArgument().getKind() == TemplateArgument::Type
+      ? dyn_cast<TemplateTypeParmType>(Written.getArgument().getAsType().getTypePtr()) : nullptr;
+  if (!WrittenType || WrittenType->getDecl() != Parameter || !Written.getTypeSourceInfo())
+    return std::nullopt;
+  std::vector<const FunctionTemplateDecl *> Overloads;
+  unsigned Int = 0, Long = 0;
+  for (const auto *Declaration : Lookup->decls()) {
+    const auto *Candidate = dyn_cast<FunctionTemplateDecl>(Declaration);
+    const auto *CandidateParameters = Candidate ? Candidate->getTemplateParameters() : nullptr;
+    const auto *Type = CandidateParameters && CandidateParameters->size() == 1
+        ? dyn_cast<TemplateTypeParmDecl>(CandidateParameters->getParam(0)) : nullptr;
+    const auto *Pattern = Candidate ? Candidate->getTemplatedDecl() : nullptr;
+    if (!Type || Type->getIndex() || Type->isParameterPack() || Type->hasDefaultArgument() ||
+        !Pattern || Pattern->hasBody() || Pattern->isVariadic() || Pattern->getNumParams() != 1 ||
+        Pattern->getParamDecl(0)->hasDefaultArg() || !Pattern->getTypeSourceInfo() ||
+        !Check.family(Candidate, {"__utility/declval.h"}) ||
+        !Check.family(Type, {"__utility/declval.h"})) return std::nullopt;
+    auto Returned = Pattern->getReturnType();
+    if (Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) {
+      if (++Int != 1 || !Returned->isRValueReferenceType()) return std::nullopt;
+      Returned = Returned->getPointeeType();
+    } else {
+      if (++Long != 1 || !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.LongTy))
+        return std::nullopt;
+    }
+    const auto *ReturnedParameter = dyn_cast<TemplateTypeParmType>(Returned.getTypePtr());
+    if (!ReturnedParameter || ReturnedParameter->getDecl() != Type) return std::nullopt;
+    Overloads.push_back(Candidate);
+  }
+  if (Int != 1 || Long != 1 || !llvm::is_contained(Overloads, HelperPrimary)) return std::nullopt;
+  // No body of declval is queried or instantiated by this description.
+  return FunctionalBindDeclvalSource{Call, HelperCall, PrimaryCall, Function, Helper,
+      Parameter, std::move(Overloads)};
+}
+
+
 bool retainFunctionalBindConstraintRoot(
     const State &S, const SourceManager &SM, TemplateSourceKind Kind,
     const NamedDecl *Template, const Decl *Declaration, const Type *Type,
@@ -16364,6 +16425,21 @@ bool retainFunctionalBindConstraintRoot(
       if (!Scalar(Parameter)) return false;
     return true;
   };
+  auto BindObject = [&](QualType T) {
+    if (T.isNull()) return false;
+    T = T.getNonReferenceType();
+    if (T.isVolatileQualified() || T.isRestrictQualified() ||
+        T.getAddressSpace() != LangAS::Default || T->isDependentType()) return false;
+    const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+    // Inert callback identity only: never request a definition, layout,
+    // special member, selected body or query completion inside Sema.
+    return Record && Record->getIdentifier() && Record->getName() == "__bind" &&
+        Record->getTemplateArgs().size() == 2 &&
+        Record->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
+        Callable(Record->getTemplateArgs()[0].getAsType()) &&
+        Pack(Record->getTemplateArgs()[1], 1) &&
+        Check.family(Record, {"__functional/bind.h"});
+  };
   if (Kind == TemplateSourceKind::Function) {
     const auto *Function = dyn_cast_or_null<FunctionDecl>(Declaration);
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
@@ -16386,7 +16462,7 @@ bool retainFunctionalBindConstraintRoot(
     }
     const auto *Method = dyn_cast<CXXMethodDecl>(Function);
     const auto *Owner = Method ? dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent()) : nullptr;
-    if (InBind && Method && Owner && Owner->getIdentifier() && Owner->getName() == "__bind" &&
+    if ((InBind || InInvoke) && Method && Owner && Owner->getIdentifier() && Owner->getName() == "__bind" &&
         Method->getOverloadedOperator() == OO_Call && !Method->isStatic() &&
         !Method->isVariadic() && !Method->getNumParams() && Owner->getTemplateArgs().size() == 2 &&
         Owner->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
@@ -16408,8 +16484,11 @@ bool retainFunctionalBindConstraintRoot(
         Owner->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
         Owner->getTemplateArgs()[0].getAsType()->isVoidType() &&
         Owner->getTemplateArgs()[1].getKind() == TemplateArgument::Type &&
-        Callable(Owner->getTemplateArgs()[1].getAsType()) &&
-        Pack(Owner->getTemplateArgs()[2], 1)) {
+        ((Callable(Owner->getTemplateArgs()[1].getAsType()) &&
+          Pack(Owner->getTemplateArgs()[2], 1)) ||
+         (BindObject(Owner->getTemplateArgs()[1].getAsType()) &&
+          Owner->getTemplateArgs()[2].getKind() == TemplateArgument::Pack &&
+          !Owner->getTemplateArgs()[2].pack_size()))) {
       const auto *Selected = Method->getTemplateSpecializationArgs();
       if (!Selected || Selected->size() != 2 ||
           !Selected->get(0).structurallyEquals(Owner->getTemplateArgs()[1]) ||
@@ -16437,6 +16516,20 @@ bool retainFunctionalBindConstraintRoot(
       return Check.family(Function, {"__utility/forward.h"});
     if (Function->getName() == "declval" && Function->getNumParams() == 0)
       return Check.family(Function, {"__utility/declval.h"});
+    if (Function->getName() == "__declval" && Function->getNumParams() == 1 &&
+        !Function->isVariadic() &&
+        Template->getASTContext().hasSameType(Function->getParamDecl(0)->getType(),
+                                             Template->getASTContext().IntTy)) {
+      const auto *Arguments = Function->getTemplateSpecializationArgs();
+      return Arguments && Arguments->size() == 1 &&
+          Arguments->get(0).getKind() == TemplateArgument::Type &&
+          (Capture(Arguments->get(0).getAsType()) || Callable(Arguments->get(0).getAsType()) ||
+           BindObject(Arguments->get(0).getAsType())) &&
+          Check.family(Function, {"__utility/declval.h"});
+    }
+    if (Function->getName() == "__invoke" && Function->getNumParams() == 1 &&
+        BindObject(Function->getParamDecl(0)->getType()))
+      return Check.family(Function, {"__type_traits/invoke.h"});
     if (InBind && Function->getName() == "bind" && Function->getNumParams() >= 2 &&
         Function->getNumParams() <= 3 &&
         Callable(Function->getParamDecl(0)->getType())) {
@@ -16514,13 +16607,6 @@ bool matchesFunctionalBindSelectedSource(
   return Selected == Source.Function;
 }
 
-static bool traceBindSourceGraphFailure(unsigned Line) {
-  const char *Trace = std::getenv("NEVERC_CPP_BIND_SOURCE_PACKET");
-  if (Trace && Trace[0] && Trace[0] != '0')
-    llvm::errs() << "NCT_BIND_SOURCE_GRAPH_FAILURE line=" << Line << "\n";
-  return false;
-}
-
 namespace {
 // This proof consumes the original Sema packets, not a reconstructed template
 // argument list. All children share one strict 64/200000 source-walker budget.
@@ -16537,6 +16623,8 @@ class BindSourceProof {
   std::set<const CXXRecordDecl *> ActiveRecords, CompletedRecords;
   std::set<const VarDecl *> ActiveVariables, CompletedVariables;
   std::set<const FunctionDecl *> ActiveFunctions, CompletedFunctions;
+  std::map<const CallExpr *, QualType> DeclvalInputs;
+  const FunctionalBindDeclvalSource *ActiveDeclval = nullptr;
   bool Ready = false;
 
   bool sdk(SourceLocation Location) const {
@@ -16544,9 +16632,9 @@ class BindSourceProof {
     return Location.isValid() && File && File->Root == "libcxx";
   }
   bool family(const Decl *Declaration) {
-    if (!Declaration) return traceBindSourceGraphFailure(__LINE__);
+    if (!Declaration) return false;
     const auto File = S.sdkFile(SM, Declaration->getLocation());
-    if (!File || File->Root != "libcxx") return traceBindSourceGraphFailure(__LINE__);
+    if (!File || File->Root != "libcxx") return false;
     const auto &Path = File->Path;
     if (!(Path == "tuple" || Path == "__config" ||
           Path == "__functional/bind.h" || Path == "__functional/weak_result_type.h" ||
@@ -16556,7 +16644,7 @@ class BindSourceProof {
           Path == "__utility/declval.h" || Path == "__utility/integer_sequence.h" ||
           Path == "__cstddef/size_t.h" || llvm::StringRef(Path).starts_with("__type_traits/") ||
           llvm::StringRef(Path).starts_with("__tuple/") ||
-          llvm::StringRef(Path).starts_with("__fwd/"))) return traceBindSourceGraphFailure(__LINE__);
+          llvm::StringRef(Path).starts_with("__fwd/"))) return false;
     // A fresh family checker preserves each declaration's own permitted path
     // set. An earlier family hit cannot hide an invalid alternative path.
     NotFnSelectedSource Family(S, SM, Context);
@@ -16569,9 +16657,9 @@ class BindSourceProof {
     return Family.family(Declaration, {Path});
   }
   bool same(const TemplateArgumentList *Left, const TemplateArgumentList *Right) const {
-    if (!Left || !Right || Left->size() != Right->size() || Left->size() > 64) return traceBindSourceGraphFailure(__LINE__);
+    if (!Left || !Right || Left->size() != Right->size() || Left->size() > 64) return false;
     for (unsigned I = 0; I < Left->size(); ++I)
-      if (!Left->get(I).structurallyEquals(Right->get(I))) return traceBindSourceGraphFailure(__LINE__);
+      if (!Left->get(I).structurallyEquals(Right->get(I))) return false;
     return true;
   }
   bool packet(const TemplateUseSource &Source, const TemplateParameterList *Parameters) {
@@ -16583,11 +16671,11 @@ class BindSourceProof {
         Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
         Source.Origin || Source.WrittenStorageClass ||
         (Source.Selection && Source.Kind != TemplateSourceKind::PartialDeduction &&
-         Source.Kind != TemplateSourceKind::PartialPattern)) return traceBindSourceGraphFailure(__LINE__);
+         Source.Kind != TemplateSourceKind::PartialPattern)) return false;
     for (unsigned I = 0; I < Source.Canonical->size(); ++I)
       if (Source.Canonical->get(I).isNull() ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return traceBindSourceGraphFailure(__LINE__);
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
     return true;
   }
   bool convertedValue(const TemplateArgumentLoc &Location, const TemplateArgument &Canonical) {
@@ -16595,12 +16683,12 @@ class BindSourceProof {
     if (Argument.getKind() == TemplateArgument::Type)
       return Canonical.getKind() == TemplateArgument::Type && Location.getTypeSourceInfo() &&
           Context.hasSameType(Argument.getAsType(), Canonical.getAsType());
-    if (Canonical.getKind() != TemplateArgument::Integral) return traceBindSourceGraphFailure(__LINE__);
+    if (Canonical.getKind() != TemplateArgument::Integral) return false;
     const Expr *Expression = Argument.getKind() == TemplateArgument::Expression
         ? Argument.getAsExpr() : Argument.getKind() == TemplateArgument::Integral
         ? Location.getSourceIntegralExpression() : nullptr;
     if (!Expression || Expression->isTypeDependent() || Expression->isValueDependent() ||
-        !Context.hasSameType(Expression->getType(), Canonical.getIntegralType())) return traceBindSourceGraphFailure(__LINE__);
+        !Context.hasSameType(Expression->getType(), Canonical.getIntegralType())) return false;
     Expr::EvalResult Value;
     // Fold only after the actual original/written/converted graphs close.
     // This value binds a converted slot; it never supplies source permission.
@@ -16609,9 +16697,9 @@ class BindSourceProof {
   }
   bool source(const TemplateUseSource &Source, const TemplateParameterList *Parameters) {
     return Graph.withBindSourceChild([&] {
-      if (!packet(Source, Parameters)) return traceBindSourceGraphFailure(__LINE__);
+      if (!packet(Source, Parameters)) return false;
       if (CompletedSources.count(&Source)) return true;
-      if (!ActiveSources.insert(&Source).second) return traceBindSourceGraphFailure(__LINE__);
+      if (!ActiveSources.insert(&Source).second) return false;
       auto Restore = llvm::make_scope_exit([&] { ActiveSources.erase(&Source); });
       std::set<unsigned> Defaults;
       std::set<std::pair<unsigned, unsigned>> ParameterTypes;
@@ -16619,81 +16707,81 @@ class BindSourceProof {
         unsigned Index = ~0U;
         for (unsigned I = 0; I < Parameters->size(); ++I)
           if (Parameters->getParam(I) == Default.Parameter) Index = I;
-        if (Index == ~0U || !Defaults.insert(Index).second || !family(Default.Parameter)) return traceBindSourceGraphFailure(__LINE__);
+        if (Index == ~0U || !Defaults.insert(Index).second || !family(Default.Parameter)) return false;
         if (const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter)) {
           if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
               Default.Written.getArgument().getKind() != TemplateArgument::Type ||
-              Default.Converted.getArgument().getKind() != TemplateArgument::Type) return traceBindSourceGraphFailure(__LINE__);
+              Default.Converted.getArgument().getKind() != TemplateArgument::Type) return false;
           const auto *Original = Parameter->getDefaultArgument().getTypeSourceInfo();
-          if (!Original || !Graph.TraverseTypeLoc(Original->getTypeLoc())) return traceBindSourceGraphFailure(__LINE__);
+          if (!Original || !Graph.TraverseTypeLoc(Original->getTypeLoc())) return false;
         } else if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Default.Parameter)) {
           if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
               Parameter->getDefaultArgument().getArgument().getKind() != TemplateArgument::Expression ||
-              !Graph.TraverseTemplateArgumentLoc(Parameter->getDefaultArgument())) return traceBindSourceGraphFailure(__LINE__);
-        } else return traceBindSourceGraphFailure(__LINE__);
+              !Graph.TraverseTemplateArgumentLoc(Parameter->getDefaultArgument())) return false;
+        } else return false;
         if (!Graph.TraverseTemplateArgumentLoc(Default.Written) ||
             !Graph.TraverseTemplateArgumentLoc(Default.Converted) ||
-            !convertedValue(Default.Converted, Source.Canonical->get(Index))) return traceBindSourceGraphFailure(__LINE__);
+            !convertedValue(Default.Converted, Source.Canonical->get(Index))) return false;
       }
       for (const auto &Entry : Source.ParameterTypes) {
         const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Entry.Parameter);
         unsigned Index = ~0U;
         for (unsigned I = 0; I < Parameters->size(); ++I)
           if (Parameters->getParam(I) == Parameter) Index = I;
-        if (!Parameter || Index == ~0U || !Entry.Type) return traceBindSourceGraphFailure(__LINE__);
-        if (!family(Parameter)) return traceBindSourceGraphFailure(__LINE__);
-        if (!ParameterTypes.insert({Index, Entry.PackIndex}).second) return traceBindSourceGraphFailure(__LINE__);
-        if (!Parameter->getTypeSourceInfo()) return traceBindSourceGraphFailure(__LINE__);
-        if (!Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return traceBindSourceGraphFailure(__LINE__);
-        if (!Graph.TraverseTypeLoc(Entry.Type->getTypeLoc())) return traceBindSourceGraphFailure(__LINE__);
+        if (!Parameter || Index == ~0U || !Entry.Type) return false;
+        if (!family(Parameter)) return false;
+        if (!ParameterTypes.insert({Index, Entry.PackIndex}).second) return false;
+        if (!Parameter->getTypeSourceInfo()) return false;
+        if (!Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+        if (!Graph.TraverseTypeLoc(Entry.Type->getTypeLoc())) return false;
         const auto &Slot = Source.Canonical->get(Index);
         const TemplateArgument *Argument = &Slot;
         if (Parameter->isParameterPack()) {
-          if (Slot.getKind() != TemplateArgument::Pack) return traceBindSourceGraphFailure(__LINE__);
+          if (Slot.getKind() != TemplateArgument::Pack) return false;
           if (Slot.pack_size() == 0) {
-            if (Entry.PackIndex != ~0U) return traceBindSourceGraphFailure(__LINE__);
+            if (Entry.PackIndex != ~0U) return false;
             Argument = nullptr;
           } else {
-            if (Entry.PackIndex >= Slot.pack_size()) return traceBindSourceGraphFailure(__LINE__);
+            if (Entry.PackIndex >= Slot.pack_size()) return false;
             Argument = &Slot.pack_elements()[Entry.PackIndex];
           }
-        } else if (Entry.PackIndex != 0) return traceBindSourceGraphFailure(__LINE__);
+        } else if (Entry.PackIndex != 0) return false;
         if (Argument && (Argument->getKind() != TemplateArgument::Integral ||
-            !Context.hasSameType(Entry.Type->getType(), Argument->getIntegralType()))) return traceBindSourceGraphFailure(__LINE__);
+            !Context.hasSameType(Entry.Type->getType(), Argument->getIntegralType()))) return false;
       }
       for (unsigned I = 0; I < Parameters->size(); ++I) {
         const auto *Parameter = Parameters->getParam(I);
-        if (!family(Parameter)) return traceBindSourceGraphFailure(__LINE__);
+        if (!family(Parameter)) return false;
         // Defaults are obligations only for omitted slots. A selected class
         // partial pattern retains explicit primary arguments as written.
         bool Explicit = Source.Written && I < Source.Written->getNumTemplateArgs();
         for (unsigned J = 0; J < I && Explicit; ++J)
           if (Parameters->getParam(J)->isParameterPack()) Explicit = false;
         if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter)) {
-          if (Type->hasDefaultArgument() && !Explicit && !Defaults.count(I)) return traceBindSourceGraphFailure(__LINE__);
+          if (Type->hasDefaultArgument() && !Explicit && !Defaults.count(I)) return false;
         } else if (const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter)) {
-          if (Value->hasDefaultArgument() && !Explicit && !Defaults.count(I)) return traceBindSourceGraphFailure(__LINE__);
+          if (Value->hasDefaultArgument() && !Explicit && !Defaults.count(I)) return false;
           const auto &Slot = Source.Canonical->get(I);
           if (Value->isParameterPack()) {
-            if (Slot.getKind() != TemplateArgument::Pack) return traceBindSourceGraphFailure(__LINE__);
-            if (!Slot.pack_size() && !ParameterTypes.count({I, ~0U})) return traceBindSourceGraphFailure(__LINE__);
+            if (Slot.getKind() != TemplateArgument::Pack) return false;
+            if (!Slot.pack_size() && !ParameterTypes.count({I, ~0U})) return false;
             for (unsigned J = 0; J < Slot.pack_size(); ++J)
-              if (!ParameterTypes.count({I, J})) return traceBindSourceGraphFailure(__LINE__);
-          } else if (!ParameterTypes.count({I, 0})) return traceBindSourceGraphFailure(__LINE__);
+              if (!ParameterTypes.count({I, J})) return false;
+          } else if (!ParameterTypes.count({I, 0})) return false;
         } else if (const auto *Template = dyn_cast<TemplateTemplateParmDecl>(Parameter)) {
           // The tuple slice implementation binds its actual tuple template.
           // This slice needs no defaulted or packed template-template slot.
           if (Template->isParameterPack() || Template->hasDefaultArgument() ||
               Source.Canonical->get(I).getKind() != TemplateArgument::Template ||
-              !Graph.TraverseTemplateName(Source.Canonical->get(I).getAsTemplate())) return traceBindSourceGraphFailure(__LINE__);
-        } else return traceBindSourceGraphFailure(__LINE__);
+              !Graph.TraverseTemplateName(Source.Canonical->get(I).getAsTemplate())) return false;
+        } else return false;
       }
       if (Source.Written)
         for (const auto &Argument : Source.Written->arguments())
-          if (!Graph.TraverseTemplateArgumentLoc(Argument)) return traceBindSourceGraphFailure(__LINE__);
+          if (!Graph.TraverseTemplateArgumentLoc(Argument)) return false;
       for (const auto *Arguments : {Source.Canonical, Source.Sugared})
         for (const auto &Argument : Arguments->asArray())
-          if (!Graph.TraverseTemplateArgument(Argument)) return traceBindSourceGraphFailure(__LINE__);
+          if (!Graph.TraverseTemplateArgument(Argument)) return false;
       CompletedSources.insert(&Source);
       return true;
     });
@@ -16702,27 +16790,21 @@ class BindSourceProof {
     return Graph.withBindSourceChild([&] {
       const auto *Template = Type ? dyn_cast_or_null<TemplateDecl>(
           Type->getTemplateName().getAsTemplateDecl()) : nullptr;
-      if (!Type || !Template || !family(Template)) return traceBindSourceGraphFailure(__LINE__);
+      if (!Type || !Template || !family(Template)) return false;
       bool Found = false;
       for (const auto *Use : Sources) {
         if (!Use || Use->Kind != TemplateSourceKind::Type || Use->Type != Type) continue;
         if (Use->Template != Template || Use->Declaration || !Use->Written ||
             Use->Instantiation || Use->Selection ||
-            !source(*Use, Template->getTemplateParameters())) return traceBindSourceGraphFailure(__LINE__);
+            !source(*Use, Template->getTemplateParameters())) return false;
         if (Type->isTypeAlias()) {
           if (!Use->Underlying || Use->Underlying->getType().isNull() ||
               !Context.hasSameType(Use->Underlying->getType(), Type->getAliasedType()) ||
-              !Graph.TraverseBindAliasUnderlying(Type, Use->Underlying)) return traceBindSourceGraphFailure(__LINE__);
-        } else if (Use->Underlying) return traceBindSourceGraphFailure(__LINE__);
+              !Graph.TraverseBindAliasUnderlying(Type, Use->Underlying)) return false;
+        } else if (Use->Underlying) return false;
         Found = true;
       }
-      if (!Found) {
-        const char *Trace = std::getenv("NEVERC_CPP_BIND_SOURCE_PACKET");
-        if (Trace && Trace[0] && Trace[0] != '0')
-          llvm::errs() << "NCT_BIND_TYPE_SOURCE_MISSING type="
-                       << QualType(Type, 0).getAsString() << "\n";
-      }
-      if (!Found) return traceBindSourceGraphFailure(__LINE__);
+      if (!Found) return false;
       return true;
     });
   }
@@ -16732,9 +16814,9 @@ class BindSourceProof {
       if (!Instance) return family(Record) && Record->isDependentContext();
       const auto *Primary = Instance->getSpecializedTemplate();
       if (!Primary || !family(Instance) ||
-          Instance->getSpecializationKind() != TSK_ImplicitInstantiation) return traceBindSourceGraphFailure(__LINE__);
+          Instance->getSpecializationKind() != TSK_ImplicitInstantiation) return false;
       if (CompletedRecords.count(Record)) return true;
-      if (!ActiveRecords.insert(Record).second) return traceBindSourceGraphFailure(__LINE__);
+      if (!ActiveRecords.insert(Record).second) return false;
       auto Restore = llvm::make_scope_exit([&] { ActiveRecords.erase(Record); });
       if (const auto *Partial = Instance->getSpecializedTemplateOrPartial()
               .dyn_cast<ClassTemplatePartialSpecializationDecl *>()) {
@@ -16745,23 +16827,23 @@ class BindSourceProof {
           if (Use->Kind == TemplateSourceKind::PartialDeduction) {
             if (Deduction || Use->Template != Partial || Use->Written ||
                 !same(Use->Canonical, &Instance->getTemplateInstantiationArgs()) ||
-                !Use->Defaults.empty() || !source(*Use, Partial->getTemplateParameters())) return traceBindSourceGraphFailure(__LINE__);
+                !Use->Defaults.empty() || !source(*Use, Partial->getTemplateParameters())) return false;
             Deduction = Use;
           } else if (Use->Kind == TemplateSourceKind::PartialPattern) {
             if (Pattern || Use->Template != Primary || !Use->Written ||
                 !same(Use->Canonical, &Instance->getTemplateArgs()) ||
-                !source(*Use, Primary->getTemplateParameters())) return traceBindSourceGraphFailure(__LINE__);
+                !source(*Use, Primary->getTemplateParameters())) return false;
             Pattern = Use;
           }
         }
         if (!Deduction || !Pattern || Deduction->Selection != Pattern->Selection ||
-            !family(Partial)) return traceBindSourceGraphFailure(__LINE__);
+            !family(Partial)) return false;
         const auto *Original = Partial->getTemplateArgsAsWritten();
-        if (!Original) return traceBindSourceGraphFailure(__LINE__);
+        if (!Original) return false;
         for (const auto &Argument : Original->arguments())
-          if (!Graph.TraverseTemplateArgumentLoc(Argument)) return traceBindSourceGraphFailure(__LINE__);
+          if (!Graph.TraverseTemplateArgumentLoc(Argument)) return false;
       } else if (Instance->getSpecializedTemplateOrPartial().get<ClassTemplateDecl *>() != Primary)
-        return traceBindSourceGraphFailure(__LINE__);
+        return false;
       CompletedRecords.insert(Record);
       return true;
     });
@@ -16770,16 +16852,16 @@ class BindSourceProof {
     return Graph.withBindSourceChild([&] {
       const auto *Variable = Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
       if (!Variable || !family(Variable) || !Variable->getType().isConstQualified() ||
-          Variable->getType().isVolatileQualified() || !Variable->hasInit()) return traceBindSourceGraphFailure(__LINE__);
+          Variable->getType().isVolatileQualified() || !Variable->hasInit()) return false;
       if (CompletedVariables.count(Variable)) return true;
-      if (!ActiveVariables.insert(Variable).second) return traceBindSourceGraphFailure(__LINE__);
+      if (!ActiveVariables.insert(Variable).second) return false;
       auto Restore = llvm::make_scope_exit([&] { ActiveVariables.erase(Variable); });
       if (const auto *Instance = dyn_cast<VarTemplateSpecializationDecl>(Variable)) {
         const auto *Primary = Instance->getSpecializedTemplate();
         if (!Primary || !family(Primary) ||
             Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
             Instance->getSpecializedTemplateOrPartial().dyn_cast<VarTemplateDecl *>() != Primary)
-          return traceBindSourceGraphFailure(__LINE__);
+          return false;
         bool Found = false;
         for (const auto *Use : Sources) {
           if (!Use || Use->Kind != TemplateSourceKind::VariableUse ||
@@ -16788,54 +16870,92 @@ class BindSourceProof {
               !same(Use->Canonical, &Instance->getTemplateArgs()) ||
               !source(*Use, Primary->getTemplateParameters()) || !Use->Underlying ||
               !Context.hasSameType(Use->Underlying->getType(), Instance->getType()) ||
-              !Graph.TraverseTypeLoc(Use->Underlying->getTypeLoc())) return traceBindSourceGraphFailure(__LINE__);
+              !Graph.TraverseTypeLoc(Use->Underlying->getTypeLoc())) return false;
           Found = true;
         }
-        if (!Found) return traceBindSourceGraphFailure(__LINE__);
+        if (!Found) return false;
       } else {
         const auto *Owner = dyn_cast<CXXRecordDecl>(Variable->getDeclContext());
-        if (!Variable->isStaticDataMember() || !Owner || !recordSource(Owner)) return traceBindSourceGraphFailure(__LINE__);
+        if (!Variable->isStaticDataMember() || !Owner || !recordSource(Owner)) return false;
         const auto Qualifier = Reference->getQualifierLoc();
-        if (Qualifier && !Graph.TraverseTypeLoc(Qualifier.getTypeLoc())) return traceBindSourceGraphFailure(__LINE__);
+        if (Qualifier && !Graph.TraverseTypeLoc(Qualifier.getTypeLoc())) return false;
       }
       if (!Variable->getTypeSourceInfo() ||
           !Graph.TraverseTypeLoc(Variable->getTypeSourceInfo()->getTypeLoc()) ||
-          !Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()))) return traceBindSourceGraphFailure(__LINE__);
+          !Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()))) return false;
       CompletedVariables.insert(Variable);
       return true;
     });
   }
-  bool functionUse(const Expr *Expression, const FunctionDecl *Function) {
+  bool functionSource(const Expr *Expression, const FunctionDecl *Function,
+                      std::function<bool()> Signature) {
     return Graph.withBindSourceChild([&] {
       const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
       const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
-      if (!Expression || !Function || !Primary || !Arguments || !family(Function) ||
-          Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return traceBindSourceGraphFailure(__LINE__);
+      if (!Expression || !Function || !Primary || !Arguments || !Signature || !family(Function) ||
+          Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
       bool Found = false;
       for (const auto *Selection : Selections) {
         if (!Selection || Selection->Expression != Expression || Selection->Function != Function) continue;
-        if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return traceBindSourceGraphFailure(__LINE__);
+        if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
         bool UseFound = false;
         for (const auto *Use : Sources) {
           if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
               Use->Location != Selection->Location) continue;
           if (Use->Template != Primary || Use->Type || Use->Underlying || Use->Written ||
               Use->Instantiation || Use->Selection || !same(Use->Canonical, Arguments) ||
-              !source(*Use, Primary->getTemplateParameters())) return traceBindSourceGraphFailure(__LINE__);
+              !source(*Use, Primary->getTemplateParameters())) return false;
           UseFound = true;
         }
-        if (!UseFound) return traceBindSourceGraphFailure(__LINE__);
+        if (!UseFound) return false;
         Found = true;
       }
-      if (!Found) return traceBindSourceGraphFailure(__LINE__);
+      if (!Found) return false;
+      return Signature();
+    });
+  }
+  bool functionUse(const Expr *Expression, const FunctionDecl *Function) {
+    return functionSource(Expression, Function, [&] {
       if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Function))
         return Graph.TraverseBindConstructorSignature(Constructor);
       return Function->getTypeSourceInfo() && Graph.function(Function) &&
           Graph.TraverseTypeLoc(Function->getTypeSourceInfo()->getTypeLoc());
     });
   }
+  bool declvalSource(const CallExpr *Call, QualType Input) {
+    if (ActiveDeclval) return false;
+    const auto Description = describeFunctionalBindDeclvalSource(S, SM, Call, Input, Context);
+    if (!Description) return false;
+    ActiveDeclval = &*Description;
+    auto Restore = llvm::make_scope_exit([&] { ActiveDeclval = nullptr; });
+    return functionSource(Call, Description->Function, [&] {
+      // No definition/body request is made for declval. Its actual selected
+      // signature, original signature and both declaration-only overloads
+      // remain separate source obligations within the same graph budget.
+      if (!Graph.function(Description->Function) ||
+          !Graph.TraverseTypeLoc(Description->Function->getTypeSourceInfo()->getTypeLoc()))
+        return false;
+      const auto *Primary = Description->Function->getPrimaryTemplate()->getTemplatedDecl();
+      if (!family(Primary) || !Primary->getTypeSourceInfo() || !Graph.function(Primary) ||
+          !Graph.TraverseTypeLoc(Primary->getTypeSourceInfo()->getTypeLoc())) return false;
+      for (const auto *Template : Description->HelperOverloads) {
+        const auto *Pattern = Template ? Template->getTemplatedDecl() : nullptr;
+        if (!Template || !Pattern || !family(Template) || !family(Pattern) ||
+            !Pattern->getTypeSourceInfo() || !Graph.function(Pattern) ||
+            !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return false;
+      }
+      return Graph.bindSourceComplete();
+    });
+  }
   bool callSource(const CallExpr *Call) {
     const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+    if (ActiveDeclval && Call == ActiveDeclval->PrimaryHelperCall)
+      return !Function; // Both exact original helper declarations close above.
+    if (ActiveDeclval && Call == ActiveDeclval->HelperCall)
+      return Function == ActiveDeclval->Helper && functionUse(Call, Function);
+    const auto Declval = DeclvalInputs.find(Call);
+    if (Declval != DeclvalInputs.end())
+      return declvalSource(Call, Declval->second);
     if (Call && Check.location(Call->getExprLoc(), {"__type_traits/conjunction.h"}))
       return conjunctionSource(Call);
     // Runtime invocation and indirect queries retain their separate proof.
@@ -16853,7 +16973,7 @@ class BindSourceProof {
           ? dyn_cast<IntegerLiteral>(Call->getArg(0)->IgnoreParens()) : nullptr;
       if (!Zero || !Zero->getValue().isZero() ||
           !Context.hasSameType(Zero->getType(), Context.IntTy) ||
-          !Check.location(Call->getExprLoc(), {"__type_traits/conjunction.h"})) return traceBindSourceGraphFailure(__LINE__);
+          !Check.location(Call->getExprLoc(), {"__type_traits/conjunction.h"})) return false;
       const auto *Function = Call->getDirectCallee();
       const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Call->getCallee()->IgnoreParenImpCasts());
       std::vector<const FunctionTemplateDecl *> Templates;
@@ -16861,16 +16981,16 @@ class BindSourceProof {
         if (!Function->getIdentifier() || Function->getName() != "__and_helper" ||
             isa<CXXMethodDecl>(Function) || !Function->getPrimaryTemplate() ||
             Function->hasBody() || !Check.family(Function, {"__type_traits/conjunction.h"}))
-          return traceBindSourceGraphFailure(__LINE__);
+          return false;
         Templates.push_back(Function->getPrimaryTemplate());
       } else {
         if (!Lookup || !Call->isTypeDependent() || Lookup->requiresADL() ||
             Lookup->getNumDecls() != 2 || !Lookup->hasExplicitTemplateArgs() ||
             Lookup->getName().getNameKind() != DeclarationName::Identifier ||
-            Lookup->getName().getAsIdentifierInfo()->getName() != "__and_helper") return traceBindSourceGraphFailure(__LINE__);
+            Lookup->getName().getAsIdentifierInfo()->getName() != "__and_helper") return false;
         for (const auto *Declaration : Lookup->decls()) {
           const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
-          if (!Template) return traceBindSourceGraphFailure(__LINE__);
+          if (!Template) return false;
           Templates.push_back(Template);
         }
       }
@@ -16886,16 +17006,16 @@ class BindSourceProof {
             Pattern->isInvalidDecl() || Pattern->isDeleted() || Pattern->hasBody() ||
             !Pattern->getTypeSourceInfo() ||
             !Check.family(Template, {"__type_traits/conjunction.h"}) ||
-            !Check.family(Pack, {"__type_traits/conjunction.h"})) return traceBindSourceGraphFailure(__LINE__);
+            !Check.family(Pack, {"__type_traits/conjunction.h"})) return false;
         if (Pattern->isVariadic()) {
-          if (Pattern->getNumParams() || ++Fallback != 1) return traceBindSourceGraphFailure(__LINE__);
+          if (Pattern->getNumParams() || ++Fallback != 1) return false;
         } else {
           if (Pattern->getNumParams() != 1 || ++Success != 1 ||
               Pattern->getParamDecl(0)->hasDefaultArg() ||
-              !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return traceBindSourceGraphFailure(__LINE__);
+              !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return false;
         }
         if (!Graph.function(Pattern) ||
-            !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return traceBindSourceGraphFailure(__LINE__);
+            !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return false;
       }
       // Both unresolved declaration signatures are original source obligations.
       // A selected call additionally needs its exact retained Sema occurrence.
@@ -16921,7 +17041,7 @@ public:
   }
   bool factory(const FunctionalBindFactorySource &Factory) {
     if (!Ready || Factory.Storage.Record != Storage.Record ||
-        !Factory.SourceCall || !S.owns(SM, Factory.SourceCall->getExprLoc())) return traceBindSourceGraphFailure(__LINE__);
+        !Factory.SourceCall || !S.owns(SM, Factory.SourceCall->getExprLoc())) return false;
     const auto Actual = describeFunctionalBindFactorySource(S, SM, Factory.SourceCall, Context);
     const auto Tuple = describeFunctionalBindTupleConstructionSource(S, SM, Factory, Context);
     const auto *Reference = dyn_cast<DeclRefExpr>(Factory.SourceCall->getCallee()->IgnoreParenImpCasts());
@@ -16943,9 +17063,9 @@ public:
         !functionUse(Factory.SourceCall, Factory.Factory) ||
         !functionUse(Factory.Construction, Factory.Construction->getConstructor()) ||
         !functionUse(Tuple->Tuple, Tuple->Tuple->getConstructor()) ||
-        !functionUse(Tuple->Implementation, Tuple->Implementation->getConstructor())) return traceBindSourceGraphFailure(__LINE__);
+        !functionUse(Tuple->Implementation, Tuple->Implementation->getConstructor())) return false;
     for (const auto *Leaf : Tuple->Leaves)
-      if (!functionUse(Leaf, Leaf->getConstructor())) return traceBindSourceGraphFailure(__LINE__);
+      if (!functionUse(Leaf, Leaf->getConstructor())) return false;
     const auto *Body = dyn_cast_or_null<CompoundStmt>(Factory.Factory->getBody());
     const auto *Statement = Body && Body->size() == 2 ? dyn_cast<DeclStmt>(*Body->body_begin()) : nullptr;
     const auto *Alias = Statement && Statement->isSingleDecl()
@@ -16953,30 +17073,53 @@ public:
     if (!Alias || !Alias->getTypeSourceInfo() || !family(Alias) ||
         !Graph.TraverseTypeLoc(Alias->getTypeSourceInfo()->getTypeLoc()) ||
         !Graph.TraverseType(Factory.Construction->getType()) ||
-        !Graph.bindFunctionalBindStorageSource()) return traceBindSourceGraphFailure(__LINE__);
+        !Graph.bindFunctionalBindStorageSource()) return false;
     for (const auto *Field : {Storage.Callable, Storage.BoundArguments})
       if (!Field || !Field->getTypeSourceInfo() || !family(Field) ||
-          !Graph.TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return traceBindSourceGraphFailure(__LINE__);
+          !Graph.TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return false;
     for (const auto *Forward : Factory.FactoryForwards)
-      if (!callSource(Forward)) return traceBindSourceGraphFailure(__LINE__);
-    if (!callSource(Factory.CallableForward)) return traceBindSourceGraphFailure(__LINE__);
+      if (!callSource(Forward)) return false;
+    if (!callSource(Factory.CallableForward)) return false;
     for (const auto *Forward : Factory.BoundForwards)
-      if (!callSource(Forward)) return traceBindSourceGraphFailure(__LINE__);
+      if (!callSource(Forward)) return false;
     for (const auto *Forward : Tuple->Forwards)
-      if (!callSource(Forward)) return traceBindSourceGraphFailure(__LINE__);
+      if (!callSource(Forward)) return false;
     for (const auto *Assertion : Tuple->Assertions)
       if (!Assertion || !family(Assertion) || Assertion->isFailed() ||
           !Assertion->getAssertExpr() ||
-          !Graph.TraverseStmt(const_cast<Expr *>(Assertion->getAssertExpr()))) return traceBindSourceGraphFailure(__LINE__);
+          !Graph.TraverseStmt(const_cast<Expr *>(Assertion->getAssertExpr()))) return false;
     if (!Factory.WeakBaseConstruction ||
         !Graph.bindFunctionalBindSpecialMember(Factory.WeakBaseConstruction->getConstructor(), true))
-      return traceBindSourceGraphFailure(__LINE__);
+      return false;
     for (const auto *Copy : Tuple->Copies)
-      if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) return traceBindSourceGraphFailure(__LINE__);
+      if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) return false;
     const auto Tags = describeFunctionalBindTupleTagSources(S, SM, Factory, Context);
-    if (!Tags || Tags->size() != 4) return traceBindSourceGraphFailure(__LINE__);
+    if (!Tags || Tags->size() != 4) return false;
     for (const auto &Tag : *Tags)
-      if (!Graph.bindFunctionalBindSpecialMember(Tag.Construction->getConstructor(), true)) return traceBindSourceGraphFailure(__LINE__);
+      if (!Graph.bindFunctionalBindSpecialMember(Tag.Construction->getConstructor(), true)) return false;
+    return Graph.bindSourceComplete();
+  }
+  bool copy(const FunctionalBindCopySource &Copy) {
+    if (!Ready || Copy.Layout.Storage.Record != Storage.Record ||
+        !Copy.Construction || !S.owns(SM, Copy.Construction->getExprLoc())) return false;
+    const auto Actual = describeFunctionalBindCopySource(S, SM, Copy.Construction, Context);
+    if (!Actual || Actual->Construction != Copy.Construction || Actual->Object != Copy.Object ||
+        Actual->Layout.Storage.Record != Storage.Record ||
+        Actual->Layout.PaddedBase != Copy.Layout.PaddedBase ||
+        !Graph.bindFunctionalBindStorageSource() ||
+        !Graph.bindFunctionalBindSpecialMember(Copy.Construction->getConstructor())) return false;
+    return Graph.bindSourceComplete();
+  }
+  bool destruction(const FunctionalBindDestructionSource &Destruction,
+                   SourceLocation Location) {
+    if (!Ready || Destruction.Layout.Storage.Record != Storage.Record ||
+        !Destruction.Destructor || !S.owns(SM, Location)) return false;
+    const auto Actual = describeFunctionalBindDestructionSource(S, SM, Destruction.Destructor, Context);
+    if (!Actual || Actual->Destructor != Destruction.Destructor ||
+        Actual->Layout.Storage.Record != Storage.Record ||
+        Actual->Layout.PaddedBase != Destruction.Layout.PaddedBase ||
+        !Graph.bindFunctionalBindStorageSource() ||
+        !Graph.bindFunctionalBindSpecialMember(Destruction.Destructor)) return false;
     return Graph.bindSourceComplete();
   }
 };
@@ -16990,6 +17133,28 @@ bool approvedFunctionalBindFactorySource(
     const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
   return BindSourceProof(S, SM, Context, Factory.Storage, Sources, Selections, Members, Traits).factory(Factory);
+}
+
+bool approvedFunctionalBindCopySource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindCopySource &Copy, const ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  return BindSourceProof(S, SM, Context, Copy.Layout.Storage, Sources, Selections,
+      Members, Traits).copy(Copy);
+}
+
+bool approvedFunctionalBindDestructionSource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindDestructionSource &Destruction, SourceLocation Location,
+    const ASTContext &Context, llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
+  return BindSourceProof(S, SM, Context, Destruction.Layout.Storage, Sources, Selections,
+      Members, Traits).destruction(Destruction, Location);
 }
 
 

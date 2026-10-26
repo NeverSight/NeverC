@@ -1871,6 +1871,18 @@ describeFunctionalBindDestructionSource(
     const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
 
 
+struct FunctionalBindDeclvalSource {
+  const clang::CallExpr *Call, *HelperCall, *PrimaryHelperCall;
+  const clang::FunctionDecl *Function, *Helper;
+  const clang::TemplateTypeParmDecl *Parameter;
+  std::vector<const clang::FunctionTemplateDecl *> HelperOverloads;
+};
+std::optional<FunctionalBindDeclvalSource>
+describeFunctionalBindDeclvalSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    clang::QualType Input, const clang::ASTContext &Context);
+
+
 // Sema callback collection only. This predicate must not complete a record or
 // grant ordinary source, runtime, selected body, default, trait or lifetime use.
 bool retainFunctionalBindConstraintRoot(
@@ -1903,6 +1915,21 @@ bool approvedFunctionalBindFactorySource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,
     llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+
+bool approvedFunctionalBindCopySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCopySource &Copy, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+bool approvedFunctionalBindDestructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindDestructionSource &Destruction, clang::SourceLocation Location,
+    const clang::ASTContext &Context, llvm::ArrayRef<const TemplateUseSource *> Sources,
     llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
