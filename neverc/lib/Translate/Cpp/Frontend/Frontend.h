@@ -1955,6 +1955,15 @@ bool approvedFunctionalBindCallAuxiliarySource(
 // Exact selected bullet-7 signature and complete original body source only.
 // Operator/apply/get/unwrap and ordinary callback/lifetime roots are separate.
 // Successful declaration-only probe signature source; no fallback/result grant.
+// Real unselected ellipsis signatures; no selected-call or result grant.
+bool approvedFunctionalBindCallTryCallFallbackSource(
+    const State &S, const clang::SourceManager &SM, const FunctionalBindCallSource &Call,
+    const clang::CXXMethodDecl *Function, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+
 bool approvedFunctionalBindCallTryCallSignatureSource(
     const State &S, const clang::SourceManager &SM, const FunctionalBindCallSource &Call,
     const clang::CXXMethodDecl *Function, const clang::ASTContext &Context,
@@ -3173,6 +3182,13 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalObjects;
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalReferences;
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalNotFnPointers;
+  // Empty until exact production source/body/operand/lifetime gates publish
+  // their own purpose-bound certificates. A shape description never inserts.
+  std::map<const clang::CXXRecordDecl *, FunctionalBindNaturalLayout> VerifiedBindRecords;
+  std::map<const clang::CallExpr *, FunctionalBindFactorySource> VerifiedBindFactories;
+  std::map<const clang::CallExpr *, FunctionalBindCallSource> VerifiedBindCalls;
+  std::map<const clang::CXXConstructExpr *, FunctionalBindCopySource> VerifiedBindCopies;
+  std::map<const clang::CXXRecordDecl *, FunctionalBindDestructionSource> VerifiedBindDestructions;
   std::map<const clang::CallExpr *, FunctionalNotFnFactorySource> VerifiedNotFnFactories;
   std::map<const clang::CallExpr *, FunctionalNotFnCallSource> VerifiedNotFnCalls;
   std::map<const clang::CallExpr *, FunctionalNotFnReferenceCallSource> VerifiedNotFnReferenceCalls;
