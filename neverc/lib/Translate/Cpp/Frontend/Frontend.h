@@ -1843,6 +1843,10 @@ struct FunctionalBindTryCallSignatureSource {
   FunctionalBindInvokeSignatureSource Dispatcher;
   std::vector<const clang::FunctionTemplateDecl *> Ancestors;
   std::vector<const clang::CallExpr *> Declvals;
+  // Real original member-template signatures, paired with Ancestors in order.
+  // These witnesses still need full traversal and never supply runtime bodies.
+  std::vector<const clang::CallExpr *> OriginalInvokes;
+  std::vector<const clang::CallExpr *> OriginalCallableDeclvals, OriginalArgumentDeclvals;
 };
 std::optional<FunctionalBindTryCallSignatureSource>
 describeFunctionalBindTryCallSignatureSource(
@@ -1853,6 +1857,21 @@ describeFunctionalBindTryCallSignatureSource(
 
 // Descriptions only. Every selected special member and its subobject source
 // must close independently before these shapes enter a runtime verified map.
+// The actual unselected declaration-only ellipsis candidate is a type witness.
+// Its source, sentinel definition and result comparison still close separately.
+struct FunctionalBindTryCallFallbackSource {
+  const clang::CXXMethodDecl *Function;
+  const clang::CXXRecordDecl *Sentinel;
+  std::vector<const clang::FunctionTemplateDecl *> Ancestors;
+  std::vector<const TemplateUseSource *> Uses;
+};
+std::optional<FunctionalBindTryCallFallbackSource>
+describeFunctionalBindTryCallFallbackSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindTryCallSignatureSource &Probe,
+    const FunctionalBindStorage &Storage,
+    llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
+
 struct FunctionalBindCopySource {
   FunctionalBindNaturalLayout Layout;
   const clang::CXXConstructExpr *Construction;
