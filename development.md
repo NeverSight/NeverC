@@ -1592,3 +1592,25 @@ intrinsics. ANDN and BLS operations use ordinary arithmetic patterns and
 select their native instructions at O2. MULX retains both product halves
 without a runtime helper; its 32-bit form may use an ordinary 64-bit multiply.
 The suite rejects inline assembly and does not require BMI hardware.
+
+The eight `_rorx_u32/u64`, `_sarx_i32/i64`, `_shlx_u32/u64` and `_shrx_u32/u64`
+interfaces now have BMI2 builtins and definitions in `<immintrin.h>` (also
+reachable through `<x86intrin.h>` and Windows `<intrin.h>`). Their previous
+Windows-only declarations emitted unresolved external calls. RORX takes a
+constant imm8 in 0..255 and uses LLVM funnel shifts; the variable shifts mask
+the count to five or six bits before emitting integer shifts. Negative
+arithmetic-shift inputs and counts at or above the width have defined machine
+semantics. Arguments are evaluated once and function-level BMI2 is required.
+
+The frontend tests verify all eight native instructions at O0/O2 in ELF, COFF
+and Mach-O and diagnose missing BMI2, dynamic RORX controls and out-of-range
+immediates. LLVM may canonicalize a right rotation to an equivalent left
+funnel shift. An independent `llc` O0 FastISel profile can select equivalent
+ordinary shifts; the full SelectionDAG selector generates BMI2. Neither path
+requires inline assembly or a new LLVM target intrinsic.
+Native regression tests compare both widths and every imm8 rotation against
+bit-loop references, including high shift-count bits, negative arithmetic
+inputs and argument evaluation counts. Cross-format qualification covers
+x86-64 with 32/64-bit operands; the existing i686 frontend target remains
+unsupported. Separate NeverC and fork-LLVM O0/O2 objects passed 2,072,384 value
+comparisons across these eight interfaces plus MULX, PDEP and PEXT.

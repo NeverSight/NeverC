@@ -557,6 +557,9 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                 << TheCall->getArg(WidthArgument + 1)->getSourceRange());
   };
   switch (BuiltinID) {
+  case X86::BI__builtin_ia32_rorx_u32:
+  case X86::BI__builtin_ia32_rorx_u64:
+    return SemaBuiltinConstantArgRange(TheCall, 1, 0, 255);
   case X86::BI__builtin_ia32_rep_movs_state:
   case X86::BI__builtin_ia32_rep_stos_state:
   case X86::BI__builtin_ia32_rep_lods_state:

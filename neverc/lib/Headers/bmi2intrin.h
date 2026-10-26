@@ -9,6 +9,28 @@
 #define __DEFAULT_FN_ATTRS                                                     \
   __attribute__((__always_inline__, __nodebug__, __target__("bmi2")))
 
+/// Rotate right by a constant imm8 count (masked to five bits).
+/// Requires BMI2 and corresponds to RORX; each argument is evaluated once.
+#define _rorx_u32(__X, __Y)                                                    \
+  __builtin_ia32_rorx_u32((unsigned int)(__X), (unsigned int)(__Y))
+
+/// Arithmetic shift right with a five-bit count, without modifying flags.
+static __inline__ int __DEFAULT_FN_ATTRS _sarx_i32(int __X, unsigned int __Y) {
+  return __builtin_ia32_sarx_i32(__X, __Y);
+}
+
+/// Logical shift left with a five-bit count, without modifying flags.
+static __inline__ unsigned int __DEFAULT_FN_ATTRS _shlx_u32(unsigned int __X,
+                                                            unsigned int __Y) {
+  return __builtin_ia32_shlx_u32(__X, __Y);
+}
+
+/// Logical shift right with a five-bit count, without modifying flags.
+static __inline__ unsigned int __DEFAULT_FN_ATTRS _shrx_u32(unsigned int __X,
+                                                            unsigned int __Y) {
+  return __builtin_ia32_shrx_u32(__X, __Y);
+}
+
 /// Copies the unsigned 32-bit integer \a __X and zeroes the upper bits
 ///    starting at bit number \a __Y.
 ///
@@ -121,6 +143,29 @@ static __inline__ unsigned int __DEFAULT_FN_ATTRS _mulx_u32(unsigned int __X,
 }
 
 #ifdef __x86_64__
+
+/// Rotate right by a constant imm8 count (masked to six bits).
+/// Requires BMI2 and corresponds to RORX; each argument is evaluated once.
+#define _rorx_u64(__X, __Y)                                                    \
+  __builtin_ia32_rorx_u64((unsigned long long)(__X), (unsigned int)(__Y))
+
+/// Arithmetic shift right with a six-bit count, without modifying flags.
+static __inline__ long long __DEFAULT_FN_ATTRS _sarx_i64(long long __X,
+                                                         unsigned int __Y) {
+  return __builtin_ia32_sarx_i64(__X, __Y);
+}
+
+/// Logical shift left with a six-bit count, without modifying flags.
+static __inline__ unsigned long long __DEFAULT_FN_ATTRS
+_shlx_u64(unsigned long long __X, unsigned int __Y) {
+  return __builtin_ia32_shlx_u64(__X, __Y);
+}
+
+/// Logical shift right with a six-bit count, without modifying flags.
+static __inline__ unsigned long long __DEFAULT_FN_ATTRS
+_shrx_u64(unsigned long long __X, unsigned int __Y) {
+  return __builtin_ia32_shrx_u64(__X, __Y);
+}
 
 /// Copies the unsigned 64-bit integer \a __X and zeroes the upper bits
 ///    starting at bit number \a __Y.

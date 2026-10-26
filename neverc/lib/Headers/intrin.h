@@ -117,13 +117,9 @@ __int64 _InterlockedExchangeAdd64_HLEAcquire(__int64 volatile *, __int64);
 __int64 _InterlockedExchangeAdd64_HLERelease(__int64 volatile *, __int64);
 void _ReadBarrier(void);
 void _ReadWriteBarrier(void);
-unsigned int _rorx_u32(unsigned int, const unsigned int);
-int _sarx_i32(int, unsigned int);
 #if __STDC_HOSTED__
 int __cdecl _setjmp(jmp_buf);
 #endif
-unsigned int _shlx_u32(unsigned int, unsigned int);
-unsigned int _shrx_u32(unsigned int, unsigned int);
 void _Store_HLERelease(long volatile *, long);
 void _Store64_HLERelease(__int64 volatile *, __int64);
 void _StorePointer_HLERelease(void *volatile *, void *);
@@ -195,10 +191,6 @@ long _InterlockedXor_np(long volatile *_Value, long _Mask);
 short _InterlockedXor16_np(short volatile *_Value, short _Mask);
 __int64 _InterlockedXor64_np(__int64 volatile *_Value, __int64 _Mask);
 char _InterlockedXor8_np(char volatile *_Value, char _Mask);
-unsigned __int64 _rorx_u64(unsigned __int64, const unsigned int);
-__int64 _sarx_i64(__int64, unsigned int);
-unsigned __int64 _shlx_u64(unsigned __int64, unsigned int);
-unsigned __int64 _shrx_u64(unsigned __int64, unsigned int);
 __int64 __mulh(__int64, __int64);
 unsigned __int64 __umulh(unsigned __int64, unsigned __int64);
 __int64 _mul128(__int64, __int64, __int64 *);

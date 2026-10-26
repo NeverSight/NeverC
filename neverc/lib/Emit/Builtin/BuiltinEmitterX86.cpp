@@ -910,6 +910,31 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     Function *F = ME.getIntrinsic(Intrinsic::cttz, Ops[0]->getType());
     return Builder.CreateCall(F, {Ops[0], Builder.getInt1(false)});
   }
+  case X86::BI__builtin_ia32_rorx_u32:
+  case X86::BI__builtin_ia32_rorx_u64: {
+    auto *Ty = Ops[0]->getType();
+    auto *Amount = Builder.CreateZExtOrTrunc(Ops[1], Ty);
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::fshr, Ty),
+                              {Ops[0], Ops[0], Amount});
+  }
+  case X86::BI__builtin_ia32_sarx_i32:
+  case X86::BI__builtin_ia32_sarx_i64:
+  case X86::BI__builtin_ia32_shlx_u32:
+  case X86::BI__builtin_ia32_shlx_u64:
+  case X86::BI__builtin_ia32_shrx_u32:
+  case X86::BI__builtin_ia32_shrx_u64: {
+    auto *Ty = Ops[0]->getType();
+    auto *Amount = Builder.CreateZExtOrTrunc(Ops[1], Ty);
+    Amount = Builder.CreateAnd(
+        Amount, ConstantInt::get(Ty, Ty->getIntegerBitWidth() - 1));
+    if (BuiltinID == X86::BI__builtin_ia32_sarx_i32 ||
+        BuiltinID == X86::BI__builtin_ia32_sarx_i64)
+      return Builder.CreateAShr(Ops[0], Amount);
+    if (BuiltinID == X86::BI__builtin_ia32_shlx_u32 ||
+        BuiltinID == X86::BI__builtin_ia32_shlx_u64)
+      return Builder.CreateShl(Ops[0], Amount);
+    return Builder.CreateLShr(Ops[0], Amount);
+  }
   case X86::BI__builtin_ia32_undef128:
   case X86::BI__builtin_ia32_undef256:
   case X86::BI__builtin_ia32_undef512:

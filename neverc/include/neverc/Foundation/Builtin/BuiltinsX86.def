@@ -671,6 +671,10 @@ TARGET_BUILTIN(__builtin_ia32_tzcnt_u32, "UiUi", "nc", "")
 TARGET_BUILTIN(__builtin_ia32_bzhi_si, "UiUiUi", "nc", "bmi2")
 TARGET_BUILTIN(__builtin_ia32_pdep_si, "UiUiUi", "nc", "bmi2")
 TARGET_BUILTIN(__builtin_ia32_pext_si, "UiUiUi", "nc", "bmi2")
+TARGET_BUILTIN(__builtin_ia32_rorx_u32, "UiUiIUi", "nc", "bmi2")
+TARGET_BUILTIN(__builtin_ia32_sarx_i32, "iiUi", "nc", "bmi2")
+TARGET_BUILTIN(__builtin_ia32_shlx_u32, "UiUiUi", "nc", "bmi2")
+TARGET_BUILTIN(__builtin_ia32_shrx_u32, "UiUiUi", "nc", "bmi2")
 
 // TBM
 TARGET_BUILTIN(__builtin_ia32_bextri_u32, "UiUiIUi", "nc", "tbm")
