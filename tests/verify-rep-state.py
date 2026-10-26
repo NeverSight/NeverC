@@ -147,7 +147,8 @@ def compile_forms(args, directory, matrix, bits, opt):
         source.write_text('\n'.join(wrapper_c(form) for form in matrix))
         command = [args.compiler, '--target=x86_64-unknown-linux-gnu', '-'+opt,
                    '-ffreestanding', '-fno-builtin-mimalloc', '-fno-lto', '-fPIC',
-                   '-fno-stack-protector', '-mllvm', '-verify-machineinstrs', source]
+                   '-fno-stack-protector', '-mno-relax-all', '-mllvm',
+                   '-verify-machineinstrs', source]
         run(command + ['-S', '-emit-llvm', '-o', ir])
         text = ir.read_text()
         assert ' asm ' not in text
@@ -156,12 +157,38 @@ def compile_forms(args, directory, matrix, bits, opt):
         if not args.backend_llc:
             run(command + ['-c', '-o', obj])
     backend = args.llc or args.backend_llc
+    triple = ('x86_64' if bits == 64 else 'i386') + '-unknown-linux-gnu'
     if backend:
-        run([backend, '-mtriple=' + ('x86_64' if bits == 64 else 'i386') + '-unknown-linux-gnu',
-             '-mattr=+sahf', '-'+opt, '-relocation-model=pic', '-verify-machineinstrs',
-             '-filetype=obj', ir, '-o', obj])
+        backend_command = [backend, '-mtriple=' + triple, '-mattr=+sahf', '-'+opt,
+                           '-relocation-model=pic', '-verify-machineinstrs', ir]
+        run(backend_command + ['-filetype=obj', '-o', obj])
     binary = lief.parse(str(obj))
     text = binary.get_section('.text')
+    for dialect in ('att', 'intel'):
+        assembly = directory / f'rep_{bits}_{opt}_{dialect}.s'
+        assembled = assembly.with_suffix('.o')
+        if backend:
+            run(backend_command + ['-filetype=asm', '-x86-asm-syntax=' + dialect,
+                                   '-o', assembly])
+            run([Path(backend).parent / 'llvm-mc', '-triple=' + triple,
+                 '-filetype=obj', assembly, '-o', assembled])
+        else:
+            run(command + ['-S', '-masm=' + dialect, '-o', assembly])
+            # Match the explicit relaxation policy used for C compilation;
+            # its O0 default differs from assembly-only input.
+            run([args.compiler, '--target=' + triple, '-c', '-fno-lto',
+                 '-mno-relax-all',
+                 '-fno-builtin-mimalloc', assembly, '-o', assembled])
+        reassembled = lief.parse(str(assembled))
+        assembled_text = reassembled.get_section('.text')
+        # CPU-specific inter-function NOP padding is outside each operation's
+        # contract. Compare complete function bodies, including flag setup.
+        for form in matrix:
+            before = binary.get_symbol(form.name)
+            after = reassembled.get_symbol(form.name)
+            assert bytes(text.content[before.value:before.value + before.size]) == \
+                bytes(assembled_text.content[after.value:after.value + after.size]), \
+                (bits, opt, dialect, form, 'assembly round trip changed function bytes')
     decoder = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64 if bits == 64 else capstone.CS_MODE_32)
     decoder.detail = True
     native = {}

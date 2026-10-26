@@ -2242,8 +2242,7 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
     // SCAS needs its full accumulator restored before the actual access.
     if (Kind == RepStringKind::Scan)
       EmitAndCountInstruction(nativeRegisterExchange(AX, DX, Wide));
-    EmitAndCountInstruction(
-        MCInstBuilder(X86::ADD8ri).addReg(X86::AL).addReg(X86::AL).addImm(127));
+    EmitAndCountInstruction(MCInstBuilder(X86::ADD8i8).addImm(127));
     EmitAndCountInstruction(MCInstBuilder(X86::SAHF));
     if (Kind == RepStringKind::Scan)
       EmitAndCountInstruction(MCInstBuilder(Wide ? X86::MOV64rr : X86::MOV32rr)

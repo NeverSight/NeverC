@@ -748,6 +748,24 @@ The REP regression passes 45,152 memory/flag cases, 112 hardware fault restarts
 and 192 controlled port completions per x64 route; the full fork additionally
 passes 8,928 i386 memory cases and 2,304 controlled port cases in emulation.
 
+The full fork also preserves the i386 ESI realignment base for explicit
+MOVS/LODS/CMPS/OUTS state and raw MOVS/OUTS intrinsics. Their tied, early-clobber
+carrier excludes the other native operands; final MC emission exchanges ESI
+only inside the indivisible operation. Raw intrinsics retain ambient DF and
+arithmetic flags. Explicit-state intrinsics restore DF=0 on normal completion.
+NeverC remains x64-only, so it does not acquire the six i386 machine records.
+Both backends use the canonical accumulator ADD encoding for REP comparison
+flag restoration as well as for bounded SGX/SMX leaves.
+
+[tests/verify-rep-frame.py](tests/verify-rep-frame.py), run with
+`--llc /path/to/full-fork/llc --keep /path/to/results`, checks 180 i386 objects
+and 2,160 controlled completions across ELF/COFF/Mach-O, O0/O2, address16/32,
+element sizes and both directions. Unmapped native operands expose any
+compiler spill or canary access through a borrowed frame base. The checks cover
+native inputs/results, comparison flags, stack canaries and callee-saved
+registers, with byte-identical object/assembly round trips in both dialects.
+They do not execute port I/O or qualify physical REP fault restart.
+
 ### Explicit descriptor-state addresses
 
 Thirteen header-free builtins add `offset, address_bits, segment_prefix`
@@ -1208,6 +1226,9 @@ port cases in 32-bit Unicorn, including 16-bit addresses and preserved high
 register halves. That 32-bit result is emulator coverage, not hardware fault
 restart qualification. Dependencies are `capstone`, `lief`, and `unicorn` for
 the emulator route, plus a host C compiler for native execution.
+All routes also reassemble both syntax dialects and compare function bodies
+with direct object emission. The comparison matches the compile driver's
+branch-relaxation policy and excludes inter-function alignment padding.
 
 Port I/O string operations (`__inbytestring`, `__outbytestring`, etc.) are
 implemented via REP pseudo-instructions: `REP_INSB_64`, `REP_INSW_64`,
