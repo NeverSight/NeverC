@@ -1824,6 +1824,8 @@ struct FunctionalBindInvokeSignatureSource {
   const clang::Expr *ActualReturn, *ActualException;
   const clang::CallExpr *SignatureCall;
   std::vector<const clang::CallExpr *> Declvals;
+  const clang::CallExpr *SpecializedCall;
+  std::vector<const clang::CallExpr *> SpecializedDeclvals;
 };
 std::optional<FunctionalBindInvokeSignatureSource>
 describeFunctionalBindInvokeSignatureSource(
