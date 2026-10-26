@@ -3721,7 +3721,9 @@ jobs:
 
         sudo bash "$RUNNER_TEMP/llvm.sh" 20 2>&1 | tee "$RUNNER_TEMP/cpp-bind-fully-bound-native/bootstrap/compiler-install.log"
 
-        sudo apt-get install -y libc++-20-dev libc++abi-20-dev 2>&1 | tee "$RUNNER_TEMP/cpp-bind-fully-bound-native/bootstrap/dependencies.log"
+        sudo apt-get install -y --allow-downgrades libc++1=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++abi1=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libunwind=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libunwind-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++abi-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 2>&1 | tee "$RUNNER_TEMP/cpp-bind-fully-bound-native/bootstrap/dependencies.log"
+
+        dpkg-query -W clang-20 libc++1 libc++abi1 libunwind libunwind-20-dev libc++-20-dev libc++abi-20-dev | tee "$RUNNER_TEMP/cpp-bind-fully-bound-native/bootstrap/toolchain-packages.log"
 
         '
     - name: Run seven original fully-bound bind sources at O0 and O2
