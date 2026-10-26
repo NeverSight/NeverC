@@ -18585,7 +18585,14 @@ namespace X86 {
     LEGACY_CMPCCXADD_NATIVE32	= 18570,
     LEGACY_CMPCCXADD_NATIVE64	= 18571,
     NATIVE_ADDRESS64	= 18572,
-    INSTRUCTION_LIST_END = 18573
+    ENCLS64_SAVE_RBX	= 18573,
+    ENCLV64_SAVE_RBX	= 18574,
+    ENCLU64_SAVE_RBX	= 18575,
+    GETSEC64_SAVE_RBX	= 18576,
+    ENCLU_STATE64_SAVE_RBX	= 18577,
+    GETSEC_STATE64_SAVE_RBX	= 18578,
+    CPUID64_SAVE_RBX	= 18579,
+    INSTRUCTION_LIST_END = 18580
   };
 
 } // end namespace X86
@@ -20976,11 +20983,11 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18573];
+  MCInstrDesc Insts[18580];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
-  MCOperandInfo OperandInfo[5519];
+  MCOperandInfo OperandInfo[5521];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[751];
+  MCPhysReg ImplicitOps[772];
 };
 
 } // end namespace llvm
@@ -20995,6 +21002,13 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18579,	2,	1,	0,	78,	2,	3,	X86ImpOpBase + 767,	5519,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18579 = CPUID64_SAVE_RBX
+    { 18578,	2,	1,	0,	78,	4,	5,	X86ImpOpBase + 758,	5519,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18578 = GETSEC_STATE64_SAVE_RBX
+    { 18577,	2,	1,	0,	78,	4,	5,	X86ImpOpBase + 758,	5519,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18577 = ENCLU_STATE64_SAVE_RBX
+    { 18576,	2,	1,	0,	78,	3,	4,	X86ImpOpBase + 751,	5519,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18576 = GETSEC64_SAVE_RBX
+    { 18575,	2,	1,	0,	78,	3,	4,	X86ImpOpBase + 751,	5519,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18575 = ENCLU64_SAVE_RBX
+    { 18574,	2,	1,	0,	78,	3,	4,	X86ImpOpBase + 751,	5519,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18574 = ENCLV64_SAVE_RBX
+    { 18573,	2,	1,	0,	78,	3,	4,	X86ImpOpBase + 751,	5519,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18573 = ENCLS64_SAVE_RBX
     { 18572,	2,	1,	0,	1416,	0,	0,	X86ImpOpBase + 0,	5517,	0|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18572 = NATIVE_ADDRESS64
     { 18571,	9,	1,	0,	73,	0,	1,	X86ImpOpBase + 0,	5508,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18571 = LEGACY_CMPCCXADD_NATIVE64
     { 18570,	9,	1,	0,	73,	0,	1,	X86ImpOpBase + 0,	5499,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18570 = LEGACY_CMPCCXADD_NATIVE32
@@ -40692,6 +40706,7 @@ extern const X86InstrTable X86Descs = {
     /* 5499 */ { X86::GR32_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR32_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR32_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
     /* 5508 */ { X86::GR64_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) }, { 0, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { 1, 0|(1<<MCOI::LookupPtrRegClass), MCOI::OPERAND_MEMORY, 0 }, { -1, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::SEGMENT_REGRegClassID, 0, MCOI::OPERAND_MEMORY, 0 }, { X86::GR64_NOREX2RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
     /* 5517 */ { X86::GR64_ABCDRegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5519 */ { X86::GR64_TCW64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64_TCW64RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) },
   }, {
     /* 0 */
     /* 0 */ X86::EFLAGS,
@@ -40858,6 +40873,9 @@ extern const X86InstrTable X86Descs = {
     /* 725 */ X86::EDI, X86::ECX, X86::EDX, X86::EDI, X86::ECX, X86::EFLAGS, X86::DF,
     /* 732 */ X86::ESI, X86::ECX, X86::EDX, X86::ESI, X86::ECX, X86::EFLAGS, X86::DF,
     /* 739 */ X86::RAX, X86::RBX, X86::RCX, X86::RDX, X86::RDI, X86::RAX, X86::RBX, X86::RCX, X86::RDX, X86::RDI, X86::RSI, X86::EFLAGS,
+    /* 751 */ X86::RAX, X86::RCX, X86::RDX, X86::RAX, X86::RCX, X86::RDX, X86::EFLAGS,
+    /* 758 */ X86::RAX, X86::RCX, X86::RDX, X86::RDI, X86::RAX, X86::RCX, X86::RDX, X86::RDI, X86::EFLAGS,
+    /* 767 */ X86::EAX, X86::ECX, X86::EAX, X86::ECX, X86::EDX,
   }
 };
 
@@ -58523,6 +58541,13 @@ extern const char X86InstrNameData[] = {
   /* 260150 */ "LEGACY_CMPCCXADD_NATIVE32\0"
   /* 260176 */ "LEGACY_CMPCCXADD_NATIVE64\0"
   /* 260202 */ "NATIVE_ADDRESS64\0"
+  /* 260219 */ "ENCLS64_SAVE_RBX\0"
+  /* 260236 */ "ENCLV64_SAVE_RBX\0"
+  /* 260253 */ "ENCLU64_SAVE_RBX\0"
+  /* 260270 */ "GETSEC64_SAVE_RBX\0"
+  /* 260288 */ "ENCLU_STATE64_SAVE_RBX\0"
+  /* 260311 */ "GETSEC_STATE64_SAVE_RBX\0"
+  /* 260335 */ "CPUID64_SAVE_RBX\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -60960,10 +60985,17 @@ extern const unsigned X86InstrNameIndices[] = {
     260150U,
     260176U,
     260202U,
+    260219U,
+    260236U,
+    260253U,
+    260270U,
+    260288U,
+    260311U,
+    260335U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18573);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18580);
 }
 
 } // end namespace llvm
@@ -61023,7 +61055,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18573);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18580);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98395,6 +98427,20 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     64508,
     /* NATIVE_ADDRESS64 */
     64513,
+    /* ENCLS64_SAVE_RBX */
+    64515,
+    /* ENCLV64_SAVE_RBX */
+    64515,
+    /* ENCLU64_SAVE_RBX */
+    64515,
+    /* GETSEC64_SAVE_RBX */
+    64515,
+    /* ENCLU_STATE64_SAVE_RBX */
+    64515,
+    /* GETSEC_STATE64_SAVE_RBX */
+    64515,
+    /* CPUID64_SAVE_RBX */
+    64515,
   };
 
   using namespace OpTypes;
@@ -135078,6 +135124,7 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     GR32_NOREX2, GR32_NOREX2, i32mem, GR32_NOREX2, i32imm,
     GR64_NOREX2, GR64_NOREX2, i64mem, GR64_NOREX2, i32imm,
     GR64_ABCD, GR64,
+    GR64_TCW64, GR64_TCW64,
 };
   return OpcodeOperandTypes[Offsets[Opcode] + OpIdx];
 }
@@ -153834,9 +153881,16 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // LEGACY_CMPCCXADD_NATIVE32 = 18570
     CEFBS_In64BitMode, // LEGACY_CMPCCXADD_NATIVE64 = 18571
     CEFBS_In64BitMode, // NATIVE_ADDRESS64 = 18572
+    CEFBS_In64BitMode, // ENCLS64_SAVE_RBX = 18573
+    CEFBS_In64BitMode, // ENCLV64_SAVE_RBX = 18574
+    CEFBS_In64BitMode, // ENCLU64_SAVE_RBX = 18575
+    CEFBS_In64BitMode, // GETSEC64_SAVE_RBX = 18576
+    CEFBS_In64BitMode, // ENCLU_STATE64_SAVE_RBX = 18577
+    CEFBS_In64BitMode, // GETSEC_STATE64_SAVE_RBX = 18578
+    CEFBS_In64BitMode, // CPUID64_SAVE_RBX = 18579
   };
 
-  assert(Opcode < 18573);
+  assert(Opcode < 18580);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

@@ -20450,6 +20450,13 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// LEGACY_CMPCCXADD_NATIVE32
     0U,	// LEGACY_CMPCCXADD_NATIVE64
     0U,	// NATIVE_ADDRESS64
+    0U,	// ENCLS64_SAVE_RBX
+    0U,	// ENCLV64_SAVE_RBX
+    0U,	// ENCLU64_SAVE_RBX
+    0U,	// GETSEC64_SAVE_RBX
+    0U,	// ENCLU_STATE64_SAVE_RBX
+    0U,	// GETSEC_STATE64_SAVE_RBX
+    0U,	// CPUID64_SAVE_RBX
 };
 
   static const uint16_t OpInfo1[] = {
@@ -39026,6 +39033,13 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// LEGACY_CMPCCXADD_NATIVE32
     0U,	// LEGACY_CMPCCXADD_NATIVE64
     0U,	// NATIVE_ADDRESS64
+    0U,	// ENCLS64_SAVE_RBX
+    0U,	// ENCLV64_SAVE_RBX
+    0U,	// ENCLU64_SAVE_RBX
+    0U,	// GETSEC64_SAVE_RBX
+    0U,	// ENCLU_STATE64_SAVE_RBX
+    0U,	// GETSEC_STATE64_SAVE_RBX
+    0U,	// CPUID64_SAVE_RBX
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57602,6 +57616,13 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// LEGACY_CMPCCXADD_NATIVE32
     0U,	// LEGACY_CMPCCXADD_NATIVE64
     0U,	// NATIVE_ADDRESS64
+    0U,	// ENCLS64_SAVE_RBX
+    0U,	// ENCLV64_SAVE_RBX
+    0U,	// ENCLU64_SAVE_RBX
+    0U,	// GETSEC64_SAVE_RBX
+    0U,	// ENCLU_STATE64_SAVE_RBX
+    0U,	// GETSEC_STATE64_SAVE_RBX
+    0U,	// CPUID64_SAVE_RBX
 };
 
   // Emit the opcode for the instruction.

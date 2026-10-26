@@ -598,15 +598,17 @@ and GETSEC requires `sahf`, independently of SGX.
 CF/PF/AF/ZF/SF in bits 8/10/12/14/15 and OF in bit zero, with mask `0xd501`.
 Other input bits are ignored and other result bits are zero. One machine
 pseudo restores these six flags, executes the native leaf, and captures its
-actual flags before compiler arithmetic. SI preserves the complete AX while
-LAHF/SAHF use AH; DI transports the flag word. Both scratch registers,
-EFLAGS and unknown memory effects are declared. The MC window excludes
+actual flags before compiler arithmetic. AX/DI exchanges preserve the complete
+AX while LAHF/SAHF use AH; DI transports the flag word. This also avoids
+clobbering i386's reserved ESI realignment base in the full fork. DI, EFLAGS
+and unknown memory effects are declared. The MC window excludes
 compiler spills, stackmap shadow padding and automatic assembler padding.
 The full LLVM fork provides matching `.state` and `.state32` interfaces;
 NeverC's frontend continues to target x64.
 
-`sync-x86-bounded-leaf-state.py` owns the two appended pseudo descriptors;
-all previous opcode identities remain unchanged. Run
+`sync-x86-bounded-leaf-state.py` retains the original two pseudo descriptors;
+new lowering uses the register-window descriptors described below. All previous
+opcode identities remain unchanged. Run
 `tests/verify-sgx-supervisor-completion.py --bounded-enclu --explicit-state`
 or `--bounded-getsec --explicit-state` for register and six-flag transport.
 The controlled boundary checks all 64 arithmetic-flag combinations, reserved
@@ -702,7 +704,7 @@ propagation until MC lowering. Full LLVM also uses SI/DI for i386 address16,
 so neither the PIC GOT register nor a reserved realignment base is overwritten.
 NeverC remains x64-only. The append-only table authority is
 `utils/lint/sync-x86-native-address-carrier.py`; no intrinsic IDs change.
-The x86 target schema now contains 18,573 instructions: it also catches up
+The address-carrier update established 18,573 instructions: it also caught up
 32 previously implemented REP, bounded-state and atomic pseudos that were
 missing from the checked-in schema. Existing instruction records, register
 and feature identities remain unchanged; AArch64's schema is unchanged.
@@ -713,6 +715,38 @@ noncanonical `#SS/#GP` trap numbers, and dynamic stack canaries at O0/O2.
 The native trap test requires Linux x64 and does not qualify AMX hardware.
 The address completion scripts validate encodings, wrapped offsets, effects
 and saved registers across both compilers and the NeverC-to-fork route.
+
+### Native implicit registers and realigned frames
+
+SGX, bounded GETSEC/ENCLU and CPUID must not replace the compiler's reserved
+RBX realignment base. Their x64 lowering carries the native RBX input/result in
+a tied virtual register outside RBX and the other implicit operands. A pseudo
+survives through allocation and copy propagation; final MC emission swaps the
+carrier into RBX, executes the operation and swaps the result back. The entire
+window preserves the compiler's RBX value and permits no intervening spills or
+padding. No compiler-owned frame register is declared as an instruction result.
+
+`utils/lint/sync-x86-native-register-windows.py` appends seven machine records.
+The x86 schema contains 18,580 instructions; all earlier 18,573 records, 391
+registers and 190 features remain unchanged, as does the AArch64 schema.
+Intrinsic signatures and capability macros are unchanged. Accumulator exchanges
+use the canonical short encoding, including the REP SCAS flag window, so object
+emission and both assembly dialects round-trip to identical bytes.
+
+`X86NativeRegisterTest` runs CPUID against an independent header-assembly
+reference with dynamic stack canaries under SysV and Microsoft calling
+conventions. The SGX/SMX completion oracle includes realigned dynamic frames
+and verifies the callee-saved registers, all native results and six arithmetic
+flags across ELF, COFF and Mach-O. These controlled completions qualify compiler
+transport; successful enclave/SMX execution and nonlocal transitions still need
+their own execution environment and semantic contract.
+
+The register-window qualification passes 156,640 SGX/SMX encoding and controlled
+completion checks on full LLVM and 78,936 on each NeverC route. Separate CPL3
+checks cover 9,984 native boundaries for LLVM and 10,044 for each NeverC route.
+The REP regression passes 45,152 memory/flag cases, 112 hardware fault restarts
+and 192 controlled port completions per x64 route; the full fork additionally
+passes 8,928 i386 memory cases and 2,304 controlled port cases in emulation.
 
 ### Explicit descriptor-state addresses
 

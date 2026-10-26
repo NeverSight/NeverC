@@ -2022,40 +2022,118 @@ static void addConstantComments(const MachineInstr *MI,
   }
 }
 
-bool X86AsmPrinter::emitBoundedLeafState(const MachineInstr *MI) {
-  bool User;
+// Match the assembler's accumulator short form so printed assembly and
+// direct object emission agree. Register-only XCHG preserves arithmetic flags.
+static MCInstBuilder nativeRegisterExchange(unsigned A, unsigned B, bool Wide) {
+  const unsigned Accumulator = Wide ? X86::RAX : X86::EAX;
+  if (A == Accumulator || B == Accumulator) {
+    const unsigned Other = A == Accumulator ? B : A;
+    return MCInstBuilder(Wide ? X86::XCHG64ar : X86::XCHG32ar)
+        .addReg(Other)
+        .addReg(Other);
+  }
+  return MCInstBuilder(Wide ? X86::XCHG64rr : X86::XCHG32rr)
+      .addReg(A)
+      .addReg(B)
+      .addReg(A)
+      .addReg(B);
+}
+
+// The carrier is an input and an output of the complete register window.
+// Never expose the temporary RBX value to scheduling, spills or padding.
+static unsigned nativeLeafRBXCarrier(const MachineInstr *MI) {
+  if (MI->getNumExplicitOperands() != 2 || !MI->getOperand(0).isReg() ||
+      !MI->getOperand(1).isReg() ||
+      MI->getOperand(0).getReg() != MI->getOperand(1).getReg())
+    report_fatal_error("invalid native leaf RBX carrier operands");
+  const unsigned Reg = MI->getOperand(0).getReg();
+  if (!X86::GR64_TCW64RegClass.contains(Reg) || Reg == X86::RAX ||
+      Reg == X86::RCX || Reg == X86::RDX || Reg == X86::RSP || Reg == X86::RIP)
+    report_fatal_error("invalid native leaf RBX carrier register");
+  return Reg;
+}
+
+bool X86AsmPrinter::emitNativeLeafSaveRBX(const MachineInstr *MI) {
+  unsigned Opcode;
   switch (MI->getOpcode()) {
-  case X86::ENCLU_STATE64:
-    User = true;
+  case X86::ENCLS64_SAVE_RBX:
+    Opcode = X86::ENCLS;
     break;
-  case X86::GETSEC_STATE64:
-    User = false;
+  case X86::ENCLV64_SAVE_RBX:
+    Opcode = X86::ENCLV;
+    break;
+  case X86::ENCLU64_SAVE_RBX:
+    Opcode = X86::ENCLU;
+    break;
+  case X86::GETSEC64_SAVE_RBX:
+    Opcode = X86::GETSEC;
+    break;
+  case X86::CPUID64_SAVE_RBX:
+    Opcode = X86::CPUID;
     break;
   default:
     return false;
   }
-  if (MI->getNumExplicitOperands() || !Subtarget->is64Bit() ||
-      !Subtarget->hasLAHFSAHF64() || (User && !Subtarget->hasSGX()))
-    report_fatal_error("invalid bounded leaf state operands or target");
+  if (!Subtarget->is64Bit() ||
+      ((Opcode == X86::ENCLS || Opcode == X86::ENCLV || Opcode == X86::ENCLU) &&
+       !Subtarget->hasSGX()))
+    report_fatal_error("invalid native leaf RBX carrier target");
+  const unsigned Carrier = nativeLeafRBXCarrier(MI);
   SMShadowTracker.emitShadowPadding(*OutStreamer, getSubtargetInfo());
   NoAutoPaddingScope NoPadScope(*OutStreamer);
-  const unsigned AX = X86::RAX;
-  const unsigned SI = X86::RSI;
-  const unsigned Move = X86::MOV64rr;
-  EmitAndCountInstruction(MCInstBuilder(Move).addReg(SI).addReg(AX));
-  EmitAndCountInstruction(
-      MCInstBuilder(X86::MOV32rr).addReg(X86::EAX).addReg(X86::EDI));
+  MCInst Exchange = nativeRegisterExchange(X86::RBX, Carrier, true);
+  EmitAndCountInstruction(Exchange);
+  EmitAndCountInstruction(MCInstBuilder(Opcode));
+  EmitAndCountInstruction(Exchange);
+  return true;
+}
+
+bool X86AsmPrinter::emitBoundedLeafState(const MachineInstr *MI) {
+  bool User, Wide, SaveBX = false;
+  switch (MI->getOpcode()) {
+  case X86::ENCLU_STATE64_SAVE_RBX:
+    SaveBX = true;
+    [[fallthrough]];
+  case X86::ENCLU_STATE64:
+    User = true;
+    Wide = true;
+    break;
+  case X86::GETSEC_STATE64_SAVE_RBX:
+    SaveBX = true;
+    [[fallthrough]];
+  case X86::GETSEC_STATE64:
+    User = false;
+    Wide = true;
+    break;
+  default:
+    return false;
+  }
+  if (MI->getNumExplicitOperands() != (SaveBX ? 2u : 0u) ||
+      Wide != Subtarget->is64Bit() || !Subtarget->hasLAHFSAHF64() ||
+      (User && !Subtarget->hasSGX()))
+    report_fatal_error("invalid bounded leaf state operands or target");
+  const unsigned Carrier = SaveBX ? nativeLeafRBXCarrier(MI) : 0;
+  SMShadowTracker.emitShadowPadding(*OutStreamer, getSubtargetInfo());
+  NoAutoPaddingScope NoPadScope(*OutStreamer);
+  auto Exchange = [&](unsigned A, unsigned B) {
+    EmitAndCountInstruction(nativeRegisterExchange(A, B, Wide));
+  };
+  if (SaveBX)
+    Exchange(X86::RBX, Carrier);
+  const unsigned AX = Wide ? X86::RAX : X86::EAX;
+  const unsigned DI = Wide ? X86::RDI : X86::EDI;
+  Exchange(AX, DI);
   EmitAndCountInstruction(MCInstBuilder(X86::ADD8i8).addImm(127));
   EmitAndCountInstruction(MCInstBuilder(X86::SAHF));
-  EmitAndCountInstruction(MCInstBuilder(Move).addReg(AX).addReg(SI));
+  Exchange(AX, DI);
   EmitAndCountInstruction(MCInstBuilder(User ? X86::ENCLU : X86::GETSEC));
-  EmitAndCountInstruction(MCInstBuilder(Move).addReg(SI).addReg(AX));
+  Exchange(AX, DI);
   EmitAndCountInstruction(MCInstBuilder(X86::LAHF));
   EmitAndCountInstruction(
       MCInstBuilder(X86::SETCCr).addReg(X86::AL).addImm(X86::COND_O));
-  EmitAndCountInstruction(
-      MCInstBuilder(X86::MOV16rr).addReg(X86::DI).addReg(X86::AX));
-  EmitAndCountInstruction(MCInstBuilder(Move).addReg(AX).addReg(SI));
+  Exchange(AX, DI);
+  if (SaveBX)
+    Exchange(X86::RBX, Carrier);
   return true;
 }
 
@@ -2163,12 +2241,7 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
     // AL bit zero. ADD restores OF; SAHF restores the other five flags.
     // SCAS needs its full accumulator restored before the actual access.
     if (Kind == RepStringKind::Scan)
-      EmitAndCountInstruction(
-          MCInstBuilder(Wide ? X86::XCHG64rr : X86::XCHG32rr)
-              .addReg(AX)
-              .addReg(DX)
-              .addReg(AX)
-              .addReg(DX));
+      EmitAndCountInstruction(nativeRegisterExchange(AX, DX, Wide));
     EmitAndCountInstruction(
         MCInstBuilder(X86::ADD8ri).addReg(X86::AL).addReg(X86::AL).addImm(127));
     EmitAndCountInstruction(MCInstBuilder(X86::SAHF));
@@ -2197,6 +2270,8 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
 }
 
 void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
+  if (emitNativeLeafSaveRBX(MI))
+    return;
   if (emitBoundedLeafState(MI))
     return;
   if (emitRepStringState(MI))

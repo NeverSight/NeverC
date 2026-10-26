@@ -43,7 +43,8 @@ STOP, ORDINARY = COMMON.STOP, COMMON.ORDINARY
 VALUES = ((4, 0, 0, 0), (0x8800000000000007, 0xd0123456789abcde, 0x798ab6cdaaaaffff, 0x80000000000000c0),
           (0xffffffffffffffff, 0x0102030405060708, 0x8000000180000001, 0xa0009))
 DELTA = (0x1234, 0x8796, 0xc0ffee, 0xdeadbeef)
-VARIANTS = ("all", "rax", "rbx", "rcx", "rdx", "flags", "dead", "twice", "memory", "condition")
+VARIANTS = ("all", "rax", "rbx", "rcx", "rdx", "flags", "dead", "twice", "memory", "condition", "realigned")
+FRAME_VALUES = (0x12345678, 0x76543210, 0xa5)
 REGISTERS = ("AX", "BX", "CX", "DX")
 BOUNDED_LEAVES = (0, 1, 5, 6, 7, 8, 9, 10, 11)
 SMX_LEAVES = (0, 6, 7, 8)
@@ -90,6 +91,15 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
         if state:
             body.append(f"%input_flags = trunc {word} %a to i16")
         terms = ["%a", "%b", "%c", "%d"]
+        if variant == "realigned":
+            body += [f"%fixed = alloca [16 x {word}], align 64",
+                     f"%last = getelementptr {word}, ptr %fixed, i32 15",
+                     f"store volatile {word} {FRAME_VALUES[0]}, ptr %fixed",
+                     f"store volatile {word} {FRAME_VALUES[1]}, ptr %last",
+                     f"%size = and {word} %a, 63",
+                     f"%count = add {word} %size, 64",
+                     f"%dynamic = alloca i8, {word} %count, align 32",
+                     f"store volatile i8 {FRAME_VALUES[2]}, ptr %dynamic"]
         if variant == "condition":
             body += [f"%cmp = icmp ult {word} %a, %d", f"%condition = zext i1 %cmp to {word}"]
             terms.append("%condition")
@@ -116,18 +126,31 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
         if variant == "memory":
             body.append(f"%loaded = load {word}, ptr %memory")
             terms.append("%loaded")
+        if variant == "realigned":
+            body += [f"%first_value = load volatile {word}, ptr %fixed",
+                     f"%last_value = load volatile {word}, ptr %last",
+                     "%dynamic_byte = load volatile i8, ptr %dynamic",
+                     f"%dynamic_value = zext i8 %dynamic_byte to {word}"]
+            terms += ["%first_value", "%last_value", "%dynamic_value"]
         value = terms[0]
         for index, term in enumerate(terms[1:]):
             body.append(f"%xor{index} = xor {word} {value}, {term}")
             value = f"%xor{index}"
         body.append(f"ret {word} {value}")
+        frame_attribute = ' "no-stack-arg-probe"' if variant == "realigned" else ""
         ir.write_text(f"declare {ty} @{api}({', '.join([word] * 4 + (['i16'] if state else []))})\n"
-                      f"define {word} @probe({word} %a, {word} %b, {word} %c, {word} %d, ptr %memory) {{\n" +
+                      f"define {word} @probe({word} %a, {word} %b, {word} %c, {word} %d, ptr %memory){frame_attribute} {{\n" +
                       "\n".join(body) + "\n}\n")
     else:
         src = directory / (name + ".c")
         body = ["*memory = a;"] if variant == "memory" else []
         terms = ["a", "b", "c", "d"]
+        if variant == "realigned":
+            body += ["volatile unsigned long long fixed[16] __attribute__((aligned(64)));",
+                     f"fixed[0] = {FRAME_VALUES[0]}; fixed[15] = {FRAME_VALUES[1]};",
+                     "volatile unsigned char *dynamic = __builtin_alloca((a & 63) + 64);",
+                     f"*dynamic = {FRAME_VALUES[2]};"]
+            terms += ["fixed[0]", "fixed[15]", "*dynamic"]
         check_evaluation = bounded_leaf is not None and variant in ("standard", "dead_standard")
         if check_evaluation:
             body.append("volatile unsigned evaluations = 0;")
@@ -170,6 +193,8 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
                        "\n".join(body) + "\n}\n")
         compiler = [args.compiler, "--target=" + triple, "-" + opt, "-Werror", "-ffreestanding", "-fno-builtin-mimalloc",
                     "-fno-lto", "-fno-stack-protector", "-mllvm", "-verify-machineinstrs", src]
+        if variant == "realigned":
+            compiler.append("-mno-stack-arg-probe")
         run(compiler + ["-S", "-emit-llvm", "-o", ir])
         assert " asm " not in ir.read_text() and f"@{api}(" in ir.read_text()
         if not args.backend_llc:
@@ -196,7 +221,7 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
     return text_section(obj)
 
 
-def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=False, bounded_leaf=None, explicit_state=False):
+def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=False, bounded_leaf=None, explicit_state=False, windows=True):
     mask = (1 << mode) - 1
     inputs = tuple(value & mask for value in values)
     machine = unicorn.Uc(unicorn.UC_ARCH_X86, unicorn.UC_MODE_64 if mode == 64 else unicorn.UC_MODE_32)
@@ -210,13 +235,16 @@ def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=F
     machine.reg_write(reg("SP"), sp)
     machine.mem_write(sp, pack(STOP))
     if mode == 64:
-        for r, value in zip(("CX", "DX", "8", "9"), inputs):
+        for r, value in zip(("CX", "DX", "8", "9") if windows else ("DI", "SI", "DX", "CX"), inputs):
             machine.reg_write(reg(r), value)
-        machine.mem_write(sp + 40, pack(ORDINARY))
+        if windows:
+            machine.mem_write(sp + 40, pack(ORDINARY))
+        else:
+            machine.reg_write(reg("8"), ORDINARY)
     else:
         machine.mem_write(sp + 4, b"".join(pack(v) for v in (*inputs, ORDINARY)))
     saved = {reg(name): (0xa1b2c3d4e5f60710 + index) & mask for index, name in
-             enumerate(("BX", "BP", "SI", "DI", *(("12", "13", "14", "15") if mode == 64 else ())))}
+             enumerate(("BX", "BP", *(("SI", "DI") if windows or mode == 32 else ()), *(("12", "13", "14", "15") if mode == 64 else ())))}
     for r, value in saved.items():
         machine.reg_write(r, value)
     decoder = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64 if mode == 64 else capstone.CS_MODE_32)
@@ -225,6 +253,8 @@ def execute(code, operation, variant, mode, values, statuses, stop_at_boundary=F
     result, start = inputs[0] ^ inputs[1] ^ inputs[2] ^ inputs[3], CODE
     if variant == "condition":
         result ^= int(inputs[0] < inputs[3])
+    if variant == "realigned":
+        result ^= FRAME_VALUES[0] ^ FRAME_VALUES[1] ^ FRAME_VALUES[2]
     for index, (instruction, status) in enumerate(zip(accesses, statuses)):
         assert bytes(instruction.bytes) == OPCODES[operation]
         machine.emu_start(start, instruction.address, count=1000)
@@ -391,7 +421,8 @@ unsigned long long original(unsigned long long *outputs) {{
         outcomes = []
         for function in ("original", "probe"):
             child = subprocess.run([sys.executable, "-c",
-                                    "import ctypes,json,sys; "
+                                    "import ctypes,json,signal,sys; "
+                                    "assert ctypes.CDLL(None).prctl(4,0,0,0,0)==0; signal.alarm(5); "
                                     "f=getattr(ctypes.CDLL(sys.argv[1]),sys.argv[2]); "
                                     "f.argtypes=[ctypes.POINTER(ctypes.c_uint64)]; f.restype=ctypes.c_uint64; "
                                     "out=(ctypes.c_uint64*3)(); result=f(out); print(json.dumps([result,*out]))",
@@ -457,9 +488,15 @@ def main():
                     count += 1
                 execute(code, operation, variant, mode, (4, 0xdead0001, 0xdead0003, 0xdead0005), (0,) * (2 if variant == "twice" else 1), True, leaf, args.explicit_state)
                 count += 1
-                if variant in ("all", "standard"):
+                if variant in ("all", "standard", "realigned"):
                     for target in COMMON.TRIPLES[1:]:
-                        compile_case(args, directory, operation, variant, mode, opt, target, leaf)
+                        code = compile_case(args, directory, operation, variant, mode, opt, target, leaf)
+                        if variant == "realigned":
+                            for values in VALUES:
+                                execute(code, operation, variant, mode, values, (0,),
+                                        bounded_leaf=leaf, explicit_state=args.explicit_state,
+                                        windows=False)
+                                count += 1
                         count += 1
         native = native_fault_oracle(args, directory)
     family = "bounded GETSEC" if args.bounded_getsec else ("bounded ENCLU" if args.bounded_enclu else "SGX supervisor")
