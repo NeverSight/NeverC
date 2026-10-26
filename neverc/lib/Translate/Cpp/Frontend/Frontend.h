@@ -1832,6 +1832,45 @@ describeFunctionalBindInvokeSignatureSource(
     llvm::ArrayRef<clang::QualType> Forwarded, const clang::ASTContext &Context);
 
 
+// Declaration-only probe metadata; this cannot certify a runtime SDK body.
+struct FunctionalBindTryCallSignatureSource {
+  const clang::CXXMethodDecl *Function;
+  const clang::ClassTemplateSpecializationDecl *Owner;
+  const clang::TypeAliasDecl *Result;
+  const clang::CallExpr *ResultCall, *Invoke;
+  FunctionalBindInvokeSignatureSource Dispatcher;
+  std::vector<const clang::FunctionTemplateDecl *> Ancestors;
+  std::vector<const clang::CallExpr *> Declvals;
+};
+std::optional<FunctionalBindTryCallSignatureSource>
+describeFunctionalBindTryCallSignatureSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, const FunctionalBindStorage &Storage,
+    llvm::ArrayRef<clang::QualType> Forwarded, const clang::ASTContext &Context);
+
+
+// Descriptions only. Every selected special member and its subobject source
+// must close independently before these shapes enter a runtime verified map.
+struct FunctionalBindCopySource {
+  FunctionalBindNaturalLayout Layout;
+  const clang::CXXConstructExpr *Construction;
+  const clang::Expr *Object;
+};
+std::optional<FunctionalBindCopySource>
+describeFunctionalBindCopySource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+
+struct FunctionalBindDestructionSource {
+  FunctionalBindNaturalLayout Layout;
+  const clang::CXXDestructorDecl *Destructor;
+};
+std::optional<FunctionalBindDestructionSource>
+describeFunctionalBindDestructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
+
+
 // Sema callback collection only. This predicate must not complete a record or
 // grant ordinary source, runtime, selected body, default, trait or lifetime use.
 bool retainFunctionalBindConstraintRoot(
