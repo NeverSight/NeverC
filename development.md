@@ -576,6 +576,10 @@ refuses malformed or incompatible carriers, and checks the effective address,
 callee-saved registers and exact return-stack balance. The
 legacy encoding check is independent of the producer's instruction decoder;
 the existing APX matrix remains available without the option.
+The wrapper oracle resolves direct jumps produced by identical-function
+folding, requires the expected atomic count for every entry, and still checks
+every entry's executed operations and ABI. Indirect, interior, cyclic and
+state-changing alias stubs fail the independent decoder checks.
 
 The older pointer-taking RAO-INT/CMPccXADD, bit-test and conditional-arithmetic
 intrinsics no longer infer address alignment from their integer bit widths.

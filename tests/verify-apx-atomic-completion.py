@@ -319,6 +319,76 @@ def condition(cc, flags):
     return bool(base ^ (cc & 1))
 
 
+def decode_wrappers(code, symbols):
+    """Resolve pure jump aliases while counting native operations per entry.
+
+    GCC can fold identical live/dead RAO wrappers into one body. Only an
+    unconditional direct jump to another known entry, preceded by NOP/ENDBR,
+    is an alias; arbitrary instructions and cyclic aliases are rejected.
+    """
+    cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+    cs.detail = True
+    starts = sorted(set(symbols.values()))
+    bodies, aliases, native = {}, {}, {}
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else len(code)
+        at = start
+        while at < end:
+            insn = next(cs.disasm(code[at:end], at, count=1), None)
+            if insn is None:
+                break
+            if insn.mnemonic in ("nop", "endbr64"):
+                at += insn.size
+                continue
+            if insn.mnemonic == "jmp" and len(insn.operands) == 1 and insn.operands[0].type == capstone.x86.X86_OP_IMM:
+                target = insn.operands[0].imm
+                assert target in starts, (start, "alias target is not a wrapper entry", target)
+                aliases[start] = target
+            break
+        if start in aliases:
+            continue
+        body = decode(code[start:end], stop_at_return=True)
+        assert body, (start, "wrapper has no native operation or pure jump alias")
+        bodies[start] = len(body)
+        for offset, insn in body.items():
+            native[start + offset] = {**insn, "end": start + insn["end"]}
+    counts = {}
+    for name, start in symbols.items():
+        seen = set()
+        while start in aliases:
+            assert start not in seen, (name, "cyclic wrapper alias")
+            seen.add(start)
+            start = aliases[start]
+        counts[name] = bodies[start]
+    return native, counts
+
+
+def verify_wrapper_decoder():
+    body = bytes.fromhex("480f38fc10c39090")
+    # An ENDBR/direct jump, a second alias and an exact symbol alias all
+    # reach the same independent legacy RAO fixture at offset zero.
+    stub = bytes.fromhex("f30f1efae9efffffff")
+    symbols = {"apx_0": 0, "apx_1": 8, "apx_2": 17, "apx_3": 0}
+    native, counts = decode_wrappers(body + stub + bytes.fromhex("e9f2ffffff"), symbols)
+    assert len(native) == 1 and counts == dict.fromkeys(symbols, 1)
+    malformed = (bytes.fromhex("e9fbffffff"),  # self cycle
+                 bytes.fromhex("e9f4ffffff"),  # interior target
+                 bytes.fromhex("ffe0"),        # indirect target
+                 bytes.fromhex("b801000000e9eeffffff"))  # changed state
+    for invalid in malformed:
+        try:
+            decode_wrappers(body + invalid, {"apx_0": 0, "apx_1": 8})
+        except AssertionError:
+            continue
+        raise AssertionError(("accepted malformed wrapper alias", invalid.hex()))
+    try:
+        decode_wrappers(body + bytes.fromhex("e900000000e9f6ffffff"),
+                        {"apx_0": 0, "apx_1": 8, "apx_2": 13})
+    except AssertionError:
+        return
+    raise AssertionError("accepted cyclic wrapper aliases")
+
+
 def qualify(obj, matrix, windows, legacy=False):
     binary = lief.parse(str(obj))
     text = text_section(binary)
@@ -329,13 +399,9 @@ def qualify(obj, matrix, windows, legacy=False):
     # All generated wrappers have one final return. Parallel object emission
     # can insert zero-filled alignment between independently emitted groups;
     # it is outside the functions and must not be decoded as instructions.
-    native = {}
-    starts = sorted(symbols.values())
-    for index, start in enumerate(starts):
-        end = starts[index + 1] if index + 1 < len(starts) else len(code)
-        for offset, insn in decode(code[start:end], stop_at_return=True).items():
-            native[start + offset] = {**insn, "end": start + insn["end"]}
-    assert len(native) == sum(2 if c[-1] == "twice" else 1 for c in matrix)
+    native, counts = decode_wrappers(code, symbols)
+    for index, case in enumerate(matrix):
+        assert counts[f"apx_{index}"] == (2 if case[-1] == "twice" else 1), (obj, index, case, counts[f"apx_{index}"])
     assert all(i["legacy"] == legacy for i in native.values()), "native encoding family changed"
     patched = bytearray(code)
     for offset, insn in native.items():
@@ -428,6 +494,7 @@ def qualify(obj, matrix, windows, legacy=False):
 
 def main():
     verify_memory_decoder()
+    verify_wrapper_decoder()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", type=Path, default=Path("build-neverc/bin/neverc"))
     group = parser.add_mutually_exclusive_group()
@@ -484,4 +551,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
