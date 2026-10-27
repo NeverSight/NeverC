@@ -550,6 +550,43 @@ matching its existing bitcode upgrade. Use a build containing those changes
 for this bridge check; the production LLVM release pin is still pending the
 remaining instruction work.
 
+### Native 3DNow values
+
+The existing 25 `__builtin_ia32_*` spellings cover all 24 3DNow/3DNowA
+arithmetic, comparison, conversion and shuffle instructions; `pswapdsi` and
+`pswapdsf` select the same instruction. Function-level `target("3dnowa")`
+enables these interfaces. Their `llvm.x86.3dnow.*` and `llvm.x86.3dnowa.*`
+names now have matching definitions and register/memory selection patterns
+in the full fork. Its MMX type legalization maps the upgraded `<1 x i64>`
+IR carrier back to the native MMX register class. Use a fork build containing
+these definitions for the bridge; no new production SDK is pinned yet.
+
+These are packed value interfaces. They preserve the processor's original
+arithmetic, including reciprocal/refinement behavior, and do not promise
+ordinary IEEE floating-point replacements or an ambient x87 context ABI.
+End MMX use with EMMS/FEMMS before executing x87 code.
+
+[ThreeDNowFrontendTests.cpp](tests/neverc/X86/ThreeDNowFrontendTests.cpp)
+checks every builtin's IR and both assembly syntaxes at O0/O2 for ELF, COFF
+and Mach-O. [tests/verify-3dnow-values.py](tests/verify-3dnow-values.py)
+compares 50 compiled register/memory wrappers with independently encoded
+instructions inside a disposable QEMU TCG guest. Each optimization level
+checks 1,600 results across eight input pairs and four x87 rounding controls,
+plus control/status/tags and input canaries. Native processor approximations
+are compared within the same CPU model; this is not a mathematical oracle
+for all processors or a physical hardware/fault qualification.
+
+Run it with `--compiler /path/to/neverc` or `--llc /path/to/llc`. The latter
+also supports `--mode 32`; NeverC uses its supported x64 target. Add
+`--backend-llc /path/to/llc` to send NeverC text IR through the full fork,
+or additionally `--bitcode` to exercise the bitcode reader. `--keep DIRECTORY`
+retains inputs, generated objects, guest images and qualification records.
+GNU binutils, a host Clang and `qemu-system-x86_64` are required. Optional
+`--context-object PATH` arguments additionally execute NeverD's owned FEMMS
+probe objects, whose `isa_probe` performs MOVQ/FEMMS/FLD1/FSTP and stores
+binary64 one at argument + 8. They check state transport, empty final tags
+and memory canaries through the existing context emitter.
+
 ### APX native atomic transactions
 
 On x86-64, `__NEVERC_X86_APX_ATOMIC__` is 1. The builtins
