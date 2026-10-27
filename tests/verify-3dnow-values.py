@@ -45,8 +45,8 @@ OPERATIONS = (
 )
 
 
-def generate(contexts, mode=64):
-    source = ["""typedef unsigned long long U64;
+def generate(contexts, mode=64, headers=False):
+    source = ['#include <x86intrin.h>\n' if headers else '', """typedef unsigned long long U64;
 typedef char V8C __attribute__((vector_size(8)));
 typedef short V4S __attribute__((vector_size(8)));
 typedef int V2I __attribute__((vector_size(8)));
@@ -73,12 +73,19 @@ typedef union { U64 bits; V8C bytes; V4S words; V2I ints; V2F floats; } Value;
             table.append(f"  {{ {fn}, reference_{index} }},\n")
             left = ("*p" if memory else "b") if unary else "a"
             right = "*p" if memory else "b"
-            args = f"left.{arg}" + ("" if unary else f", right.{arg}")
+            if headers:
+                args = "(__m64)left.bits" + ("" if unary else ", (__m64)right.bits")
+                public = "pfrsqrtit1" if name == "pfrsqit1" else name
+                assignment = f"out.bits = (U64)_m_{public}({args});"
+            else:
+                args = f"left.{arg}" + ("" if unary else f", right.{arg}")
+                assignment = f"out.{result} = __builtin_ia32_{name}({args});"
+            cleanup = "_m_femms" if headers else "__builtin_ia32_femms"
             source.append(f'__attribute__((target("3dnowa"), noinline))\n'
                           f"U64 {fn}(U64 a, U64 b, const U64 *p) {{\n"
                           f" Value left = {{{left}}}, right = {{{right}}}, out;\n"
-                          f" out.{result} = __builtin_ia32_{name}({args});\n"
-                          " U64 bits = out.bits; __builtin_ia32_femms(); return bits;\n}\n")
+                          f" {assignment}\n"
+                          f" U64 bits = out.bits; {cleanup}(); return bits;\n}}\n")
             ir.append(f"define i64 @{fn}(i64 %a, i64 %b, ptr %p) #0 {{\n")
             if memory:
                 ir.append("  %loaded = load i64, ptr %p, align 8\n")
@@ -113,7 +120,7 @@ def verify(args, directory):
     directory.mkdir(parents=True, exist_ok=True)
     for fixture in FIXTURES.iterdir():
         shutil.copyfile(fixture, directory / fixture.name)
-    source, ir, header, oracle = generate(len(args.context_object), args.mode)
+    source, ir, header, oracle = generate(len(args.context_object), args.mode, args.headers)
     for name, text in (("cases.c", source), ("cases.ll", ir),
                        ("cases.inc", header), ("oracle.S", oracle)):
         (directory / name).write_text(text)
@@ -182,6 +189,8 @@ def main():
     parser.add_argument("--backend-llc", type=lambda p: str(Path(p).resolve()))
     parser.add_argument("--bitcode", action="store_true",
                         help="Use NeverC bitcode instead of text IR with --backend-llc")
+    parser.add_argument("--headers", action="store_true",
+                        help="Use the standard _m_* interfaces through <x86intrin.h>")
     parser.add_argument("--mode", type=int, choices=(32, 64), default=64)
     parser.add_argument("--context-object", action="append", default=[], type=lambda p: str(Path(p).resolve()))
     parser.add_argument("--qemu", default="qemu-system-x86_64")
@@ -192,6 +201,8 @@ def main():
         parser.error("--backend-llc requires --compiler")
     if args.bitcode and not args.backend_llc:
         parser.error("--bitcode requires --backend-llc")
+    if args.headers and not args.compiler:
+        parser.error("--headers requires --compiler")
     if args.mode == 32 and (args.compiler or args.context_object):
         parser.error("i386 qualification requires --llc and no x64 context objects")
     if args.keep:

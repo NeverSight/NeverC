@@ -5,6 +5,8 @@
 
 #include <immintrin.h>
 
+#include <mm3dnow.h>
+
 #include <tbmintrin.h>
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \

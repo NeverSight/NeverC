@@ -125,6 +125,7 @@ set(x86_files
   invpcidintrin.h
   lzcntintrin.h
   mmintrin.h
+  mm3dnow.h
   movdirintrin.h
   mwaitxintrin.h
   nmmintrin.h

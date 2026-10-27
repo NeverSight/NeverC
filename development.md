@@ -566,9 +566,16 @@ arithmetic, including reciprocal/refinement behavior, and do not promise
 ordinary IEEE floating-point replacements or an ambient x87 context ABI.
 End MMX use with EMMS/FEMMS before executing x87 code.
 
+The installed `<mm3dnow.h>` and umbrella `<x86intrin.h>` expose all 25 `_m_*`
+value interfaces plus `_m_femms()`, with function-level `3dnow`/`3dnowa`
+requirements. The header is imported from LLVM `llvmorg-18.1.8`, retaining
+its Apache/LLVM exception license and exact source revision. Its standard
+`_m_pfrsqrtit1` spelling maps to `__builtin_ia32_pfrsqit1`.
+
 [ThreeDNowFrontendTests.cpp](tests/neverc/X86/ThreeDNowFrontendTests.cpp)
-checks every builtin's IR and both assembly syntaxes at O0/O2 for ELF, COFF
-and Mach-O. [tests/verify-3dnow-values.py](tests/verify-3dnow-values.py)
+checks every builtin and both header entry points through IR and both assembly
+syntaxes at O0/O2 for ELF, COFF and Mach-O.
+[tests/verify-3dnow-values.py](tests/verify-3dnow-values.py)
 compares 50 compiled register/memory wrappers with independently encoded
 instructions inside a disposable QEMU TCG guest. Each optimization level
 checks 1,600 results across eight input pairs and four x87 rounding controls,
@@ -581,6 +588,7 @@ also supports `--mode 32`; NeverC uses its supported x64 target. Add
 `--backend-llc /path/to/llc` to send NeverC text IR through the full fork,
 or additionally `--bitcode` to exercise the bitcode reader. `--keep DIRECTORY`
 retains inputs, generated objects, guest images and qualification records.
+`--headers` selects the standard interfaces instead of direct builtin calls.
 GNU binutils, a host Clang and `qemu-system-x86_64` are required. Optional
 `--context-object PATH` arguments additionally execute NeverD's owned FEMMS
 probe objects, whose `isa_probe` performs MOVQ/FEMMS/FLD1/FSTP and stores
