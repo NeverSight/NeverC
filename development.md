@@ -533,6 +533,17 @@ through the full LLVM fork, including live MMX values, realigned frames,
 dynamic allocation, memory ordering and ABI preservation (432 completions).
 This does not qualify physical FEMMS execution or x87 exception delivery.
 
+EMMS and FEMMS are also machine scheduling boundaries. Their physical
+clobbers alone did not constrain virtual MMX registers: O2 could move MMX
+arithmetic and integer extraction past the final reset and return with
+nonempty x87 tags. All six O2 objects in the direct/bridge format matrix
+failed that postcondition before this fix. The oracle now checks empty tags
+on return, and the frontend regression checks both final reset instructions
+with realigned/dynamic frames. Physical EMMS cleanup was reproduced by
+replacing only the unavailable FEMMS boundaries with EMMS; the returned
+abridged tag changed from 255 before the fix to 0 afterward. That experiment
+does not execute FEMMS or establish its hardware fault behavior.
+
 The full fork now restores `llvm.x86.mmx.femms`, accepts the legacy `3dnow`
 and `3dnowa` annotations, and upgrades textual `x86_mmx` types to `<1 x i64>`,
 matching its existing bitcode upgrade. Use a build containing those changes

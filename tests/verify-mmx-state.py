@@ -150,8 +150,10 @@ def qualify(path, windows):
         assert uc.reg_read(reg("RAX")) == expected, (path, name, a, b, clobber)
         assert uc.reg_read(reg("RSP")) == sp + 8, (path, "return stack")
         assert all(uc.reg_read(reg(r)) == value for r, value in saved.items()), (path, "C ABI")
+        assert uc.reg_read(reg("FPTAG")) == 0xffff, (path, name, "MMX operation crossed final reset")
         checks += 1
-    return {"functions": 2, "femms_boundaries": len(boundaries), "controlled_completions": checks}
+    return {"functions": 2, "femms_boundaries": len(boundaries), "controlled_completions": checks,
+            "x87_tags_empty_on_return": True}
 
 
 def main():
