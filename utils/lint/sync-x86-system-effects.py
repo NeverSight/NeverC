@@ -27,6 +27,7 @@ EFFECTS = {
     "CLAC": (0, (), (), ()),
     "STAC": (0, (), (), ()),
     "HLT": (0, (), (), ("MayLoad", "MayStore")),
+    "SKINIT": (0, ("EAX",), (), ("MayLoad", "MayStore")),
     "HRESET": (1, ("EAX",), (), ()),
     "INVLPGB64": (0, ("RAX", "EDX", "ECX"), (), ()),
     "TLBSYNC": (0, (), (), ()),
@@ -136,6 +137,11 @@ def synchronize(text):
         if name == "HLT":
             # A returning interrupt resumes after HLT.
             flags = flags.replace("|(1ULL<<MCID::Terminator)", "")
+        if name == "SKINIT":
+            for flag in ("Terminator", "Barrier"):
+                marker = f"|(1ULL<<MCID::{flag})"
+                if marker not in flags:
+                    flags += marker
         flags = re.sub(r"\|\(1ULL<<MCID::(?:MayLoad|MayStore|UnmodeledSideEffects)\)", "", flags)
         # MOVS/STOS have their complete ordinary memory/register effects.
         # Port I/O and the other system operations also have ambient effects.

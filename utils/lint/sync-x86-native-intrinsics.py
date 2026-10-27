@@ -33,6 +33,7 @@ DECLARATIONS = {
     "invlpgb": ("Done", "I64", "I32", "I32"),
     "invlpgb_addr32": ("Done", "I32", "I32", "I32"),
     "tlbsync": ("Done",),
+    "skinit": ("Done", "I32"),
     "lkgs_reg": ("Done", "I16"),
     "lkgs_mem": ("Done", "PTR"),
 }
@@ -221,6 +222,39 @@ def immediate_arguments_attribute(impl, indices):
     return str(index), impl.replace(anchor, f"    case {index}: {{\n" + body + anchor, 1)
 
 
+def secure_launch_attribute(impl):
+    # The full fork's SKINIT contract has no default willreturn/nosync/nofree/
+    # nocallback promises. Allocate the function and list recipes together.
+    start = impl.index("static AttributeSet getIntrinsicFnAttributeSet")
+    end = impl.index("AttributeList Intrinsic::getAttributes", start)
+    functions = impl[start:end]
+    body = "    return AttributeSet::get(C, {\n" + "".join(
+        f"      Attribute::get(C, Attribute::{name}),\n"
+        for name in ("NoUnwind", "NoReturn", "Convergent", "NoDuplicate")) + "    });\n"
+    existing = re.search(r"  case (\d+):\n" + re.escape(body), functions)
+    if existing:
+        function = existing.group(1)
+    else:
+        function = str(max(int(v) for v in re.findall(r"  case (\d+):", functions)) + 1)
+        closing = functions.rindex("  }\n}")
+        functions = (functions[:closing] + f"  case {function}:\n" + body +
+                     functions[closing:])
+        impl = impl[:start] + functions + impl[end:]
+    body = ("      AS[0] = {AttributeList::FunctionIndex, "
+            f"getIntrinsicFnAttributeSet(C, {function})}};\n"
+            "      NumAttrs = 1;\n      break;\n    }\n")
+    start = impl.index("switch(IntrinsicsToAttributesMap[id - 1])")
+    end = impl.index("return AttributeList::get", start)
+    recipes = impl[start:end]
+    existing = re.search(r"    case (\d+): \{\n" + re.escape(body), recipes)
+    if existing:
+        return existing.group(1), impl
+    recipe = str(max(int(v) for v in re.findall(r"    case (\d+): \{", recipes)) + 1)
+    impl = impl[:start] + recipes.replace(
+        "    case 108: {\n", f"    case {recipe}: {{\n" + body + "    case 108: {\n", 1) + impl[end:]
+    return recipe, impl
+
+
 def encode_signature(signature, impl):
     codes = {name: int(value) for name, value in
              re.findall(r"\bIIT_(\w+) = (\d+),", impl)}
@@ -270,6 +304,7 @@ def synchronize(write):
     additions = []
     cpp_names = dict(enum_entries)
     immediate_pair, updated_impl = immediate_arguments_attribute(impl, (0, 1))
+    launch_attribute, updated_impl = secure_launch_attribute(updated_impl)
     address_attributes = {}
     for indices in sorted({indices for _, indices in ADDRESS_SIGNATURES.values()}):
         attribute, updated_impl = immediate_arguments_attribute(updated_impl, indices)
@@ -287,6 +322,8 @@ def synchronize(write):
         attribute = immediate_pair if suffix in ROW_IMMEDIATES else attributes[source][0]
         if suffix in ADDRESS_SIGNATURES:
             attribute = address_attributes[ADDRESS_SIGNATURES[suffix][1]]
+        if suffix == "skinit":
+            attribute = launch_attribute
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)
         if name in names:

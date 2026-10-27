@@ -3428,6 +3428,16 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   }
   case X86::BI__builtin_ia32_clts:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_clts, {});
+  case X86::BI__svm_skinit:
+  case X86::BI__builtin_ia32_skinit: {
+    auto *Call =
+        Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_skinit, {Ops[0]});
+    // The processor starts a new loader context; no old C ABI continuation
+    // exists. Keep source after this call in an unreachable emission block.
+    genUnreachable(E->getExprLoc());
+    genBlock(createBasicBlock("skinit.cont"));
+    return Call;
+  }
   case X86::BI__svm_vmload:
   case X86::BI__builtin_ia32_vmload:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload,

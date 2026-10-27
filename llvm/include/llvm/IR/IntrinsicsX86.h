@@ -1294,6 +1294,7 @@ enum X86Intrinsics : unsigned {
     x86_sha256rnds2,                                 // llvm.x86.sha256rnds2
     x86_sidt,                                        // llvm.x86.sidt
     x86_sidt_address,                                // llvm.x86.sidt.address
+    x86_skinit,                                      // llvm.x86.skinit
     x86_sldt_mem,                                    // llvm.x86.sldt.mem
     x86_sldt_mem_address,                            // llvm.x86.sldt.mem.address
     x86_sldt_reg16,                                  // llvm.x86.sldt.reg16

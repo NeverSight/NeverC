@@ -388,6 +388,27 @@ ordering, saved registers and continuation at O0/O2, including all three
 object formats and both assembly dialects. Linux x64 children compare real
 CPL3 faults with independent byte oracles.
 
+### Secure-loader launch
+
+`__builtin_ia32_skinit(unsigned physical_address)` and Microsoft's
+`__svm_skinit(int)` emit `llvm.x86.skinit(i32)` directly. The complete input
+reaches EAX unchanged, including unaligned values. SKINIT performs its own
+checks before clearing the low 16 bits, resets processor state and enters the
+secure loader; it has no normal continuation in the old C ABI context.
+Both builtins are nonreturning. The LLVM declaration is convergent and
+noduplicate, with unknown memory effects and no willreturn, nosync, nofree or
+nocallback promise. No inline assembly or external launch helper is emitted.
+The contract follows [AMD APM Volume 3 revision 3.38, pages 472–473](https://docs.amd.com/v/u/en-US/24594_3.38_APM_Vol3_PUB).
+
+The full LLVM fork first added this API in `6804d12d13a8`. The native signature
+and system-effect synchronizers retain the pruned enum, attributes, matcher IDs
+and terminating machine descriptor together. `X86SkinitTest` checks both
+spellings, ordered stores, removed continuation, malformed inputs and O0/O2
+ELF/COFF/Mach-O output. The [binary oracle](tests/neverc/X86/verify_skinit_completion.py)
+also checks original EAX bits at a stopped instruction boundary: 1,080 checks
+for NeverC's six objects and 1,080 for the full fork's twelve i386/x64 objects.
+It never executes SKINIT or qualifies reset, attestation or successful launch.
+
 [tests/verify-bounded-virtualization-qemu.py](tests/verify-bounded-virtualization-qemu.py) executes the generated code in
 disposable i386/x64 CPL0 guests. It checks VMSAVE/VMLOAD MSR round trips,
 INVLPGA fallthrough, AC changes, SWAPGS exchange, GIF masking of an actual

@@ -26738,6 +26738,11 @@ static SDValue lowerBoundedSystemState(SDValue Op,
     return SDValue(DAG.getMachineNode(X86::STAC, DL, MVT::Other, Chain), 0);
   case Intrinsic::x86_hlt:
     return SDValue(DAG.getMachineNode(X86::HLT, DL, MVT::Other, Chain), 0);
+  case Intrinsic::x86_skinit:
+    Chain = DAG.getCopyToReg(Chain, DL, X86::EAX, Op.getOperand(2), SDValue());
+    return SDValue(DAG.getMachineNode(X86::SKINIT, DL, MVT::Other,
+                                      {Chain, Chain.getValue(1)}),
+                   0);
   case Intrinsic::x86_vmfunc_eptp_switch:
     Chain = DAG.getCopyToReg(Chain, DL, X86::EAX,
                              DAG.getConstant(0, DL, MVT::i32), SDValue());
@@ -28081,6 +28086,7 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_clac:
     case Intrinsic::x86_stac:
     case Intrinsic::x86_hlt:
+    case Intrinsic::x86_skinit:
     case Intrinsic::x86_vmfunc_eptp_switch:
     case Intrinsic::x86_invd:
     case Intrinsic::x86_hreset:
