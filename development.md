@@ -516,6 +516,29 @@ dialects. Isolated Linux x64 children additionally compare real CPL3 #UD faults
 with independently encoded bytes. Controlled output injection qualifies
 compiler transport, not successful privileged enclave operations.
 
+### Native FEMMS and legacy MMX IR
+
+`__builtin_ia32_femms()` already has a native frontend and embedded-backend
+interface. It emits `llvm.x86.mmx.femms` and the original `0f 0e` instruction.
+The descriptor invalidates all eight MMX and eight x87 register payloads;
+conservative side effects preserve repeated calls and surrounding memory
+operations. It must not be replaced with EMMS, whose payload contract differs.
+
+`X86MMXStateTest` checks O0/O2 IR and both assembly syntaxes for ELF, COFF and
+Mach-O. `X86MMXState` checks the complete implicit clobber set and intrinsic
+effects. [tests/verify-mmx-state.py](tests/verify-mmx-state.py) independently
+decodes native object files and completes each FEMMS boundary with adversarial
+register contents. Its 12 objects cover direct NeverC output and NeverC IR
+through the full LLVM fork, including live MMX values, realigned frames,
+dynamic allocation, memory ordering and ABI preservation (432 completions).
+This does not qualify physical FEMMS execution or x87 exception delivery.
+
+The full fork now restores `llvm.x86.mmx.femms`, accepts the legacy `3dnow`
+and `3dnowa` annotations, and upgrades textual `x86_mmx` types to `<1 x i64>`,
+matching its existing bitcode upgrade. Use a build containing those changes
+for this bridge check; the production LLVM release pin is still pending the
+remaining instruction work.
+
 ### APX native atomic transactions
 
 On x86-64, `__NEVERC_X86_APX_ATOMIC__` is 1. The builtins
