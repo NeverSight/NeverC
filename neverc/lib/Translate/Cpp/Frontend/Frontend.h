@@ -1952,6 +1952,15 @@ bool approvedFunctionalBindCallAuxiliarySource(
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 
+// Exact stored tuple get and leaf source only; no runtime registration.
+bool approvedFunctionalBindCallGetSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+
 bool approvedFunctionalBindCallUnwrapSource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindCallSource &Call, const clang::ASTContext &Context,
