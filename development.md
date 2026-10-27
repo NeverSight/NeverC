@@ -568,8 +568,12 @@ frontend remains x86-64-only; these i386 IR declarations are not frontend
 builtins. Code mode, data width and address width are separate contracts.
 
 Pass `--legacy` to the completion oracle for the legacy/VEX matrix. Each
-compiler route covers 10,080 functions and 120,960 controlled completions
-across O0/O2 and ELF/COFF/Mach-O, plus twelve assembly round trips. The
+compiler route covers 13,680 functions and 164,160 controlled completions
+across O0/O2 and ELF/COFF/Mach-O, plus twelve assembly round trips. This
+includes stack-reference controls with every permitted CS/DS/ES/SS override.
+The independent parser decodes the RBP-plus-index SIB and its displacement,
+refuses malformed or incompatible carriers, and checks the effective address,
+callee-saved registers and exact return-stack balance. The
 legacy encoding check is independent of the producer's instruction decoder;
 the existing APX matrix remains available without the option.
 

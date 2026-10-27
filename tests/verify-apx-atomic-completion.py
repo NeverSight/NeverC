@@ -22,6 +22,7 @@ import unicorn.x86_const as regs
 
 TRIPLES = ("x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "x86_64-apple-darwin")
 SEGMENTS = (0, 0x26, 0x2e, 0x36, 0x3e, 0x64, 0x65)
+STACK_CONTROLS = (0x100, 0x126, 0x12e, 0x136, 0x13e)
 GPRS = ("RAX", "RCX", "RDX", "RBX", "RSP", "RBP", "RSI", "RDI",
         "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15")
 CODE, STACK, DATA, PAGE = 0x1000000, 0x80000, 0xa0000, 4096
@@ -71,7 +72,9 @@ def assembly_roundtrips(command, obj, triple, compiler, backend):
 
 def cases():
     result = []
-    for bits, address, segment in itertools.product((32, 64), (32, 64), SEGMENTS):
+    for bits, address, segment in itertools.product((32, 64), (32, 64), SEGMENTS + STACK_CONTROLS):
+        if segment in STACK_CONTROLS and address != 64:
+            continue
         for op, cc in [("aadd", 0), ("aand", 0), ("aor", 0), ("axor", 0)] + [("cmpccxadd", cc) for cc in range(16)]:
             for variant in ("live", "dead", "twice"):
                 result.append((op, bits, address, segment, cc, variant))
@@ -130,6 +133,41 @@ def source(matrix, ir, legacy=False):
     return "\n".join(sorted(declarations)) + "\n" + "\n".join(functions) + "\n"
 
 
+def memory_carrier(code, offset, modrm, address, segment, base_extension, index_extension):
+    """Decode the restricted carriers independently, including actual SIB bytes.
+
+    A data address uses AX/CX/DX/BX (SI/DI for addr16). A long-mode stack
+    address uses RBP plus one of the data carriers with scale one and zero
+    displacement, so frame and realignment registers need not be overwritten.
+    """
+    mode, rm = modrm >> 6, modrm & 7
+    if address == 16:
+        assert mode == 0 and rm in (4, 5), "addr16 carrier must be SI or DI"
+        return dict(base=rm + 2, index=None, segment=segment, end=offset)
+    if rm != 4:
+        base = rm | base_extension
+        assert mode == 0 and base in (0, 1, 2, 3), (modrm, base)
+        return dict(base=base, index=None, segment=segment, end=offset)
+    assert address == 64 and segment not in (0x64, 0x65), "invalid stack address control"
+    assert offset < len(code), "truncated SIB"
+    sib = code[offset]
+    base, index = (sib & 7) | base_extension, ((sib >> 3) & 7) | index_extension
+    assert base == 5 and index in (0, 1, 2, 3) and sib >> 6 == 0, (sib, base, index)
+    assert mode in (1, 2), "RBP requires a zero displacement"
+    size = 1 if mode == 1 else 4
+    end = offset + 1 + size
+    assert end <= len(code) and not any(code[offset + 1:end]), "invalid stack displacement"
+    return dict(base=base, index=index, segment=segment | 0x100, end=end)
+
+
+def effective_offset(machine, insn):
+    reg = lambda number: getattr(regs, "UC_X86_REG_" + GPRS[number])
+    value = machine.reg_read(reg(insn["base"]))
+    if insn.get("index") is not None:
+        value += machine.reg_read(reg(insn["index"]))
+    return value & ((1 << insn["address"]) - 1)
+
+
 def decode(code, stop_at_return=False, mode64=True):
     """Read atomic memory encodings independently of the producer's decoder."""
     cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64 if mode64 else capstone.CS_MODE_32)
@@ -162,16 +200,15 @@ def decode(code, stop_at_return=False, mode64=True):
                     assert p2 == 8 and p1 & 0x78 == 0x78
                 register = ((modrm >> 3) & 7) | ((~p0 & 0x80) >> 4) | (~p0 & 0x10)
                 add = ((~p1 & 0x78) >> 3) | ((~p2 & 8) << 1) if compare else register
-                base = (modrm & 7) | ((~p0 & 0x20) >> 2) | ((p0 & 8) << 1)
-                # Native carriers must retain a data-default base through allocation.
-                assert modrm >> 6 == 0 and base in (0, 1, 2, 3), (start, modrm, base)
+                memory = memory_carrier(code, at + 6, modrm, address, segment,
+                                        ((~p0 & 0x20) >> 2) | ((p0 & 8) << 1),
+                                        ((~p0 & 0x40) >> 3) | ((~p1 & 4) << 2))
                 assert add < len(GPRS) and register < len(GPRS), "controlled oracle does not execute EGPR setup"
                 name = "cmpccxadd" if compare else {0: "aadd", 1: "aand", 3: "aor", 2: "axor"}[pp]
                 result[start] = dict(op=name, bits=64 if p1 & 0x80 else 32,
-                                     address=address, segment=segment,
-                                     cc=opcode - 0xe0 if compare else 0,
-                                     compare=register, add=add, base=base, end=at + 6, legacy=False)
-                at += 6
+                                     address=address, cc=opcode - 0xe0 if compare else 0,
+                                     compare=register, add=add, legacy=False, **memory)
+                at = memory["end"]
                 continue
         is_vex = at + 5 <= len(code) and code[at] == 0xc4 and code[at + 1] & 31 == 2 and 0xe0 <= code[at + 3] <= 0xef
         is_rao = at + 4 <= len(code) and code[at:at + 3] == b"\x0f\x38\xfc"
@@ -182,21 +219,19 @@ def decode(code, stop_at_return=False, mode64=True):
                 assert p1 & 7 == 1 and not mandatory and not rex
                 register = ((modrm >> 3) & 7) | ((~p0 & 0x80) >> 4)
                 add = (~p1 & 0x78) >> 3
-                base = (modrm & 7) | ((~p0 & 0x20) >> 2)
+                base_extension, index_extension = (~p0 & 0x20) >> 2, (~p0 & 0x40) >> 3
                 bits, cc, end, name = 64 if p1 & 0x80 else 32, opcode - 0xe0, at + 5, "cmpccxadd"
             else:
                 modrm = code[at + 3]
                 register = ((modrm >> 3) & 7) | ((rex & 4) << 1)
-                add, base = register, (modrm & 7) | ((rex & 1) << 3)
+                add = register
+                base_extension, index_extension = (rex & 1) << 3, (rex & 2) << 2
                 bits, cc, end = 64 if rex & 8 else 32, 0, at + 4
                 name = {0: "aadd", 0x66: "aand", 0xf2: "aor", 0xf3: "axor"}[mandatory]
-                if address == 16:
-                    assert (modrm & 7) in (4, 5), "addr16 native carrier must be SI or DI"
-                    base = (modrm & 7) + 2
-            assert modrm >> 6 == 0 and base in ((6, 7) if address == 16 else (0, 1, 2, 3)), (start, modrm, base)
-            result[start] = dict(op=name, bits=bits, address=address, segment=segment,
-                                 cc=cc, compare=register, add=add, base=base, end=end, legacy=True)
-            at = end
+            memory = memory_carrier(code, end, modrm, address, segment, base_extension, index_extension)
+            result[start] = dict(op=name, bits=bits, address=address,
+                                 cc=cc, compare=register, add=add, legacy=True, **memory)
+            at = memory["end"]
             continue
         instruction = next(cs.disasm(code[start:], start, count=1), None)
         assert instruction is not None, (start, code[start:start + 16].hex())
@@ -204,6 +239,31 @@ def decode(code, stop_at_return=False, mode64=True):
         if stop_at_return and instruction.mnemonic == "ret":
             break
     return result
+
+
+def verify_memory_decoder():
+    """Positive bytes and malformed carriers independent of generated fixtures."""
+    fixtures = ("62f4fc08fc541500", "62f2ed08e4441500",
+                "480f38fc541500", "c4e2e9e4441500")
+    for fixture in fixtures:
+        code = bytes.fromhex(fixture)
+        for prefix in (b"", b"\x26", b"\x2e", b"\x36", b"\x3e"):
+            insn, = decode(prefix + code).values()
+            assert (insn["base"], insn["index"], insn["segment"], insn["end"]) == (
+                5, 2, 0x100 | (prefix[0] if prefix else 0), len(code) + len(prefix))
+        malformed = (code[:-2], code[:-1], code[:-1] + b"\x01",
+                     code[:-2] + b"\x55\x00", code[:-2] + b"\x25\x00",
+                     code[:-2] + b"\x14\x00", b"\x64" + code,
+                     b"\x65" + code, b"\x67" + code)
+        for invalid in malformed:
+            try:
+                decode(invalid)
+            except AssertionError:
+                continue
+            raise AssertionError(("accepted malformed carrier", invalid.hex()))
+    # Ordinary data carriers and i386 addr16 retain their earlier contract.
+    assert decode(bytes.fromhex("480f38fc10"))[0]["segment"] == 0
+    assert decode(bytes.fromhex("670f38fc15"), mode64=False)[0]["base"] == 7
 
 
 def instruction_bytes(code):
@@ -331,7 +391,7 @@ def qualify(obj, matrix, windows, legacy=False):
                     assert pc - CODE in native, (index, hex(pc))
                     insn = native[pc - CODE]
                     assert tuple(insn[k] for k in ("op", "bits", "address", "segment", "cc")) == case[:5], (case, insn)
-                    assert machine.reg_read(reg(GPRS[insn["base"]])) == (offset & (0xffffffff if address_bits == 32 else MASK))
+                    assert effective_offset(machine, insn) == (offset & (0xffffffff if address_bits == 32 else MASK))
                     assert machine.reg_read(reg(GPRS[insn["add"]])) & mask == add & mask
                     before = min(compare, add)
                     if seen == 0:
@@ -355,6 +415,7 @@ def qualify(obj, matrix, windows, legacy=False):
                     pc = CODE + insn["end"]
                     machine.reg_write(reg("RIP"), pc)
                 assert seen == (2 if variant == "twice" else 1), "atomic operation was removed or duplicated"
+                assert machine.reg_read(reg("RSP")) == sp + 8, "return stack corrupted"
                 expected = offset ^ compare ^ add ^ int(compare < add) ^ struct.unpack("<Q", machine.mem_read(ordinary, 8))[0]
                 if variant != "dead":
                     for result in results:
@@ -366,6 +427,7 @@ def qualify(obj, matrix, windows, legacy=False):
 
 
 def main():
+    verify_memory_decoder()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", type=Path, default=Path("build-neverc/bin/neverc"))
     group = parser.add_mutually_exclusive_group()
@@ -380,7 +442,7 @@ def main():
             setattr(args, name, getattr(args, name).resolve())
     matrix = cases()
     if args.quick:
-        matrix = [c for c in matrix if c[3] in (0, 0x64, 0x65) and c[4] in (0, 4, 15)]
+        matrix = [c for c in matrix if c[3] in (0, 0x64, 0x65, 0x100) and c[4] in (0, 4, 15)]
     with tempfile.TemporaryDirectory(prefix="apx-native-") as temp:
         directory = args.keep or Path(temp)
         directory.mkdir(parents=True, exist_ok=True)
