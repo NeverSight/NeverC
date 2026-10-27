@@ -1952,6 +1952,14 @@ bool approvedFunctionalBindCallAuxiliarySource(
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 
+bool approvedFunctionalBindCallUnwrapSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+
 // Exact selected bullet-7 signature and complete original body source only.
 // Operator/apply/get/unwrap and ordinary callback/lifetime roots are separate.
 // Successful declaration-only probe signature source; no fallback/result grant.
