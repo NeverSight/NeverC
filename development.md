@@ -871,7 +871,7 @@ carrier pseudo preserves that constraint through coalescing and post-RA copy
 propagation until MC lowering. Full LLVM also uses SI/DI for i386 address16,
 so neither the PIC GOT register nor a reserved realignment base is overwritten.
 NeverC remains x64-only. The append-only table authority is
-`utils/lint/sync-x86-native-address-carrier.py`; no intrinsic IDs change.
+[utils/lint/sync-x86-native-address-carrier.py](utils/lint/sync-x86-native-address-carrier.py); no intrinsic IDs change.
 The address-carrier update established 18,573 instructions: it also caught up
 32 previously implemented REP, bounded-state and atomic pseudos that were
 missing from the checked-in schema. Existing instruction records, register
@@ -894,7 +894,7 @@ carrier into RBX, executes the operation and swaps the result back. The entire
 window preserves the compiler's RBX value and permits no intervening spills or
 padding. No compiler-owned frame register is declared as an instruction result.
 
-`utils/lint/sync-x86-native-register-windows.py` appends seven machine records.
+[utils/lint/sync-x86-native-register-windows.py](utils/lint/sync-x86-native-register-windows.py) appends seven machine records.
 The x86 schema contains 18,580 instructions; all earlier 18,573 records, 391
 registers and 190 features remain unchanged, as does the AArch64 schema.
 Intrinsic signatures and capability macros are unchanged. Accumulator exchanges
