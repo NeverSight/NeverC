@@ -28097,6 +28097,10 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_lkgs_mem:
       return lowerBoundedSystemState(Op, Subtarget, DAG);
 
+    case Intrinsic::x86_fnop:
+      return SDValue(DAG.getMachineNode(X86::FNOP, SDLoc(Op), MVT::Other,
+                                        Op.getOperand(0)),
+                     0);
     case llvm::Intrinsic::x86_clts:
       return SDValue(DAG.getMachineNode(X86::CLTS, SDLoc(Op), MVT::Other,
                                         Op.getOperand(0)),

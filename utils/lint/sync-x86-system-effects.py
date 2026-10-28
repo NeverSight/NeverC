@@ -16,6 +16,8 @@ TABLE = ROOT / "llvm/lib/Target/X86/X86GenInstrInfo.inc"
 # Explicit operand count, implicit uses/definitions, memory effects.
 EFFECTS = {
     "CLTS": (0, (), (), ()),
+    "FNOP": (0, ("FPCW", "FPSW"), ("FPSW",),
+             ("MayLoad", "MayStore", "MayRaiseFPException")),
     "VMLOAD64": (0, ("RAX",), (), ("MayLoad",)),
     "VMSAVE64": (0, ("RAX",), (), ("MayStore",)),
     "INVLPGA64": (0, ("RAX", "ECX"), (), ()),
@@ -142,7 +144,7 @@ def synchronize(text):
                 marker = f"|(1ULL<<MCID::{flag})"
                 if marker not in flags:
                     flags += marker
-        flags = re.sub(r"\|\(1ULL<<MCID::(?:MayLoad|MayStore|UnmodeledSideEffects)\)", "", flags)
+        flags = re.sub(r"\|\(1ULL<<MCID::(?:MayLoad|MayStore|UnmodeledSideEffects|MayRaiseFPException)\)", "", flags)
         # MOVS/STOS have their complete ordinary memory/register effects.
         # Port I/O and the other system operations also have ambient effects.
         side_effects = () if name.startswith(("REP_MOVS", "REP_STOS")) else ("UnmodeledSideEffects",)

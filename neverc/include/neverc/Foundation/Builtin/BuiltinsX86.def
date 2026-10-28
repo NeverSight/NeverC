@@ -13,6 +13,9 @@ BUILTIN(__builtin_cpu_init, "v", "n")
 BUILTIN(__builtin_cpu_supports, "bcC*", "nc")
 BUILTIN(__builtin_cpu_is, "bcC*", "nc")
 
+// Waiting x87 state operation, including pending exceptions and FIP effects.
+BUILTIN(__builtin_ia32_fnop, "v", "n")
+
 // Undefined Values
 //
 TARGET_BUILTIN(__builtin_ia32_undef128, "V2d", "ncV:128:", "")

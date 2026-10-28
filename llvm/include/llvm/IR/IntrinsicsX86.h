@@ -1078,6 +1078,7 @@ enum X86Intrinsics : unsigned {
     x86_fma_vfmaddsub_pd_256,                        // llvm.x86.fma.vfmaddsub.pd.256
     x86_fma_vfmaddsub_ps,                            // llvm.x86.fma.vfmaddsub.ps
     x86_fma_vfmaddsub_ps_256,                        // llvm.x86.fma.vfmaddsub.ps.256
+    x86_fnop,                                        // llvm.x86.fnop
     x86_fxrstor,                                     // llvm.x86.fxrstor
     x86_fxrstor64,                                   // llvm.x86.fxrstor64
     x86_fxsave,                                      // llvm.x86.fxsave

@@ -3428,6 +3428,8 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   }
   case X86::BI__builtin_ia32_clts:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_clts, {});
+  case X86::BI__builtin_ia32_fnop:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_fnop, {});
   case X86::BI__svm_skinit:
   case X86::BI__builtin_ia32_skinit: {
     auto *Call =

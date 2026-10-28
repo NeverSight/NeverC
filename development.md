@@ -537,6 +537,27 @@ dialects. Isolated Linux x64 children additionally compare real CPL3 #UD faults
 with independently encoded bytes. Controlled output injection qualifies
 compiler transport, not successful privileged enclave operations.
 
+### Native FNOP
+
+`__builtin_ia32_fnop()` emits `llvm.x86.fnop()` and the original `d9 d0`
+instruction. FNOP waits for pending x87 exceptions and updates the processor's
+x87 instruction pointer; it is observable even though it performs no numeric
+operation. The descriptor reads FPCW/FPSW, writes FPSW, may raise an FP exception
+and retains conservative memory ordering. It does not invalidate x87 or MMX
+payloads. The frontend accepts no arguments and returns void.
+
+The MMX state test targets cover intrinsic attributes, descriptor effects and
+O0/O2 IR/assembly on ELF, COFF and Mach-O. The full LLVM fork additionally
+covers i386 and rejects malformed intrinsic declarations. Run
+`tests/neverc/X86/verify_fnop_state.py --llc /path/to/llc --neverc /path/to/neverc
+--clang /path/to/clang --output-dir /path/to/new-directory` on native Intel
+Linux x64 to retain independent byte-oracle and generated-code observations.
+Supplying both tools also checks NeverC text IR through the full LLVM fork.
+Each compiler/optimization profile checks 48 CW, defined SW, TOP, tag, payload
+and FIP observations plus two pending #MF faults in isolated child processes.
+Undefined condition bits are excluded. This does not qualify other CPUs,
+privileged #NM conditions, or FEMMS hardware execution.
+
 ### Native FEMMS and legacy MMX IR
 
 `__builtin_ia32_femms()` already has a native frontend and embedded-backend

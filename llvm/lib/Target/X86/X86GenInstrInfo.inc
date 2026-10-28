@@ -20987,7 +20987,7 @@ struct X86InstrTable {
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5521];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[772];
+  MCPhysReg ImplicitOps[775];
 };
 
 } // end namespace llvm
@@ -38254,7 +38254,7 @@ extern const X86InstrTable X86Descs = {
     { 1330,	5,	0,	0,	763,	1,	1,	X86ImpOpBase + 216,	209,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x6e80000027ULL },  // Inst #1330 = FNSTSWm
     { 1329,	0,	0,	0,	729,	1,	2,	X86ImpOpBase + 213,	1,	0, 0x6f80000060ULL },  // Inst #1329 = FNSTSW16r
     { 1328,	5,	0,	0,	669,	1,	1,	X86ImpOpBase + 66,	209,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x6c80000027ULL },  // Inst #1328 = FNSTCW16m
-    { 1327,	0,	0,	0,	720,	0,	1,	X86ImpOpBase + 36,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6c80000050ULL },  // Inst #1327 = FNOP
+    { 1327,	0,	0,	0,	720,	2,	1,	X86ImpOpBase + 772,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::MayRaiseFPException)|(1ULL<<MCID::UnmodeledSideEffects), 0x6c80000050ULL },  // Inst #1327 = FNOP
     { 1326,	0,	0,	0,	694,	0,	2,	X86ImpOpBase + 211,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6d80000063ULL },  // Inst #1326 = FNINIT
     { 1325,	0,	0,	0,	683,	0,	1,	X86ImpOpBase + 36,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6d80000062ULL },  // Inst #1325 = FNCLEX
     { 1324,	0,	0,	0,	146,	1,	1,	X86ImpOpBase + 66,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6c8000006bULL },  // Inst #1324 = FLDPI
@@ -40876,6 +40876,7 @@ extern const X86InstrTable X86Descs = {
     /* 751 */ X86::RAX, X86::RCX, X86::RDX, X86::RAX, X86::RCX, X86::RDX, X86::EFLAGS,
     /* 758 */ X86::RAX, X86::RCX, X86::RDX, X86::RDI, X86::RAX, X86::RCX, X86::RDX, X86::RDI, X86::EFLAGS,
     /* 767 */ X86::EAX, X86::ECX, X86::EAX, X86::ECX, X86::EDX,
+    /* 772 */ X86::FPCW, X86::FPSW, X86::FPSW,
   }
 };
 

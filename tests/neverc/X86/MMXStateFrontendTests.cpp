@@ -11,6 +11,63 @@
 
 class X86MMXStateTest : public NeverCTest {};
 
+TEST_F(X86MMXStateTest, FnopIsANativeWaitingStateOperation) {
+  const auto Source = tmpFile("fnop-state.c");
+  writeFile(Source, R"(
+#if !__has_builtin(__builtin_ia32_fnop)
+#error missing native FNOP
+#endif
+void step(unsigned *p, unsigned value) {
+  *p = value;
+  __builtin_ia32_fnop();
+  __builtin_ia32_fnop();
+  *p = 0;
+}
+)");
+  for (const char *Target : {"x86_64-unknown-linux-gnu",
+                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"})
+      for (bool IR : {false, true}) {
+        SCOPED_TRACE(Target);
+        SCOPED_TRACE(Opt);
+        const auto Output = tmpFile(IR ? "fnop.ll" : "fnop.s");
+        std::vector<std::string> Args = {std::string("--target=") + Target,
+                                         Opt,
+                                         "-fno-builtin-mimalloc",
+                                         "-fno-lto",
+                                         "-ffreestanding",
+                                         "-mllvm",
+                                         "-verify-machineinstrs",
+                                         "-S",
+                                         Source.string(),
+                                         "-o",
+                                         Output.string()};
+        if (IR)
+          Args.push_back("-emit-llvm");
+        const auto Result = ncc(Args);
+        ASSERT_EQ(Result.exitCode, 0) << Result.err;
+        const auto Text = readFile(Output);
+        EXPECT_EQ(Text.find(IR ? " asm " : "#APP"), std::string::npos);
+        const std::regex Operation(IR ? "call void @llvm\\.x86\\.fnop\\("
+                                      : "\\tfnop[ \\t]*[\\r\\n]");
+        EXPECT_EQ(std::distance(
+                      std::sregex_iterator(Text.begin(), Text.end(), Operation),
+                      std::sregex_iterator()),
+                  2)
+            << Text;
+        if (IR) {
+          EXPECT_LT(Text.find("store i32"),
+                    Text.find("call void @llvm.x86.fnop"));
+          EXPECT_NE(
+              Text.find("store i32 0", Text.rfind("call void @llvm.x86.fnop")),
+              std::string::npos)
+              << Text;
+        }
+      }
+  writeFile(Source, "void bad(void) { __builtin_ia32_fnop(1); }\n");
+  EXPECT_NE(ncc({"-fsyntax-only", Source.string()}).exitCode, 0);
+}
+
 TEST_F(X86MMXStateTest, FinalResetFollowsMmxOperationsAndIntegerExtraction) {
   const auto Source = tmpFile("mmx-cleanup.c");
   for (const char *Reset : {"emms", "femms"}) {

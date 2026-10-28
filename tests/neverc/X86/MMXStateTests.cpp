@@ -15,6 +15,49 @@
 
 using namespace llvm;
 
+TEST(X86MMXState, FnopRetainsWaitingAndStatusDependencies) {
+  LLVMInitializeX86TargetInfo();
+  LLVMInitializeX86Target();
+  LLVMInitializeX86TargetMC();
+  const char *Triple = "x86_64-unknown-linux-gnu";
+  std::string Error;
+  const auto *Target = TargetRegistry::lookupTarget(Triple, Error);
+  ASSERT_NE(Target, nullptr) << Error;
+  std::unique_ptr<TargetMachine> TM(
+      Target->createTargetMachine(Triple, "generic", "", {}, std::nullopt));
+  ASSERT_NE(TM, nullptr);
+  const auto *Instructions = TM->getMCInstrInfo();
+  const auto *Registers = TM->getMCRegisterInfo();
+  unsigned Matches = 0;
+  for (unsigned I = 0; I < Instructions->getNumOpcodes(); ++I) {
+    if (Instructions->getName(I) != "FNOP")
+      continue;
+    ++Matches;
+    const auto &Instruction = Instructions->get(I);
+    EXPECT_TRUE(Instruction.hasUnmodeledSideEffects());
+    EXPECT_TRUE(Instruction.mayRaiseFPException());
+    EXPECT_TRUE(Instruction.mayLoad());
+    EXPECT_TRUE(Instruction.mayStore());
+    std::set<std::string> Uses, Defs;
+    for (auto Register : Instruction.implicit_uses())
+      Uses.insert(Registers->getName(Register));
+    for (auto Register : Instruction.implicit_defs())
+      Defs.insert(Registers->getName(Register));
+    EXPECT_EQ(Uses, (std::set<std::string>{"FPCW", "FPSW"}));
+    EXPECT_EQ(Defs, (std::set<std::string>{"FPSW"}));
+  }
+  EXPECT_EQ(Matches, 1U);
+  LLVMContext Context;
+  Module M("fnop-state", Context);
+  auto *F = Intrinsic::getDeclaration(&M, Intrinsic::x86_fnop);
+  EXPECT_TRUE(F->getReturnType()->isVoidTy());
+  EXPECT_TRUE(F->arg_empty());
+  EXPECT_FALSE(F->onlyReadsMemory());
+  EXPECT_FALSE(F->onlyWritesMemory());
+  EXPECT_FALSE(F->doesNotReturn());
+  EXPECT_FALSE(F->hasFnAttribute(Attribute::WillReturn));
+}
+
 TEST(X86MMXState, FemmsInvalidatesTheCompleteRegisterBank) {
   LLVMInitializeX86TargetInfo();
   LLVMInitializeX86Target();
