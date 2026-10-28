@@ -378,7 +378,7 @@
     vp_zext,                                   // llvm.vp.zext
     vscale,                                    // llvm.vscale
     write_register,                            // llvm.write_register
-    num_intrinsics = 3488
+    num_intrinsics = 3490
 #endif
 
 // llvm::Intrinsic::IITDescriptor::ArgKind

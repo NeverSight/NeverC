@@ -1074,11 +1074,13 @@ enum X86Intrinsics : unsigned {
     x86_enqcmds,                                     // llvm.x86.enqcmds
     x86_flags_read_u64,                              // llvm.x86.flags.read.u64
     x86_flags_write_u64,                             // llvm.x86.flags.write.u64
+    x86_fldcw,                                       // llvm.x86.fldcw
     x86_fma_vfmaddsub_pd,                            // llvm.x86.fma.vfmaddsub.pd
     x86_fma_vfmaddsub_pd_256,                        // llvm.x86.fma.vfmaddsub.pd.256
     x86_fma_vfmaddsub_ps,                            // llvm.x86.fma.vfmaddsub.ps
     x86_fma_vfmaddsub_ps_256,                        // llvm.x86.fma.vfmaddsub.ps.256
     x86_fnop,                                        // llvm.x86.fnop
+    x86_fnstcw,                                      // llvm.x86.fnstcw
     x86_fxrstor,                                     // llvm.x86.fxrstor
     x86_fxrstor64,                                   // llvm.x86.fxrstor64
     x86_fxsave,                                      // llvm.x86.fxsave

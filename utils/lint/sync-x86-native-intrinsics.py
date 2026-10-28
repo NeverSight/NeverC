@@ -25,6 +25,8 @@ DECLARATIONS = {
     "invvpid": ("I8", "I64", "PTR"),
     "clts": ("Done",),
     "fnop": ("Done",),
+    "fnstcw": ("Done", "PTR"),
+    "fldcw": ("Done", "PTR"),
     "wrmsrns": ("Done", "I32", "I64"),
     "rdmsrlist": ("I64", "PTR", "PTR", "I64"),
     "wrmsrlist": ("I64", "PTR", "PTR", "I64"),

@@ -558,6 +558,45 @@ and FIP observations plus two pending #MF faults in isolated child processes.
 Undefined condition bits are excluded. This does not qualify other CPUs,
 privileged #NM conditions, or FEMMS hardware execution.
 
+### Native x87 control words
+
+`__builtin_ia32_fnstcw(unsigned short *)` and
+`__builtin_ia32_fldcw(const unsigned short *)` emit the fixed pointer interfaces
+`llvm.x86.fnstcw` and `llvm.x86.fldcw`. Both return void and retain their actual
+two-byte memory access, including unaligned addresses and memory faults.
+FNSTCW does not wait for pending x87 exceptions. FLDCW checks pending exceptions
+using the old control state; newly unmasked exceptions are delivered at the next
+waiting instruction. Undefined condition-code bits are not promised to survive.
+
+The IR interfaces have conservative memory effects. Their DAG memory operations
+are volatile and aligned to one byte. The FLDCW descriptor reads FPCW/FPSW,
+writes FPCW/FPSW and may raise an FP exception. FNSTCW reads FPCW, writes FPSW
+and stores through its memory operand. The generated instruction table remains
+owned by `sync-x86-system-effects.py`; its register-sequence selection must be
+stable even when an appended sequence overlaps the previous table tail.
+
+`X86X87ControlTest` checks header-free builtins, pointer qualification, and
+O0/O2 native IR/assembly on ELF, COFF and Mach-O. `X86X87Control` checks
+intrinsic and descriptor effects. Run
+`tests/neverc/X86/verify_x87_control.py --llc /path/to/llc
+--neverc /path/to/neverc --clang /path/to/clang
+--output-dir /path/to/new-directory` on native Linux x64 for an independent
+byte-oracle comparison. Each compiler/optimization profile retains 1,152 state
+observations, four page-boundary accesses and 26 fault/nonfault cases, including
+20 expected faults. The test observes stores before the fault, the faulting
+opcode and saved control/status state. Children exit in their signal handler;
+generated code is never resumed by guessing an instruction length. Supplying
+both tools also checks NeverC text IR through the full LLVM fork. Other CPUs,
+i386 execution, privileged #NM and alignment-check exceptions are outside this
+harness's qualification.
+
+The full LLVM O2 profile first runs `opt -passes=default<O2>`; `--opt` defaults
+to the sibling of `--llc`. Compiler/script inputs must remain unchanged during
+execution, and the record hashes every retained source, object, executable and
+output. Six O0/O2 profiles on an Intel Core i9-13900H Linux x64 host pass 6,912
+state observations, 120 expected faults and 24 page-boundary accesses. Their
+recorded outputs agree across direct LLVM, NeverC and the text-IR bridge.
+
 ### Native FEMMS and legacy MMX IR
 
 `__builtin_ia32_femms()` already has a native frontend and embedded-backend

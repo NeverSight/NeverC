@@ -18,6 +18,9 @@ EFFECTS = {
     "CLTS": (0, (), (), ()),
     "FNOP": (0, ("FPCW", "FPSW"), ("FPSW",),
              ("MayLoad", "MayStore", "MayRaiseFPException")),
+    "FNSTCW16m": (5, ("FPCW",), ("FPSW",), ("MayStore",)),
+    "FLDCW16m": (5, ("FPCW", "FPSW"), ("FPSW", "FPCW"),
+                ("MayLoad", "MayRaiseFPException")),
     "VMLOAD64": (0, ("RAX",), (), ("MayLoad",)),
     "VMSAVE64": (0, ("RAX",), (), ("MayStore",)),
     "INVLPGA64": (0, ("RAX", "ECX"), (), ()),
@@ -118,7 +121,9 @@ def implicit_sequence(text, sequence):
     text = text[:end] + addition + text[end:]
     text = re.sub(r"MCPhysReg ImplicitOps\[\d+\];",
                   f"MCPhysReg ImplicitOps[{declared + len(sequence)}];", text, count=1)
-    return text, declared
+    # Appending can create an earlier match across the old/new boundary.
+    # Resolve that canonical offset now, so a second run produces no changes.
+    return implicit_sequence(text, sequence)
 
 
 def synchronize(text):

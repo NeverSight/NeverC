@@ -28101,6 +28101,19 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       return SDValue(DAG.getMachineNode(X86::FNOP, SDLoc(Op), MVT::Other,
                                         Op.getOperand(0)),
                      0);
+    case Intrinsic::x86_fnstcw:
+    case Intrinsic::x86_fldcw: {
+      const bool Store = IntNo == Intrinsic::x86_fnstcw;
+      const SDValue Ops[] = {Op.getOperand(0), Op.getOperand(2)};
+      // These APIs expose the original memory operation, including faults.
+      // Do not assume alignment or discard a repeated control-state access.
+      return DAG.getMemIntrinsicNode(
+          Store ? X86ISD::FNSTCW16m : X86ISD::FLDCW16m, SDLoc(Op),
+          DAG.getVTList(MVT::Other), Ops, MVT::i16, MachinePointerInfo(),
+          Align(1),
+          MachineMemOperand::MOVolatile |
+              (Store ? MachineMemOperand::MOStore : MachineMemOperand::MOLoad));
+    }
     case llvm::Intrinsic::x86_clts:
       return SDValue(DAG.getMachineNode(X86::CLTS, SDLoc(Op), MVT::Other,
                                         Op.getOperand(0)),

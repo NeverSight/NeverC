@@ -20987,7 +20987,7 @@ struct X86InstrTable {
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5521];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[775];
+  MCPhysReg ImplicitOps[779];
 };
 
 } // end namespace llvm
@@ -38263,7 +38263,7 @@ extern const X86InstrTable X86Descs = {
     { 1321,	0,	0,	0,	146,	1,	1,	X86ImpOpBase + 66,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6c80000069ULL },  // Inst #1321 = FLDL2T
     { 1320,	0,	0,	0,	146,	1,	1,	X86ImpOpBase + 66,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6c8000006aULL },  // Inst #1320 = FLDL2E
     { 1319,	5,	0,	0,	871,	0,	2,	X86ImpOpBase + 211,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x6c80000024ULL },  // Inst #1319 = FLDENVm
-    { 1318,	5,	0,	0,	656,	0,	2,	X86ImpOpBase + 211,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x6c80000025ULL },  // Inst #1318 = FLDCW16m
+    { 1318,	5,	0,	0,	656,	2,	2,	X86ImpOpBase + 772,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayRaiseFPException)|(1ULL<<MCID::UnmodeledSideEffects), 0x6c80000025ULL },  // Inst #1318 = FLDCW16m
     { 1317,	0,	0,	0,	817,	0,	1,	X86ImpOpBase + 36,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6c80000077ULL },  // Inst #1317 = FINCSTP
     { 1316,	5,	0,	0,	776,	1,	1,	X86ImpOpBase + 66,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayRaiseFPException)|(1ULL<<MCID::UnmodeledSideEffects), 0x6d00000023ULL },  // Inst #1316 = FICOMP32m
     { 1315,	5,	0,	0,	776,	1,	1,	X86ImpOpBase + 66,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayRaiseFPException)|(1ULL<<MCID::UnmodeledSideEffects), 0x6f00000023ULL },  // Inst #1315 = FICOMP16m
@@ -40877,6 +40877,7 @@ extern const X86InstrTable X86Descs = {
     /* 758 */ X86::RAX, X86::RCX, X86::RDX, X86::RDI, X86::RAX, X86::RCX, X86::RDX, X86::RDI, X86::EFLAGS,
     /* 767 */ X86::EAX, X86::ECX, X86::EAX, X86::ECX, X86::EDX,
     /* 772 */ X86::FPCW, X86::FPSW, X86::FPSW,
+    /* 775 */ X86::FPCW, X86::FPSW, X86::FPSW, X86::FPCW,
   }
 };
 

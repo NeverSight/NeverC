@@ -1,5 +1,5 @@
 add_executable(neverc-x86-backend-tests
-  AtomicMemoryTests.cpp MMXStateTests.cpp TransactionTests.cpp)
+  AtomicMemoryTests.cpp MMXStateTests.cpp TransactionTests.cpp X87ControlTests.cpp)
 target_link_libraries(neverc-x86-backend-tests PRIVATE
   GTest::gtest
   GTest::gtest_main

@@ -15,6 +15,10 @@ BUILTIN(__builtin_cpu_is, "bcC*", "nc")
 
 // Waiting x87 state operation, including pending exceptions and FIP effects.
 BUILTIN(__builtin_ia32_fnop, "v", "n")
+// Two-byte memory operations on the x87 control word. FNSTCW does not wait;
+// FLDCW checks pending exceptions before reading its operand.
+BUILTIN(__builtin_ia32_fnstcw, "vUs*", "n")
+BUILTIN(__builtin_ia32_fldcw, "vUsC*", "n")
 
 // Undefined Values
 //
