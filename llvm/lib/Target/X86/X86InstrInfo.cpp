@@ -8527,8 +8527,8 @@ bool X86InstrInfo::isSchedulingBoundary(const MachineInstr &MI,
 
   // Physical MMX clobbers do not constrain virtual MMX registers before
   // allocation. Moving their operations or copies across a reset can
-  // recreate nonempty x87 tags after the caller's final EMMS/FEMMS.
-  if (Opcode == X86::MMX_EMMS || Opcode == X86::FEMMS)
+  // recreate nonempty x87 tags after the caller's final reset.
+  if (Opcode == X86::MMX_EMMS || Opcode == X86::FEMMS || Opcode == X86::FNINIT)
     return true;
 
   return TargetInstrInfo::isSchedulingBoundary(MI, MBB, MF);

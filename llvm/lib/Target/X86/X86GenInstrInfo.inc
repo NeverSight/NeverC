@@ -20987,7 +20987,7 @@ struct X86InstrTable {
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5521];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[779];
+  MCPhysReg ImplicitOps[805];
 };
 
 } // end namespace llvm
@@ -21372,7 +21372,7 @@ extern const X86InstrTable X86Descs = {
     { 18212,	1,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	202,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5700003032ULL },  // Inst #18212 = WRFSBASE
     { 18211,	0,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x480003001ULL },  // Inst #18211 = WBNOINVD
     { 18210,	0,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x480002001ULL },  // Inst #18210 = WBINVD
-    { 18209,	0,	0,	0,	625,	0,	1,	X86ImpOpBase + 36,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x4d80000001ULL },  // Inst #18209 = WAIT
+    { 18209,	0,	0,	0,	625,	2,	1,	X86ImpOpBase + 772,	1,	0|(1ULL<<MCID::MayRaiseFPException)|(1ULL<<MCID::UnmodeledSideEffects), 0x4d80000001ULL },  // Inst #18209 = WAIT
     { 18208,	0,	0,	0,	783,	0,	16,	X86ImpOpBase + 508,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x3ba0002001ULL },  // Inst #18208 = VZEROUPPER
     { 18207,	0,	0,	0,	782,	0,	16,	X86ImpOpBase + 508,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x13ba0002001ULL },  // Inst #18207 = VZEROALL
     { 18206,	3,	1,	0,	1026,	0,	0,	X86ImpOpBase + 0,	1405,	0|(1ULL<<MCID::Commutable), 0xaba8002029ULL },  // Inst #18206 = VXORPSrr
@@ -38251,12 +38251,12 @@ extern const X86InstrTable X86Descs = {
     { 1333,	6,	0,	0,	0,	0,	1,	X86ImpOpBase + 0,	783,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UsesCustomInserter), 0x0ULL },  // Inst #1333 = FP80_TO_INT16_IN_MEM
     { 1332,	3,	1,	0,	0,	0,	1,	X86ImpOpBase + 0,	462,	0|(1ULL<<MCID::UsesCustomInserter), 0x0ULL },  // Inst #1332 = FP80_ADDr
     { 1331,	7,	1,	0,	0,	0,	1,	X86ImpOpBase + 0,	465,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UsesCustomInserter), 0x0ULL },  // Inst #1331 = FP80_ADDm32
-    { 1330,	5,	0,	0,	763,	1,	1,	X86ImpOpBase + 216,	209,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x6e80000027ULL },  // Inst #1330 = FNSTSWm
-    { 1329,	0,	0,	0,	729,	1,	2,	X86ImpOpBase + 213,	1,	0, 0x6f80000060ULL },  // Inst #1329 = FNSTSW16r
+    { 1330,	5,	0,	0,	763,	1,	1,	X86ImpOpBase + 215,	209,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x6e80000027ULL },  // Inst #1330 = FNSTSWm
+    { 1329,	0,	0,	0,	729,	1,	2,	X86ImpOpBase + 213,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6f80000060ULL },  // Inst #1329 = FNSTSW16r
     { 1328,	5,	0,	0,	669,	1,	1,	X86ImpOpBase + 66,	209,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x6c80000027ULL },  // Inst #1328 = FNSTCW16m
     { 1327,	0,	0,	0,	720,	2,	1,	X86ImpOpBase + 772,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::MayRaiseFPException)|(1ULL<<MCID::UnmodeledSideEffects), 0x6c80000050ULL },  // Inst #1327 = FNOP
-    { 1326,	0,	0,	0,	694,	0,	2,	X86ImpOpBase + 211,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6d80000063ULL },  // Inst #1326 = FNINIT
-    { 1325,	0,	0,	0,	683,	0,	1,	X86ImpOpBase + 36,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6d80000062ULL },  // Inst #1325 = FNCLEX
+    { 1326,	0,	0,	0,	694,	0,	26,	X86ImpOpBase + 779,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6d80000063ULL },  // Inst #1326 = FNINIT
+    { 1325,	0,	0,	0,	683,	1,	1,	X86ImpOpBase + 215,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6d80000062ULL },  // Inst #1325 = FNCLEX
     { 1324,	0,	0,	0,	146,	1,	1,	X86ImpOpBase + 66,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6c8000006bULL },  // Inst #1324 = FLDPI
     { 1323,	0,	0,	0,	146,	1,	1,	X86ImpOpBase + 66,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6c8000006dULL },  // Inst #1323 = FLDLN2
     { 1322,	0,	0,	0,	146,	1,	1,	X86ImpOpBase + 66,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x6c8000006cULL },  // Inst #1322 = FLDLG2
@@ -40878,6 +40878,7 @@ extern const X86InstrTable X86Descs = {
     /* 767 */ X86::EAX, X86::ECX, X86::EAX, X86::ECX, X86::EDX,
     /* 772 */ X86::FPCW, X86::FPSW, X86::FPSW,
     /* 775 */ X86::FPCW, X86::FPSW, X86::FPSW, X86::FPCW,
+    /* 779 */ X86::FPSW, X86::FPCW, X86::FP0, X86::FP1, X86::FP2, X86::FP3, X86::FP4, X86::FP5, X86::FP6, X86::FP7, X86::ST0, X86::ST1, X86::ST2, X86::ST3, X86::ST4, X86::ST5, X86::ST6, X86::ST7, X86::MM0, X86::MM1, X86::MM2, X86::MM3, X86::MM4, X86::MM5, X86::MM6, X86::MM7,
   }
 };
 

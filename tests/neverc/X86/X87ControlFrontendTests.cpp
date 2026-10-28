@@ -87,3 +87,92 @@ TEST_F(X86X87ControlTest, BuiltinsRequireOneCorrectlyQualifiedPointer) {
     EXPECT_NE(ncc({"-Werror", "-fsyntax-only", Source.string()}).exitCode, 0);
   }
 }
+
+TEST_F(X86X87ControlTest, StatusAndResetOperationsUseNativeIntrinsics) {
+  const auto Source = tmpFile("x87-status.c");
+  writeFile(Source, R"(
+#if !__has_builtin(__builtin_ia32_fnstsw) || \
+    !__has_builtin(__builtin_ia32_fnstsw_mem) || \
+    !__has_builtin(__builtin_ia32_fnclex) || \
+    !__has_builtin(__builtin_ia32_fninit) || \
+    !__has_builtin(__builtin_ia32_fwait)
+#error missing native x87 status builtins
+#endif
+unsigned short step(unsigned short *out, unsigned *marker) {
+  *marker = 17;
+  __builtin_ia32_fnstsw();
+  __builtin_ia32_fnstsw_mem(out);
+  __builtin_ia32_fnclex();
+  unsigned short value = __builtin_ia32_fnstsw();
+  __builtin_ia32_fninit();
+  __builtin_ia32_fwait();
+  __builtin_ia32_fwait();
+  *marker = 23;
+  return value;
+}
+)");
+  for (const char *Target : {"x86_64-unknown-linux-gnu",
+                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"})
+      for (bool IR : {false, true}) {
+        SCOPED_TRACE(Target);
+        SCOPED_TRACE(Opt);
+        const auto Output = tmpFile(IR ? "status.ll" : "status.s");
+        std::vector<std::string> Args = {std::string("--target=") + Target,
+                                         Opt,
+                                         "-fno-builtin-mimalloc",
+                                         "-fno-lto",
+                                         "-ffreestanding",
+                                         "-mllvm",
+                                         "-verify-machineinstrs",
+                                         "-S",
+                                         Source.string(),
+                                         "-o",
+                                         Output.string()};
+        if (IR)
+          Args.push_back("-emit-llvm");
+        const auto Result = ncc(Args);
+        ASSERT_EQ(Result.exitCode, 0) << Result.err;
+        const auto Text = readFile(Output);
+        EXPECT_EQ(Text.find(IR ? " asm " : "#APP"), std::string::npos);
+        for (const char *Operation :
+             {"fnstsw", "fnstsw.mem", "fnclex", "fninit", "fwait"}) {
+          std::string Pattern;
+          unsigned Expected = 1;
+          if (IR) {
+            Pattern = "call .* @llvm\\.x86\\." + std::string(Operation) + "\\(";
+            if (std::string(Operation) == "fnstsw" ||
+                std::string(Operation) == "fwait")
+              Expected = 2;
+          } else {
+            if (std::string(Operation) == "fnstsw.mem")
+              continue;
+            const bool Wait = std::string(Operation) == "fwait";
+            Pattern = "\\t" + (Wait ? "wait" : std::string(Operation)) +
+                      "([ \\t\\r\\n])";
+            Expected = Wait ? 2 : std::string(Operation) == "fnstsw" ? 3 : 1;
+          }
+          const std::regex Expression(Pattern);
+          EXPECT_EQ(std::distance(std::sregex_iterator(Text.begin(), Text.end(),
+                                                       Expression),
+                                  std::sregex_iterator()),
+                    Expected)
+              << Operation << '\n'
+              << Text;
+        }
+      }
+}
+
+TEST_F(X86X87ControlTest, StatusBuiltinsRejectWrongOperands) {
+  const auto Source = tmpFile("x87-status-signature.c");
+  for (const char *Call :
+       {"__builtin_ia32_fnstsw(0)", "__builtin_ia32_fnstsw_mem()",
+        "__builtin_ia32_fnstsw_mem(1)", "__builtin_ia32_fnstsw_mem(p)",
+        "__builtin_ia32_fnstsw_mem(p, p)", "__builtin_ia32_fnclex(0)",
+        "__builtin_ia32_fninit(0)", "__builtin_ia32_fwait(0)"}) {
+    SCOPED_TRACE(Call);
+    writeFile(Source, "void bad(const unsigned short *p) { " +
+                          std::string(Call) + "; }\n");
+    EXPECT_NE(ncc({"-Werror", "-fsyntax-only", Source.string()}).exitCode, 0);
+  }
+}

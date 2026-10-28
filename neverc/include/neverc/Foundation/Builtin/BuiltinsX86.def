@@ -19,6 +19,12 @@ BUILTIN(__builtin_ia32_fnop, "v", "n")
 // FLDCW checks pending exceptions before reading its operand.
 BUILTIN(__builtin_ia32_fnstcw, "vUs*", "n")
 BUILTIN(__builtin_ia32_fldcw, "vUsC*", "n")
+// Native nonwaiting status/reset operations and explicit exception wait.
+BUILTIN(__builtin_ia32_fnstsw, "Us", "n")
+BUILTIN(__builtin_ia32_fnstsw_mem, "vUs*", "n")
+BUILTIN(__builtin_ia32_fnclex, "v", "n")
+BUILTIN(__builtin_ia32_fninit, "v", "n")
+BUILTIN(__builtin_ia32_fwait, "v", "n")
 
 // Undefined Values
 //

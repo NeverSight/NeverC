@@ -5,13 +5,7 @@ Retain state, exact two-byte memory extent, waiting and page-fault observations.
 Faults run in children; the harness never resumes through generated instructions.
 """
 
-import argparse
-import hashlib
-import json
-from pathlib import Path
-import platform
-import subprocess
-
+from x87_native_qualification import run_qualification
 
 HARNESS = r'''
 #define _GNU_SOURCE
@@ -205,116 +199,34 @@ int main(void) {
 '''
 
 
-def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def source(ir):
+    operations = "\n".join(
+        (f"declare void @llvm.x86.{instruction}(ptr)\n"
+         f"define void @generated_{name}(ptr %p, ptr %marker) {{\n"
+         f"store i32 17, ptr %marker\ncall void @llvm.x86.{instruction}(ptr %p)\n"
+         "store i32 23, ptr %marker\nret void\n}\n")
+        if ir else
+        (f"void generated_{name}(void *p, unsigned *marker) {{\n"
+         f"*marker=17; __builtin_ia32_{instruction}(p); *marker=23;\n}}\n")
+        for name, instruction in (("store", "fnstcw"), ("load", "fldcw")))
+    unmask = ("declare void @llvm.x86.fnop()\n"
+              "define void @generated_unmask(ptr %p, ptr %marker) {\n"
+              "store i32 17, ptr %marker\ncall void @llvm.x86.fldcw(ptr %p)\n"
+              "store i32 23, ptr %marker\ncall void @llvm.x86.fnop()\n"
+              "store i32 29, ptr %marker\nret void\n}\n"
+              if ir else
+              "void generated_unmask(void *p, unsigned *marker) {\n"
+              "*marker=17; __builtin_ia32_fldcw(p); *marker=23;\n"
+              "__builtin_ia32_fnop(); *marker=29;\n}\n")
+    return operations + unmask
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--llc", type=Path)
-    parser.add_argument("--opt", type=Path,
-                        help="LLVM optimizer; defaults to the sibling of --llc")
-    parser.add_argument("--neverc", type=Path)
-    parser.add_argument("--clang", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    args = parser.parse_args()
-    if not args.llc and not args.neverc:
-        parser.error("provide --llc and/or --neverc")
-    if platform.system() != "Linux" or platform.machine() != "x86_64":
-        parser.error("native Linux x64 is required")
-    if args.llc and not args.opt:
-        args.opt = args.llc.with_name("opt")
-    tools = {str(path.resolve()): digest(path.resolve())
-             for path in (args.llc, args.opt, args.neverc, args.clang) if path}
-    script_hash = digest(Path(__file__))
-    root = args.output_dir.resolve()
-    root.mkdir(parents=True, exist_ok=False)
-    (root / "cpuinfo.txt").write_text(Path("/proc/cpuinfo").read_text())
-    harness = root / "harness.c"
-    harness.write_text(HARNESS)
-    commands, observations = [], []
-
-    def run(command, name):
-        command = list(map(str, command))
-        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
-        (root / (name + ".stdout")).write_text(result.stdout)
-        (root / (name + ".stderr")).write_text(result.stderr)
-        commands.append({"argv": command, "returncode": result.returncode})
-        (root / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
-        result.check_returncode()
-        return result.stdout
-
-    profiles = [name for name in ("llc", "neverc") if getattr(args, name)]
-    if args.llc and args.neverc:
-        profiles.append("neverc-llvm")
-    for compiler in profiles:
-        tool = (args.llc if compiler == "llc" else args.neverc).resolve()
-        source = root / (compiler + (".ll" if compiler == "llc" else ".c"))
-        source.write_text("\n".join(
-            (f"declare void @llvm.x86.{instruction}(ptr)\n"
-             f"define void @generated_{name}(ptr %p, ptr %marker) {{\n"
-             f"store i32 17, ptr %marker\ncall void @llvm.x86.{instruction}(ptr %p)\n"
-             "store i32 23, ptr %marker\nret void\n}\n")
-            if compiler == "llc" else
-            (f"void generated_{name}(void *p, unsigned *marker) {{\n"
-             f"*marker=17; __builtin_ia32_{instruction}(p); *marker=23;\n}}\n")
-            for name, instruction in (("store", "fnstcw"), ("load", "fldcw"))) +
-            ("declare void @llvm.x86.fnop()\n"
-             "define void @generated_unmask(ptr %p, ptr %marker) {\n"
-             "store i32 17, ptr %marker\ncall void @llvm.x86.fldcw(ptr %p)\n"
-             "store i32 23, ptr %marker\ncall void @llvm.x86.fnop()\n"
-             "store i32 29, ptr %marker\nret void\n}\n"
-             if compiler == "llc" else
-             "void generated_unmask(void *p, unsigned *marker) {\n"
-             "*marker=17; __builtin_ia32_fldcw(p); *marker=23;\n"
-             "__builtin_ia32_fnop(); *marker=29;\n}\n"))
-        for opt in (0, 2):
-            name = f"{compiler}-O{opt}"
-            obj, binary = root / (name + ".o"), root / name
-            if compiler == "llc":
-                ir = source
-                if opt:
-                    ir = root / (name + ".ll")
-                    run([args.opt.resolve(), "-S", "-passes=default<O2>",
-                         source, "-o", ir], name + "-optimize")
-                command = [tool, "-mtriple=x86_64-unknown-linux-gnu",
-                           "-verify-machineinstrs", "-filetype=obj", f"-O{opt}", ir, "-o", obj]
-            elif compiler == "neverc":
-                command = [tool, "--target=x86_64-unknown-linux-gnu", "-fno-lto",
-                           "-fno-builtin-mimalloc", "-c", f"-O{opt}", source, "-o", obj]
-            else:
-                ir = root / (name + ".ll")
-                run([tool, "--target=x86_64-unknown-linux-gnu", "-fno-lto",
-                     "-fno-builtin-mimalloc", "-S", "-emit-llvm", f"-O{opt}", source,
-                     "-o", ir], name + "-frontend")
-                command = [args.llc.resolve(), "-mtriple=x86_64-unknown-linux-gnu",
-                           "-verify-machineinstrs", "-filetype=obj", f"-O{opt}", ir, "-o", obj]
-            run(command, name + "-compile")
-            run([args.clang.resolve(), "-O2", "-mno-red-zone", harness, obj,
-                 "-o", binary], name + "-link")
-            rows = [json.loads(row) for row in run([binary], name + "-execute").splitlines()]
-            result = rows[-1]
-            expected = {"state_observations": 1152, "fault_observations": 20,
-                        "fault_and_nonfault_cases": 26, "boundary_observations": 4}
-            if result != expected or len(rows) != 1183:
-                raise ValueError("incomplete native observation inventory")
-            observations.append({"profile": name, **result, "object_sha256": digest(obj),
-                                 "binary_sha256": digest(binary)})
-    if tools != {path: digest(Path(path)) for path in tools} or \
-            script_hash != digest(Path(__file__)):
-        raise ValueError("compiler or qualification script changed during execution")
-    record = {"passed": True, "profiles": observations,
-              "harness_sha256": digest(harness),
-              "script_sha256": script_hash, "stable_inputs": True,
-              "tools": tools, "platform": platform.platform(),
-              "files": {str(path.relative_to(root)): {"sha256": digest(path),
-                                                       "bytes": path.stat().st_size}
-                        for path in sorted(root.rglob("*")) if path.is_file()},
-              "exclusions": ["other CPU models", "i386 runtime", "privileged #NM",
-                             "alignment-check exceptions", "general x87 state equivalence"],
-              "reference": "independently authored D9 /7 and D9 /5 opcodes"}
-    (root / "qualification.json").write_text(json.dumps(record, indent=2) + "\n")
-    print(json.dumps({"passed": True, "profiles": len(observations)}, indent=2))
+    run_qualification(
+        __doc__, HARNESS, {"ir": source(True), "c": source(False)},
+        {"state_observations": 1152, "fault_observations": 20,
+         "fault_and_nonfault_cases": 26, "boundary_observations": 4},
+        1183, "independently authored D9 /7 and D9 /5 opcodes", __file__)
 
 
 if __name__ == "__main__":

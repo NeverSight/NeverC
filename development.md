@@ -597,6 +597,45 @@ output. Six O0/O2 profiles on an Intel Core i9-13900H Linux x64 host pass 6,912
 state observations, 120 expected faults and 24 page-boundary accesses. Their
 recorded outputs agree across direct LLVM, NeverC and the text-IR bridge.
 
+### Native x87 status, reset and wait
+
+The header-free builtins `__builtin_ia32_fnstsw()` (unsigned short),
+`__builtin_ia32_fnstsw_mem(unsigned short *)`, `__builtin_ia32_fnclex()`,
+`__builtin_ia32_fninit()` and `__builtin_ia32_fwait()` emit the fixed native
+interfaces `llvm.x86.fnstsw`, `llvm.x86.fnstsw.mem`, `llvm.x86.fnclex`,
+`llvm.x86.fninit` and `llvm.x86.fwait`. The last four return void. The memory
+status read uses a single two-byte DD /7 store even at unaligned addresses;
+it does not become FNSTSW AX followed by an ordinary C store.
+
+Status reads, clear and initialize are nonwaiting. FWAIT checks pending
+unmasked exceptions. Both FNSTSW forms read and clobber FPSW, reflecting
+undefined condition-code results. FNCLEX reads/clobbers FPSW; FWAIT additionally
+reads FPCW and may raise an FP exception. FNINIT clobbers FPCW/FPSW and every
+allocator FP, architectural ST and MMX register, with a scheduling boundary
+that prevents virtual-register operations from crossing the reset. Compiler
+values live across it must survive through spills/reloads. This allocation
+contract does not mean FNINIT erases physical register payload bits.
+
+`X86X87ControlTest` and `X86X87Control` also check these five interfaces.
+[verify_x87_status.py](tests/neverc/X86/verify_x87_status.py) accepts the same compiler options as the
+control-word harness. It compares independent DF E0, DD /7, DB E2, DB E3 and
+9B byte oracles, checks two-byte canaries and page boundaries, inspects fault
+PC/opcode/marker/saved state in children, and checks live x87/MMX values across
+FNINIT, including a realigned stack frame. The shared
+[x87_native_qualification.py](tests/neverc/X86/x87_native_qualification.py) owns compiler profiles and
+hash-based evidence recording for both harnesses. Ordinary unconstrained FP
+IR keeps its usual environment assumptions; these APIs do not establish an
+atomic owned-context transition or complete machine-state equivalence.
+
+Qualification against LLVM `5740ed1d13baa01ca5f82d82ebc927e656620b39` on the
+recorded Intel Core i9-13900H Linux x64 host passes all six direct LLVM,
+NeverC and text-IR bridge O0/O2 profiles: 34,560 state observations,
+60 expected faults, 12 page-boundary accesses and 1,536 live-value cases.
+All six outputs agree. The full x86 frontend and backend selections pass
+113 and six tests respectively. The shared-driver refactor also repeats all
+six control-word profiles with the same 6,912 state observations, 120 expected
+faults and 24 boundary accesses; generated control sources remain unchanged.
+
 ### Native FEMMS and legacy MMX IR
 
 `__builtin_ia32_femms()` already has a native frontend and embedded-backend
