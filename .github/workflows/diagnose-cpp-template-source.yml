@@ -3839,6 +3839,116 @@ jobs:
         retention-days: 7
         compression-level: 0
 
+  inspect-bind-clean360:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-clean360'
+      }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Prepare isolated frontend bootstrap evidence
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-bind-clean360-bootstrap"
+
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-bind-clean360-bootstrap/revision.txt"
+
+        python3 --version > "$RUNNER_TEMP/cpp-bind-clean360-bootstrap/runner-python.log"
+
+        '
+    - name: Set up pinned diagnostic Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Install matching host compiler and archive reader
+      run: 'set -o pipefail
+
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert
+        callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-bind-clean360-bootstrap/python.log"
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-bind-clean360-bootstrap/clang-install.log"
+
+        sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-bind-clean360-bootstrap/dependencies.log"
+
+        '
+    - name: Install the original native Clang20 and libc++20 reference toolchain
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-bind-native18/bootstrap"
+
+        set -o pipefail
+
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+
+        sudo bash "$RUNNER_TEMP/llvm.sh" 20 2>&1 | tee "$RUNNER_TEMP/cpp-bind-native18/bootstrap/compiler-install.log"
+
+        sudo apt-get install -y --allow-downgrades libc++1=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++abi1=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libunwind=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libunwind-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++abi-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 2>&1 | tee "$RUNNER_TEMP/cpp-bind-native18/bootstrap/dependencies.log"
+
+        dpkg-query -W clang-20 libc++1 libc++abi1 libunwind libunwind-20-dev libc++-20-dev libc++abi-20-dev | tee "$RUNNER_TEMP/cpp-bind-native18/bootstrap/toolchain-packages.log"
+
+        '
+    - name: Run nine fully-bound bind sources at O0 and O2
+      run: python3 utils/ci/check-cpp-bind-native18.py --repo "$GITHUB_WORKSPACE"
+        --output "$RUNNER_TEMP/cpp-bind-native18"
+    - name: Validate the complete 360-request STL matrix
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: "python3 utils/ci/check-cpp-bind-clean360.py --repo \"$GITHUB_WORKSPACE\"\
+        \ \\\n  --plan utils/ci/cpp-bind-clean360-plan.json \\\n  --output\
+        \ \"$RUNNER_TEMP/cpp-bind-clean360\" \\\n  --build \"$RUNNER_TEMP/cpp-bind-clean360-rebuild\"\
+        \n"
+      id: verify_pair_requests
+    - name: Upload small actual source and request evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-bind-clean360-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-bind-clean360
+
+          ${{ runner.temp }}/cpp-bind-clean360-bootstrap
+
+          '
+        if-no-files-found: error
+        retention-days: 14
+    - name: Keep new actual source binary remotely for further diagnosis
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-bind-clean360-binary-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
+        if-no-files-found: warn
+        compression-level: 0
+        retention-days: 7
+    - name: Retain actual current private archive remotely for source diagnosis
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-current-private-archive-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
+        if-no-files-found: warn
+        compression-level: 0
+        retention-days: 7
+    - name: Upload only bounded native reference text evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-bind-native18-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-bind-native18
+
+          !${{ runner.temp }}/cpp-bind-native18/**/native-O*'
+        if-no-files-found: error
+        retention-days: 14
+    - name: Retain eighteen real native programs remotely only
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-bind-native18-binaries-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-bind-native18/**/native-O*
+        if-no-files-found: warn
+        retention-days: 7
+        compression-level: 0
+
+
 'on':
   workflow_dispatch:
     inputs:
@@ -3901,6 +4011,7 @@ jobs:
         - not-fn-nested-clean288
         - bind-fully-bound-baseline
         - bind-source-structure
+        - bind-clean360
   push:
     branches:
     - dev
