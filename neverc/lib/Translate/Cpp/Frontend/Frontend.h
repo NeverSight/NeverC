@@ -3209,6 +3209,9 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalObjects;
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalReferences;
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalNotFnPointers;
+  // Layout metadata is separate from the final runtime operation maps.
+  std::set<const clang::CXXRecordDecl *> RequiredFunctionalBindRecords;
+  std::function<bool(const clang::CXXRecordDecl *)> CheckBindDestructionSource;
   // Empty until exact production source/body/operand/lifetime gates publish
   // their own purpose-bound certificates. A shape description never inserts.
   std::map<const clang::CXXRecordDecl *, FunctionalBindNaturalLayout> VerifiedBindRecords;
