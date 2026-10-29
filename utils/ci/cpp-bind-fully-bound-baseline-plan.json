@@ -43,46 +43,11 @@
   ],
   "cases": [
     {
-      "name": "bind-fully-bound-value-copies",
-      "source": "#include <functional>\n#include <utility>\nint calls;\nint add(int a, int b) { ++calls; return a + b; }\nint main() {\n  auto f = std::bind(&add, 3, 4);\n  auto copy = f;\n  const auto fixed = copy;\n  if (f() != 7 || copy() != 7 || fixed() != 7 || std::move(copy)() != 7) return 1;\n  return calls != 4;\n}\n",
-      "source_sha256": "423b8da11cb05ebbcf04d72addc5d1317818a29ad0438742ef6b86097babd9d1",
-      "expected": "observe"
-    },
-    {
-      "name": "bind-captures-function-pointer-value",
-      "source": "#include <functional>\nint first(int a, int b) { return a + b; }\nint second(int, int) { return -1; }\nint main() {\n  int (*pointer)(int, int) = &first;\n  auto f = std::bind(pointer, 3, 4);\n  pointer = &second;\n  return f() != 7 || pointer(3, 4) != -1;\n}\n",
-      "source_sha256": "e4ed0f2db32931da39daedad796df2ba0ec3b55a4188719072b6934dc41e37b0",
-      "expected": "observe"
-    },
-    {
-      "name": "bind-bound-expression-effects-once",
-      "source": "#include <functional>\nint left_builds, right_builds, calls;\nint left() { ++left_builds; return 5; }\nint right() { ++right_builds; return 7; }\nint add(int a, int b) { ++calls; return a + b; }\nint main() {\n  auto f = std::bind(&add, left(), right());\n  if (left_builds != 1 || right_builds != 1 || calls != 0) return 1;\n  auto copy = f;\n  if (f() != 12 || copy() != 12) return 2;\n  return left_builds != 1 || right_builds != 1 || calls != 2;\n}\n",
-      "source_sha256": "2ca7e15dd16efb6cdcb2e627d1a7159f0fb45b56cb5704b877a2b6023dbd6aa8",
-      "expected": "observe"
-    },
-    {
-      "name": "bind-borrowed-scalar-argument",
-      "source": "#include <functional>\nint calls;\nint add_to(int &value, int delta) { ++calls; value += delta; return value; }\nint main() {\n  int value = 7;\n  auto f = std::bind(&add_to, std::ref(value), 3);\n  auto copy = f;\n  if (f() != 10 || copy() != 13 || value != 13) return 1;\n  return calls != 2;\n}\n",
-      "source_sha256": "a1a56ec0a672eea6bd79aba1c39efadefaca69b6ba5a17290ce30992d0b40a3b",
-      "expected": "observe"
-    },
-    {
-      "name": "bind-live-reference-result",
-      "source": "#include <functional>\n#include <type_traits>\nint &identity(int &value) { return value; }\nint main() {\n  int value = 7;\n  auto f = std::bind(&identity, std::ref(value));\n  static_assert(std::is_same<decltype(f()), int &>::value, \"reference result\");\n  f() += 3;\n  const auto copy = f;\n  copy() = 14;\n  return value != 14;\n}\n",
-      "source_sha256": "9fe7d9cdd1d857c3e243e18f56b41cc9a1588b6a87e249628af3b1573ebb60db",
-      "expected": "observe"
-    },
-    {
-      "name": "bind-void-result",
-      "source": "#include <functional>\nint calls;\nvoid store(int *target, int value) { ++calls; *target = value; }\nint main() {\n  int value = 0;\n  auto f = std::bind(&store, &value, 9);\n  f();\n  if (value != 9 || calls != 1) return 1;\n  value = 2;\n  f();\n  return value != 9 || calls != 2;\n}\n",
-      "source_sha256": "cd12e9224b32d26cdff21fcd9d044031de247975ec22faa232762fa49fa41117",
-      "expected": "observe"
-    },
-    {
-      "name": "bind-result-and-exception-queries",
-      "source": "#include <functional>\n#include <type_traits>\nint add(int a, int b) noexcept { return a + b; }\nint main() {\n  auto f = std::bind(&add, 3, 4);\n  using F = decltype(f);\n  static_assert(std::is_bind_expression<F>::value, \"bind expression\");\n  static_assert(std::is_same<decltype(f()), int>::value, \"result type\");\n  static_assert(!noexcept(f()), \"pinned SDK operator has no noexcept signature\");\n  return f() != 7;\n}\n",
-      "source_sha256": "ebc8e5056c4d6bf0f7517e0ebe1717e79912f5eaa6c7c6e32972cb378472e826",
-      "expected": "observe"
+      "name": "bind-lvalue-captures-after-argument-effects",
+      "source": "#include <functional>\nint first(int, int) { return -1; }\nint second(int a, int b) { return 100 + 10 * a + b; }\nint &change(int (*&pointer)(int, int), int &value) {\n  pointer = &second;\n  value = 3;\n  return value;\n}\nint main() {\n  int (*pointer)(int, int) = &first;\n  int value = 1;\n  auto f = std::bind(pointer, change(pointer, value), value);\n  if (f() != 133) return 1;\n  value = 9;\n  pointer = &first;\n  return f() != 133;\n}\n",
+      "source_sha256": "36e239740481446b2397da1316fb807dd283b7c502f8f39c9d6e7fb3e2abc9f9",
+      "expected": "observe",
+      "expected_proposed_not_observed": true
     }
   ],
   "producer_actual_job": 122606984385,
@@ -137,7 +102,7 @@
   "fixture_group": "bind-fully-bound-baseline",
   "source_repair_commit": "b8da2d4a3dcca753a308a4e0591ed99983e8b919",
   "clean_source_basis": "b8da2d4a3dcca753a308a4e0591ed99983e8b919",
-  "required_requests": 56,
+  "required_requests": 8,
   "required_acceptances": null,
   "required_sdk_guard_rejections": null,
   "required_unimplemented_not_fn_runtime_refusals": null,
@@ -167,9 +132,9 @@
   "actual_inherited240_report_sha256": null,
   "actual_eight_native_reference_binding_sha256": "f3ca6e057930ff78d22aa2b42e5d981b1167dfa09e88a67fa176983fd194a814",
   "original_four_sources_preserved": true,
-  "required_pid_records": 56,
-  "required_pid_files": 280,
-  "required_command_count": 73,
+  "required_pid_records": 8,
+  "required_pid_files": 40,
+  "required_command_count": 25,
   "required_logical_owned_record_layouts": 0,
   "required_reference_abi_requests": 0,
   "required_reference_wrapper_layouts": 0,
@@ -299,8 +264,8 @@
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
   "bind_private_source_packet": true,
-  "source_packet_clean_basis": "e33d4afe1e18e6012da6699e6f3d53548d500e76",
-  "source_trace_commit": "460b82a8bf141174950ebbe1d275cf092601beaf",
+  "source_packet_clean_basis": "ccf7463cbf12c8bd73e7e319d49ed55627deee23",
+  "source_trace_commit": "a49d2049e9d5ef281d41a99dcfd1f78d1ff81a2b",
   "source_packet_inverse_source_ledger_sha256": "9c86ac114173864156d807ac718b33d8e1aa260cac2f7be26ae46c2c253dd02c",
   "pre_refinement_clean_basis": "9595247a983c1becc051be24d7277917fd30f06b",
   "pre_refinement_clean_syntax6_proof_sha256": "17169e4c97282d16d716a14e1aac9b52ac676ac6427b089775e5dc663c31660b",

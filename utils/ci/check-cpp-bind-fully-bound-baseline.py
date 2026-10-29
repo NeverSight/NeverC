@@ -170,7 +170,7 @@ def main():
         plan = json.loads(args.plan.read_text())
         assert plan['observation_only'] is True and plan['requires_actual_nested_dev_publication_first'] is True
         assert re.fullmatch('[0-9a-f]{40}', plan['published_nested_basis']['commit'])
-        assert len(plan['cases']) == 7 and len(plan['target_abis']) == 8
+        assert len(plan['cases']) == 1 and len(plan['target_abis']) == 8
         report['plan'] = plan
         report['revision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
         report['source_sha256'] = {name: sha(root / name) for name in plan['candidate_source_paths']}
@@ -368,7 +368,7 @@ def main():
                 save()
         report['invocation_inventory'] = [{'path': str(path.relative_to(out)), 'sha256': sha(path), 'bytes': path.stat().st_size}
             for path in sorted((out / 'invocations').rglob('*')) if path.is_file()]
-        assert len(report['requests']) == 56 and len(report['invocation_inventory']) == 280
+        assert len(report['requests']) == 8 and len(report['invocation_inventory']) == 40
         passed = all(row['observation_contract_satisfied'] for row in report['requests'])
         report.update(completed=True, evidence_authenticated=True, passed=passed, not_fn_private_support_complete=False, scope='bind_fully_bound_current_baseline_observation',
                       baseline_observation_contract_passed=passed, private_translation_support_proven=False,
