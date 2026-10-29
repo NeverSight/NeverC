@@ -245,9 +245,10 @@ table can't find the pattern because the ID it checks no longer matches.
    all targets. The x86 count is tracked in `IntrinsicImpl.inc`.
 
 5. Changes to `TargetInfos` also change the reviewed immutable-object digest in
-   `utils/plugin-api/global-state-allowlist.json`. Review the complete table and
+   [`utils/plugin-api/global-state-allowlist.json`](utils/plugin-api/global-state-allowlist.json). Review the complete table and
    its element type, then update its `definition_sha256` using
-   `object_definition_sha256` from `utils/plugin-api/check-global-state.py`.
+   `object_definition_sha256` from
+   [`utils/plugin-api/check-global-state.py`](utils/plugin-api/check-global-state.py).
    Run the plugin global-state audit alongside the intrinsic synchronizers;
    signature checks alone do not validate this review manifest.
 
