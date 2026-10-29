@@ -242,8 +242,14 @@ table can't find the pattern because the ID it checks no longer matches.
    regeneration of matcher branch offsets.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
-   all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently
-   1580).
+   all targets. The x86 count is tracked in `IntrinsicImpl.inc`.
+
+5. Changes to `TargetInfos` also change the reviewed immutable-object digest in
+   `utils/plugin-api/global-state-allowlist.json`. Review the complete table and
+   its element type, then update its `definition_sha256` using
+   `object_definition_sha256` from `utils/plugin-api/check-global-state.py`.
+   Run the plugin global-state audit alongside the intrinsic synchronizers;
+   signature checks alone do not validate this review manifest.
 
 ### How to update X86GenDAGISel.inc after enum changes
 
