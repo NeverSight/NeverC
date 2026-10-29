@@ -28715,7 +28715,9 @@ class FunctionLowering {
       if (!Element.Field || Element.EmptyBase)
         reject(L, "bind invocation field", "The exact original logical capture field is required.");
       auto Place = fieldStorage(json::Object(Bound), Element.Field, L);
-      auto Captured = snapshot(address(std::move(Place), Element.getType(), L), L);
+      const auto Stored = Source.Object->getType().isConstQualified()
+          ? A.Context.getConstType(Element.getType()) : Element.getType();
+      auto Captured = snapshot(address(std::move(Place), Stored, L), L);
       const auto &Selected = Source.Arguments[I];
       if (Selected.Reference) {
         const auto &Wrapper = Selected.Reference->Wrapper;
