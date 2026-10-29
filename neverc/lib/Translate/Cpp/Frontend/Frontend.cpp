@@ -11525,6 +11525,8 @@ public:
     if (!Record || Depth > 64)
       return false;
     A.chargeExpansion(1, Record->getLocation());
+    if (describeFunctionalBindNaturalLayout(A.S, A.Sources, Record, A.Context))
+      return A.CheckBindDestructionSource && A.CheckBindDestructionSource(Record);
     if (const auto Nested = describeFunctionalNotFnNestedStorage(A.S, A.Sources, Record, A.Context)) {
       const auto *Destructor = Record->getDestructor();
       const auto Source = describeFunctionalNotFnDestructionSource(A.S, A.Sources, Destructor, A.Context);
@@ -13626,6 +13628,12 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
           if (type(NotFn->CallableType, L, false, Depth + 1).empty()) return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
+      } else if (const auto Bind = describeFunctionalBindNaturalLayout(S, Sources, D, Context)) {
+        if (RequiredFunctionalBindRecords.insert(D->getCanonicalDecl()).second) {
+          if (type(Bind->Storage.CallableType, L, false, Depth + 1).empty() ||
+              type(Bind->Storage.BoundArguments->getType(), L, false, Depth + 1).empty()) return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
+        }
       } else if (approvedFunctionalReferenceRecord(S, Sources, D, Context)) {
         if (!requireFunctionalReference(D, L, Depth + 1))
           return {};
@@ -14194,6 +14202,13 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto NotFn = functionalNotFnLayout(S, Sources, R, Context)) {
       Args.push_back(zero(NotFn->CallableType, L));
+    } else if (const auto Found = VerifiedBindRecords.find(R->getCanonicalDecl());
+               Found != VerifiedBindRecords.end()) {
+      const auto Bind = describeFunctionalBindNaturalLayout(S, Sources, R, Context);
+      if (!Bind || Found->second.PaddedBase != Bind->PaddedBase) throw Failure{};
+      if (Bind->PaddedBase) Args.push_back(zero(Context.getSizeType(), L));
+      Args.push_back(zero(Bind->Storage.CallableType, L));
+      Args.push_back(zero(Bind->Storage.BoundArguments->getType(), L));
     } else if (auto Wrapper =
                    approvedFunctionalReferenceRecord(S, Sources, R, Context)) {
       if (Wrapper->PaddedBase)
@@ -14950,6 +14965,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::set<const FunctionDecl *> CompletedOperationDefinitions;
   std::map<const CXXMethodDecl *, SourceLocation> AlgorithmPredicateMethods;
+  std::map<const CXXRecordDecl *, FunctionalBindNaturalLayout> PendingBindRecords;
+  std::map<const CallExpr *, FunctionalBindFactorySource> PendingBindFactories;
+  std::map<const CallExpr *, FunctionalBindCallSource> PendingBindCalls;
+  std::map<const CXXConstructExpr *, FunctionalBindCopySource> PendingBindCopies;
+  std::map<const CXXRecordDecl *, FunctionalBindDestructionSource> PendingBindDestructions;
+  std::map<const CXXRecordDecl *, SourceLocation> PendingBindSourceLocations;
   std::set<const CXXMethodDecl *> CompletedAlgorithmPredicateDefinitions;
   GeneratedOperationSources CompletedGeneratedOperations;
   std::vector<const CXXDestructorDecl *> ConsumedDestructorSignatures;
@@ -15093,6 +15114,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<NotFnConstraintKey> NotFnConstraintKeys;
   std::vector<const TemplateUseSource *> NotFnConstraintSources;
   std::map<const Expr *, std::vector<const SelectedTemplateCallSource *>> NotFnSelectedCallSources;
+  std::set<NotFnConstraintKey> BindConstraintKeys;
+  std::vector<const TemplateUseSource *> BindConstraintSources;
+  std::map<const Expr *, std::vector<const SelectedTemplateCallSource *>> BindSelectedCallSources;
   static NotFnConstraintKey notFnConstraintKey(const TemplateUseSource &Source) {
     return {Source.Kind, Source.Template, Source.Type, Source.Declaration,
             Source.Location.getRawEncoding()};
@@ -18808,6 +18832,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Iterator->IteratorType, true, Depth + 1);
           return;
         }
+        if (const auto Bind = describeFunctionalBindNaturalLayout(
+                A.S, A.Sources, Declaration, A.Context)) {
+          // The exact SDK descriptor supplies private storage layout. Keep
+          // the real stored types as dependencies; SDK base/field TypeLocs
+          // are not ordinary project source roots or runtime permissions.
+          Self(Self, Bind->Storage.CallableType, false, Depth + 1);
+          for (const auto &Element : Bind->Storage.Arguments.Elements)
+            Self(Self, Element.getType(), true, Depth + 1);
+          return;
+        }
         if (const auto NotFn = functionalNotFnLayout(
                 A.S, A.Sources, Declaration, A.Context)) {
           Self(Self, NotFn->CallableType, false, Depth + 1);
@@ -20229,6 +20263,23 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
               AuthenticatedVectorEndpoint = Method;
           }
         if (utilityArrayCallSource(A, Call))
+          if (const auto *Reference = directFunctionReference(Call)) {
+            auto [Entry, Inserted] =
+                AuthenticatedUtilityReferences.emplace(Reference, Call);
+            if (Inserted)
+              A.chargeExpansion(1, Call->getExprLoc());
+            if (Entry->second == Call)
+              AuthenticatedUtilityCall = Call;
+          }
+        // A bind receiver cast has the same exact pinned SDK signature proof
+        // as the existing utility operations. Keep its original caller source;
+        // private move return TypeLocs are not project declaration roots.
+        if (const auto Operation =
+                approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+            Operation == UtilityOperation::Move &&
+            describeFunctionalBindNaturalLayout(A.S, A.Sources,
+                Call->getType()->getAsCXXRecordDecl(), A.Context) &&
+            utilitySDKValueAdapterSource(A, Call, *Operation))
           if (const auto *Reference = directFunctionReference(Call)) {
             auto [Entry, Inserted] =
                 AuthenticatedUtilityReferences.emplace(Reference, Call);
@@ -22879,6 +22930,101 @@ public:
     }
     return true;
   }
+  struct FunctionalBindSourceInputs {
+    std::vector<const TemplateUseSource *> Dependencies;
+    std::vector<const SelectedTemplateCallSource *> Selections;
+  };
+  std::optional<FunctionalBindSourceInputs> functionalBindSourceInputs() {
+    std::vector<const TemplateUseSource *> Dependencies;
+    std::set<const TemplateUseSource *> Uses;
+    auto AddUse = [&](const TemplateUseSource *Use) {
+      if (Use && Uses.insert(Use).second) Dependencies.push_back(Use);
+    };
+    for (const auto *Use : BindConstraintSources) AddUse(Use);
+    for (const auto &[Key, Entries] : FunctionSources)
+      for (const auto *Use : Entries) AddUse(Use);
+    for (const auto &[Key, Entries] : TypeSources)
+      for (const auto *Use : Entries) AddUse(Use);
+    for (const auto &[Key, Entries] : ClassSources)
+      for (const auto *Use : Entries) AddUse(Use);
+    for (const auto &[Key, Entries] : ClassFullDeclarations)
+      for (const auto *Use : Entries) AddUse(Use);
+    for (const auto &[Key, Entries] : VariableArgumentSources)
+      for (const auto *Use : Entries) AddUse(Use);
+    for (const auto &[Key, Pair] : PartialSources) {
+      if (Pair.Conflict) return std::nullopt; // Conflicting retained partials always refuse.
+      AddUse(Pair.Deduction); AddUse(Pair.Pattern);
+    }
+    std::vector<const SelectedTemplateCallSource *> Selections;
+    std::set<const SelectedTemplateCallSource *> Seen;
+    auto AddSelection = [&](const SelectedTemplateCallSource *Selection) {
+      if (Selection && Seen.insert(Selection).second) Selections.push_back(Selection);
+    };
+    for (const auto &[Expression, Entries] : BindSelectedCallSources)
+      for (const auto *Selection : Entries) AddSelection(Selection);
+    for (const auto &[Expression, Entries] : SelectedCallSources)
+      for (const auto *Selection : Entries) AddSelection(Selection);
+    return FunctionalBindSourceInputs{std::move(Dependencies), std::move(Selections)};
+  }
+  bool functionalBindFactorySourceComplete(const FunctionalBindFactorySource &Factory) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindFactorySource(A.S, A.Sources, Factory, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+  }
+  bool functionalBindCallAuxiliarySourceComplete(const FunctionalBindCallSource &Call) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindCallAuxiliarySource(A.S, A.Sources, Call, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+  }
+  bool functionalBindCallTryCallFallbackSourceComplete(
+      const FunctionalBindCallSource &Call, const CXXMethodDecl *Function) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindCallTryCallFallbackSource(A.S, A.Sources, Call,
+        Function, A.Context, Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+  }
+  bool functionalBindCallTryCallSignatureSourceComplete(
+      const FunctionalBindCallSource &Call, const CXXMethodDecl *Function) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindCallTryCallSignatureSource(A.S, A.Sources, Call,
+        Function, A.Context, Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+  }
+  bool functionalBindCallInvokeBodySourceComplete(const FunctionalBindCallSource &Call) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindCallInvokeBodySource(A.S, A.Sources, Call, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+  }
+  bool functionalBindCallInvokeSignatureSourceComplete(const FunctionalBindCallSource &Call) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindCallInvokeSignatureSource(A.S, A.Sources, Call, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+  }
+  bool functionalBindCallUnwrapSourceComplete(const FunctionalBindCallSource &Call) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindCallUnwrapSource(A.S, A.Sources, Call, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+  }
+  bool functionalBindCallSourceComplete(const FunctionalBindCallSource &Call) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindCallCompleteSource(A.S, A.Sources, Call, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+  }
+  bool functionalBindCallGetSourceComplete(const FunctionalBindCallSource &Call) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindCallGetSource(A.S, A.Sources, Call, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+  }
+  bool functionalBindCopySourceComplete(const FunctionalBindCopySource &Copy) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindCopySource(A.S, A.Sources, Copy, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+  }
+  bool functionalBindDestructionSourceComplete(
+      const FunctionalBindDestructionSource &Destruction, SourceLocation Location) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindDestructionSource(A.S, A.Sources, Destruction,
+        Location, A.Context, Inputs->Dependencies, Inputs->Selections,
+        A.SpecialMembers, A.OperationTraits);
+  }
   void beginTemplateSourceEvents(std::size_t Uses, std::size_t Calls) {
     TemplateUseCursor = Uses;
     SelectedCallCursor = Calls;
@@ -22886,6 +23032,8 @@ public:
   }
   void sealTemplateSourceEvents() { SourceEventsSealed = true; }
   bool freshLateTemplateSource(const TemplateUseSource &Source) const {
+    if (Source.FunctionalBindConstraint &&
+        BindConstraintKeys.count(notFnConstraintKey(Source))) return false;
     if (Source.FunctionalNotFnConstraint)
       return !NotFnConstraintKeys.count(notFnConstraintKey(Source));
     // A previously checked key cannot acquire an untraversed alternative after
@@ -22965,6 +23113,7 @@ public:
       for (const auto &Source : Batch.Calls) {
         if (SelectedCallSources.count(Source.Expression) ||
             NotFnSelectedCallSources.count(Source.Expression) ||
+            BindSelectedCallSources.count(Source.Expression) ||
             PairTraitSelections.count(Source.Expression)) {
           A.reject(Source.Location, "repeated late selected source",
                    "A retained late selection needs a fresh exact expression.");
@@ -22989,6 +23138,21 @@ public:
         Selected = Call->getDirectCallee();
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
+      if (Source.FunctionalBindConstraint) {
+        if (!matchesFunctionalBindSelectedSource(A.S, A.Sources, Source, A.Context)) {
+          A.reject(Source.Location, "bind selected source", "The exact retained SDK selection is required.");
+          continue;
+        }
+        BindSelectedCallSources[Source.Expression].push_back(&Source);
+        // Preserve every historical producer route independently. Newly
+        // retained Bind-only SDK evidence has no ordinary permission index.
+        if (!A.S.owns(A.Sources, Source.Location) && !Source.FunctionalNotFnConstraint &&
+            !tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
+            !approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
+            !approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
+            !pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Source.Function))
+          continue;
+      }
       if (Source.FunctionalNotFnConstraint) {
         if (!matchesFunctionalNotFnSelectedSource(A.S, A.Sources, Source, A.Context)) {
           A.reject(Source.Location, "not_fn selected source", "The exact retained SDK selection is required.");
@@ -23506,6 +23670,18 @@ public:
       return;
     for (const auto &Source : Sources) {
       A.chargeExpansion(1, Source.Location);
+      if (Source.FunctionalBindConstraint) {
+        BindConstraintKeys.insert(notFnConstraintKey(Source));
+        BindConstraintSources.push_back(&Source);
+        const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration);
+        if (!A.S.owns(A.Sources, Source.Location) && !Source.FunctionalNotFnConstraint &&
+            !(Source.Kind == TemplateSourceKind::Function &&
+              (tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Function) ||
+               approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Function) ||
+               approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Function) ||
+               pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Function))))
+          continue;
+      }
       if (Source.FunctionalNotFnConstraint) {
         // These addresses have the same initial snapshot/owned-batch lifetime
         // as every other retained event. No ordinary permission index sees them.
@@ -26312,6 +26488,185 @@ public:
       Source.Complete = true;
     return Result;
   }
+  // Pending source roots never supply a lowering certificate. Ordinary source
+  // completion and the final lifecycle pass precede publication of all maps.
+  bool sameBindStorage(const FunctionalBindStorage &Left,
+                       const FunctionalBindStorage &Right) const {
+    if (Left.Record != Right.Record || Left.WeakResult != Right.WeakResult ||
+        Left.Callable != Right.Callable || Left.BoundArguments != Right.BoundArguments ||
+        !A.Context.hasSameType(Left.CallableType, Right.CallableType) ||
+        Left.CallableOffsetBits != Right.CallableOffsetBits ||
+        Left.BoundOffsetBits != Right.BoundOffsetBits || Left.SizeBytes != Right.SizeBytes ||
+        Left.AlignmentBytes != Right.AlignmentBytes ||
+        Left.Arguments.Record != Right.Arguments.Record ||
+        Left.Arguments.StoragePaddingBytes != Right.Arguments.StoragePaddingBytes ||
+        Left.Arguments.SelectedStringCarrierValues != Right.Arguments.SelectedStringCarrierValues ||
+        Left.Arguments.RequiresSelectedElementOperations != Right.Arguments.RequiresSelectedElementOperations ||
+        Left.Arguments.Elements.size() != Right.Arguments.Elements.size()) return false;
+    for (unsigned I = 0; I < Left.Arguments.Elements.size(); ++I) {
+      const auto &L = Left.Arguments.Elements[I], &R = Right.Arguments.Elements[I];
+      if (L.Field != R.Field || L.EmptyBase != R.EmptyBase || L.OffsetBits != R.OffsetBits ||
+          !A.Context.hasSameType(L.getType(), R.getType())) return false;
+    }
+    return true;
+  }
+  bool retainBindRuntimeSource(const FunctionalBindStorage &Storage, SourceLocation Location) {
+    const auto Layout = describeFunctionalBindNaturalLayout(A.S, A.Sources, Storage.Record, A.Context);
+    const auto Destruction = describeFunctionalBindDestructionSource(
+        A.S, A.Sources, Storage.Record->getDestructor(), A.Context);
+    if (!A.S.owns(A.Sources, Location) || !Layout || !Destruction ||
+        !sameBindStorage(Storage, Layout->Storage) ||
+        !sameBindStorage(Storage, Destruction->Layout.Storage) ||
+        Layout->PaddedBase != Destruction->Layout.PaddedBase ||
+        !functionalBindDestructionSourceComplete(*Destruction, Location)) return false;
+    const auto *Record = Storage.Record->getCanonicalDecl();
+    const auto Previous = PendingBindRecords.find(Record);
+    if (Previous != PendingBindRecords.end() &&
+        (Previous->second.PaddedBase != Layout->PaddedBase ||
+         !sameBindStorage(Previous->second.Storage, Layout->Storage))) return false;
+    const auto PreviousDestruction = PendingBindDestructions.find(Record);
+    if (PreviousDestruction != PendingBindDestructions.end() &&
+        PreviousDestruction->second.Destructor != Destruction->Destructor) return false;
+    PendingBindRecords.emplace(Record, *Layout);
+    PendingBindDestructions.emplace(Record, *Destruction);
+    PendingBindSourceLocations.emplace(Record, Location);
+    return true;
+  }
+  bool bindDestructionSourceComplete(const CXXRecordDecl *Record) {
+    if (!Record) return false;
+    const auto Found = PendingBindDestructions.find(Record->getCanonicalDecl());
+    const auto Site = PendingBindSourceLocations.find(Record->getCanonicalDecl());
+    return Found != PendingBindDestructions.end() && Site != PendingBindSourceLocations.end() &&
+        functionalBindDestructionSourceComplete(Found->second, Site->second);
+  }
+  std::optional<bool> traverseBindFactory(CallExpr *Call) {
+    const auto Source = describeFunctionalBindFactorySource(A.S, A.Sources, Call, A.Context);
+    if (!Source) return std::nullopt;
+    return traverseTypeQuerySource(Call, [&] {
+      const auto *Reference = dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+      if (!Reference || Reference->getDecl() != Source->Factory ||
+          Reference->hasExplicitTemplateArgs() || !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+          !functionalBindFactorySourceComplete(*Source)) {
+        A.reject(Call->getExprLoc(), "bind factory source",
+            "The actual deduced factory and complete selected source graph are required.", "TR0203");
+        return true;
+      }
+      A.type(Source->Storage.CallableType, Call->getExprLoc());
+      for (const auto *Argument : Call->arguments())
+        if (!TraverseStmt(const_cast<Expr *>(Argument))) return false;
+      if (!A.S.Diagnostics.empty()) return true;
+      if (!retainBindRuntimeSource(Source->Storage, Call->getExprLoc())) {
+        A.reject(Call->getExprLoc(), "bind factory lifetime source",
+            "The exact storage and complete trivial SDK lifecycle source are required.", "TR0203");
+        return true;
+      }
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Destructions.insert(Source->Storage.Record).second)
+          A.chargeExpansion(1, Call->getExprLoc());
+      PendingBindFactories.emplace(Call, *Source);
+      A.type(Call->getType(), Call->getExprLoc());
+      return true;
+    });
+  }
+  std::optional<bool> traverseBindCall(CXXOperatorCallExpr *Call) {
+    const auto Source = describeFunctionalBindCallSource(A.S, A.Sources, Call, A.Context);
+    if (!Source) return std::nullopt;
+    return traverseTypeQuerySource(Call, [&] {
+      const auto *Prototype = Source->Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+      if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
+          !A.Context.hasSameType(operationCalleePrototype(Source->Target), Prototype) ||
+          !functionalBindCallSourceComplete(*Source)) {
+        A.reject(Call->getExprLoc(), "bind invocation source",
+            "The complete original and selected invocation and ordinary callback signature are required.", "TR0203");
+        return true;
+      }
+      A.type(Source->Storage.CallableType, Call->getExprLoc());
+      if (!TraverseStmt(const_cast<Expr *>(Source->Object))) return false;
+      if (!A.S.Diagnostics.empty()) return true;
+      if (!retainBindRuntimeSource(Source->Storage, Call->getExprLoc())) {
+        A.reject(Call->getExprLoc(), "bind receiver lifetime source",
+            "The actual receiver needs its complete storage and lifecycle source.", "TR0203");
+        return true;
+      }
+      PendingBindCalls.emplace(Call, *Source);
+      return true;
+    });
+  }
+  std::optional<bool> traverseBindCopy(CXXConstructExpr *Construction) {
+    const auto Source = describeFunctionalBindCopySource(A.S, A.Sources, Construction, A.Context);
+    if (!Source) return std::nullopt;
+    return traverseTypeQuerySource(Construction, [&] {
+      if (!A.S.owns(A.Sources, Construction->getExprLoc()) ||
+          !functionalBindCopySourceComplete(*Source)) {
+        A.reject(Construction->getExprLoc(), "bind copy source",
+            "The exact selected trivial copy or move needs complete original source.", "TR0203");
+        return true;
+      }
+      if (const auto *Temporary = dyn_cast<CXXTemporaryObjectExpr>(Construction)) {
+        const auto *Written = Temporary->getTypeSourceInfo();
+        if (!Written || !TraverseTypeLoc(Written->getTypeLoc())) return false;
+      }
+      checkBinding(Source->Object, true);
+      if (!TraverseStmt(const_cast<Expr *>(Source->Object))) return false;
+      if (!A.S.Diagnostics.empty()) return true;
+      if (!retainBindRuntimeSource(Source->Layout.Storage, Construction->getExprLoc())) {
+        A.reject(Construction->getExprLoc(), "bind copy lifetime source",
+            "The actual copied object and its complete SDK lifecycle source are required.", "TR0203");
+        return true;
+      }
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Destructions.insert(Source->Layout.Storage.Record).second)
+          A.chargeExpansion(1, Construction->getExprLoc());
+      PendingBindCopies.emplace(Construction, *Source);
+      A.type(Construction->getType(), Construction->getExprLoc());
+      return true;
+    });
+  }
+  bool finishBindRuntimeSources() {
+    if (!A.S.Diagnostics.empty() || A.CheckingSource ||
+        !A.VerifiedBindRecords.empty() || !A.VerifiedBindFactories.empty() ||
+        !A.VerifiedBindCalls.empty() || !A.VerifiedBindCopies.empty() ||
+        !A.VerifiedBindDestructions.empty()) return false;
+    auto OrdinarySource = [&](const Expr *Expression) {
+      OperationSourceChecker Check(A, &CompletedOperationDefinitions,
+          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+          &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
+          &CompletedOperationDefaults);
+      return Check.requireExpression(Expression) && Check.finish(Expression->getExprLoc());
+    };
+    for (const auto &[Call, Source] : PendingBindFactories)
+      if (Source.SourceCall != Call || !functionalBindFactorySourceComplete(Source) ||
+          !OrdinarySource(Call)) return false;
+    for (const auto &[Call, Source] : PendingBindCalls)
+      if (Source.SourceCall != Call || !functionalBindCallSourceComplete(Source) ||
+          !OrdinarySource(Call)) return false;
+    for (const auto &[Construction, Source] : PendingBindCopies)
+      if (Source.Construction != Construction || !functionalBindCopySourceComplete(Source) ||
+          !OrdinarySource(Construction)) return false;
+    for (const auto &[Record, Source] : PendingBindDestructions)
+      if (Source.Layout.Storage.Record->getCanonicalDecl() != Record ||
+          !bindDestructionSourceComplete(Record)) return false;
+    for (const auto *Record : A.RequiredFunctionalBindRecords) {
+      const auto Found = PendingBindRecords.find(Record);
+      const auto Layout = describeFunctionalBindNaturalLayout(A.S, A.Sources, Record, A.Context);
+      if (!Layout || Found == PendingBindRecords.end() ||
+          !sameBindStorage(Layout->Storage, Found->second.Storage) ||
+          Layout->PaddedBase != Found->second.PaddedBase ||
+          !PendingBindDestructions.count(Record)) {
+        A.reject(Record->getLocation(), "bind record source completion",
+            "Every required layout needs a real completed operation and lifecycle source.", "TR0203");
+        return false;
+      }
+    }
+    // Every ordinary expression root and selected SDK lifecycle is closed.
+    // These are the sole publishers consumed by the existing guarded lowering.
+    A.VerifiedBindRecords = PendingBindRecords;
+    A.VerifiedBindFactories = PendingBindFactories;
+    A.VerifiedBindCalls = PendingBindCalls;
+    A.VerifiedBindCopies = PendingBindCopies;
+    A.VerifiedBindDestructions = PendingBindDestructions;
+    return true;
+  }
   std::optional<bool> traverseNotFnFactory(CallExpr *Call) {
     const auto Shape = describeFunctionalNotFnFactorySource(A.S, A.Sources, Call, A.Context);
     const auto Owned = Shape
@@ -26581,7 +26936,16 @@ public:
       if (!TraverseStmt(Call->getArg(I))) return false;
     return true;
   }
+  bool TraverseCXXConstructExpr(CXXConstructExpr *Construction, DataRecursionQueue *Queue = nullptr) {
+    if (auto Bind = traverseBindCopy(Construction)) return *Bind;
+    return RecursiveASTVisitor<Allowlist>::TraverseCXXConstructExpr(Construction, Queue);
+  }
+  bool TraverseCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *Construction, DataRecursionQueue *Queue = nullptr) {
+    if (auto Bind = traverseBindCopy(Construction)) return *Bind;
+    return RecursiveASTVisitor<Allowlist>::TraverseCXXTemporaryObjectExpr(Construction, Queue);
+  }
   bool TraverseCallExpr(CallExpr *Call, DataRecursionQueue *Queue = nullptr) {
+    if (auto Bind = traverseBindFactory(Call)) return *Bind;
     if (auto NotFn = traverseNotFnFactory(Call)) return *NotFn;
     if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCallExpr(Call, Queue);
@@ -26593,6 +26957,7 @@ public:
     });
   }
   bool TraverseCXXOperatorCallExpr(CXXOperatorCallExpr *Call, DataRecursionQueue *Queue = nullptr) {
+    if (auto Bind = traverseBindCall(Call)) return *Bind;
     if (auto NotFn = traverseNotFnCall(Call)) return *NotFn;
     if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCXXOperatorCallExpr(Call, Queue);
@@ -29444,7 +29809,27 @@ static void orderCoreV2Records(Adapter &A) {
     const auto FunctionalReference =
         approvedFunctionalReferenceRecord(A.S, A.Sources, R, A.Context);
     const auto NotFn = functionalNotFnLayout(A.S, A.Sources, R, A.Context);
-    if (const auto *Base = FunctionalObject || FunctionalReference || NotFn ||
+    const auto BindEntry = A.VerifiedBindRecords.find(R->getCanonicalDecl());
+    const auto Bind = BindEntry != A.VerifiedBindRecords.end()
+        ? describeFunctionalBindNaturalLayout(A.S, A.Sources, R, A.Context)
+        : std::optional<FunctionalBindNaturalLayout>();
+    if (BindEntry != A.VerifiedBindRecords.end()) {
+      const auto &Checked = BindEntry->second;
+      if (!Bind || Checked.Storage.Record->getCanonicalDecl() != R->getCanonicalDecl() ||
+          Checked.PaddedBase != Bind->PaddedBase ||
+          Checked.Storage.Callable != Bind->Storage.Callable ||
+          Checked.Storage.BoundArguments != Bind->Storage.BoundArguments ||
+          !A.Context.hasSameType(Checked.Storage.CallableType, Bind->Storage.CallableType) ||
+          Checked.Storage.CallableOffsetBits != Bind->Storage.CallableOffsetBits ||
+          Checked.Storage.BoundOffsetBits != Bind->Storage.BoundOffsetBits ||
+          Checked.Storage.SizeBytes != Bind->Storage.SizeBytes ||
+          Checked.Storage.AlignmentBytes != Bind->Storage.AlignmentBytes) {
+        A.reject(R->getLocation(), "bind layout dependency certificate",
+            "Record ordering requires the exact completed certificate and current target layout.");
+        throw Failure{};
+      }
+    }
+    if (const auto *Base = FunctionalObject || FunctionalReference || NotFn || Bind ||
                                    UtilityReverse || UtilityTuple ||
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
@@ -29501,6 +29886,11 @@ static void orderCoreV2Records(Adapter &A) {
     } else if (UtilityVector) {
       DependencyTypes.emplace_back(UtilityVector->PointerType,
                                    UtilityVector->Record->getLocation());
+    } else if (Bind) {
+      DependencyTypes.emplace_back(Bind->Storage.CallableType,
+                                   Bind->Storage.Callable->getLocation());
+      DependencyTypes.emplace_back(Bind->Storage.BoundArguments->getType(),
+                                   Bind->Storage.BoundArguments->getLocation());
     } else if (NotFn) {
       DependencyTypes.emplace_back(NotFn->CallableType, R->getLocation());
     } else if (FunctionalReference) {
@@ -29608,8 +29998,12 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   Check.indexSelectedTemplateCalls(SelectedCalls);
   Check.beginTemplateSourceEvents(TemplateUses.size(), SelectedCalls.size());
   SynchronizeTemplateSourceEvents = [&] { Check.synchronizeTemplateSourceEvents(); };
+  CheckBindDestructionSource = [&](const CXXRecordDecl *Record) {
+    return Check.bindDestructionSourceComplete(Record);
+  };
   auto FinishSourceEvents = llvm::make_scope_exit([&] {
     SynchronizeTemplateSourceEvents = {};
+    CheckBindDestructionSource = {};
   });
   SynchronizeTemplateSourceEvents();
   Check.checkFriendSourceIdentities();
@@ -29640,6 +30034,12 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   SynchronizeTemplateSourceEvents();
   if (!S.Diagnostics.empty())
     return;
+  if (!Check.finishBindRuntimeSources()) {
+    if (S.Diagnostics.empty())
+      reject(Context.getTranslationUnitDecl()->getBeginLoc(), "bind source completion",
+          "Every original operation, ordinary operand and lifecycle source must finish before lowering.", "TR0203");
+    return;
+  }
   SynchronizeTemplateSourceEvents = {};
   if (S.coreV2())
     orderCoreV2Records(*this);
@@ -29703,7 +30103,27 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     const auto NotFn = S.coreV2()
         ? functionalNotFnLayout(S, Sources, R, Context)
         : std::optional<FunctionalNotFnStorage>();
-    const auto *Base = S.coreV2() && !FunctionalObject && !NotFn &&
+    const auto BindEntry = VerifiedBindRecords.find(R->getCanonicalDecl());
+    const auto Bind = S.coreV2() && BindEntry != VerifiedBindRecords.end()
+        ? describeFunctionalBindNaturalLayout(S, Sources, R, Context)
+        : std::optional<FunctionalBindNaturalLayout>();
+    if (BindEntry != VerifiedBindRecords.end()) {
+      const auto &Checked = BindEntry->second;
+      if (!Bind || Checked.Storage.Record->getCanonicalDecl() != R->getCanonicalDecl() ||
+          Checked.PaddedBase != Bind->PaddedBase ||
+          Checked.Storage.Callable != Bind->Storage.Callable ||
+          Checked.Storage.BoundArguments != Bind->Storage.BoundArguments ||
+          !Context.hasSameType(Checked.Storage.CallableType, Bind->Storage.CallableType) ||
+          Checked.Storage.CallableOffsetBits != Bind->Storage.CallableOffsetBits ||
+          Checked.Storage.BoundOffsetBits != Bind->Storage.BoundOffsetBits ||
+          Checked.Storage.SizeBytes != Bind->Storage.SizeBytes ||
+          Checked.Storage.AlignmentBytes != Bind->Storage.AlignmentBytes) {
+        reject(R->getLocation(), "bind layout certificate",
+            "The exact completed record certificate and current target layout must agree.");
+        return;
+      }
+    }
+    const auto *Base = S.coreV2() && !FunctionalObject && !NotFn && !Bind &&
                                !FunctionalReference && !UtilityReverse &&
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
@@ -29725,6 +30145,14 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     } else if (NotFn) {
       Fields.push_back(json::Object{{"name", "nct_not_fn_callable"},
           {"type", type(NotFn->CallableType, R->getLocation())}});
+    } else if (Bind) {
+      if (Bind->PaddedBase)
+        Fields.push_back(json::Object{{"name", "nct_bind_base_storage"},
+            {"type", type(Context.getSizeType(), R->getLocation())}});
+      Fields.push_back(json::Object{{"name", "nct_bind_callable"},
+          {"type", type(Bind->Storage.CallableType, R->getLocation())}});
+      Fields.push_back(json::Object{{"name", "nct_bind_bound"},
+          {"type", type(Bind->Storage.BoundArguments->getType(), R->getLocation())}});
     } else if (FunctionalReference) {
       if (FunctionalReference->PaddedBase)
         Fields.push_back(json::Object{
@@ -29815,7 +30243,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       json::Array Offsets;
       if (Base)
         Offsets.push_back(uint64_t(Layout.getBaseClassOffset(Base->Base).getQuantity()) * 8);
-      if (FunctionalReference) {
+      if (Bind) {
+        if (Bind->PaddedBase) Offsets.push_back(uint64_t(0));
+        Offsets.push_back(Bind->Storage.CallableOffsetBits);
+        Offsets.push_back(Bind->Storage.BoundOffsetBits);
+      } else if (FunctionalReference) {
         if (FunctionalReference->PaddedBase)
           Offsets.push_back(uint64_t(0));
         Offsets.push_back(Layout.getFieldOffset(0));
@@ -30391,7 +30823,9 @@ class Consumer : public ASTConsumer {
     auto &Sources = Context.getSourceManager();
     const bool NotFnConstraint = retainFunctionalNotFnConstraintRoot(
         S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
-    if (!S.owns(Sources, Location) && !NotFnConstraint &&
+    const bool BindConstraint = retainFunctionalBindConstraintRoot(
+        S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
+    if (!S.owns(Sources, Location) && !NotFnConstraint && !BindConstraint &&
         !(Kind == TemplateSourceKind::Function &&
           (tupleFactorySelectionLocation(S, Sources, Location,
               dyn_cast_or_null<FunctionDecl>(Declaration)) ||
@@ -30460,6 +30894,7 @@ class Consumer : public ASTConsumer {
         {}, {}, Location, Overflow, Instantiation, Selection, WrittenStorageClass};
     Source.Origin = Origin;
     Source.FunctionalNotFnConstraint = NotFnConstraint;
+    Source.FunctionalBindConstraint = BindConstraint;
     Source.Defaults.reserve(DefaultCount);
     for (unsigned I = 0; I < DefaultCount; ++I)
       Source.Defaults.push_back({DefaultParameters[I], OriginalDefaults[I], ConvertedDefaults[I]});
@@ -30534,6 +30969,8 @@ public:
     }
     const bool NotFnSignatureMember = shouldRetainFunctionalNotFnSpecialMemberSource(
         S, Context.getSourceManager(), Method, Context);
+    const bool BindSignatureMember = shouldRetainFunctionalBindSpecialMemberSource(
+        S, Context.getSourceManager(), Method);
     const auto *DefaultConstructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
     const bool PairArrayDefaultMember = DefaultConstructor && !Owned &&
         DefaultConstructor->isImplicit() && DefaultConstructor->isDefaulted() &&
@@ -30552,7 +30989,7 @@ public:
         approvedStandardSDKDeclaration(S, Context.getSourceManager(), Method->getParent());
     if (!S.coreV2() || !S.Diagnostics.empty() || !Method ||
         (!Owned && !TupleSignatureMember && !PairSignatureMember && !PairArrayDefaultMember &&
-         !PairOptionalMember && !NotFnSignatureMember) ||
+         !PairOptionalMember && !NotFnSignatureMember && !BindSignatureMember) ||
         SpecialMembers.count(Method->getCanonicalDecl()) ||
         !reserveSourceUnits(Context.getSourceManager(), Method->getLocation(), 0))
       return false;
@@ -30718,7 +31155,9 @@ public:
     auto &Sources = Function->getASTContext().getSourceManager();
     const bool NotFn = retainFunctionalNotFnConstraintRoot(S, Sources, TemplateSourceKind::Function,
         Function->getPrimaryTemplate(), Function, nullptr, nullptr, Location);
-    if ((!S.owns(Sources, Location) && !NotFn &&
+    const bool Bind = retainFunctionalBindConstraintRoot(S, Sources, TemplateSourceKind::Function,
+        Function->getPrimaryTemplate(), Function, nullptr, nullptr, Location);
+    if ((!S.owns(Sources, Location) && !NotFn && !Bind &&
          !tupleFactorySelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function) &&
@@ -30727,7 +31166,7 @@ public:
       return;
     // All admitted producer paths capture direct nodes before casts or
     // lifetime wrappers. Preserve invalid records for deterministic rejection.
-    SelectedCalls.push_back({Expression, Function, Location, NotFn});
+    SelectedCalls.push_back({Expression, Function, Location, NotFn, Bind});
   }
   void HandleNeverCFunctionTemplateSource(
       FunctionDecl *Function,

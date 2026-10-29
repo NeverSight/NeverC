@@ -1,28 +1,28 @@
 {
-  "component_commit": "e3b22f2e5b16205dafe95ef7ee12470a756b89f7",
-  "component_run_id": 40216069722,
-  "component_actual_job": 121237347037,
+  "component_commit": "988872fad1ed41ab453bcb8f9ba6846d7f0a69f5",
+  "component_run_id": 40891481804,
+  "component_actual_job": 123509175400,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 12607872466,
-    "name": "cpp-not-fn-nested-clean288-e3b22f2e5b16205dafe95ef7ee12470a756b89f7",
-    "digest": "sha256:5755625d1f731cfb83f0e74282d7d02ed5e5cc866ba6a8b64be2b2c632571718"
+    "id": 12906743897,
+    "name": "cpp-bind-clean360-988872fad1ed41ab453bcb8f9ba6846d7f0a69f5",
+    "digest": "sha256:fbbff7420df71f6e7db3026d7424dcdb5c84f9b8846448bbd2938caef2ab5970"
   },
   "component_archive_artifact": {
-    "id": 12607882427,
-    "name": "cpp-current-private-archive-remote-only-e3b22f2e5b16205dafe95ef7ee12470a756b89f7",
-    "digest": "sha256:6f7b1bab62c6913a738c99d0cc36734221a252ef082ad52d124872c9a611797e"
+    "id": 12906948502,
+    "name": "cpp-current-private-archive-remote-only-988872fad1ed41ab453bcb8f9ba6846d7f0a69f5",
+    "digest": "sha256:ede393b4c89facca87c42c5e9d58007478fda8adbc27f7faa2c9796aae55d3ec"
   },
-  "component_report_sha256": "cc1951d1669a5010c561d677a4a10c172c1a298a7f0aacce463fa653aa0465f9",
-  "private_archive_sha256": "d6241435b68f716daa4491e336daea73accf81a1901ed666967419fe5e32c5f3",
-  "frontend_build_id": "cpp-frontend-1-d3f231fa2ca306b7766357d7bdf7e9746357449c902201144be90593756f3203",
+  "component_report_sha256": "e20164a1c53a079a051c96856ac50aa72fac4299ac0c6376317cb631e661a51b",
+  "private_archive_sha256": "325acc297ee69891baf930302f4ac3161fab55aef0ec86d377ab54339b63f627",
+  "frontend_build_id": "cpp-frontend-1-953b47c85778c523d249c9879c59b58b5b6ea8a163c39c679386f89cad1a8ccf",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "f6b55fee7f87b88167efae96f21ffd763cc6b83422d6bac21611eb3c84483695",
-    "Lowering.cpp": "5b1e3cb88b700a09fa2c1862f54a1526d50acb3b7b99c4c7ab28474bcff812ca",
+    "Frontend.cpp": "bcbe763da18fbf6eb80d1e57e82ec9403fb2fe6865c6223c22612f5ff441a326",
+    "Lowering.cpp": "190a74150a331efb2ff464a24294d43efb17997a3e06961a79e274f2679b8a98",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "03869224eab8cfe6513d2a8170f500e3ced3b95e15466a87af93d452d23b2c35",
+    "MathSDK.cpp": "500c7d4ab81a61d23d37a869f851a97290c6d90969cdd3815cd9dcf97ff88710",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "0ae5db060a9e547268d6c9113a1eb2c5e614eb308aa4c0b84cfd156eb845a9d3",
+    "Frontend.h": "386f0a41044a0ff3feb2b4065b8fd73fcde7a895ace2ab1b9f9a4c24d5b7d7d0",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -38,15 +38,15 @@
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
   "dependency_producer_components_artifact": {
-    "id": 12313187412,
+    "id": 12789872379,
     "name": "cpp-not-fn-operator-components-remote-only-52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
-    "digest": "sha256:9edf4623b5f8535b68b1b64865e6a71f5003bf03c3ba5b62b049a7069428a0d7"
+    "digest": "sha256:62e526fea88d768d97d507ab866e2363dacfd55544bcc535d89da9d147e7785d"
   },
   "dependency_producer_commit": "52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
-  "dependency_producer_run_id": 39523812510,
+  "dependency_producer_run_id": 40624781946,
   "private_prefix_sha256": "cf4d69ade740f971db56cc3f4e1b811d8094d2549a0aed84f6d97f9eaed140f8",
   "authenticated_system_libraries_sha256": "1c998ace53fdcebd4e6836bc2f9d50b481b0aa38c2625f9c73fd75c0234f820e",
-  "original_tests_file_sha256": "006fa380968b6acc0c7c8d99ff7a1c5a59196045e08934805550b649966bbf7d",
+  "original_tests_file_sha256": "a38050d1e0d40689c4cec7cd03e344cbbf042118bd410e3aa59cc8a149719201",
   "formal_manifest_sha256": "a4e047df483c770a7dd077e50abad961d8a0833c86e56d1bbcb47e92a6c27979",
   "required_actual_original_gtest_xml": 124,
   "original_gtest_bodies_modified": false,
@@ -67,13 +67,14 @@
     "utils/ci/not-fn-pointer-six-formal-additions.cpp",
     "utils/ci/not-fn-pointer-ten-formal-additions.cpp",
     "utils/ci/not-fn-pointer-eleven-formal-additions.cpp",
-    "utils/ci/not-fn-pointer-twelve-formal-additions.cpp"
+    "utils/ci/not-fn-pointer-twelve-formal-additions.cpp",
+    "utils/ci/bind-twenty-one-formal-additions.cpp"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,
   "actual_current_translate_owners_required": true,
   "actual_fresh_host_private_abi_audit_required": true,
-  "scope": "original124_plus_twelve_not_fn_current_private_gtest_and_generated_programs",
+  "scope": "original124_plus_twelve_not_fn_plus_nine_bind_current_private_gtest_and_generated_programs",
   "full_ci_passed": false,
   "published_to_dev": false,
   "goal_complete": false,
@@ -124,8 +125,8 @@
     ],
     "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
   },
-  "not_fn_formal_additions_path": "utils/ci/not-fn-pointer-twelve-formal-additions.cpp",
-  "not_fn_formal_additions_sha256": "1773950ecb88dc8436566bb9e2e1bf7601deffb7527ffedfd051bdc9feb4b0c1",
+  "not_fn_formal_additions_path": "utils/ci/bind-twenty-one-formal-additions.cpp",
+  "not_fn_formal_additions_sha256": "dcb85be2ebb3cea63d018f3db3d9238a3064fc3e9398010a647ea5aa17f247a1",
   "not_fn_formal_cases": [
     {
       "name": "not-fn-function-pointer",
@@ -198,14 +199,79 @@
       "formal_test_name": "TranslateTest.CoreV2NotFnNestedAdaptersRunAtBothOptimizations",
       "source_sha256": "526ba4898dfa558ee054497bf191b9da4b3a17caf94376edb5c1c51535593b54",
       "gtest_body_sha256": "509cf8b4685764580ecc54d0a700c8a689e3c4bac126f9f3e58ab28465d7ee58"
+    },
+    {
+      "name": "bind-fully-bound-value-copies",
+      "formal_test_name": "TranslateTest.CoreV2BindFullyBoundValueCopiesRunAtBothOptimizations",
+      "source_sha256": "423b8da11cb05ebbcf04d72addc5d1317818a29ad0438742ef6b86097babd9d1",
+      "gtest_body_sha256": "e9bd0d6af2a7af603f8901bc9622480f548b2827712ea9b3e11f0e3b299143b4"
+    },
+    {
+      "name": "bind-captures-function-pointer-value",
+      "formal_test_name": "TranslateTest.CoreV2BindCapturesFunctionPointerValueRunAtBothOptimizations",
+      "source_sha256": "e4ed0f2db32931da39daedad796df2ba0ec3b55a4188719072b6934dc41e37b0",
+      "gtest_body_sha256": "649a8af5467f43e7c547c7db181c5f7688dea78f746d73d48fa0c33f37139124"
+    },
+    {
+      "name": "bind-bound-expression-effects-once",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundExpressionEffectsOnceRunAtBothOptimizations",
+      "source_sha256": "2ca7e15dd16efb6cdcb2e627d1a7159f0fb45b56cb5704b877a2b6023dbd6aa8",
+      "gtest_body_sha256": "44b6aef4282952297804d31cb5f356c1eef80c271cde9977ed5a4e302f2b605f"
+    },
+    {
+      "name": "bind-borrowed-scalar-argument",
+      "formal_test_name": "TranslateTest.CoreV2BindBorrowedScalarArgumentRunAtBothOptimizations",
+      "source_sha256": "a1a56ec0a672eea6bd79aba1c39efadefaca69b6ba5a17290ce30992d0b40a3b",
+      "gtest_body_sha256": "af3353958f356d670a611e758b7ac84f3e87f863ac9cb1fd5bc598177a219ae2"
+    },
+    {
+      "name": "bind-live-reference-result",
+      "formal_test_name": "TranslateTest.CoreV2BindLiveReferenceResultRunAtBothOptimizations",
+      "source_sha256": "9fe7d9cdd1d857c3e243e18f56b41cc9a1588b6a87e249628af3b1573ebb60db",
+      "gtest_body_sha256": "21d9172db0e2a15d0712d41d9cd0b2b315b62523da4f4283f4120cc2ec567518"
+    },
+    {
+      "name": "bind-void-result",
+      "formal_test_name": "TranslateTest.CoreV2BindVoidResultRunAtBothOptimizations",
+      "source_sha256": "cd12e9224b32d26cdff21fcd9d044031de247975ec22faa232762fa49fa41117",
+      "gtest_body_sha256": "8002b471f5933eadece8f8ad061cf77d32d0b5d67e03fc756ed8193331041c03"
+    },
+    {
+      "name": "bind-result-and-exception-queries",
+      "formal_test_name": "TranslateTest.CoreV2BindResultAndExceptionQueriesRunAtBothOptimizations",
+      "source_sha256": "ebc8e5056c4d6bf0f7517e0ebe1717e79912f5eaa6c7c6e32972cb378472e826",
+      "gtest_body_sha256": "19fea797bfe4272e6b1a50ae10dc89db0712d2ba01abce70deac64cf2c9d5952"
+    },
+    {
+      "name": "bind-lvalue-captures-after-argument-effects",
+      "formal_test_name": "TranslateTest.CoreV2BindLvalueCapturesAfterArgumentEffectsRunAtBothOptimizations",
+      "source_sha256": "36e239740481446b2397da1316fb807dd283b7c502f8f39c9d6e7fb3e2abc9f9",
+      "gtest_body_sha256": "4e1841d360539536bf65309d030631d8aeb32e4047a3cbf701dfbed75037505c"
+    },
+    {
+      "name": "bind-stored-state-and-rvalue-receiver",
+      "formal_test_name": "TranslateTest.CoreV2BindStoredStateAndRvalueReceiverRunAtBothOptimizations",
+      "source_sha256": "967ec76e1957b8b7d653734291d4d30a7cb24b906748e67d5ae57fff030eba15",
+      "gtest_body_sha256": "31375df263bd606f4366a2ecbc9765f3ef7559118175446a22401061e8ec910b"
     }
   ],
-  "required_actual_total_gtest_xml": 136,
-  "required_actual_not_fn_gtest_xml": 12,
-  "required_actual_not_fn_generated_o0_o2_products": 24,
-  "not_fn_registered_previous_additions_path": "utils/ci/not-fn-pointer-twelve-formal-additions.cpp",
-  "not_fn_registered_previous_additions_sha256": "1773950ecb88dc8436566bb9e2e1bf7601deffb7527ffedfd051bdc9feb4b0c1",
-  "required_actual_frontend_requests": 747,
+  "required_actual_total_gtest_xml": 145,
+  "required_actual_not_fn_gtest_xml": 21,
+  "required_actual_not_fn_generated_o0_o2_products": 42,
+  "not_fn_registered_previous_additions_path": "utils/ci/bind-twenty-one-formal-additions.cpp",
+  "not_fn_registered_previous_additions_sha256": "dcb85be2ebb3cea63d018f3db3d9238a3064fc3e9398010a647ea5aa17f247a1",
+  "required_actual_frontend_requests": 756,
   "actual_new_signature_native_reference_verified": false,
-  "actual_prior_custom_native_reference_verified": true
+  "actual_prior_custom_native_reference_verified": true,
+  "preparation_only": false,
+  "execution_binding_required": true,
+  "current_clean_syntax6_proof_sha256": "1bd51d31ebf20b106c731786762059ed47b478f5c5f0f59bac3f7e88f284bfb7",
+  "current_full360_proof_sha256": "505619a792151242c7c9c0a53a93a8f51c7819a18c281ca25e8d5f6187735e6d",
+  "dependency_producer_actual_job": 122606984385,
+  "dependency_producer_attempt": 1,
+  "dependency_producer_authentication_sha256": "7b4188218f280d74d6b87c34443f96cc1df246ae05d0827f240d084424c6b730",
+  "required_component_accept": 200,
+  "required_component_reject": 152,
+  "required_component_invalid": 8,
+  "required_component_requests": 360
 }

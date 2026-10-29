@@ -132,7 +132,7 @@ def main():
         assert producer['conclusion'] == job['conclusion'] == 'success'
         assert producer['run_attempt'] == job['run_attempt'] == plan['producer_attempt']
         assert job['run_id'] == producer['id']
-        for name in ['Observe actual residual not_fn defaults and operator source proofs',
+        for name in ['Validate the complete 360-request STL matrix',
                      'Keep new actual source binary remotely for further diagnosis']:
             assert any(s['name'] == name and s['conclusion'] == 'success' for s in job['steps'])
         provenance = out / 'producer'
@@ -170,7 +170,7 @@ def main():
         assert len(reports) == 1 and sha(reports[0]) == plan['producer_report_sha256']
         previous = json.loads(reports[0].read_text())
         assert previous['revision'] == plan['producer_commit'] and previous['completed'] and previous['passed']
-        assert previous['focused_request_contract_passed'] and len(previous['requests']) == 288
+        assert previous['focused_request_contract_passed'] and len(previous['requests']) == 360
         assert all(r['expectation_satisfied'] for r in previous['requests'])
         assert previous['exact_private_input_sha256'] == plan['exact_private_input_sha256']
         assert previous['new_build_id'] == plan['frontend_build_id']
