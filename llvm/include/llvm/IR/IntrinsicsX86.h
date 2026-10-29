@@ -1075,6 +1075,8 @@ enum X86Intrinsics : unsigned {
     x86_flags_read_u64,                              // llvm.x86.flags.read.u64
     x86_flags_write_u64,                             // llvm.x86.flags.write.u64
     x86_fldcw,                                       // llvm.x86.fldcw
+    x86_fldenv16,                                    // llvm.x86.fldenv16
+    x86_fldenv32,                                    // llvm.x86.fldenv32
     x86_fma_vfmaddsub_pd,                            // llvm.x86.fma.vfmaddsub.pd
     x86_fma_vfmaddsub_pd_256,                        // llvm.x86.fma.vfmaddsub.pd.256
     x86_fma_vfmaddsub_ps,                            // llvm.x86.fma.vfmaddsub.ps
@@ -1082,9 +1084,15 @@ enum X86Intrinsics : unsigned {
     x86_fnclex,                                      // llvm.x86.fnclex
     x86_fninit,                                      // llvm.x86.fninit
     x86_fnop,                                        // llvm.x86.fnop
+    x86_fnsave16,                                    // llvm.x86.fnsave16
+    x86_fnsave32,                                    // llvm.x86.fnsave32
     x86_fnstcw,                                      // llvm.x86.fnstcw
+    x86_fnstenv16,                                   // llvm.x86.fnstenv16
+    x86_fnstenv32,                                   // llvm.x86.fnstenv32
     x86_fnstsw,                                      // llvm.x86.fnstsw
     x86_fnstsw_mem,                                  // llvm.x86.fnstsw.mem
+    x86_frstor16,                                    // llvm.x86.frstor16
+    x86_frstor32,                                    // llvm.x86.frstor32
     x86_fwait,                                       // llvm.x86.fwait
     x86_fxrstor,                                     // llvm.x86.fxrstor
     x86_fxrstor64,                                   // llvm.x86.fxrstor64

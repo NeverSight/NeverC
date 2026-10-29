@@ -137,3 +137,60 @@ TEST(X86X87Control, StatusResetAndWaitRetainArchitecturalDependencies) {
     EXPECT_FALSE(F->hasFnAttribute(Attribute::Speculatable));
   }
 }
+
+TEST(X86X87Control, EnvironmentFormatsRetainMemoryAndAliasedBankEffects) {
+  LLVMInitializeX86TargetInfo();
+  LLVMInitializeX86Target();
+  LLVMInitializeX86TargetMC();
+  std::string Error;
+  const char *Triple = "x86_64-unknown-linux-gnu";
+  const auto *Target = TargetRegistry::lookupTarget(Triple, Error);
+  ASSERT_NE(Target, nullptr) << Error;
+  std::unique_ptr<TargetMachine> TM(
+      Target->createTargetMachine(Triple, "generic", "", {}, std::nullopt));
+  const auto *Instructions = TM->getMCInstrInfo();
+  const auto *Registers = TM->getMCRegisterInfo();
+  unsigned Matches = 0;
+  for (unsigned I = 0; I < Instructions->getNumOpcodes(); ++I) {
+    const auto Name = Instructions->getName(I);
+    if (Name != "FSTENVm" && Name != "FSTENV16m" && Name != "FLDENVm" &&
+        Name != "FLDENV16m" && Name != "FSAVEm" && Name != "FSAVE16m" &&
+        Name != "FRSTORm" && Name != "FRSTOR16m")
+      continue;
+    SCOPED_TRACE(Name.str());
+    ++Matches;
+    const bool Load = Name.starts_with("FLDENV") || Name.starts_with("FRSTOR");
+    const auto &Instruction = Instructions->get(I);
+    EXPECT_TRUE(Instruction.hasUnmodeledSideEffects());
+    EXPECT_EQ(Instruction.mayRaiseFPException(), Load);
+    EXPECT_EQ(Instruction.mayLoad(), Load);
+    EXPECT_EQ(Instruction.mayStore(), !Load);
+    std::set<std::string> Uses, Defs, ExpectedDefs{"FPSW", "FPCW"};
+    for (auto Register : Instruction.implicit_uses())
+      Uses.insert(Registers->getName(Register));
+    for (auto Register : Instruction.implicit_defs())
+      Defs.insert(Registers->getName(Register));
+    if (!Name.starts_with("FSTENV"))
+      for (const char *Bank : {"FP", "ST", "MM"})
+        for (unsigned J = 0; J < 8; ++J)
+          ExpectedDefs.insert(Bank + std::to_string(J));
+    EXPECT_EQ(Uses, (std::set<std::string>{"FPCW", "FPSW"}));
+    EXPECT_EQ(Defs, ExpectedDefs);
+  }
+  EXPECT_EQ(Matches, 8U);
+  LLVMContext Context;
+  Module M("x87-environment", Context);
+  for (auto ID : {Intrinsic::x86_fnstenv16, Intrinsic::x86_fnstenv32,
+                  Intrinsic::x86_fldenv16, Intrinsic::x86_fldenv32,
+                  Intrinsic::x86_fnsave16, Intrinsic::x86_fnsave32,
+                  Intrinsic::x86_frstor16, Intrinsic::x86_frstor32}) {
+    auto *F = Intrinsic::getDeclaration(&M, ID);
+    EXPECT_TRUE(F->getReturnType()->isVoidTy());
+    ASSERT_EQ(F->arg_size(), 1U);
+    EXPECT_TRUE(F->getArg(0)->getType()->isPointerTy());
+    EXPECT_FALSE(F->onlyReadsMemory());
+    EXPECT_FALSE(F->onlyWritesMemory());
+    EXPECT_FALSE(F->hasFnAttribute(Attribute::WillReturn));
+    EXPECT_FALSE(F->hasFnAttribute(Attribute::Speculatable));
+  }
+}

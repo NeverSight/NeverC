@@ -1871,6 +1871,10 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
   /* 19262 */ "aand\t\0"
   /* 19268 */ "aor\t\0"
   /* 19273 */ "axor\t\0"
+  /* 19279 */ "fnstenvs\t\0"
+  /* 19289 */ "fldenvs\t\0"
+  /* 19298 */ "fnsaves\t\0"
+  /* 19307 */ "frstors\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20457,6 +20461,10 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// ENCLU_STATE64_SAVE_RBX
     0U,	// GETSEC_STATE64_SAVE_RBX
     0U,	// CPUID64_SAVE_RBX
+    543568U,	// FSTENV16m
+    543578U,	// FLDENV16m
+    543587U,	// FSAVE16m
+    543596U,	// FRSTOR16m
 };
 
   static const uint16_t OpInfo1[] = {
@@ -39040,6 +39048,10 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// ENCLU_STATE64_SAVE_RBX
     0U,	// GETSEC_STATE64_SAVE_RBX
     0U,	// CPUID64_SAVE_RBX
+    0U,	// FSTENV16m
+    0U,	// FLDENV16m
+    0U,	// FSAVE16m
+    0U,	// FRSTOR16m
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57623,6 +57635,10 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// ENCLU_STATE64_SAVE_RBX
     0U,	// GETSEC_STATE64_SAVE_RBX
     0U,	// CPUID64_SAVE_RBX
+    0U,	// FSTENV16m
+    0U,	// FLDENV16m
+    0U,	// FSAVE16m
+    0U,	// FRSTOR16m
 };
 
   // Emit the opcode for the instruction.

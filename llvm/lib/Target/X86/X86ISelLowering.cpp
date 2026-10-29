@@ -28120,7 +28120,57 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       return DAG.getMergeValues({Value, Value.getValue(1)}, DL);
     }
 
+    case Intrinsic::x86_fnstenv16:
+    case Intrinsic::x86_fnstenv32:
+    case Intrinsic::x86_fldenv16:
+    case Intrinsic::x86_fldenv32:
+    case Intrinsic::x86_fnsave16:
+    case Intrinsic::x86_fnsave32:
+    case Intrinsic::x86_frstor16:
+    case Intrinsic::x86_frstor32:
     case Intrinsic::x86_fnstsw_mem: {
+      unsigned Opcode = X86::FNSTSWm, Bytes = 2;
+      bool Store = true;
+      switch (IntNo) {
+      case Intrinsic::x86_fnstenv16:
+        Opcode = X86::FSTENV16m;
+        Bytes = 14;
+        break;
+      case Intrinsic::x86_fnstenv32:
+        Opcode = X86::FSTENVm;
+        Bytes = 28;
+        break;
+      case Intrinsic::x86_fldenv16:
+        Opcode = X86::FLDENV16m;
+        Bytes = 14;
+        Store = false;
+        break;
+      case Intrinsic::x86_fldenv32:
+        Opcode = X86::FLDENVm;
+        Bytes = 28;
+        Store = false;
+        break;
+      case Intrinsic::x86_fnsave16:
+        Opcode = X86::FSAVE16m;
+        Bytes = 94;
+        break;
+      case Intrinsic::x86_fnsave32:
+        Opcode = X86::FSAVEm;
+        Bytes = 108;
+        break;
+      case Intrinsic::x86_frstor16:
+        Opcode = X86::FRSTOR16m;
+        Bytes = 94;
+        Store = false;
+        break;
+      case Intrinsic::x86_frstor32:
+        Opcode = X86::FRSTORm;
+        Bytes = 108;
+        Store = false;
+        break;
+      default:
+        break;
+      }
       const SDLoc DL(Op);
       const MVT PtrVT = Subtarget.is64Bit() ? MVT::i64 : MVT::i32;
       const SDValue Address[] = {Op.getOperand(2),
@@ -28129,13 +28179,14 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
                                  DAG.getTargetConstant(0, DL, MVT::i32),
                                  DAG.getRegister(0, MVT::i16),
                                  Op.getOperand(0)};
-      auto *Store = DAG.getMachineNode(X86::FNSTSWm, DL, MVT::Other, Address);
+      auto *Access = DAG.getMachineNode(Opcode, DL, MVT::Other, Address);
       auto *MMO = DAG.getMachineFunction().getMachineMemOperand(
           MachinePointerInfo(),
-          MachineMemOperand::MOVolatile | MachineMemOperand::MOStore, 2,
-          Align(1));
-      DAG.setNodeMemRefs(Store, {MMO});
-      return SDValue(Store, 0);
+          MachineMemOperand::MOVolatile |
+              (Store ? MachineMemOperand::MOStore : MachineMemOperand::MOLoad),
+          Bytes, Align(1));
+      DAG.setNodeMemRefs(Access, {MMO});
+      return SDValue(Access, 0);
     }
 
     case Intrinsic::x86_fnstcw:

@@ -75,7 +75,7 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   {llvm::StringLiteral(""), 0, 370},
   {llvm::StringLiteral("aarch64"), 370, 1432},
   // x86 entries must be sorted alphabetically: utils/lint/sort-x86-intrinsics.py
-  {llvm::StringLiteral("x86"), 1802, 1692},
+  {llvm::StringLiteral("x86"), 1802, 1700},
 };
 #endif
 
@@ -2938,6 +2938,8 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.flags.read.u64",
   "llvm.x86.flags.write.u64",
   "llvm.x86.fldcw",
+  "llvm.x86.fldenv16",
+  "llvm.x86.fldenv32",
   "llvm.x86.fma.vfmaddsub.pd",
   "llvm.x86.fma.vfmaddsub.pd.256",
   "llvm.x86.fma.vfmaddsub.ps",
@@ -2945,9 +2947,15 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.fnclex",
   "llvm.x86.fninit",
   "llvm.x86.fnop",
+  "llvm.x86.fnsave16",
+  "llvm.x86.fnsave32",
   "llvm.x86.fnstcw",
+  "llvm.x86.fnstenv16",
+  "llvm.x86.fnstenv32",
   "llvm.x86.fnstsw",
   "llvm.x86.fnstsw.mem",
+  "llvm.x86.frstor16",
+  "llvm.x86.frstor32",
   "llvm.x86.fwait",
   "llvm.x86.fxrstor",
   "llvm.x86.fxrstor64",
@@ -4016,6 +4024,7 @@ static const uint8_t OTable[] = {
   0,
   0,
   0,
+  0,
   0
 };
 
@@ -4382,8 +4391,9 @@ static const unsigned IIT_Table[] = {
   0xe0, 0x0, 0x0, 0xe0, 0xe0, 0x444e4, 0x4444454, 0x4444454,
   0x455e5, 0x4445555, 0x4445555, 0x44E0, 0x4e0, 0x5e0, (1U<<31) | 4279, (1U<<31) | 4279,
   (1U<<31) | 4472, (1U<<31) | 4279, (1U<<31) | 2559, (1U<<31) | 2587, 0xee2, 0xee2, 0x5, 0x50,
-  0xe0, (1U<<31) | 3549, (1U<<31) | 3610, 0x7a7a7a7a, 0x7b7b7b7b, 0x0, 0x0, 0x0,
-  0xe0, 0x3, 0xe0, 0x0, 0xe0, 0xe0, 0xe0, 0xe0,
+  0xe0, 0xe0, 0xe0, (1U<<31) | 3549, (1U<<31) | 3610, 0x7a7a7a7a, 0x7b7b7b7b, 0x0,
+  0x0, 0x0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0x3,
+  0xe0, 0xe0, 0xe0, 0x0, 0xe0, 0xe0, 0xe0, 0xe0,
   (1U<<31) | 4290, (1U<<31) | 4472, 0x0, 0x40, 0x32, 0x4E30, 0x40, 0x50,
   0x34, 0x4E30, 0x20, 0, 0x0, 0xE52, 0x44552, 0xE0,
   0x4450, 0x450, 0x440, 0x4450, 0x4440, 0xe40, 0xE52, 0x44552,
@@ -8161,6 +8171,8 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     11, // llvm.x86.flags.read.u64
     11, // llvm.x86.flags.write.u64
     11, // llvm.x86.fldcw
+    11, // llvm.x86.fldenv16
+    11, // llvm.x86.fldenv32
     2, // llvm.x86.fma.vfmaddsub.pd
     2, // llvm.x86.fma.vfmaddsub.pd.256
     2, // llvm.x86.fma.vfmaddsub.ps
@@ -8168,9 +8180,15 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     11, // llvm.x86.fnclex
     11, // llvm.x86.fninit
     11, // llvm.x86.fnop
+    11, // llvm.x86.fnsave16
+    11, // llvm.x86.fnsave32
     11, // llvm.x86.fnstcw
+    11, // llvm.x86.fnstenv16
+    11, // llvm.x86.fnstenv32
     11, // llvm.x86.fnstsw
     11, // llvm.x86.fnstsw.mem
+    11, // llvm.x86.frstor16
+    11, // llvm.x86.frstor32
     11, // llvm.x86.fwait
     11, // llvm.x86.fxrstor
     11, // llvm.x86.fxrstor64

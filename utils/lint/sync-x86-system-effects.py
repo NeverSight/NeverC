@@ -90,6 +90,16 @@ EFFECTS = {
 REGISTER_RESULTS = {f"{operation}{bits}r"
                     for operation in ("SLDT", "STR", "SMSW")
                     for bits in (16, 32, 64)}
+for operation in ("FSTENV", "FLDENV", "FSAVE", "FRSTOR"):
+    load = operation in ("FLDENV", "FRSTOR")
+    definitions = ("FPSW", "FPCW")
+    if operation != "FSTENV":
+        definitions += tuple(f"{bank}{index}" for bank in ("FP", "ST", "MM")
+                             for index in range(8))
+    uses = ("FPCW", "FPSW") if load else ("FPSW", "FPCW")
+    memory = ("MayLoad", "MayRaiseFPException") if load else ("MayStore",)
+    for suffix in ("m", "16m"):
+        EFFECTS[operation + suffix] = (5, uses, definitions, memory)
 for name in REGISTER_RESULTS:
     EFFECTS[name] = (1, (), (), ())
 for operation in ("SLDT", "STR", "SMSW"):

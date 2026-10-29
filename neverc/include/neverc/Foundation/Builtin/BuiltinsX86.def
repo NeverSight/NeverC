@@ -25,6 +25,15 @@ BUILTIN(__builtin_ia32_fnstsw_mem, "vUs*", "n")
 BUILTIN(__builtin_ia32_fnclex, "v", "n")
 BUILTIN(__builtin_ia32_fninit, "v", "n")
 BUILTIN(__builtin_ia32_fwait, "v", "n")
+// Operand-size formats: 14/28-byte environments, 94/108-byte register images.
+BUILTIN(__builtin_ia32_fnstenv16, "vv*", "n")
+BUILTIN(__builtin_ia32_fnstenv32, "vv*", "n")
+BUILTIN(__builtin_ia32_fldenv16, "vvC*", "n")
+BUILTIN(__builtin_ia32_fldenv32, "vvC*", "n")
+BUILTIN(__builtin_ia32_fnsave16, "vv*", "n")
+BUILTIN(__builtin_ia32_fnsave32, "vv*", "n")
+BUILTIN(__builtin_ia32_frstor16, "vvC*", "n")
+BUILTIN(__builtin_ia32_frstor32, "vvC*", "n")
 
 // Undefined Values
 //

@@ -636,6 +636,49 @@ All six outputs agree. The full x86 frontend and backend selections pass
 six control-word profiles with the same 6,912 state observations, 120 expected
 faults and 24 boundary accesses; generated control sources remain unchanged.
 
+### Native x87 environment and register images
+
+Eight header-free `__builtin_ia32_fnstenv16/32`, `__builtin_ia32_fldenv16/32`,
+`__builtin_ia32_fnsave16/32` and `__builtin_ia32_frstor16/32` builtins select
+14/28-byte environments and 94/108-byte register images. Each returns void;
+saves accept `void *`, restores accept `const void *`. Corresponding fixed
+LLVM names use the same operation and format suffix. The suffix selects the
+operand format independently of address width.
+
+Saves are nonwaiting. FNSTENV masks exceptions after saving; FNSAVE saves the
+register payloads and initializes the FPU. Restores check incoming pending
+exceptions before reading, and defer newly loaded unmasked exceptions to the
+next waiting operation. The backend carries exact volatile memory sizes and
+byte alignment, keeps all operations as scheduling boundaries and invalidates
+compiler FP/ST/MMX values for operations that replace TOP/tags or payloads.
+This preserves compiler-owned values through spills/reloads; it does not make
+separate state calls an atomic context switch.
+
+The full fork owns the four new 16-bit machine encodings. NeverC's
+[sync-x86-x87-environment.py](utils/lint/sync-x86-x87-environment.py) keeps their opcode numbers,
+66 prefixes, assembler and printer records synchronized, using the existing
+system-effect owner for register and memory effects. Native signature
+synchronization remains in the existing intrinsic generator.
+
+[X87EnvironmentFrontendTests.cpp](tests/neverc/X86/X87EnvironmentFrontendTests.cpp) checks both formats
+at O0/O2 on ELF, COFF and Mach-O, including pointer qualification and arity.
+[verify_x87_environment.py](tests/neverc/X86/verify_x87_environment.py) uses the shared qualification
+driver with [x87_environment_harness.c](tests/neverc/X86/x87_environment_harness.c): raw-byte reference
+instructions, independently reconstructed full tags, all TOP values, mixed
+80-bit payload classes, save/reset/restore behavior, exact protected-page
+boundaries, pending and newly loaded exceptions, and live x87/MMX values.
+Physical qualification covers the recorded Linux x64 CPU; i386 runtime,
+privileged faults and historical processors remain outside that evidence.
+
+The 2026-10-28 qualification uses full LLVM
+[`f35c3ce214cd`](https://github.com/NeverSight/llvm-project/commit/f35c3ce214cd0bb12849ea46fdb826864444786b).
+Direct LLVM, NeverC and NeverC IR through full LLVM pass at O0/O2: six profiles,
+55,296 state observations, 480 expected faults in 624 fault/nonfault cases,
+96 protected-page boundaries and 3,072 live-value cases. Their observation
+streams match byte-for-byte. All 115 X86 frontend tests, seven backend tests,
+60 generator tests and 16 X86 synchronization checks pass. The qualification
+manifest records compiler, source and artifact hashes and verifies stable inputs.
+
 ### Native FEMMS and legacy MMX IR
 
 `__builtin_ia32_femms()` already has a native frontend and embedded-backend

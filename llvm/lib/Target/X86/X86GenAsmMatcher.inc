@@ -8407,7 +8407,11 @@ static const char MnemonicTable[] =
     "\006bndstx"
     "\005bndcl"
     "\005bndcu"
-    "\005bndcn";
+    "\005bndcn"
+    "\010fnstenvs"
+    "\007fldenvs"
+    "\007fnsaves"
+    "\007frstors";
 
 // Feature bitsets.
 enum : uint8_t {
@@ -9560,6 +9564,7 @@ static const MatchEntry MatchTable0[] = {
   { 2951 /* fld1 */, X86::LD_F1, Convert_NoOperands, AMFBS_None, {  }, },
   { 2956 /* fldcw */, X86::FLDCW16m, Convert__Mem165_0, AMFBS_None, { MCK_Mem16 }, },
   { 2962 /* fldenv */, X86::FLDENVm, Convert__Mem5_0, AMFBS_None, { MCK_Mem }, },
+  { 18931 /* fldenvs */, X86::FLDENV16m, Convert__Mem5_0, AMFBS_In64BitMode, { MCK_Mem }, },
   { 2969 /* fldl */, X86::LD_F64m, Convert__Mem645_0, AMFBS_None, { MCK_Mem64 }, },
   { 2974 /* fldl2e */, X86::FLDL2E, Convert_NoOperands, AMFBS_None, {  }, },
   { 2981 /* fldl2t */, X86::FLDL2T, Convert_NoOperands, AMFBS_None, {  }, },
@@ -9585,8 +9590,10 @@ static const MatchEntry MatchTable0[] = {
   { 3053 /* fninit */, X86::FNINIT, Convert_NoOperands, AMFBS_None, {  }, },
   { 3060 /* fnop */, X86::FNOP, Convert_NoOperands, AMFBS_None, {  }, },
   { 3065 /* fnsave */, X86::FSAVEm, Convert__Mem5_0, AMFBS_None, { MCK_Mem }, },
+  { 18939 /* fnsaves */, X86::FSAVE16m, Convert__Mem5_0, AMFBS_In64BitMode, { MCK_Mem }, },
   { 3072 /* fnstcw */, X86::FNSTCW16m, Convert__Mem165_0, AMFBS_None, { MCK_Mem16 }, },
   { 3079 /* fnstenv */, X86::FSTENVm, Convert__Mem5_0, AMFBS_None, { MCK_Mem }, },
+  { 18922 /* fnstenvs */, X86::FSTENV16m, Convert__Mem5_0, AMFBS_In64BitMode, { MCK_Mem }, },
   { 3087 /* fnstsw */, X86::FNSTSW16r, Convert_NoOperands, AMFBS_None, {  }, },
   { 3087 /* fnstsw */, X86::FNSTSW16r, Convert_NoOperands, AMFBS_None, { MCK_AX }, },
   { 3087 /* fnstsw */, X86::FNSTSWm, Convert__Mem165_0, AMFBS_None, { MCK_Mem16 }, },
@@ -9596,6 +9603,7 @@ static const MatchEntry MatchTable0[] = {
   { 3114 /* fptan */, X86::FPTAN, Convert_NoOperands, AMFBS_None, {  }, },
   { 3120 /* frndint */, X86::FRNDINT, Convert_NoOperands, AMFBS_None, {  }, },
   { 3128 /* frstor */, X86::FRSTORm, Convert__Mem5_0, AMFBS_None, { MCK_Mem }, },
+  { 18947 /* frstors */, X86::FRSTOR16m, Convert__Mem5_0, AMFBS_In64BitMode, { MCK_Mem }, },
   { 3135 /* fs */, X86::FS_PREFIX, Convert_NoOperands, AMFBS_None, {  }, },
   { 3138 /* fscale */, X86::FSCALE, Convert_NoOperands, AMFBS_None, {  }, },
   { 3145 /* fsin */, X86::FSIN, Convert_NoOperands, AMFBS_None, {  }, },
@@ -27363,6 +27371,7 @@ static const MatchEntry MatchTable1[] = {
   { 2951 /* fld1 */, X86::LD_F1, Convert_NoOperands, AMFBS_None, {  }, },
   { 2956 /* fldcw */, X86::FLDCW16m, Convert__Mem165_0, AMFBS_None, { MCK_Mem16 }, },
   { 2962 /* fldenv */, X86::FLDENVm, Convert__Mem5_0, AMFBS_None, { MCK_Mem }, },
+  { 18931 /* fldenvs */, X86::FLDENV16m, Convert__Mem5_0, AMFBS_In64BitMode, { MCK_Mem }, },
   { 2974 /* fldl2e */, X86::FLDL2E, Convert_NoOperands, AMFBS_None, {  }, },
   { 2981 /* fldl2t */, X86::FLDL2T, Convert_NoOperands, AMFBS_None, {  }, },
   { 2988 /* fldlg2 */, X86::FLDLG2, Convert_NoOperands, AMFBS_None, {  }, },
@@ -27385,8 +27394,10 @@ static const MatchEntry MatchTable1[] = {
   { 3053 /* fninit */, X86::FNINIT, Convert_NoOperands, AMFBS_None, {  }, },
   { 3060 /* fnop */, X86::FNOP, Convert_NoOperands, AMFBS_None, {  }, },
   { 3065 /* fnsave */, X86::FSAVEm, Convert__Mem5_0, AMFBS_None, { MCK_Mem }, },
+  { 18939 /* fnsaves */, X86::FSAVE16m, Convert__Mem5_0, AMFBS_In64BitMode, { MCK_Mem }, },
   { 3072 /* fnstcw */, X86::FNSTCW16m, Convert__Mem165_0, AMFBS_None, { MCK_Mem16 }, },
   { 3079 /* fnstenv */, X86::FSTENVm, Convert__Mem5_0, AMFBS_None, { MCK_Mem }, },
+  { 18922 /* fnstenvs */, X86::FSTENV16m, Convert__Mem5_0, AMFBS_In64BitMode, { MCK_Mem }, },
   { 3087 /* fnstsw */, X86::FNSTSW16r, Convert_NoOperands, AMFBS_None, {  }, },
   { 3087 /* fnstsw */, X86::FNSTSW16r, Convert_NoOperands, AMFBS_None, { MCK_AX }, },
   { 3087 /* fnstsw */, X86::FNSTSWm, Convert__Mem165_0, AMFBS_None, { MCK_Mem16 }, },
@@ -27396,6 +27407,7 @@ static const MatchEntry MatchTable1[] = {
   { 3114 /* fptan */, X86::FPTAN, Convert_NoOperands, AMFBS_None, {  }, },
   { 3120 /* frndint */, X86::FRNDINT, Convert_NoOperands, AMFBS_None, {  }, },
   { 3128 /* frstor */, X86::FRSTORm, Convert__Mem5_0, AMFBS_None, { MCK_Mem }, },
+  { 18947 /* frstors */, X86::FRSTOR16m, Convert__Mem5_0, AMFBS_In64BitMode, { MCK_Mem }, },
   { 3135 /* fs */, X86::FS_PREFIX, Convert_NoOperands, AMFBS_None, {  }, },
   { 3138 /* fscale */, X86::FSCALE, Convert_NoOperands, AMFBS_None, {  }, },
   { 3145 /* fsin */, X86::FSIN, Convert_NoOperands, AMFBS_None, {  }, },

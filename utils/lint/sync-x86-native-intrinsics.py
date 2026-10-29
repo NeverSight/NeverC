@@ -47,6 +47,9 @@ DECLARATIONS = {
 }
 for operation in ("vmload", "vmsave"):
     DECLARATIONS[operation] = ("Done", "I64")
+for operation in ("fnstenv", "fldenv", "fnsave", "frstor"):
+    for bits in (16, 32):
+        DECLARATIONS[f"{operation}{bits}"] = ("Done", "PTR")
 DECLARATIONS["invlpga"] = ("Done", "I64", "I32")
 for operation in ("vmload", "vmsave"):
     DECLARATIONS[operation + "_addr32"] = ("Done", "I32")

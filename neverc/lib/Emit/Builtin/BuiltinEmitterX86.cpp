@@ -3448,6 +3448,30 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_fldcw:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_fldcw,
                                    {Ops[0]});
+  case X86::BI__builtin_ia32_fnstenv16:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_fnstenv16,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_fnstenv32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_fnstenv32,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_fldenv16:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_fldenv16,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_fldenv32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_fldenv32,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_fnsave16:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_fnsave16,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_fnsave32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_fnsave32,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_frstor16:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_frstor16,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_frstor32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_frstor32,
+                                   {Ops[0]});
   case X86::BI__svm_skinit:
   case X86::BI__builtin_ia32_skinit: {
     auto *Call =
