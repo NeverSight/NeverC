@@ -132,7 +132,7 @@ def main():
         assert producer['conclusion'] == job['conclusion'] == 'success'
         assert producer['run_attempt'] == job['run_attempt'] == plan['producer_attempt']
         assert job['run_id'] == producer['id']
-        for name in ['Observe actual residual not_fn defaults and operator source proofs',
+        for name in ['Validate the complete 360-request STL matrix',
                      'Keep new actual source binary remotely for further diagnosis']:
             assert any(s['name'] == name and s['conclusion'] == 'success' for s in job['steps'])
         provenance = out / 'producer'
