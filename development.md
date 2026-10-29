@@ -50,6 +50,65 @@ also applies the Microsoft-name register/return checks to all eight portable
 names: 89 binary cases pass. These transport checks do not authorize or qualify
 successful privileged accesses on physical hardware.
 
+## Native far-pointer segment loads
+
+`__builtin_ia32_lfs16/32/64`, `__builtin_ia32_lgs16/32/64` and
+`__builtin_ia32_lss16/32/64` each take one `const void *`. The result is an
+`unsigned short`, `unsigned int` or `unsigned long long`, respectively. The
+memory image is packed: the offset occupies 2, 4 or 8 bytes, followed immediately
+by a two-byte selector. It requires no padding or stronger alignment. Each
+builtin emits its matching `llvm.x86.*` intrinsic and one native far-pointer
+load. Hardware owns selector validation and segment installation before the
+offset becomes the successful result. An unused result does not remove the
+operation. Descriptor-table reads and accessed-bit writes remain unknown memory
+effects, separate from the pointer image's exact read extent.
+
+The selected segment and its hidden descriptor remain ambient CPU state. These
+APIs do not save or restore TLS, switch the compiler stack or provide a complete
+machine-state continuation. Callers must preserve the compiler ABI's segment
+invariants. In particular, LSS's interrupt/debug inhibition applies to the next
+machine instruction selected by the compiler; it does not establish adjacency
+to an original binary instruction. Machine scheduling cannot move instructions
+across the far-load boundary. Native arithmetic flags are unchanged.
+The pointer follows compiler-selected addressing. The API does not retain an
+original instruction's source segment, address-size prefix or default-stack
+fault provenance.
+
+The full LLVM fork also exposes `llvm.x86.lds16/32` and `llvm.x86.les16/32` in
+32-bit code. NeverC targets x86-64 and does not advertise those four invalid
+long-mode builtins; its IR reader retains their signatures and diagnoses native
+compilation. All 64-bit result forms require long mode, and code16 is explicitly
+unsupported. These mode checks do not substitute another instruction.
+
+`FarPointerFrontendTests.cpp` checks native identity, unused effects, exact C
+types, malformed operands and both assembly dialects at O0/O2 on ELF/COFF/Mach-O.
+The backend and generated-table tests check segment definitions and unknown
+descriptor effects. [verify_far_pointer.py](tests/neverc/X86/verify_far_pointer.py) compares direct LLVM,
+NeverC and NeverC IR through LLVM against independent original bytes on Linux
+x64. Its invocation window restores FS/GS bases, selectors and SS before host C
+continues. It tests GDT/LDT selectors, readable and execute-only code descriptors,
+read-only and absent data descriptors, null selectors, unaligned pointer images
+and protected page boundaries. Faulting children single-step to the actual
+allocated instruction and verify that all GPRs and arithmetic flags/DF remain
+unchanged when it faults; page faults also check CR2. FSGSBASE OS support and `modify_ldt` are required;
+unavailable prerequisites do not count as passes. The driver retains exact
+commands, tool hashes, objects, observation streams and explicit exclusions.
+
+Each of the six compiler/optimization profiles checks 4,320 paired state
+observations, 18 exact page-boundary completions and 186 faults. The 1,440
+observations with null FS/GS selectors 1..3 use `ptrace` to read the saved
+register bank at the instruction's immediate single-step stop; they also check
+GPR preservation, partial-register writes, arithmetic flags/DF and image
+canaries. Those children are terminated at the stop, so they do not qualify
+post-interrupt continuation. A separate original-byte reproduction showed all
+three selectors becoming zero after Linux SIGTRAP return, while direct and
+ordinary syscall observations retained them. Linux's
+[x64 signal-frame implementation](https://github.com/torvalds/linux/blob/master/arch/x86/kernel/signal_64.c)
+also writes zero into the frame's FS/GS fields, so reading them from a signal
+handler would not measure the instruction result. No selector is masked,
+removed from the matrix or retried on mismatch. Parent-child tracing permission
+is an additional prerequisite for these observations.
+
 ## Native MPX bounds state
 
 NeverC exposes 14 C23 builtins for the architectural BND0--BND3 bank. Each
@@ -622,7 +681,7 @@ control-word harness. It compares independent DF E0, DD /7, DB E2, DB E3 and
 9B byte oracles, checks two-byte canaries and page boundaries, inspects fault
 PC/opcode/marker/saved state in children, and checks live x87/MMX values across
 FNINIT, including a realigned stack frame. The shared
-[x87_native_qualification.py](tests/neverc/X86/x87_native_qualification.py) owns compiler profiles and
+[native_qualification.py](tests/neverc/X86/native_qualification.py) owns compiler profiles and
 hash-based evidence recording for both harnesses. Ordinary unconstrained FP
 IR keeps its usual environment assumptions; these APIs do not establish an
 atomic owned-context transition or complete machine-state equivalence.

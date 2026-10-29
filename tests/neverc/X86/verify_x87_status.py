@@ -5,7 +5,7 @@ Exercise compiler-owned x87/MMX values, exact two-byte stores, and real faults.
 Child signal handlers inspect fault instructions and saved state, then exit.
 """
 
-from x87_native_qualification import run_qualification
+from native_qualification import run_qualification
 
 
 HARNESS = r'''

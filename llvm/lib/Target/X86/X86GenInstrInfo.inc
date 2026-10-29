@@ -20991,7 +20991,7 @@ struct X86InstrTable {
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5521];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[833];
+  MCPhysReg ImplicitOps[836];
 };
 
 } // end namespace llvm
@@ -37870,9 +37870,9 @@ extern const X86InstrTable X86Descs = {
     { 1722,	7,	0,	0,	8,	0,	1,	X86ImpOpBase + 0,	326,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x894018c020ULL },  // Inst #1722 = LWPINS32rmi
     { 1721,	1,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	767,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x2033ULL },  // Inst #1721 = LTRr
     { 1720,	5,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x2023ULL },  // Inst #1720 = LTRm
-    { 1719,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	214,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x5900022019ULL },  // Inst #1719 = LSS64rm
-    { 1718,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	493,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x5900002119ULL },  // Inst #1718 = LSS32rm
-    { 1717,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	515,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x5900002099ULL },  // Inst #1717 = LSS16rm
+    { 1719,	6,	1,	0,	8,	0,	1,	X86ImpOpBase + 833,	214,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5900022019ULL },  // Inst #1719 = LSS64rm
+    { 1718,	6,	1,	0,	8,	0,	1,	X86ImpOpBase + 833,	493,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5900002119ULL },  // Inst #1718 = LSS32rm
+    { 1717,	6,	1,	0,	8,	0,	1,	X86ImpOpBase + 833,	515,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5900002099ULL },  // Inst #1717 = LSS16rm
     { 1716,	2,	1,	0,	1121,	0,	1,	X86ImpOpBase + 0,	910,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x180022029ULL },  // Inst #1716 = LSL64rr
     { 1715,	6,	1,	0,	852,	0,	1,	X86ImpOpBase + 0,	214,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x180022019ULL },  // Inst #1715 = LSL64rm
     { 1714,	2,	1,	0,	1121,	0,	1,	X86ImpOpBase + 0,	908,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x180002129ULL },  // Inst #1714 = LSL32rr
@@ -37982,13 +37982,13 @@ extern const X86InstrTable X86Descs = {
     { 1610,	1,	0,	0,	1487,	0,	0,	X86ImpOpBase + 0,	767,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x2032ULL },  // Inst #1610 = LLDT16r
     { 1609,	5,	0,	0,	1486,	0,	0,	X86ImpOpBase + 0,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x2022ULL },  // Inst #1609 = LLDT16m
     { 1608,	5,	0,	0,	1485,	0,	0,	X86ImpOpBase + 0,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x80002023ULL },  // Inst #1608 = LIDT64m
-    { 1607,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	214,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x5a80022019ULL },  // Inst #1607 = LGS64rm
-    { 1606,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	493,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x5a80002119ULL },  // Inst #1606 = LGS32rm
-    { 1605,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	515,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x5a80002099ULL },  // Inst #1605 = LGS16rm
+    { 1607,	6,	1,	0,	8,	0,	1,	X86ImpOpBase + 835,	214,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5a80022019ULL },  // Inst #1607 = LGS64rm
+    { 1606,	6,	1,	0,	8,	0,	1,	X86ImpOpBase + 835,	493,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5a80002119ULL },  // Inst #1606 = LGS32rm
+    { 1605,	6,	1,	0,	8,	0,	1,	X86ImpOpBase + 835,	515,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5a80002099ULL },  // Inst #1605 = LGS16rm
     { 1604,	5,	0,	0,	1484,	0,	0,	X86ImpOpBase + 0,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::UnmodeledSideEffects), 0x80002022ULL },  // Inst #1604 = LGDT64m
-    { 1603,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	214,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x5a00022019ULL },  // Inst #1603 = LFS64rm
-    { 1602,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	493,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x5a00002119ULL },  // Inst #1602 = LFS32rm
-    { 1601,	6,	1,	0,	8,	0,	0,	X86ImpOpBase + 0,	515,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x5a00002099ULL },  // Inst #1601 = LFS16rm
+    { 1603,	6,	1,	0,	8,	0,	1,	X86ImpOpBase + 834,	214,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5a00022019ULL },  // Inst #1603 = LFS64rm
+    { 1602,	6,	1,	0,	8,	0,	1,	X86ImpOpBase + 834,	493,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5a00002119ULL },  // Inst #1602 = LFS32rm
+    { 1601,	6,	1,	0,	8,	0,	1,	X86ImpOpBase + 834,	515,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x5a00002099ULL },  // Inst #1601 = LFS16rm
     { 1600,	0,	0,	0,	626,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x570000203dULL },  // Inst #1600 = LFENCE
     { 1599,	0,	0,	0,	628,	2,	2,	X86ImpOpBase + 267,	1,	0|(1ULL<<MCID::MayLoad), 0x6480000001ULL },  // Inst #1599 = LEAVE64
     { 1598,	6,	1,	0,	989,	0,	0,	X86ImpOpBase + 0,	919,	0|(1ULL<<MCID::Rematerializable), 0x4680020019ULL },  // Inst #1598 = LEA64r
@@ -40888,6 +40888,9 @@ extern const X86InstrTable X86Descs = {
     /* 775 */ X86::FPCW, X86::FPSW, X86::FPSW, X86::FPCW,
     /* 779 */ X86::FPSW, X86::FPCW, X86::FP0, X86::FP1, X86::FP2, X86::FP3, X86::FP4, X86::FP5, X86::FP6, X86::FP7, X86::ST0, X86::ST1, X86::ST2, X86::ST3, X86::ST4, X86::ST5, X86::ST6, X86::ST7, X86::MM0, X86::MM1, X86::MM2, X86::MM3, X86::MM4, X86::MM5, X86::MM6, X86::MM7,
     /* 805 */ X86::FPCW, X86::FPSW, X86::FPSW, X86::FPCW, X86::FP0, X86::FP1, X86::FP2, X86::FP3, X86::FP4, X86::FP5, X86::FP6, X86::FP7, X86::ST0, X86::ST1, X86::ST2, X86::ST3, X86::ST4, X86::ST5, X86::ST6, X86::ST7, X86::MM0, X86::MM1, X86::MM2, X86::MM3, X86::MM4, X86::MM5, X86::MM6, X86::MM7,
+    /* 833 */ X86::SS,
+    /* 834 */ X86::FS,
+    /* 835 */ X86::GS,
   }
 };
 

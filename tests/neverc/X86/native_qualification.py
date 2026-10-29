@@ -1,4 +1,4 @@
-"""Shared compiler profiles and retained evidence for native x87 oracles."""
+"""Shared compiler profiles and retained evidence for native x86 oracles."""
 
 import argparse
 import hashlib
@@ -13,7 +13,7 @@ def digest(path):
 
 
 def run_qualification(description, harness_text, sources, expected, expected_rows,
-                      reference, script_path):
+                      reference, script_path, exclusions=None):
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--llc", type=Path)
     parser.add_argument("--opt", type=Path,
@@ -96,7 +96,8 @@ def run_qualification(description, harness_text, sources, expected, expected_row
               "files": {str(path.relative_to(root)): {"sha256": digest(path),
                                                        "bytes": path.stat().st_size}
                         for path in sorted(root.rglob("*")) if path.is_file()},
-              "exclusions": ["other CPU models", "i386 runtime", "privileged #NM",
+              "exclusions": exclusions if exclusions is not None else
+                            ["other CPU models", "i386 runtime", "privileged #NM",
                              "alignment-check exceptions", "general x87 state equivalence"],
               "reference": reference}
     (root / "qualification.json").write_text(json.dumps(record, indent=2) + "\n")

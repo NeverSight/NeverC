@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from x87_native_qualification import run_qualification
+from native_qualification import run_qualification
 
 
 OPERATIONS = tuple(f"{op}{bits}" for op in ("fnstenv", "fldenv", "fnsave", "frstor")

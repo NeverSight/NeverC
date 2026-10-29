@@ -1,0 +1,22 @@
+//===- X86FarPointerLoads.def - Far loads --------------------*- C++ -*-===//
+//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+// Define X86_FAR_POINTER_LOAD(Name, Opcode, Bits, Segment, LegacyOnly).
+// This intentionally unguarded inventory owns lowering and scheduling cases.
+// NeverC targets x86-64; LDS/LES are available only in the full LLVM fork.
+//===----------------------------------------------------------------------===//
+
+X86_FAR_POINTER_LOAD(lss16, LSS16rm, 16, SS, false)
+X86_FAR_POINTER_LOAD(lss32, LSS32rm, 32, SS, false)
+X86_FAR_POINTER_LOAD(lss64, LSS64rm, 64, SS, false)
+X86_FAR_POINTER_LOAD(lfs16, LFS16rm, 16, FS, false)
+X86_FAR_POINTER_LOAD(lfs32, LFS32rm, 32, FS, false)
+X86_FAR_POINTER_LOAD(lfs64, LFS64rm, 64, FS, false)
+X86_FAR_POINTER_LOAD(lgs16, LGS16rm, 16, GS, false)
+X86_FAR_POINTER_LOAD(lgs32, LGS32rm, 32, GS, false)
+X86_FAR_POINTER_LOAD(lgs64, LGS64rm, 64, GS, false)

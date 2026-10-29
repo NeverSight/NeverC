@@ -42,6 +42,12 @@ class NativeSignaturesTest(unittest.TestCase):
     def test_checked_in_native_schema_is_synchronized(self):
         NATIVE.synchronize(False)
 
+    def test_far_pointer_images_are_single_pointer_operands(self):
+        for operation in ("lds", "les", "lss", "lfs", "lgs"):
+            for bits in ((16, 32) if operation in ("lds", "les") else (16, 32, 64)):
+                self.assertEqual(NATIVE.DECLARATIONS[f"{operation}{bits}"],
+                                 (f"I{bits}", "PTR"))
+
     def test_address_controls_have_distinct_immediate_positions(self):
         first, initial = NATIVE.immediate_arguments_attribute(self.impl, (1, 2))
         second, updated = NATIVE.immediate_arguments_attribute(initial, (2, 3))

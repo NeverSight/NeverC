@@ -8,6 +8,11 @@
 #  define TARGET_HEADER_BUILTIN(ID, TYPE, ATTRS, HEADER, LANG, FEATURE) BUILTIN(ID, TYPE, ATTRS)
 #endif
 
+// Native packed far-pointer loads; selector validation stays instruction-owned.
+BUILTIN(__builtin_ia32_lss64, "ULLivC*", "n")
+BUILTIN(__builtin_ia32_lfs64, "ULLivC*", "n")
+BUILTIN(__builtin_ia32_lgs64, "ULLivC*", "n")
+
 TARGET_HEADER_BUILTIN(_BitScanForward64, "UcUNi*ULLi", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(_BitScanReverse64, "UcUNi*ULLi", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 

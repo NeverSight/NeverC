@@ -90,6 +90,11 @@ EFFECTS = {
 REGISTER_RESULTS = {f"{operation}{bits}r"
                     for operation in ("SLDT", "STR", "SMSW")
                     for bits in (16, 32, 64)}
+for operation in ("LSS", "LFS", "LGS"):
+    for bits in (16, 32, 64):
+        name = f"{operation}{bits}rm"
+        REGISTER_RESULTS.add(name)
+        EFFECTS[name] = (6, (), (operation[1:],), ("MayLoad", "MayStore"))
 for operation in ("FSTENV", "FLDENV", "FSAVE", "FRSTOR"):
     load = operation in ("FLDENV", "FRSTOR")
     definitions = ("FPSW", "FPCW")
@@ -101,7 +106,8 @@ for operation in ("FSTENV", "FLDENV", "FSAVE", "FRSTOR"):
     for suffix in ("m", "16m"):
         EFFECTS[operation + suffix] = (5, uses, definitions, memory)
 for name in REGISTER_RESULTS:
-    EFFECTS[name] = (1, (), (), ())
+    if name not in EFFECTS:
+        EFFECTS[name] = (1, (), (), ())
 for operation in ("SLDT", "STR", "SMSW"):
     name = operation + ("m" if operation == "STR" else "16m")
     EFFECTS[name] = (5, (), (), ("MayStore",))

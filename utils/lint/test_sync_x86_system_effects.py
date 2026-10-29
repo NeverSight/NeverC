@@ -30,6 +30,14 @@ class SystemEffectsTest(unittest.TestCase):
         original = EFFECTS.TABLE.read_text()
         self.assertEqual(EFFECTS.synchronize(original), original)
 
+    def test_far_loads_define_the_segment_and_retain_descriptor_writes(self):
+        for operation in ("LFS", "LGS", "LSS"):
+            for bits in (16, 32, 64):
+                name = f"{operation}{bits}rm"
+                self.assertIn(name, EFFECTS.REGISTER_RESULTS)
+                self.assertEqual(EFFECTS.EFFECTS[name],
+                                 (6, (), (operation[1:],), ("MayLoad", "MayStore")))
+
 
 if __name__ == "__main__":
     unittest.main()

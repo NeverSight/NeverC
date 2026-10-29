@@ -8,6 +8,14 @@
 #  define TARGET_HEADER_BUILTIN(ID, TYPE, ATTRS, HEADER, LANG, FEATURE) BUILTIN(ID, TYPE, ATTRS)
 #endif
 
+// Native packed far-pointer loads; selector validation stays instruction-owned.
+BUILTIN(__builtin_ia32_lss16, "UsvC*", "n")
+BUILTIN(__builtin_ia32_lss32, "UivC*", "n")
+BUILTIN(__builtin_ia32_lfs16, "UsvC*", "n")
+BUILTIN(__builtin_ia32_lfs32, "UivC*", "n")
+BUILTIN(__builtin_ia32_lgs16, "UsvC*", "n")
+BUILTIN(__builtin_ia32_lgs32, "UivC*", "n")
+
 // Miscellaneous builtin for checking x86 cpu features.
 BUILTIN(__builtin_cpu_init, "v", "n")
 BUILTIN(__builtin_cpu_supports, "bcC*", "nc")

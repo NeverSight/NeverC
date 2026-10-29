@@ -5,7 +5,7 @@ Retain state, exact two-byte memory extent, waiting and page-fault observations.
 Faults run in children; the harness never resumes through generated instructions.
 """
 
-from x87_native_qualification import run_qualification
+from native_qualification import run_qualification
 
 HARNESS = r'''
 #define _GNU_SOURCE
