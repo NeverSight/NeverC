@@ -506,8 +506,8 @@
     "i686-unknown-linux-gnu"
   ],
   "fixture_group": "bind-clean360",
-  "source_repair_commit": "b055621dedc0e999c255fcfb7bf0ad4610f1a2aa",
-  "clean_source_basis": "b055621dedc0e999c255fcfb7bf0ad4610f1a2aa",
+  "source_repair_commit": "5a4d2e5af07ef435bd28a2d9b545030528c6d9f9",
+  "clean_source_basis": "5a4d2e5af07ef435bd28a2d9b545030528c6d9f9",
   "required_requests": 360,
   "required_acceptances": 200,
   "required_sdk_guard_rejections": 80,
@@ -534,7 +534,7 @@
   "source_trace_included": false,
   "inverse_source_edits": {},
   "frontend_execution_timeout_seconds": 60,
-  "actual_same_source_six_report_sha256": "4cacecca13a3d2bf98f0783b9ee4274f83e4023030cea57a5bf9028439175c71",
+  "actual_same_source_six_report_sha256": "ce208dd51a1248967a3231b16a52beeea543998423c16626b1389bc62821983c",
   "reference_full_plan_commit": "f961e1f5cc09ba6fd54a708b73e4639a6952f651",
   "reference_full_plan_path": "utils/ci/cpp-not-fn-nested-clean288-plan.json",
   "reference_full_plan_sha256": "b3dfb130b4e1a5b970262f6f8cd3cf1adc87a918214ac9573e75714f59c3ac45",
@@ -581,7 +581,7 @@
   "actual_same_source_six48_report_sha256": null,
   "current_private_input_sha256": {
     "Frontend.cpp": "bcbe763da18fbf6eb80d1e57e82ec9403fb2fe6865c6223c22612f5ff441a326",
-    "Lowering.cpp": "a7439c795731ee8bba6f1e58f01b53aa834f03d312c6b014bf8166e021797953",
+    "Lowering.cpp": "190a74150a331efb2ff464a24294d43efb17997a3e06961a79e274f2679b8a98",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
     "MathSDK.cpp": "500c7d4ab81a61d23d37a869f851a97290c6d90969cdd3815cd9dcf97ff88710",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
@@ -600,7 +600,7 @@
     "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
-  "actual_same_source_six_proof_sha256": "5b633c9b217cd2460edd169327fc74aed45db2a316c8c13a918cd71142e60938",
+  "actual_same_source_six_proof_sha256": "1bd51d31ebf20b106c731786762059ed47b478f5c5f0f59bac3f7e88f284bfb7",
   "required_original288_requests": 288,
   "required_original288_acceptances": 128,
   "required_original288_expected_reject": 152,
