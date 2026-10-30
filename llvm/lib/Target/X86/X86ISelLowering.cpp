@@ -27474,7 +27474,7 @@ static SDValue lowerMPXState(SDValue Op, const X86Subtarget &Subtarget,
   const bool Register = X86::mpxIsCheckRegister(Kind);
   const bool Pair = X86::mpxHasIndex(Kind);
   unsigned Bits = Wide ? 64 : 32;
-  unsigned Prefix = 0;
+  unsigned Control = 0;
   if (!Register) {
     const unsigned WidthOperand = Pair ? 5 : 4;
     const auto *Width = dyn_cast<ConstantSDNode>(Op.getOperand(WidthOperand));
@@ -27486,35 +27486,34 @@ static SDValue lowerMPXState(SDValue Op, const X86Subtarget &Subtarget,
         Width->getZExtValue() == 16)
       report_fatal_error(
           "invalid MPX address encoding width for this code mode");
-    if (!X86::isNativeMemorySegmentPrefix(Segment->getZExtValue()))
-      report_fatal_error("invalid MPX segment prefix");
+    if (!X86::isMpxMemoryAddressControl(Wide, Kind, Width->getZExtValue(),
+                                        Segment->getZExtValue()))
+      report_fatal_error(
+          "invalid MPX segment prefix or stack-reference control");
     Bits = Width->getZExtValue();
-    Prefix = Segment->getZExtValue();
+    Control = Segment->getZExtValue();
   }
   const MVT VT = Wide ? MVT::i64 : MVT::i32;
   SDValue Base = Op.getOperand(3);
-  SDValue Index = Base;
   SDValue Chain = Op.getOperand(0), Glue;
-  if (!Register) {
-    // Unlike ordinary memory instructions, MPX ignores 67H in long mode.
-    // Keep the full GPR values even when selecting a 32-bit address encoding.
-    const unsigned BaseReg = Wide ? X86::RBX : X86::EBX;
-    Chain = DAG.getCopyToReg(Chain, DL, BaseReg, Base, Glue);
-    Glue = Chain.getValue(1);
-    Base = DAG.getRegister(BaseReg, VT);
-    Index = Base;
-    if (Pair) {
-      SDValue Value = Op.getOperand(4);
-      if (Kind == MpxOperation::Make)
-        Value = DAG.getNode(ISD::SUB, DL, VT, Value, Op.getOperand(3));
-      const unsigned IndexReg = Wide ? X86::RSI : X86::ESI;
-      Chain = DAG.getCopyToReg(Chain, DL, IndexReg, Value, Glue);
-      Glue = Chain.getValue(1);
-      Index = DAG.getRegister(IndexReg, VT);
-    }
+  // Fixed BX/SI copies can overwrite a reserved stack/PIC base. Use allocated
+  // legacy-encodable carriers for every operand, including register checks.
+  // Unlike ordinary memory instructions, MPX ignores 67H in long mode.
+  auto Address = lowerNativeMemoryAddress(Base, Wide ? 64 : 32, Control,
+                                          Subtarget, DAG, DL, Chain, Glue);
+  Base = Address[0];
+  const bool Stack = Control & X86::NativeMemoryStackReference;
+  SDValue Index = Stack ? Address[2] : Base;
+  if (Pair) {
+    SDValue Value = Op.getOperand(4);
+    if (Kind == MpxOperation::Make)
+      Value = DAG.getNode(ISD::SUB, DL, VT, Value, Op.getOperand(3));
+    Index = lowerNativeMemoryAddress(Value, Wide ? 64 : 32, 0, Subtarget, DAG,
+                                     DL, Chain, Glue)[0];
   }
+  const unsigned Prefix = Control & ~X86::NativeMemoryStackReference;
   const unsigned Descriptor =
-      X86::mpxDescriptor(Kind, Bound, 0, Wide && Bits == 32, Prefix);
+      X86::mpxDescriptor(Kind, Bound, 0, Wide && Bits == 32, Prefix, Stack);
   SmallVector<SDValue, 5> Operands = {
       DAG.getTargetConstant(Descriptor, DL, MVT::i32), Base, Index, Chain};
   if (Glue)

@@ -854,6 +854,7 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   if (getTriple().getArch() == llvm::Triple::x86_64) {
     Builder.defineMacro("__NEVERC_X86_AMX_CONTROLS__", "1");
     Builder.defineMacro("__NEVERC_X86_AMX_STACK_MEMORY__", "1");
+    Builder.defineMacro("__NEVERC_X86_MPX_STACK_MEMORY__", "1");
     Builder.defineMacro("__NEVERC_X86_NATIVE_MEMORY_STACK_REFERENCE__", "1");
     Builder.defineMacro("__NEVERC_X86_SGX_COMPLETION__", "1");
     Builder.defineMacro("__NEVERC_X86_REP_STATE__", "1");

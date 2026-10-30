@@ -67,12 +67,11 @@ def functions(disassembly, branch_probes=False):
                 # These wrappers have one native return and no trailing code.
                 if raw in (b"\xc3", b"\xf2\xc3"):
                     current = None
-    if branch_probes:
-        # Earlier probe functions can change alignment between assembly
-        # routes. Compare each branch probe's offsets and bytes, not its VA.
-        result = {name: [(address - body[0][0], raw) for address, raw in body]
-                  for name, body in result.items()}
-    return result
+    # Assembly and object emission can order equivalent sections differently
+    # or select different inter-function alignment. Compare every instruction
+    # and its offset within the function, independently of section placement.
+    return {name: [(address - body[0][0], raw) for address, raw in body]
+            for name, body in result.items()}
 
 
 def native(raw):
@@ -85,7 +84,27 @@ def native(raw):
     return position
 
 
-def verify_case(instructions, operation, bound, bits, segment, windows, mode):
+def memory_registers(raw, cursor, rex):
+    modrm = raw[cursor + 2]
+    mod, rm = modrm >> 6, modrm & 7
+    assert mod != 3
+    position, index, scale = cursor + 3, None, 1
+    if rm == 4:
+        sib = raw[position]
+        position += 1
+        base = (sib & 7) | ((rex & 1) << 3)
+        encoded_index = ((sib >> 3) & 7) | ((rex & 2) << 2)
+        if encoded_index != 4:
+            index = encoded_index
+        scale = 1 << (sib >> 6)
+    else:
+        base = rm | ((rex & 1) << 3)
+    assert mod != 0 or base & 7 != 5, "native operand lost register base"
+    displacement = int.from_bytes(raw[position:], 'little', signed=True)
+    return base, index, scale, displacement
+
+
+def verify_case(instructions, operation, bound, bits, segment, windows, mode, frame=False):
     start = instructions[0][0]
     size = instructions[-1][0] + len(instructions[-1][1]) - start
     code = bytearray(size)
@@ -121,6 +140,13 @@ def verify_case(instructions, operation, bound, bits, segment, windows, mode):
     machine.reg_write(number("RSP"), sp)
     pack = lambda value: struct.pack("<Q" if mode == 64 else "<I", value)
     machine.mem_write(sp, pack(STOP))
+    reads = []
+    if frame:
+        def observe(uc, access, address, size, value, user):
+            if size == 1:
+                assert STACK <= address < STACK + PAGE, "local escaped the stack"
+                reads.append(bytes(uc.mem_read(address, size))[0])
+        machine.hook_add(unicorn.UC_HOOK_MEM_READ, observe)
     if mode == 64:
         for name, value in zip(("RCX", "RDX", "R8", "R9") if windows else
                                ("RDI", "RSI", "RDX", "RCX"), args):
@@ -136,6 +162,8 @@ def verify_case(instructions, operation, bound, bits, segment, windows, mode):
         prefixes, modrm = raw[:cursor], raw[cursor + 2]
         assert raw[cursor + 1] == OPCODE[name], "wrong native opcode"
         assert [p for p in prefixes if p in (0x66, 0xf2, 0xf3)] == ([NATIVE_PREFIX[name]] if NATIVE_PREFIX[name] else [])
+        stack = bool(prefix & 0x100)
+        prefix &= ~0x100
         assert [p for p in prefixes if p in SEGMENTS] == ([prefix] if prefix else [])
         assert prefixes.count(0x67) == int(width != mode and name not in MPX.REGISTER)
         assert prefixes.count(0xf0) == int(name == "bndmov_store_lock")
@@ -149,27 +177,36 @@ def verify_case(instructions, operation, bound, bits, segment, windows, mode):
                 register = (modrm & 7) | ((rex & 1) << 3)
                 assert machine.reg_read(number(GPRS[register])) == value, "check input changed"
         else:
-            # BX supplies default DS independently of the allocated input GPR.
-            assert modrm >> 6 == 0 and not rex & 1
-            assert machine.reg_read(number("RBX")) == value, "base was truncated or changed"
-            if name in MPX.PAIR:
-                assert modrm & 7 == 4 and raw[cursor + 3] == 0x33 and not rex & 2
-                expected_index = (second - value) & mask if name == "bndmk" else second
-                assert machine.reg_read(number("RSI")) == expected_index, "index role changed"
+            base, index, scale, displacement = memory_registers(raw, cursor, rex)
+            base_value = machine.reg_read(number(GPRS[base]))
+            index_value = machine.reg_read(number(GPRS[index])) if index is not None else 0
+            assert displacement == 0 and scale == 1
+            if stack:
+                assert base == 5 and index is not None, "lost stack-default segment"
+                assert (base_value + index_value) & mask == value, "stack offset changed"
             else:
-                assert modrm & 7 == 3
+                assert base not in (4, 5, 12, 13), "lost data-default segment"
+                assert base_value == value, "base was truncated or changed"
+            if name in MPX.PAIR:
+                assert index is not None and not stack
+                expected_index = (second - value) & mask if name == "bndmk" else second
+                assert index_value == expected_index, "index role changed"
+            elif not stack:
+                assert index is None
         # The native boundary is deliberately not executed by Unicorn.
         position = pc + len(raw)
     machine.emu_start(position, STOP, count=1000)
     assert machine.reg_read(number("RIP")) == STOP
     assert machine.reg_read(number("RSP")) == sp + mode // 8
+    if frame:
+        assert reads == [33, 44], f"stack canaries changed: {reads}"
     for name, value in saved.items():
         assert machine.reg_read(number(name)) == value, "callee-saved register changed: " + name
 
 
 def verify(args, directory):
     directory.mkdir(parents=True, exist_ok=True)
-    ir, source, header, count = MPX.generate(args.mode)
+    ir, source, header, count = MPX.generate(args.mode, args.stack_memory, args.frame)
     (directory / "cases.ll").write_text(ir)
     (directory / "cases.c").write_text(source)
     cases = re.findall(r"\{ case_(\d+), (\w+), (\d+), (\d+), (\d+) \}", header)
@@ -185,11 +222,11 @@ def verify(args, directory):
             if args.compiler:
                 command = [args.compiler, "--target=" + triple, "-std=c23", opt,
                            "-ffreestanding", "-fno-lto", "-fno-builtin-mimalloc",
-                           "-fno-stack-protector", "-mno-red-zone", "-mllvm", "-verify-machineinstrs"]
+                           "-fno-stack-protector", "-mno-red-zone", "-mno-stack-arg-probe", "-mllvm", "-verify-machineinstrs"]
                 input_ir = stem + ".ll"
                 run([*command, "-S", "-emit-llvm", "cases.c", "-o", input_ir], directory)
                 text = (directory / input_ir).read_text()
-                assert " asm " not in text and "@llvm.x86.bndmk(" in text
+                assert " asm " not in text and "@llvm.x86.bndmov.load(" in text
                 for kind in (0, 1):
                     assert f"@llvm.x86.bnd.branch(i32 {kind})" in text
             elif opt == "-O2":
@@ -212,7 +249,7 @@ def verify(args, directory):
             assert len(decoded) == count
             for index, enum, bank, width, segment in cases:
                 try:
-                    verify_case(decoded[int(index)], names[enum], int(bank), int(width), int(segment), "windows" in triple, args.mode)
+                    verify_case(decoded[int(index)], names[enum], int(bank), int(width), int(segment), "windows" in triple, args.mode, args.frame)
                 except Exception as error:
                     raise RuntimeError(f"{stem} case_{index} {enum} bank={bank} width={width} segment={segment}") from error
             for dialect in ("att", "intel"):
@@ -238,11 +275,15 @@ def main():
     parser.add_argument("--objdump", required=True, type=lambda s: str(Path(s).resolve()))
     parser.add_argument("--keep", type=lambda s: Path(s).resolve())
     parser.add_argument("--mode", choices=(32, 64), default=64, type=int)
+    parser.add_argument("--stack-memory", action="store_true")
+    parser.add_argument("--frame", action="store_true")
     args = parser.parse_args()
     if args.backend_llc and not args.compiler:
         parser.error("--backend-llc requires --compiler")
     if args.mode == 32 and not args.llc:
         parser.error("NeverC supports x86-64 code; --mode=32 requires --llc")
+    if args.mode == 32 and args.stack_memory:
+        parser.error("stack provenance control requires long mode")
     if args.keep:
         verify(args, args.keep)
     else:

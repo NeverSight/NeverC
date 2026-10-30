@@ -239,6 +239,21 @@ bases. BNDLDX/STX use base+displacement for table translation and a separate,
 unscaled pointer-comparison value. With no encoded base, supply zero, ignoring
 the displacement as required by the instruction.
 
+`__NEVERC_X86_MPX_STACK_MEMORY__=1` advertises stack-default addresses for the
+three BNDMOV memory builtins. OR `0x100` into a non-FS/GS segment control to
+retain the SS default using the unmodified frame pointer and a computed index.
+This accepts both 32- and 64-bit encodings, since MPX ignores 67H. Native bounds
+memory is never probed by ordinary compiler loads. MIB table operations,
+BNDMK and effective-address checks reject this control because their operand
+roles differ. One shared MPX address validator owns frontend and backend
+admission. Intrinsic IDs, signatures and machine opcode IDs are unchanged.
+
+All MPX operands use allocated legacy-encodable registers. Fixed RBX copies
+previously overwrote a reserved dynamic-stack base and redirected local
+accesses to the bounds operand. The existing address carrier retains its
+constraint through allocation, including register checks and MIB indices;
+frame lowering keeps ownership of the realignment and PIC bases.
+
 Bounds stay in the ambient CPU bank. Native instructions own enable checks,
 table accesses, #BR and partial fault completion; the compiler retains repeated
 checks and unknown memory effects. Compiler-created near transfers receive
@@ -265,6 +280,11 @@ O0/O2 across ELF, COFF and Mach-O. It accepts NeverC, full LLVM, or NeverC IR
 with the full LLVM backend. `--mode=32 --llc=...` checks 268 i386 combinations
 against the full LLVM fork; NeverC's x86 backend remains 64-bit only.
 These controlled boundaries do not simulate successful MPX operations.
+`--frame` additionally checks aligned fixed locals, dynamic allocations and
+both stack canaries in every function. `--stack-memory` checks 120 BNDMOV
+combinations; it composes with `--frame`. Per-function instruction bytes and
+relative offsets must match both assembly dialects, independently of section
+ordering or inter-function alignment.
 
 [tests/verify-mpx-state.py](tests/verify-mpx-state.py) supplies a freestanding CPL0 QEMU guest with its own
 page tables, XCR0, BNDCFG and exception gates. It executes native enable/disable,
@@ -293,6 +313,10 @@ See QEMU's
 and [`emit.c.inc`](https://github.com/qemu/qemu/blob/v10.2.2/target/i386/tcg/emit.c.inc).
 Skipped cases retain byte/transport coverage, not successful execution coverage.
 Physical MPX hardware qualification remains outstanding.
+The state verifier also accepts `--stack-memory --frame`: 40 BNDMOV controls
+execute and 80 are explicitly skipped per optimization level under the same
+model limitations. Enabled loads/stores and disabled operand suppression are
+checked; native stack-segment fault delivery still needs separate qualification.
 
 ## Critical Invariant: Enum ID ↔ ISel Table Synchronization
 

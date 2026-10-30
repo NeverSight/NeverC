@@ -27,7 +27,7 @@ PAIR = {"bndmk", "bndldx", "bndstx"}
 PREFIXES = (0, 0x26, 0x2e, 0x36, 0x3e, 0x64, 0x65)
 
 
-def generate(mode=64):
+def generate(mode=64, stack_memory=False, frame=False):
     declarations = {}
     ir, source, header, cases = [], ["typedef unsigned long long U64;\n"], [], []
     header.append("enum { " + ", ".join(enum for _, enum in OPERATIONS) + " };\n")
@@ -51,16 +51,35 @@ def generate(mode=64):
 
     def begin(name):
         header.append(f"extern void {name}(U64, U64, U64, U64);\n")
-        ir.append(f"define void @{name}(i64 %a, i64 %b, i64 %c, i64 %out) noredzone {{\n")
+        ir.append(f'define void @{name}(i64 %a, i64 %b, i64 %c, i64 %out) noredzone "no-stack-arg-probe" {{\n')
         source.append(f"void {name}(U64 a, U64 b, U64 c, U64 out) {{\n")
+        if frame:
+            ir.append("  %fixed = alloca [64 x i8], align 64\n"
+                      "  %length = and i64 %b, 127\n"
+                      "  %n = add i64 %length, 1\n"
+                      "  %dynamic = alloca i8, i64 %n, align 16\n"
+                      "  store volatile i8 33, ptr %fixed\n"
+                      "  store volatile i8 44, ptr %dynamic\n")
+            source.append("  _Alignas(64) volatile char fixed[64];\n"
+                          "  volatile char *dynamic = __builtin_alloca((b & 127) + 1);\n"
+                          "  fixed[0] = 33; dynamic[0] = 44;\n")
 
     def end():
+        if frame:
+            # These volatile reads must remain after the native effects. The
+            # encoding oracle checks both values and the returned stack frame.
+            ir.append("  %fixed_value = load volatile i8, ptr %fixed\n"
+                      "  %dynamic_value = load volatile i8, ptr %dynamic\n")
+            source.append("  (void)fixed[0]; (void)dynamic[0];\n")
         ir.append("  ret void\n}\n"); source.append("}\n")
 
     for operation, enum in OPERATIONS:
+        if stack_memory and operation not in ("bndmov_load", "bndmov_store", "bndmov_store_lock"):
+            continue
         for bound in range(4):
             for bits in ((mode,) if operation in REGISTER or mode == 32 else (32, 64)):
-                for prefix in ((0,) if operation in REGISTER else PREFIXES):
+                for prefix in ((0x100, 0x126, 0x12e, 0x136, 0x13e) if stack_memory else
+                               (0,) if operation in REGISTER else PREFIXES):
                     name = f"case_{len(cases)}"
                     begin(name)
                     if operation not in ("bndmk", "bndmov_load", "bndldx"):
@@ -116,7 +135,7 @@ def run(args, directory, **kwargs):
 
 
 def verify(args, directory):
-    ir, source, header, count = generate()
+    ir, source, header, count = generate(stack_memory=args.stack_memory, frame=args.frame)
     directory.mkdir(parents=True, exist_ok=True)
     for file in FIXTURES.iterdir():
         shutil.copyfile(file, directory / file.name)
@@ -159,7 +178,7 @@ def verify(args, directory):
         result = subprocess.run(command, cwd=directory, capture_output=True, text=True, timeout=20)
         (directory / (stem + ".log")).write_text(result.stdout + result.stderr)
         # Four addr32 memory forms, both LOCK widths, and three register checks.
-        skipped = 4 * (len(PREFIXES) * 6 + 3) if args.qemu_mpx_limitations else 0
+        skipped = (80 if args.stack_memory else 4 * (len(PREFIXES) * 6 + 3)) if args.qemu_mpx_limitations else 0
         branch_skipped = int(args.qemu_mpx_limitations)
         expected = f"PASS{count - skipped:08x}:{skipped:08x}:{6 - branch_skipped:08x}:{branch_skipped:08x}\n"
         if result.returncode != 1 or result.stdout != expected:
@@ -180,6 +199,10 @@ def main():
     parser.add_argument("--keep", type=lambda s: Path(s).resolve())
     parser.add_argument("--qemu-mpx-limitations", action="store_true",
                         help="explicitly skip QEMU 10.2's addr32 memory, LOCK BNDMOV, register-check and E9 BNDINIT limitations")
+    parser.add_argument("--stack-memory", action="store_true",
+                        help="execute BNDMOV stack-provenance controls instead of the general instruction matrix")
+    parser.add_argument("--frame", action="store_true",
+                        help="keep fixed aligned and dynamic stack objects live across every native operation")
     args = parser.parse_args()
     if args.backend_llc and not args.compiler:
         parser.error("--backend-llc requires --compiler")

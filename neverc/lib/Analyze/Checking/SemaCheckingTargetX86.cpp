@@ -662,10 +662,46 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_bndcn_address:
   case X86::BI__builtin_ia32_bndmk:
   case X86::BI__builtin_ia32_bndldx:
-  case X86::BI__builtin_ia32_bndstx:
-    return SemaBuiltinConstantArgRange(TheCall, 0, 0,
-                                       llvm::X86::MpxRegisterCount - 1) ||
-           CheckMemoryAddress(TheCall->getNumArgs() - 2, false);
+  case X86::BI__builtin_ia32_bndstx: {
+    if (SemaBuiltinConstantArgRange(TheCall, 0, 0,
+                                    llvm::X86::MpxRegisterCount - 1))
+      return true;
+    using llvm::X86::MpxOperation;
+    const auto Operation = [&] {
+      switch (BuiltinID) {
+      case X86::BI__builtin_ia32_bndmov_load:
+        return MpxOperation::Load;
+      case X86::BI__builtin_ia32_bndmov_store:
+        return MpxOperation::Store;
+      case X86::BI__builtin_ia32_bndmov_store_lock:
+        return MpxOperation::StoreLocked;
+      case X86::BI__builtin_ia32_bndcl_address:
+        return MpxOperation::CheckLowerAddress;
+      case X86::BI__builtin_ia32_bndcu_address:
+        return MpxOperation::CheckUpperAddress;
+      case X86::BI__builtin_ia32_bndcn_address:
+        return MpxOperation::CheckUpperRawAddress;
+      case X86::BI__builtin_ia32_bndmk:
+        return MpxOperation::Make;
+      case X86::BI__builtin_ia32_bndldx:
+        return MpxOperation::LoadTable;
+      default:
+        return MpxOperation::StoreTable;
+      }
+    }();
+    const unsigned WidthArgument = TheCall->getNumArgs() - 2;
+    llvm::APSInt Width, Control;
+    if (SemaBuiltinConstantArg(TheCall, WidthArgument, Width) ||
+        SemaBuiltinConstantArg(TheCall, WidthArgument + 1, Control))
+      return true;
+    if (llvm::X86::isMpxMemoryAddressControl(
+            true, Operation, Width.getZExtValue(), Control.getZExtValue()))
+      return false;
+    return bool(Diag(TheCall->getBeginLoc(),
+                     diag::err_x86_builtin_invalid_memory_address)
+                << TheCall->getArg(WidthArgument)->getSourceRange()
+                << TheCall->getArg(WidthArgument + 1)->getSourceRange());
+  }
   case X86::BI__builtin_ia32_v4fmaddps_native:
   case X86::BI__builtin_ia32_v4fnmaddps_native:
   case X86::BI__builtin_ia32_v4fmaddss_native:

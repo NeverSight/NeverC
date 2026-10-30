@@ -2,6 +2,52 @@
 
 class X86NativeAddressTest : public X86NativeBuiltinTest {};
 
+TEST_F(X86NativeAddressTest, MpxBoundsMemoryRetainsStackProvenanceAndFrames) {
+  const auto Source = tmpFile("mpx_stack_memory.c");
+  writeFile(Source, R"(
+#if __NEVERC_X86_MPX_STACK_MEMORY__ != 1
+#error "missing MPX stack-memory capability"
+#endif
+unsigned probe(unsigned long long p, unsigned n) {
+  _Alignas(64) volatile unsigned char fixed[64];
+  volatile unsigned char *dynamic = __builtin_alloca(n);
+  fixed[0] = 33; dynamic[0] = 44;
+  __builtin_ia32_bndmov_load(0, p, 64, 0x100);
+  __builtin_ia32_bndmov_store(1, p, 32, 0x126);
+  __builtin_ia32_bndmov_store_lock(2, p, 64, 0x136);
+  return fixed[0] + dynamic[0];
+}
+)");
+  for (const char *Target :
+       {"--target=x86_64-unknown-linux-gnu", "--target=x86_64-pc-windows-msvc",
+        "--target=x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Target);
+      SCOPED_TRACE(Opt);
+      const auto Output = tmpFile("mpx_stack_memory.s");
+      const auto Result =
+          ncc({Target, Opt, "-fno-lto", "-fno-builtin-mimalloc",
+               "-ffreestanding", "-Werror", "-mllvm", "-verify-machineinstrs",
+               "-masm=att", "-S", Source.string(), "-o", Output.string()});
+      ASSERT_EQ(Result.exitCode, 0) << Result.err;
+      const auto Assembly = readFile(Output);
+      EXPECT_EQ(Assembly.find("#APP"), std::string::npos);
+      EXPECT_NE(Assembly.find("(%rbp,%"), std::string::npos) << Assembly;
+      EXPECT_NE(Assembly.find("%es:(%ebp,%"), std::string::npos) << Assembly;
+      EXPECT_NE(Assembly.find("%ss:(%rbp,%"), std::string::npos) << Assembly;
+      const auto IRFile = tmpFile("mpx_stack_memory.ll");
+      const auto IR =
+          ncc({Target, Opt, "-fno-builtin-mimalloc", "-S", "-emit-llvm",
+               Source.string(), "-o", IRFile.string()});
+      ASSERT_EQ(IR.exitCode, 0) << IR.err;
+      const auto Text = readFile(IRFile);
+      EXPECT_EQ(Text.find(" asm "), std::string::npos);
+      EXPECT_NE(Text.find("@llvm.x86.bndmov.load("), std::string::npos);
+      EXPECT_NE(Text.find("@llvm.x86.bndmov.store("), std::string::npos);
+      EXPECT_NE(Text.find("@llvm.x86.bndmov.store.lock("), std::string::npos);
+    }
+}
+
 TEST_F(X86NativeAddressTest, StackTileMemoryOwnsItsFrameAndNativeStride) {
   const auto Source = tmpFile("amx_stack_memory.c");
   writeFile(Source, R"(
@@ -188,7 +234,11 @@ TEST_F(X86NativeAddressTest, InvalidStackControlsFailBeforeCodeGeneration) {
         "__builtin_ia32_tileloadd64_address(0, p, 64, 32, 0x100, 0)",
         "__builtin_ia32_tileloadd64_address(0, p, 64, 64, 0x164, 0)",
         "__builtin_ia32_tilestored64_address(0, p, 64, 64, 0x165, 0)",
-        "__builtin_ia32_bndmov_load(0, p, 64, 0x100)",
+        "__builtin_ia32_bndmov_load(0, p, 16, 0x100)",
+        "__builtin_ia32_bndmov_store(0, p, 32, 0x164)",
+        "__builtin_ia32_bndmov_store_lock(0, p, 64, 0x200)",
+        "__builtin_ia32_bndcl_address(0, p, 64, 0x100)",
+        "__builtin_ia32_bndmk(0, p, 0, 64, 0x100)",
         "__builtin_ia32_bndldx(0, p, 0, 64, 0x100)"}) {
     SCOPED_TRACE(Call);
     const auto Source = tmpFile("invalid_stack_address.c");

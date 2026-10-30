@@ -9,6 +9,11 @@
 #ifndef LLVM_IR_X86MPXSTATE_H
 #define LLVM_IR_X86MPXSTATE_H
 
+#include "llvm/IR/X86NativeMemoryAddress.h"
+
+// BNDMOV memory APIs accept the native stack-provenance control in long mode.
+#define LLVM_X86_MPX_STACK_MEMORY 1
+
 namespace llvm::X86 {
 
 // Model an original control transfer independently of compiler-created CFG.
@@ -39,8 +44,25 @@ enum class MpxOperation : unsigned {
 
 inline constexpr unsigned MpxRegisterCount = 4;
 inline constexpr unsigned MpxAddress32 = 1u << 8;
+inline constexpr unsigned MpxStackMemory = 1u << 9;
 inline constexpr unsigned MpxSourceMask = 3u << 6;
-inline constexpr unsigned MpxDescriptorMask = 0x00ff01ff;
+inline constexpr unsigned MpxDescriptorMask = 0x00ff03ff;
+
+inline constexpr bool mpxIsBoundsMemory(MpxOperation Op) {
+  return Op == MpxOperation::Load || Op == MpxOperation::Store ||
+         Op == MpxOperation::StoreLocked;
+}
+
+inline constexpr bool isMpxMemoryAddressControl(bool Is64Bit, MpxOperation Op,
+                                                uint64_t Bits,
+                                                uint64_t Control) {
+  if (!isNativeMemoryAddressWidth(Is64Bit, Bits) || Bits == 16)
+    return false;
+  // MPX ignores 67H in long mode. Even its addr32 encoding consumes a full
+  // 64-bit address and can retain an SS default independently of that prefix.
+  return isNativeMemoryAddressControl(Is64Bit, Is64Bit ? 64 : 32, Control) &&
+         (!(Control & NativeMemoryStackReference) || mpxIsBoundsMemory(Op));
+}
 
 inline constexpr bool mpxIsCheckRegister(MpxOperation Op) {
   return Op >= MpxOperation::CheckLowerRegister &&
@@ -54,9 +76,11 @@ inline constexpr bool mpxHasIndex(MpxOperation Op) {
 
 inline constexpr unsigned mpxDescriptor(MpxOperation Op, unsigned Bound,
                                         unsigned Source, bool Address32,
-                                        unsigned SegmentPrefix) {
+                                        unsigned SegmentPrefix,
+                                        bool StackMemory = false) {
   return unsigned(Op) | (Bound << 4) | (Source << 6) |
-         (Address32 ? MpxAddress32 : 0) | (SegmentPrefix << 16);
+         (Address32 ? MpxAddress32 : 0) | (StackMemory ? MpxStackMemory : 0) |
+         (SegmentPrefix << 16);
 }
 
 } // namespace llvm::X86
