@@ -28694,14 +28694,20 @@ class FunctionLowering {
     const auto Verified = A.VerifiedBindCalls.find(Call);
     const auto *Prototype = Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
     if (Verified == A.VerifiedBindCalls.end() || &Verified->second != &Source ||
-        Source.SourceCall != Call || !Source.Object || Call->getNumArgs() != 1 ||
+        Source.SourceCall != Call || !Source.Object ||
+        Source.Method != Call->getDirectCallee() || !Call->getNumArgs() ||
+        Source.Method->getNumParams() + 1 != Call->getNumArgs() ||
         !Prototype || Prototype->getNumParams() != Source.Arguments.size() ||
         Source.Arguments.size() != Source.Storage.Arguments.Elements.size())
-      reject(L, "bind call certificate", "The exact completed nullary selected invocation is required.");
+      reject(L, "bind call certificate", "The exact completed selected invocation and argument slots are required.");
     // An unqualified bind operator keeps every stored argument an lvalue,
     // including when the original receiver is an xvalue. Preserve its actual
     // address and all receiver effects before loading the stored callback.
     auto Address = snapshot(address(lvalue(Source.Object), Source.Object->getType(), L), L);
+    // Ignored call operands still bind and run once before stored callback or
+    // argument values are loaded. Ordinary full-expression cleanup remains in
+    // the existing forwarding-argument lowering.
+    (void)captureUtilityInvocationArguments(Call, 1, Call->getNumArgs() - 1);
     Expression CallableField{{"kind", "member"},
         {"type", type(Source.Storage.CallableType, L)}, {"name", "nct_bind_callable"},
         {"args", json::Array{dereference(json::Object(Address), L)}}, {"loc", A.loc(L)}};
