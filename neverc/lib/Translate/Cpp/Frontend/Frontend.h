@@ -1782,7 +1782,8 @@ struct FunctionalBindCallSource {
   const clang::CXXMethodDecl *Method;
   const clang::Expr *Object;
   const clang::CallExpr *Apply, *Invoke, *Target;
-  const clang::CXXConstructExpr *Indices, *EmptyArguments;
+  const clang::CXXConstructExpr *Indices, *CallArguments;
+  std::vector<const clang::CallExpr *> CallForwards;
   std::vector<FunctionalBindArgumentSource> Arguments;
   std::vector<const clang::CXXStaticCastExpr *> InvokeCasts;
 };
@@ -1804,6 +1805,11 @@ std::optional<FunctionalBindTupleConstructionSource>
 describeFunctionalBindTupleConstructionSource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context);
+
+std::optional<FunctionalBindTupleConstructionSource>
+describeFunctionalBindCallTupleConstructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
 
 // Logical C23 storage only. This layout description grants no SDK operation,
 // base conversion, lifecycle, default/trait source, body or lifetime permission.
@@ -1926,6 +1932,11 @@ std::optional<std::vector<FunctionalBindTupleTagSource>>
 describeFunctionalBindTupleTagSources(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context);
+
+std::optional<std::vector<FunctionalBindTupleTagSource>>
+describeFunctionalBindCallTupleTagSources(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
 bool shouldRetainFunctionalBindSpecialMemberSource(
     const State &S, const clang::SourceManager &SM, const clang::CXXMethodDecl *Method);
 
