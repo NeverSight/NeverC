@@ -18596,7 +18596,9 @@ namespace X86 {
     FLDENV16m	= 18581,
     FSAVE16m	= 18582,
     FRSTOR16m	= 18583,
-    INSTRUCTION_LIST_END = 18584
+    SYSRET32_STACK	= 18584,
+    SYSRET64_STACK	= 18585,
+    INSTRUCTION_LIST_END = 18586
   };
 
 } // end namespace X86
@@ -20987,11 +20989,11 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18584];
+  MCInstrDesc Insts[18586];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5521];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[836];
+  MCPhysReg ImplicitOps[897];
 };
 
 } // end namespace llvm
@@ -21006,6 +21008,8 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18585,	1,	0,	0,	8,	2,	4,	X86ImpOpBase + 891,	152,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier), 0x0ULL },  // Inst #18585 = SYSRET64_STACK
+    { 18584,	1,	0,	0,	8,	2,	11,	X86ImpOpBase + 878,	152,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier), 0x0ULL },  // Inst #18584 = SYSRET32_STACK
     { 18583,	5,	0,	0,	804,	2,	26,	X86ImpOpBase + 805,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayRaiseFPException)|(1ULL<<MCID::UnmodeledSideEffects), 0x6e800000a4ULL },  // Inst #18583 = FRSTOR16m
     { 18582,	5,	0,	0,	803,	2,	26,	X86ImpOpBase + 777,	209,	0|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x6e800000a6ULL },  // Inst #18582 = FSAVE16m
     { 18581,	5,	0,	0,	871,	2,	26,	X86ImpOpBase + 805,	209,	0|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayRaiseFPException)|(1ULL<<MCID::UnmodeledSideEffects), 0x6c800000a4ULL },  // Inst #18581 = FLDENV16m
@@ -36072,10 +36076,10 @@ extern const X86InstrTable X86Descs = {
     { 3520,	6,	1,	0,	1124,	0,	1,	X86ImpOpBase + 0,	214,	0|(1ULL<<MCID::MayLoad), 0x80c002a027ULL },  // Inst #3520 = T1MSKC64rm
     { 3519,	2,	1,	0,	1123,	0,	1,	X86ImpOpBase + 0,	499,	0, 0x80c000a037ULL },  // Inst #3519 = T1MSKC32rr
     { 3518,	6,	1,	0,	1124,	0,	1,	X86ImpOpBase + 0,	493,	0|(1ULL<<MCID::MayLoad), 0x80c000a027ULL },  // Inst #3518 = T1MSKC32rm
-    { 3517,	0,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x380022001ULL },  // Inst #3517 = SYSRET64
-    { 3516,	0,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x380002001ULL },  // Inst #3516 = SYSRET
-    { 3515,	0,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1a80022001ULL },  // Inst #3515 = SYSEXIT64
-    { 3514,	0,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1a80002001ULL },  // Inst #3514 = SYSEXIT
+    { 3517,	0,	0,	0,	8,	3,	3,	X86ImpOpBase + 850,	1,	0|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x380022001ULL },  // Inst #3517 = SYSRET64
+    { 3516,	0,	0,	0,	8,	3,	11,	X86ImpOpBase + 836,	1,	0|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x380002001ULL },  // Inst #3516 = SYSRET
+    { 3515,	0,	0,	0,	8,	2,	3,	X86ImpOpBase + 861,	1,	0|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x1a80022001ULL },  // Inst #3515 = SYSEXIT64
+    { 3514,	0,	0,	0,	8,	2,	10,	X86ImpOpBase + 866,	1,	0|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x1a80002001ULL },  // Inst #3514 = SYSEXIT
     { 3513,	0,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x1a00002001ULL },  // Inst #3513 = SYSENTER
     { 3512,	0,	0,	0,	1457,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x280002001ULL },  // Inst #3512 = SYSCALL
     { 3511,	0,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1,	0|(1ULL<<MCID::UnmodeledSideEffects), 0x80002078ULL },  // Inst #3511 = SWAPGS
@@ -40891,6 +40895,13 @@ extern const X86InstrTable X86Descs = {
     /* 833 */ X86::SS,
     /* 834 */ X86::FS,
     /* 835 */ X86::GS,
+    /* 836 */ X86::ECX, X86::R11D, X86::RSP, X86::CS, X86::SS, X86::EFLAGS, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::RSP, X86::RBP, X86::RSI, X86::RDI,
+    /* 850 */ X86::RCX, X86::R11, X86::RSP, X86::CS, X86::SS, X86::EFLAGS,
+    /* 856 */ X86::EDX, X86::ECX, X86::CS, X86::SS, X86::ESP,
+    /* 861 */ X86::RDX, X86::RCX, X86::CS, X86::SS, X86::RSP,
+    /* 866 */ X86::EDX, X86::ECX, X86::CS, X86::SS, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::RSP, X86::RBP, X86::RSI, X86::RDI,
+    /* 878 */ X86::ECX, X86::R11D, X86::CS, X86::SS, X86::EFLAGS, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::RSP, X86::RBP, X86::RSI, X86::RDI,
+    /* 891 */ X86::RCX, X86::R11, X86::CS, X86::SS, X86::EFLAGS, X86::RSP,
   }
 };
 
@@ -58567,6 +58578,8 @@ extern const char X86InstrNameData[] = {
   /* 260362 */ "FLDENV16m\0"
   /* 260372 */ "FSAVE16m\0"
   /* 260381 */ "FRSTOR16m\0"
+  /* 260391 */ "SYSRET32_STACK\0"
+  /* 260406 */ "SYSRET64_STACK\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -61015,10 +61028,12 @@ extern const unsigned X86InstrNameIndices[] = {
     260362U,
     260372U,
     260381U,
+    260391U,
+    260406U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18584);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18586);
 }
 
 } // end namespace llvm
@@ -61078,7 +61093,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18584);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18586);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98472,6 +98487,10 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     3187,
     /* FRSTOR16m */
     3186,
+    /* SYSRET32_STACK */
+    673,
+    /* SYSRET64_STACK */
+    673,
   };
 
   using namespace OpTypes;
@@ -153923,9 +153942,11 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // FLDENV16m = 18581
     CEFBS_In64BitMode, // FSAVE16m = 18582
     CEFBS_In64BitMode, // FRSTOR16m = 18583
+    CEFBS_In64BitMode, // SYSRET32_STACK = 18584
+    CEFBS_In64BitMode, // SYSRET64_STACK = 18585
   };
 
-  assert(Opcode < 18584);
+  assert(Opcode < 18586);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

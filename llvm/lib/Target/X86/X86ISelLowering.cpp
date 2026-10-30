@@ -26790,6 +26790,39 @@ static SDValue lowerBoundedSystemState(SDValue Op,
     return SDValue(DAG.getMachineNode(X86::SKINIT, DL, MVT::Other,
                                       {Chain, Chain.getValue(1)}),
                    0);
+  case Intrinsic::x86_sysret32:
+  case Intrinsic::x86_sysret64:
+  case Intrinsic::x86_sysexit32:
+  case Intrinsic::x86_sysexit64: {
+    const bool Sysret =
+        ID == Intrinsic::x86_sysret32 || ID == Intrinsic::x86_sysret64;
+    const bool Wide =
+        ID == Intrinsic::x86_sysret64 || ID == Intrinsic::x86_sysexit64;
+    // NeverC's pruned backend supports x86-64 only. The full LLVM fork owns
+    // the additional protected-mode SYSEXIT32 lowering and code16 rejection.
+    if (!Subtarget.is64Bit())
+      report_fatal_error(
+          "system-return intrinsic does not match the target code mode");
+    const unsigned PC =
+        Sysret ? (Wide ? X86::RCX : X86::ECX) : (Wide ? X86::RDX : X86::EDX);
+    const unsigned Second =
+        Sysret ? (Wide ? X86::R11 : X86::R11D) : (Wide ? X86::RCX : X86::ECX);
+    Chain = DAG.getCopyToReg(Chain, DL, PC, Op.getOperand(2), SDValue());
+    Chain = DAG.getCopyToReg(Chain, DL, Second, Op.getOperand(3),
+                             Chain.getValue(1));
+    // Machine scheduling can separate glued physical copies. Retain the
+    // destination stack as an explicit pseudo operand until MC emission, so
+    // no compiler-frame access can occur after RSP has changed.
+    if (Sysret)
+      return SDValue(
+          DAG.getMachineNode(Wide ? X86::SYSRET64_STACK : X86::SYSRET32_STACK,
+                             DL, MVT::Other,
+                             {Op.getOperand(4), Chain, Chain.getValue(1)}),
+          0);
+    return SDValue(DAG.getMachineNode(Wide ? X86::SYSEXIT64 : X86::SYSEXIT, DL,
+                                      MVT::Other, {Chain, Chain.getValue(1)}),
+                   0);
+  }
   case Intrinsic::x86_vmfunc_eptp_switch:
     Chain = DAG.getCopyToReg(Chain, DL, X86::EAX,
                              DAG.getConstant(0, DL, MVT::i32), SDValue());
@@ -28146,6 +28179,10 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_stac:
     case Intrinsic::x86_hlt:
     case Intrinsic::x86_skinit:
+    case Intrinsic::x86_sysret32:
+    case Intrinsic::x86_sysret64:
+    case Intrinsic::x86_sysexit32:
+    case Intrinsic::x86_sysexit64:
     case Intrinsic::x86_vmfunc_eptp_switch:
     case Intrinsic::x86_invd:
     case Intrinsic::x86_hreset:

@@ -1524,6 +1524,10 @@ enum X86Intrinsics : unsigned {
     x86_subborrow_32,                                // llvm.x86.subborrow.32
     x86_subborrow_64,                                // llvm.x86.subborrow.64
     x86_swapgs,                                      // llvm.x86.swapgs
+    x86_sysexit32,                                   // llvm.x86.sysexit32
+    x86_sysexit64,                                   // llvm.x86.sysexit64
+    x86_sysret32,                                    // llvm.x86.sysret32
+    x86_sysret64,                                    // llvm.x86.sysret64
     x86_tbm_bextri_u32,                              // llvm.x86.tbm.bextri.u32
     x86_tbm_bextri_u64,                              // llvm.x86.tbm.bextri.u64
     x86_tcmmimfp16ps,                                // llvm.x86.tcmmimfp16ps

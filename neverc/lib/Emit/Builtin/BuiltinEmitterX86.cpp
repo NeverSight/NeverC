@@ -3510,6 +3510,22 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     genBlock(createBasicBlock("skinit.cont"));
     return Call;
   }
+  case X86::BI__builtin_ia32_sysret32:
+  case X86::BI__builtin_ia32_sysret64:
+  case X86::BI__builtin_ia32_sysexit32:
+  case X86::BI__builtin_ia32_sysexit64: {
+    const auto ID = BuiltinID == X86::BI__builtin_ia32_sysret32
+                        ? llvm::Intrinsic::x86_sysret32
+                    : BuiltinID == X86::BI__builtin_ia32_sysret64
+                        ? llvm::Intrinsic::x86_sysret64
+                    : BuiltinID == X86::BI__builtin_ia32_sysexit32
+                        ? llvm::Intrinsic::x86_sysexit32
+                        : llvm::Intrinsic::x86_sysexit64;
+    auto *Call = Builder.CreateIntrinsic(VoidTy, ID, Ops);
+    genUnreachable(E->getExprLoc());
+    genBlock(createBasicBlock("system.return.cont"));
+    return Call;
+  }
   case X86::BI__svm_vmload:
   case X86::BI__builtin_ia32_vmload:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload,

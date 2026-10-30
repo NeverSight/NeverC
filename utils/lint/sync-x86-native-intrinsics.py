@@ -42,6 +42,10 @@ DECLARATIONS = {
     "invlpgb_addr32": ("Done", "I32", "I32", "I32"),
     "tlbsync": ("Done",),
     "skinit": ("Done", "I32"),
+    "sysret32": ("Done", "I32", "I32", "I64"),
+    "sysret64": ("Done", "I64", "I64", "I64"),
+    "sysexit32": ("Done", "I32", "I32"),
+    "sysexit64": ("Done", "I64", "I64"),
     "lkgs_reg": ("Done", "I16"),
     "lkgs_mem": ("Done", "PTR"),
 }
@@ -236,8 +240,8 @@ def immediate_arguments_attribute(impl, indices):
     return str(index), impl.replace(anchor, f"    case {index}: {{\n" + body + anchor, 1)
 
 
-def secure_launch_attribute(impl):
-    # The full fork's SKINIT contract has no default willreturn/nosync/nofree/
+def nonreturning_transfer_attribute(impl):
+    # Native terminal transfers have no default willreturn/nosync/nofree/
     # nocallback promises. Allocate the function and list recipes together.
     start = impl.index("static AttributeSet getIntrinsicFnAttributeSet")
     end = impl.index("AttributeList Intrinsic::getAttributes", start)
@@ -318,7 +322,7 @@ def synchronize(write):
     additions = []
     cpp_names = dict(enum_entries)
     immediate_pair, updated_impl = immediate_arguments_attribute(impl, (0, 1))
-    launch_attribute, updated_impl = secure_launch_attribute(updated_impl)
+    transfer_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl)
     address_attributes = {}
     for indices in sorted({indices for _, indices in ADDRESS_SIGNATURES.values()}):
         attribute, updated_impl = immediate_arguments_attribute(updated_impl, indices)
@@ -336,8 +340,8 @@ def synchronize(write):
         attribute = immediate_pair if suffix in ROW_IMMEDIATES else attributes[source][0]
         if suffix in ADDRESS_SIGNATURES:
             attribute = address_attributes[ADDRESS_SIGNATURES[suffix][1]]
-        if suffix == "skinit":
-            attribute = launch_attribute
+        if suffix in ("skinit", "sysret32", "sysret64", "sysexit32", "sysexit64"):
+            attribute = transfer_attribute
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)
         if name in names:

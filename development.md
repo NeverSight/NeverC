@@ -50,6 +50,67 @@ also applies the Microsoft-name register/return checks to all eight portable
 names: 89 binary cases pass. These transport checks do not authorize or qualify
 successful privileged accesses on physical hardware.
 
+## Native system-return transfers
+
+The four C23 builtins below return `void` and terminate the current function.
+They emit native LLVM intrinsics and CPU instructions, with no inline assembly
+or runtime helper. The suffix is the operand width; NeverC exposes these APIs
+on x86-64.
+
+| Builtin after `__builtin_ia32_` | Arguments |
+| --- | --- |
+| `sysret32` | `unsigned pc, unsigned flags, unsigned long long stack` |
+| `sysret64` | `unsigned long long pc, flags, stack` |
+| `sysexit32` | `unsigned pc, unsigned stack` |
+| `sysexit64` | `unsigned long long pc, stack` |
+
+SYSRET transports PC/flags through ECX/R11D or RCX/R11 and copies the supplied
+stack to RSP immediately before the native instruction. Its final stack switch
+stays in one machine pseudo until MC output: machine scheduling must never move
+it before a compiler-frame access. SYSEXIT uses EDX/ECX or RDX/RCX and installs
+the new stack itself. Narrow arguments promise only their low 32 input bits.
+SYSEXIT uses the flags present at its instruction boundary; evaluating C
+arguments and the preceding compiler code can change those flags.
+
+The current compiler frame is abandoned, with no ABI epilogue or ordinary
+return. Other registers remain compiler-selected. These interfaces do not
+restore a complete saved context or promise asynchronous unwinding across the
+stack switch. MSRs, CPL, CPU features and CET remain ambient state, and hardware
+owns admission checks, segment installation, flag filtering and faults. Legacy
+GPR high halves after a compatibility transition are architecturally undefined.
+The intrinsics are convergent, noduplicate and noreturn, with unknown memory
+effects; source after a builtin is unreachable.
+
+`SystemReturnFrontendTests.cpp` checks native identity, nonreturning control,
+dynamic frames and malformed arguments at O0/O2 on ELF, COFF and Mach-O.
+`sync-x86-system-returns.py` owns the pruned stack-carrier records; its checks
+also reject accidental ordinary-return metadata and retain existing opcode IDs.
+The full LLVM fork additionally tests i386 SYSEXIT32 and rejects code16 and
+SYSRET/SYSEXIT64 in 32-bit code.
+
+Run the independent Linux x64 privileged oracle with:
+
+```bash
+python3 tests/neverc/X86/verify_system_returns.py \
+  --llvm-bin /path/to/llvm/build/bin --neverc build-neverc/bin/neverc \
+  --output /path/to/artifacts
+```
+
+It executes direct LLVM, NeverC, and NeverC IR through LLVM at O0/O2. Each
+profile tests 16 plain/fixed/dynamic-frame/register-pressure functions, five
+selector bases, 68 flag inputs, four stack values and four size/address combinations. At the
+actual instruction boundary it checks input transport and then compares all
+GPRs, flags, PC, hidden CS/SS caches, remaining system registers and every mapped
+memory byte with an independent original-byte vCPU. A deliberately corrupted
+stack move must fail the operand check. Canonical high PC aliases and stacks,
+unaligned stacks and narrow argument high halves are included. KVM access is
+required; unavailable hardware is not a pass. This fixture disables CET and
+does not qualify faults, asynchronous events or other CPU models. Add `--i386`
+to run the two LLVM profiles in native protected 32-bit mode: four SYSEXIT32
+functions and 21,760 complete state pairs per profile, with an independently
+corrupted ECX move rejected. NeverC itself retains its x86-64 target. The contract follows [Intel SDM SYSRET/SYSEXIT and section
+3.4.1.1](https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf).
+
 ## Native far-pointer segment loads
 
 `__builtin_ia32_lfs16/32/64`, `__builtin_ia32_lgs16/32/64` and

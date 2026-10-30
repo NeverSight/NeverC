@@ -2269,6 +2269,17 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
 }
 
 void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
+  if (MI->getOpcode() == X86::SYSRET32_STACK ||
+      MI->getOpcode() == X86::SYSRET64_STACK) {
+    SMShadowTracker.emitShadowPadding(*OutStreamer, getSubtargetInfo());
+    NoAutoPaddingScope NoPadScope(*OutStreamer);
+    EmitAndCountInstruction(MCInstBuilder(X86::MOV64rr)
+                                .addReg(X86::RSP)
+                                .addReg(MI->getOperand(0).getReg()));
+    EmitAndCountInstruction(MCInstBuilder(
+        MI->getOpcode() == X86::SYSRET32_STACK ? X86::SYSRET : X86::SYSRET64));
+    return;
+  }
   if (emitNativeLeafSaveRBX(MI))
     return;
   if (emitBoundedLeafState(MI))

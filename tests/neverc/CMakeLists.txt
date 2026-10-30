@@ -65,6 +65,7 @@ set(NEVERC_TEST_SOURCES
   X86/NativeAddressTests.cpp
   X86/NativeRegisterTests.cpp
   X86/SkinitFrontendTests.cpp
+  X86/SystemReturnFrontendTests.cpp
   X86/MMXStateFrontendTests.cpp
   X86/X87ControlFrontendTests.cpp
   X86/FarPointerFrontendTests.cpp
