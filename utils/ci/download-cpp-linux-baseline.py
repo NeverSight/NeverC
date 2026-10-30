@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -25,6 +26,27 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def open_with_transient_retry(opener, query, timeout):
+    """Retry HTTP 503 at most twice inside this original open timeout."""
+    deadline = time.monotonic() + timeout
+    for attempt in range(3):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('Baseline request open deadline reached')
+        try:
+            return opener(query, timeout=remaining)
+        except urllib.error.HTTPError as error:
+            if error.code != 503 or attempt == 2:
+                raise
+            delay = 2 ** (attempt + 1)
+            retry_after = (error.headers or {}).get('Retry-After', '')
+            if re.fullmatch('[0-9]+', retry_after):
+                delay = max(delay, int(retry_after))
+            if delay >= deadline - time.monotonic():
+                raise
+            time.sleep(delay)
+
+
 def request(endpoint, token, output=None):
     url = 'https://api.github.com/repos/NeverSight/NeverC/' + endpoint
     query = urllib.request.Request(url, headers={
@@ -34,15 +56,15 @@ def request(endpoint, token, output=None):
         'User-Agent': 'NeverC-piecewise-baseline',
     })
     try:
-        response = urllib.request.build_opener(NoRedirect).open(query, timeout=60)
+        response = open_with_transient_retry(urllib.request.build_opener(NoRedirect).open, query, 60)
     except urllib.error.HTTPError as error:
         if error.code != 302:
             raise
         location = error.headers['Location']
         assert location.startswith('https://')
         # Do not forward repository credentials to the signed blob URL.
-        response = urllib.request.urlopen(urllib.request.Request(location,
-            headers={'User-Agent': 'NeverC-piecewise-baseline'}), timeout=180)
+        response = open_with_transient_retry(urllib.request.urlopen, urllib.request.Request(location,
+            headers={'User-Agent': 'NeverC-piecewise-baseline'}), 180)
     with response:
         if output is not None:
             with output.open('wb') as stream:
