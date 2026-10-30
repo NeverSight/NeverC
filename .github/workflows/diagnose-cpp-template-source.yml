@@ -3951,9 +3951,8 @@ jobs:
         compression-level: 0
 
 
-  inspect-bind-call-arguments-clean456:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-call-arguments-clean456'
-      }}
+  inspect-bind-call-arguments-source-diag:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-call-arguments-clean456' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -3961,11 +3960,11 @@ jobs:
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
-      run: 'mkdir -p "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap"
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-bind-call-arguments-source-diag-two-bootstrap"
 
-        git rev-parse HEAD > "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/revision.txt"
+        git rev-parse HEAD > "$RUNNER_TEMP/cpp-bind-call-arguments-source-diag-two-bootstrap/revision.txt"
 
-        python3 --version > "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/runner-python.log"
+        python3 --version > "$RUNNER_TEMP/cpp-bind-call-arguments-source-diag-two-bootstrap/runner-python.log"
 
         '
     - name: Set up pinned diagnostic Python
@@ -3975,49 +3974,28 @@ jobs:
     - name: Install matching host compiler and archive reader
       run: 'set -o pipefail
 
-        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert
-        callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/python.log"
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-bind-call-arguments-source-diag-two-bootstrap/python.log"
 
         curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
 
-        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/clang-install.log"
+        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-source-diag-two-bootstrap/clang-install.log"
 
-        sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/dependencies.log"
-
-        '
-    - name: Install the original native Clang20 and libc++20 reference toolchain
-      run: 'mkdir -p "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap"
-
-        set -o pipefail
-
-        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
-
-        sudo bash "$RUNNER_TEMP/llvm.sh" 20 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap/compiler-install.log"
-
-        sudo apt-get install -y --allow-downgrades libc++1=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++abi1=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libunwind=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libunwind-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++abi-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap/dependencies.log"
-
-        dpkg-query -W clang-20 libc++1 libc++abi1 libunwind libunwind-20-dev libc++-20-dev libc++abi-20-dev | tee "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap/toolchain-packages.log"
+        sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-source-diag-two-bootstrap/dependencies.log"
 
         '
-    - name: Run twenty bind reference sources at O0 and O2
-      run: python3 utils/ci/check-cpp-bind-call-arguments-native40.py --repo "$GITHUB_WORKSPACE"
-        --output "$RUNNER_TEMP/cpp-bind-call-arguments-native40"
-    - name: Validate the complete 456-request STL matrix
+    - name: Diagnose eight exact Bind source-admission cases
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: "python3 utils/ci/check-cpp-bind-call-arguments-clean456.py --repo \"$GITHUB_WORKSPACE\"\
-        \ \\\n  --plan utils/ci/cpp-bind-call-arguments-clean456-plan.json \\\n  --output\
-        \ \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456\" \\\n  --build \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456-rebuild\"\
-        \n"
+      run: "python3 utils/ci/check-cpp-bind-call-arguments-source-diag.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-bind-call-arguments-source-diag-plan.json \\\n  --output \"$RUNNER_TEMP/cpp-bind-call-arguments-source-diag-two\" \\\n  --build \"$RUNNER_TEMP/cpp-bind-call-arguments-source-diag-two-rebuild\"\n"
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: cpp-bind-call-arguments-clean456-${{ github.sha }}
-        path: '${{ runner.temp }}/cpp-bind-call-arguments-clean456
+        name: cpp-bind-call-arguments-source-diag-two-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-bind-call-arguments-source-diag-two
 
-          ${{ runner.temp }}/cpp-bind-call-arguments-clean456-bootstrap
+          ${{ runner.temp }}/cpp-bind-call-arguments-source-diag-two-bootstrap
 
           '
         if-no-files-found: error
@@ -4026,7 +4004,7 @@ jobs:
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
-        name: cpp-bind-call-arguments-clean456-binary-remote-only-${{ github.sha }}
+        name: cpp-bind-call-arguments-source-diag-two-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
         if-no-files-found: warn
         compression-level: 0
@@ -4040,26 +4018,6 @@ jobs:
         if-no-files-found: warn
         compression-level: 0
         retention-days: 7
-    - name: Upload only bounded native reference text evidence
-      if: ${{ always() }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: cpp-bind-call-arguments-native40-${{ github.sha }}
-        path: '${{ runner.temp }}/cpp-bind-call-arguments-native40
-
-          !${{ runner.temp }}/cpp-bind-call-arguments-native40/**/native-O*'
-        if-no-files-found: error
-        retention-days: 14
-    - name: Retain eighteen real native programs remotely only
-      if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: cpp-bind-call-arguments-native40-binaries-remote-only-${{ github.sha }}
-        path: ${{ runner.temp }}/cpp-bind-call-arguments-native40/**/native-O*
-        if-no-files-found: warn
-        retention-days: 7
-        compression-level: 0
-
 
 'on':
   workflow_dispatch:
