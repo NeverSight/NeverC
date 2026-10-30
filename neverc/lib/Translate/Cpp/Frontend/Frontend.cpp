@@ -22968,8 +22968,19 @@ public:
   }
   bool functionalBindFactorySourceComplete(const FunctionalBindFactorySource &Factory) {
     const auto Inputs = functionalBindSourceInputs();
+    auto AliasSource = [this](const TypedefNameDecl *Alias) {
+      const auto *Info = Alias ? Alias->getTypeSourceInfo() : nullptr;
+      if (!Alias || !Info || !A.S.owns(A.Sources, Alias->getLocation()) ||
+          Alias->isInvalidDecl() || Alias->hasAttrs() ||
+          !Alias->getUnderlyingType()->isFunctionPointerType()) return false;
+      A.checkTypeOnly(Alias->getUnderlyingType(), Alias->getLocation());
+      const bool Signature = retainFunctionTypeSource(
+          Alias->getUnderlyingType(), Info, Alias->getLocation());
+      return A.S.Diagnostics.empty() && Signature &&
+          TraverseTypeLoc(Info->getTypeLoc()) && A.S.Diagnostics.empty();
+    };
     return Inputs && approvedFunctionalBindFactorySource(A.S, A.Sources, Factory, A.Context,
-        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits, AliasSource);
   }
   bool functionalBindCallAuxiliarySourceComplete(const FunctionalBindCallSource &Call) {
     const auto Inputs = functionalBindSourceInputs();
