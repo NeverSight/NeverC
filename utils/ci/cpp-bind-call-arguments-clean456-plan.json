@@ -540,6 +540,69 @@
       "source_sha256": "ee14f514e833d974d62c01f75a9861e535d619ea1329c5c386fbb2e45528b888",
       "expected": "reject",
       "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-value",
+      "source": "#include <functional>\nint answer(){return 37;}\nint main(){auto f=std::bind(&answer);return f()!=37;}\n",
+      "source_sha256": "de9c183a26860cf349390ff7541b895ce21e8528252421584a44eb0848b8c40b",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-designator",
+      "source": "#include <functional>\nint calls;int answer(){++calls;return 37;}\nint main(){auto f=std::bind(answer);return f()!=37||calls!=1;}\n",
+      "source_sha256": "d32cbec368c9d84d665f20f76731bacdb957dd38d73de5755b40626aa1dcdf75",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-copy-cvref",
+      "source": "#include <functional>\n#include <utility>\nint calls;int answer(){++calls;return 37;}\nint main(){auto f=std::bind(&answer);auto copy=f;const auto fixed=copy;return f()!=37||copy()!=37||fixed()!=37||std::move(copy)()!=37||calls!=4;}\n",
+      "source_sha256": "eca7e15458d8206c7316e8716cec1a9b7d4c265e9915b7e288a8f80885f0fd47",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-factory-once",
+      "source": "#include <functional>\nusing Callback=int(*)();int selections;int first(){return 7;}int second(){return 9;}\nCallback selected=&first;Callback select(){++selections;return selected;}\nint main(){auto f=std::bind(select());selected=&second;return f()!=7||f()!=7||selections!=1;}\n",
+      "source_sha256": "42569cbc4e7d2e27ea5c82038af17ff062c84100d12848380c69be3a3a762a6d",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-void-target",
+      "source": "#include <functional>\nint calls;void touch(){++calls;}\nint main(){const auto f=std::bind(&touch);f();f();return calls!=2;}\n",
+      "source_sha256": "692d348f695124bb6001b732d7e9f3684a31128d06a4379df2828d75e1a1153c",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-reference-result",
+      "source": "#include <functional>\nint stored=5;int& access(){return stored;}\nint main(){auto f=std::bind(&access);f()=17;const auto fixed=f;return &fixed()!=&stored||stored!=17;}\n",
+      "source_sha256": "2dfd7995c72d3cdafe166bf1658c3e870184a3d3e4249c5fd668204a672a7871",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-unused-effects",
+      "source": "#include <functional>\nint effects;int targets;int bump(){return ++effects;}int answer(){++targets;return 37;}\nint main(){auto f=std::bind(&answer);int value=3;const int fixed=4;return f(bump(),bump())!=37||effects!=2||targets!=1||f(value,fixed)!=37||targets!=2||value!=3;}\n",
+      "source_sha256": "579b4c3c3e8fb036b3a572ab04e41ea6d781aef3651518cffba1af0981cac451",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-result-kinds",
+      "source": "#include <functional>\nint stored=5;int* address(){return &stored;}double half(){return 0.5;}\nint main(){auto pointer=std::bind(&address);auto real=std::bind(&half);return pointer()!=&stored||*pointer()!=5||real()!=0.5;}\n",
+      "source_sha256": "302be284785ab81a26632e0ffc8edc647ca64faf15eb09467588037700be81da",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-invalid-ordinary-body",
+      "source": "#include <functional>\nint forbidden(){asm(\"\" ::: \"memory\");return 7;}\nint main(){auto f=std::bind(&forbidden);return f();}\n",
+      "source_sha256": "ba029bedfb5855e2a5839ceda381ac0628b76de5116eb91f244c39a3e29d39e2",
+      "expected_proposed_not_observed": true,
+      "expected": "reject"
     }
   ],
   "producer_actual_job": 122606984385,
@@ -592,10 +655,10 @@
     "i686-unknown-linux-gnu"
   ],
   "fixture_group": "bind-call-arguments-clean456",
-  "source_repair_commit": "7019b3999b6659968dfe5494238d5058abe6c976",
-  "clean_source_basis": "7019b3999b6659968dfe5494238d5058abe6c976",
-  "required_requests": 456,
-  "required_acceptances": 288,
+  "source_repair_commit": "934df31064a29be2bd536a8060272e2076fc48db",
+  "clean_source_basis": "934df31064a29be2bd536a8060272e2076fc48db",
+  "required_requests": 528,
+  "required_acceptances": 352,
   "required_sdk_guard_rejections": 80,
   "required_unimplemented_not_fn_runtime_refusals": 8,
   "required_failed_substitutions": 8,
@@ -606,7 +669,7 @@
   "required_original216_sdk_guards": 80,
   "required_original216_unsupported": 0,
   "required_original216_invalid": 8,
-  "required_pid_files": 2280,
+  "required_pid_files": 2640,
   "graph_budget_observation_only": false,
   "unchanged_graph_node_limit": 200000,
   "unchanged_graph_depth_limit": 64,
@@ -620,7 +683,7 @@
   "source_trace_included": false,
   "inverse_source_edits": {},
   "frontend_execution_timeout_seconds": 60,
-  "actual_same_source_six_report_sha256": "1c0034b65c064490022a6623e2eac370e760f5507a83fcdcc9faac3ae936aef9",
+  "actual_same_source_six_report_sha256": "9d797c3f77cfdb10dfe71d97bfaa7aa47553e92c13719768feef90e2fbcfa8b4",
   "reference_full_plan_commit": "f961e1f5cc09ba6fd54a708b73e4639a6952f651",
   "reference_full_plan_path": "utils/ci/cpp-not-fn-nested-clean288-plan.json",
   "reference_full_plan_sha256": "b3dfb130b4e1a5b970262f6f8cd3cf1adc87a918214ac9573e75714f59c3ac45",
@@ -634,7 +697,7 @@
   "required_original240_requests": 240,
   "required_original240_acceptances": 128,
   "required_original240_owned_body_guards": 16,
-  "required_command_count": 473,
+  "required_command_count": 545,
   "actual_owned_four32_report_sha256": null,
   "actual_inherited240_report_sha256": null,
   "added_owned_callable_source_guards_sha256": "be222b5e55dbdd5ed6c1f5a6c77963ccd63a9543015b9f723684444f48a4b167",
@@ -649,7 +712,7 @@
   "preparation_only": false,
   "prepared_owned256_template_sha256": "97da3970cc9f7555ac534a4f559a471fdb5ce41854aa4ba6cbf19642b8c4e796",
   "execution_binding_required": true,
-  "required_pid_records": 456,
+  "required_pid_records": 528,
   "required_original272_requests": 272,
   "required_original272_acceptances": 128,
   "required_original272_expected_reject": 136,
@@ -669,7 +732,7 @@
     "Frontend.cpp": "2e3d767d541b26f1f8cb08da8367fa391cf8ef853463bc67365b5b98ad1ef2df",
     "Lowering.cpp": "01bf7bdf9e09d6ab3fc5b96f5892c2c2c9b467160b8fbb2304c251c73f4b16a7",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "cdc04456de307fcb87ec7b7e7d1e093adde5f42b57a97c257b46dcfaf46cd291",
+    "MathSDK.cpp": "702f372ebe35d6d58c0a1e2dac836121d35d69319dc587e2917523cecafb5004",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "907e55674e3d0923818a0209c604eecb765b99226f79c91f4990767c31866179",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -686,13 +749,13 @@
     "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
-  "actual_same_source_six_proof_sha256": "d6205037268285482c0d8b56ffd0d72a77b1b0611ca640322eab161c77e69bf9",
+  "actual_same_source_six_proof_sha256": "10a67300d9638028431fd019392f2ece398adf410fcfb1a1346a4e0e0c4cbc9a",
   "required_original288_requests": 288,
   "required_original288_acceptances": 128,
   "required_original288_expected_reject": 152,
   "required_original288_invalid": 8,
-  "required_added_bind_requests": 168,
-  "required_added_bind_acceptances": 160,
+  "required_added_bind_requests": 240,
+  "required_added_bind_acceptances": 224,
   "private_bind_admission_implemented": true,
   "bind_lowering_implemented": true,
   "bind_source_contract_sha256": "e71b11486d5ce55e759950d55163e60cb12215064b055cbaa58ce6fa6353bb8f",
@@ -701,15 +764,20 @@
   "required_bind_call_argument_acceptances": 88,
   "required_bind_call_argument_body_guard_refusals": 8,
   "planned_total_counts": {
-    "accepted": 288,
-    "unsupported": 160,
-    "invalid": 8
+    "accepted": 352,
+    "unsupported": 168,
+    "invalid-source": 8
   },
   "published_current_bind_basis": {
     "commit": "043b3f02feb6ec117a18ebbb96ab80ea1f309f5f",
     "publication_receipt_sha256": "09b0cba021679211178a0f746be32f9908f9f44ec2026b79823819960b0ed4fa"
   },
   "requires_exact_current_source_six": true,
-  "requires_exact_tuple_tag_role_source_assembly_sha256": "2cb69a13f541d709f8494012e311cd203a59d2ec7b09be7b78a061a6439a0421",
-  "current_source_review_sha256": "c6b5c8c117fe216b4393ba306875983d0fe8d2d51493f44c2ded39f8325d9d97"
+  "requires_exact_tuple_tag_role_source_assembly_sha256": "4987d80b0fbdb1c4bc5b48f3c2b92ee27d213d2980b27a041a33aceb9876fb2e",
+  "current_source_review_sha256": "6e6b9edcdbd36a45629ecb931560fa0fe294eac79aa29f50efee5cdea0ae22ee",
+  "required_zero_bound_bind_requests": 72,
+  "required_zero_bound_bind_acceptances": 64,
+  "required_zero_bound_body_guard_refusals": 8,
+  "zero_bound_cases_contract_sha256": "e3766090a950cfd3510d80519f610a1cda0bf27cc464f1d8d8a76f6af6ea7397",
+  "requires_current_source6_before_dispatch": true
 }

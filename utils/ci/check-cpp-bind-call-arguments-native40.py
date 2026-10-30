@@ -44,7 +44,7 @@ try:
              '-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS']
     report['native_flags']=list(map(str,flags))
     plan=json.loads((root/'utils/ci/cpp-bind-call-arguments-native40-plan.json').read_text());report['plan']=plan
-    assert len(plan['cases'])==20 and plan['required_native_programs']==40
+    assert len(plan['cases'])==28 and plan['required_native_programs']==56
     assert plan['fixture_group']=='bind-call-arguments-native40' and plan['preparation_only'] is False
     assert plan['execution_binding_required'] is True
     assert re.fullmatch('[0-9a-f]{40}', plan['source_repair_commit'])
