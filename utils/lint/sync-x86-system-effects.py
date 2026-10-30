@@ -40,6 +40,10 @@ EFFECTS = {
     "CLAC": (0, (), (), ()),
     "STAC": (0, (), (), ()),
     "HLT": (0, (), (), ("MayLoad", "MayStore")),
+    "SYSENTER": (0, (), ("CS", "SS", "RSP", "EFLAGS"), ("MayLoad", "MayStore")),
+    "RSM": (0, (), ("CS", "SS", "DS", "ES", "FS", "GS", "EFLAGS",
+                     "RAX", "RCX", "RDX", "RBX", "RSP", "RBP", "RSI", "RDI",
+                     *(f"R{i}" for i in range(8, 16))), ("MayLoad", "MayStore")),
     "SKINIT": (0, ("EAX",), (), ("MayLoad", "MayStore")),
     "SYSRET": (0, ("ECX", "R11D", "RSP"),
                ("CS", "SS", "EFLAGS", "RAX", "RCX", "RDX", "RBX", "RSP", "RBP", "RSI", "RDI"),
@@ -177,7 +181,7 @@ def synchronize(text):
         if name == "HLT":
             # A returning interrupt resumes after HLT.
             flags = flags.replace("|(1ULL<<MCID::Terminator)", "")
-        if name in ("SKINIT", "SYSRET", "SYSRET64", "SYSEXIT", "SYSEXIT64"):
+        if name in ("SKINIT", "SYSRET", "SYSRET64", "SYSEXIT", "SYSEXIT64", "SYSENTER", "RSM"):
             for flag in ("Terminator", "Barrier"):
                 marker = f"|(1ULL<<MCID::{flag})"
                 if marker not in flags:

@@ -19,6 +19,7 @@
 #include "X86InstrBuilder.h"
 #include "X86IntrinsicsInfo.h"
 #include "X86MachineFunctionInfo.h"
+#include "X86NativeFrameReturn.h"
 #include "X86TargetMachine.h"
 #include "X86TargetObjectFile.h"
 #include "llvm/ADT/SmallBitVector.h"
@@ -26744,6 +26745,43 @@ static SDValue lowerDescriptorState(SDValue Op, const X86Subtarget &Subtarget,
   return DAG.getMergeValues({ZF, SDValue(Access, 0)}, DL);
 }
 
+static SDValue lowerNativeFrameReturn(SDValue Op, const X86Subtarget &Subtarget,
+                                      SelectionDAG &DAG) {
+  X86::NativeFrameReturn Kind;
+  switch (Op.getConstantOperandVal(1)) {
+  default:
+    llvm_unreachable("unexpected native frame-return intrinsic");
+#define X86_FRAME_RETURN(Name, Opcode, LongOnly, Immediate, Uintr)             \
+  case Intrinsic::x86_##Name:                                                  \
+    Kind = X86::NativeFrameReturn::Name;                                       \
+    break;
+#include "X86NativeFrameReturns.def"
+#undef X86_FRAME_RETURN
+  }
+  const auto Info = X86::nativeFrameReturnInfo(unsigned(Kind));
+  const bool Wide = Subtarget.is64Bit();
+  if (!Wide)
+    report_fatal_error(
+        "native frame-return intrinsic does not match the target code mode");
+  if (Info.Uintr && !Subtarget.hasUINTR())
+    report_fatal_error("UIRET intrinsic requires the UINTR target feature");
+  uint64_t Adjustment = 0;
+  if (Info.Immediate) {
+    const auto *Immediate = dyn_cast<ConstantSDNode>(Op.getOperand(3));
+    if (!Immediate)
+      report_fatal_error("far-return adjustment must be an immediate");
+    Adjustment = Immediate->getZExtValue();
+  }
+  const SDLoc DL(Op);
+  return SDValue(
+      DAG.getMachineNode(
+          X86::NATIVE_FRAME_RETURN64, DL, MVT::Other,
+          {DAG.getZExtOrTrunc(Op.getOperand(2), DL, Wide ? MVT::i64 : MVT::i32),
+           DAG.getTargetConstant(unsigned(Kind), DL, MVT::i32),
+           DAG.getTargetConstant(Adjustment, DL, MVT::i32), Op.getOperand(0)}),
+      0);
+}
+
 static SDValue lowerBoundedSystemState(SDValue Op,
                                        const X86Subtarget &Subtarget,
                                        SelectionDAG &DAG) {
@@ -26785,6 +26823,12 @@ static SDValue lowerBoundedSystemState(SDValue Op,
     return SDValue(DAG.getMachineNode(X86::STAC, DL, MVT::Other, Chain), 0);
   case Intrinsic::x86_hlt:
     return SDValue(DAG.getMachineNode(X86::HLT, DL, MVT::Other, Chain), 0);
+  case Intrinsic::x86_sysenter:
+  case Intrinsic::x86_rsm:
+    return SDValue(DAG.getMachineNode(
+                       ID == Intrinsic::x86_sysenter ? X86::SYSENTER : X86::RSM,
+                       DL, MVT::Other, Chain),
+                   0);
   case Intrinsic::x86_skinit:
     Chain = DAG.getCopyToReg(Chain, DL, X86::EAX, Op.getOperand(2), SDValue());
     return SDValue(DAG.getMachineNode(X86::SKINIT, DL, MVT::Other,
@@ -28166,6 +28210,12 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_lmsw_mem:
       return lowerDescriptorState(Op, Subtarget, DAG);
 
+#define X86_FRAME_RETURN(Name, Opcode, LongOnly, Immediate, Uintr)             \
+  case Intrinsic::x86_##Name:
+#include "X86NativeFrameReturns.def"
+#undef X86_FRAME_RETURN
+      return lowerNativeFrameReturn(Op, Subtarget, DAG);
+
     case Intrinsic::x86_vmload:
     case Intrinsic::x86_vmsave:
     case Intrinsic::x86_invlpga:
@@ -28178,6 +28228,8 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_clac:
     case Intrinsic::x86_stac:
     case Intrinsic::x86_hlt:
+    case Intrinsic::x86_sysenter:
+    case Intrinsic::x86_rsm:
     case Intrinsic::x86_skinit:
     case Intrinsic::x86_sysret32:
     case Intrinsic::x86_sysret64:

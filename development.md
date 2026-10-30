@@ -111,6 +111,48 @@ functions and 21,760 complete state pairs per profile, with an independently
 corrupted ECX move rejected. NeverC itself retains its x86-64 target. The contract follows [Intel SDM SYSRET/SYSEXIT and section
 3.4.1.1](https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf).
 
+## Native frame and SMM transfers
+
+The C23 builtins `__builtin_ia32_iret16/32/64`, `retf16/32/64`, `erets`,
+`eretu` and `uiret` (all with the same prefix) take a `const void *frame` and
+return `void`. The three `retf16/32/64_imm` variants take an additional constant
+`unsigned short adjustment`; they retain the CA immediate encoding even for
+zero. The plain forms use CB. `__builtin_ia32_sysenter()` and
+`__builtin_ia32_rsm()` take no arguments. All are nonreturning native intrinsics,
+with conservative memory effects; source after the builtin is unreachable.
+UIRET additionally requires `-muintr` or the corresponding function target
+feature. NeverC supports the x64 code mode, including narrow operand sizes.
+
+Frame pointers replace RSP immediately before the CPU instruction. A terminal
+machine pseudo keeps that move after every compiler-frame access. The CPU reads
+the frame, including its native layout and any FRED error-code slot, and owns
+privilege, segment, flag, NMI, CET and fault behavior. SYSENTER reads ambient
+entry MSRs; RSM restores the hardware SMM save state. Other live registers are
+compiler-selected, and these APIs do not restore a complete original-image
+context or promise asynchronous unwind behavior. An IRET context that can later
+resume after the instruction, such as a protected-mode NT task return, is
+outside this nonreturning interface.
+
+`X86NativeTransfers.def` owns the frontend identities/signatures shared by
+builtin registration and emission. The backend frame registry is separate from
+the frontend, and drives the pruned intrinsic schema. `sync-x86-frame-returns.py`
+owns the appended frame carrier and FRED native records without renumbering
+existing opcodes. Frame-return frontend tests cover ELF/COFF/Mach-O at O0/O2,
+dynamic frames, argument errors, nonconstant adjustments and UIRET features.
+
+`verify_frame_returns.py` runs the direct LLVM, NeverC, and NeverC-IR-through-LLVM
+paths against independent original-byte KVM executions. Its default tests
+IRET/RETF operand sizes and SYSENTER, with plain/fixed/dynamic/pressure compiler
+frames, CPL0/CPL3 transitions, aligned/unaligned and canonical high frame aliases,
+flag samples and immediate cleanup. `--i386` selects the two full LLVM code32
+profiles. `--smm` tests RSM with separate normal/SMM memory spaces and SMI-created
+save images, then establishes code64 execution inside SMM for the compiler
+wrapper. This is KVM-mediated SMM qualification, not bare-metal firmware evidence.
+The comparison covers all represented GPRs, PC, flags, segment/system state,
+event state and every mapped RAM byte. XSTATE, CET, NT task returns, fault and
+asynchronous delivery, other CPU models, and successful FRED/UIRET transitions
+remain outside this native fixture's scope.
+
 ## Native far-pointer segment loads
 
 `__builtin_ia32_lfs16/32/64`, `__builtin_ia32_lgs16/32/64` and

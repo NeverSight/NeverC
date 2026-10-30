@@ -1553,6 +1553,8 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
   /* 15799 */ "fldenvs\t\0"
   /* 15808 */ "fnsaves\t\0"
   /* 15817 */ "frstors\t\0"
+  /* 15826 */ "erets\t\0"
+  /* 15833 */ "eretu\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20145,6 +20147,9 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     146890U,	// FRSTOR16m
     0U,	// SYSRET32_STACK
     0U,	// SYSRET64_STACK
+    15827U,	// ERETS
+    15834U,	// ERETU
+    0U,	// NATIVE_FRAME_RETURN64
 };
 
   static const uint32_t OpInfo1[] = {
@@ -38734,6 +38739,9 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// FRSTOR16m
     0U,	// SYSRET32_STACK
     0U,	// SYSRET64_STACK
+    0U,	// ERETS
+    0U,	// ERETU
+    0U,	// NATIVE_FRAME_RETURN64
 };
 
   // Emit the opcode for the instruction.

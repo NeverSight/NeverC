@@ -12,6 +12,7 @@ on:
       - 'llvm/include/llvm/IR/IntrinsicImpl.inc'
       - 'llvm/lib/Target/X86/X86GenDAGISel.inc'
       - 'llvm/lib/Target/X86/X86GenInstrInfo.inc'
+      - 'llvm/lib/Target/X86/X86NativeFrameReturns.def'
       - 'utils/lint/sort-x86-intrinsics.py'
       - 'utils/lint/test_sort_x86_intrinsics.py'
       - 'utils/lint/test_sync_x86_native_intrinsics.py'
@@ -19,7 +20,9 @@ on:
       - 'utils/lint/sync-x86-vmx-effects.py'
       - 'utils/lint/sync-x86-system-effects.py'
       - 'utils/lint/sync-x86-system-returns.py'
+      - 'utils/lint/sync-x86-frame-returns.py'
       - 'utils/lint/test_sync_x86_system_returns.py'
+      - 'utils/lint/test_sync_x86_frame_returns.py'
       - 'utils/lint/sync-x86-x87-environment.py'
       - 'utils/lint/test_sync_x86_x87_environment.py'
       - 'utils/lint/sync-x86-amx-instructions.py'
@@ -56,6 +59,7 @@ on:
       - 'llvm/include/llvm/IR/IntrinsicImpl.inc'
       - 'llvm/lib/Target/X86/X86GenDAGISel.inc'
       - 'llvm/lib/Target/X86/X86GenInstrInfo.inc'
+      - 'llvm/lib/Target/X86/X86NativeFrameReturns.def'
       - 'utils/lint/sort-x86-intrinsics.py'
       - 'utils/lint/test_sort_x86_intrinsics.py'
       - 'utils/lint/test_sync_x86_native_intrinsics.py'
@@ -63,7 +67,9 @@ on:
       - 'utils/lint/sync-x86-vmx-effects.py'
       - 'utils/lint/sync-x86-system-effects.py'
       - 'utils/lint/sync-x86-system-returns.py'
+      - 'utils/lint/sync-x86-frame-returns.py'
       - 'utils/lint/test_sync_x86_system_returns.py'
+      - 'utils/lint/test_sync_x86_frame_returns.py'
       - 'utils/lint/sync-x86-x87-environment.py'
       - 'utils/lint/test_sync_x86_x87_environment.py'
       - 'utils/lint/sync-x86-amx-instructions.py'
@@ -188,7 +194,9 @@ jobs:
         run: |
           python3 utils/lint/sync-x86-system-effects.py
           python3 utils/lint/sync-x86-system-returns.py
+          python3 utils/lint/sync-x86-frame-returns.py
           python3 utils/lint/test_sync_x86_system_returns.py
+          python3 utils/lint/test_sync_x86_frame_returns.py
           python3 utils/lint/sync-x86-x87-environment.py
           python3 utils/lint/test_sync_x86_x87_environment.py
 

@@ -57,6 +57,17 @@ for operation in ("fnstenv", "fldenv", "fnsave", "frstor"):
 for operation in ("lds", "les", "lss", "lfs", "lgs"):
     for bits in ((16, 32) if operation in ("lds", "les") else (16, 32, 64)):
         DECLARATIONS[f"{operation}{bits}"] = (f"I{bits}", "PTR")
+# The backend registry owns native frame operation identities and immediates.
+FRAME_RETURNS = {}
+for name, immediate in re.findall(
+        r"X86_FRAME_RETURN\((\w+), \w+, (?:true|false), (true|false), (?:true|false)\)",
+        (ROOT / "llvm/lib/Target/X86/X86NativeFrameReturns.def").read_text()):
+    FRAME_RETURNS[name] = immediate == "true"
+    DECLARATIONS[name] = ("Done", "PTR", "I16") if FRAME_RETURNS[name] else ("Done", "PTR")
+DECLARATIONS["sysenter"] = ("Done",)
+DECLARATIONS["rsm"] = ("Done",)
+TERMINAL_TRANSFERS = {"skinit", "sysret32", "sysret64", "sysexit32", "sysexit64",
+                      "sysenter", "rsm", *FRAME_RETURNS}
 DECLARATIONS["invlpga"] = ("Done", "I64", "I32")
 for operation in ("vmload", "vmsave"):
     DECLARATIONS[operation + "_addr32"] = ("Done", "I32")
@@ -240,7 +251,7 @@ def immediate_arguments_attribute(impl, indices):
     return str(index), impl.replace(anchor, f"    case {index}: {{\n" + body + anchor, 1)
 
 
-def nonreturning_transfer_attribute(impl):
+def nonreturning_transfer_attribute(impl, indices=()):
     # Native terminal transfers have no default willreturn/nosync/nofree/
     # nocallback promises. Allocate the function and list recipes together.
     start = impl.index("static AttributeSet getIntrinsicFnAttributeSet")
@@ -258,9 +269,11 @@ def nonreturning_transfer_attribute(impl):
         functions = (functions[:closing] + f"  case {function}:\n" + body +
                      functions[closing:])
         impl = impl[:start] + functions + impl[end:]
-    body = ("      AS[0] = {AttributeList::FunctionIndex, "
-            f"getIntrinsicFnAttributeSet(C, {function})}};\n"
-            "      NumAttrs = 1;\n      break;\n    }\n")
+    body = "".join(f"      AS[{i}] = {{{arg + 1}, getIntrinsicArgAttributeSet(C, 0)}};\n"
+                   for i, arg in enumerate(indices))
+    body += (f"      AS[{len(indices)}] = {{AttributeList::FunctionIndex, "
+             f"getIntrinsicFnAttributeSet(C, {function})}};\n"
+             f"      NumAttrs = {len(indices) + 1};\n      break;\n    }}\n")
     start = impl.index("switch(IntrinsicsToAttributesMap[id - 1])")
     end = impl.index("return AttributeList::get", start)
     recipes = impl[start:end]
@@ -323,6 +336,7 @@ def synchronize(write):
     cpp_names = dict(enum_entries)
     immediate_pair, updated_impl = immediate_arguments_attribute(impl, (0, 1))
     transfer_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl)
+    immediate_transfer, updated_impl = nonreturning_transfer_attribute(updated_impl, (1,))
     address_attributes = {}
     for indices in sorted({indices for _, indices in ADDRESS_SIGNATURES.values()}):
         attribute, updated_impl = immediate_arguments_attribute(updated_impl, indices)
@@ -340,8 +354,8 @@ def synchronize(write):
         attribute = immediate_pair if suffix in ROW_IMMEDIATES else attributes[source][0]
         if suffix in ADDRESS_SIGNATURES:
             attribute = address_attributes[ADDRESS_SIGNATURES[suffix][1]]
-        if suffix in ("skinit", "sysret32", "sysret64", "sysexit32", "sysexit64"):
-            attribute = transfer_attribute
+        if suffix in TERMINAL_TRANSFERS:
+            attribute = immediate_transfer if FRAME_RETURNS.get(suffix) else transfer_attribute
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)
         if name in names:

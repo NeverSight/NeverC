@@ -1,0 +1,20 @@
+//===- X86NativeFrameReturns.def - Explicit frame transfer identities -------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+// Intrinsic suffix, native opcode, long-mode-only, immediate, UINTR feature.
+X86_FRAME_RETURN(iret16, IRET16, false, false, false)
+X86_FRAME_RETURN(iret32, IRET32, false, false, false)
+X86_FRAME_RETURN(iret64, IRET64, true, false, false)
+X86_FRAME_RETURN(retf16, LRET16, false, false, false)
+X86_FRAME_RETURN(retf32, LRET32, false, false, false)
+X86_FRAME_RETURN(retf64, LRET64, true, false, false)
+X86_FRAME_RETURN(retf16_imm, LRETI16, false, true, false)
+X86_FRAME_RETURN(retf32_imm, LRETI32, false, true, false)
+X86_FRAME_RETURN(retf64_imm, LRETI64, true, true, false)
+X86_FRAME_RETURN(erets, ERETS, true, false, false)
+X86_FRAME_RETURN(eretu, ERETU, true, false, false)
+X86_FRAME_RETURN(uiret, UIRET, true, false, true)

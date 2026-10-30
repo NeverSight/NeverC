@@ -200,10 +200,10 @@ TARGET_HEADER_BUILTIN(__svm_vmload, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__svm_vmsave, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__svm_skinit, "vi", "nrh", INTRIN_H, ALL_MS_LANGUAGES, "")
 BUILTIN(__builtin_ia32_skinit, "vUi", "nr")
-BUILTIN(__builtin_ia32_sysret32, "vUiUiULLi", "nr")
-BUILTIN(__builtin_ia32_sysret64, "vULLiULLiULLi", "nr")
-BUILTIN(__builtin_ia32_sysexit32, "vUiUi", "nr")
-BUILTIN(__builtin_ia32_sysexit64, "vULLiULLi", "nr")
+#define X86_NATIVE_TRANSFER(Name, Type, Features) \
+  TARGET_BUILTIN(__builtin_ia32_##Name, Type, "nr", Features)
+#include "X86NativeTransfers.def"
+#undef X86_NATIVE_TRANSFER
 BUILTIN(__builtin_ia32_vmload, "vULLi", "n")
 BUILTIN(__builtin_ia32_vmsave, "vULLi", "n")
 BUILTIN(__builtin_ia32_invlpga, "vULLiUi", "n")

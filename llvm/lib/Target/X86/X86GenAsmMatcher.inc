@@ -8411,7 +8411,9 @@ static const char MnemonicTable[] =
     "\010fnstenvs"
     "\007fldenvs"
     "\007fnsaves"
-    "\007frstors";
+    "\007frstors"
+    "\005erets"
+    "\005eretu";
 
 // Feature bitsets.
 enum : uint8_t {
@@ -9458,6 +9460,8 @@ static const MatchEntry MatchTable0[] = {
   { 2385 /* enqcmds */, X86::ENQCMDS32, Convert__Reg1_1__Mem5125_0, AMFBS_None, { MCK_Mem512, MCK_GR32 }, },
   { 2385 /* enqcmds */, X86::ENQCMDS64, Convert__Reg1_1__Mem5125_0, AMFBS_In64BitMode, { MCK_Mem512, MCK_GR64 }, },
   { 2393 /* enter */, X86::ENTER, Convert__Imm1_0__Imm1_1, AMFBS_None, { MCK_Imm, MCK_Imm }, },
+  { 18955 /* erets */, X86::ERETS, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
+  { 18961 /* eretu */, X86::ERETU, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 2399 /* es */, X86::ES_PREFIX, Convert_NoOperands, AMFBS_None, {  }, },
   { 2402 /* extractps */, X86::EXTRACTPSrr, Convert__GR32orGR641_2__Reg1_1__ImmUnsignedi81_0, AMFBS_None, { MCK_ImmUnsignedi8, MCK_FR16, MCK_GR32orGR64 }, },
   { 2402 /* extractps */, X86::EXTRACTPSmr, Convert__Mem325_2__Reg1_1__ImmUnsignedi81_0, AMFBS_None, { MCK_ImmUnsignedi8, MCK_FR16, MCK_Mem32 }, },
@@ -27262,6 +27266,8 @@ static const MatchEntry MatchTable1[] = {
   { 2385 /* enqcmds */, X86::ENQCMDS32, Convert__Reg1_0__Mem5125_1, AMFBS_None, { MCK_GR32, MCK_Mem512 }, },
   { 2385 /* enqcmds */, X86::ENQCMDS64, Convert__Reg1_0__Mem5125_1, AMFBS_In64BitMode, { MCK_GR64, MCK_Mem512 }, },
   { 2393 /* enter */, X86::ENTER, Convert__Imm1_0__Imm1_1, AMFBS_None, { MCK_Imm, MCK_Imm }, },
+  { 18955 /* erets */, X86::ERETS, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
+  { 18961 /* eretu */, X86::ERETU, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 2399 /* es */, X86::ES_PREFIX, Convert_NoOperands, AMFBS_None, {  }, },
   { 2402 /* extractps */, X86::EXTRACTPSrr, Convert__GR32orGR641_0__Reg1_1__ImmUnsignedi81_2, AMFBS_None, { MCK_GR32orGR64, MCK_FR16, MCK_ImmUnsignedi8 }, },
   { 2402 /* extractps */, X86::EXTRACTPSmr, Convert__Mem325_0__Reg1_1__ImmUnsignedi81_2, AMFBS_None, { MCK_Mem32, MCK_FR16, MCK_ImmUnsignedi8 }, },

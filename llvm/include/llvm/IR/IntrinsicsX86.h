@@ -1072,6 +1072,8 @@ enum X86Intrinsics : unsigned {
     x86_encodekey256,                                // llvm.x86.encodekey256
     x86_enqcmd,                                      // llvm.x86.enqcmd
     x86_enqcmds,                                     // llvm.x86.enqcmds
+    x86_erets,                                       // llvm.x86.erets
+    x86_eretu,                                       // llvm.x86.eretu
     x86_flags_read_u64,                              // llvm.x86.flags.read.u64
     x86_flags_write_u64,                             // llvm.x86.flags.write.u64
     x86_fldcw,                                       // llvm.x86.fldcw
@@ -1124,6 +1126,9 @@ enum X86Intrinsics : unsigned {
     x86_invvpid_address,                             // llvm.x86.invvpid.address
     x86_inword,                                      // llvm.x86.inword
     x86_inwordstring,                                // llvm.x86.inwordstring
+    x86_iret16,                                      // llvm.x86.iret16
+    x86_iret32,                                      // llvm.x86.iret32
+    x86_iret64,                                      // llvm.x86.iret64
     x86_lar_mem16,                                   // llvm.x86.lar.mem16
     x86_lar_mem16_address,                           // llvm.x86.lar.mem16.address
     x86_lar_mem32,                                   // llvm.x86.lar.mem32
@@ -1306,6 +1311,13 @@ enum X86Intrinsics : unsigned {
     x86_rep_scas_state32,                            // llvm.x86.rep.scas.state32
     x86_rep_stos_state,                              // llvm.x86.rep.stos.state
     x86_rep_stos_state32,                            // llvm.x86.rep.stos.state32
+    x86_retf16,                                      // llvm.x86.retf16
+    x86_retf16_imm,                                  // llvm.x86.retf16.imm
+    x86_retf32,                                      // llvm.x86.retf32
+    x86_retf32_imm,                                  // llvm.x86.retf32.imm
+    x86_retf64,                                      // llvm.x86.retf64
+    x86_retf64_imm,                                  // llvm.x86.retf64.imm
+    x86_rsm,                                         // llvm.x86.rsm
     x86_rstorssp,                                    // llvm.x86.rstorssp
     x86_saveprevssp,                                 // llvm.x86.saveprevssp
     x86_seh_lsda,                                    // llvm.x86.seh.lsda
@@ -1524,6 +1536,7 @@ enum X86Intrinsics : unsigned {
     x86_subborrow_32,                                // llvm.x86.subborrow.32
     x86_subborrow_64,                                // llvm.x86.subborrow.64
     x86_swapgs,                                      // llvm.x86.swapgs
+    x86_sysenter,                                    // llvm.x86.sysenter
     x86_sysexit32,                                   // llvm.x86.sysexit32
     x86_sysexit64,                                   // llvm.x86.sysexit64
     x86_sysret32,                                    // llvm.x86.sysret32
@@ -1588,6 +1601,7 @@ enum X86Intrinsics : unsigned {
     x86_tlbsync,                                     // llvm.x86.tlbsync
     x86_tmmultf32ps,                                 // llvm.x86.tmmultf32ps
     x86_tpause,                                      // llvm.x86.tpause
+    x86_uiret,                                       // llvm.x86.uiret
     x86_umonitor,                                    // llvm.x86.umonitor
     x86_umwait,                                      // llvm.x86.umwait
     x86_urdmsr,                                      // llvm.x86.urdmsr

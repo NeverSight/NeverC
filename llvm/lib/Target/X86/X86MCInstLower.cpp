@@ -19,6 +19,7 @@
 #include "MCTargetDesc/X86TargetStreamer.h"
 #include "X86AsmPrinter.h"
 #include "X86MachineFunctionInfo.h"
+#include "X86NativeFrameReturn.h"
 #include "X86RegisterInfo.h"
 #include "X86ShuffleDecodeConstantPool.h"
 #include "X86Subtarget.h"
@@ -2269,6 +2270,26 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
 }
 
 void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
+  if (MI->getOpcode() == X86::NATIVE_FRAME_RETURN64) {
+    const bool Wide = true;
+    const auto Info = X86::nativeFrameReturnInfo(MI->getOperand(1).getImm());
+    const int64_t Adjustment = MI->getOperand(2).getImm();
+    if (Info.LongOnly && !Wide)
+      report_fatal_error("native frame return requires 64-bit mode");
+    if (Adjustment < 0 || Adjustment > UINT16_MAX ||
+        (!Info.Immediate && Adjustment))
+      report_fatal_error("invalid native far-return adjustment");
+    SMShadowTracker.emitShadowPadding(*OutStreamer, getSubtargetInfo());
+    NoAutoPaddingScope NoPadScope(*OutStreamer);
+    EmitAndCountInstruction(MCInstBuilder(Wide ? X86::MOV64rr : X86::MOV32rr)
+                                .addReg(Wide ? X86::RSP : X86::ESP)
+                                .addReg(MI->getOperand(0).getReg()));
+    MCInst Return = MCInstBuilder(Info.Opcode);
+    if (Info.Immediate)
+      Return.addOperand(MCOperand::createImm(Adjustment));
+    EmitAndCountInstruction(Return);
+    return;
+  }
   if (MI->getOpcode() == X86::SYSRET32_STACK ||
       MI->getOpcode() == X86::SYSRET64_STACK) {
     SMShadowTracker.emitShadowPadding(*OutStreamer, getSubtargetInfo());

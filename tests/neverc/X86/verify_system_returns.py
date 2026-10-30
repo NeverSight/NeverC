@@ -249,7 +249,7 @@ SECTIONS {
     report = dict(
         scope="Native compiler input transport and successful transfers; ambient CPL/MSRs, CET disabled",
         host=platform.platform(), code_bits=32 if args.i386 else 64, profiles=results,
-        source_sha256={p.name: sha256(p) for p in (Path(__file__), ROOT / "system_return_kvm.c")},
+        source_sha256={p.name: sha256(p) for p in (Path(__file__), ROOT / "system_return_kvm.c", ROOT / "KvmTransferFixture.h")},
         tools={name: dict(path=path, sha256=sha256(path)) for name, path in tools.items()},
         reference="Intel SDM 325462-085US, Vol. 2B SYSRET/SYSEXIT; Vol. 1 3.4.1.1",
         reference_url="https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf",
