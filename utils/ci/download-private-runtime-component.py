@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import stat
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -23,6 +24,27 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def open_with_transient_retry(opener, query, timeout):
+    """Retry HTTP 502/503 at most twice inside this original open timeout."""
+    deadline = time.monotonic() + timeout
+    for attempt in range(3):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('Baseline request open deadline reached')
+        try:
+            return opener(query, timeout=remaining)
+        except urllib.error.HTTPError as error:
+            if error.code not in (502, 503) or attempt == 2:
+                raise
+            delay = 2 ** (attempt + 1)
+            retry_after = (error.headers or {}).get('Retry-After', '')
+            if re.fullmatch('[0-9]+', retry_after):
+                delay = max(delay, int(retry_after))
+            if delay >= deadline - time.monotonic():
+                raise
+            time.sleep(delay)
+
+
 def api(endpoint, destination=None):
     request = urllib.request.Request('https://api.github.com/repos/NeverSight/NeverC/' + endpoint,
         headers={'Authorization': 'Bearer ' + os.environ['GITHUB_TOKEN'],
@@ -30,14 +52,14 @@ def api(endpoint, destination=None):
                  'Cache-Control': 'no-cache', 'User-Agent': 'NeverC-real-private-runtime'})
     try:
         try:
-            response = urllib.request.build_opener(NoRedirect).open(request, timeout=60)
+            response = open_with_transient_retry(urllib.request.build_opener(NoRedirect).open, request, 60)
         except urllib.error.HTTPError as error:
             if error.code != 302:
                 raise
             location = error.headers['Location']
             assert location.startswith('https://')
-            response = urllib.request.urlopen(urllib.request.Request(location,
-                headers={'User-Agent': 'NeverC-real-private-runtime'}), timeout=180)
+            response = open_with_transient_retry(urllib.request.urlopen, urllib.request.Request(location,
+                headers={'User-Agent': 'NeverC-real-private-runtime'}), 180)
         with response:
             if destination is not None:
                 with Path(destination).open('wb') as stream:
@@ -67,12 +89,12 @@ def main():
     assert run['head_sha'] == plan['component_commit']
     assert run['status'] == 'completed' and run['conclusion'] == 'success'
     actual_jobs = api('actions/runs/' + str(run['id']) + '/attempts/' + str(run['run_attempt']) + '/jobs?per_page=100')
-    selected = [j for j in actual_jobs['jobs'] if j['name'] == 'inspect-bind-clean360']
+    selected = [j for j in actual_jobs['jobs'] if j['name'] == 'inspect-bind-call-arguments-clean456']
     assert len(selected) == 1
     job = api('actions/jobs/' + str(selected[0]['id']))
     assert job['head_sha'] == plan['component_commit'] and job['status'] == 'completed' and job['conclusion'] == 'success'
     assert job['id'] == plan['component_actual_job'] and run['run_attempt'] == plan['component_attempt']
-    for name, expected in [('Validate the complete 360-request STL matrix', 'success'),
+    for name, expected in [('Validate the complete 456-request STL matrix', 'success'),
                            ('Retain actual current private archive remotely for source diagnosis', 'success')]:
         assert any(step['name'] == name and step['conclusion'] == expected for step in job['steps'])
     downloads = []
@@ -106,9 +128,9 @@ def main():
     r = json.loads(report.read_text())
     assert r['revision'] == plan['component_commit'] and r['completed'] and r['passed'] is True and r['not_fn_private_support_complete'] is False
     assert r['all_five_bridge_units_recompiled'] and r['focused_request_contract_passed']
-    assert len(r['requests']) == 360 and all(row['expectation_satisfied'] for row in r['requests'])
-    assert sum(row['expected'] == 'accept' for row in r['requests']) == 200
-    assert sum(row['expected'] == 'reject' for row in r['requests']) == 152
+    assert len(r['requests']) == 456 and all(row['expectation_satisfied'] for row in r['requests'])
+    assert sum(row['expected'] == 'accept' for row in r['requests']) == 288
+    assert sum(row['expected'] == 'reject' for row in r['requests']) == 160
     assert sum(row['expected'] == 'invalid' for row in r['requests']) == 8
     assert len(r['exact_private_input_sha256']) == 19
     for name, identity in r['exact_private_input_sha256'].items():

@@ -26582,6 +26582,8 @@ public:
       }
       A.type(Source->Storage.CallableType, Call->getExprLoc());
       if (!TraverseStmt(const_cast<Expr *>(Source->Object))) return false;
+      for (unsigned Index = 1; Index < Call->getNumArgs(); ++Index)
+        if (!TraverseStmt(Call->getArg(Index))) return false;
       if (!A.S.Diagnostics.empty()) return true;
       if (!retainBindRuntimeSource(Source->Storage, Call->getExprLoc())) {
         A.reject(Call->getExprLoc(), "bind receiver lifetime source",
