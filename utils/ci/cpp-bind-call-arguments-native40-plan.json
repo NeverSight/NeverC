@@ -195,24 +195,64 @@
       "name": "bind-call-unused-rvalue-scalar",
       "source": "#include <functional>\n#include <utility>\nint twice(int n){return n*2;}\nint main(){int n=9;auto f=std::bind(&twice,21);return f(std::move(n))!=42||n!=9;}\n",
       "source_sha256": "0fac1197a39c14cbeb34f9672d2c7c457bb08217e43f69a01acabdccb671d762"
+    },
+    {
+      "name": "bind-zero-bound-value",
+      "source": "#include <functional>\nint answer(){return 37;}\nint main(){auto f=std::bind(&answer);return f()!=37;}\n",
+      "source_sha256": "de9c183a26860cf349390ff7541b895ce21e8528252421584a44eb0848b8c40b"
+    },
+    {
+      "name": "bind-zero-bound-designator",
+      "source": "#include <functional>\nint calls;int answer(){++calls;return 37;}\nint main(){auto f=std::bind(answer);return f()!=37||calls!=1;}\n",
+      "source_sha256": "d32cbec368c9d84d665f20f76731bacdb957dd38d73de5755b40626aa1dcdf75"
+    },
+    {
+      "name": "bind-zero-bound-copy-cvref",
+      "source": "#include <functional>\n#include <utility>\nint calls;int answer(){++calls;return 37;}\nint main(){auto f=std::bind(&answer);auto copy=f;const auto fixed=copy;return f()!=37||copy()!=37||fixed()!=37||std::move(copy)()!=37||calls!=4;}\n",
+      "source_sha256": "eca7e15458d8206c7316e8716cec1a9b7d4c265e9915b7e288a8f80885f0fd47"
+    },
+    {
+      "name": "bind-zero-bound-factory-once",
+      "source": "#include <functional>\nusing Callback=int(*)();int selections;int first(){return 7;}int second(){return 9;}\nCallback selected=&first;Callback select(){++selections;return selected;}\nint main(){auto f=std::bind(select());selected=&second;return f()!=7||f()!=7||selections!=1;}\n",
+      "source_sha256": "42569cbc4e7d2e27ea5c82038af17ff062c84100d12848380c69be3a3a762a6d"
+    },
+    {
+      "name": "bind-zero-bound-void-target",
+      "source": "#include <functional>\nint calls;void touch(){++calls;}\nint main(){const auto f=std::bind(&touch);f();f();return calls!=2;}\n",
+      "source_sha256": "692d348f695124bb6001b732d7e9f3684a31128d06a4379df2828d75e1a1153c"
+    },
+    {
+      "name": "bind-zero-bound-reference-result",
+      "source": "#include <functional>\nint stored=5;int& access(){return stored;}\nint main(){auto f=std::bind(&access);f()=17;const auto fixed=f;return &fixed()!=&stored||stored!=17;}\n",
+      "source_sha256": "2dfd7995c72d3cdafe166bf1658c3e870184a3d3e4249c5fd668204a672a7871"
+    },
+    {
+      "name": "bind-zero-bound-unused-effects",
+      "source": "#include <functional>\nint effects;int targets;int bump(){return ++effects;}int answer(){++targets;return 37;}\nint main(){auto f=std::bind(&answer);int value=3;const int fixed=4;return f(bump(),bump())!=37||effects!=2||targets!=1||f(value,fixed)!=37||targets!=2||value!=3;}\n",
+      "source_sha256": "579b4c3c3e8fb036b3a572ab04e41ea6d781aef3651518cffba1af0981cac451"
+    },
+    {
+      "name": "bind-zero-bound-result-kinds",
+      "source": "#include <functional>\nint stored=5;int* address(){return &stored;}double half(){return 0.5;}\nint main(){auto pointer=std::bind(&address);auto real=std::bind(&half);return pointer()!=&stored||*pointer()!=5||real()!=0.5;}\n",
+      "source_sha256": "302be284785ab81a26632e0ffc8edc647ca64faf15eb09467588037700be81da"
     }
   ],
   "fixture_group": "bind-call-arguments-native40",
   "execution_binding_required": true,
-  "source_repair_commit": "7019b3999b6659968dfe5494238d5058abe6c976",
-  "clean_source_basis": "7019b3999b6659968dfe5494238d5058abe6c976",
-  "actual_same_source_six_report_sha256": "1c0034b65c064490022a6623e2eac370e760f5507a83fcdcc9faac3ae936aef9",
-  "actual_same_source_six_proof_sha256": "d6205037268285482c0d8b56ffd0d72a77b1b0611ca640322eab161c77e69bf9",
+  "source_repair_commit": "231a76516f49359e507204e916593c8a6441ca69",
+  "clean_source_basis": "231a76516f49359e507204e916593c8a6441ca69",
+  "actual_same_source_six_report_sha256": "43cc4f2b4268133b33da880bc71d0bfd6a029e3e901c722362ba447597abaadd",
+  "actual_same_source_six_proof_sha256": "c1aa506821fb621bd316e96926a4b3d04f1dc864608922cf0d076a005e19c27c",
   "source_contract_sha256": "e71b11486d5ce55e759950d55163e60cb12215064b055cbaa58ce6fa6353bb8f",
-  "required_native_programs": 40,
+  "required_native_programs": 56,
   "cpp_executed_locally": false,
   "current_private_input_sha256": {
-    "Frontend.cpp": "2e3d767d541b26f1f8cb08da8367fa391cf8ef853463bc67365b5b98ad1ef2df",
+    "Frontend.cpp": "1f9625e6f65ced6778de8ac96f91b6f70ab8b702e32e5ff2d1a807559333b61b",
     "Lowering.cpp": "01bf7bdf9e09d6ab3fc5b96f5892c2c2c9b467160b8fbb2304c251c73f4b16a7",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "cdc04456de307fcb87ec7b7e7d1e093adde5f42b57a97c257b46dcfaf46cd291",
+    "MathSDK.cpp": "d372cb7d93b2943702550ffbb5bf2351654dc232dc15f9ce37eb682e34e6a67b",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "907e55674e3d0923818a0209c604eecb765b99226f79c91f4990767c31866179",
+    "Frontend.h": "a5c5f1990c2a51812632fe1e5a909fa0872039540aab6484ee1080f24999d06d",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -234,6 +274,8 @@
   },
   "requires_actual_current_bind_dev_publication_first": true,
   "requires_exact_current_source_six": true,
-  "requires_exact_tuple_tag_role_source_assembly_sha256": "2cb69a13f541d709f8494012e311cd203a59d2ec7b09be7b78a061a6439a0421",
-  "current_source_review_sha256": "c6b5c8c117fe216b4393ba306875983d0fe8d2d51493f44c2ded39f8325d9d97"
+  "requires_exact_tuple_tag_role_source_assembly_sha256": "f94fc9d68297942f262fbeed166791da5755baeaf4b516c8795a0021c042a45b",
+  "current_source_review_sha256": "255e8e148511f5636074abca3a856e254192be2a3706a54297dee20bed7f4a3d",
+  "zero_bound_cases_contract_sha256": "e3766090a950cfd3510d80519f610a1cda0bf27cc464f1d8d8a76f6af6ea7397",
+  "requires_current_source6_before_dispatch": true
 }
