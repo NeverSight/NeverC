@@ -67,7 +67,7 @@ try:
         report['cases'].append(dict(name=case['name'],source_sha256=sha(source),modes=modes))
         save()
     report['completed']=True
-    report['passed']=len(report['cases'])==20 and all(m['passed'] for c in report['cases'] for m in c['modes'])
+    report['passed']=len(report['cases'])==28 and all(m['passed'] for c in report['cases'] for m in c['modes'])
     save()
 except Exception:
     report['error']=traceback.format_exc();save();print(report['error'],flush=True)
