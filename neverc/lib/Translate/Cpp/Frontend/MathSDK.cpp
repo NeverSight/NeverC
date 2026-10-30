@@ -11568,6 +11568,61 @@ public:
           !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "tuple")) return false;
     return !Failed;
   }
+  bool bindFunctionalBindEmptyStorageTupleDefinitionSource(const CXXRecordDecl *R) {
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !R ||
+        !BindMetadata->Arguments.Record || !BindMetadata->Arguments.Elements.empty() ||
+        R->getCanonicalDecl() != BindMetadata->Arguments.Record->getCanonicalDecl()) return false;
+    // Storage identity and the exact explicit SDK definition prove metadata only.
+    // Its selected constructor is a separate complete source obligation below.
+    return bindFunctionalBindEmptyTupleDefinitionSource(R);
+  }
+  bool TraverseBindEmptyStorageTupleConstructionSource(
+      const FunctionalBindFactorySource &Factory,
+      const FunctionalBindTupleConstructionSource &Tuple) {
+    return withBindSourceChild([&] {
+      if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
+          Factory.Storage.Record != BindMetadata->Record || !Factory.SourceCall ||
+          !S.owns(SM, Factory.SourceCall->getExprLoc()) ||
+          !BindMetadata->Arguments.Elements.empty()) return false;
+      const auto Actual = describeFunctionalBindFactorySource(S, SM, Factory.SourceCall, Context);
+      const auto Fresh = Actual
+          ? describeFunctionalBindTupleConstructionSource(S, SM, *Actual, Context) : std::nullopt;
+      if (!Actual || !Fresh || Actual->Factory != Factory.Factory ||
+          Actual->Construction != Factory.Construction ||
+          Actual->Storage.Record != BindMetadata->Record ||
+          Actual->BoundConstruction != Factory.BoundConstruction ||
+          Factory.BoundConstruction != Tuple.Tuple || Fresh->Tuple != Tuple.Tuple ||
+          Fresh->Implementation || Tuple.Implementation ||
+          !Tuple.Leaves.empty() || !Tuple.Copies.empty() || !Tuple.Initializers.empty() ||
+          !Tuple.Forwards.empty() || !Tuple.Assertions.empty() ||
+          !bindFunctionalBindEmptyStorageTupleDefinitionSource(BindMetadata->Arguments.Record))
+        return false;
+      const auto *Construction = Tuple.Tuple;
+      const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+      const auto *Prototype = Constructor ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
+      const auto Member = Constructor
+          ? SpecialMembers.find(Constructor->getCanonicalDecl()) : SpecialMembers.end();
+      if (!Construction || !Constructor || Construction->getNumArgs() || !Construction->isPRValue() ||
+          Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+          !cstddefOrigin(S, SM, Construction->getExprLoc(), "libcxx", "__functional/bind.h") ||
+          Constructor->getParent()->getCanonicalDecl() !=
+              BindMetadata->Arguments.Record->getCanonicalDecl() ||
+          !Constructor->isDefaultConstructor() || Constructor->getNumParams() ||
+          Constructor->getNumCtorInitializers() || Constructor->isImplicit() ||
+          !Constructor->isDefaulted() || !Constructor->isTrivial() || !Constructor->isConstexpr() ||
+          Constructor->isDeleted() || Constructor->isInvalidDecl() || Constructor->isVariadic() ||
+          Constructor->getAccess() != AS_public || Constructor->getPrimaryTemplate() ||
+          !Constructor->getTypeSourceInfo() || !family(Constructor) ||
+          !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+          Prototype->getNoexceptExpr() || Member == SpecialMembers.end() ||
+          !Member->second.Complete || Member->second.Owner != Constructor ||
+          !Member->second.Selections.empty()) return false;
+      // Reuse the established empty-call-tuple lifecycle and written-signature
+      // protocols, bound here to this exact stored default construction.
+      return bindFunctionalBindSpecialMember(Constructor, true) &&
+          TraverseBindConstructorSignature(Constructor) && !Failed;
+    });
+  }
   bool bindFunctionalBindEmptyCallTupleSource(const CXXRecordDecl *R) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !R || !BindCallMetadata->CallArguments || !BindCallMetadata->CallForwards.empty()) return false;
@@ -15953,7 +16008,6 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
   if (TemplateArguments.size() != 2 ||
       TemplateArguments[0].getKind() != TemplateArgument::Type ||
       TemplateArguments[1].getKind() != TemplateArgument::Pack ||
-      TemplateArguments[1].pack_size() < 1 ||
       TemplateArguments[1].pack_size() > 2) return std::nullopt;
 
   auto DecayedValue = [&](QualType Type) -> QualType {
@@ -16015,8 +16069,11 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
     return std::nullopt;
   // A noexcept callback can select the generic weak-result chain. Its
   // selected partial/default/base sources are independent later obligations.
-  const auto *Tuple = Check.record(Bound->getType(), "tuple",
-                                   {"tuple", "__fwd/tuple.h"});
+  // tuple<> is an explicit SDK specialization; the generic implicit-record
+  // locator is intentionally unchanged for every nonempty stored pack.
+  const auto *Tuple = TemplateArguments[1].pack_size()
+      ? Check.record(Bound->getType(), "tuple", {"tuple", "__fwd/tuple.h"})
+      : Bound->getType()->getAsCXXRecordDecl();
   auto Arguments = Tuple ? approvedUtilityTupleRecord(S, SM, Tuple, Context)
                          : std::nullopt;
   if (!Arguments || Arguments->Elements.size() != TemplateArguments[1].pack_size())
@@ -17552,13 +17609,30 @@ describeFunctionalBindTupleConstructionSourceImpl(
     bool CallReferenceInputs = false) {
   const auto Count = Arguments.Elements.size();
   const auto *TupleConstructor = Tuple ? Tuple->getConstructor() : nullptr;
-  if (!Arguments.Record || !Count || Count > 2 || !Tuple || !TupleConstructor ||
+  if (!Arguments.Record || Count > 2 || !Tuple || !TupleConstructor ||
       Tuple->getNumArgs() != Count || TupleConstructor->getNumParams() != Count ||
       TupleConstructor->isDeleted() || TupleConstructor->getAccess() != AS_public ||
       !Context.hasSameUnqualifiedType(Tuple->getType(), Context.getRecordType(Arguments.Record)) ||
       TupleConstructor->getParent()->getCanonicalDecl() != Arguments.Record->getCanonicalDecl())
     return std::nullopt;
   NotFnSelectedSource Check(S, SM, Context);
+  if (!Count) {
+    const auto Empty = approvedUtilityTupleRecord(S, SM, Arguments.Record, Context);
+    const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Arguments.Record);
+    const auto *Prototype = TupleConstructor->getType()->getAs<FunctionProtoType>();
+    if (CallReferenceInputs || !Empty || !Empty->Elements.empty() || !Instance ||
+        Instance->getSpecializationKind() != TSK_ExplicitSpecialization ||
+        !TupleConstructor->isDefaultConstructor() || TupleConstructor->isImplicit() ||
+        !TupleConstructor->isDefaulted() || !TupleConstructor->isTrivial() ||
+        !TupleConstructor->isConstexpr() || TupleConstructor->getPrimaryTemplate() ||
+        TupleConstructor->getNumCtorInitializers() || !TupleConstructor->getTypeSourceInfo() ||
+        !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+        Prototype->getNoexceptExpr() || !Check.family(TupleConstructor, {"tuple"}))
+      return std::nullopt;
+    // tuple<> has no __base_, implementation, tags or leaves. This description
+    // grants no constructor/body permission; the owner closes its real source.
+    return FunctionalBindTupleConstructionSource{Tuple, nullptr, {}, {}, {}, {}, {}};
+  }
   std::vector<const StaticAssertDecl *> Assertions;
   auto MetadataOnlyBody = [&](const CXXConstructorDecl *Constructor) {
     const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody()) : nullptr;
@@ -17857,7 +17931,6 @@ bool shouldRetainFunctionalBindSpecialMemberSource(
       Record->getTemplateArgs().size() == 2 &&
       Record->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
       Record->getTemplateArgs()[1].getKind() == TemplateArgument::Pack &&
-      Record->getTemplateArgs()[1].pack_size() >= 1 &&
       Record->getTemplateArgs()[1].pack_size() <= 2) {
     const auto Argument = Record->getTemplateArgs()[0].getAsType();
     if (Argument.isNull()) return false;
@@ -17931,7 +18004,7 @@ describeFunctionalBindInvokeSignatureSource(
   if (!S.coreV2() || !Function || !Template || !Primary || !Callable || !Arguments ||
       !Selected || Selected->size() != 2 || !Prototype || !Target ||
       Forwarded.size() != Storage.Arguments.Elements.size() ||
-      Forwarded.size() != Target->getNumParams() || Forwarded.empty() || Forwarded.size() > 2 ||
+      Forwarded.size() != Target->getNumParams() || Forwarded.size() > 2 ||
       !Function->getIdentifier() || Function->getName() != "__invoke" ||
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       isa<CXXMethodDecl>(Function) || Function->isVariadic() || Function->isDeleted() ||
@@ -18616,7 +18689,7 @@ bool retainFunctionalBindConstraintRoot(
         T.getAddressSpace() != LangAS::Default || T->isDependentType()) return false;
     const auto *F = T->isFunctionPointerType()
         ? T->getPointeeType()->getAs<FunctionProtoType>() : T->getAs<FunctionProtoType>();
-    if (!F || !ordinaryCallbackPrototype(F) || F->getNumParams() < 1 || F->getNumParams() > 2 ||
+    if (!F || !ordinaryCallbackPrototype(F) || F->getNumParams() > 2 ||
         (!F->getReturnType()->isVoidType() && !Scalar(F->getReturnType()))) return false;
     for (const auto Parameter : F->param_types())
       if (!Scalar(Parameter)) return false;
@@ -18634,7 +18707,7 @@ bool retainFunctionalBindConstraintRoot(
         Record->getTemplateArgs().size() == 2 &&
         Record->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
         Callable(Record->getTemplateArgs()[0].getAsType()) &&
-        Pack(Record->getTemplateArgs()[1], 1) &&
+        Pack(Record->getTemplateArgs()[1], 0) &&
         Check.family(Record, {"__functional/bind.h"});
   };
   if (Kind == TemplateSourceKind::Function) {
@@ -18650,7 +18723,7 @@ bool retainFunctionalBindConstraintRoot(
       const auto &Arguments = R->getTemplateArgs();
       if (InBind && R->getName() == "__bind" && Arguments.size() == 2 &&
           Arguments[0].getKind() == TemplateArgument::Type && Callable(Arguments[0].getAsType()) &&
-          Pack(Arguments[1], 1)) return Check.family(Constructor, {"__functional/bind.h"});
+          Pack(Arguments[1], 0)) return Check.family(Constructor, {"__functional/bind.h"});
       if (!Check.family(Constructor, {"tuple"})) return false;
       return (R->getName() == "tuple" && Arguments.size() == 1 && Pack(Arguments[0], 0)) ||
           (R->getName() == "__tuple_impl" && Arguments.size() == 2 && Pack(Arguments[1], 0)) ||
@@ -18663,7 +18736,7 @@ bool retainFunctionalBindConstraintRoot(
         Method->getOverloadedOperator() == OO_Call && !Method->isStatic() &&
         !Method->isVariadic() && !Method->getNumParams() && Owner->getTemplateArgs().size() == 2 &&
         Owner->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
-        Callable(Owner->getTemplateArgs()[0].getAsType()) && Pack(Owner->getTemplateArgs()[1], 1))
+        Callable(Owner->getTemplateArgs()[0].getAsType()) && Pack(Owner->getTemplateArgs()[1], 0))
       return Check.family(Method, {"__functional/bind.h"});
     // Retain both original declaration-only probe overloads. The fallback
     // supplies the result-comparison sentinel identity; it grants no call,
@@ -18682,7 +18755,7 @@ bool retainFunctionalBindConstraintRoot(
         Owner->getTemplateArgs()[0].getAsType()->isVoidType() &&
         Owner->getTemplateArgs()[1].getKind() == TemplateArgument::Type &&
         ((Callable(Owner->getTemplateArgs()[1].getAsType()) &&
-          Pack(Owner->getTemplateArgs()[2], 1)) ||
+          Pack(Owner->getTemplateArgs()[2], 0)) ||
          (BindObject(Owner->getTemplateArgs()[1].getAsType()) &&
           Owner->getTemplateArgs()[2].getKind() == TemplateArgument::Pack &&
           !Owner->getTemplateArgs()[2].pack_size()))) {
@@ -18763,7 +18836,7 @@ bool retainFunctionalBindConstraintRoot(
     if (Function->getName() == "__invoke" && Function->getNumParams() == 1 &&
         BindObject(Function->getParamDecl(0)->getType()))
       return Check.family(Function, {"__type_traits/invoke.h"});
-    if (InBind && Function->getName() == "bind" && Function->getNumParams() >= 2 &&
+    if (InBind && Function->getName() == "bind" && Function->getNumParams() >= 1 &&
         Function->getNumParams() <= 3 &&
         Callable(Function->getParamDecl(0)->getType())) {
       for (unsigned I = 1; I < Function->getNumParams(); ++I)
@@ -18774,13 +18847,13 @@ bool retainFunctionalBindConstraintRoot(
           Result->getTemplateArgs().size() == 2 &&
           Result->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
           Callable(Result->getTemplateArgs()[0].getAsType()) &&
-          Pack(Result->getTemplateArgs()[1], 1) &&
+          Pack(Result->getTemplateArgs()[1], 0) &&
           Check.family(Function, {"__functional/bind.h"}) &&
           Check.family(Result, {"__functional/bind.h"});
     }
     if (Function->getName() == "__apply_functor" && Function->getNumParams() == 4 &&
         Callable(Function->getParamDecl(0)->getType()) &&
-        Tuple(Function->getParamDecl(1)->getType(), 1) &&
+        Tuple(Function->getParamDecl(1)->getType(), 0) &&
         Tuple(Function->getParamDecl(3)->getType(), 0))
       return Check.family(Function, {"__functional/bind.h"});
     if (Function->getName() == "__mu" && Function->getNumParams() == 2 &&
@@ -18789,7 +18862,7 @@ bool retainFunctionalBindConstraintRoot(
     if (Function->getName() == "get" && Function->getNumParams() == 1 &&
         Tuple(Function->getParamDecl(0)->getType(), 1))
       return Check.family(Function, {"tuple", "__fwd/tuple.h"});
-    if (Function->getName() == "__invoke" && Function->getNumParams() >= 2 &&
+    if (Function->getName() == "__invoke" && Function->getNumParams() >= 1 &&
         Function->getNumParams() <= 3 && Callable(Function->getParamDecl(0)->getType()))
       return Check.family(Function, {"__type_traits/invoke.h"});
     return false;
@@ -19772,7 +19845,8 @@ class BindSourceProof {
       if (ActiveUnusedVoidConversion && Instance == ActiveUnusedVoidConversion->Record)
         return unusedVoidConversionDeclarationSource(Instance);
       if (Instance->getSpecializationKind() != TSK_ImplicitInstantiation) {
-        if (completeCallEmptyTupleMetadataSource(Instance) ||
+        if (Graph.bindFunctionalBindEmptyStorageTupleDefinitionSource(Instance) ||
+            completeCallEmptyTupleMetadataSource(Instance) ||
             emptyOperatorTupleSignatureSource(Instance)) return true;
         if (Instance->getSpecializationKind() == TSK_ExplicitSpecialization &&
             Graph.bindScalarConditionalSelector(Instance)) return scalarConditionalSelectorSource(Instance);
@@ -20905,11 +20979,14 @@ public:
         !Callable || !Bound || Callable->isParameterPack() || Callable->hasDefaultArgument() ||
         !Bound->isParameterPack() || Bound->hasDefaultArgument() ||
         !family(Callable) || !family(Bound) ||
-        !Graph.bindFunctionalBindTupleTags(Factory, *Tuple) ||
+        !(Storage.Arguments.Elements.empty()
+            ? Graph.TraverseBindEmptyStorageTupleConstructionSource(Factory, *Tuple)
+            : Graph.bindFunctionalBindTupleTags(Factory, *Tuple)) ||
         !functionUse(Factory.SourceCall, Factory.Factory) ||
         !functionUse(Factory.Construction, Factory.Construction->getConstructor()) ||
-        !functionUse(Tuple->Tuple, Tuple->Tuple->getConstructor()) ||
-        !functionUse(Tuple->Implementation, Tuple->Implementation->getConstructor())) return false;
+        (!Storage.Arguments.Elements.empty() &&
+         (!functionUse(Tuple->Tuple, Tuple->Tuple->getConstructor()) ||
+          !functionUse(Tuple->Implementation, Tuple->Implementation->getConstructor())))) return false;
     for (const auto *Leaf : Tuple->Leaves)
       if (!functionUse(Leaf, Leaf->getConstructor())) return false;
     // Bind only fresh, independently described occurrences. These sets are
@@ -20945,6 +21022,7 @@ public:
         return false;
       for (const auto *Copy : Tuple->Copies)
         if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) return false;
+      if (Storage.Arguments.Elements.empty()) return Graph.bindSourceComplete();
       const auto Tags = describeFunctionalBindTupleTagSources(S, SM, Factory, Context);
       if (!Tags || Tags->size() != 4) return false;
       for (const auto &Tag : *Tags)
@@ -20960,7 +21038,8 @@ public:
     if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Object != Call.Object || Actual->Storage.Record != Storage.Record ||
-        Actual->Arguments.empty() || Actual->Arguments.size() > 2) return false;
+        Actual->Arguments.size() != Storage.Arguments.Elements.size() ||
+        Actual->Arguments.size() > 2) return false;
     // All selected children and both metadata probe alternatives close in
     // this proof and share its original graph budget.
     if (!callAuxiliary(*Actual)) return false;
@@ -21322,8 +21401,10 @@ public:
     const auto Actual = describeFunctionalBindCallSource(S, SM, Call.SourceCall, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
-        Actual->Storage.Record != Storage.Record || Actual->Arguments.empty() ||
+        Actual->Storage.Record != Storage.Record ||
+        Actual->Arguments.size() != Storage.Arguments.Elements.size() ||
         Actual->Arguments.size() > 2 || !Graph.TraverseBindCallAuxiliarySource(*Actual)) return false;
+    if (Actual->Arguments.empty()) return Graph.bindSourceComplete();
     return Graph.withBindTupleElementProjections(*Actual, [&] {
       if (!Graph.TraverseBindTupleElementProjectionSources()) return false;
       struct Source {
@@ -21535,6 +21616,7 @@ public:
     if (!Actual || Actual->Method != Call.Method || Actual->Object != Call.Object || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Storage.Record != Storage.Record || Actual->Arguments.size() != Call.Arguments.size() ||
+        Actual->Arguments.size() != Storage.Arguments.Elements.size() ||
         Actual->Arguments.size() > 2 ||
         !Graph.TraverseBindCallAuxiliarySource(*Actual)) return false;
     for (unsigned I = 0; I < Actual->Arguments.size(); ++I)
@@ -21542,6 +21624,10 @@ public:
           Actual->Arguments[I].Unwrap != Call.Arguments[I].Unwrap ||
           Actual->Arguments[I].WrapperCopy != Call.Arguments[I].WrapperCopy ||
           !Context.hasSameType(Actual->Arguments[I].ForwardedType, Call.Arguments[I].ForwardedType)) return false;
+    // A freshly described zero-bound call has no __mu or tuple-element
+    // projection operations. Its real auxiliary and invocation sources remain
+    // independent obligations; do not grant any nonempty projection identity.
+    if (Actual->Arguments.empty()) return Graph.bindSourceComplete();
     struct ReferenceSource {
       const CallExpr *Call;
       const CXXMethodDecl *Method, *Original;
