@@ -2,6 +2,123 @@
 
 class X86NativeAddressTest : public X86NativeBuiltinTest {};
 
+TEST_F(X86NativeAddressTest, StackTileMemoryOwnsItsFrameAndNativeStride) {
+  const auto Source = tmpFile("amx_stack_memory.c");
+  writeFile(Source, R"(
+#if __NEVERC_X86_AMX_STACK_MEMORY__ != 1
+#error "missing AMX stack-memory capability"
+#endif
+unsigned long long probe(unsigned long long, unsigned long long, unsigned);
+unsigned long long caller(unsigned long long p, unsigned long long stride,
+                           unsigned n) {
+  return probe(p, stride, n);
+}
+__attribute__((target("amx-tile,amx-movrs,egpr")))
+unsigned long long probe(unsigned long long p, unsigned long long stride,
+                         unsigned n) {
+  _Alignas(64) volatile unsigned long long fixed[8];
+  volatile char *dynamic = __builtin_alloca(n);
+  fixed[0] = 0x123456789abcdef0ULL;
+  dynamic[0] = 42;
+  __builtin_ia32_tileloadd64_address(0, p, stride, 64, 0x100, 0);
+  __builtin_ia32_tileloaddt164_address(1, p, stride, 64, 0x126, 1);
+  __builtin_ia32_tileloaddrs64_address(2, p, stride, 64, 0x12e, 0);
+  __builtin_ia32_tileloaddrst164_address(3, p, stride, 64, 0x136, 1);
+  __builtin_ia32_tilestored64_address(7, p, stride, 64, 0x13e, 0);
+  return fixed[0] ^ dynamic[0];
+}
+)");
+  for (const char *Target :
+       {"--target=x86_64-unknown-linux-gnu", "--target=x86_64-pc-windows-msvc",
+        "--target=x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Target);
+      SCOPED_TRACE(Opt);
+      const auto AssemblyFile = tmpFile("amx_stack_memory.s");
+      const auto Result = ncc({Target, Opt, "-fno-lto", "-fno-builtin-mimalloc",
+                               "-ffreestanding", "-Werror", "-mllvm",
+                               "-verify-machineinstrs", "-masm=att", "-S",
+                               Source.string(), "-o", AssemblyFile.string()});
+      ASSERT_EQ(Result.exitCode, 0) << Result.err;
+      const auto Assembly = readFile(AssemblyFile);
+      EXPECT_EQ(Assembly.find("#APP"), std::string::npos);
+      EXPECT_NE(Assembly.find("__llvm_x86_amx_stack"), std::string::npos);
+      for (const char *Name : {"tileloadd\t", "tileloaddt1\t", "tileloaddrs\t",
+                               "tileloaddrst1\t", "tilestored\t"}) {
+        const auto Start = Assembly.find(Name);
+        ASSERT_NE(Start, std::string::npos) << Name << Assembly;
+        const auto Line =
+            Assembly.substr(Start, Assembly.find('\n', Start) - Start);
+        EXPECT_NE(Line.find("(%rbp,%rcx)"), std::string::npos) << Line;
+      }
+      const auto IRFile = tmpFile("amx_stack_memory.ll");
+      const auto IR =
+          ncc({Target, Opt, "-fno-builtin-mimalloc", "-S", "-emit-llvm",
+               Source.string(), "-o", IRFile.string()});
+      ASSERT_EQ(IR.exitCode, 0) << IR.err;
+      EXPECT_EQ(readFile(IRFile).find(" asm "), std::string::npos);
+    }
+}
+
+TEST_F(X86NativeAddressTest, DefinitionRefreshesTargetFeaturesAfterEarlierUse) {
+  const auto Source = tmpFile("target_redeclaration.c");
+  writeFile(Source, R"(
+unsigned ordinary(unsigned);
+__attribute__((target("bmi2"))) unsigned inherited(unsigned);
+unsigned late(unsigned);
+unsigned disabled(unsigned);
+unsigned use(unsigned v) {
+  return ordinary(v) + inherited(v) + late(v) + disabled(v);
+}
+unsigned ordinary(unsigned v) { return v + 1; }
+unsigned inherited(unsigned v) { return v + 2; }
+__attribute__((target("arch=haswell,tune=skylake")))
+unsigned late(unsigned v) { return v + 3; }
+__attribute__((target("no-avx2")))
+unsigned disabled(unsigned v) { return v + 4; }
+)");
+  for (const char *Target :
+       {"--target=x86_64-unknown-linux-gnu", "--target=x86_64-pc-windows-msvc",
+        "--target=x86_64-apple-darwin"}) {
+    SCOPED_TRACE(Target);
+    const auto IRFile = tmpFile("target_redeclaration.ll");
+    const auto Result =
+        ncc({Target, "-O0", "-mavx2", "-fno-builtin-mimalloc", "-S",
+             "-emit-llvm", Source.string(), "-o", IRFile.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    const auto IR = readFile(IRFile);
+    auto Attributes = [&](const char *Name) {
+      for (auto Start = IR.find("\ndefine "); Start != std::string::npos;
+           Start = IR.find("\ndefine ", Start + 1)) {
+        const auto Line = IR.substr(Start, IR.find('\n', Start + 1) - Start);
+        if (Line.find(std::string("@") + Name + "(") == std::string::npos)
+          continue;
+        const auto Group = Line.find('#');
+        if (Group == std::string::npos)
+          break;
+        const auto End = Line.find(' ', Group);
+        const auto Attr =
+            IR.find("attributes " + Line.substr(Group, End - Group) + " =");
+        return Attr == std::string::npos
+                   ? std::string()
+                   : IR.substr(Attr, IR.find('\n', Attr) - Attr);
+      }
+      return std::string();
+    };
+    EXPECT_NE(Attributes("ordinary").find("+avx2"), std::string::npos);
+    EXPECT_NE(Attributes("inherited").find("+bmi2"), std::string::npos);
+    EXPECT_NE(Attributes("late").find("\"target-cpu\"=\"haswell\""),
+              std::string::npos);
+    EXPECT_NE(Attributes("late").find("\"tune-cpu\"=\"skylake\""),
+              std::string::npos);
+    EXPECT_NE(Attributes("disabled").find("-avx2"), std::string::npos);
+    EXPECT_EQ(Attributes("disabled").find("+avx2"), std::string::npos);
+    EXPECT_NE(Attributes("use").find("+avx2"), std::string::npos);
+    EXPECT_EQ(Attributes("use").find("\"target-cpu\"=\"haswell\""),
+              std::string::npos);
+  }
+}
+
 TEST_F(X86NativeAddressTest, StackControlUsesNativeInstructionsAcrossFormats) {
   const auto Source = tmpFile("native_stack_address.c");
   writeFile(Source, R"(
@@ -68,7 +185,9 @@ TEST_F(X86NativeAddressTest, InvalidStackControlsFailBeforeCodeGeneration) {
         "__builtin_ia32_verr_mem_address(p, 64, 0x164)",
         "__builtin_ia32_verr_mem_address(p, 64, 0x165)",
         "__builtin_ia32_verr_mem_address(p, 64, 0x200)",
-        "__builtin_ia32_tileloadd64_address(0, p, 64, 64, 0x100, 0)",
+        "__builtin_ia32_tileloadd64_address(0, p, 64, 32, 0x100, 0)",
+        "__builtin_ia32_tileloadd64_address(0, p, 64, 64, 0x164, 0)",
+        "__builtin_ia32_tilestored64_address(0, p, 64, 64, 0x165, 0)",
         "__builtin_ia32_bndmov_load(0, p, 64, 0x100)",
         "__builtin_ia32_bndldx(0, p, 0, 64, 0x100)"}) {
     SCOPED_TRACE(Call);

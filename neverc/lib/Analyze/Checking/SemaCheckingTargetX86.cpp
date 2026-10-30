@@ -629,7 +629,7 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_tileloaddrst164_address:
   case X86::BI__builtin_ia32_tilestored64_address:
     return CheckX86BuiltinTileArgumentsRange(TheCall, 0) ||
-           CheckMemoryAddress(3, false) ||
+           CheckMemoryAddress(3) ||
            SemaBuiltinConstantArgRange(TheCall, 5, 0, 1);
   case X86::BI__builtin_ia32_tcvtrowd2ps_reg:
   case X86::BI__builtin_ia32_tcvtrowps2bf16h_reg:

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "X86.h"
+#include "X86AMXStackMemory.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86RegisterInfo.h"
 #include "X86Subtarget.h"
@@ -66,6 +67,8 @@ void checkAMXProgrammingModel(const Function &F) {
     for (const Instruction &I : BB) {
       const auto *Call = dyn_cast<CallBase>(&I);
       const Function *Callee = Call ? Call->getCalledFunction() : nullptr;
+      Physical |=
+          Callee && Callee->hasFnAttribute(X86::AMXStackMemoryAttribute);
       if (!Callee || !Callee->isIntrinsic())
         continue;
       Managed |= Call->getType()->isX86_AMXTy() ||

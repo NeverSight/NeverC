@@ -9,6 +9,9 @@
 #ifndef LLVM_IR_X86AMXNATIVE_H
 #define LLVM_IR_X86AMXNATIVE_H
 
+// Stack-default tile transfers retain an independent full-width stride.
+#define LLVM_X86_AMX_STACK_MEMORY 1
+
 namespace llvm::X86 {
 // Private machine descriptors. Public APIs use separate constant operands.
 inline constexpr unsigned AMXNativeTileCount = 8;

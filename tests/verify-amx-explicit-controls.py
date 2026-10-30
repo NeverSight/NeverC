@@ -71,15 +71,20 @@ def memory_decode(code):
                 tile = (modrm >> 3) & 7
                 end = op_at + 2
                 config = name in ("ldtilecfg", "sttilecfg")
-                assert modrm >> 6 == 0
+                assert modrm >> 6 in (0, 1)
                 base = modrm & 7
                 assert base in (0, 1, 2, 3) if config else base == 4
                 if not config:
                     base = code[end] & 7
-                    assert code[end] >> 3 == 1 and base in (0, 1, 2, 3), "expected data-default base and unscaled stride CX"
+                    assert code[end] >> 3 == 1 and base in (0, 1, 2, 3, 5), "expected qualified base and unscaled stride CX"
                     end += 1
                 else:
                     assert tile == 0
+                if modrm >> 6 == 1:
+                    assert not config and base == 5 and code[end] == 0
+                    end += 1
+                else:
+                    assert base != 5
                 segment = next((v for v in prefixes if v != 0x67), 0)
                 assert len(prefixes) == bool(segment) + (0x67 in prefixes)
                 result[start] = (name, tile, 32 if 0x67 in prefixes else 64, segment, int(evex), base, end)
@@ -143,7 +148,7 @@ def build(args, directory, stem, cases, opt, triple, rows=False, live=False):
     else:
         params = "unsigned long long *out, unsigned row, unsigned long long seed" if rows else "unsigned long long base, unsigned long long stride, unsigned long long *out, unsigned long long seed"
         src.write_text('\n'.join(sorted(declarations)) + f'\n__attribute__((target("{FEATURES}"))) {"unsigned long long" if live else "void"} probe({params}) {{\n' + '\n'.join(body) + '\n}\n')
-        compiler = [args.compiler, '--target='+triple, '-'+opt, '-Werror', '-ffreestanding', '-fno-lto', '-fno-builtin-mimalloc', '-fno-stack-protector', '-mllvm', '-verify-machineinstrs', src]
+        compiler = [args.compiler, '--target='+triple, '-'+opt, '-Werror', '-ffreestanding', '-fno-function-sections', '-fno-data-sections', '-fno-lto', '-fno-builtin-mimalloc', '-fno-stack-protector', '-mllvm', '-verify-machineinstrs', src]
         run(compiler + ['-S', '-emit-llvm', '-o', ir])
         assert ' asm ' not in ir.read_text()
         if not args.backend_llc:
@@ -158,12 +163,29 @@ def build(args, directory, stem, cases, opt, triple, rows=False, live=False):
             roundtrip = asm.with_suffix('.o')
             if backend:
                 run(command + ['-filetype=asm', '-x86-asm-syntax='+dialect, '-o', asm])
-                run([backend.parent/'llvm-mc', '-triple='+triple, '-filetype=obj', asm, '-o', roundtrip])
+                run([backend.parent/'llvm-mc', '-triple='+triple, '-mattr='+','.join('+'+f for f in FEATURES.split(',')), '-filetype=obj', asm, '-o', roundtrip])
             else:
                 run(compiler + ['-S', '-masm='+dialect, '-o', asm])
                 run([args.compiler, '--target='+triple, '-c', asm, '-o', roundtrip])
-            assert text_section(obj) == text_section(roundtrip), 'assembly roundtrip changed encoding'
-    return text_section(obj)
+            original, rebuilt = text_section(obj), text_section(roundtrip)
+            if args.stack_memory:
+                original, rebuilt = canonical_padding(original), canonical_padding(rebuilt)
+            assert original == rebuilt, 'assembly roundtrip changed encoding'
+    return link_internal_calls(obj) if args.stack_memory and live else text_section(obj)
+
+
+def link_internal_calls(path):
+    binary = N.lief.parse(str(path))
+    code = bytearray(text_section(path))
+    if isinstance(binary, N.lief.COFF.Binary):
+        section = next(s for s in binary.sections if s.name == '.text' and s.content)
+        for reloc in section.relocations:
+            assert reloc.type == N.lief.COFF.Relocation.TYPE.AMD64_REL32
+            assert reloc.symbol.section == section, 'unexpected external call'
+            at = reloc.address
+            addend = int.from_bytes(code[at:at + 4], 'little', signed=True)
+            code[at:at + 4] = (addend + reloc.symbol.value - at - 4).to_bytes(4, 'little', signed=True)
+    return bytes(code)
 
 
 def complete_memory(code, cases, base, stride):
@@ -191,10 +213,12 @@ def complete_memory(code, cases, base, stride):
         pc=machine.reg_read(regs.UC_X86_REG_RIP)
         if pc==N.STOP:break
         actual=native[pc-N.CODE]
-        assert actual[:-2]==cases[count]
+        name,tile,width,control,evex=cases[count]
+        assert actual[:-2]==(name,tile,width,control&255,evex)
+        assert (actual[-2]==5)==bool(control&0x100), "stack provenance changed"
         _,_,width,_,_,carrier,end=actual
         mask=(1<<width)-1
-        assert machine.reg_read((regs.UC_X86_REG_RAX, regs.UC_X86_REG_RCX, regs.UC_X86_REG_RDX, regs.UC_X86_REG_RBX)[carrier])==base&mask,'base truncation changed'
+        assert machine.reg_read((regs.UC_X86_REG_RAX, regs.UC_X86_REG_RCX, regs.UC_X86_REG_RDX, regs.UC_X86_REG_RBX, regs.UC_X86_REG_RSP, regs.UC_X86_REG_RBP)[carrier])==base&mask,'base truncation changed'
         if actual[0] not in ('ldtilecfg','sttilecfg'):
             assert machine.reg_read(regs.UC_X86_REG_RCX)==stride&mask,'stride truncation changed'
         if not count:
@@ -378,11 +402,15 @@ def main():
     p.add_argument('--compiler',type=Path,default=Path('build-neverc/bin/neverc'))
     b=p.add_mutually_exclusive_group();b.add_argument('--llc',type=Path);b.add_argument('--backend-llc',type=Path)
     p.add_argument('--keep',type=Path)
+    p.add_argument('--stack-memory',action='store_true')
     args=p.parse_args()
     for key in ('compiler','llc','backend_llc'):
         if getattr(args,key):setattr(args,key,getattr(args,key).resolve())
     with tempfile.TemporaryDirectory(prefix='amx-controls-') as temp:
         directory=args.keep or Path(temp);directory.mkdir(parents=True,exist_ok=True)
+        if args.stack_memory:
+            qualify_stack_memory(args, directory)
+            return
         count=0
         matrix=[(n,t,w,p,e) for n in MEMORY for t in (range(1) if n in ('ldtilecfg','sttilecfg') else range(8)) for w,p,e in itertools.product((32,64),PREFIXES,(0,1))]
         row_matrix=[(n,t,e) for n in R.ROWS for t,e in itertools.product(range(8),(0,1))]
@@ -407,6 +435,52 @@ def main():
                 complete_rows(code, cases, row)
                 count += len(cases)
         print(f'PASS {count} AMX explicit control checks (controlled completion, not physical hardware)')
+
+
+def canonical_padding(code):
+    # Function alignment uses codegen tuning for direct objects and assembler
+    # tuning for assembly input. Only proven NOP bytes may differ; preserve
+    # every address, native instruction, register move and call displacement.
+    native = memory_decode(code)
+    result, offset = bytearray(code), 0
+    decoder = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+    while offset < len(code):
+        if offset in native:
+            offset = native[offset][-1]
+            continue
+        if code[offset] == 0xd5:
+            offset += rex2_length(code, offset)
+            continue
+        insn = next(decoder.disasm(code[offset:], offset, count=1), None)
+        assert insn
+        if insn.mnemonic == "nop":
+            result[offset:offset + insn.size] = bytes([0x90]) * insn.size
+        offset += insn.size
+    return bytes(result)
+
+
+def qualify_stack_memory(args, directory):
+    names = tuple(n for n in MEMORY if n not in ("ldtilecfg", "sttilecfg"))
+    prefixes = (0x100, 0x126, 0x12e, 0x136, 0x13e)
+    matrix = [(n, t, 64, p, e) for n, t, p, e in
+              itertools.product(names, range(8), prefixes, (0, 1))]
+    count = 0
+    for opt, triple in itertools.product(("O0", "O2"), N.TRIPLES):
+        code = build(args, directory, f"stack-{opt}-{N.TRIPLES.index(triple)}",
+                     matrix, opt, triple)
+        native = list(memory_decode(code).values())
+        assert [v[:-2] for v in native] == [(n, t, w, p & 255, e) for n, t, w, p, e in matrix]
+        assert all(v[-2] == 5 for v in native), "stack-default BP base lost"
+        count += len(matrix)
+    for opt, evex in itertools.product(("O0", "O2"), (0, 1)):
+        cases = [(n, 7, 64, p, evex) for n, p in itertools.product(names, prefixes)] * 2
+        code = build(args, directory, f"stack-live-{opt}-{evex}", cases,
+                     opt, N.TRIPLES[0], live=True)
+        for base, stride in ((0x80000000fff00123, 0x9876543280000037),
+                             (0xffffffffffffffff, 0xffffffffffffffff), (N.DATA, 64)):
+            complete_memory(code, cases, base, stride)
+            count += len(cases)
+    print(f"PASS {count} AMX stack-memory checks (controlled completion, not physical hardware)")
 
 
 def decode_rows(code):

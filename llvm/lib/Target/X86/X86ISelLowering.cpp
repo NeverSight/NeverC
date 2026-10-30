@@ -14,6 +14,7 @@
 #include "X86ISelLowering.h"
 #include "MCTargetDesc/X86ShuffleDecode.h"
 #include "X86.h"
+#include "X86AMXStackMemory.h"
 #include "X86CallingConv.h"
 #include "X86FrameLowering.h"
 #include "X86InstrBuilder.h"
@@ -27327,10 +27328,33 @@ static SDValue lowerAMXNative(SDValue Op, const X86Subtarget &Subtarget,
     return DAG.getMergeValues({SDValue(Read, 0), SDValue(Read, 1)}, DL);
   }
   const unsigned WidthOperand = TileMemory ? 5 : 3;
-  auto Operands =
-      lowerNativeAddressOperands(Op, Subtarget, TileMemory ? 3 : 2, DAG, Chain,
-                                 Glue, WidthOperand, !TileMemory);
-  const unsigned Bits = Op.getConstantOperandVal(WidthOperand);
+  const unsigned Bits = Constant(WidthOperand, 65);
+  const unsigned Control = Constant(WidthOperand + 1, 512);
+  const bool StackRows =
+      TileMemory && (Control & X86::NativeMemoryStackReference);
+  SmallVector<SDValue, 8> Operands;
+  if (StackRows) {
+    if (!X86::isNativeMemoryAddressControl(true, Bits, Control))
+      report_fatal_error(
+          "invalid native memory segment prefix or stack-reference control");
+    if (!X86::isAMXStackMemoryHelper(DAG.getMachineFunction().getFunction()))
+      report_fatal_error(
+          "AMX stack memory must be outlined before instruction selection");
+    if (Subtarget.getFrameLowering()->hasFP(DAG.getMachineFunction()))
+      report_fatal_error("AMX stack memory requires an RSP-based helper frame");
+    // A compiler-owned RET must not initialize bounds live in an MPX caller.
+    DAG.getMachineFunction().getInfo<X86MachineFunctionInfo>()->setHasMPXState(
+        true);
+    Operands = lowerNativeMemoryAddress(
+        Op.getOperand(3), Bits, Control & ~X86::NativeMemoryStackReference,
+        Subtarget, DAG, DL, Chain, Glue);
+    Chain = DAG.getCopyToReg(Chain, DL, X86::RBP, Operands[0], Glue);
+    Glue = Chain.getValue(1);
+    Operands[0] = DAG.getRegister(X86::RBP, MVT::i64);
+  } else {
+    Operands = lowerNativeAddressOperands(Op, Subtarget, TileMemory ? 3 : 2,
+                                          DAG, Chain, Glue, WidthOperand);
+  }
   if (Bits == 32)
     Descriptor |= X86::AMXNativeAddress32;
   if (Encoding)

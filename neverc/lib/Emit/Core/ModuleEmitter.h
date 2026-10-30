@@ -565,6 +565,7 @@ private:
   bool getCPUAndFeaturesAttributes(GlobalDecl GD,
                                    llvm::AttrBuilder &AttrBuilder,
                                    bool SetTargetFeatures = true);
+  void setCPUAndFeaturesAttributes(GlobalDecl GD, llvm::Function *F);
   void setNonAliasAttributes(GlobalDecl GD, llvm::GlobalObject *GO,
                              bool SkipCPUFeatures = false);
 

@@ -39,9 +39,12 @@
 //===----------------------------------------------------------------------===//
 //
 #include "X86.h"
+#include "X86AMXStackMemory.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
@@ -54,19 +57,91 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IntrinsicsX86.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/PatternMatch.h"
+#include "llvm/IR/X86NativeMemoryAddress.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/AssumeBundleBuilder.h"
 #include "llvm/Transforms/Utils/Local.h"
 
+#include <array>
+#include <cstdint>
 #include <map>
 
 using namespace llvm;
 using namespace PatternMatch;
 
 #define DEBUG_TYPE "lower-amx-type"
+
+namespace llvm::X86 {
+
+static bool outlineAMXStackMemory(Function &F) {
+  if (F.hasFnAttribute(AMXStackMemoryAttribute)) {
+    if (!isAMXStackMemoryHelper(F))
+      report_fatal_error("invalid AMX stack-memory helper");
+    return false;
+  }
+  SmallVector<IntrinsicInst *, 4> Calls;
+  for (auto &BB : F)
+    for (auto &I : BB) {
+      auto *Call = dyn_cast<IntrinsicInst>(&I);
+      if (!Call || !isAMXTileMemoryIntrinsic(Call->getIntrinsicID()))
+        continue;
+      const auto *Control = dyn_cast<ConstantInt>(Call->getArgOperand(4));
+      if (Control && (Control->getZExtValue() & NativeMemoryStackReference))
+        Calls.push_back(Call);
+    }
+  std::map<std::array<uint64_t, 5>, Function *> Helpers;
+  for (auto *Call : Calls) {
+    std::array<uint64_t, 5> Key{Call->getIntrinsicID()};
+    for (auto [N, Index] : enumerate(std::array<unsigned, 4>{0, 3, 4, 5})) {
+      const auto *C = dyn_cast<ConstantInt>(Call->getArgOperand(Index));
+      if (!C)
+        report_fatal_error("invalid explicit AMX constant control");
+      Key[N + 1] = C->getZExtValue();
+    }
+    if (Key[1] >= 8 || Key[4] > 1)
+      report_fatal_error("invalid explicit AMX constant control");
+    if (!isNativeMemoryAddressControl(true, Key[2], Key[3]))
+      report_fatal_error("invalid native memory segment prefix or "
+                         "stack-reference control");
+    auto *&Helper = Helpers[Key];
+    if (!Helper) {
+      IRBuilder<> B(F.getContext());
+      auto *Type = FunctionType::get(B.getVoidTy(),
+                                     {B.getInt64Ty(), B.getInt64Ty()}, false);
+      Helper = Function::Create(Type, GlobalValue::InternalLinkage,
+                                "__llvm_x86_amx_stack", F.getParent());
+      Helper->setCallingConv(CallingConv::PreserveAll);
+      Helper->addFnAttr(AMXStackMemoryAttribute);
+      Helper->addFnAttr("frame-pointer", "none");
+      Helper->addFnAttr(Attribute::NoInline);
+      Helper->addFnAttr(Attribute::NoUnwind);
+      Helper->setUWTableKind(UWTableKind::Async);
+      for (StringRef Name : {"target-cpu", "tune-cpu", "target-features"})
+        if (F.hasFnAttribute(Name))
+          Helper->addFnAttr(F.getFnAttribute(Name));
+      B.SetInsertPoint(BasicBlock::Create(F.getContext(), "entry", Helper));
+      SmallVector<Value *, 6> Args(Call->args());
+      Args[1] = Helper->getArg(0);
+      Args[2] = Helper->getArg(1);
+      B.CreateCall(Call->getCalledFunction(), Args);
+      B.CreateRetVoid();
+    }
+    IRBuilder<> B(Call);
+    auto *Replacement =
+        B.CreateCall(Helper, {Call->getArgOperand(1), Call->getArgOperand(2)});
+    Replacement->setCallingConv(Helper->getCallingConv());
+    Replacement->setDebugLoc(Call->getDebugLoc());
+    Call->eraseFromParent();
+  }
+  return !Calls.empty();
+}
+
+} // namespace llvm::X86
 
 static bool isAMXCast(Instruction *II) {
   return match(II,
@@ -1230,7 +1305,7 @@ public:
   }
 
   bool runOnFunction(Function &F) override {
-    bool C = false;
+    bool C = X86::outlineAMXStackMemory(F);
     TargetMachine *TM = &getAnalysis<TargetPassConfig>().getTM<TargetMachine>();
     TargetLibraryInfo *TLI =
         &getAnalysis<TargetLibraryInfoWrapperPass>().getTLI(F);

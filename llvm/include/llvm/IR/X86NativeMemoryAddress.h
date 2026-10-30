@@ -18,8 +18,8 @@ namespace llvm::X86 {
 
 // OR this bit with a segment-prefix byte to request a stack-default memory
 // operand in 64-bit addressing. An SS prefix alone does not change a
-// data-default operand's noncanonical fault. Stride/MIB address APIs do not
-// accept this control; their index has instruction-specific semantics.
+// data-default operand's noncanonical fault. AMX stride APIs use an isolated
+// stack leaf; MPX MIB address APIs still require their own state contract.
 inline constexpr uint32_t NativeMemoryStackReference = 0x100;
 
 // The address is an unsigned offset before segment-base addition. A zero

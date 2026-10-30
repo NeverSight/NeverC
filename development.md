@@ -1108,8 +1108,8 @@ unknown control bits are rejected.
 
 This applies to explicit descriptor/VMX addresses, RAO/CMPccXADD, native
 compress/expand and four-source memory operations, and LDTILECFG/STTILECFG.
-AMX tile row-memory and MPX controls do not yet accept the bit: their index
-or state semantics need separate lowering. Existing raw prefix values keep
+AMX tile row-memory additionally requires the stack-memory capability below;
+MPX controls still reject the bit. Existing raw prefix values keep
 their meaning. This API describes the native access; it does not authorize
 execution of privileged instructions or promise an emulated completion.
 
@@ -1837,6 +1837,29 @@ of active CPU features. This lets source generators select native builtins
 and then attach the exact required function target attributes. It does not
 set `__AMX_TILE__` or other CPU availability macros. `__has_builtin` alone is
 insufficient at baseline because target builtins require active CPU features.
+
+`__NEVERC_X86_AMX_STACK_MEMORY__ == 1` additionally admits `0x100` in the five
+tile-memory builtins' segment controls. It requires address64 and permits
+zero/CS/DS/ES/SS; FS/GS and address32 still reject it. The complete stride stays
+independent of the base. The compiler outlines an internal `preserve_allcc`
+leaf whose BP holds the base and whose normal prologue/epilogue and DWARF/SEH
+preserve the caller's frame. The helper's return preserves ambient MPX bounds.
+It requires no user assembly or external runtime; all existing IDs stay fixed.
+The host call and saved-register frame are additional compiler transport.
+Physical tile state and the instruction's partial progress remain native.
+
+`verify-amx-explicit-controls.py --stack-memory` checks all tiles, five
+operations, five controls, VEX/EVEX, O0/O2 and ELF/COFF/MachO. Its controlled
+completions retain full-width base/stride, unknown-memory ordering and saved
+GPRs. `verify-amx-stack-unwind.py` instruments only decoded AMX slots with UD2
+and exercises real signal delivery, DWARF unwinding and resumption through
+dynamic frames. It does not qualify physical AMX execution or tile restart.
+
+Complete NeverD LLVM-to-C modules also exercise declarations and calls before
+the target-attributed definition. Definition emission now refreshes CPU,
+tuning and feature attributes from that declaration before generating its
+body. This prevents an earlier baseline prototype from dropping AMX features;
+feature inheritance and explicit feature disabling use the same authority.
 
 `sync-x86-native-intrinsics.py` owns signatures and constant operands;
 `sync-x86-amx-native-controls.py` appends two encoding-preserving pseudos.

@@ -1452,7 +1452,7 @@ bool ModuleEmitter::getCPUAndFeaturesAttributes(GlobalDecl GD,
   if (TD || TV || SD || TC) {
     std::vector<std::string> Features;
     llvm::StringMap<bool> FeatureMap;
-    getContext().getFunctionFeatureMap(FeatureMap, GD);
+    getContext().getFunctionFeatureMap(FeatureMap, GD.getWithDecl(FD));
 
     for (const llvm::StringMap<bool>::value_type &Entry : FeatureMap)
       Features.push_back((Entry.getValue() ? "+" : "-") + Entry.getKey().str());
@@ -1521,6 +1521,19 @@ bool ModuleEmitter::getCPUAndFeaturesAttributes(GlobalDecl GD,
   return AddedAttr;
 }
 
+void ModuleEmitter::setCPUAndFeaturesAttributes(GlobalDecl GD,
+                                                llvm::Function *F) {
+  llvm::AttrBuilder Attrs(F->getContext());
+  if (!getCPUAndFeaturesAttributes(GD, Attrs))
+    return;
+  llvm::AttributeMask RemoveAttrs;
+  RemoveAttrs.addAttribute("target-cpu");
+  RemoveAttrs.addAttribute("target-features");
+  RemoveAttrs.addAttribute("tune-cpu");
+  F->removeFnAttrs(RemoveAttrs);
+  F->addFnAttrs(Attrs);
+}
+
 void ModuleEmitter::setNonAliasAttributes(GlobalDecl GD, llvm::GlobalObject *GO,
                                           bool SkipCPUFeatures) {
   const Decl *D = GD.getDecl();
@@ -1579,17 +1592,8 @@ void ModuleEmitter::setNonAliasAttributes(GlobalDecl GD, llvm::GlobalObject *GO,
           F->addFnAttr(Key, Val);
       }
 
-      if (!SkipCPUFeatures) {
-        llvm::AttrBuilder Attrs(F->getContext());
-        if (getCPUAndFeaturesAttributes(GD, Attrs)) {
-          llvm::AttributeMask RemoveAttrs;
-          RemoveAttrs.addAttribute("target-cpu");
-          RemoveAttrs.addAttribute("target-features");
-          RemoveAttrs.addAttribute("tune-cpu");
-          F->removeFnAttrs(RemoveAttrs);
-          F->addFnAttrs(Attrs);
-        }
-      }
+      if (!SkipCPUFeatures)
+        setCPUAndFeaturesAttributes(GD, F);
     }
 
     if (const auto *CSA = D->getAttr<CodeSegAttr>())
@@ -3571,6 +3575,10 @@ ModuleEmitter::genGlobalFunctionDefinition(GlobalDecl GD,
 
   maybeSetTrivialComdat(*D, *Fn);
 
+  // An earlier use can create Fn from a prototype before the definition's
+  // target attributes are available. Refresh from the defining declaration
+  // before emitting its body, preserving later body-specific adjustments.
+  setCPUAndFeaturesAttributes(GD, Fn);
   FunctionEmitter(*this).generateCode(GD, Fn, FI);
 
   // A declaration can create the LLVM Function before the defining
