@@ -1,4 +1,5 @@
 #include "Frontend.h"
+#include <cstdio>
 #include "FrontendEntry.h"
 #include "BuildID.h"
 #include "clang/AST/Attr.h"
@@ -22968,8 +22969,11 @@ public:
   }
   bool functionalBindFactorySourceComplete(const FunctionalBindFactorySource &Factory) {
     const auto Inputs = functionalBindSourceInputs();
-    return Inputs && approvedFunctionalBindFactorySource(A.S, A.Sources, Factory, A.Context,
-        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+    const bool Result = Inputs && approvedFunctionalBindFactorySource(A.S, A.Sources, Factory, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);    std::fprintf(stderr, "ZB_FRONT_RESULT kind=factory result=%d inputs=%d bound=%zu dependencies=%zu selections=%zu\n",
+        Result, bool(Inputs), Factory.Storage.Arguments.Elements.size(),
+        Inputs ? Inputs->Dependencies.size() : 0, Inputs ? Inputs->Selections.size() : 0);
+    return Result;
   }
   bool functionalBindCallAuxiliarySourceComplete(const FunctionalBindCallSource &Call) {
     const auto Inputs = functionalBindSourceInputs();
@@ -23005,8 +23009,11 @@ public:
   }
   bool functionalBindCallSourceComplete(const FunctionalBindCallSource &Call) {
     const auto Inputs = functionalBindSourceInputs();
-    return Inputs && approvedFunctionalBindCallCompleteSource(A.S, A.Sources, Call, A.Context,
-        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+    const bool Result = Inputs && approvedFunctionalBindCallCompleteSource(A.S, A.Sources, Call, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);    std::fprintf(stderr, "ZB_FRONT_RESULT kind=call result=%d inputs=%d bound=%zu dependencies=%zu selections=%zu\n",
+        Result, bool(Inputs), Call.Storage.Arguments.Elements.size(),
+        Inputs ? Inputs->Dependencies.size() : 0, Inputs ? Inputs->Selections.size() : 0);
+    return Result;
   }
   bool functionalBindCallGetSourceComplete(const FunctionalBindCallSource &Call) {
     const auto Inputs = functionalBindSourceInputs();
@@ -26573,6 +26580,10 @@ public:
     if (!Source) return std::nullopt;
     return traverseTypeQuerySource(Call, [&] {
       const auto *Prototype = Source->Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+      std::fprintf(stderr, "ZB_FRONT_PROTO present=%d ordinary=%d same=%d bound=%zu target=%u call=%u\n",
+          bool(Prototype), Prototype && ordinaryCallbackPrototype(Prototype),
+          Prototype && A.Context.hasSameType(operationCalleePrototype(Source->Target), Prototype),
+          Source->Storage.Arguments.Elements.size(), Source->Target->getNumArgs(), Source->Method->getNumParams());
       if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
           !A.Context.hasSameType(operationCalleePrototype(Source->Target), Prototype) ||
           !functionalBindCallSourceComplete(*Source)) {
