@@ -1,4 +1,5 @@
 #include "Frontend.h"
+#include <cstdio>
 #include "FrontendEntry.h"
 #include "BuildID.h"
 #include "clang/AST/Attr.h"
@@ -26573,9 +26574,14 @@ public:
     if (!Source) return std::nullopt;
     return traverseTypeQuerySource(Call, [&] {
       const auto *Prototype = Source->Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
-      if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
-          !A.Context.hasSameType(operationCalleePrototype(Source->Target), Prototype) ||
-          !functionalBindCallSourceComplete(*Source)) {
+      bool BindOrdinaryPrototype = false;
+      bool BindTargetPrototype = false;
+      bool BindCompleteSource = false;
+      if (!Prototype || !(BindOrdinaryPrototype = ordinaryCallbackPrototype(Prototype)) ||
+          !(BindTargetPrototype = A.Context.hasSameType(operationCalleePrototype(Source->Target), Prototype)) ||
+          !(BindCompleteSource = functionalBindCallSourceComplete(*Source))) {
+        std::fprintf(stderr, "BIND_UNUSED_GATE proto=%d ordinary=%d target=%d complete=%d\n",
+            Prototype != nullptr, BindOrdinaryPrototype, BindTargetPrototype, BindCompleteSource);
         A.reject(Call->getExprLoc(), "bind invocation source",
             "The complete original and selected invocation and ordinary callback signature are required.", "TR0203");
         return true;
