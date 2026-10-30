@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include <cstdio>
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
 #include "clang/AST/Expr.h"
@@ -6564,7 +6565,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                                bool RequireMixedReferenceElements,
                                UtilityCatLayoutProof *Query) {
   if (Depth > 64)
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -6574,7 +6575,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
   const auto Types = utilityTupleTypes(Specialization);
   if (!approvedUtilityTupleMetadata(S, SM, Specialization) || !Types ||
       !Specialization)
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
   const bool Empty = Types->empty();
   if ((Empty ? Specialization->getSpecializationKind() !=
                    TSK_ExplicitSpecialization
@@ -6584,14 +6585,14 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
       Specialization->isDynamicClass() ||
       !approvedStandardSDKDeclaration(S, SM, Specialization) ||
       !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx", "tuple"))
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
   unsigned ReferenceElements = 0;
   bool OwnedElement = false;
   bool SelectedStringCarrierValues = false;
   for (QualType Type : *Types) {
     if (Query) {
       if (!utilityCatCarrier(S, SM, Context, Type, *Query, Depth + 1))
-        return std::nullopt;
+        { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
       ReferenceElements += Type->isReferenceType();
       continue;
     }
@@ -6600,12 +6601,12 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
       if ((!RequireReferenceElements && !RequireMixedReferenceElements) ||
           !utilityTupleReferenceValue(S, SM, Context,
                                       Type->getPointeeType()))
-        return std::nullopt;
+        { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     } else {
       if (RequireReferenceElements || Type.isVolatileQualified() ||
           Type.isRestrictQualified() ||
           Type.getAddressSpace() != LangAS::Default)
-        return std::nullopt;
+        { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
       const auto *Element = Type->getAsCXXRecordDecl();
       Element = Element ? Element->getDefinition() : nullptr;
       const bool NestedMetadata = approvedUtilityTupleMetadata(S, SM, Element);
@@ -6615,7 +6616,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
           ? utilityTupleStorageRecord(S, SM, Element, Context, Depth + 1)
           : std::optional<UtilityTupleRecord>();
       if (NestedMetadata && !Nested)
-        return std::nullopt;
+        { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
       const bool NestedReferences = Nested && llvm::any_of(
           Nested->Elements, [](const UtilityTupleElement &E) {
             return E.getType()->isReferenceType();
@@ -6636,7 +6637,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
             (!Element || Type.isConstQualified() ||
              !S.owns(SM, Element->getLocation()) ||
              !utilityArrayStorableValue(S, SM, Context, Type)))
-          return std::nullopt;
+          { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
         // Keep owning elements on the selected construction/cleanup path.
         // They are deliberately not utilityTupleValue bitwise values.
         OwnedElement = true;
@@ -6646,10 +6647,10 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
   if (!Query && !OwnedElement &&
       (!Specialization->hasTrivialCopyConstructor() ||
        !Specialization->hasTrivialDestructor()))
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
   if (RequireMixedReferenceElements &&
       (!ReferenceElements || ReferenceElements == Types->size()))
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
 
   if (Empty) {
     const auto &Layout = Context.getASTRecordLayout(Specialization);
@@ -6657,7 +6658,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
         !Specialization->isStandardLayout() || Layout.getFieldCount() ||
         Layout.getSize().getQuantity() != 1 ||
         Layout.getAlignment().getQuantity() != 1)
-      return std::nullopt;
+      { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     return UtilityTupleRecord{Specialization, {}};
   }
 
@@ -6685,26 +6686,26 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, ImplSpecialization) ||
       !cstddefOrigin(S, SM, ImplSpecialization->getLocation(), "libcxx",
                      "tuple"))
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
 
   const auto &ImplArguments = ImplSpecialization->getTemplateArgs();
   if (ImplArguments.size() != 2 ||
       ImplArguments.get(0).getKind() != TemplateArgument::Type ||
       ImplArguments.get(1).getKind() != TemplateArgument::Pack ||
       ImplArguments.get(1).pack_size() != Types->size())
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
   unsigned TypeIndex = 0;
   for (const auto &Argument : ImplArguments.get(1).pack_elements())
     if (Argument.getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Argument.getAsType(), (*Types)[TypeIndex++]))
-      return std::nullopt;
+      { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
 
   const auto &TopLayout = Context.getASTRecordLayout(Specialization);
   const auto &ImplLayout = Context.getASTRecordLayout(ImplSpecialization);
   if (TopLayout.getFieldCount() != 1 || TopLayout.getFieldOffset(0) != 0 ||
       TopLayout.getSize() != ImplLayout.getSize() ||
       TopLayout.getAlignment() != ImplLayout.getAlignment())
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
 
   std::vector<UtilityTupleElement> Elements;
   Elements.reserve(Types->size());
@@ -6724,7 +6725,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
         !approvedStandardSDKDeclaration(S, SM, LeafSpecialization) ||
         !cstddefOrigin(S, SM, LeafSpecialization->getLocation(), "libcxx",
                        "tuple"))
-      return std::nullopt;
+      { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     const auto &LeafArguments = LeafSpecialization->getTemplateArgs();
     if (LeafArguments.size() != 3 ||
         LeafArguments.get(0).getKind() != TemplateArgument::Integral ||
@@ -6735,7 +6736,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                              (*Types)[Index]) ||
         LeafArguments.get(2).getKind() != TemplateArgument::Integral ||
         !LeafArguments.get(2).getIntegralType()->isBooleanType())
-      return std::nullopt;
+      { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     const auto *ElementRecord =
         (*Types)[Index].getUnqualifiedType()->getAsCXXRecordDecl();
     const bool EmptyBase = !LeafArguments.get(2).getAsIntegral().isZero();
@@ -6757,7 +6758,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
           !LeafSpecialization->field_empty() || LeafLayout.getFieldCount() ||
           LeafLayout.getSize().getQuantity() != 1 ||
           LeafLayout.getAlignment().getQuantity() != 1)
-        return std::nullopt;
+        { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
       const auto &ElementBase = *LeafSpecialization->bases_begin();
       const auto *BaseRecord = ElementBase.getType()->getAsCXXRecordDecl();
       if (ElementBase.isVirtual() ||
@@ -6766,7 +6767,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
           LeafLayout.getBaseClassOffset(Definition).getQuantity() != 0 ||
           Offset % 8 ||
           Offset + 8 > uint64_t(ImplLayout.getSize().getQuantity()) * 8)
-        return std::nullopt;
+        { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
       // Repeated empty subobjects of the same type must retain distinct
       // addresses.
       for (const auto &Element : Elements)
@@ -6774,20 +6775,20 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
             Element.EmptyBase->getCanonicalDecl() ==
                 Definition->getCanonicalDecl() &&
             Element.OffsetBits == Offset)
-          return std::nullopt;
+          { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
       Elements.emplace_back(Definition, (*Types)[Index], Offset);
       ++Index;
       continue;
     }
     if (LeafSpecialization->getNumBases())
-      return std::nullopt;
+      { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     // A leaf containing another tuple inherits its member's non-standard-layout
     // classification. The concrete field, size, alignment and offset checks
     // below still authenticate that leaf.
     if (!LeafSpecialization->isStandardLayout() &&
         !Query && !RequireReferenceElements && !RequireMixedReferenceElements &&
         !approvedUtilityTupleMetadata(S, SM, ElementRecord))
-      return std::nullopt;
+      { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     auto LeafFields = LeafSpecialization->fields();
     auto LeafField = LeafFields.begin();
     const auto *Value = LeafField == LeafFields.end() ? nullptr : *LeafField++;
@@ -6797,28 +6798,28 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
         !Context.hasSameType(Value->getType(), (*Types)[Index]) ||
         !approvedStandardSDKDeclaration(S, SM, Value) ||
         !cstddefOrigin(S, SM, Value->getLocation(), "libcxx", "tuple"))
-      return std::nullopt;
+      { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     const uint64_t ElementBits = Context.getTypeSize((*Types)[Index]);
     const uint64_t ElementAlign = Context.getTypeAlign((*Types)[Index]);
     if (LeafLayout.getFieldCount() != 1 || LeafLayout.getFieldOffset(0) != 0 ||
         uint64_t(LeafLayout.getSize().getQuantity()) * 8 != ElementBits ||
         uint64_t(LeafLayout.getAlignment().getQuantity()) * 8 != ElementAlign)
-      return std::nullopt;
+      { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     if (Offset + ElementBits > uint64_t(ImplLayout.getSize().getQuantity()) * 8)
-      return std::nullopt;
+      { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     for (const auto &Element : Elements) {
       if (Element.EmptyBase)
         continue;
       const uint64_t ExistingBits = Context.getTypeSize(Element.getType());
       if (Offset < Element.OffsetBits + ExistingBits &&
           Element.OffsetBits < Offset + ElementBits)
-        return std::nullopt;
+        { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     }
     Elements.emplace_back(Value, Offset);
     ++Index;
   }
   if (Index != Types->size())
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
   // Verify the natural layout of the actual stored fields independently of the
   // overlapping empty bases. Additional bytes preserve repeated empty
   // identities.
@@ -6831,21 +6832,21 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
     const uint64_t Expected =
         (End + ElementAlign - 1) / ElementAlign * ElementAlign;
     if (Element.OffsetBits != Expected)
-      return std::nullopt;
+      { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
     End = Expected + Context.getTypeSize(Type);
     Align = std::max(Align, ElementAlign);
   }
   const uint64_t NativeSize = uint64_t(TopLayout.getSize().getQuantity()) * 8;
   if (uint64_t(TopLayout.getAlignment().getQuantity()) * 8 != Align ||
       End > NativeSize || NativeSize % 8)
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
   const uint64_t Rounded = (End + Align - 1) / Align * Align;
   const uint64_t Padding = NativeSize > Rounded ? (NativeSize - End) / 8 : 0;
   if (!End && NativeSize > 8)
     return UtilityTupleRecord{Specialization, std::move(Elements),
                               NativeSize / 8, SelectedStringCarrierValues, OwnedElement};
   if ((End ? Rounded : 8) != NativeSize && !Padding)
-    return std::nullopt;
+    { if (RequireReferenceElements) std::fprintf(stderr, "BIND_UNUSED_REFERENCE_TUPLE_NULL line=%d\n", __LINE__); return std::nullopt; }
   return UtilityTupleRecord{Specialization, std::move(Elements), Padding,
                             SelectedStringCarrierValues, OwnedElement};
 }
@@ -7877,7 +7878,7 @@ class UtilityTupleQueryGraph
         (ParentBudget && ((nestedBudgetActive() ? !ParentBudget->nestedDepthFits(Depth)
                                                : ParentBudget->Depth + Depth > 64) ||
                           !ParentBudget->step()))) {
-      Failed = true;
+      Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
       return false;
     }
     return true;
@@ -8255,12 +8256,12 @@ class UtilityTupleQueryGraph
   bool family(const Decl *D) {
     bool Complete = false;
     auto Latch = llvm::make_scope_exit([&] {
-      if (!Complete && (Mode == UtilityTupleQueryMode::PairConstruction || Mode == UtilityTupleQueryMode::BindSignature || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = true;
+      if (!Complete && (Mode == UtilityTupleQueryMode::PairConstruction || Mode == UtilityTupleQueryMode::BindSignature || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
     });
     if (!pinned(D)) {
       // A genuine source failure cannot be recovered by a second cache lookup.
       // Other metadata modes preserve their existing behavior.
-      if ((Mode == UtilityTupleQueryMode::PairConstruction || Mode == UtilityTupleQueryMode::BindSignature || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = true;
+      if ((Mode == UtilityTupleQueryMode::PairConstruction || Mode == UtilityTupleQueryMode::BindSignature || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
       return false;
     }
     if (!Declarations.insert(D).second) {
@@ -9250,7 +9251,7 @@ class UtilityTupleQueryGraph
     }
     // Bind this use before consulting the method cache; another retained
     // query or subobject selection must independently authenticate its purpose.
-    if (!bindPairOwnerMember(Method)) { Failed = true; return false; }
+    if (!bindPairOwnerMember(Method)) { Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true); return false; }
     if (!bindPairBorrowedMember(Method, PairDefault) ||
         !bindPairArrayMember(Method, PairDefault) ||
         !bindPairOptionalMember(Method) || !family(Method)) return false;
@@ -10567,7 +10568,7 @@ class UtilityTupleQueryGraph
         }
       }
     }
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
     return Complete;
   }
   bool record(const CXXRecordDecl *R) {
@@ -10578,7 +10579,7 @@ class UtilityTupleQueryGraph
         R->getCanonicalDecl() == BindCallMetadata->CallArguments->getType()
             ->getAsCXXRecordDecl()->getCanonicalDecl()) {
       const bool Complete = bindFunctionalBindEmptyCallTupleSource(R);
-      if (!Complete) Failed = true;
+      if (!Complete) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
       return Complete;
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
@@ -10588,7 +10589,7 @@ class UtilityTupleQueryGraph
           R->getCanonicalDecl() == BindResultComparisonRecord && bindResultSentinelDefinition(R)) ||
           (BindFallbackSignature && BindFallbackSentinel &&
            R->getCanonicalDecl() == BindFallbackSentinel && bindDeletedResultSentinelDefinition(R));
-      if (!Complete) Failed = true;
+      if (!Complete) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
       return Complete;
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
@@ -10599,14 +10600,14 @@ class UtilityTupleQueryGraph
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         BindMetadataRecords.count(R->getCanonicalDecl())) {
       if (!R->isDependentContext() && (!BindRecordSource || !BindRecordSource(R))) {
-        Failed = true;
+        Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
         return false;
       }
       return family(R); // Identity is separate from its actual selected partial source.
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindRecordSource &&
         !R->isDependentContext()) {
-      if (!BindRecordSource(R)) { Failed = true; return false; }
+      if (!BindRecordSource(R)) { Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true); return false; }
     }
     if (NotFnNestedStorage && NotFnNestedRecords.count(R->getCanonicalDecl()))
       return family(R); // Exact descriptor metadata only; selected operations still close independently.
@@ -10666,12 +10667,12 @@ class UtilityTupleQueryGraph
       const auto *Key = R->getCanonicalDecl();
       if (CompletedPairImplicitDefaults.count(Key)) return true;
       if (!ActivePairImplicitDefaults.insert(Key).second) {
-        Failed = true;
+        Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
         return false;
       }
       auto Restore = llvm::make_scope_exit([&] { ActivePairImplicitDefaults.erase(Key); });
       if (!family(R) || !pairImplicitDefaultSource(PairTrait)) {
-        Failed = true;
+        Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
         return false;
       }
       CompletedPairImplicitDefaults.insert(Key);
@@ -10690,7 +10691,7 @@ class UtilityTupleQueryGraph
         utilityUniquePtrRecord(S, SM, R, Context, false, false)) {
       if (!Records.insert(R).second) return !Failed;
       const bool Complete = ownerSource(R);
-      if (!Complete) Failed = true;
+      if (!Complete) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
       return Complete;
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
@@ -10818,7 +10819,7 @@ class UtilityTupleQueryGraph
       const bool Complete = Definition && family(R) && family(Definition) &&
           !Definition->isUnion() && !Definition->isDynamicClass() &&
           !Definition->getNumBases() && Definition->field_empty();
-      if (!Complete) Failed = true;
+      if (!Complete) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
       return Complete;
     }
     if (!family(R)) return false;
@@ -11407,7 +11408,23 @@ public:
     const auto *Type = Use.Kind == TemplateSourceKind::Type
         ? dyn_cast_or_null<TemplateSpecializationType>(Use.Type) : nullptr;
     const auto *Sentinel = bindResultSentinelAlias(Type);
-    if (!Sentinel || Index != 1) return TraverseTemplateArgumentLoc(Argument);
+    if (!Sentinel || Index != 1) {
+      const bool Complete = TraverseTemplateArgumentLoc(Argument);
+      if (!Complete) {
+        const auto Kind = Argument.getArgument().getKind();
+        const Expr *Written = Kind == TemplateArgument::Integral ? Argument.getSourceIntegralExpression()
+            : Kind == TemplateArgument::Expression ? Argument.getSourceExpression() : nullptr;
+        const Expr *Core = Written ? Written->IgnoreParenImpCasts() : nullptr;
+        if (const auto *Constant = dyn_cast_or_null<ConstantExpr>(Core)) Core = Constant->getSubExpr()->IgnoreParenImpCasts();
+        const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Core);
+        std::fprintf(stderr, "BIND_UNUSED_WRITTEN_ARGUMENT index=%u kind=%u expr=%s core=%s decl=%s tsi=%d\n",
+            Index, unsigned(Kind), Written ? Written->getStmtClassName() : "<none>",
+            Core ? Core->getStmtClassName() : "<none>",
+            Reference ? Reference->getDecl()->getQualifiedNameAsString().c_str() : "<none>",
+            Kind == TemplateArgument::Type && Argument.getTypeSourceInfo() != nullptr);
+      }
+      return Complete;
+    }
     if (Use.Template != Type->getTemplateName().getAsTemplateDecl() || !Use.Written ||
         Use.Written->getNumTemplateArgs() != 2 ||
         Argument.getArgument().getKind() != TemplateArgument::Type ||
@@ -11479,7 +11496,7 @@ public:
   bool bindFunctionalBindCallPhysicalMetadata(const FunctionalBindCallSource &Call) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !Call.SourceCall || Call.SourceCall != BindCallMetadata->SourceCall ||
-        Call.Storage.Record != BindMetadata->Record) return false;
+        Call.Storage.Record != BindMetadata->Record) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallPhysicalMetadata line=11482\n"); return false; }
     const auto Actual = describeFunctionalBindCallSource(S, SM, Call.SourceCall, Context);
     if (!Actual || Actual->Storage.Record != BindMetadata->Record ||
         Actual->Method != Call.Method || Actual->Method != BindCallMetadata->Method ||
@@ -11487,29 +11504,29 @@ public:
         Actual->CallArguments != BindCallMetadata->CallArguments ||
         Actual->CallForwards != Call.CallForwards ||
         Actual->CallForwards != BindCallMetadata->CallForwards ||
-        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return false;
+        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallPhysicalMetadata line=11490\n"); return false; }
     const auto Input = approvedUtilityReferenceTupleRecord(
         S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
     const auto Construction = describeFunctionalBindCallTupleConstructionSource(S, SM, *Actual, Context);
     if (!Input || !Construction || Construction->Tuple != Actual->CallArguments ||
         Input->Elements.size() != Actual->CallForwards.size() ||
-        Construction->Leaves.size() != Input->Elements.size()) return false;
+        Construction->Leaves.size() != Input->Elements.size()) { std::fprintf(stderr, "BIND_UNUSED_PHYSICAL_FIELDS input=%d construction=%d elements=%zu leaves=%zu forwards=%zu same=%d\n", bool(Input), bool(Construction), Input ? Input->Elements.size() : 0U, Construction ? Construction->Leaves.size() : 0U, Actual->CallForwards.size(), Construction && Construction->Tuple == Actual->CallArguments); std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallPhysicalMetadata line=11496\n"); return false; }
     for (const auto &Element : Input->Elements)
       if (!Element.Field || Element.EmptyBase || !Element.getType()->isReferenceType() ||
-          !Element.getType().getNonReferenceType()->isScalarType()) return false;
+          !Element.getType().getNonReferenceType()->isScalarType()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallPhysicalMetadata line=11499\n"); return false; }
     // Only the exact independently described incoming reference tuple owns these
     // physical type identities. Selected operations close in separate source proofs.
     std::vector<const CXXRecordDecl *> Records{Input->Record};
     for (std::size_t I = 0; I < Records.size(); ++I) {
       const auto *Record = Records[I];
-      if (!Record || !step() || Records.size() > 64) return false;
+      if (!Record || !step() || Records.size() > 64) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallPhysicalMetadata line=11505\n"); return false; }
       if (!BindCallPhysicalRecords.insert(Record->getCanonicalDecl()).second) continue;
       const auto *Definition = Record->getDefinition();
       if (!Definition || Definition->isDependentContext() || Definition->isUnion() ||
-          Definition->isDynamicClass() || Definition->getNumVBases()) return false;
+          Definition->isDynamicClass() || Definition->getNumVBases()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallPhysicalMetadata line=11509\n"); return false; }
       for (const auto &Base : Definition->bases()) {
         const auto *Child = Base.getType()->getAsCXXRecordDecl();
-        if (Base.isVirtual() || !Child) return false;
+        if (Base.isVirtual() || !Child) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallPhysicalMetadata line=11512\n"); return false; }
         Records.push_back(Child);
       }
       for (const auto *Field : Definition->fields())
@@ -11517,7 +11534,7 @@ public:
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record)) {
         const auto *Primary = Instance->getSpecializedTemplate();
-        if (!Primary) return false;
+        if (!Primary) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallPhysicalMetadata line=11520\n"); return false; }
         BindMetadataRecords.insert(Primary->getTemplatedDecl()->getCanonicalDecl());
       }
     }
@@ -11525,17 +11542,17 @@ public:
   }
   bool TraverseBindCallPhysicalStorageSource() {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
-        BindCallMetadata->CallForwards.empty() || BindCallPhysicalRecords.empty() || !step()) return false;
+        BindCallMetadata->CallForwards.empty() || BindCallPhysicalRecords.empty() || !step()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallPhysicalStorageSource line=11528\n"); return false; }
     for (const auto *Record : BindCallPhysicalRecords) {
       const auto *Definition = Record->getDefinition();
-      if (!Definition || !family(Definition)) return false;
+      if (!Definition || !family(Definition)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallPhysicalStorageSource line=11531\n"); return false; }
       for (const auto &Base : Definition->bases())
         if (!Base.getTypeSourceInfo() || Base.isVirtual() ||
-            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallPhysicalStorageSource line=11534\n"); return false; }
       for (const auto *Field : Definition->fields())
         if (!family(Field) || Field->isBitField() || Field->isMutable() ||
             !Field->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallPhysicalStorageSource line=11538\n"); return false; }
     }
     return !Failed;
   }
@@ -11570,22 +11587,22 @@ public:
   bool bindFunctionalBindCallAuxiliaryMetadata(const FunctionalBindCallSource &Call) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !step() || !Call.SourceCall || Call.Storage.Record != BindMetadata->Record ||
-        (BindCallMetadata && BindCallMetadata->SourceCall != Call.SourceCall)) return false;
+        (BindCallMetadata && BindCallMetadata->SourceCall != Call.SourceCall)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallAuxiliaryMetadata line=11573\n"); return false; }
     const auto Actual = describeFunctionalBindCallSource(S, SM, Call.SourceCall, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Indices != Call.Indices ||
         Actual->CallArguments != Call.CallArguments ||
         Actual->CallForwards != Call.CallForwards ||
-        Actual->Storage.Record != BindMetadata->Record) return false;
+        Actual->Storage.Record != BindMetadata->Record) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallAuxiliaryMetadata line=11578\n"); return false; }
     const auto *Empty = Actual->CallArguments->getType()->getAsCXXRecordDecl();
     const auto *Indices = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
         Actual->Indices->getType()->getAsCXXRecordDecl());
-    if (!Empty || !Indices || !Indices->getSpecializedTemplate()) return false;
+    if (!Empty || !Indices || !Indices->getSpecializedTemplate()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallAuxiliaryMetadata line=11582\n"); return false; }
     BindCallMetadata = *Actual;
     if (Actual->CallForwards.empty()) {
-      if (!bindFunctionalBindEmptyCallTupleSource(Empty)) return false;
-    } else if (!bindFunctionalBindCallPhysicalMetadata(*Actual)) return false;
+      if (!bindFunctionalBindEmptyCallTupleSource(Empty)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallAuxiliaryMetadata line=11585\n"); return false; }
+    } else if (!bindFunctionalBindCallPhysicalMetadata(*Actual)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallAuxiliaryMetadata line=11586\n"); return false; }
     for (const auto *Record : {Empty, static_cast<const CXXRecordDecl *>(Indices)}) {
-      if (!step() || !family(Record)) return false;
+      if (!step() || !family(Record)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallAuxiliaryMetadata line=11588\n"); return false; }
       BindMetadataRecords.insert(Record->getCanonicalDecl());
     }
     BindMetadataRecords.insert(Indices->getSpecializedTemplate()->getTemplatedDecl()->getCanonicalDecl());
@@ -11593,11 +11610,11 @@ public:
   }
   bool TraverseBindCallAuxiliarySource(const FunctionalBindCallSource &Call) {
     return withBindSourceChild([&] {
-      if (!bindFunctionalBindCallAuxiliaryMetadata(Call)) return false;
+      if (!bindFunctionalBindCallAuxiliaryMetadata(Call)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallAuxiliarySource line=11596\n"); return false; }
       const auto &Actual = *BindCallMetadata;
       const auto *Empty = Actual.CallArguments->getConstructor();
       const auto *Indices = Actual.Indices->getConstructor();
-      if (!Empty || !Indices) return false;
+      if (!Empty || !Indices) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallAuxiliarySource line=11600\n"); return false; }
       if (Actual.CallForwards.empty()) {
         const auto *Prototype = Empty ? Empty->getType()->getAs<FunctionProtoType>() : nullptr;
         const auto Member = Empty ? SpecialMembers.find(Empty->getCanonicalDecl()) : SpecialMembers.end();
@@ -11607,19 +11624,19 @@ public:
             !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
             Prototype->getNoexceptExpr() || Member == SpecialMembers.end() ||
             !Member->second.Complete || Member->second.Owner != Empty ||
-            !Member->second.Selections.empty()) return false;
+            !Member->second.Selections.empty()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallAuxiliarySource line=11610\n"); return false; }
       }
       const auto *Definition = BindMetadata->Record->getDefinition();
       const TypedefDecl *IndexAlias = nullptr;
-      if (!Definition || !family(Definition)) return false;
+      if (!Definition || !family(Definition)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallAuxiliarySource line=11614\n"); return false; }
       for (const auto *Declaration : Definition->decls()) {
-        if (!step()) return false;
+        if (!step()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallAuxiliarySource line=11616\n"); return false; }
         const auto *Alias = dyn_cast<TypedefDecl>(Declaration);
         if (!Alias || !Alias->getIdentifier() || Alias->getName() != "__indices") continue;
         if (IndexAlias || Alias->getDeclContext() != Definition ||
             Alias->getAccess() != AS_private || !family(Alias) || !Alias->getTypeSourceInfo() ||
             !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/bind.h") ||
-            !Context.hasSameType(Alias->getUnderlyingType(), Actual.Indices->getType())) return false;
+            !Context.hasSameType(Alias->getUnderlyingType(), Actual.Indices->getType())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallAuxiliarySource line=11622\n"); return false; }
         IndexAlias = Alias;
       }
       // This written SDK root is mandatory even when the actual construction
@@ -11630,22 +11647,22 @@ public:
           (Actual.CallForwards.empty() &&
            (!bindFunctionalBindSpecialMember(Empty, true) ||
             !TraverseBindConstructorSignature(Empty))) ||
-          !bindFunctionalBindSpecialMember(Indices, true)) return false;
+          !bindFunctionalBindSpecialMember(Indices, true)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindCallAuxiliarySource line=11633\n"); return false; }
       return !Failed;
     });
   }
   bool withBindPartialPatternSource(const ClassTemplateSpecializationDecl *Instance,
       const TemplateUseSource &Source, const std::function<bool()> &Proof) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Instance || !Proof ||
-        Failed || !step()) return false;
+        Failed || !step()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withBindPartialPatternSource line=11640\n"); return false; }
     const auto *Partial = Instance->getSpecializedTemplateOrPartial()
         .dyn_cast<ClassTemplatePartialSpecializationDecl *>();
     const auto *Primary = Instance->getSpecializedTemplate();
     if (!Partial || !Primary || Source.Kind != TemplateSourceKind::PartialPattern ||
         Source.Declaration != Partial || Source.Template != Primary ||
-        Source.Selection != &Instance->getTemplateInstantiationArgs()) return false;
+        Source.Selection != &Instance->getTemplateInstantiationArgs()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withBindPartialPatternSource line=11646\n"); return false; }
     if (!Primary->getIdentifier() || Primary->getName() != "__make_tuple_types_flat")
-      return Proof() && !Failed;
+      { const bool BindPartialTraceResult = Proof() && !Failed; if (!BindPartialTraceResult) std::fprintf(stderr, "BIND_UNUSED_PARTIAL_RESULT phase=0 result=0\n"); return BindPartialTraceResult; }
     const auto &Arguments = Instance->getTemplateArgs();
     const auto *Original = Partial->getTemplateArgsAsWritten();
     if (!BindTupleTagStorage || !BindTupleTagStorage->Record ||
@@ -11663,19 +11680,19 @@ public:
         !Source.Written->arguments()[1].getTypeSourceInfo() ||
         !Original->arguments()[1].getTypeSourceInfo() ||
         !Context.hasSameType(Source.Written->arguments()[1].getArgument().getAsType(), Arguments[1].getAsType()))
-      return false;
+      { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withBindPartialPatternSource line=11666\n"); return false; }
     for (unsigned I = 0; I < 2; ++I)
       if (!Source.Canonical->get(I).structurallyEquals(Arguments[I]) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withBindPartialPatternSource line=11670\n"); return false; }
     const auto *Indices = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Arguments[1].getAsType()->getAsCXXRecordDecl());
     if (!Indices || !Indices->getIdentifier() || Indices->getName() != "__tuple_indices" ||
         !family(Indices) || Indices->getSpecializationKind() != TSK_ImplicitInstantiation ||
         Indices->getTemplateArgs().size() != 1 || Indices->getTemplateArgs()[0].getKind() != TemplateArgument::Pack)
-      return false;
+      { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withBindPartialPatternSource line=11675\n"); return false; }
     // Only the actual empty-index slice observed in the authenticated packet
     // needs this split-token role. Other slices retain ordinary location rules.
-    if (Indices->getTemplateArgs()[0].pack_size()) return Proof() && !Failed;
+    if (Indices->getTemplateArgs()[0].pack_size()) { const bool BindPartialTraceResult = Proof() && !Failed; if (!BindPartialTraceResult) std::fprintf(stderr, "BIND_UNUSED_PARTIAL_RESULT phase=1 result=0\n"); return BindPartialTraceResult; }
     const auto *SavedSource = BindSelectedPartialPattern;
     const auto *SavedInstance = BindSelectedPartialInstance;
     BindSelectedPartialPattern = &Source;
@@ -11684,7 +11701,7 @@ public:
       BindSelectedPartialPattern = SavedSource;
       BindSelectedPartialInstance = SavedInstance;
     });
-    return Proof() && !Failed;
+    { const bool BindPartialTraceResult = Proof() && !Failed; if (!BindPartialTraceResult) std::fprintf(stderr, "BIND_UNUSED_PARTIAL_RESULT phase=2 result=0\n"); return BindPartialTraceResult; }
   }
   bool bindFunctionalBindConjunctionOperand(
       const ClassTemplateSpecializationDecl *Instance, const TemplateUseSource &Source) {
@@ -12154,27 +12171,27 @@ public:
         !Tuple.Tuple || !Tuple.Implementation || Tags.size() != 4 ||
         Tuple.Implementation->getNumArgs() != Count + 4 ||
         !Context.hasSameType(Tuple.Tuple->getType(), Context.getRecordType(InputTuple.Record)))
-      return false;
+      { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12157\n"); return false; }
     BindTupleTagStorage = InputTuple;
     const auto *Constructor = Tuple.Tuple->getConstructor();
     const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
     const auto *TupleRecord = dyn_cast<ClassTemplateSpecializationDecl>(InputTuple.Record);
-    if (!Primary || !TupleRecord || !family(Primary)) return false;
+    if (!Primary || !TupleRecord || !family(Primary)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12162\n"); return false; }
     std::set<const NamedDecl *> InputPacks, StoredPacks;
     std::set<const FunctionTemplateDecl *> Templates;
     for (const auto *Current = Primary; Current;) {
       if (!step() || !Templates.insert(Current).second || !family(Current) ||
-          !Current->getTemplateParameters()->size()) return false;
+          !Current->getTemplateParameters()->size()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12167\n"); return false; }
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12169\n"); return false; }
       InputPacks.insert(Pack);
       Current = Current->getInstantiatedFromMemberTemplate();
     }
     for (const auto *Current : TupleRecord->getSpecializedTemplate()->redecls()) {
       if (!step() || !family(Current) || Current->getTemplateParameters()->size() != 1)
-        return false;
+        { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12175\n"); return false; }
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12177\n"); return false; }
       StoredPacks.insert(Pack);
     }
     std::vector<const TypeSourceInfo *> WrittenTags;
@@ -12192,10 +12209,10 @@ public:
           !Record->field_empty() || Record->getNumBases() || Record->isUnion() ||
           Record->isDynamicClass() || !Record->hasTrivialDestructor() ||
           !family(Selected) || !family(Record) ||
-          !Context.hasSameType(Written->getType(), Construction->getType())) return false;
+          !Context.hasSameType(Written->getType(), Construction->getType())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12195\n"); return false; }
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record);
-      if (!Instance) return false;
+      if (!Instance) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12198\n"); return false; }
       BindMetadataRecords.insert(Instance->getSpecializedTemplate()->getTemplatedDecl()->getCanonicalDecl());
       WrittenTags.push_back(Written);
       if (!(I % 2)) continue;
@@ -12213,7 +12230,7 @@ public:
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Location.getArgLoc(0).getArgument().getAsType(),
                                Context.getRecordType(InputTuple.Record)) ||
-          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return false;
+          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12216\n"); return false; }
       for (unsigned J = 1; J < Slots; ++J) {
         const auto Argument = Location.getArgLoc(J);
         const auto Kind = Argument.getArgument().getKind();
@@ -12223,15 +12240,15 @@ public:
         const auto &Expected = I == 1 || J == 2 ? InputPacks : StoredPacks;
         if (!Pack || Pack->isValueDependent() || Pack->getPackLength() != Count ||
             !Expected.count(Pack->getPack()) || !family(Pack->getPack()) ||
-            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return false;
+            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12226\n"); return false; }
       }
       if (!BindTupleTagSlices.emplace(Slice->getCanonicalDecl(),
-              std::make_pair(Use, I == 1 ? 0U : unsigned(Count))).second) return false;
+              std::make_pair(Use, I == 1 ? 0U : unsigned(Count))).second) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12229\n"); return false; }
     }
     // Bind both exact slices before traversing their actual original TypeLocs.
     // The retained Sema packets still close defaults and selected partials.
     for (const auto *Written : WrittenTags)
-      if (!TraverseTypeLoc(Written->getTypeLoc())) return false;
+      if (!TraverseTypeLoc(Written->getTypeLoc())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindTupleTagGraph line=12234\n"); return false; }
     return !Failed;
   }
 
@@ -12251,7 +12268,7 @@ public:
       const FunctionalBindTupleConstructionSource &Tuple) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !Call.SourceCall || Call.SourceCall != BindCallMetadata->SourceCall ||
-        Call.Storage.Record != BindMetadata->Record) return false;
+        Call.Storage.Record != BindMetadata->Record) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallTupleTags line=12254\n"); return false; }
     const auto Actual = describeFunctionalBindCallSource(S, SM, Call.SourceCall, Context);
     if (!Actual || Actual->Storage.Record != BindMetadata->Record ||
         Actual->Method != Call.Method || Actual->Method != BindCallMetadata->Method ||
@@ -12259,7 +12276,7 @@ public:
         Actual->CallArguments != BindCallMetadata->CallArguments ||
         Actual->CallForwards != Call.CallForwards ||
         Actual->CallForwards != BindCallMetadata->CallForwards ||
-        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return false;
+        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallTupleTags line=12262\n"); return false; }
     const auto Input = approvedUtilityReferenceTupleRecord(
         S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
     const auto Construction = describeFunctionalBindCallTupleConstructionSource(S, SM, *Actual, Context);
@@ -12268,7 +12285,7 @@ public:
         Construction->Tuple != Tuple.Tuple || Construction->Implementation != Tuple.Implementation ||
         Construction->Leaves != Tuple.Leaves || Construction->Copies != Tuple.Copies ||
         Construction->Initializers != Tuple.Initializers || Construction->Forwards != Tuple.Forwards ||
-        Construction->Assertions != Tuple.Assertions) return false;
+        Construction->Assertions != Tuple.Assertions) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=bindFunctionalBindCallTupleTags line=12271\n"); return false; }
     return bindFunctionalBindTupleTagGraph(*Input, Tuple, *Tags);
   }
   bool bindFunctionalBindSpecialMember(const CXXMethodDecl *Method, bool Default = false) {
@@ -12281,7 +12298,7 @@ public:
       if (!Constructor || !Constructor->isDefaultConstructor()) return false;
     }
     const bool Complete = specialMember(Method, 0, Default) && !Failed;
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
     return Complete;
   }
 
@@ -12302,11 +12319,11 @@ public:
   }
   bool withBindSourceChild(const std::function<bool()> &Proof) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Proof ||
-        Failed || Depth >= 64 || !step()) { Failed = true; return false; }
+        Failed || Depth >= 64 || !step()) { Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true); return false; }
     ++Depth;
     auto Restore = llvm::make_scope_exit([&] { --Depth; });
     const bool Complete = Proof();
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
     return Complete && !Failed;
   }
   bool bindSourceComplete() const {
@@ -12344,13 +12361,13 @@ public:
   bool TraverseBindConstructorSignature(const CXXConstructorDecl *Constructor) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Constructor ||
         !BindMetadataRecords.count(Constructor->getParent()->getCanonicalDecl()) ||
-        !Constructor->getTypeSourceInfo() || !family(Constructor)) return false;
+        !Constructor->getTypeSourceInfo() || !family(Constructor)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindConstructorSignature line=12347\n"); return false; }
     const auto Location = Constructor->getTypeSourceInfo()->getTypeLoc();
     const auto Function = Location.getAs<FunctionProtoTypeLoc>();
-    if (Function.isNull()) return false;
+    if (Function.isNull()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindConstructorSignature line=12350\n"); return false; }
     const auto Return = Function.getReturnLoc();
     if (!Return.getAs<BuiltinTypeLoc>() || !Return.getType()->isVoidType() ||
-        Return.getBeginLoc().isValid() || Return.getEndLoc().isValid()) return false;
+        Return.getBeginLoc().isValid() || Return.getEndLoc().isValid()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=TraverseBindConstructorSignature line=12353\n"); return false; }
     const auto Saved = BindConstructorReturn;
     BindConstructorReturn = Return;
     auto Restore = llvm::make_scope_exit([&] { BindConstructorReturn = Saved; });
@@ -12363,11 +12380,11 @@ public:
   bool withNotFnChildProof(const std::function<bool()> &Proof) {
     NestedSharedBudget = true;
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !Proof || Failed ||
-        Depth >= 64 || !step()) { Failed = true; return false; }
+        Depth >= 64 || !step()) { Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true); return false; }
     ++Depth;
     auto Restore = llvm::make_scope_exit([&] { --Depth; });
     const bool Complete = Proof();
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
     return Complete && !Failed;
   }
   bool bindNotFnNestedStorage(const FunctionalNotFnNestedStorage &Storage) {
@@ -12436,7 +12453,7 @@ public:
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnNestedStorage || !Method ||
         !NotFnNestedRecords.count(Method->getParent()->getCanonicalDecl())) return false;
     const bool Complete = specialMember(Method) && !Failed;
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
     return Complete;
   }
 
@@ -12720,7 +12737,7 @@ public:
     // Types/expressions only remain cached after this whole dependency closes.
     // Nodes and depth are never reset or moved to a new graph.
     const bool Complete = Proof() && !Failed;
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
     return Complete;
   }
   bool withNotFnInvocation(const FunctionalNotFnCallSource &Call,
@@ -13907,7 +13924,7 @@ public:
             (!BindWeakResultSentinel || !BindWeakResultOriginalSentinel ||
              (Record->getCanonicalDecl() != BindWeakResultSentinel &&
               Record->getCanonicalDecl() != BindWeakResultOriginalSentinel))) {
-          Failed = true;
+          Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
           return false;
         }
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairSourceTypeSpelling(T))
@@ -13939,20 +13956,20 @@ public:
               Record->getCanonicalDecl() == BindResultComparisonRecord) &&
             !(BindFallbackSignature && BindFallbackSentinel &&
               Record->getCanonicalDecl() == BindFallbackSentinel)) {
-          Failed = true;
+          Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
           return false;
         }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata)
       if (const auto *Projection = dyn_cast<TemplateSpecializationType>(T.getTypePtr()))
         if (BindTupleElementProjectionAtoms.count(Projection) && !bindTupleElementProjectionType(Projection)) {
-          Failed = true;
+          Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
           return false;
         }
     if (!Types.insert(T.getTypePtr()).second) return true;
     ++Depth;
     auto Restore = llvm::make_scope_exit([&] { --Depth; });
     const bool Complete = RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseType(T);
-    if (!Complete && (NotFnReferenceStorage || Mode == UtilityTupleQueryMode::BindSignature)) Failed = true;
+    if (!Complete && (NotFnReferenceStorage || Mode == UtilityTupleQueryMode::BindSignature)) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
     return Complete && !Failed;
   }
   bool TraverseStmt(Stmt *E) {
@@ -13966,7 +13983,7 @@ public:
     if (OwnDepth) ++Depth;
     auto Restore = llvm::make_scope_exit([&] { if (OwnDepth) --Depth; });
     const bool Complete = RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseStmt(E);
-    if (!Complete && (NotFnReferenceStorage || Mode == UtilityTupleQueryMode::BindSignature)) Failed = true;
+    if (!Complete && (NotFnReferenceStorage || Mode == UtilityTupleQueryMode::BindSignature)) Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
     return Complete && !Failed;
   }
   bool TraverseTypeLoc(TypeLoc Location) {
@@ -14134,7 +14151,11 @@ public:
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         T != BindOriginalConjunctionAlias &&
         !T->isDependentType() && (!BindTypeSource || !BindTypeSource(T))) {
-      Failed = true;
+      std::fprintf(stderr, "BIND_UNUSED_TYPE_SOURCE name=%s type=%s tuple=%s\n",
+          Template->getQualifiedNameAsString().c_str(), QualType(T, 0).getAsString().c_str(),
+          BindTupleTagStorage && BindTupleTagStorage->Record
+              ? Context.getRecordType(BindTupleTagStorage->Record).getAsString().c_str() : "<none>");
+      Failed = (std::fprintf(stderr, "BIND_UNUSED_STATE_FAILED line=%d\n", __LINE__), true);
       return false;
     }
     if (T->isTypeAlias()) {
@@ -17507,19 +17528,19 @@ describeFunctionalBindTupleConstructionSourceImpl(
       TupleConstructor->isDeleted() || TupleConstructor->getAccess() != AS_public ||
       !Context.hasSameUnqualifiedType(Tuple->getType(), Context.getRecordType(Arguments.Record)) ||
       TupleConstructor->getParent()->getCanonicalDecl() != Arguments.Record->getCanonicalDecl())
-    return std::nullopt;
+    { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
   NotFnSelectedSource Check(S, SM, Context);
   std::vector<const StaticAssertDecl *> Assertions;
   auto MetadataOnlyBody = [&](const CXXConstructorDecl *Constructor) {
     const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody()) : nullptr;
-    if (!Body) return false;
+    if (!Body) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_BODY line=%d ctor=%s\n", __LINE__, Constructor ? Constructor->getQualifiedNameAsString().c_str() : "<none>"); return false; }
     for (const auto *Statement : Body->body()) {
       const auto *Declarations = dyn_cast<DeclStmt>(Statement);
-      if (!Declarations) return false;
+      if (!Declarations) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_BODY line=%d ctor=%s\n", __LINE__, Constructor ? Constructor->getQualifiedNameAsString().c_str() : "<none>"); return false; }
       for (const auto *Declaration : Declarations->decls()) {
         const auto *Assertion = dyn_cast<StaticAssertDecl>(Declaration);
         if (!Assertion || Assertion->isFailed() || !Assertion->getAssertExpr() ||
-            !Check.family(Assertion, {"tuple"})) return false;
+            !Check.family(Assertion, {"tuple"})) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_BODY line=%d ctor=%s\n", __LINE__, Constructor ? Constructor->getQualifiedNameAsString().c_str() : "<none>"); return false; }
         // Retain the original assertion source as a later query obligation.
         // A folded success is not a type/default/body certificate.
         Assertions.push_back(Assertion);
@@ -17529,7 +17550,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
   };
   if (Arguments.Record->getNumBases() ||
       std::distance(Arguments.Record->field_begin(), Arguments.Record->field_end()) != 1)
-    return std::nullopt;
+    { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
   const auto *BaseField = *Arguments.Record->field_begin();
   const auto *ImplementationRecord = BaseField->getType()->getAsCXXRecordDecl();
   if (Arguments.Record->getNumBases() ||
@@ -17537,7 +17558,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
                     Arguments.Record->field_end()) != 1 ||
       BaseField->getName() != "__base_" || !ImplementationRecord ||
       !Check.family(BaseField, {"tuple"}) || !MetadataOnlyBody(TupleConstructor) ||
-      TupleConstructor->getNumCtorInitializers() != 1) return std::nullopt;
+      TupleConstructor->getNumCtorInitializers() != 1) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
   const auto *BaseInitializer = *TupleConstructor->init_begin();
   const auto *Implementation = Check.construction(BaseInitializer->getInit());
   const auto *ImplementationConstructor = Implementation ? Implementation->getConstructor() : nullptr;
@@ -17548,7 +17569,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
       ImplementationConstructor->getParent()->getCanonicalDecl() !=
           ImplementationRecord->getCanonicalDecl() ||
       !Check.family(ImplementationConstructor, {"tuple"}) ||
-      !MetadataOnlyBody(ImplementationConstructor)) return std::nullopt;
+      !MetadataOnlyBody(ImplementationConstructor)) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
   for (unsigned I = 0; I < 4; ++I) {
     const auto *Tag = Check.construction(Implementation->getArg(I));
     const auto *Selected = Tag ? Tag->getConstructor() : nullptr;
@@ -17566,23 +17587,23 @@ describeFunctionalBindTupleConstructionSourceImpl(
                                  "__utility/integer_sequence.h"}) ||
         !Check.family(Record, {"__tuple/tuple_indices.h", "__tuple/tuple_types.h",
                                "__utility/integer_sequence.h"}))
-      return std::nullopt;
+      { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
     const auto &TagArguments = Instance->getTemplateArgs();
     const unsigned Expected = I < 2 ? Count : 0;
     if (TagArguments.size() != 1 || TagArguments[0].getKind() != TemplateArgument::Pack ||
-        TagArguments[0].pack_size() != Expected) return std::nullopt;
+        TagArguments[0].pack_size() != Expected) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
     unsigned Index = 0;
     for (const auto &Argument : TagArguments[0].pack_elements()) {
       if (I % 2) {
         if (Argument.getKind() != TemplateArgument::Type ||
             !Context.hasSameType(Argument.getAsType(),
                                 Arguments.Elements[Index].getType()))
-          return std::nullopt;
+          { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
       } else if (Argument.getKind() != TemplateArgument::Integral ||
                  Argument.getAsIntegral().isNegative() ||
                  Argument.getAsIntegral().getLimitedValue(65) != Index ||
                  !Context.hasSameType(Argument.getIntegralType(), Context.getSizeType()))
-        return std::nullopt;
+        { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
       ++Index;
     }
   }
@@ -17590,14 +17611,14 @@ describeFunctionalBindTupleConstructionSourceImpl(
   for (unsigned I = 0; I < Count; ++I) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(Implementation->getArg(I + 4), TupleConstructor->getParamDecl(I),
-                          "tuple", Forward)) return std::nullopt;
+                          "tuple", Forward)) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
     Forwards.push_back(Forward);
   }
   std::vector<const CXXConstructExpr *> Leaves, Copies;
   std::vector<const Expr *> Initializers;
   unsigned Index = 0;
   for (const auto *Initializer : ImplementationConstructor->inits()) {
-    if (Index >= Count) return std::nullopt;
+    if (Index >= Count) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
     const auto &Element = Arguments.Elements[Index];
     const auto *LeafRecord = Element.Field
         ? dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext()) : nullptr;
@@ -17612,14 +17633,14 @@ describeFunctionalBindTupleConstructionSourceImpl(
         LeafConstructor->getNumParams() != 1 || LeafConstructor->getNumCtorInitializers() != 1 ||
         LeafConstructor->getParent()->getCanonicalDecl() != LeafRecord->getCanonicalDecl() ||
         !Check.family(LeafConstructor, {"tuple"}) || !MetadataOnlyBody(LeafConstructor))
-      return std::nullopt;
+      { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(Leaf->getArg(0), ImplementationConstructor->getParamDecl(Index + 4),
-                          "tuple", Forward)) return std::nullopt;
+                          "tuple", Forward)) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
     Forwards.push_back(Forward);
     const auto *Value = *LeafConstructor->init_begin();
     if (!Value->isMemberInitializer() || Value->getMember() != Element.Field)
-      return std::nullopt;
+      { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
     const auto *Copy = Check.construction(Value->getInit());
     const auto Wrapper = approvedFunctionalReferenceRecord(
         S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
@@ -17628,17 +17649,17 @@ describeFunctionalBindTupleConstructionSourceImpl(
                    !SelectedCopy->isCopyOrMoveConstructor() || !SelectedCopy->isTrivial() ||
                    SelectedCopy->isDeleted() || SelectedCopy->getParent()->getCanonicalDecl() !=
                        Wrapper->Record->getCanonicalDecl())
-                : bool(Copy)) return std::nullopt;
+                : bool(Copy)) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
     const auto *Forwarded = Copy ? Copy->getArg(0) : Value->getInit();
     if (!Check.forwarding(Forwarded, LeafConstructor->getParamDecl(0), "tuple", Forward))
-      return std::nullopt;
+      { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
     Forwards.push_back(Forward);
     Leaves.push_back(Leaf);
     Copies.push_back(Copy);
     Initializers.push_back(Value->getInit());
     ++Index;
   }
-  if (Index != Count) return std::nullopt;
+  if (Index != Count) { std::fprintf(stderr, "BIND_UNUSED_CONSTRUCTION_NULL line=%d ctor=%s\n", __LINE__, TupleConstructor ? TupleConstructor->getQualifiedNameAsString().c_str() : "<none>"); return std::nullopt; }
   return FunctionalBindTupleConstructionSource{Tuple, Implementation, std::move(Leaves),
       std::move(Copies), std::move(Initializers), std::move(Forwards), std::move(Assertions)};
 }
@@ -17667,10 +17688,10 @@ describeFunctionalBindCallTupleConstructionSource(
   if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
       Actual->CallArguments != Call.CallArguments || Actual->CallForwards != Call.CallForwards ||
       Actual->Storage.Record != Call.Storage.Record || Actual->CallForwards.empty() ||
-      Actual->CallForwards.size() > 2) return std::nullopt;
+      Actual->CallForwards.size() > 2) { std::fprintf(stderr, "BIND_UNUSED_CALL_CONSTRUCTION_NULL line=%d\n", __LINE__); return std::nullopt; }
   const auto Arguments = approvedUtilityReferenceTupleRecord(
       S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
-  if (!Arguments || Arguments->Elements.size() != Actual->CallForwards.size()) return std::nullopt;
+  if (!Arguments || Arguments->Elements.size() != Actual->CallForwards.size()) { std::fprintf(stderr, "BIND_UNUSED_CALL_CONSTRUCTION_NULL line=%d\n", __LINE__); return std::nullopt; }
   return describeFunctionalBindTupleConstructionSourceImpl(
       S, SM, *Arguments, Actual->CallArguments, Context);
 }
@@ -18871,11 +18892,11 @@ class BindSourceProof {
         Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
         Source.Origin || Source.WrittenStorageClass ||
         (Source.Selection && Source.Kind != TemplateSourceKind::PartialDeduction &&
-         Source.Kind != TemplateSourceKind::PartialPattern)) return false;
+         Source.Kind != TemplateSourceKind::PartialPattern)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=packet line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
     for (unsigned I = 0; I < Source.Canonical->size(); ++I)
       if (Source.Canonical->get(I).isNull() ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=packet line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
     return true;
   }
   bool convertedValue(const TemplateArgumentLoc &Location, const TemplateArgument &Canonical) {
@@ -19053,9 +19074,9 @@ class BindSourceProof {
   }
   bool source(const TemplateUseSource &Source, const TemplateParameterList *Parameters) {
     return Graph.withBindSourceChild([&] {
-      if (!packet(Source, Parameters)) return false;
+      if (!packet(Source, Parameters)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
       if (CompletedSources.count(&Source)) return true;
-      if (!ActiveSources.insert(&Source).second) return false;
+      if (!ActiveSources.insert(&Source).second) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
       auto Restore = llvm::make_scope_exit([&] { ActiveSources.erase(&Source); });
       return Graph.withBindTemplateParameters(Source.Template, Parameters, [&] {
         std::set<unsigned> Defaults;
@@ -19064,85 +19085,85 @@ class BindSourceProof {
           unsigned Index = ~0U;
           for (unsigned I = 0; I < Parameters->size(); ++I)
             if (Parameters->getParam(I) == Default.Parameter) Index = I;
-          if (Index == ~0U || !Defaults.insert(Index).second || !family(Default.Parameter)) return false;
+          if (Index == ~0U || !Defaults.insert(Index).second || !family(Default.Parameter)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
           if (const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter)) {
             if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
                 Default.Written.getArgument().getKind() != TemplateArgument::Type ||
-                Default.Converted.getArgument().getKind() != TemplateArgument::Type) return false;
+                Default.Converted.getArgument().getKind() != TemplateArgument::Type) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
             const auto *Original = Parameter->getDefaultArgument().getTypeSourceInfo();
-            if (!Original || !Graph.TraverseTypeLoc(Original->getTypeLoc())) return false;
+            if (!Original || !Graph.TraverseTypeLoc(Original->getTypeLoc())) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
           } else if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Default.Parameter)) {
             if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
                 Parameter->getDefaultArgument().getArgument().getKind() != TemplateArgument::Expression ||
-                !Graph.TraverseTemplateArgumentLoc(Parameter->getDefaultArgument())) return false;
-          } else return false;
+                !Graph.TraverseTemplateArgumentLoc(Parameter->getDefaultArgument())) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
+          } else { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
           if (!Graph.TraverseTemplateArgumentLoc(Default.Written) ||
               !Graph.TraverseTemplateArgumentLoc(Default.Converted) ||
-              !convertedValue(Default.Converted, Source.Canonical->get(Index))) return false;
+              !convertedValue(Default.Converted, Source.Canonical->get(Index))) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
         }
         for (const auto &Entry : Source.ParameterTypes) {
           const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Entry.Parameter);
           unsigned Index = ~0U;
           for (unsigned I = 0; I < Parameters->size(); ++I)
             if (Parameters->getParam(I) == Parameter) Index = I;
-          if (!Parameter || Index == ~0U || !Entry.Type) return false;
-          if (!family(Parameter)) return false;
-          if (!ParameterTypes.insert({Index, Entry.PackIndex}).second) return false;
-          if (!Parameter->getTypeSourceInfo()) return false;
-          if (!unwrapScalarParameterSource(Source, Parameter, Entry.Type)) return false;
+          if (!Parameter || Index == ~0U || !Entry.Type) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
+          if (!family(Parameter)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
+          if (!ParameterTypes.insert({Index, Entry.PackIndex}).second) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
+          if (!Parameter->getTypeSourceInfo()) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
+          if (!unwrapScalarParameterSource(Source, Parameter, Entry.Type)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
           const auto &Slot = Source.Canonical->get(Index);
           const TemplateArgument *Argument = &Slot;
           if (Parameter->isParameterPack()) {
-            if (Slot.getKind() != TemplateArgument::Pack) return false;
+            if (Slot.getKind() != TemplateArgument::Pack) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
             if (Slot.pack_size() == 0) {
-              if (Entry.PackIndex != ~0U) return false;
+              if (Entry.PackIndex != ~0U) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
               Argument = nullptr;
             } else {
-              if (Entry.PackIndex >= Slot.pack_size()) return false;
+              if (Entry.PackIndex >= Slot.pack_size()) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
               Argument = &Slot.pack_elements()[Entry.PackIndex];
             }
-          } else if (Entry.PackIndex != 0) return false;
+          } else if (Entry.PackIndex != 0) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
           if (Argument && (Argument->getKind() != TemplateArgument::Integral ||
-              !Context.hasSameType(Entry.Type->getType(), Argument->getIntegralType()))) return false;
+              !Context.hasSameType(Entry.Type->getType(), Argument->getIntegralType()))) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
         }
         for (unsigned I = 0; I < Parameters->size(); ++I) {
           const auto *Parameter = Parameters->getParam(I);
-          if (!family(Parameter)) return false;
+          if (!family(Parameter)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
           // Defaults are obligations only for omitted slots. A selected class
           // partial pattern retains explicit primary arguments as written.
           bool Explicit = Source.Written && I < Source.Written->getNumTemplateArgs();
           for (unsigned J = 0; J < I && Explicit; ++J)
             if (Parameters->getParam(J)->isParameterPack()) Explicit = false;
           if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter)) {
-            if (Type->hasDefaultArgument() && !Explicit && !Defaults.count(I)) return false;
+            if (Type->hasDefaultArgument() && !Explicit && !Defaults.count(I)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
           } else if (const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter)) {
-            if (Value->hasDefaultArgument() && !Explicit && !Defaults.count(I)) return false;
+            if (Value->hasDefaultArgument() && !Explicit && !Defaults.count(I)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
             const auto &Slot = Source.Canonical->get(I);
             if (Value->isParameterPack()) {
-              if (Slot.getKind() != TemplateArgument::Pack) return false;
+              if (Slot.getKind() != TemplateArgument::Pack) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
               if (!Slot.pack_size() && !ParameterTypes.count({I, ~0U})) {
                 if (Context.hasSameType(Value->getType(), Context.BoolTy)) {
-                  if (!Graph.bindFunctionalBindEmptyConjunctionParameterSource(Source, Value)) return false;
-                } else if (!Graph.bindFunctionalBindEmptyIndexParameterSource(Source, Value)) return false;
+                  if (!Graph.bindFunctionalBindEmptyConjunctionParameterSource(Source, Value)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
+                } else if (!Graph.bindFunctionalBindEmptyIndexParameterSource(Source, Value)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
               }
               for (unsigned J = 0; J < Slot.pack_size(); ++J)
-                if (!ParameterTypes.count({I, J})) return false;
-            } else if (!ParameterTypes.count({I, 0})) return false;
+                if (!ParameterTypes.count({I, J})) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
+            } else if (!ParameterTypes.count({I, 0})) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
           } else if (const auto *Template = dyn_cast<TemplateTemplateParmDecl>(Parameter)) {
             // The tuple slice implementation binds its actual tuple template.
             // This slice needs no defaulted or packed template-template slot.
             if (Template->isParameterPack() || Template->hasDefaultArgument() ||
                 Source.Canonical->get(I).getKind() != TemplateArgument::Template ||
-                !Graph.TraverseTemplateName(Source.Canonical->get(I).getAsTemplate())) return false;
-          } else return false;
+                !Graph.TraverseTemplateName(Source.Canonical->get(I).getAsTemplate())) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
+          } else { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
         }
         if (Source.Written)
           for (unsigned I = 0; I < Source.Written->getNumTemplateArgs(); ++I)
             if (!Graph.TraverseBindResultSourceWrittenArgument(
-                    Source, I, Source.Written->arguments()[I])) return false;
+                    Source, I, Source.Written->arguments()[I])) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
         for (const auto *Arguments : {Source.Canonical, Source.Sugared})
           for (unsigned I = 0; I < Arguments->size(); ++I)
-            if (!Graph.TraverseBindResultSourceArgument(Source, I, Arguments->get(I))) return false;
+            if (!Graph.TraverseBindResultSourceArgument(Source, I, Arguments->get(I))) { std::fprintf(stderr, "BIND_UNUSED_PACKET_FIELDS constraint=%d canonical=%u sugared=%u parameters=%u overflow=%d origin=%d storage=%d selection=%d kind=%u defaults=%zu parameterTypes=%zu\n", Source.FunctionalBindConstraint, Source.Canonical ? Source.Canonical->size() : 0U, Source.Sugared ? Source.Sugared->size() : 0U, Parameters ? Parameters->size() : 0U, Source.DefaultsOverflow, bool(Source.Origin), bool(Source.WrittenStorageClass), Source.Selection != nullptr, unsigned(Source.Kind), Source.Defaults.size(), Source.ParameterTypes.size()); std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=source line=%d name=%s\n", __LINE__, Source.Template ? Source.Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
         CompletedSources.insert(&Source);
         return true;
       });
@@ -19370,24 +19391,24 @@ class BindSourceProof {
     return Graph.withBindSourceChild([&] {
       const auto *Template = Type ? dyn_cast_or_null<TemplateDecl>(
           Type->getTemplateName().getAsTemplateDecl()) : nullptr;
-      if (!Type || !Template || !family(Template)) return false;
+      if (!Type || !Template || !family(Template)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=typeSource line=%d name=%s\n", __LINE__, Template ? Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
       bool Found = false;
       for (const auto *Use : Sources) {
         if (!Use || Use->Kind != TemplateSourceKind::Type || Use->Type != Type) continue;
         if (Use->Template != Template || Use->Declaration || !Use->Written ||
-            Use->Instantiation || Use->Selection) return false;
+            Use->Instantiation || Use->Selection) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=typeSource line=%d name=%s\n", __LINE__, Template ? Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
         if (!Graph.withBindScalarConditionalSource(*Use, [&] {
-              if (!source(*Use, Template->getTemplateParameters())) return false;
+              if (!source(*Use, Template->getTemplateParameters())) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=typeSource line=%d name=%s\n", __LINE__, Template ? Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
               if (Type->isTypeAlias()) {
                 if (!Use->Underlying || Use->Underlying->getType().isNull() ||
                     !Context.hasSameType(Use->Underlying->getType(), Type->getAliasedType()) ||
-                    !Graph.TraverseBindAliasUnderlying(Type, Use->Underlying)) return false;
-              } else if (Use->Underlying) return false;
+                    !Graph.TraverseBindAliasUnderlying(Type, Use->Underlying)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=typeSource line=%d name=%s\n", __LINE__, Template ? Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
+              } else if (Use->Underlying) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=typeSource line=%d name=%s\n", __LINE__, Template ? Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
               return true;
-            })) return false;
+            })) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=typeSource line=%d name=%s\n", __LINE__, Template ? Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
         Found = true;
       }
-      if (!Found) return false;
+      if (!Found) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=typeSource line=%d name=%s\n", __LINE__, Template ? Template->getQualifiedNameAsString().c_str() : "<none>"); return false; }
       return true;
     });
   }
@@ -19471,7 +19492,7 @@ class BindSourceProof {
       const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
       if (!Instance) return family(Record) && Record->isDependentContext();
       const auto *Primary = Instance->getSpecializedTemplate();
-      if (!Primary || !family(Instance)) return false;
+      if (!Primary || !family(Instance)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       if (CompletedRecords.count(Record)) return true;
       if (ActiveUnusedVoidConversion && Instance == ActiveUnusedVoidConversion->Record)
         return unusedVoidConversionDeclarationSource(Instance);
@@ -19481,9 +19502,9 @@ class BindSourceProof {
         for (const auto *Use : CompletedSources)
           if (Use && Use->Template == Primary && same(Use->Canonical, &Instance->getTemplateArgs()) &&
               Graph.bindFunctionalBindConjunctionOperand(Instance, *Use)) return true;
-        return false;
+        { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       }
-      if (!ActiveRecords.insert(Record).second) return false;
+      if (!ActiveRecords.insert(Record).second) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       auto Restore = llvm::make_scope_exit([&] { ActiveRecords.erase(Record); });
       if (const auto *Partial = Instance->getSpecializedTemplateOrPartial()
               .dyn_cast<ClassTemplatePartialSpecializationDecl *>()) {
@@ -19494,28 +19515,28 @@ class BindSourceProof {
           if (Use->Kind == TemplateSourceKind::PartialDeduction) {
             if (Deduction || Use->Template != Partial || Use->Written ||
                 !same(Use->Canonical, &Instance->getTemplateInstantiationArgs()) ||
-                !Use->Defaults.empty()) return false;
+                !Use->Defaults.empty()) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
             Deduction = Use;
           } else if (Use->Kind == TemplateSourceKind::PartialPattern) {
             if (Pattern || Use->Template != Primary || !Use->Written ||
-                !same(Use->Canonical, &Instance->getTemplateArgs())) return false;
+                !same(Use->Canonical, &Instance->getTemplateArgs())) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
             Pattern = Use;
           }
         }
         if (!Deduction || !Pattern || Deduction->Selection != Pattern->Selection ||
-            !family(Partial)) return false;
-        if (!source(*Deduction, Partial->getTemplateParameters())) return false;
+            !family(Partial)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
+        if (!source(*Deduction, Partial->getTemplateParameters())) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
         const auto *Original = Partial->getTemplateArgsAsWritten();
         if (!Original || !Graph.withBindPartialPatternSource(Instance, *Pattern, [&] {
-              if (!source(*Pattern, Primary->getTemplateParameters())) return false;
+              if (!source(*Pattern, Primary->getTemplateParameters())) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
               return Graph.withBindTemplateParameters(Partial, Partial->getTemplateParameters(), [&] {
                 for (const auto &Argument : Original->arguments())
-                  if (!Graph.TraverseTemplateArgumentLoc(Argument)) return false;
+                  if (!Graph.TraverseTemplateArgumentLoc(Argument)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
                 return true;
               });
-            })) return false;
+            })) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       } else if (Instance->getSpecializedTemplateOrPartial().get<ClassTemplateDecl *>() != Primary)
-        return false;
+        { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=recordSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       CompletedRecords.insert(Record);
       return true;
     });
@@ -19773,6 +19794,9 @@ class BindSourceProof {
         Context.hasSameType(Base.getType(), Context.getRecordType(Owner));
   }
   std::optional<bool> scalarConstantValueSource(const DeclRefExpr *Reference, const VarDecl *Variable) {
+    if (Variable && Variable->getIdentifier() && Variable->getName() == "value")
+      std::fprintf(stderr, "BIND_UNUSED_SCALAR_CONTEXT parameter=%d complete=%d variable=%s\n",
+          bool(ActiveScalarParameter), bool(ActiveCompleteCall), Variable->getQualifiedNameAsString().c_str());
     const bool ConstructorBooleanSource = ActiveCallTupleConstructor && Variable &&
         Context.hasSameType(Variable->getType().getUnqualifiedType(), Context.BoolTy);
     if ((!ActiveScalarParameter && !ActiveCompleteCall && !ConstructorBooleanSource) ||
@@ -19794,18 +19818,18 @@ class BindSourceProof {
         !Context.hasSameType(Owner->getTemplateArgs()[0].getAsType(), Variable->getType().getUnqualifiedType()) ||
         !Context.hasSameType(Owner->getTemplateArgs()[1].getIntegralType(), Variable->getType().getUnqualifiedType()) ||
         !(Context.hasSameType(Variable->getType().getUnqualifiedType(), Context.BoolTy) ||
-          Context.hasSameType(Variable->getType().getUnqualifiedType(), Context.IntTy) || EmptyCallSize)) return false;
+          Context.hasSameType(Variable->getType().getUnqualifiedType(), Context.IntTy) || EmptyCallSize)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=scalarConstantValueSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
     // A qualifier may read the same shared false value while proving a
     // different trait. Finish the real definition before proving that name.
     // Every reference still closes its own qualifier below.
     if (!CompletedScalarValues.count(Variable)) {
-      if (!ActiveScalarValues.insert(Variable).second) return false;
+      if (!ActiveScalarValues.insert(Variable).second) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=scalarConstantValueSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       auto Restore = llvm::make_scope_exit([&] { ActiveScalarValues.erase(Variable); });
       if (!Graph.TraverseTypeLoc(Variable->getTypeSourceInfo()->getTypeLoc()) ||
-          !Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()))) return false;
+          !Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()))) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=scalarConstantValueSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       CompletedScalarValues.insert(Variable);
     }
-    if (!recordSource(Owner)) return false;
+    if (!recordSource(Owner)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=scalarConstantValueSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
     const auto Qualifier = Reference->getQualifierLoc();
     return (!Qualifier || Graph.TraverseTypeLoc(Qualifier.getTypeLoc())) && Graph.bindSourceComplete();
   }
@@ -19924,19 +19948,22 @@ class BindSourceProof {
     return Graph.withBindSourceChild([&] {
       const auto *Variable = Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
       if (!Variable || !family(Variable) || !Variable->getType().isConstQualified() ||
-          Variable->getType().isVolatileQualified() || !Variable->hasInit()) return false;
+          Variable->getType().isVolatileQualified() || !Variable->hasInit()) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=variableSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       return withWeakDerivesVariableSource(Variable, [&] {
-      if (!weakHasResultVariableSource(Variable)) return false;
-      if (const auto Constant = scalarConstantValueSource(Reference, Variable)) return *Constant;
+      if (!weakHasResultVariableSource(Variable)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=variableSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
+      if (const auto Constant = scalarConstantValueSource(Reference, Variable)) {
+        if (!*Constant) std::fprintf(stderr, "BIND_UNUSED_SCALAR_CONSTANT_RESULT result=0 variable=%s\n", Variable->getQualifiedNameAsString().c_str());
+        return *Constant;
+      }
       if (CompletedVariables.count(Variable)) return true;
-      if (!ActiveVariables.insert(Variable).second) return false;
+      if (!ActiveVariables.insert(Variable).second) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=variableSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       auto Restore = llvm::make_scope_exit([&] { ActiveVariables.erase(Variable); });
       if (const auto *Instance = dyn_cast<VarTemplateSpecializationDecl>(Variable)) {
         const auto *Primary = Instance->getSpecializedTemplate();
         if (!Primary || !family(Primary) ||
             Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
             Instance->getSpecializedTemplateOrPartial().dyn_cast<VarTemplateDecl *>() != Primary)
-          return false;
+          { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=variableSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
         bool Found = false;
         for (const auto *Use : Sources) {
           if (!Use || Use->Kind != TemplateSourceKind::VariableUse ||
@@ -19947,19 +19974,19 @@ class BindSourceProof {
               (Use->Underlying
                   ? (!Context.hasSameType(Use->Underlying->getType(), Instance->getType()) ||
                      !Graph.TraverseTypeLoc(Use->Underlying->getTypeLoc()))
-                  : !completeCallInvocableVariableSource(Instance, *Use, Reference))) return false;
+                  : !completeCallInvocableVariableSource(Instance, *Use, Reference))) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=variableSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
           Found = true;
         }
-        if (!Found) return false;
+        if (!Found) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=variableSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       } else {
         const auto *Owner = dyn_cast<CXXRecordDecl>(Variable->getDeclContext());
-        if (!Variable->isStaticDataMember() || !Owner || !recordSource(Owner)) return false;
+        if (!Variable->isStaticDataMember() || !Owner || !recordSource(Owner)) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=variableSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
         const auto Qualifier = Reference->getQualifierLoc();
-        if (Qualifier && !Graph.TraverseTypeLoc(Qualifier.getTypeLoc())) return false;
+        if (Qualifier && !Graph.TraverseTypeLoc(Qualifier.getTypeLoc())) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=variableSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       }
       if (!Variable->getTypeSourceInfo() ||
           !Graph.TraverseTypeLoc(Variable->getTypeSourceInfo()->getTypeLoc()) ||
-          !Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()))) return false;
+          !Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()))) { std::fprintf(stderr, "BIND_UNUSED_PACKET_EDGE scope=variableSource line=%d name=%s\n", __LINE__, "<source-child>"); return false; }
       CompletedVariables.insert(Variable);
       return true;
       });
@@ -19971,24 +19998,28 @@ class BindSourceProof {
       const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
       const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
       if (!Expression || !Function || !Primary || !Arguments || !Signature || !family(Function) ||
-          Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+          Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=functionSource line=19970\n"); return false; }
       bool Found = false;
       for (const auto *Selection : Selections) {
         if (!Selection || Selection->Expression != Expression || Selection->Function != Function) continue;
-        if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
+        if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=functionSource line=19974\n"); return false; }
         bool UseFound = false;
         for (const auto *Use : Sources) {
           if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
               Use->Location != Selection->Location) continue;
           if (Use->Template != Primary || Use->Type || Use->Underlying || Use->Written ||
               Use->Instantiation || Use->Selection || !same(Use->Canonical, Arguments) ||
-              !source(*Use, Primary->getTemplateParameters())) return false;
+              !source(*Use, Primary->getTemplateParameters())) { std::fprintf(stderr, "BIND_UNUSED_FUNCTION_PACKET template=%d type=%d underlying=%d written=%d instantiation=%d selection=%d canonical=%d constraint=%d defaults=%zu parameterTypes=%zu\n",
+                  Use->Template == Primary, Use->Type != nullptr, Use->Underlying != nullptr,
+                  Use->Written != nullptr, Use->Instantiation, Use->Selection != nullptr,
+                  same(Use->Canonical, Arguments), Use->FunctionalBindConstraint, Use->Defaults.size(), Use->ParameterTypes.size());
+              std::fprintf(stderr, "BIND_UNUSED_EDGE scope=functionSource line=19981\n"); return false; }
           UseFound = true;
         }
-        if (!UseFound) return false;
+        if (!UseFound) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=functionSource line=19984\n"); return false; }
         Found = true;
       }
-      if (!Found) return false;
+      if (!Found) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=functionSource line=19987\n"); return false; }
       return Signature();
     });
   }
@@ -20118,12 +20149,15 @@ class BindSourceProof {
     });
   }
   bool functionUse(const Expr *Expression, const FunctionDecl *Function) {
-    return functionSource(Expression, Function, [&] {
+    const bool Complete = functionSource(Expression, Function, [&] {
       if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Function))
         return Graph.TraverseBindConstructorSignature(Constructor);
       return Function->getTypeSourceInfo() && Graph.function(Function) &&
           Graph.TraverseTypeLoc(Function->getTypeSourceInfo()->getTypeLoc());
     });
+    if (!Complete) std::fprintf(stderr, "BIND_UNUSED_FUNCTION_USE name=%s\n",
+        Function ? Function->getQualifiedNameAsString().c_str() : "<null>");
+    return Complete;
   }
   bool declvalSource(const CallExpr *Call, QualType Input) {
     if (ActiveDeclval) return false;
@@ -20351,7 +20385,7 @@ class BindSourceProof {
       if (Call == Probe.Invoke ||
           std::find(Probe.OriginalInvokes.begin(), Probe.OriginalInvokes.end(), Call) != Probe.OriginalInvokes.end()) {
         for (const auto *Declval : Probe.Declvals)
-          if (!CompletedDeclvalInputs.count(Declval)) return false;
+          if (!CompletedDeclvalInputs.count(Declval)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callSource line=20350\n"); return false; }
         return Call == Probe.Invoke ? Function == Probe.Dispatcher.Function : !Function;
       }
     }
@@ -20376,7 +20410,7 @@ class BindSourceProof {
       if (Call == Description.SignatureCall || Call == Description.SpecializedCall ||
           Call == PrimaryNoexcept || Call == ActualNoexcept) {
         for (const auto *Declval : Description.SpecializedDeclvals)
-          if (!CompletedDeclvalInputs.count(Declval)) return false;
+          if (!CompletedDeclvalInputs.count(Declval)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callSource line=20375\n"); return false; }
         return true; // Exact re-described metadata expressions, never an SDK runtime call.
       }
     }
@@ -20389,12 +20423,12 @@ class BindSourceProof {
       const auto *Lookup = Call
           ? dyn_cast<UnresolvedLookupExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
       if (Function || !Call || Call->getNumArgs() || !Lookup || Lookup->requiresADL() ||
-          Lookup->getNumDecls() != 1 || Original->second.empty()) return false;
+          Lookup->getNumDecls() != 1 || Original->second.empty()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callSource line=20388\n"); return false; }
       for (const auto *Concrete : Original->second) {
         const auto *Selected = Concrete ? Concrete->getDirectCallee() : nullptr;
         if (!Selected || !CompletedDeclvalInputs.count(Concrete) ||
             !DeclvalInputs.count(Concrete) ||
-            *Lookup->decls_begin() != Selected->getPrimaryTemplate()) return false;
+            *Lookup->decls_begin() != Selected->getPrimaryTemplate()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callSource line=20393\n"); return false; }
       }
       return true;
     }
@@ -20408,7 +20442,7 @@ class BindSourceProof {
         ? dyn_cast<DeclRefExpr>(Call->getArg(0)->IgnoreParenImpCasts()) : nullptr;
     const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
     if (!Function || !Function->getIdentifier() || Function->getName() != "forward" ||
-        !Parameter || !approvedFunctionalForwardingCall(S, SM, Call, Parameter)) return false;
+        !Parameter || !approvedFunctionalForwardingCall(S, SM, Call, Parameter)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callSource line=20407\n"); return false; }
     const auto *Builtin = Function->getAttr<BuiltinAttr>();
     if (Builtin && Builtin->isImplicit() && Builtin->getID() == Builtin::BIforward &&
         Function->getBuiltinID() == Builtin::BIforward && !Function->getDefinition())
@@ -20482,9 +20516,9 @@ class BindSourceProof {
   bool withTupleReferenceAssertionSources(
       const FunctionalBindTupleConstructionSource &Tuple,
       const std::function<bool()> &Complete) {
-    if (!TupleReferenceQueries.empty() || !Complete) return false;
+    if (!TupleReferenceQueries.empty() || !Complete) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withTupleReferenceAssertionSources line=20481\n"); return false; }
     for (const auto *Assertion : Tuple.Assertions) {
-      if (!Assertion || !Assertion->getAssertExpr()) return false;
+      if (!Assertion || !Assertion->getAssertExpr()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withTupleReferenceAssertionSources line=20483\n"); return false; }
       const auto *Constructor = dyn_cast<CXXConstructorDecl>(Assertion->getDeclContext());
       bool Bound = false;
       for (const auto *Leaf : Tuple.Leaves) Bound |= Leaf->getConstructor() == Constructor;
@@ -20492,20 +20526,20 @@ class BindSourceProof {
       if (const auto *Constant = dyn_cast<ConstantExpr>(Expression)) Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
       const auto *Query = dyn_cast<CallExpr>(Expression);
       if (!Bound || !Query || TupleReferenceQueries.size() == 64 ||
-          !TupleReferenceQueries.emplace(Query, Constructor).second) return false;
+          !TupleReferenceQueries.emplace(Query, Constructor).second) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withTupleReferenceAssertionSources line=20491\n"); return false; }
     }
     auto RestoreQueries = llvm::make_scope_exit([&] { TupleReferenceQueries.clear(); });
     for (const auto *Assertion : Tuple.Assertions)
       if (!Assertion || !family(Assertion) || Assertion->isFailed() ||
           !Assertion->getAssertExpr() ||
-          !Graph.TraverseStmt(const_cast<Expr *>(Assertion->getAssertExpr()))) return false;
+          !Graph.TraverseStmt(const_cast<Expr *>(Assertion->getAssertExpr()))) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withTupleReferenceAssertionSources line=20497\n"); return false; }
     return Complete();
   }
 
   bool withCallTupleSources(const FunctionalBindCallSource &Call,
       const std::function<bool()> &Complete) {
     if (!Complete || !Call.SourceCall || Call.Storage.Record != Storage.Record ||
-        !ClosedCallTupleConstructors.empty()) return false;
+        !ClosedCallTupleConstructors.empty()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
     if (Call.CallForwards.empty()) return Complete();
     const auto Actual = describeFunctionalBindCallSource(S, SM, Call.SourceCall, Context);
     const auto Tuple = Actual
@@ -20514,11 +20548,11 @@ class BindSourceProof {
         Actual->Method != Call.Method || Actual->Object != Call.Object ||
         Actual->CallArguments != Call.CallArguments || Actual->CallForwards != Call.CallForwards ||
         Actual->CallForwards.size() > 2 || Tuple->Tuple != Actual->CallArguments ||
-        !Graph.bindFunctionalBindCallTupleTags(*Actual, *Tuple)) return false;
+        !Graph.bindFunctionalBindCallTupleTags(*Actual, *Tuple)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
     auto ConstructorSource = [&](const CXXConstructExpr *Construction) {
       if (!Construction || !Construction->getConstructor() || ActiveCallTupleConstructor ||
           ActiveScalarParameter || ActiveCompleteCall ||
-          !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+          !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
       // Only these freshly described incoming constructors may use the shared
       // boolean definition proof. Every reference still closes its qualifier.
       ActiveCallTupleConstructor = Construction->getConstructor();
@@ -20529,31 +20563,31 @@ class BindSourceProof {
       });
       return functionUse(Construction, Construction->getConstructor());
     };
-    if (!ConstructorSource(Tuple->Tuple) || !ConstructorSource(Tuple->Implementation)) return false;
+    if (!ConstructorSource(Tuple->Tuple) || !ConstructorSource(Tuple->Implementation)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
     for (const auto *Leaf : Tuple->Leaves)
-      if (!ConstructorSource(Leaf)) return false;
+      if (!ConstructorSource(Leaf)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
     // Keep exact incoming occurrences active through the complete selected and
     // original operator bodies, including ordinary traversal of their children.
-    if (!FactoryBuiltinForwards.empty()) return false;
+    if (!FactoryBuiltinForwards.empty()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
     for (const auto *Forward : Actual->CallForwards) FactoryBuiltinForwards.insert(Forward);
     for (const auto *Forward : Tuple->Forwards) FactoryBuiltinForwards.insert(Forward);
-    if (FactoryBuiltinForwards.count(nullptr) || FactoryBuiltinForwards.size() > 64) return false;
+    if (FactoryBuiltinForwards.count(nullptr) || FactoryBuiltinForwards.size() > 64) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
     auto RestoreForwards = llvm::make_scope_exit([&] { FactoryBuiltinForwards.clear(); });
-    if (!Graph.TraverseBindCallPhysicalStorageSource()) return false;
+    if (!Graph.TraverseBindCallPhysicalStorageSource()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
     for (const auto *Forward : Actual->CallForwards)
-      if (!callSource(Forward)) return false;
+      if (!callSource(Forward)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
     for (const auto *Forward : Tuple->Forwards)
-      if (!callSource(Forward)) return false;
+      if (!callSource(Forward)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
     return withTupleReferenceAssertionSources(*Tuple, [&] {
       for (const auto *Copy : Tuple->Copies)
-        if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) return false;
+        if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
       const auto Tags = describeFunctionalBindCallTupleTagSources(S, SM, *Actual, Context);
-      if (!Tags || Tags->size() != 4) return false;
+      if (!Tags || Tags->size() != 4) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
       for (const auto &Tag : *Tags)
-        if (!Graph.bindFunctionalBindSpecialMember(Tag.Construction->getConstructor(), true)) return false;
+        if (!Graph.bindFunctionalBindSpecialMember(Tag.Construction->getConstructor(), true)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
       if (!Graph.bindSourceComplete() || !Actual->CallArguments->getConstructor() ||
           !ClosedCallTupleConstructors.emplace(Actual->CallArguments,
-              Actual->CallArguments->getConstructor()).second) return false;
+              Actual->CallArguments->getConstructor()).second) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=withCallTupleSources line=%d\n", __LINE__); return false; }
       auto RestoreConstruction = llvm::make_scope_exit([&] { ClosedCallTupleConstructors.clear(); });
       return Complete();
     });
@@ -20649,18 +20683,18 @@ public:
   bool callCompleteSource(const FunctionalBindCallSource &Call) {
     if (!Ready || ActiveCompleteCall || ActiveUnusedVoidConversion || !ClosedCompleteCalls.empty() || !ClosedCallTupleConstructors.empty() ||
         !Call.SourceCall || !S.owns(SM, Call.SourceCall->getExprLoc()) ||
-        Call.Storage.Record != Storage.Record) return false;
+        Call.Storage.Record != Storage.Record) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20635\n"); return false; }
     const auto Actual = describeFunctionalBindCallSource(S, SM, Call.SourceCall, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Object != Call.Object || Actual->Storage.Record != Storage.Record ||
-        Actual->Arguments.empty() || Actual->Arguments.size() > 2) return false;
+        Actual->Arguments.empty() || Actual->Arguments.size() > 2) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20640\n"); return false; }
     // All selected children and both metadata probe alternatives close in
     // this proof and share its original graph budget.
-    if (!callAuxiliary(*Actual)) return false;
+    if (!callAuxiliary(*Actual)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20643\n"); return false; }
     return withCallTupleSources(*Actual, [&] {
       if (!callGetSource(*Actual) || !callUnwrapSource(*Actual) ||
-          !callInvokeBody(*Actual)) return false;
+          !callInvokeBody(*Actual)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20646\n"); return false; }
       std::vector<QualType> Forwarded;
       for (const auto &Argument : Actual->Arguments) Forwarded.push_back(Argument.ForwardedType);
       std::set<const CXXMethodDecl *> Probes;
@@ -20674,12 +20708,12 @@ public:
             S, SM, Function, Storage, Forwarded, Context);
         if (!Probe) continue;
         if (Probes.size() == 64 || !tryCallSignatureSource(*Probe) ||
-            !tryCallFallbackSource(*Probe) || !Graph.bindFunctionalBindResultProbe(*Probe)) return false;
+            !tryCallFallbackSource(*Probe) || !Graph.bindFunctionalBindResultProbe(*Probe)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20660\n"); return false; }
         Probes.insert(Function);
         CompletedProbes.push_back(*Probe);
       }
-      if (Probes.empty()) return false;
-      if (ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+      if (Probes.empty()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20664\n"); return false; }
+      if (ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20665\n"); return false; }
       ActiveCompleteCall = &*Actual;
       auto Restore = llvm::make_scope_exit([&] {
         ClosedCompleteCalls.clear();
@@ -20688,56 +20722,56 @@ public:
         ActiveCompleteCall = nullptr;
       });
       auto Close = [&](const CallExpr *Expression, const FunctionDecl *Function) {
-        if (!Expression || ClosedCompleteCalls.size() == 64) return false;
+        if (!Expression || ClosedCompleteCalls.size() == 64) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20674\n"); return false; }
         const auto Inserted = ClosedCompleteCalls.emplace(Expression, Function);
         return Inserted.second || Inserted.first->second == Function;
       };
       for (const auto &Argument : Actual->Arguments)
         if (!Argument.Get->getDirectCallee() || !Argument.Unwrap->getDirectCallee() ||
             !Close(Argument.Get, Argument.Get->getDirectCallee()) ||
-            !Close(Argument.Unwrap, Argument.Unwrap->getDirectCallee())) return false;
+            !Close(Argument.Unwrap, Argument.Unwrap->getDirectCallee())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20681\n"); return false; }
       if (!Actual->Invoke->getDirectCallee() ||
-          !Close(Actual->Invoke, Actual->Invoke->getDirectCallee())) return false;
+          !Close(Actual->Invoke, Actual->Invoke->getDirectCallee())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20683\n"); return false; }
 
       for (const auto &Probe : CompletedProbes) {
         const auto &Dispatcher = Probe.Dispatcher;
         if (!Probe.ResultCall || !Probe.Invoke || !Probe.Function || !Dispatcher.Function ||
             Probe.ResultCall->getDirectCallee() != Probe.Function ||
             Probe.Invoke->getDirectCallee() != Dispatcher.Function ||
-            !Close(Probe.ResultCall, Probe.Function) || !Close(Probe.Invoke, Dispatcher.Function)) return false;
+            !Close(Probe.ResultCall, Probe.Function) || !Close(Probe.Invoke, Dispatcher.Function)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20690\n"); return false; }
         // These exact concrete declval calls closed their selected and original
         // signatures above. Their ordinary written children still traverse here.
         auto CloseDeclval = [&](const CallExpr *Expression) {
           const auto *Selected = Expression ? Expression->getDirectCallee() : nullptr;
           const auto Input = DeclvalInputs.find(Expression);
           if (!Selected || !CompletedDeclvalInputs.count(Expression) || Input == DeclvalInputs.end())
-            return false;
+            { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20697\n"); return false; }
           const auto Source = describeFunctionalBindDeclvalSource(S, SM, Expression, Input->second, Context);
           if (!Source || Source->Call != Expression || Source->Function != Selected || !Source->Helper ||
               !Source->HelperCall || Source->HelperCall->getDirectCallee() != Source->Helper ||
-              !Source->PrimaryHelperCall || Source->PrimaryHelperCall->getDirectCallee()) return false;
+              !Source->PrimaryHelperCall || Source->PrimaryHelperCall->getDirectCallee()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20701\n"); return false; }
           // The completed outer signature consumed these exact real helper
           // declarations. Reentry still walks their ordinary types and children.
           return Close(Expression, Selected) && Close(Source->HelperCall, Source->Helper) &&
               Close(Source->PrimaryHelperCall, nullptr);
         };
         for (const auto *Expression : Probe.Declvals)
-          if (!CloseDeclval(Expression)) return false;
+          if (!CloseDeclval(Expression)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20708\n"); return false; }
         for (const auto *Expression : Dispatcher.SpecializedDeclvals)
-          if (!CloseDeclval(Expression)) return false;
+          if (!CloseDeclval(Expression)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20710\n"); return false; }
         for (const auto *Expression : Probe.OriginalInvokes)
-          if (!Expression || Expression->getDirectCallee() || !Close(Expression, nullptr)) return false;
+          if (!Expression || Expression->getDirectCallee() || !Close(Expression, nullptr)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20712\n"); return false; }
         const auto *PrimaryException = dyn_cast_or_null<CXXNoexceptExpr>(Dispatcher.PrimaryException);
         const auto *PrimaryNoexcept = PrimaryException
             ? dyn_cast_or_null<CallExpr>(Check.stripped(PrimaryException->getOperand())) : nullptr;
         const auto *ActualException = dyn_cast_or_null<CXXNoexceptExpr>(Dispatcher.ActualException);
         const auto *ActualNoexcept = ActualException
             ? dyn_cast_or_null<CallExpr>(Check.stripped(ActualException->getOperand())) : nullptr;
-        if (!Dispatcher.SignatureCall || !Dispatcher.SpecializedCall) return false;
+        if (!Dispatcher.SignatureCall || !Dispatcher.SpecializedCall) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20719\n"); return false; }
         for (const auto *Expression : {Dispatcher.SignatureCall, Dispatcher.SpecializedCall,
                                        PrimaryNoexcept, ActualNoexcept}) {
           if (!Expression) continue;
-          if (Expression->getDirectCallee() || !Close(Expression, nullptr)) return false;
+          if (Expression->getDirectCallee() || !Close(Expression, nullptr)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20723\n"); return false; }
         }
       }
       // The exact probe and dispatcher sources closed above in this same graph.
@@ -20752,9 +20786,9 @@ public:
             !Use || Use->requiresADL() || Use->getNumDecls() != Count ||
             Use->getName().getNameKind() != DeclarationName::Identifier ||
             Use->getName().getAsIdentifierInfo()->getName() != Name ||
-            !Check.location(Expression->getExprLoc(), {"__functional/bind.h"})) return false;
+            !Check.location(Expression->getExprLoc(), {"__functional/bind.h"})) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20738\n"); return false; }
         const auto *Chosen = Selected ? Selected->getPrimaryTemplate() : nullptr;
-        if (Selected && !Chosen) return false;
+        if (Selected && !Chosen) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20740\n"); return false; }
         std::set<const FunctionTemplateDecl *> Seen;
         std::vector<const NamedDecl *> Declarations;
         unsigned Matches = 0;
@@ -20763,7 +20797,7 @@ public:
           const auto *Function = Template ? Template->getTemplatedDecl() : nullptr;
           if (!Template || !Function || isa<CXXMethodDecl>(Function) ||
               !Function->getIdentifier() || Function->getName() != Name ||
-              !Seen.insert(Template->getCanonicalDecl()).second) return false;
+              !Seen.insert(Template->getCanonicalDecl()).second) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20749\n"); return false; }
           bool Family = false;
           if (Name == "get")
             Family = Check.family(Template, {"tuple", "__fwd/tuple.h", "__utility/pair.h", "__fwd/pair.h", "array", "__fwd/array.h"});
@@ -20773,12 +20807,12 @@ public:
             Family = Check.family(Template, {"__utility/forward.h"});
           else
             Family = Check.family(Template, {"__functional/bind.h"});
-          if (!Family) return false;
+          if (!Family) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20759\n"); return false; }
           Matches += Chosen && Template->getCanonicalDecl() == Chosen->getCanonicalDecl();
           Declarations.push_back(Declaration);
         }
-        if (Chosen && Matches != 1) return false;
-        if (Name == "get" && !LookupUses.emplace(Use, std::move(Declarations)).second) return false;
+        if (Chosen && Matches != 1) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20763\n"); return false; }
+        if (Name == "get" && !LookupUses.emplace(Use, std::move(Declarations)).second) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20764\n"); return false; }
         return Close(Expression, nullptr);
       };
       auto Parameter = [&](const Expr *Expression, const FunctionDecl *Function, unsigned Index) {
@@ -20816,11 +20850,11 @@ public:
           !Parameter(OriginalInvoke->getArg(0), ApplyPattern, 0) ||
           !Lookup(OriginalGet, "get", 16, Actual->Arguments.front().Get->getDirectCallee()) ||
           !Lookup(OriginalUnwrap, "__mu", 4, Actual->Arguments.front().Unwrap->getDirectCallee()) ||
-          !Lookup(OriginalInvoke, "__invoke", 8, Actual->Invoke->getDirectCallee())) return false;
+          !Lookup(OriginalInvoke, "__invoke", 8, Actual->Invoke->getDirectCallee())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20802\n"); return false; }
       for (unsigned I : {0u, 1u, 3u}) {
         const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
         if (!Parameter || Parameter->getIndex() != I || Parameter->isParameterPack() ||
-            Parameter->hasDefaultArgument() || !family(Parameter)) return false;
+            Parameter->hasDefaultArgument() || !family(Parameter)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20806\n"); return false; }
       }
       // Mixed scalar/reference-wrapper slots may select different __mu
       // primaries. Bind every completed child to this exact original lookup.
@@ -20830,14 +20864,14 @@ public:
                  std::make_pair(OriginalUnwrap, Argument.Unwrap->getDirectCallee())}) {
           const auto *Use = dyn_cast<UnresolvedLookupExpr>(Original->getCallee());
           const auto *Chosen = Concrete ? Concrete->getPrimaryTemplate() : nullptr;
-          if (!Use || !Chosen) return false;
+          if (!Use || !Chosen) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20816\n"); return false; }
           unsigned Matches = 0;
           for (const auto *Declaration : Use->decls()) {
             const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
-            if (!Template) return false;
+            if (!Template) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20820\n"); return false; }
             Matches += Template->getCanonicalDecl() == Chosen->getCanonicalDecl();
           }
-          if (Matches != 1) return false;
+          if (Matches != 1) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20823\n"); return false; }
         }
       }
 
@@ -20846,7 +20880,7 @@ public:
       const auto *StorageRecord = dyn_cast<ClassTemplateSpecializationDecl>(Storage.Record);
       const auto *StorageTemplate = StorageRecord ? StorageRecord->getSpecializedTemplate() : nullptr;
       const auto *OriginalOwner = StorageTemplate ? StorageTemplate->getTemplatedDecl()->getDefinition() : nullptr;
-      if (!OriginalOwner) return false;
+      if (!OriginalOwner) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20832\n"); return false; }
       unsigned OriginalBodies = 0;
       std::set<const FunctionTemplateDecl *> SeenOperators;
       for (const auto *Template = Actual->Method->getPrimaryTemplate(); Template;
@@ -20858,31 +20892,31 @@ public:
             SeenOperators.size() == 64 || !SeenOperators.insert(Template).second ||
             !Check.family(Template, {"__functional/bind.h"}) ||
             Method->getOverloadedOperator() != OO_Call || Method->isConst() != Actual->Method->isConst() ||
-            Method->getNumParams() != 1 || !Method->getParamDecl(0)->isParameterPack()) return false;
+            Method->getNumParams() != 1 || !Method->getParamDecl(0)->isParameterPack()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20844\n"); return false; }
         Operators.emplace_back(Template, Method);
         if (Method->hasBody()) {
-          if (Method->getParent()->getCanonicalDecl() != OriginalOwner->getCanonicalDecl()) return false;
+          if (Method->getParent()->getCanonicalDecl() != OriginalOwner->getCanonicalDecl()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20847\n"); return false; }
           ++OriginalBodies;
-        } else if (!Template->getInstantiatedFromMemberTemplate()) return false;
+        } else if (!Template->getInstantiatedFromMemberTemplate()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20849\n"); return false; }
       }
-      if (OriginalBodies != 1) return false;
+      if (OriginalBodies != 1) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20851\n"); return false; }
       auto BodyMembers = [&](const CXXMethodDecl *Method, const CallExpr *Expression) {
-        if (!Method || !Expression || Expression->getNumArgs() != 4) return false;
+        if (!Method || !Expression || Expression->getNumArgs() != 4) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20853\n"); return false; }
         const auto *Owner = Method->getParent()->getDefinition();
         if (!Owner || (Owner->getCanonicalDecl() != OriginalOwner->getCanonicalDecl() &&
-            Owner->getCanonicalDecl() != Storage.Record->getCanonicalDecl())) return false;
+            Owner->getCanonicalDecl() != Storage.Record->getCanonicalDecl())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20856\n"); return false; }
         std::vector<const FieldDecl *> Fields(Owner->field_begin(), Owner->field_end());
-        if (Fields.size() != 2 || Fields[0]->getName() != "__f_" || Fields[1]->getName() != "__bound_args_") return false;
+        if (Fields.size() != 2 || Fields[0]->getName() != "__f_" || Fields[1]->getName() != "__bound_args_") { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20858\n"); return false; }
         for (unsigned I = 0; I < 2; ++I) {
           const auto *Member = dyn_cast_or_null<MemberExpr>(Check.stripped(Expression->getArg(I)));
           const auto *This = Member ? dyn_cast_or_null<CXXThisExpr>(Check.stripped(Member->getBase())) : nullptr;
           if (!Member || !Member->isArrow() || Member->getMemberDecl() != Fields[I] ||
               !This || !Context.hasSameType(This->getType(), Method->getThisType()) ||
-              !Members.emplace(Member, Fields[I]).second) return false;
+              !Members.emplace(Member, Fields[I]).second) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20864\n"); return false; }
         }
         return true;
       };
-      if (!BodyMembers(Actual->Method, Actual->Apply)) return false;
+      if (!BodyMembers(Actual->Method, Actual->Apply)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20868\n"); return false; }
       std::vector<const CallExpr *> OriginalApplies;
       for (const auto &[Template, Method] : Operators) {
         if (!Method->hasBody()) continue; // An unselected instantiated pattern has no body.
@@ -20904,13 +20938,13 @@ public:
         for (const auto *Declaration : Method->getParent()->decls()) {
           const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
           if (!Alias || !Alias->getIdentifier() || Alias->getName() != "__indices") continue;
-          if (IndexAlias) return false;
+          if (IndexAlias) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20890\n"); return false; }
           IndexAlias = Alias;
         }
         auto IndexType = Indices && Indices->getTypeSourceInfo() ? Indices->getTypeAsWritten() : QualType();
         if (!IndexType.isNull())
           if (const auto *Name = dyn_cast<ElaboratedType>(IndexType.getTypePtr())) {
-            if (Name->getQualifier()) return false;
+            if (Name->getQualifier()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20896\n"); return false; }
             IndexType = Name->getNamedType();
           }
         const auto *WrittenIndex = IndexType.isNull() ? nullptr : dyn_cast<TypedefType>(IndexType.getTypePtr());
@@ -20929,7 +20963,7 @@ public:
             WrittenIndex->getDecl() != IndexAlias || !IndexAlias->getTypeSourceInfo() ||
             !Tuple || !TupleRecord || Tuple->getTemplateName().getAsTemplateDecl() != TupleRecord->getSpecializedTemplate() ||
             !TupleParameter || TupleParameter->getDecl() != OwnPack ||
-            !Parameter(Forward->getArg(0), Method, 0) || !Lookup(Forward, "forward", 2, nullptr)) return false;
+            !Parameter(Forward->getArg(0), Method, 0) || !Lookup(Forward, "forward", 2, nullptr)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20915\n"); return false; }
         // The original forward-pack spelling closes independently of
         // the exact selected concrete calls proved in the incoming tuple scope.
         OriginalApplies.push_back(Expression);
@@ -20939,40 +20973,40 @@ public:
         if (!Function || !Prototype || Prototype->getExceptionSpecType() != EST_None ||
             Function->isVariadic() || Function->isInvalidDecl() || Function->isDeleted() ||
             !Function->getTypeSourceInfo() || !family(Function) || !Graph.function(Function) ||
-            !Graph.TraverseTypeLoc(Function->getTypeSourceInfo()->getTypeLoc())) return false;
+            !Graph.TraverseTypeLoc(Function->getTypeSourceInfo()->getTypeLoc())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20925\n"); return false; }
         for (const auto *Parameter : Function->parameters())
           if (Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() || !family(Parameter) ||
-              !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+              !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20928\n"); return false; }
         return true;
       };
       return Graph.withBindScalarConstraintSource([&] {
         return Graph.withBindTupleElementProjections(*Actual, [&] {
-          if (!Graph.TraverseBindTupleElementProjectionSources()) return false;
+          if (!Graph.TraverseBindTupleElementProjectionSources()) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20933\n"); return false; }
           return Graph.withBindSourceMemberUses(Members, [&] {
             return Graph.withBindSourceLookupUses(LookupUses, [&] {
               if (!functionSource(Actual->Apply, Apply, [&] {
                     for (const auto *Declaration : Apply->redecls())
-                      if (!Signature(Declaration)) return false;
+                      if (!Signature(Declaration)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20938\n"); return false; }
                     for (const auto *Template : ApplyTemplate->redecls()) {
                       const auto *Pattern = dyn_cast<FunctionDecl>(Template->getTemplatedDecl());
                       if (!Pattern || !Graph.withBindTemplateParameters(Template, Template->getTemplateParameters(), [&] {
-                            if (!Signature(Pattern)) return false;
+                            if (!Signature(Pattern)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20942\n"); return false; }
                             return !Pattern->hasBody() || Graph.TraverseStmt(const_cast<Stmt *>(Pattern->getBody()));
-                          })) return false;
+                          })) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20944\n"); return false; }
                     }
                     return Apply->hasBody() && Graph.TraverseStmt(const_cast<Stmt *>(Apply->getBody()));
-                  }) || !Close(Actual->Apply, Apply)) return false;
+                  }) || !Close(Actual->Apply, Apply)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20947\n"); return false; }
               for (const auto *Expression : OriginalApplies)
-                if (!Lookup(Expression, "__apply_functor", 1, Apply)) return false;
+                if (!Lookup(Expression, "__apply_functor", 1, Apply)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20949\n"); return false; }
               return functionSource(Actual->SourceCall, Actual->Method, [&] {
                 for (const auto *Declaration : Actual->Method->redecls())
-                  if (!Signature(Declaration)) return false;
+                  if (!Signature(Declaration)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20952\n"); return false; }
                 for (const auto &[Template, Method] : Operators)
                   if (!Graph.withBindTemplateParameters(Template, Template->getTemplateParameters(), [&] {
                         for (const auto *Declaration : Method->redecls())
-                          if (!Signature(Declaration)) return false;
+                          if (!Signature(Declaration)) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20956\n"); return false; }
                         return !Method->hasBody() || Graph.TraverseStmt(const_cast<Stmt *>(Method->getBody()));
-                      })) return false;
+                      })) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callCompleteSource line=20958\n"); return false; }
                 return Actual->Method->hasBody() &&
                     Graph.TraverseStmt(const_cast<Stmt *>(Actual->Method->getBody())) && Graph.bindSourceComplete();
               });
@@ -20985,7 +21019,7 @@ public:
 
   bool callAuxiliary(const FunctionalBindCallSource &Call) {
     if (!Ready || Call.Storage.Record != Storage.Record || !Call.SourceCall ||
-        !S.owns(SM, Call.SourceCall->getExprLoc())) return false;
+        !S.owns(SM, Call.SourceCall->getExprLoc())) { std::fprintf(stderr, "BIND_UNUSED_EDGE scope=callAuxiliary line=20971\n"); return false; }
     return Graph.TraverseBindCallAuxiliarySource(Call) && Graph.bindSourceComplete();
   }
   bool callTryCallFallback(const FunctionalBindCallSource &Call, const CXXMethodDecl *Function) {
