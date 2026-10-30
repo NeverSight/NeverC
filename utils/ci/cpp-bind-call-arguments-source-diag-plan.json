@@ -1,0 +1,132 @@
+{
+  "producer_manifest_sha256": "18eb72d30afc3c44c68abfd1020f0f664de3263c25187028982470988610c151",
+  "producer_components_artifact": {
+    "id": 12789872379,
+    "name": "cpp-not-fn-operator-components-remote-only-52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+    "digest": "sha256:62e526fea88d768d97d507ab866e2363dacfd55544bcc535d89da9d147e7785d"
+  },
+  "execution_binding_required": true,
+  "current_private_input_sha256": {
+    "Frontend.cpp": "cee61e8d7b6dca34e4acda37c8916b3878205a29604d356dad3f8e63276c0cf9",
+    "Lowering.cpp": "01bf7bdf9e09d6ab3fc5b96f5892c2c2c9b467160b8fbb2304c251c73f4b16a7",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "198468396574958d205caebb367fa60e241466915c907507f60c2d6d24b1464a",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "907e55674e3d0923818a0209c604eecb765b99226f79c91f4990767c31866179",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "bind_lowering_implemented": true,
+  "producer_commit": "52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+  "candidate_source_paths": [
+    "utils/ci/check-cpp-bind-call-arguments-source-diag.py",
+    "utils/ci/cpp-bind-call-arguments-source-diag-plan.json",
+    ".github/workflows/diagnose-cpp-template-source.yml",
+    "utils/ci/FrontendProtocolDriver.cpp",
+    "tests/neverc/TranslateTests.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/Frontend.h",
+    "neverc/lib/Translate/Cpp/Frontend/Lowering.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp",
+    "neverc/lib/Translate/Cpp/Frontend/IsolateSymbols.py",
+    "neverc/lib/Translate/Cpp/Frontend/AuditArchiveTests.py",
+    "utils/ci/check-cpp-bind-call-arguments-native40.py",
+    "utils/ci/cpp-bind-call-arguments-native40-plan.json"
+  ],
+  "target_abis": [
+    "x86_64-unknown-linux-gnu"
+  ],
+  "producer_private_input_sha256": {
+    "Frontend.cpp": "d5e4732cf9499501d124ea5adbcaf192a7b6ec39915c8662cd69e331e6ddb7f6",
+    "Lowering.cpp": "aacf0210dca3bb6d6f435c55a3323275d349743e703818e82e1f18298d39b6ef",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "cb678512a78a9dcc8229202c3a5b0b95e35e4f8a1d693ffdc97db707327a1248",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "ee5b66d539d1fff7542a156575d62145d504a2832ed334647616e58963808e7f",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "allowed_bridge_source_changes": [
+    "Frontend.cpp",
+    "Frontend.h",
+    "Lowering.cpp",
+    "MathSDK.cpp"
+  ],
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "producer_expected_run_conclusion": "failure",
+  "producer_actual_job": 122606984385,
+  "private_bind_admission_implemented": true,
+  "producer_small_artifact": {
+    "id": 12789573772,
+    "name": "cpp-not-fn-operator-component-52f1f36713ff3f5f0e3b7291a6aba28d129c0f8c",
+    "digest": "sha256:ca2dc033d2f6bf67e8e9cb4f7cebbcf0631a7e45218131c08ddc0273685e4d15"
+  },
+  "required_requests": 3,
+  "source_repair_commit": "ae04e3f25dabf247312a9841656d84b0a91af36c",
+  "producer_attempt": 1,
+  "cases": [
+    {
+      "name": "bind-fully-bound-value-copies",
+      "source": "#include <functional>\n#include <utility>\nint calls;\nint add(int a, int b) { ++calls; return a + b; }\nint main() {\n  auto f = std::bind(&add, 3, 4);\n  auto copy = f;\n  const auto fixed = copy;\n  if (f() != 7 || copy() != 7 || fixed() != 7 || std::move(copy)() != 7) return 1;\n  return calls != 4;\n}\n",
+      "source_sha256": "423b8da11cb05ebbcf04d72addc5d1317818a29ad0438742ef6b86097babd9d1",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-value",
+      "source": "#include <functional>\nint answer(){return 37;}\nint main(){auto f=std::bind(&answer);return f()!=37;}\n",
+      "source_sha256": "de9c183a26860cf349390ff7541b895ce21e8528252421584a44eb0848b8c40b",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-zero-bound-factory-once",
+      "source": "#include <functional>\nusing Callback=int(*)();int selections;int first(){return 7;}int second(){return 9;}\nCallback selected=&first;Callback select(){++selections;return selected;}\nint main(){auto f=std::bind(select());selected=&second;return f()!=7||f()!=7||selections!=1;}\n",
+      "source_sha256": "42569cbc4e7d2e27ea5c82038af17ff062c84100d12848380c69be3a3a762a6d",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    }
+  ],
+  "preparation_only": false,
+  "fixture_group": "bind-call-arguments-source-diag-two",
+  "source_trace_included": true,
+  "producer_run_id": 40624781946,
+  "clean_source_basis": "ae04e3f25dabf247312a9841656d84b0a91af36c",
+  "producer_report_sha256": "fb9661b4c758c12c15aa34108e6ade11b2907b7a9d397f5062adec4a3e701fbb",
+  "required_acceptances": 3,
+  "required_pid_records": 3,
+  "required_pid_files": 15,
+  "required_command_count": 20,
+  "diagnostic_only": true,
+  "original_clean_source_ancestor": "9c5cfd693ab056d5b2c99aa54eb2be7fc1fe516d",
+  "source_diagnostic_preparation_sha256": "3a8b85cb915e2b87aed53b9b3937ea2adfb9df824b22e8bb398b3b90be4c45f4",
+  "full_matrix_verified": false,
+  "formal_execution_verified": false,
+  "generated_execution_verified": false,
+  "actual_support_verified": false,
+  "ancestor_clean_source_six_report_sha256": "9d797c3f77cfdb10dfe71d97bfaa7aa47553e92c13719768feef90e2fbcfa8b4",
+  "ancestor_clean_source_six_proof_sha256": "10a67300d9638028431fd019392f2ece398adf410fcfb1a1346a4e0e0c4cbc9a",
+  "source_repair_clean_text_basis": "934df31064a29be2bd536a8060272e2076fc48db"
+}
