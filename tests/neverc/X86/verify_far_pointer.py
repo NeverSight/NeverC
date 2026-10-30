@@ -43,6 +43,6 @@ if __name__ == "__main__":
         "https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf",
         __file__, exclusions=["other CPU models", "i386 runtime", "code16",
                               "privileged descriptor-table accessed-bit faults",
-                              "alignment-check exceptions", "LSS interrupt/debug shadow",
+                              "alignment-check exceptions", "asynchronous interrupt delivery",
                               "null selectors 1..3 after Linux interrupt/signal return",
                               "complete lifted machine-state continuation"])

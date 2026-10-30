@@ -66,10 +66,11 @@ effects, separate from the pointer image's exact read extent.
 The selected segment and its hidden descriptor remain ambient CPU state. These
 APIs do not save or restore TLS, switch the compiler stack or provide a complete
 machine-state continuation. Callers must preserve the compiler ABI's segment
-invariants. In particular, LSS's interrupt/debug inhibition applies to the next
-machine instruction selected by the compiler; it does not establish adjacency
-to an original binary instruction. Machine scheduling cannot move instructions
-across the far-load boundary. Native arithmetic flags are unchanged.
+invariants. LSS does not establish MOV SS / POP SS interrupt/debug inhibition
+([Intel SDM Volume 3A, section 7.8.3](https://cdrdv2-public.intel.com/835754/253668-sdm-vol-3a.pdf));
+the earlier claim that it inhibited the next compiler-selected instruction was
+incorrect. Machine scheduling cannot move instructions across the far-load
+boundary. Native arithmetic flags are unchanged.
 The pointer follows compiler-selected addressing. The API does not retain an
 original instruction's source segment, address-size prefix or default-stack
 fault provenance.
