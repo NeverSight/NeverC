@@ -999,3 +999,12 @@ Acht GTests für erweiterte gebundene Argumentpakete sind registriert; der STL-G
 
 
 Die statische bind-Beschreibung erhält die exakte Speicherung der SDK-Platzhalter `_1` und `_2` als leere Basen, einschließlich verschiedener Offsets bei wiederholten gleichen Typen. Die allgemeine Tuple-Zulassung bleibt gleich. Ausgewählte Konstruktion, Quellnachweise, Erfassung und Argumentprojektion sind unvollständig; Laufzeitunterstützung wird noch nicht zugesagt. Die Aufrufbeschreibung erhält außerdem die ursprüngliche Indexvariable sowie `get` und `forward` des Aufruftuples und unterscheidet Speicherplatz und Argumentrang.
+
+
+Wiederverwendete skalare bind-Helper prüfen jeden erhaltenen `tuple_element`-Operanden mit seinem eigenen Tuple, Index und Quelltext der partiellen Spezialisierung in einem temporären Gültigkeitsbereich. Temporäre Typ- und Anweisungseinträge werden danach verworfen; Konstruktion, physischer Speicher und Lebensdauer eines anderen bind-Objekts werden nicht freigegeben. Die Validierung steht aus.
+
+
+Die bind-Konstruktionsbeschreibung erhält für jeden Platzhalter die ausgewählte Initialisierung der leeren Basis, triviale SDK-Kopier- und Verschiebeoperationen sowie Weiterleitungsausdrücke. Quellzertifizierung und Laufzeitausführung stehen aus.
+
+
+Die Factory-Beschreibung bindet jeden ursprünglichen Operanden an die exakte SDK-Deklaration extern const `_1` oder `_2` und prüft Namensraum, Typ und weitere Deklarationen. Sie wertet das Objekt nicht aus und erzeugt keinen Initialisierer. Gewöhnliche Variablenrechte und Laufzeiterfassung bleiben gleich; Laufzeitunterstützung ist unvollständig.

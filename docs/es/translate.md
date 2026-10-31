@@ -999,3 +999,12 @@ Se registraron ocho GTest de paquetes de argumentos ligados ampliados, elevando 
 
 
 La descripción estática de bind conserva el almacenamiento exacto en bases vacías de los marcadores SDK `_1` y `_2`, con desplazamientos distintos al repetir el mismo tipo. La admisión general de tuplas no cambia. Construcción seleccionada, cierre de pruebas, captura y proyección siguen incompletos; no se declara soporte en ejecución. La descripción seleccionada conserva la variable de índice original, `get` y `forward` de la tupla de llamada, separando posición almacenada y rango del argumento.
+
+
+Los helpers bind escalares reutilizados prueban cada operando `tuple_element` retenido con su propia tupla, índice y fuente de especialización parcial en un ámbito temporal. Las entradas temporales de tipos y sentencias se descartan al salir, sin autorizar construcción, almacenamiento físico ni vida de otro objeto bind. La validación sigue pendiente.
+
+
+La descripción de construcción bind conserva la inicialización de base vacía seleccionada, la copia o movimiento trivial del SDK y las expresiones de reenvío de cada marcador. La certificación de fuente y la ejecución siguen pendientes.
+
+
+La descripción de fábrica enlaza cada operando original a la declaración SDK extern const exacta `_1` o `_2`, comprobando espacio de nombres, tipo y redeclaraciones. No evalúa el objeto ni inventa inicializadores. Los permisos ordinarios y la captura en ejecución no cambian; el soporte runtime sigue pendiente.

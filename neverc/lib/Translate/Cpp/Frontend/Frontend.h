@@ -1749,6 +1749,19 @@ describeFunctionalBindPlaceholderIdentity(
     const State &S, const clang::SourceManager &SM, clang::QualType Type,
     const clang::ASTContext &Context);
 
+// The original operand and actual SDK declaration, never a constexpr value
+// or permission to access an arbitrary SDK variable at runtime.
+struct FunctionalBindPlaceholderOperandSource {
+  FunctionalBindPlaceholderIdentity Identity;
+  const clang::Expr *Operand;
+  const clang::DeclRefExpr *Reference;
+  const clang::VarDecl *Variable;
+};
+std::optional<FunctionalBindPlaceholderOperandSource>
+describeFunctionalBindPlaceholderOperandSource(
+    const State &S, const clang::SourceManager &SM, const clang::Expr *Operand,
+    const clang::ASTContext &Context);
+
 // Inert shape only. Factory/default, lifecycle, invocation, ordinary callback
 // body and lifetime proofs must complete before any SDK runtime use is granted.
 struct FunctionalBindStorage {
@@ -1778,6 +1791,7 @@ struct FunctionalBindFactorySource {
   std::vector<const clang::CallExpr *> FactoryForwards;
   const clang::CallExpr *CallableForward;
   std::vector<const clang::CallExpr *> BoundForwards;
+  std::vector<std::optional<FunctionalBindPlaceholderOperandSource>> Placeholders;
 };
 std::optional<FunctionalBindFactorySource>
 describeFunctionalBindFactorySource(

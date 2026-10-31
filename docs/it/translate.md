@@ -999,3 +999,12 @@ Sono registrati otto GTest per pacchetti estesi di argomenti associati; il suffi
 
 
 La descrizione statica di bind conserva la memorizzazione esatta come basi vuote dei segnaposto SDK `_1` e `_2`, con offset distinti per ripetizioni dello stesso tipo. L’ammissione generale delle tuple resta invariata. Costruzione selezionata, prove sorgente, cattura e proiezione sono incomplete; il supporto runtime non è dichiarato. La descrizione selezionata conserva anche la variabile di indice originale, `get` e `forward` della tupla di chiamata, distinguendo slot memorizzato e rango dell’argomento.
+
+
+Gli helper bind scalari riutilizzati verificano ogni operando `tuple_element` conservato con la propria tupla, indice e sorgente della specializzazione parziale in un ambito temporaneo. Le voci temporanee di tipi e istruzioni vengono eliminate all’uscita, senza autorizzare costruzione, memoria fisica o durata di un altro oggetto bind. La verifica è in attesa.
+
+
+La descrizione di costruzione bind conserva l’inizializzazione della base vuota selezionata, copia o spostamento triviale dell’SDK e le espressioni di inoltro di ogni segnaposto. La certificazione sorgente e l’esecuzione restano in attesa.
+
+
+La descrizione della factory lega ogni operando originale alla dichiarazione SDK extern const esatta `_1` o `_2`, verificando namespace, tipo e ridichiarazioni. Non valuta l’oggetto né crea inizializzatori. Permessi ordinari e cattura runtime restano invariati; il supporto runtime è incompleto.
