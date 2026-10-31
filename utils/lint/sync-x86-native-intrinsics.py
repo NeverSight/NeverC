@@ -52,6 +52,10 @@ DECLARATIONS = {
 }
 for operation in ("vmload", "vmsave"):
     DECLARATIONS[operation] = ("Done", "I64")
+KVM_HYPERCALLS = {name + suffix for name in ("vmcall", "vmmcall")
+                 for suffix in ("_kvm", "_kvm32")}
+for name in sorted(KVM_HYPERCALLS):
+    DECLARATIONS[name] = ("I32" if name.endswith("32") else "I64",) * 6
 for operation in ("fnstenv", "fldenv", "fnsave", "frstor"):
     for bits in (16, 32):
         DECLARATIONS[f"{operation}{bits}"] = ("Done", "PTR")
@@ -340,6 +344,7 @@ def synchronize(write):
     transfer_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl)
     immediate_transfer, updated_impl = nonreturning_transfer_attribute(updated_impl, (1,))
     vmrun_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (1,), returning=True)
+    hypercall_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, returning=True)
     address_attributes = {}
     for indices in sorted({indices for _, indices in ADDRESS_SIGNATURES.values()}):
         attribute, updated_impl = immediate_arguments_attribute(updated_impl, indices)
@@ -361,6 +366,8 @@ def synchronize(write):
             attribute = immediate_transfer if FRAME_RETURNS.get(suffix) else transfer_attribute
         if suffix == "vmrun_context":
             attribute = vmrun_attribute
+        if suffix in KVM_HYPERCALLS:
+            attribute = hypercall_attribute
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)
         if name in names:

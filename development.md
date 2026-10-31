@@ -590,6 +590,46 @@ NeverC's embedded legacy backend already runs the required tied-operand pass;
 its LSR now shares the full fork's delayed LCSSA repair after all fixups and
 before dead-instruction cleanup.
 
+### Explicit KVM hypercall ABI
+
+`<kvmhypercallintrin.h>` exposes `__kvm_vmcall` and `__kvm_vmmcall`, backed by
+`__builtin_ia32_vmcall_kvm` and `__builtin_ia32_vmmcall_kvm`. Each takes five
+`unsigned long long` values and returns one: RAX is the call number/result,
+and RBX/RCX/RDX/RSI hold four arguments. These are native instructions without
+inline assembly or external helpers. Calls have unknown memory effects, are
+convergent and cannot be duplicated even when their result is unused.
+
+The caller explicitly binds the returning
+[KVM ABI](https://docs.kernel.org/virt/kvm/x86/hypercalls.html), with all other
+registers, extended state and the compiler execution environment preserved.
+Services with extra outputs, nonlocal transfers or unrepresented caller-state
+dependencies require a different interface. The opcode does not identify a
+hypervisor and this API does not implement Hyper-V's different convention.
+
+The shared `X86KVMHypercall.h` lowering comes from NeverSight LLVM commit
+`7eb7c0ffbe9e`, retaining Apache-2.0 WITH LLVM-exception licensing. The full
+fork provides code32 and code64; NeverC retains only its existing x64 codegen
+domain and rejects other modes. `sync-x86-native-intrinsics.py` owns the four
+IR declarations, while `sync-x86-kvm-hypercalls.py` owns machine descriptors
+and both printers without renumbering existing instruction IDs. Their tests
+verify exact register order and detect lost inputs or memory effects.
+
+`X86KVMHypercallTest` exercises the public header, retained unused calls and
+memory accesses, invalid inputs, and O0/O2 ELF/COFF/Mach-O emission.
+`tests/neverc/X86/verify_kvm_hypercalls.py --keep DIRECTORY` additionally runs
+independent original bytes and generated calls in a native KVM guest. An
+isolated userspace service observes all five physical inputs, returns a value
+that depends on each and writes shared RAM. Each O0/O2 profile compares 256
+pairs and executes 512 hypercalls. This qualifies ABI transport, not all KVM
+services. Missing KVM fails explicitly instead of counting as passed.
+
+Use `--backend-llc /path/to/llc` for NeverC IR through the full fork; add
+`--new-pm` for its other codegen pipeline. `--llvm-only --bits 32` or
+`--llvm-only --bits 64` independently tests the full fork without NeverC.
+`--source FILE --manifest FILE` compiles actual NeverD continuation C after
+checking the manifest's source hash and explicit KVM binding. The run retains
+commands, tool and fixture hashes, generated objects and runtime logs.
+
 ### Bounded history, translation and GS-state operations
 
 `__builtin_ia32_hreset(unsigned control)` emits HRESET with the complete EAX

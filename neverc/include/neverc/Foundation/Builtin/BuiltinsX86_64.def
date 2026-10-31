@@ -206,6 +206,8 @@ BUILTIN(__builtin_ia32_skinit, "vUi", "nr")
 #undef X86_NATIVE_TRANSFER
 BUILTIN(__builtin_ia32_vmload, "vULLi", "n")
 BUILTIN(__builtin_ia32_vmrun_context, "vv*IUi", "n")
+BUILTIN(__builtin_ia32_vmcall_kvm, "ULLiULLiULLiULLiULLiULLi", "n")
+BUILTIN(__builtin_ia32_vmmcall_kvm, "ULLiULLiULLiULLiULLiULLi", "n")
 BUILTIN(__builtin_ia32_vmsave, "vULLi", "n")
 BUILTIN(__builtin_ia32_invlpga, "vULLiUi", "n")
 BUILTIN(__builtin_ia32_vmload_addr32, "vUi", "n")

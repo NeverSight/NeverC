@@ -58,6 +58,12 @@ class NativeSignaturesTest(unittest.TestCase):
         self.assertIn("getIntrinsicArgAttributeSet(C, 0)", body)
         self.assertNotIn("Attribute::NoReturn", body)
 
+    def test_kvm_hypercalls_have_five_matching_inputs_and_one_result(self):
+        for operation in ("vmcall", "vmmcall"):
+            for suffix, bits in (("", 64), ("32", 32)):
+                self.assertEqual(NATIVE.DECLARATIONS[f"{operation}_kvm{suffix}"],
+                                 (f"I{bits}",) * 6)
+
     def test_address_controls_have_distinct_immediate_positions(self):
         first, initial = NATIVE.immediate_arguments_attribute(self.impl, (1, 2))
         second, updated = NATIVE.immediate_arguments_attribute(initial, (2, 3))

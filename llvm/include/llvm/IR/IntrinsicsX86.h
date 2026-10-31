@@ -1637,12 +1637,16 @@ enum X86Intrinsics : unsigned {
     x86_vgf2p8mulb_128,                              // llvm.x86.vgf2p8mulb.128
     x86_vgf2p8mulb_256,                              // llvm.x86.vgf2p8mulb.256
     x86_vgf2p8mulb_512,                              // llvm.x86.vgf2p8mulb.512
+    x86_vmcall_kvm,                                  // llvm.x86.vmcall.kvm
+    x86_vmcall_kvm32,                                // llvm.x86.vmcall.kvm32
     x86_vmclear,                                     // llvm.x86.vmclear
     x86_vmclear_address,                             // llvm.x86.vmclear.address
     x86_vmfunc_eptp_switch,                          // llvm.x86.vmfunc.eptp.switch
     x86_vmlaunch,                                    // llvm.x86.vmlaunch
     x86_vmload,                                      // llvm.x86.vmload
     x86_vmload_addr32,                               // llvm.x86.vmload.addr32
+    x86_vmmcall_kvm,                                 // llvm.x86.vmmcall.kvm
+    x86_vmmcall_kvm32,                               // llvm.x86.vmmcall.kvm32
     x86_vmptrld,                                     // llvm.x86.vmptrld
     x86_vmptrld_address,                             // llvm.x86.vmptrld.address
     x86_vmptrst,                                     // llvm.x86.vmptrst

@@ -18602,7 +18602,11 @@ namespace X86 {
     ERETU	= 18587,
     NATIVE_FRAME_RETURN64	= 18588,
     VMRUN_CONTEXT64	= 18589,
-    INSTRUCTION_LIST_END = 18590
+    VMCALL_KVM32	= 18590,
+    VMCALL_KVM64	= 18591,
+    VMMCALL_KVM32	= 18592,
+    VMMCALL_KVM64	= 18593,
+    INSTRUCTION_LIST_END = 18594
   };
 
 } // end namespace X86
@@ -20993,11 +20997,11 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18590];
+  MCInstrDesc Insts[18594];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5524];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[941];
+  MCPhysReg ImplicitOps[955];
 };
 
 } // end namespace llvm
@@ -21012,6 +21016,10 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18593,	0,	0,	0,	8,	5,	2,	X86ImpOpBase + 948,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18593 = VMMCALL_KVM64
+    { 18592,	0,	0,	0,	8,	5,	2,	X86ImpOpBase + 941,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18592 = VMMCALL_KVM32
+    { 18591,	0,	0,	0,	8,	5,	2,	X86ImpOpBase + 948,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18591 = VMCALL_KVM64
+    { 18590,	0,	0,	0,	8,	5,	2,	X86ImpOpBase + 941,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18590 = VMCALL_KVM32
     { 18589,	7,	0,	0,	8,	1,	16,	X86ImpOpBase + 924,	357,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18589 = VMRUN_CONTEXT64
     { 18588,	3,	0,	0,	8,	0,	15,	X86ImpOpBase + 901,	5521,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18588 = NATIVE_FRAME_RETURN64
     { 18587,	0,	0,	0,	1171,	1,	4,	X86ImpOpBase + 896,	1,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier), 0x8000304aULL },  // Inst #18587 = ERETU
@@ -40914,6 +40922,8 @@ extern const X86InstrTable X86Descs = {
     /* 897 */ X86::CS, X86::SS, X86::RSP, X86::EFLAGS,
     /* 901 */ X86::CS, X86::SS, X86::DS, X86::ES, X86::FS, X86::GS, X86::EFLAGS, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::RSP, X86::RBP, X86::RSI, X86::RDI, X86::R8, X86::R9, X86::R10, X86::R11, X86::R12, X86::R13, X86::R14, X86::R15,
     /* 924 */ X86::RSP, X86::RAX, X86::RBX, X86::RCX, X86::RDX, X86::RSI, X86::RDI, X86::RBP, X86::R8, X86::R9, X86::R10, X86::R11, X86::R12, X86::R13, X86::R14, X86::R15, X86::EFLAGS,
+    /* 941 */ X86::EAX, X86::EBX, X86::ECX, X86::EDX, X86::ESI, X86::EAX, X86::EFLAGS,
+    /* 948 */ X86::RAX, X86::RBX, X86::RCX, X86::RDX, X86::RSI, X86::RAX, X86::EFLAGS,
   }
 };
 
@@ -58596,6 +58606,10 @@ extern const char X86InstrNameData[] = {
   /* 260427 */ "ERETU\0"
   /* 260433 */ "NATIVE_FRAME_RETURN64\0"
   /* 260455 */ "VMRUN_CONTEXT64\0"
+  /* 260471 */ "VMCALL_KVM32\0"
+  /* 260484 */ "VMCALL_KVM64\0"
+  /* 260497 */ "VMMCALL_KVM32\0"
+  /* 260511 */ "VMMCALL_KVM64\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -61050,10 +61064,14 @@ extern const unsigned X86InstrNameIndices[] = {
     260427U,
     260433U,
     260455U,
+    260471U,
+    260484U,
+    260497U,
+    260511U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18590);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18594);
 }
 
 } // end namespace llvm
@@ -61113,7 +61131,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18590);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18594);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98519,6 +98537,14 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     64495,
     /* VMRUN_CONTEXT64 */
     64517,
+    /* VMCALL_KVM32 */
+    33375,
+    /* VMCALL_KVM64 */
+    33375,
+    /* VMMCALL_KVM32 */
+    34288,
+    /* VMMCALL_KVM64 */
+    34288,
   };
 
   using namespace OpTypes;
@@ -153977,9 +154003,13 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // ERETU = 18587
     CEFBS_In64BitMode, // NATIVE_FRAME_RETURN64 = 18588
     CEFBS_In64BitMode, // VMRUN_CONTEXT64 = 18589
+    CEFBS_In64BitMode, // VMCALL_KVM32 = 18590
+    CEFBS_In64BitMode, // VMCALL_KVM64 = 18591
+    CEFBS_In64BitMode, // VMMCALL_KVM32 = 18592
+    CEFBS_In64BitMode, // VMMCALL_KVM64 = 18593
   };
 
-  assert(Opcode < 18590);
+  assert(Opcode < 18594);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

@@ -66,6 +66,7 @@ set(NEVERC_TEST_SOURCES
   X86/NativeRegisterTests.cpp
   X86/SkinitFrontendTests.cpp
   X86/SVMContextFrontendTests.cpp
+  X86/KVMHypercallFrontendTests.cpp
   X86/SystemReturnFrontendTests.cpp
   X86/FrameReturnFrontendTests.cpp
   X86/MMXStateFrontendTests.cpp

@@ -19,6 +19,7 @@
 #include "X86FrameLowering.h"
 #include "X86InstrBuilder.h"
 #include "X86IntrinsicsInfo.h"
+#include "X86KVMHypercall.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86NativeFrameReturn.h"
 #include "X86SVMContext.h"
@@ -27982,6 +27983,11 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
   const IntrinsicData *IntrData = getIntrinsicWithChain(IntNo);
   if (!IntrData) {
     switch (IntNo) {
+    case Intrinsic::x86_vmcall_kvm:
+    case Intrinsic::x86_vmcall_kvm32:
+    case Intrinsic::x86_vmmcall_kvm:
+    case Intrinsic::x86_vmmcall_kvm32:
+      return X86::lowerKVMHypercall(Op, Subtarget, DAG);
     case Intrinsic::x86_rep_movs_state:
     case Intrinsic::x86_rep_stos_state:
     case Intrinsic::x86_rep_lods_state:
