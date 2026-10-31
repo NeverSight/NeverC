@@ -1026,3 +1026,6 @@ El lowering bind protegido captura una sola vez las vinculaciones de entrada y p
 
 
 Los tuples marcadores de bind tienen rutas propias de diseño, dependencias e inicialización cero. La salida exige certificados completos de todos los bind propietarios y revisa campos, posiciones vacías, tamaño, alineación y relleno. Los permisos generales de tuple no cambian; cuerpo completo y ejecución siguen pendientes.
+
+
+La prueba de tipo bind consume el TSI de la declaración SDK extern real, el parámetro int primario y el rango literal escrito. No fabrica deducción, argumentos, inicializadores ni permisos de valores. La caché de dos pruebas pertenece solo al bind exacto. La ejecución sigue pendiente.

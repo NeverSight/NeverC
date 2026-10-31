@@ -1026,3 +1026,6 @@ Il lowering bind protetto acquisisce una sola volta i binding in ingresso e ne p
 
 
 I tuple segnaposto di bind hanno percorsi dedicati per layout, dipendenze e inizializzazione a zero. L’output richiede certificati completi di tutti i bind proprietari e ricontrolla campi, posizioni vuote, dimensione, allineamento e padding. I permessi tuple generali non cambiano; corpo completo ed esecuzione restano incompleti.
+
+
+La prova di tipo bind usa il TSI della dichiarazione SDK extern reale, il parametro int primario e il rango letterale scritto. Non crea deduzioni, argomenti, inizializzatori o permessi sui valori. La cache di due prove appartiene solo al bind esatto. L’esecuzione resta incompleta.

@@ -1026,3 +1026,6 @@ Le lowering bind protégé conserve une seule fois les liaisons entrantes et pro
 
 
 Les tuples réservés appartenant à bind disposent d’un chemin dédié de disposition, dépendances et initialisation zéro. La sortie exige les certificats complets de tous les bind propriétaires et revérifie champs, positions vides, taille, alignement et remplissage. Les permissions tuple générales ne changent pas ; corps complet et exécution restent à valider.
+
+
+La preuve de type bind consomme le TSI de la déclaration SDK extern réelle, le paramètre int primaire et le rang littéral écrit. Elle ne fabrique ni déduction, ni arguments, ni initialiseur, ni permission de valeur. Son cache de deux preuves appartient au seul bind exact. L’exécution reste inachevée.

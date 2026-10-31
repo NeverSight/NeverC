@@ -19535,6 +19535,8 @@ class BindSourceProof {
   std::map<const CallExpr *, const CXXConstructorDecl *> TupleReferenceQueries;
   std::set<const CallExpr *> FactoryBuiltinForwards;
   std::set<const CallExpr *> CompletedBuiltinForwards;
+  const TemplateSpecializationType *ActivePlaceholderDeclarationType = nullptr;
+  std::set<const TemplateSpecializationType *> CompletedPlaceholderDeclarationTypes;
   const FunctionalBindDeclvalSource *ActiveDeclval = nullptr;
   const FunctionalBindInvokeSignatureSource *ActiveInvokeSignature = nullptr;
   const FunctionalBindCallSource *ActiveRuntimeInvoke = nullptr;
@@ -20335,11 +20337,127 @@ class BindSourceProof {
     return true;
   }
 
+  bool seedPlaceholderDeclarationTypes() {
+    // The fixed SDK leaf is fully explicit: int rank, no defaults, packs or
+    // partial deduction. Consume its actual declaration TSI and literal, never
+    // fabricate a template-use event or a canonical argument list.
+    for (const auto &Element : Storage.Arguments.Elements) {
+      if (!Element.EmptyBase) continue;
+      const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
+      const auto *Namespace = Identity ? dyn_cast<NamespaceDecl>(Identity->Record->getDeclContext()) : nullptr;
+      if (!Identity || !Namespace || Element.Field ||
+          Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return false;
+      const VarDecl *Variable = nullptr;
+      unsigned Namespaces = 0, Declarations = 0;
+      for (const auto *Owner : Namespace->redecls()) {
+        if (++Namespaces > 64) return false;
+        for (const auto *Declaration : Owner->decls()) {
+          if (++Declarations > 64) return false;
+          const auto *Candidate = dyn_cast<VarDecl>(Declaration);
+          if (!Candidate || !Candidate->getIdentifier() ||
+              Candidate->getName() != (Identity->Rank == 1 ? "_1" : "_2")) continue;
+          if (Variable && Variable->getCanonicalDecl() != Candidate->getCanonicalDecl()) return false;
+          Variable = Candidate;
+        }
+      }
+      const VarDecl *Initializer = nullptr;
+      if (!Variable || Variable->getAnyInitializer(Initializer) ||
+          !Variable->getType().isConstQualified() || Variable->getType().isVolatileQualified() ||
+          Variable->getType().isRestrictQualified() || Variable->getType().getAddressSpace() != LangAS::Default ||
+          !Context.hasSameUnqualifiedType(Variable->getType(), Element.getType())) return false;
+      unsigned Redeclarations = 0;
+      for (const auto *Declaration : Variable->redecls()) {
+        const auto *Owner = dyn_cast<NamespaceDecl>(Declaration->getDeclContext());
+        const auto *Info = Declaration->getTypeSourceInfo();
+        if (++Redeclarations > 64 || !Owner ||
+            Owner->getCanonicalDecl() != Namespace->getCanonicalDecl() ||
+            Declaration->getStorageClass() != SC_Extern || !Declaration->hasGlobalStorage() ||
+            Declaration->getTLSKind() != VarDecl::TLS_None || Declaration->isConstexpr() || Declaration->hasInit() ||
+            !Info || !Context.hasSameType(Declaration->getType(), Variable->getType()) ||
+            !Check.family(Declaration, {"__functional/bind.h"}) ||
+            S.owns(SM, Declaration->getLocation())) return false;
+        auto Written = Info->getTypeLoc().getUnqualifiedLoc();
+        if (const auto Name = Written.getAs<ElaboratedTypeLoc>()) {
+          if (Name.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Name.getQualifierLoc()) return false;
+          Written = Name.getNamedTypeLoc();
+        }
+        const auto Location = Written.getAs<TemplateSpecializationTypeLoc>();
+        const auto *Type = Location ? Location.getTypePtr() : nullptr;
+        const auto *Record = Type ? Type->getAsCXXRecordDecl() : nullptr;
+        if (!Type || Location.getNumArgs() != 1 || Type->isDependentType() || Type->isTypeAlias() ||
+            Type->getTemplateName().getAsTemplateDecl() != Identity->Primary ||
+            !Record || Record->getCanonicalDecl() != Identity->Record->getCanonicalDecl() ||
+            Type->template_arguments().size() != 1 ||
+            !Check.location(Written.getBeginLoc(), {"__functional/bind.h"}) ||
+            !Check.location(Written.getEndLoc(), {"__functional/bind.h"})) return false;
+        const auto Argument = Location.getArgLoc(0);
+        const Expr *Expression = Argument.getArgument().getKind() == TemplateArgument::Integral
+            ? Argument.getSourceIntegralExpression()
+            : Argument.getArgument().getKind() == TemplateArgument::Expression
+                ? Argument.getArgument().getAsExpr() : nullptr;
+        // Sema may retain a constant cache around the written int literal.
+        // Keep every original child; only source-preserving int wrappers may
+        // be peeled here, and the ordinary graph still traverses them below.
+        const Expr *Spelling = Expression;
+        for (unsigned Depth = 0; Spelling && Depth < 64; ++Depth) {
+          const Expr *Child = nullptr;
+          if (const auto *Parentheses = dyn_cast<ParenExpr>(Spelling)) Child = Parentheses->getSubExpr();
+          else if (const auto *Constant = dyn_cast<ConstantExpr>(Spelling)) {
+            Child = Constant->getSubExpr();
+            if (!Child || Constant->isTypeDependent() || Constant->isValueDependent() ||
+                Constant->getValueKind() != Child->getValueKind() ||
+                Constant->getBeginLoc() != Child->getBeginLoc() || Constant->getEndLoc() != Child->getEndLoc())
+              return false;
+          } else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Spelling)) {
+            if (Cast->getCastKind() != CK_NoOp) return false;
+            Child = Cast->getSubExpr();
+          } else break;
+          if (!Child || !Context.hasSameType(Spelling->getType(), Context.IntTy) ||
+              !Context.hasSameType(Child->getType(), Context.IntTy)) return false;
+          Spelling = Child;
+        }
+        const auto *Literal = dyn_cast_or_null<IntegerLiteral>(Spelling);
+        if (!Literal || !Context.hasSameType(Literal->getType(), Context.IntTy) ||
+            Literal->getValue().getLimitedValue(3) != Identity->Rank ||
+            !Check.location(Literal->getExprLoc(), {"__functional/bind.h"})) return false;
+        const auto &Converted = Type->template_arguments()[0];
+        if (Converted.getKind() == TemplateArgument::Integral) {
+          if (!Context.hasSameType(Converted.getIntegralType(), Context.IntTy) ||
+              Converted.getAsIntegral().isNegative() ||
+              Converted.getAsIntegral().getLimitedValue(3) != Identity->Rank) return false;
+        } else if (Converted.getKind() != TemplateArgument::Expression ||
+                   (Converted.getAsExpr() != Literal && Converted.getAsExpr() != Expression)) return false;
+        if (ActivePlaceholderDeclarationType || !Identity->Parameter->getTypeSourceInfo()) return false;
+        ActivePlaceholderDeclarationType = Type;
+        auto Restore = llvm::make_scope_exit([&] { ActivePlaceholderDeclarationType = nullptr; });
+        if (!Graph.withBindSourceChild([&] {
+              return Graph.withBindTemplateParameters(Identity->Primary, Identity->Primary->getTemplateParameters(), [&] {
+                return Graph.TraverseTypeLoc(Identity->Parameter->getTypeSourceInfo()->getTypeLoc()) &&
+                    Graph.TraverseTypeLoc(Info->getTypeLoc());
+              });
+            })) return false;
+        // This is a completed fixed SDK type leaf within this owning bind
+        // proof, not permission to read the extern variable or run an operation.
+        CompletedPlaceholderDeclarationTypes.insert(Type);
+        if (CompletedPlaceholderDeclarationTypes.size() > 2) return false;
+      }
+    }
+    return Graph.bindSourceComplete();
+  }
+
   bool typeSource(const TemplateSpecializationType *Type) {
     return Graph.withBindSourceChild([&] {
       const auto *Template = Type ? dyn_cast_or_null<TemplateDecl>(
           Type->getTemplateName().getAsTemplateDecl()) : nullptr;
       if (!Type || !Template || !family(Template)) return false;
+      if (Type == ActivePlaceholderDeclarationType || CompletedPlaceholderDeclarationTypes.count(Type)) {
+        const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, QualType(Type, 0), Context);
+        if (!Identity || Template != Identity->Primary) return false;
+        for (const auto &Element : Storage.Arguments.Elements)
+          if (Element.EmptyBase && Identity->Record->getCanonicalDecl() == Element.EmptyBase->getCanonicalDecl())
+            return Graph.bindSourceComplete();
+        return false;
+      }
       bool Found = false;
       for (const auto *Use : Sources) {
         if (!Use || Use->Kind != TemplateSourceKind::Type || Use->Type != Type) continue;
@@ -21817,6 +21935,7 @@ public:
         [this](const TemplateSpecializationType *Type, const std::function<bool()> &Proof) {
           return typeTraversalSource(Type, Proof);
         });
+    Ready = Ready && seedPlaceholderDeclarationTypes();
   }
   bool factory(const FunctionalBindFactorySource &Factory) {
     if (!Ready || Factory.Storage.Record != Storage.Record ||

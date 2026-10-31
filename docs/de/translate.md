@@ -1026,3 +1026,6 @@ Geschütztes bind-Lowering erfasst Eingangsbindungen einmal und projiziert auch 
 
 
 Bind-eigene Platzhalter-tuples erhalten eigene Layout-, Abhängigkeits- und Nullinitialisierungspfade. Die Ausgabe verlangt vollständige Zertifikate aller Eigentümer und prüft Felder, leere Positionen, Größe, Ausrichtung und Padding erneut. Allgemeine tuple-Rechte bleiben gleich; vollständiger Körper und Ausführungsprüfung sind unvollständig.
+
+
+Der bind-Typnachweis prüft die tatsächliche SDK-extern-TSI, den primären int-Parameter und das geschriebene Rangliteral. Er erzeugt keine Deduktionsdaten, Argumentlisten, Initialisierer oder Variablenwertrechte. Der Cache aus zwei Typnachweisen gehört nur zur exakten bind-Wurzel; die Ausführung ist unvollständig.

@@ -446,3 +446,6 @@ Guarded bind lowering now retains incoming argument bindings once and projects p
 
 
 Bind-owned placeholder tuples now have a dedicated layout, dependency and zero-initialization path. Output requires complete certificates for every owning bind record and rechecks actual fields, empty offsets, size, alignment and padding. Generic tuple type/value permissions are unchanged. Full placeholder body and execution validation remain unfinished.
+
+
+Bind placeholder type proofs now consume the actual SDK extern declaration TSI, primary int parameter and written rank literal. This fully explicit leaf creates no deduction event, argument list, initializer or variable-value permission. Its two-entry type proof cache belongs only to the exact bind root. Complete placeholder execution remains unfinished.
