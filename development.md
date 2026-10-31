@@ -318,6 +318,30 @@ execute and 80 are explicitly skipped per optimization level under the same
 model limitations. Enabled loads/stores and disabled operand suppression are
 checked; native stack-segment fault delivery still needs separate qualification.
 
+NeverD's separate `intel-mpx-v11` explicit-state C output is also executable
+through NeverC and both full LLVM codegen pass managers. The integration oracle
+loads its actual source and bound manifest, assembles the manifest's original
+BND bytes independently, and compares all bounds registers, BNDSTATUS and RAM
+under QEMU, including disabled operation and pending #BR. Run it with the files
+exported by NeverD's `MpxOwnsAllBoundsAndMemoryForms` regression:
+
+```sh
+python3 tests/neverc/X86/verify_mpx_continuation.py \
+  --source /path/to/mpx-high.c --manifest /path/to/mpx-high.json \
+  --compiler build-neverc/bin/neverc --keep /path/to/qualification
+```
+
+Repeat for `mpx-llvm.c/.json`; add `--backend-llc /path/to/llc`, and optionally
+`--new-pm`, for the full backend routes. Both optimization levels execute
+1,344 original/source comparisons each. The six route combinations passed
+16,128 comparisons. Each record explicitly excludes 100 of the exported 156
+forms: 96 affected by the QEMU issues above and four absent-base table cases
+outside this native fixture. NeverD's sanitizer oracle covers all 156 forms,
+including nonzero directory bases. These counts do not certify physical MPX,
+transaction rollback, memory faults, or arbitrary ordinary function ABIs.
+The native fixture keeps BNDPRESERVE enabled while executing compiler-generated
+code; original MPX input enablement is independently selected for each call.
+
 ## Critical Invariant: Enum ID ↔ ISel Table Synchronization
 
 **This is the single most important thing to understand when modifying x86
