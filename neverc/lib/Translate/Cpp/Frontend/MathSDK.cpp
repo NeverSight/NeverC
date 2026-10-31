@@ -11046,7 +11046,7 @@ public:
       if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
           Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
           Actual->Storage.Record != BindMetadata->Record || Actual->Arguments.empty() ||
-          Actual->Arguments.size() > 2 || Actual->Arguments.size() != BindMetadata->Arguments.Elements.size())
+          Actual->Arguments.size() != BindMetadata->Arguments.Elements.size())
         return false;
       std::vector<BindTupleElementProjection> Projections;
       std::vector<const ClassTemplatePartialSpecializationDecl *> Partials;
@@ -11087,7 +11087,8 @@ public:
   bool TraverseBindTupleElementProjectionSources() {
     return withBindSourceChild([&] {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-          BindTupleElementProjections.empty() || BindTupleElementProjections.size() > 2 ||
+          BindTupleElementProjections.empty() ||
+          BindTupleElementProjections.size() != BindMetadata->Arguments.Elements.size() ||
           !BindRecordSource) return false;
       for (const auto &Projection : BindTupleElementProjections) {
         if (!BindRecordSource(Projection.Owner)) return false;
@@ -11407,7 +11408,6 @@ public:
           Probe.Result->getDeclContext() != Probe.Owner ||
           Probe.Owner->getTemplateArgs().size() != 3 ||
           Probe.Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-          Probe.Owner->getTemplateArgs()[2].pack_size() > 2 ||
           BindResultProbes.size() > 64) return false;
       std::vector<QualType> Forwarded;
       for (const auto &Argument : Probe.Owner->getTemplateArgs()[2].pack_elements()) {
@@ -11479,8 +11479,7 @@ public:
     const auto *Primary = Description.Primary;
     const auto *Selected = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!Function || !Primary || !Selected || Selected->size() != 2 ||
-        Selected->get(1).getKind() != TemplateArgument::Pack ||
-        Selected->get(1).pack_size() > 2) return false;
+        Selected->get(1).getKind() != TemplateArgument::Pack) return false;
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Selected->get(1).pack_elements()) {
       if (!step() || Argument.getKind() != TemplateArgument::Type) return false;
@@ -12261,7 +12260,7 @@ public:
       const std::vector<FunctionalBindTupleTagSource> &Tags) {
     const auto Count = InputTuple.Elements.size();
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-        !InputTuple.Record || BindTupleTagStorage || !BindTupleTagSlices.empty() || !Count || Count > 2 ||
+        !InputTuple.Record || BindTupleTagStorage || !BindTupleTagSlices.empty() || !Count ||
         !Tuple.Tuple || !Tuple.Implementation || Tags.size() != 4 ||
         Tuple.Implementation->getNumArgs() != Count + 4 ||
         !Context.hasSameType(Tuple.Tuple->getType(), Context.getRecordType(InputTuple.Record)))
@@ -16063,8 +16062,7 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
   const auto &TemplateArguments = Instance->getTemplateArgs();
   if (TemplateArguments.size() != 2 ||
       TemplateArguments[0].getKind() != TemplateArgument::Type ||
-      TemplateArguments[1].getKind() != TemplateArgument::Pack ||
-      TemplateArguments[1].pack_size() > 2) return std::nullopt;
+      TemplateArguments[1].getKind() != TemplateArgument::Pack) return std::nullopt;
 
   auto DecayedValue = [&](QualType Type) -> QualType {
     if (Type.isNull()) return {};
@@ -17665,7 +17663,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
     bool CallReferenceInputs = false) {
   const auto Count = Arguments.Elements.size();
   const auto *TupleConstructor = Tuple ? Tuple->getConstructor() : nullptr;
-  if (!Arguments.Record || Count > 2 || !Tuple || !TupleConstructor ||
+  if (!Arguments.Record || !Tuple || !TupleConstructor ||
       Tuple->getNumArgs() != Count || TupleConstructor->getNumParams() != Count ||
       TupleConstructor->isDeleted() || TupleConstructor->getAccess() != AS_public ||
       !Context.hasSameUnqualifiedType(Tuple->getType(), Context.getRecordType(Arguments.Record)) ||
@@ -17909,7 +17907,7 @@ describeFunctionalBindTupleTagSourcesImpl(
     const State &S, const SourceManager &SM,
     const FunctionalBindTupleConstructionSource &Tuple, unsigned Count,
     const ASTContext &Context) {
-  if (!Count || Count > 2 || !Tuple.Implementation ||
+  if (!Count || !Tuple.Implementation ||
       Tuple.Implementation->getNumArgs() != Count + 4) return std::nullopt;
   NotFnSelectedSource Check(S, SM, Context);
   std::vector<FunctionalBindTupleTagSource> Tags;
@@ -17986,8 +17984,7 @@ bool shouldRetainFunctionalBindSpecialMemberSource(
   if (Origin->Path == "__functional/bind.h" && Record->getName() == "__bind" &&
       Record->getTemplateArgs().size() == 2 &&
       Record->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
-      Record->getTemplateArgs()[1].getKind() == TemplateArgument::Pack &&
-      Record->getTemplateArgs()[1].pack_size() <= 2) {
+      Record->getTemplateArgs()[1].getKind() == TemplateArgument::Pack) {
     const auto Argument = Record->getTemplateArgs()[0].getAsType();
     if (Argument.isNull()) return false;
     const auto Input = Argument.getNonReferenceType();
@@ -18001,8 +17998,7 @@ bool shouldRetainFunctionalBindSpecialMemberSource(
       ((Origin->Path == "__tuple/tuple_indices.h" && Record->getName() == "__tuple_indices") ||
        (Origin->Path == "__tuple/tuple_types.h" && Record->getName() == "__tuple_types")) &&
       Record->getTemplateArgs().size() == 1 &&
-      Record->getTemplateArgs()[0].getKind() == TemplateArgument::Pack &&
-      Record->getTemplateArgs()[0].pack_size() <= 2;
+      Record->getTemplateArgs()[0].getKind() == TemplateArgument::Pack;
 }
 
 
@@ -18060,7 +18056,7 @@ describeFunctionalBindInvokeSignatureSource(
   if (!S.coreV2() || !Function || !Template || !Primary || !Callable || !Arguments ||
       !Selected || Selected->size() != 2 || !Prototype || !Target ||
       Forwarded.size() != Storage.Arguments.Elements.size() ||
-      Forwarded.size() != Target->getNumParams() || Forwarded.size() > 2 ||
+      Forwarded.size() != Target->getNumParams() ||
       !Function->getIdentifier() || Function->getName() != "__invoke" ||
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       isa<CXXMethodDecl>(Function) || Function->isVariadic() || Function->isDeleted() ||
@@ -18412,7 +18408,7 @@ describeFunctionalBindTryCallFallbackSource(
     llvm::ArrayRef<const TemplateUseSource *> Sources, const ASTContext &Context) {
   if (!Probe.Function || !Probe.Owner || Probe.Owner->getTemplateArgs().size() != 3 ||
       Probe.Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-      Probe.Owner->getTemplateArgs()[2].pack_size() > 2 || Sources.size() > 200000) return std::nullopt;
+      Sources.size() > 200000) return std::nullopt;
   std::vector<QualType> Forwarded;
   for (const auto &Argument : Probe.Owner->getTemplateArgs()[2].pack_elements()) {
     if (Argument.getKind() != TemplateArgument::Type) return std::nullopt;
@@ -18723,7 +18719,7 @@ bool retainFunctionalBindConstraintRoot(
   auto Capture = [&](QualType T) { return Scalar(T) || Reference(T); };
   auto Pack = [&](const TemplateArgument &Argument, unsigned Minimum) {
     if (Argument.getKind() != TemplateArgument::Pack ||
-        Argument.pack_size() < Minimum || Argument.pack_size() > 2) return false;
+        Argument.pack_size() < Minimum) return false;
     for (const auto &Element : Argument.pack_elements())
       if (Element.getKind() != TemplateArgument::Type || !Capture(Element.getAsType()))
         return false;
@@ -18746,7 +18742,7 @@ bool retainFunctionalBindConstraintRoot(
         T.getAddressSpace() != LangAS::Default || T->isDependentType()) return false;
     const auto *F = T->isFunctionPointerType()
         ? T->getPointeeType()->getAs<FunctionProtoType>() : T->getAs<FunctionProtoType>();
-    if (!F || !ordinaryCallbackPrototype(F) || F->getNumParams() > 2 ||
+    if (!F || !ordinaryCallbackPrototype(F) ||
         (!F->getReturnType()->isVoidType() && !Scalar(F->getReturnType()))) return false;
     for (const auto Parameter : F->param_types())
       if (!Scalar(Parameter)) return false;
@@ -18894,7 +18890,6 @@ bool retainFunctionalBindConstraintRoot(
         BindObject(Function->getParamDecl(0)->getType()))
       return Check.family(Function, {"__type_traits/invoke.h"});
     if (InBind && Function->getName() == "bind" && Function->getNumParams() >= 1 &&
-        Function->getNumParams() <= 3 &&
         Callable(Function->getParamDecl(0)->getType())) {
       for (unsigned I = 1; I < Function->getNumParams(); ++I)
         if (!Capture(Function->getParamDecl(I)->getType())) return false;
@@ -18920,7 +18915,7 @@ bool retainFunctionalBindConstraintRoot(
         Tuple(Function->getParamDecl(0)->getType(), 1))
       return Check.family(Function, {"tuple", "__fwd/tuple.h"});
     if (Function->getName() == "__invoke" && Function->getNumParams() >= 1 &&
-        Function->getNumParams() <= 3 && Callable(Function->getParamDecl(0)->getType()))
+        Callable(Function->getParamDecl(0)->getType()))
       return Check.family(Function, {"__type_traits/invoke.h"});
     return false;
   }
@@ -19725,19 +19720,39 @@ class BindSourceProof {
     return true;
   }
 
+  bool storedReturnOperandSource(QualType Type, bool ReferenceWrapper) {
+    if (Type.isNull() || Type->isDependentType() || Type.isVolatileQualified() ||
+        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default) return false;
+    for (const auto &Element : Storage.Arguments.Elements) {
+      if (!Context.hasSameType(Type, Element.getType()) &&
+          !Context.hasSameType(Type, Context.getConstType(Element.getType()))) continue;
+      if (!ReferenceWrapper) return Element.getType()->isScalarType();
+      return bool(approvedFunctionalReferenceRecord(S, SM,
+          Element.getType()->getAsCXXRecordDecl(), Context));
+    }
+    return false;
+  }
   bool bindReturnMetadataTupleSource(const TemplateUseSource &Use, QualType Tuple) {
     if (!ActiveCompleteCall || Tuple.isNull() || Use.Kind != TemplateSourceKind::Type ||
         !Use.FunctionalBindConstraint || !Use.Template || !Use.Template->getIdentifier() ||
         Use.Template->getName() != "__bind_return" || !Use.Canonical || Use.Canonical->size() != 4 ||
         !Check.family(Use.Template, {"__functional/bind.h"})) return false;
     const auto &A = *Use.Canonical;
+    const auto StoredTuple = Context.getRecordType(Storage.Arguments.Record);
+    const bool Mutable = A.get(0).getKind() == TemplateArgument::Type &&
+        A.get(1).getKind() == TemplateArgument::Type &&
+        Context.hasSameType(A.get(0).getAsType(), Storage.CallableType) &&
+        Context.hasSameType(A.get(1).getAsType(), StoredTuple);
+    const bool Constant = A.get(0).getKind() == TemplateArgument::Type &&
+        A.get(1).getKind() == TemplateArgument::Type &&
+        Context.hasSameType(A.get(0).getAsType(), Context.getConstType(Storage.CallableType)) &&
+        Context.hasSameType(A.get(1).getAsType(), Context.getConstType(StoredTuple));
     return A.get(0).getKind() == TemplateArgument::Type &&
         A.get(1).getKind() == TemplateArgument::Type && A.get(2).getKind() == TemplateArgument::Type &&
         A.get(3).getKind() == TemplateArgument::Integral &&
         Context.hasSameType(A.get(3).getIntegralType(), Context.BoolTy) &&
         A.get(3).getAsIntegral().getBoolValue() &&
-        Context.hasSameType(A.get(0).getAsType(), Storage.CallableType) &&
-        Context.hasSameType(A.get(1).getAsType(), Context.getRecordType(Storage.Arguments.Record)) &&
+        (Mutable || Constant) &&
         Context.hasSameType(A.get(2).getAsType(), Tuple);
   }
   bool emptyOperatorTupleSignatureSource(const ClassTemplateSpecializationDecl *Tuple) {
@@ -19808,7 +19823,8 @@ class BindSourceProof {
     for (const auto *Use : ActiveSources) {
       if (!Use || !Use->Template || !Use->Template->getIdentifier() ||
           !Use->FunctionalBindConstraint || !Use->Canonical) continue;
-      Return |= bindReturnMetadataTupleSource(*Use, ActiveCompleteCall->CallArguments->getType());
+      Return |= bindReturnMetadataTupleSource(*Use, ActiveCompleteCall->CallArguments->getType()) ||
+          bindReturnMetadataTupleSource(*Use, Context.getRecordType(Tuple));
       const auto &A = *Use->Canonical;
       if (Use->Kind == TemplateSourceKind::Type && Use->Template->getName() == "__mu_return_impl" &&
           A.size() == 5 && A.get(0).getKind() == TemplateArgument::Type &&
@@ -19818,10 +19834,10 @@ class BindSourceProof {
         bool Flags = true;
         for (unsigned I = 1; I != 4; ++I)
           Flags &= A.get(I).getKind() == TemplateArgument::Integral &&
-              Context.hasSameType(A.get(I).getIntegralType(), Context.BoolTy) && !A.get(I).getAsIntegral().getBoolValue();
-        for (const auto &Element : Storage.Arguments.Elements)
-          if (Flags && Element.getType()->isScalarType() &&
-              Context.hasSameType(A.get(0).getAsType(), Element.getType())) Scalar = true;
+              Context.hasSameType(A.get(I).getIntegralType(), Context.BoolTy) &&
+              (I == 1 || !A.get(I).getAsIntegral().getBoolValue());
+        if (Flags && storedReturnOperandSource(A.get(0).getAsType(),
+                A.get(1).getAsIntegral().getBoolValue())) Scalar = true;
       }
       if (Use->Kind != TemplateSourceKind::VariableUse || Use->Template->getName() != "__is_invocable_v" ||
           !Use->Sugared || A.size() != 2 || Use->Sugared->size() != 2 ||
@@ -19829,7 +19845,8 @@ class BindSourceProof {
       bool Exact = true;
       for (const auto *Arguments : {Use->Canonical, Use->Sugared}) {
         if (Arguments->get(0).getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Arguments->get(0).getAsType(), Storage.CallableType) ||
+            (!Context.hasSameType(Arguments->get(0).getAsType(), Storage.CallableType) &&
+             !Context.hasSameType(Arguments->get(0).getAsType(), Context.getConstType(Storage.CallableType))) ||
             Arguments->get(1).getKind() != TemplateArgument::Pack ||
             Arguments->get(1).pack_size() != ActiveCompleteCall->Arguments.size()) { Exact = false; break; }
         unsigned I = 0;
@@ -19841,8 +19858,9 @@ class BindSourceProof {
       }
       Invocable |= Exact;
     }
-    // Scalar binding erases unused call arguments from this real invocable
-    // specialization. Its other retained tuple spelling still proves its own size.
+    // Exact scalar or reference-wrapper captures erase unused call arguments.
+    // The retained return tuple proves its own size; the actual invocable pack
+    // independently matches every runtime forwarded argument.
     return Return && Scalar && Invocable ? std::optional<unsigned>(unsigned(Elements.size())) : std::nullopt;
   }
 
@@ -19860,14 +19878,8 @@ class BindSourceProof {
           !Use->Template || !Use->Template->getIdentifier() || !Use->Canonical ||
           !Check.family(Use->Template, {"__functional/bind.h"})) continue;
       const auto &Arguments = *Use->Canonical;
-      if (Use->Template->getName() == "__bind_return" && Arguments.size() == 4 &&
-          Arguments.get(0).getKind() == TemplateArgument::Type &&
-          Arguments.get(1).getKind() == TemplateArgument::Type &&
-          Arguments.get(2).getKind() == TemplateArgument::Type &&
-          Context.hasSameType(Arguments.get(0).getAsType(), Storage.CallableType) &&
-          Context.hasSameType(Arguments.get(1).getAsType(), Context.getRecordType(Storage.Arguments.Record)) &&
-          Context.hasSameType(Arguments.get(2).getAsType(), ActiveCompleteCall->CallArguments->getType()))
-        BoundReturn = true;
+      BoundReturn |= bindReturnMetadataTupleSource(*Use, ActiveCompleteCall->CallArguments->getType()) ||
+          bindReturnMetadataTupleSource(*Use, Context.getRecordType(Instance));
       const bool ReturnOperand = Use->Template->getName() == "__mu_return" && Arguments.size() == 2;
       const bool ImplementationOperand = Use->Template->getName() == "__mu_return_impl" && Arguments.size() == 5;
       if (!ReturnOperand && !ImplementationOperand) continue;
@@ -19876,16 +19888,17 @@ class BindSourceProof {
         for (unsigned I = 1; I != 4; ++I)
           ScalarFlags &= Arguments.get(I).getKind() == TemplateArgument::Integral &&
               Context.hasSameType(Arguments.get(I).getIntegralType(), Context.BoolTy) &&
-              !Arguments.get(I).getAsIntegral().getBoolValue();
+              (I == 1 || !Arguments.get(I).getAsIntegral().getBoolValue());
         if (!ScalarFlags) continue;
       }
       const unsigned TupleIndex = ImplementationOperand ? 4U : 1U;
       if (Arguments.get(0).getKind() == TemplateArgument::Type &&
           Arguments.get(TupleIndex).getKind() == TemplateArgument::Type &&
           Context.hasSameType(Arguments.get(TupleIndex).getAsType(), Context.getRecordType(Instance))) {
-        for (const auto &Element : Storage.Arguments.Elements)
-          if (Element.getType()->isScalarType() &&
-              Context.hasSameType(Arguments.get(0).getAsType(), Element.getType())) ScalarOperand = true;
+        const auto Type = Arguments.get(0).getAsType();
+        const bool Wrapper = ImplementationOperand && Arguments.get(1).getAsIntegral().getBoolValue();
+        ScalarOperand |= storedReturnOperandSource(Type, Wrapper) ||
+            (ReturnOperand && storedReturnOperandSource(Type, true));
       }
     }
     // The current return packet and its real scalar operand packet (parent
@@ -19956,6 +19969,8 @@ class BindSourceProof {
         Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default) return false;
     if (Context.hasSameType(Type, Storage.CallableType)) return true;
     for (const auto &Element : Storage.Arguments.Elements) {
+      if (Element.getType()->isScalarType() &&
+          Context.hasSameType(Type, Element.getType())) return true;
       const auto Wrapper = approvedFunctionalReferenceRecord(S, SM,
           Element.getType()->getAsCXXRecordDecl(), Context);
       if (Wrapper && Context.hasSameType(Type, Wrapper->ReferentType)) return true;
@@ -21159,8 +21174,7 @@ public:
     if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Object != Call.Object || Actual->Storage.Record != Storage.Record ||
-        Actual->Arguments.size() != Storage.Arguments.Elements.size() ||
-        Actual->Arguments.size() > 2) return false;
+        Actual->Arguments.size() != Storage.Arguments.Elements.size()) return false;
     // All selected children and both metadata probe alternatives close in
     // this proof and share its original graph budget.
     if (!callAuxiliary(*Actual)) return false;
@@ -21194,9 +21208,11 @@ public:
         ActiveCompleteCall = nullptr;
       });
       auto Close = [&](const CallExpr *Expression, const FunctionDecl *Function) {
-        if (!Expression || ClosedCompleteCalls.size() == 64) return false;
-        const auto Inserted = ClosedCompleteCalls.emplace(Expression, Function);
-        return Inserted.second || Inserted.first->second == Function;
+        if (!Expression) return false;
+        const auto Existing = ClosedCompleteCalls.find(Expression);
+        if (Existing != ClosedCompleteCalls.end()) return Existing->second == Function;
+        if (ClosedCompleteCalls.size() == 64) return false;
+        return ClosedCompleteCalls.emplace(Expression, Function).second;
       };
       for (const auto &Argument : Actual->Arguments)
         if (!Argument.Get->getDirectCallee() || !Argument.Unwrap->getDirectCallee() ||
@@ -21532,7 +21548,7 @@ public:
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Storage.Record != Storage.Record ||
         Actual->Arguments.size() != Storage.Arguments.Elements.size() ||
-        Actual->Arguments.size() > 2 || !Graph.TraverseBindCallAuxiliarySource(*Actual)) return false;
+        !Graph.TraverseBindCallAuxiliarySource(*Actual)) return false;
     if (Actual->Arguments.empty()) return Graph.bindSourceComplete();
     return Graph.withBindTupleElementProjections(*Actual, [&] {
       if (!Graph.TraverseBindTupleElementProjectionSources()) return false;
@@ -21746,7 +21762,6 @@ public:
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Storage.Record != Storage.Record || Actual->Arguments.size() != Call.Arguments.size() ||
         Actual->Arguments.size() != Storage.Arguments.Elements.size() ||
-        Actual->Arguments.size() > 2 ||
         !Graph.TraverseBindCallAuxiliarySource(*Actual)) return false;
     for (unsigned I = 0; I < Actual->Arguments.size(); ++I)
       if (Actual->Arguments[I].Get != Call.Arguments[I].Get ||

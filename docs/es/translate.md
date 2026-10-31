@@ -984,3 +984,6 @@ Las tuplas de referencias toman prestados los propietarios admitidos. Las tuplas
 
 
 `cpp-core-v2`: `std::bind` también acepta un puntero de función ordinaria sin parámetros y sin argumentos almacenados. La fábrica captura el puntero una sola vez; las copias y las llamadas const o sobre valores r conservan ese destino. Las llamadas aceptan cero, uno o dos argumentos escalares sin usar y evalúan sus efectos una sola vez antes de invocar el destino. Los resultados escalares, void y referencias válidas admitidos conservan sus comprobaciones. Se autentican la tupla SDK vacía y las fuentes de las llamadas seleccionadas. Los marcadores de posición, las expresiones bind anidadas y los objetos invocables requieren más soporte. El lenguaje fuente de NeverC sigue siendo C23.
+
+
+`cpp-core-v2`: El tratamiento de paquetes ampliados de argumentos almacenados de `std::bind` está integrado como trabajo en desarrollo. La prueba cumple 584 de 600 expectativas; quedan 16 rechazos en `bind-bound-pack-eight-values` y `bind-bound-pack-result-kinds` entre ocho ABI. Pasan las comprobaciones sintácticas y 72 ejecuciones nativas de referencia. Los tests formales y la validación O0/O2 del código traducido de este incremento siguen pendientes. Los marcadores de posición, expresiones bind anidadas y objetos invocables requieren más soporte. NeverC sigue admitiendo solo C23.
