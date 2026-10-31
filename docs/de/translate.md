@@ -1002,3 +1002,6 @@ Die statische bind-Beschreibung erhält die exakte Speicherung der SDK-Platzhalt
 
 
 Wiederverwendete skalare bind-Helper prüfen jeden erhaltenen `tuple_element`-Operanden mit seinem eigenen Tuple, Index und Quelltext der partiellen Spezialisierung in einem temporären Gültigkeitsbereich. Temporäre Typ- und Anweisungseinträge werden danach verworfen; Konstruktion, physischer Speicher und Lebensdauer eines anderen bind-Objekts werden nicht freigegeben. Die Validierung steht aus.
+
+
+Die bind-Konstruktionsbeschreibung erhält für jeden Platzhalter die ausgewählte Initialisierung der leeren Basis, triviale SDK-Kopier- und Verschiebeoperationen sowie Weiterleitungsausdrücke. Quellzertifizierung und Laufzeitausführung stehen aus.

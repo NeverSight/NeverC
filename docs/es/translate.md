@@ -1002,3 +1002,6 @@ La descripción estática de bind conserva el almacenamiento exacto en bases vac
 
 
 Los helpers bind escalares reutilizados prueban cada operando `tuple_element` retenido con su propia tupla, índice y fuente de especialización parcial en un ámbito temporal. Las entradas temporales de tipos y sentencias se descartan al salir, sin autorizar construcción, almacenamiento físico ni vida de otro objeto bind. La validación sigue pendiente.
+
+
+La descripción de construcción bind conserva la inicialización de base vacía seleccionada, la copia o movimiento trivial del SDK y las expresiones de reenvío de cada marcador. La certificación de fuente y la ejecución siguen pendientes.

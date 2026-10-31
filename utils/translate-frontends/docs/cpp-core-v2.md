@@ -17330,3 +17330,6 @@ The inert bind layout descriptor now retains the exact empty-base storage of SDK
 
 
 Reused scalar bind helpers now close each retained `tuple_element` operand against its own tuple, index and partial source in a temporary proof scope. Temporary type and statement entries are discarded on exit; this grants no construction, physical storage or lifetime permission for another bind object. Validation of this repair remains pending.
+
+
+The bind construction descriptor now retains each placeholder’s selected empty-base initializer, trivial SDK copy/move and forwarding expressions. Source certification and runtime placeholder execution remain pending.

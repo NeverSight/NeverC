@@ -1002,3 +1002,6 @@ La descrizione statica di bind conserva la memorizzazione esatta come basi vuote
 
 
 Gli helper bind scalari riutilizzati verificano ogni operando `tuple_element` conservato con la propria tupla, indice e sorgente della specializzazione parziale in un ambito temporaneo. Le voci temporanee di tipi e istruzioni vengono eliminate all’uscita, senza autorizzare costruzione, memoria fisica o durata di un altro oggetto bind. La verifica è in attesa.
+
+
+La descrizione di costruzione bind conserva l’inizializzazione della base vuota selezionata, copia o spostamento triviale dell’SDK e le espressioni di inoltro di ogni segnaposto. La certificazione sorgente e l’esecuzione restano in attesa.

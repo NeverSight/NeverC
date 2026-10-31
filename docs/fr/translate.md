@@ -1002,3 +1002,6 @@ La description statique de bind conserve le stockage exact en bases vides des es
 
 
 Les helpers bind scalaires réutilisés prouvent chaque opérande `tuple_element` conservé avec son propre tuple, index et source de spécialisation partielle dans une portée temporaire. Les entrées temporaires de types et instructions sont supprimées à la sortie, sans autoriser construction, stockage physique ni durée de vie d’un autre objet bind. La validation reste en attente.
+
+
+La description de construction bind conserve l’initialisation de base vide sélectionnée, la copie ou le déplacement trivial du SDK et les expressions de transfert de chaque espace réservé. La certification de source et l’exécution restent en attente.

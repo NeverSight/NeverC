@@ -18179,13 +18179,38 @@ describeFunctionalBindTupleConstructionSourceImpl(
   for (const auto *Initializer : ImplementationConstructor->inits()) {
     if (Index >= Count) return std::nullopt;
     const auto &Element = Arguments.Elements[Index];
-    const auto *LeafRecord = Element.Field
-        ? dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext()) : nullptr;
+    const bool EmptyPlaceholder = Element.EmptyBase && !CallReferenceInputs &&
+        functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context);
     const auto *Base = Initializer->isBaseInitializer()
         ? Initializer->getBaseClass()->getAsCXXRecordDecl() : nullptr;
+    const auto *LeafRecord = Element.Field
+        ? dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext()) : EmptyPlaceholder ? Base : nullptr;
+    if (EmptyPlaceholder) {
+      const auto *Leaf = dyn_cast_or_null<ClassTemplateSpecializationDecl>(LeafRecord);
+      if (!Leaf || !Leaf->getIdentifier() || Leaf->getName() != "__tuple_leaf" ||
+          Leaf->getSpecializationKind() != TSK_ImplicitInstantiation ||
+          Leaf->getTemplateArgs().size() != 3 || !Leaf->field_empty() ||
+          Leaf->getNumBases() != 1 || !Leaf->isEmpty() ||
+          !Check.family(Leaf, {"tuple"})) return std::nullopt;
+      const auto &Parameters = Leaf->getTemplateArgs();
+      if (Parameters[0].getKind() != TemplateArgument::Integral ||
+          Parameters[0].getAsIntegral().isNegative() ||
+          Parameters[0].getAsIntegral().getLimitedValue(65) != Index ||
+          !Context.hasSameType(Parameters[0].getIntegralType(), Context.getSizeType()) ||
+          Parameters[1].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Parameters[1].getAsType(), Element.getType()) ||
+          Parameters[2].getKind() != TemplateArgument::Integral ||
+          !Parameters[2].getIntegralType()->isBooleanType() ||
+          !Parameters[2].getAsIntegral().getBoolValue()) return std::nullopt;
+      const auto &StorageBase = *Leaf->bases_begin();
+      const auto *StorageRecord = StorageBase.getType()->getAsCXXRecordDecl();
+      if (StorageBase.isVirtual() || StorageBase.getAccessSpecifier() != AS_private ||
+          !StorageRecord || StorageRecord->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
+        return std::nullopt;
+    }
     const auto *Leaf = Check.construction(Initializer->getInit());
     const auto *LeafConstructor = Leaf ? Leaf->getConstructor() : nullptr;
-    if (!Element.Field || Element.EmptyBase || !LeafRecord || !Base ||
+    if ((!EmptyPlaceholder && (!Element.Field || Element.EmptyBase)) || !LeafRecord || !Base ||
         !Initializer->isBaseInitializer() || Initializer->isBaseVirtual() ||
         Base->getCanonicalDecl() != LeafRecord->getCanonicalDecl() ||
         !Leaf || !LeafConstructor || Leaf->getNumArgs() != 1 ||
@@ -18198,17 +18223,25 @@ describeFunctionalBindTupleConstructionSourceImpl(
                           "tuple", Forward)) return std::nullopt;
     Forwards.push_back(Forward);
     const auto *Value = *LeafConstructor->init_begin();
-    if (!Value->isMemberInitializer() || Value->getMember() != Element.Field)
+    if (EmptyPlaceholder) {
+      const auto *StorageBase = Value->isBaseInitializer()
+          ? Value->getBaseClass()->getAsCXXRecordDecl() : nullptr;
+      if (!StorageBase || Value->isBaseVirtual() ||
+          StorageBase->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return std::nullopt;
+    } else if (!Value->isMemberInitializer() || Value->getMember() != Element.Field)
       return std::nullopt;
     const auto *Copy = Check.construction(Value->getInit());
     const auto Wrapper = approvedFunctionalReferenceRecord(
         S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
     const auto *SelectedCopy = Copy ? Copy->getConstructor() : nullptr;
-    if (Wrapper ? (!Copy || Copy->getNumArgs() != 1 || !SelectedCopy ||
-                   !SelectedCopy->isCopyOrMoveConstructor() || !SelectedCopy->isTrivial() ||
-                   SelectedCopy->isDeleted() || SelectedCopy->getParent()->getCanonicalDecl() !=
-                       Wrapper->Record->getCanonicalDecl())
-                : bool(Copy)) return std::nullopt;
+    const auto *CopiedRecord = Wrapper ? Wrapper->Record : EmptyPlaceholder ? Element.EmptyBase : nullptr;
+    if (CopiedRecord ? (!Copy || Copy->getNumArgs() != 1 || !SelectedCopy ||
+                        !SelectedCopy->isCopyOrMoveConstructor() || !SelectedCopy->isTrivial() ||
+                        SelectedCopy->isDeleted() || SelectedCopy->getParent()->getCanonicalDecl() !=
+                            CopiedRecord->getCanonicalDecl())
+                     : bool(Copy)) return std::nullopt;
+    if (EmptyPlaceholder && (!SelectedCopy->isImplicit() || !SelectedCopy->isDefaulted() ||
+                            !Check.family(SelectedCopy, {"__functional/bind.h"}))) return std::nullopt;
     const auto *Forwarded = Copy ? Copy->getArg(0) : Value->getInit();
     if (!Check.forwarding(Forwarded, LeafConstructor->getParamDecl(0), "tuple", Forward))
       return std::nullopt;
