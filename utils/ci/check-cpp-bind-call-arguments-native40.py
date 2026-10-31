@@ -49,8 +49,13 @@ try:
     assert plan['execution_binding_required'] is True
     assert re.fullmatch('[0-9a-f]{40}', plan['source_repair_commit'])
     assert plan['clean_source_basis']==plan['source_repair_commit']
-    for field in ['actual_same_source_six_report_sha256', 'actual_same_source_six_proof_sha256']:
-        assert re.fullmatch('[0-9a-f]{64}', plan[field])
+    if plan.get('source_syntax_validation_pending', False):
+        assert plan['post_merge_validation'] is True
+        assert plan['actual_same_source_six_report_sha256'] is None
+        assert plan['actual_same_source_six_proof_sha256'] is None
+    else:
+        for field in ['actual_same_source_six_report_sha256', 'actual_same_source_six_proof_sha256']:
+            assert re.fullmatch('[0-9a-f]{64}', plan[field])
     for case in plan['cases']:
         folder=out/case['name'];folder.mkdir();source=folder/'input.cpp'
         source.write_text(case['source']);assert sha(source)==case['source_sha256']

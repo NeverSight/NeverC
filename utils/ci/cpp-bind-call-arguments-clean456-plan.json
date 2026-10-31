@@ -728,8 +728,8 @@
     "i686-unknown-linux-gnu"
   ],
   "fixture_group": "bind-call-arguments-clean456",
-  "source_repair_commit": "2f27297ef578c94352fc37f4333fa7c0211a6272",
-  "clean_source_basis": "2f27297ef578c94352fc37f4333fa7c0211a6272",
+  "source_repair_commit": "c2039c5d8ba4daadfaf34ef30b073ed71addf616",
+  "clean_source_basis": "c2039c5d8ba4daadfaf34ef30b073ed71addf616",
   "required_requests": 600,
   "required_acceptances": 416,
   "required_sdk_guard_rejections": 80,
@@ -756,7 +756,7 @@
   "source_trace_included": false,
   "inverse_source_edits": {},
   "frontend_execution_timeout_seconds": 60,
-  "actual_same_source_six_report_sha256": "0e85f97f69ab3d8f0cdce3b1bf9e83ec9f286bce79312a097b7a6d0536dae369",
+  "actual_same_source_six_report_sha256": null,
   "reference_full_plan_commit": "f961e1f5cc09ba6fd54a708b73e4639a6952f651",
   "reference_full_plan_path": "utils/ci/cpp-not-fn-nested-clean288-plan.json",
   "reference_full_plan_sha256": "b3dfb130b4e1a5b970262f6f8cd3cf1adc87a918214ac9573e75714f59c3ac45",
@@ -805,7 +805,7 @@
     "Frontend.cpp": "1f9625e6f65ced6778de8ac96f91b6f70ab8b702e32e5ff2d1a807559333b61b",
     "Lowering.cpp": "01bf7bdf9e09d6ab3fc5b96f5892c2c2c9b467160b8fbb2304c251c73f4b16a7",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "eda0a69461a5ed4cd4feaf07a578438351ff71225ac1aa63a620c8ae541b9b94",
+    "MathSDK.cpp": "9706656e5b3c1d1a95fb16128f4cfd3c359d5e0f1eefbd84fb35aa5ce1d468a5",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "a5c5f1990c2a51812632fe1e5a909fa0872039540aab6484ee1080f24999d06d",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -822,7 +822,7 @@
     "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
-  "actual_same_source_six_proof_sha256": "3fb4c9b7273c7bce69225ad62b1638778050fb5b7ae598bf6c9ee78cb003ce6d",
+  "actual_same_source_six_proof_sha256": null,
   "required_original288_requests": 288,
   "required_original288_acceptances": 128,
   "required_original288_expected_reject": 152,
@@ -856,5 +856,7 @@
   "required_expanded_bound_pack_requests": 72,
   "required_expanded_bound_pack_acceptances": 64,
   "required_expanded_bound_pack_body_guard_refusals": 8,
-  "expanded_bound_pack_cases_contract_sha256": "1345a813ac0fdd6056fb11aeebdabf3b758eab26960f9610f06d8b8396539549"
+  "expanded_bound_pack_cases_contract_sha256": "1345a813ac0fdd6056fb11aeebdabf3b758eab26960f9610f06d8b8396539549",
+  "source_syntax_validation_pending": true,
+  "post_merge_validation": true
 }

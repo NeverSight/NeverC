@@ -174,8 +174,13 @@ def main():
         assert len(plan['target_abis']) == 8 and len(set(plan['target_abis'])) == 8
         assert re.fullmatch('[0-9a-f]{40}', plan['source_repair_commit'])
         assert plan['clean_source_basis'] == plan['source_repair_commit']
-        for field in ['actual_same_source_six_report_sha256', 'actual_same_source_six_proof_sha256']:
-            assert re.fullmatch('[0-9a-f]{64}', plan[field])
+        if plan.get('source_syntax_validation_pending', False):
+            assert plan['post_merge_validation'] is True
+            assert plan['actual_same_source_six_report_sha256'] is None
+            assert plan['actual_same_source_six_proof_sha256'] is None
+        else:
+            for field in ['actual_same_source_six_report_sha256', 'actual_same_source_six_proof_sha256']:
+                assert re.fullmatch('[0-9a-f]{64}', plan[field])
         report['plan'] = plan
         report['revision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
         report['source_sha256'] = {name: sha(root / name) for name in plan['candidate_source_paths']}

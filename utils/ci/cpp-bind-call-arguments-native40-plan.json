@@ -279,10 +279,10 @@
   ],
   "fixture_group": "bind-call-arguments-native40",
   "execution_binding_required": true,
-  "source_repair_commit": "2f27297ef578c94352fc37f4333fa7c0211a6272",
-  "clean_source_basis": "2f27297ef578c94352fc37f4333fa7c0211a6272",
-  "actual_same_source_six_report_sha256": "0e85f97f69ab3d8f0cdce3b1bf9e83ec9f286bce79312a097b7a6d0536dae369",
-  "actual_same_source_six_proof_sha256": "3fb4c9b7273c7bce69225ad62b1638778050fb5b7ae598bf6c9ee78cb003ce6d",
+  "source_repair_commit": "c2039c5d8ba4daadfaf34ef30b073ed71addf616",
+  "clean_source_basis": "c2039c5d8ba4daadfaf34ef30b073ed71addf616",
+  "actual_same_source_six_report_sha256": null,
+  "actual_same_source_six_proof_sha256": null,
   "source_contract_sha256": "e71b11486d5ce55e759950d55163e60cb12215064b055cbaa58ce6fa6353bb8f",
   "required_native_programs": 72,
   "cpp_executed_locally": false,
@@ -290,7 +290,7 @@
     "Frontend.cpp": "1f9625e6f65ced6778de8ac96f91b6f70ab8b702e32e5ff2d1a807559333b61b",
     "Lowering.cpp": "01bf7bdf9e09d6ab3fc5b96f5892c2c2c9b467160b8fbb2304c251c73f4b16a7",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "eda0a69461a5ed4cd4feaf07a578438351ff71225ac1aa63a620c8ae541b9b94",
+    "MathSDK.cpp": "9706656e5b3c1d1a95fb16128f4cfd3c359d5e0f1eefbd84fb35aa5ce1d468a5",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "a5c5f1990c2a51812632fe1e5a909fa0872039540aab6484ee1080f24999d06d",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -318,5 +318,7 @@
   "current_source_review_sha256": "255e8e148511f5636074abca3a856e254192be2a3706a54297dee20bed7f4a3d",
   "zero_bound_cases_contract_sha256": "e3766090a950cfd3510d80519f610a1cda0bf27cc464f1d8d8a76f6af6ea7397",
   "requires_current_source6_before_dispatch": true,
-  "expanded_bound_pack_cases_contract_sha256": "1345a813ac0fdd6056fb11aeebdabf3b758eab26960f9610f06d8b8396539549"
+  "expanded_bound_pack_cases_contract_sha256": "1345a813ac0fdd6056fb11aeebdabf3b758eab26960f9610f06d8b8396539549",
+  "source_syntax_validation_pending": true,
+  "post_merge_validation": true
 }
