@@ -16046,6 +16046,71 @@ public:
 };
 } // namespace
 
+std::optional<FunctionalBindPlaceholderIdentity>
+describeFunctionalBindPlaceholderIdentity(
+    const State &S, const SourceManager &SM, QualType Type,
+    const ASTContext &Context) {
+  if (!S.coreV2() || Type.isNull()) return std::nullopt;
+  Type = Type.getNonReferenceType();
+  if (Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default || Type->isDependentType())
+    return std::nullopt;
+  const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Type->getAsCXXRecordDecl());
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  const auto *Namespace = Record
+      ? dyn_cast<NamespaceDecl>(Record->getDeclContext()) : nullptr;
+  if (!Record || !Primary || !Record->getIdentifier() || Record->getName() != "__ph" ||
+      !Namespace || !Namespace->getIdentifier() || Namespace->getName() != "placeholders" ||
+      Namespace->isInline() || Namespace->isAnonymousNamespace() ||
+      Primary->getDeclContext() != Record->getDeclContext() ||
+      Record->isInvalidDecl() || Record->isUnion() ||
+      (Record->getSpecializationKind() != TSK_Undeclared &&
+       Record->getSpecializationKind() != TSK_ImplicitInstantiation) ||
+      Record->getSpecializedTemplateOrPartial()
+          .is<ClassTemplatePartialSpecializationDecl *>()) return std::nullopt;
+  const DeclContext *Parent = Namespace->getParent();
+  unsigned NamespaceDepth = 0;
+  while (const auto *Inline = dyn_cast_or_null<NamespaceDecl>(Parent)) {
+    if (Inline->isStdNamespace()) break;
+    if (++NamespaceDepth > 64 || !Inline->isInline() || Inline->isAnonymousNamespace())
+      return std::nullopt;
+    Parent = Inline->getParent();
+  }
+  const auto *Standard = dyn_cast_or_null<NamespaceDecl>(Parent);
+  if (!Standard || !Standard->isStdNamespace()) return std::nullopt;
+  auto Origin = [&](const Decl *Declaration) {
+    const auto File = Declaration ? S.sdkFile(SM, Declaration->getLocation()) : std::nullopt;
+    return File && File->Root == "libcxx" && File->Path == "__functional/bind.h" &&
+        !S.owns(SM, Declaration->getLocation()) &&
+        approvedStandardSDKDeclaration(S, SM, Declaration);
+  };
+  if (!Origin(Namespace)) return std::nullopt;
+  const auto *Parameters = Primary->getTemplateParameters();
+  const auto *Parameter = Parameters && Parameters->size() == 1
+      ? dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0)) : nullptr;
+  if (!Parameter || Parameter->getDepth() || Parameter->getIndex() ||
+      Parameter->isParameterPack() || Parameter->hasDefaultArgument() ||
+      !Parameter->getTypeSourceInfo() || !Context.hasSameType(Parameter->getType(), Context.IntTy) ||
+      !Origin(Parameter) || Record->getTemplateArgs().size() != 1) return std::nullopt;
+  const auto &Argument = Record->getTemplateArgs()[0];
+  if (Argument.getKind() != TemplateArgument::Integral ||
+      !Context.hasSameType(Argument.getIntegralType(), Context.IntTy) ||
+      Argument.getAsIntegral().isNegative()) return std::nullopt;
+  const auto Rank = Argument.getAsIntegral().getLimitedValue(3);
+  if (Rank != 1 && Rank != 2) return std::nullopt;
+  unsigned Declarations = 0;
+  for (const auto *Declaration : Primary->redecls())
+    if (++Declarations > 64 || !Origin(Declaration) || !Origin(Declaration->getTemplatedDecl()))
+      return std::nullopt;
+  Declarations = 0;
+  for (const auto *Declaration : Record->redecls())
+    if (++Declarations > 64 || !Origin(Declaration)) return std::nullopt;
+  // Only retain these actual SDK identities. No record completion or layout
+  // query is allowed here because Sema may still be selecting an overload.
+  return FunctionalBindPlaceholderIdentity{Record, Primary, Parameter, unsigned(Rank)};
+}
+
 std::optional<FunctionalBindStorage>
 describeFunctionalBindStorage(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record,
@@ -18716,7 +18781,10 @@ bool retainFunctionalBindConstraintRoot(
         Scalar(R->getTemplateArgs()[0].getAsType()) &&
         Check.family(R, {"__functional/reference_wrapper.h", "__fwd/functional.h"});
   };
-  auto Capture = [&](QualType T) { return Scalar(T) || Reference(T); };
+  auto Capture = [&](QualType T) {
+    return Scalar(T) || Reference(T) ||
+        describeFunctionalBindPlaceholderIdentity(S, SM, T, Template->getASTContext()).has_value();
+  };
   auto Pack = [&](const TemplateArgument &Argument, unsigned Minimum) {
     if (Argument.getKind() != TemplateArgument::Pack ||
         Argument.pack_size() < Minimum) return false;

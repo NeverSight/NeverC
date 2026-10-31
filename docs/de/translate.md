@@ -990,3 +990,9 @@ Referenztupel leihen unterstützte Besitzer. Werttupel verwenden den ausgewählt
 
 
 Abgeschlossene `declval`-Quellnachweise fassen den ausgewählten Aufruf und beide exakten Helper-Aufrufe in einem Cache-Eintrag zusammen. Die Grenze von 64 Einträgen und alle gewöhnlichen Quellprüfungen bleiben erhalten. Die Prüfung erfolgt nach dem Zusammenführen; Syntax- und Laufzeitergebnisse stehen noch aus.
+
+
+Die Quellerfassung erhält die exakten Identitäten `__ph<1>` und `__ph<2>` des festen SDK, ohne während Sema Definitionen oder Layouts anzufordern. Laufzeiterfassung, Argumentprojektion und Quellnachweise für Platzhalter sind noch unvollständig. [cpp-bind-placeholder-cases.json](../../utils/ci/cpp-bind-placeholder-cases.json) enthält vorgeschlagene Fälle, keine erfolgreichen Ergebnisse.
+
+
+Acht GTests für erweiterte gebundene Argumentpakete sind registriert; der STL-Golden-Suffix umfasst nun 48 Tests. Ihre formalen und übersetzten O0/O2-Ergebnisse stehen aus. Die bisherigen 40 Fälle und der Vertrag über 164 Tests und 80 ausgeführte Produkte bleiben bis zur Bindung einer neuen Komponente erhalten.

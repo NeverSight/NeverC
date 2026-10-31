@@ -1425,3 +1425,9 @@ Reference tuples borrow admitted owners. Value tuples use the selected same-type
 
 
 Completed `declval` source proofs now group the selected call and both exact helper calls in one cache entry, retaining the 64-entry limit and all ordinary source checks. Validation of this change runs after the merge; its syntax and runtime results remain pending.
+
+
+Source collection now retains the exact pinned SDK `__ph<1>` and `__ph<2>` identities without requesting definitions or layouts during Sema. This is preparation for placeholders; their runtime capture, projection and source certificates remain unfinished. The proposed cases are retained in [cpp-bind-placeholder-cases.json](../utils/ci/cpp-bind-placeholder-cases.json); they are not passing results.
+
+
+Eight expanded bound-pack GTests are now registered, bringing the STL golden suffix to 48 tests. Their formal and translated O0/O2 results are pending. The previously authenticated component still selects its original 40 goldens; its 164-test, 80-product execution contract is preserved until a new component is bound.

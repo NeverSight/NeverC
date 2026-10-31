@@ -1735,6 +1735,20 @@ approvedUtilityPairPiecewiseConstruction(
     const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
 
+// Sema-safe identity only: this description never asks for an instantiated
+// definition, layout, special member or body. Runtime placeholder capture and
+// projection require their own selected source and lifetime certificates.
+struct FunctionalBindPlaceholderIdentity {
+  const clang::ClassTemplateSpecializationDecl *Record;
+  const clang::ClassTemplateDecl *Primary;
+  const clang::NonTypeTemplateParmDecl *Parameter;
+  unsigned Rank;
+};
+std::optional<FunctionalBindPlaceholderIdentity>
+describeFunctionalBindPlaceholderIdentity(
+    const State &S, const clang::SourceManager &SM, clang::QualType Type,
+    const clang::ASTContext &Context);
+
 // Inert shape only. Factory/default, lifecycle, invocation, ordinary callback
 // body and lifetime proofs must complete before any SDK runtime use is granted.
 struct FunctionalBindStorage {
