@@ -993,3 +993,6 @@ Las pruebas de fuente `declval` completadas agrupan la llamada seleccionada y su
 
 
 La recopilación conserva las identidades exactas `__ph<1>` y `__ph<2>` del SDK fijado sin solicitar definiciones ni diseños durante Sema. La captura, proyección de argumentos y pruebas de fuente de los marcadores siguen pendientes. [cpp-bind-placeholder-cases.json](../../utils/ci/cpp-bind-placeholder-cases.json) contiene casos propuestos, no resultados aprobados.
+
+
+Se registraron ocho GTest de paquetes de argumentos ligados ampliados, elevando el sufijo STL golden a 48 pruebas. Sus resultados formales y traducidos O0/O2 siguen pendientes. El componente autenticado conserva sus 40 casos y el contrato de 164 pruebas y 80 productos ejecutados hasta vincular un nuevo componente.

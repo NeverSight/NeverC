@@ -993,3 +993,6 @@ merge 接受同一預設 int/int unordered_map 的左值或右值來源容器。
 
 
 原始碼收集現保留固定 SDK 的精確 `__ph<1>`、`__ph<2>` 身分，Sema 期間不要求定義或配置。這是預留位置支援的準備工作，執行階段擷取、引數投影及原始碼證明尚未完成。擬議案例保存在 [cpp-bind-placeholder-cases.json](../../utils/ci/cpp-bind-placeholder-cases.json)，不代表已通過的結果。
+
+
+擴充儲存引數包的八個 GTest 現已正式註冊，STL golden 後綴增至 48 項；新增案例的正式測試與翻譯後 O0/O2 結果仍待驗證。先前驗證的元件仍選擇原有 40 項，在綁定新元件前保留其 164 項測試、80 個執行產物的契約。

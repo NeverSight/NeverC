@@ -8,6 +8,8 @@ SIX_REGISTERED_SOURCE_SHA256 = '2fa44b258cb1ef0bbbd45435f5150673f35a46f1574d7a72
 TWELVE_REGISTERED_SOURCE_SHA256 = '006fa380968b6acc0c7c8d99ff7a1c5a59196045e08934805550b649966bbf7d'
 BIND21_REGISTERED_SOURCE_SHA256 = 'a38050d1e0d40689c4cec7cd03e344cbbf042118bd410e3aa59cc8a149719201'
 BIND21_GOLDEN_SUFFIX_SHA256 = 'dcb85be2ebb3cea63d018f3db3d9238a3064fc3e9398010a647ea5aa17f247a1'
+BIND48_REGISTERED_SOURCE_SHA256 = 'd24fb9ba8d90ef5ac0f72238e04be70e08a50e583bd723bee5a56dc95164346b'
+BIND48_GOLDEN_SUFFIX_SHA256 = '620adce3d4aa3c926ade2dd4e76c048cca4b10ac1b645eed6caa889cc910ec88'
 BIND40_REGISTERED_SOURCE_SHA256 = 'bcb391dec4e2db6181eda34c778404b2d8846fd7f05c487c6e6e57c06e7a06fc'
 BIND40_GOLDEN_SUFFIX_SHA256 = '48e16535ad52835351d6beb425f6b69690209d1014cd24df4da2ba4fe8f8ae1d'
 BIND32_REGISTERED_SOURCE_SHA256 = 'b30cba17a5378fabc41f5aa381f6ae5caabaadfa032facec8d6b1017d20c0423'
@@ -26,7 +28,9 @@ def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
     suffix_digest = digest(additions)
-    if suffix_digest == BIND40_GOLDEN_SUFFIX_SHA256:
+    if suffix_digest == BIND48_GOLDEN_SUFFIX_SHA256:
+        registered_digest = BIND48_REGISTERED_SOURCE_SHA256
+    elif suffix_digest == BIND40_GOLDEN_SUFFIX_SHA256:
         registered_digest = BIND40_REGISTERED_SOURCE_SHA256
     elif suffix_digest == BIND32_GOLDEN_SUFFIX_SHA256:
         registered_digest = BIND32_REGISTERED_SOURCE_SHA256

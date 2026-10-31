@@ -46,7 +46,7 @@
   "dependency_producer_run_id": 40624781946,
   "private_prefix_sha256": "cf4d69ade740f971db56cc3f4e1b811d8094d2549a0aed84f6d97f9eaed140f8",
   "authenticated_system_libraries_sha256": "1c998ace53fdcebd4e6836bc2f9d50b481b0aa38c2625f9c73fd75c0234f820e",
-  "original_tests_file_sha256": "bcb391dec4e2db6181eda34c778404b2d8846fd7f05c487c6e6e57c06e7a06fc",
+  "original_tests_file_sha256": "d24fb9ba8d90ef5ac0f72238e04be70e08a50e583bd723bee5a56dc95164346b",
   "formal_manifest_sha256": "a4e047df483c770a7dd077e50abad961d8a0833c86e56d1bbcb47e92a6c27979",
   "required_actual_original_gtest_xml": 124,
   "original_gtest_bodies_modified": false,
@@ -74,7 +74,9 @@
     "tests/neverc/TranslateTests.cpp",
     "utils/ci/bind-zero-bound-eight-formal-additions.cpp",
     "utils/ci/bind-forty-formal-additions.cpp",
-    "tests/neverc/NotFnRegisteredGTestsTests.py"
+    "tests/neverc/NotFnRegisteredGTestsTests.py",
+    "utils/ci/bind-expanded-bound-eight-formal-additions.cpp",
+    "utils/ci/bind-forty-eight-formal-additions.cpp"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,
@@ -378,8 +380,8 @@
   "required_actual_total_gtest_xml": 164,
   "required_actual_not_fn_gtest_xml": 40,
   "required_actual_not_fn_generated_o0_o2_products": 80,
-  "not_fn_registered_previous_additions_path": "utils/ci/bind-forty-formal-additions.cpp",
-  "not_fn_registered_previous_additions_sha256": "48e16535ad52835351d6beb425f6b69690209d1014cd24df4da2ba4fe8f8ae1d",
+  "not_fn_registered_previous_additions_path": "utils/ci/bind-forty-eight-formal-additions.cpp",
+  "not_fn_registered_previous_additions_sha256": "620adce3d4aa3c926ade2dd4e76c048cca4b10ac1b645eed6caa889cc910ec88",
   "required_actual_frontend_requests": 775,
   "actual_new_signature_native_reference_verified": false,
   "actual_prior_custom_native_reference_verified": true,
@@ -393,5 +395,18 @@
   "required_component_reject": 160,
   "required_component_invalid": 8,
   "required_component_requests": 456,
-  "current_full456_proof_sha256": "0a0a21d5a624d4e999a11be37ba889fd0b0aaa4e2d6d9279556cd79459a51205"
+  "current_full456_proof_sha256": "0a0a21d5a624d4e999a11be37ba889fd0b0aaa4e2d6d9279556cd79459a51205",
+  "registered_stl_goldens": 48,
+  "registered_pending_component_formal_cases": [
+    "TranslateTest.CoreV2BindBoundPackThreeValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2BindBoundPackFourMixedRunAtBothOptimizations",
+    "TranslateTest.CoreV2BindBoundPackEightValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2BindBoundPackThirdReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2BindBoundPackCopiedStateRunAtBothOptimizations",
+    "TranslateTest.CoreV2BindBoundPackCaptureEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2BindBoundPackCapturedPointerRunAtBothOptimizations",
+    "TranslateTest.CoreV2BindBoundPackResultKindsRunAtBothOptimizations"
+  ],
+  "pending_expanded_formal_gtests": 172,
+  "pending_expanded_generated_o0_o2_products": 96
 }

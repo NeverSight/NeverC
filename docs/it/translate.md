@@ -993,3 +993,6 @@ Le prove di sorgente `declval` completate raggruppano la chiamata selezionata e 
 
 
 La raccolta conserva le identità esatte `__ph<1>` e `__ph<2>` dell’SDK fisso senza richiedere definizioni o layout durante Sema. Cattura, proiezione degli argomenti e prove sorgente dei segnaposto restano incompleti. [cpp-bind-placeholder-cases.json](../../utils/ci/cpp-bind-placeholder-cases.json) contiene casi proposti, non risultati riusciti.
+
+
+Sono registrati otto GTest per pacchetti estesi di argomenti associati; il suffisso STL golden conta ora 48 test. I risultati formali e tradotti O0/O2 sono in attesa. Il componente autenticato conserva i suoi 40 casi e il contratto di 164 test e 80 prodotti eseguiti fino al collegamento di un nuovo componente.

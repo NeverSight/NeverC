@@ -993,3 +993,6 @@ Les preuves de source `declval` terminées regroupent désormais l’appel séle
 
 
 La collecte conserve les identités exactes `__ph<1>` et `__ph<2>` du SDK figé sans demander de définition ni de disposition pendant Sema. La capture, la projection des arguments et les preuves de source des espaces réservés restent à terminer. [cpp-bind-placeholder-cases.json](../../utils/ci/cpp-bind-placeholder-cases.json) contient des cas proposés, pas des résultats réussis.
+
+
+Huit GTest de paquets liés étendus sont enregistrés, portant le suffixe STL golden à 48 tests. Leurs résultats formels et traduits O0/O2 restent en attente. Le composant déjà authentifié conserve ses 40 cas et son contrat de 164 tests et 80 produits exécutés jusqu’à la liaison d’un nouveau composant.
