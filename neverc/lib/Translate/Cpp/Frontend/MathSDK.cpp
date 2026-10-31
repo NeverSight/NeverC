@@ -7597,7 +7597,7 @@ enum class UtilityTupleQueryMode { Construction, CatSignature, PairConstruction,
 
 // Temporary bounded observational state, never a source/body permission.
 struct FunctionalBindDiagnosticRing {
-  unsigned Lines[128] = {}, Count = 0, Next = 0;
+  unsigned Lines[128] = {}, Count = 0, Next = 0, ProjectionMismatches = 0;
 };
 static FunctionalBindDiagnosticRing FunctionalBindDiagnostic;
 static bool functionalBindDiagnosticFailure(unsigned Line) {
@@ -7610,7 +7610,7 @@ static bool functionalBindDiagnosticFailure(unsigned Line) {
   return false;
 }
 static void functionalBindDiagnosticReset() {
-  FunctionalBindDiagnostic.Count = FunctionalBindDiagnostic.Next = 0;
+  FunctionalBindDiagnostic.Count = FunctionalBindDiagnostic.Next = FunctionalBindDiagnostic.ProjectionMismatches = 0;
 }
 static void functionalBindDiagnosticDump() {
   if (!std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) return;
@@ -9840,6 +9840,31 @@ class UtilityTupleQueryGraph
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Use) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Projection : BindTupleElementProjections)
       if (Use == Projection.Actual || Use == Projection.Original) return true;
+    if (BindScalarConstraintSource &&
+        isa_and_nonnull<BuiltinTemplateDecl>(Use->getTemplateName().getAsTemplateDecl()) &&
+        std::getenv("NEVERC_CPP_BIND_PROOF_TRACE") && FunctionalBindDiagnostic.ProjectionMismatches++ < 32) {
+      std::fprintf(stderr, "BIND-PROJECTION-MISMATCH current=%s active=%zu use=%p type=%s\n",
+          Context.getRecordType(BindMetadata->Arguments.Record).getAsString().c_str(),
+          BindTupleElementProjections.size(), static_cast<const void *>(Use), QualType(Use, 0).getAsString().c_str());
+      unsigned ArgumentIndex = 0;
+      for (const auto &Argument : Use->template_arguments()) {
+        if (Argument.getKind() == TemplateArgument::Type) {
+          const auto Type = Argument.getAsType();
+          const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Type.getTypePtr());
+          std::fprintf(stderr, "BIND-PROJECTION-INPUT index=%u type=%s owner=%p parameter=%p pack=%u\n",
+              ArgumentIndex, Type.getAsString().c_str(),
+              Substitution ? static_cast<const void *>(Substitution->getAssociatedDecl()) : nullptr,
+              Substitution ? static_cast<const void *>(Substitution->getReplacedParameter()) : nullptr,
+              Substitution && Substitution->getPackIndex() ? *Substitution->getPackIndex() : 999U);
+        }
+        ++ArgumentIndex;
+      }
+      for (const auto &Projection : BindTupleElementProjections)
+        std::fprintf(stderr, "BIND-PROJECTION-BOUND slot=%u owner=%p actual=%p original=%p type=%s\n",
+            Projection.Slot, static_cast<const void *>(Projection.Owner),
+            static_cast<const void *>(Projection.Actual), static_cast<const void *>(Projection.Original),
+            QualType(Projection.Actual, 0).getAsString().c_str());
+    }
     return functionalBindDiagnosticFailure(__LINE__);
   }
   bool bindTupleElementPackElement(const TemplateSpecializationType *Use) {
