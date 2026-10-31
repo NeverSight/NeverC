@@ -19421,7 +19421,11 @@ class BindSourceProof {
         if (Source.Written)
           for (unsigned I = 0; I < Source.Written->getNumTemplateArgs(); ++I)
             if (!Graph.TraverseBindResultSourceWrittenArgument(
-                    Source, I, Source.Written->arguments()[I])) return functionalBindDiagnosticFailure(__LINE__);
+                    Source, I, Source.Written->arguments()[I])) {
+              const auto &Argument = Source.Written->arguments()[I].getArgument();
+              std::fprintf(stderr, "BIND-WRITTEN-ARG template=%s slot=%u type=%s\n", Source.Template->getNameAsString().c_str(), I, Argument.getKind() == TemplateArgument::Type ? Argument.getAsType().getAsString().c_str() : "non-type");
+              return functionalBindDiagnosticFailure(__LINE__);
+            }
         for (const auto *Arguments : {Source.Canonical, Source.Sugared})
           for (unsigned I = 0; I < Arguments->size(); ++I)
             if (!Graph.TraverseBindResultSourceArgument(Source, I, Arguments->get(I))) return functionalBindDiagnosticFailure(__LINE__);
@@ -19983,6 +19987,7 @@ class BindSourceProof {
           Element.getType()->getAsCXXRecordDecl(), Context);
       if (Wrapper && Context.hasSameType(Type, Wrapper->ReferentType)) return true;
     }
+    std::fprintf(stderr, "BIND-WEAK-INPUT type=%s callable=%s stored=%zu\n", Type.getAsString().c_str(), Storage.CallableType.getAsString().c_str(), Storage.Arguments.Elements.size());
     return functionalBindDiagnosticFailure(__LINE__);
   }
   bool weakResultBooleanType(QualType Type, bool Value) {
@@ -20223,7 +20228,10 @@ class BindSourceProof {
         Expected = 0;
       } else if (const auto Size = alternateScalarTupleSizeSource(Metadata)) {
         Expected = *Size;
-      } else return functionalBindDiagnosticFailure(__LINE__);
+      } else {
+        std::fprintf(stderr, "BIND-TUPLE-SIZE input=%s actual=%s call=%zu stored=%zu\n", Input.getAsString().c_str(), ActiveCompleteCall->CallArguments->getType().getAsString().c_str(), ActiveCompleteCall->CallForwards.size(), Storage.Arguments.Elements.size());
+        return functionalBindDiagnosticFailure(__LINE__);
+      }
     }
     if (Owner->getTemplateArgs()[1].getAsIntegral().getLimitedValue(3) != Expected) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Base = *Trait->bases_begin();
@@ -21216,7 +21224,10 @@ public:
         ActiveCompleteCall = nullptr;
       });
       auto Close = [&](const CallExpr *Expression, const FunctionDecl *Function) {
-        if (!Expression || ClosedCompleteCalls.size() == 64) return functionalBindDiagnosticFailure(__LINE__);
+        if (!Expression || ClosedCompleteCalls.size() == 64) {
+          std::fprintf(stderr, "BIND-CLOSE-LIMIT size=%zu existing=%u probes=%zu\n", ClosedCompleteCalls.size(), unsigned(ClosedCompleteCalls.count(Expression)), CompletedProbes.size());
+          return functionalBindDiagnosticFailure(__LINE__);
+        }
         const auto Inserted = ClosedCompleteCalls.emplace(Expression, Function);
         return Inserted.second || Inserted.first->second == Function;
       };
