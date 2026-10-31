@@ -1789,6 +1789,11 @@ struct FunctionalBindArgumentSource {
   const clang::CXXConstructExpr *WrapperCopy;
   std::optional<FunctionalReferenceAccessCall> Reference;
   clang::QualType ForwardedType;
+  // Actual selected SDK nodes only. These grant no capture, projection or
+  // runtime permission until the complete source proof closes them.
+  unsigned PlaceholderRank = 0;
+  const clang::VarDecl *PlaceholderIndex = nullptr;
+  const clang::CallExpr *PlaceholderGet = nullptr, *PlaceholderForward = nullptr;
 };
 struct FunctionalBindCallSource {
   FunctionalBindStorage Storage;

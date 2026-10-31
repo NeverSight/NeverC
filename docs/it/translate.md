@@ -996,3 +996,6 @@ La raccolta conserva le identità esatte `__ph<1>` e `__ph<2>` dell’SDK fisso 
 
 
 Sono registrati otto GTest per pacchetti estesi di argomenti associati; il suffisso STL golden conta ora 48 test. I risultati formali e tradotti O0/O2 sono in attesa. Il componente autenticato conserva i suoi 40 casi e il contratto di 164 test e 80 prodotti eseguiti fino al collegamento di un nuovo componente.
+
+
+La descrizione statica di bind conserva la memorizzazione esatta come basi vuote dei segnaposto SDK `_1` e `_2`, con offset distinti per ripetizioni dello stesso tipo. L’ammissione generale delle tuple resta invariata. Costruzione selezionata, prove sorgente, cattura e proiezione sono incomplete; il supporto runtime non è dichiarato. La descrizione selezionata conserva anche la variabile di indice originale, `get` e `forward` della tupla di chiamata, distinguendo slot memorizzato e rango dell’argomento.

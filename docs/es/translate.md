@@ -996,3 +996,6 @@ La recopilación conserva las identidades exactas `__ph<1>` y `__ph<2>` del SDK 
 
 
 Se registraron ocho GTest de paquetes de argumentos ligados ampliados, elevando el sufijo STL golden a 48 pruebas. Sus resultados formales y traducidos O0/O2 siguen pendientes. El componente autenticado conserva sus 40 casos y el contrato de 164 pruebas y 80 productos ejecutados hasta vincular un nuevo componente.
+
+
+La descripción estática de bind conserva el almacenamiento exacto en bases vacías de los marcadores SDK `_1` y `_2`, con desplazamientos distintos al repetir el mismo tipo. La admisión general de tuplas no cambia. Construcción seleccionada, cierre de pruebas, captura y proyección siguen incompletos; no se declara soporte en ejecución. La descripción seleccionada conserva la variable de índice original, `get` y `forward` de la tupla de llamada, separando posición almacenada y rango del argumento.
