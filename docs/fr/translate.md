@@ -1017,3 +1017,6 @@ La preuve du getter bind vérifie la feuille tuple vide sélectionnée, sa spéc
 
 
 Chaque projection entrante bind est liée à son tuple réel, sa source sélectionnée et son rang. Positions stockées, rangs entrants, références et const sont vérifiés séparément. Permissions et caches restent limités à cet appel. L’exécution complète des espaces réservés reste à terminer.
+
+
+La preuve bind vérifie séparément la contrainte positive du rang avec le paquet exact de la fonction sélectionnée. Les sources des opérateurs original et substitué sont fermées avant toute vérification de valeur. La preuve scalaire zéro est conservée ; corps complet et exécution restent inachevés.

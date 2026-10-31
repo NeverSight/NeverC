@@ -1017,3 +1017,6 @@ La prueba del getter bind comprueba la hoja tuple vacía seleccionada, su especi
 
 
 Cada proyección de entrada bind se vincula a su tuple real, fuente seleccionada y rango. Se comprueban por separado posiciones almacenadas, rangos de entrada, referencias y const. Permisos y cachés se limitan a esa llamada. La ejecución completa sigue pendiente.
+
+
+La prueba bind comprueba por separado la condición positiva del marcador con el paquete exacto de la función seleccionada y su rango. Cierra las fuentes de los operadores original y sustituido antes de comprobar valores. Se mantiene la prueba escalar cero; cuerpo completo y ejecución siguen pendientes.

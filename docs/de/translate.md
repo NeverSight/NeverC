@@ -1017,3 +1017,6 @@ Der bind-Getter-Nachweis prüft das gewählte leere tuple-Blatt, seine ursprüng
 
 
 Jede bind-Eingangsprojektion wird an ihr tatsächliches Aufruf-tuple, die gewählte Quelle und den Rang gebunden. Speicherposition, Eingangsrang, Referenzen und const werden getrennt geprüft. Rechte und Caches gelten nur für diesen Aufruf; vollständige Ausführung ist noch unvollständig.
+
+
+Der bind-Nachweis prüft die positive Platzhalterbedingung separat anhand des exakt gewählten Funktionspakets und Rangs. Originale und substituierte Operatorquellen schließen vor der Wertprüfung. Skalare Nullbedingungen bleiben erhalten; vollständiger Funktionskörper und Laufzeitunterstützung sind noch unvollständig.

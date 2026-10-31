@@ -437,3 +437,6 @@ The bind getter source proof now checks the selected empty-base tuple leaf, its 
 
 
 Bind placeholder getter proofs now bind each incoming projection to its own actual call tuple, selected source and rank. Stored positions and incoming ranks, reference types and const qualification are checked separately; projection permissions and caches remain scoped to that call. Complete placeholder execution remains pending.
+
+
+The bind source proof now checks the separate positive placeholder constraint against the exact selected function packet and rank. Both original and substituted operator sources close before any value check. Scalar zero constraints keep their existing proof; complete placeholder body and runtime support remain unfinished.

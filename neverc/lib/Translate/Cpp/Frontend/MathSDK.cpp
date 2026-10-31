@@ -19639,9 +19639,185 @@ class BindSourceProof {
     return Expression->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects) &&
         Value.Val.isInt() && Value.Val.getInt() == Canonical.getAsIntegral();
   }
+  bool unwrapConstraintTraitSource(const TemplateUseSource &Source,
+      const FunctionTemplateDecl *Primary, const TemplateTypeParmDecl *Input,
+      const Expr *Written, const Expr *Substituted, llvm::StringRef Name, bool Integer) {
+    auto Enable = [](QualType Type) -> const TemplateSpecializationType * {
+      if (Type.isNull()) return nullptr;
+      if (const auto *Elaborated = dyn_cast<ElaboratedType>(Type.getTypePtr()))
+        Type = Elaborated->getNamedType();
+      return dyn_cast<TemplateSpecializationType>(Type.getTypePtr());
+    };
+    auto Core = [](const Expr *Expression) -> const Expr * {
+      if (!Expression) return nullptr;
+      Expression = Expression->IgnoreParenImpCasts();
+      if (const auto *Constant = dyn_cast<ConstantExpr>(Expression))
+        Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
+      return Expression;
+    };
+      const auto *OriginalRead = dyn_cast_or_null<DependentScopeDeclRefExpr>(Core(Written));
+      const auto *ActualRead = dyn_cast_or_null<DeclRefExpr>(Core(Substituted));
+      const auto *OriginalQualifier = OriginalRead ? OriginalRead->getQualifier() : nullptr;
+      const auto *ActualQualifier = ActualRead ? ActualRead->getQualifier() : nullptr;
+      const auto *OriginalType = OriginalQualifier ? OriginalQualifier->getAsType() : nullptr;
+      const auto *SubstitutedType = ActualQualifier ? ActualQualifier->getAsType() : nullptr;
+      const auto *OriginalTrait = OriginalType ? Enable(QualType(OriginalType, 0)) : nullptr;
+      const auto *ActualTrait = SubstitutedType ? Enable(QualType(SubstitutedType, 0)) : nullptr;
+      const auto *Template = OriginalTrait
+          ? dyn_cast_or_null<ClassTemplateDecl>(OriginalTrait->getTemplateName().getAsTemplateDecl()) : nullptr;
+      const auto *Argument = OriginalTrait && OriginalTrait->template_arguments().size() == 1 &&
+          OriginalTrait->template_arguments()[0].getKind() == TemplateArgument::Type
+          ? dyn_cast<TemplateTypeParmType>(OriginalTrait->template_arguments()[0].getAsType().getTypePtr()) : nullptr;
+      const auto *Variable = ActualRead ? dyn_cast<VarDecl>(ActualRead->getDecl()) : nullptr;
+      const auto *ActualArgument = ActualTrait && ActualTrait->template_arguments().size() == 1 &&
+          ActualTrait->template_arguments()[0].getKind() == TemplateArgument::Type
+          ? dyn_cast<SubstTemplateTypeParmType>(ActualTrait->template_arguments()[0].getAsType().getTypePtr())
+          : nullptr;
+      if (!OriginalRead || OriginalRead->getDeclName().getAsString() != "value" ||
+          OriginalRead->hasExplicitTemplateArgs() || !ActualRead || ActualRead->hasExplicitTemplateArgs() ||
+          OriginalRead->getBeginLoc() != ActualRead->getBeginLoc() ||
+          OriginalRead->getEndLoc() != ActualRead->getEndLoc() || !Template ||
+          !Template->getIdentifier() || Template->getName() != Name ||
+          !Check.family(Template, {Name == "__is_reference_wrapper"
+              ? "__type_traits/is_reference_wrapper.h" : "__functional/bind.h"}) ||
+          !Argument || Argument->getDecl() != Input ||
+          !ActualTrait || ActualTrait->isDependentType() || ActualTrait->template_arguments().size() != 1 ||
+          ActualTrait->getTemplateName().getAsTemplateDecl() != Template ||
+          !ActualArgument || ActualArgument->getAssociatedDecl() != Primary ||
+          ActualArgument->getReplacedParameter() != Input || ActualArgument->getPackIndex() ||
+          ActualArgument->getReplacementType() != Source.Sugared->get(0).getAsType() ||
+          !Variable || !Variable->getIdentifier() || Variable->getName() != "value" ||
+          !Variable->isStaticDataMember() || !Variable->hasInit() || !Variable->getType().isConstQualified() ||
+          !Context.hasSameType(Variable->getType().getUnqualifiedType(), Integer ? Context.IntTy : Context.BoolTy))
+        return false;
+      return true;
+  }
+
+  bool unwrapPlaceholderParameterSource(const TemplateUseSource &Source,
+      const NonTypeTemplateParmDecl *Parameter, TypeSourceInfo *ActualType,
+      const FunctionalBindArgumentSource &Argument) {
+    const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    const auto *Input = Parameters && Parameters->size() == 3
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+    const auto *Incoming = Parameters && Parameters->size() == 3
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+    if (!ActiveUnwrapSource || !Argument.PlaceholderRank || Argument.Reference ||
+        !Argument.PlaceholderIndex || !Argument.PlaceholderGet || !Argument.PlaceholderForward ||
+        Argument.PlaceholderRank > ActiveUnwrapSource->CallForwards.size() ||
+        !Function || Source.Declaration != Function || Source.Kind != TemplateSourceKind::Function ||
+        !Primary || !Parameters || Parameters->size() != 3 ||
+        Source.Template != Primary || !Parameter || !ActualType ||
+        Parameters->getParam(2) != Parameter || Parameter->getIndex() != 2 ||
+        Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
+        !Parameter->getTypeSourceInfo() || !Input || Input->getIndex() ||
+        Input->isParameterPack() || Input->hasDefaultArgument() ||
+        !Incoming || Incoming->getIndex() != 1 || Incoming->isParameterPack() ||
+        Incoming->hasDefaultArgument() || !family(Input) || !family(Incoming) ||
+        !Check.family(Primary, {"__functional/bind.h"}) ||
+        !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 3 ||
+        Source.Sugared->size() != 3) return false;
+    for (const auto *Arguments : {Source.Canonical, Source.Sugared}) {
+      if (Arguments->get(0).getKind() != TemplateArgument::Type ||
+          Arguments->get(1).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments->get(1).getAsType(), ActiveUnwrapSource->CallArguments->getType()) ||
+          Arguments->get(2).getKind() != TemplateArgument::Integral ||
+          !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy) ||
+          !Arguments->get(2).getAsIntegral().isZero()) return false;
+      const auto Identity = describeFunctionalBindPlaceholderIdentity(
+          S, SM, Arguments->get(0).getAsType(), Context);
+      if (!Identity || Identity->Rank != Argument.PlaceholderRank) return false;
+    }
+    if (!Context.hasSameType(Source.Canonical->get(0).getAsType(), Source.Sugared->get(0).getAsType()) ||
+        ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+    ActiveScalarParameter = &Source;
+    auto Restore = llvm::make_scope_exit([&] {
+      ActiveScalarValues.clear(); CompletedScalarValues.clear(); ActiveScalarParameter = nullptr;
+    });
+    auto Enable = [](QualType Type) -> const TemplateSpecializationType * {
+      if (Type.isNull()) return nullptr;
+      if (const auto *Name = dyn_cast<ElaboratedType>(Type.getTypePtr())) Type = Name->getNamedType();
+      return dyn_cast<TemplateSpecializationType>(Type.getTypePtr());
+    };
+    auto Core = [](const Expr *Expression) -> const Expr * {
+      if (!Expression) return nullptr;
+      Expression = Expression->IgnoreParenImpCasts();
+      if (const auto *Constant = dyn_cast<ConstantExpr>(Expression))
+        Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
+      return Expression;
+    };
+    const auto *Original = Enable(Parameter->getTypeSourceInfo()->getType());
+    const auto *Actual = Enable(ActualType->getType());
+    const auto *Alias = Original
+        ? dyn_cast_or_null<TypeAliasTemplateDecl>(Original->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (!Original || !Actual || !Alias || !Alias->getIdentifier() || Alias->getName() != "__enable_if_t" ||
+        !Check.family(Alias, {"__type_traits/enable_if.h"}) || !Original->isTypeAlias() || !Actual->isTypeAlias() ||
+        Actual->getTemplateName().getAsTemplateDecl() != Alias || !Original->isDependentType() ||
+        Actual->isDependentType() || !Context.hasSameType(ActualType->getType(), Context.IntTy)) return false;
+    for (const auto *Type : {Original, Actual}) {
+      const auto Arguments = Type->template_arguments();
+      if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Expression ||
+          Arguments[1].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return false;
+    }
+    const auto *Written = Core(Original->template_arguments()[0].getAsExpr());
+    const auto *Comparison = dyn_cast_or_null<CXXOperatorCallExpr>(Written);
+    const auto *Binary = dyn_cast_or_null<BinaryOperator>(Written);
+    const Expr *Left = nullptr, *Right = nullptr;
+    SourceLocation OperatorLocation;
+    if (Comparison) {
+      const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Comparison->getCallee()->IgnoreParenImpCasts());
+      if (Comparison->getDirectCallee() || !Comparison->isTypeDependent() ||
+          Comparison->getOperator() != OO_Less || Comparison->getNumArgs() != 2 ||
+          !Lookup || !Lookup->requiresADL() || Lookup->hasExplicitTemplateArgs() ||
+          !Lookup->getNumDecls() || Lookup->getNumDecls() > 64 ||
+          Lookup->getName().getNameKind() != DeclarationName::CXXOperatorName ||
+          Lookup->getName().getCXXOverloadedOperator() != OO_Less) return false;
+      for (const auto *Candidate : Lookup->decls()) if (!family(Candidate)) return false;
+      Left = Comparison->getArg(0); Right = Comparison->getArg(1);
+      OperatorLocation = Comparison->getOperatorLoc();
+    } else {
+      if (!Binary || Binary->getOpcode() != BO_LT || !Binary->isValueDependent() ||
+          !Context.hasSameType(Binary->getType(), Context.BoolTy)) return false;
+      Left = Binary->getLHS(); Right = Binary->getRHS(); OperatorLocation = Binary->getOperatorLoc();
+    }
+    const auto *Converted = dyn_cast_or_null<BinaryOperator>(Core(Actual->template_arguments()[0].getAsExpr()));
+    const auto *Zero = dyn_cast_or_null<IntegerLiteral>(Core(Left));
+    const auto *Read = Converted ? dyn_cast<ImplicitCastExpr>(Converted->getRHS()) : nullptr;
+    if (!Converted || Converted->getOpcode() != BO_LT || Converted->isTypeDependent() ||
+        Converted->isValueDependent() || !Converted->isPRValue() ||
+        !Context.hasSameType(Converted->getType(), Context.BoolTy) ||
+        !Zero || !Zero->getValue().isZero() || !Context.hasSameType(Zero->getType(), Context.IntTy) ||
+        Core(Converted->getLHS()) != Zero || !Read || Read->getCastKind() != CK_LValueToRValue ||
+        !Context.hasSameType(Read->getType(), Context.IntTy) ||
+        Converted->getOperatorLoc() != OperatorLocation ||
+        Written->getBeginLoc() != Converted->getBeginLoc() || Written->getEndLoc() != Converted->getEndLoc() ||
+        !Check.location(Written->getExprLoc(), {"__functional/bind.h"}) ||
+        !unwrapConstraintTraitSource(Source, Primary, Input, Right, Read, "is_placeholder", true)) return false;
+    // Close both real source graphs before checking their converted values.
+    // Only this exact original dependent operator receives the witness.
+    if (!Graph.withBindScalarConstraintSource([&] {
+          if (!Graph.TraverseStmt(const_cast<BinaryOperator *>(Converted))) return false;
+          if (Comparison) UnwrapScalarConstraintSources.insert(Comparison);
+          return Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) &&
+              Graph.TraverseTypeLoc(ActualType->getTypeLoc());
+        })) return false;
+    Expr::EvalResult Positive, Rank;
+    return Converted->EvaluateAsInt(Positive, Context, Expr::SE_NoSideEffects) &&
+        Positive.Val.isInt() && Positive.Val.getInt().getBoolValue() &&
+        Read->EvaluateAsInt(Rank, Context, Expr::SE_NoSideEffects) && Rank.Val.isInt() &&
+        !Rank.Val.getInt().isNegative() &&
+        Rank.Val.getInt().getLimitedValue(3) == Argument.PlaceholderRank;
+  }
+
   bool unwrapScalarParameterSource(const TemplateUseSource &Source,
       const NonTypeTemplateParmDecl *Parameter, TypeSourceInfo *ActualType) {
     const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration);
+    if (ActiveUnwrapSource && Function)
+      for (const auto &Argument : ActiveUnwrapSource->Arguments)
+        if (Argument.PlaceholderRank && Argument.Unwrap && Argument.Unwrap->getDirectCallee() == Function)
+          return unwrapPlaceholderParameterSource(Source, Parameter, ActualType, Argument);
     bool Scalar = false;
     if (ActiveUnwrapSource && Function)
       for (const auto &Argument : ActiveUnwrapSource->Arguments)
@@ -19712,42 +19888,7 @@ class BindSourceProof {
         OriginalRoot->getEndLoc() != ActualRoot->getEndLoc()) return false;
     auto Trait = [&](const Expr *Written, const Expr *Substituted, llvm::StringRef Name,
                      bool Integer) {
-      const auto *OriginalRead = dyn_cast_or_null<DependentScopeDeclRefExpr>(Core(Written));
-      const auto *ActualRead = dyn_cast_or_null<DeclRefExpr>(Core(Substituted));
-      const auto *OriginalQualifier = OriginalRead ? OriginalRead->getQualifier() : nullptr;
-      const auto *ActualQualifier = ActualRead ? ActualRead->getQualifier() : nullptr;
-      const auto *OriginalType = OriginalQualifier ? OriginalQualifier->getAsType() : nullptr;
-      const auto *SubstitutedType = ActualQualifier ? ActualQualifier->getAsType() : nullptr;
-      const auto *OriginalTrait = OriginalType ? Enable(QualType(OriginalType, 0)) : nullptr;
-      const auto *ActualTrait = SubstitutedType ? Enable(QualType(SubstitutedType, 0)) : nullptr;
-      const auto *Template = OriginalTrait
-          ? dyn_cast_or_null<ClassTemplateDecl>(OriginalTrait->getTemplateName().getAsTemplateDecl()) : nullptr;
-      const auto *Argument = OriginalTrait && OriginalTrait->template_arguments().size() == 1 &&
-          OriginalTrait->template_arguments()[0].getKind() == TemplateArgument::Type
-          ? dyn_cast<TemplateTypeParmType>(OriginalTrait->template_arguments()[0].getAsType().getTypePtr()) : nullptr;
-      const auto *Variable = ActualRead ? dyn_cast<VarDecl>(ActualRead->getDecl()) : nullptr;
-      const auto *ActualArgument = ActualTrait && ActualTrait->template_arguments().size() == 1 &&
-          ActualTrait->template_arguments()[0].getKind() == TemplateArgument::Type
-          ? dyn_cast<SubstTemplateTypeParmType>(ActualTrait->template_arguments()[0].getAsType().getTypePtr())
-          : nullptr;
-      if (!OriginalRead || OriginalRead->getDeclName().getAsString() != "value" ||
-          OriginalRead->hasExplicitTemplateArgs() || !ActualRead || ActualRead->hasExplicitTemplateArgs() ||
-          OriginalRead->getBeginLoc() != ActualRead->getBeginLoc() ||
-          OriginalRead->getEndLoc() != ActualRead->getEndLoc() || !Template ||
-          !Template->getIdentifier() || Template->getName() != Name ||
-          !Check.family(Template, {Name == "__is_reference_wrapper"
-              ? "__type_traits/is_reference_wrapper.h" : "__functional/bind.h"}) ||
-          !Argument || Argument->getDecl() != Input ||
-          !ActualTrait || ActualTrait->isDependentType() || ActualTrait->template_arguments().size() != 1 ||
-          ActualTrait->getTemplateName().getAsTemplateDecl() != Template ||
-          !ActualArgument || ActualArgument->getAssociatedDecl() != Primary ||
-          ActualArgument->getReplacedParameter() != Input || ActualArgument->getPackIndex() ||
-          ActualArgument->getReplacementType() != Source.Sugared->get(0).getAsType() ||
-          !Variable || !Variable->getIdentifier() || Variable->getName() != "value" ||
-          !Variable->isStaticDataMember() || !Variable->hasInit() || !Variable->getType().isConstQualified() ||
-          !Context.hasSameType(Variable->getType().getUnqualifiedType(), Integer ? Context.IntTy : Context.BoolTy))
-        return false;
-      return true;
+      return unwrapConstraintTraitSource(Source, Primary, Input, Written, Substituted, Name, Integer);
     };
     auto Negation = [&](const Expr *Written, const Expr *Substituted, llvm::StringRef Name) {
       const auto *OriginalNot = dyn_cast_or_null<UnaryOperator>(Core(Written));

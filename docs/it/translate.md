@@ -1017,3 +1017,6 @@ La prova del getter bind controlla la foglia tuple vuota selezionata, la special
 
 
 Ogni proiezione in ingresso bind viene legata al tuple reale, alla sorgente selezionata e al rango. Posizioni memorizzate, ranghi in ingresso, riferimenti e const sono verificati separatamente. Permessi e cache restano limitati alla chiamata. L’esecuzione completa rimane incompleta.
+
+
+La prova bind controlla separatamente il vincolo positivo del segnaposto con il pacchetto esatto della funzione selezionata e il rango. Chiude le sorgenti degli operatori originale e sostituito prima dei valori. La prova scalare zero resta invariata; corpo completo e runtime sono incompleti.
