@@ -17348,3 +17348,6 @@ Bind placeholder getter proofs now bind each incoming projection to its own actu
 
 
 The bind source proof now checks the separate positive placeholder constraint against the exact selected function packet and rank. Both original and substituted operator sources close before any value check. Scalar zero constraints keep their existing proof; complete placeholder body and runtime support remain unfinished.
+
+
+Guarded bind lowering now retains incoming argument bindings once and projects placeholder ranks from those bindings, including repeated ranks. Exact empty SDK markers omit external-object value loads and field writes. These paths still require complete verified factory/call certificates; frontend placeholder admission and execution validation remain unfinished.

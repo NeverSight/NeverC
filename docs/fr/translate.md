@@ -1020,3 +1020,6 @@ Chaque projection entrante bind est liée à son tuple réel, sa source sélecti
 
 
 La preuve bind vérifie séparément la contrainte positive du rang avec le paquet exact de la fonction sélectionnée. Les sources des opérateurs original et substitué sont fermées avant toute vérification de valeur. La preuve scalaire zéro est conservée ; corps complet et exécution restent inachevés.
+
+
+Le lowering bind protégé conserve une seule fois les liaisons entrantes et projette leurs rangs, y compris répétés. Les marqueurs SDK vides exacts omettent lecture d’objet externe et écriture de champ. Ces chemins exigent toujours les certificats complets ; admission frontend et validation d’exécution restent inachevées.

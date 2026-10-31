@@ -28626,37 +28626,71 @@ class FunctionLowering {
     if (Verified == A.VerifiedBindFactories.end() || &Verified->second != &Source ||
         Source.SourceCall != Call || !Layout || !TupleSource || !Factory ||
         Factory->getNumParams() != Call->getNumArgs() ||
-        Call->getNumArgs() != Source.Storage.Arguments.Elements.size() + 1)
+        Call->getNumArgs() != Source.Storage.Arguments.Elements.size() + 1 ||
+        Source.Placeholders.size() != Source.Storage.Arguments.Elements.size() ||
+        TupleSource->Copies.size() != Source.Storage.Arguments.Elements.size())
       reject(L, "bind factory certificate", "The exact completed selected source and layout are required.");
-    std::vector<Expression> Captured;
+    std::vector<std::optional<Expression>> Captured(Call->getNumArgs());
     for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
       const auto Parameter = Factory->getParamDecl(I)->getType();
       if (!Parameter->isReferenceType())
         reject(L, "bind factory parameter", "Every original factory operand needs its exact forwarding binding.");
-      Captured.push_back(captureUtilityConstructorArgument(Call->getArg(I), Parameter));
+      if (I && Source.Storage.Arguments.Elements[I - 1].EmptyBase) {
+        const auto &Element = Source.Storage.Arguments.Elements[I - 1];
+        const auto &Retained = Source.Placeholders[I - 1];
+        const auto Actual = describeFunctionalBindPlaceholderOperandSource(A.S, A.Sources, Call->getArg(I), A.Context);
+        const auto *Copy = TupleSource->Copies[I - 1];
+        const auto *Constructor = Copy ? Copy->getConstructor() : nullptr;
+        if (Element.Field || !Retained || !Actual || Actual->Operand != Retained->Operand ||
+            Actual->Reference != Retained->Reference || Actual->Variable != Retained->Variable ||
+            Actual->Identity.Record != Retained->Identity.Record ||
+            Actual->Identity.Primary != Retained->Identity.Primary ||
+            Actual->Identity.Parameter != Retained->Identity.Parameter ||
+            Actual->Identity.Rank != Retained->Identity.Rank ||
+            Actual->Identity.Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl() ||
+            !A.Context.hasSameType(Parameter, A.Context.getLValueReferenceType(Call->getArg(I)->getType())) ||
+            !Constructor || !Constructor->isCopyOrMoveConstructor() || !Constructor->isImplicit() ||
+            !Constructor->isDefaulted() || !Constructor->isTrivial() || Constructor->isDeleted() ||
+            Constructor->getParent()->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
+          reject(L, "bind empty placeholder capture", "The exact SDK operand and completed trivial empty copy are required.");
+        // The checked direct extern SDK marker has no effects and contributes
+        // no value bytes. Its selected trivial empty copy never loads a symbol.
+        continue;
+      }
+      if (I && Source.Placeholders[I - 1])
+        reject(L, "bind placeholder storage", "Placeholder source must match its exact empty storage slot.");
+      Captured[I] = captureUtilityConstructorArgument(Call->getArg(I), Parameter);
     }
+    if (!Captured[0]) reject(L, "bind callable capture", "The original callable binding is required.");
     // Read after all original argument effects and before writing a possibly
     // aliased destination. A bound pointer or reference-wrapper binding is
     // copied; its referent's value and lifetime remain ordinary source work.
     auto Callable = snapshot(cast(utilityConstructorArgumentValue(
-        std::move(Captured[0]), Factory->getParamDecl(0)->getType(), L),
+        std::move(*Captured[0]), Factory->getParamDecl(0)->getType(), L),
         type(Source.Storage.CallableType, L), L), L);
-    std::vector<Expression> Values;
+    std::vector<std::optional<Expression>> Values(Source.Storage.Arguments.Elements.size());
     for (unsigned I = 0; I < Source.Storage.Arguments.Elements.size(); ++I) {
-      const auto Stored = Source.Storage.Arguments.Elements[I].getType();
+      const auto &Element = Source.Storage.Arguments.Elements[I];
+      if (Element.EmptyBase) {
+        if (Captured[I + 1] || !Source.Placeholders[I])
+          reject(L, "bind empty placeholder value", "Only the checked empty marker may omit a value read.");
+        continue;
+      }
+      if (!Captured[I + 1]) reject(L, "bind capture value", "The original value binding is required.");
+      const auto Stored = Element.getType();
       const auto Wrapper = approvedFunctionalReferenceRecord(
           A.S, A.Sources, Stored->getAsCXXRecordDecl(), A.Context);
       if (Wrapper) {
         if (!TupleSource->Copies[I])
           reject(L, "bind wrapper capture", "The selected trivial binding copy must be retained.");
-        Values.push_back(functionalReferenceArgumentAddress(
-            dereference(std::move(Captured[I + 1]), L), *Wrapper, L));
+        Values[I] = functionalReferenceArgumentAddress(
+            dereference(std::move(*Captured[I + 1]), L), *Wrapper, L);
       } else {
         if (TupleSource->Copies[I])
           reject(L, "bind scalar capture", "Only the exact checked scalar initializer is supported.");
-        Values.push_back(snapshot(cast(utilityConstructorArgumentValue(
-            std::move(Captured[I + 1]), Factory->getParamDecl(I + 1)->getType(), L),
-            type(Stored, L), L), L));
+        Values[I] = snapshot(cast(utilityConstructorArgumentValue(
+            std::move(*Captured[I + 1]), Factory->getParamDecl(I + 1)->getType(), L),
+            type(Stored, L), L), L);
       }
     }
     auto Result = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
@@ -28676,14 +28710,19 @@ class FunctionLowering {
     initializeZero(json::Object(Bound), BoundType, L);
     for (unsigned I = 0; I < Source.Storage.Arguments.Elements.size(); ++I) {
       const auto &Element = Source.Storage.Arguments.Elements[I];
-      if (!Element.Field || Element.EmptyBase)
+      if (Element.EmptyBase) {
+        if (Element.Field || Values[I] || !Source.Placeholders[I])
+          reject(L, "bind empty capture field", "Only the completed empty subobject may omit a field write.");
+        continue; // Keep its independently checked offset and zeroed storage padding.
+      }
+      if (!Element.Field || !Values[I])
         reject(L, "bind capture field", "The exact selected stored value field is required.");
       auto Place = fieldStorage(json::Object(Bound), Element.Field, L);
       if (const auto Wrapper = approvedFunctionalReferenceRecord(
               A.S, A.Sources, Element.getType()->getAsCXXRecordDecl(), A.Context))
-        constructFunctionalReferencePointer(std::move(Place), *Wrapper, std::move(Values[I]), L);
+        constructFunctionalReferencePointer(std::move(Place), *Wrapper, std::move(*Values[I]), L);
       else
-        assign(std::move(Place), std::move(Values[I]), L);
+        assign(std::move(Place), std::move(*Values[I]), L);
     }
     return Result;
   }
@@ -28704,10 +28743,10 @@ class FunctionLowering {
     // including when the original receiver is an xvalue. Preserve its actual
     // address and all receiver effects before loading the stored callback.
     auto Address = snapshot(address(lvalue(Source.Object), Source.Object->getType(), L), L);
-    // Ignored call operands still bind and run once before stored callback or
-    // argument values are loaded. Ordinary full-expression cleanup remains in
-    // the existing forwarding-argument lowering.
-    (void)captureUtilityInvocationArguments(Call, 1, Call->getNumArgs() - 1);
+    // Every input binds and runs once before any callback or argument value
+    // is loaded. Repeated placeholders copy this binding, never the operand's
+    // effects. Unused operands and full-expression cleanup keep the same path.
+    auto Incoming = captureUtilityInvocationArguments(Call, 1, Call->getNumArgs() - 1);
     Expression CallableField{{"kind", "member"},
         {"type", type(Source.Storage.CallableType, L)}, {"name", "nct_bind_callable"},
         {"args", json::Array{dereference(json::Object(Address), L)}}, {"loc", A.loc(L)}};
@@ -28718,13 +28757,27 @@ class FunctionLowering {
     json::Array Arguments;
     for (unsigned I = 0; I < Source.Arguments.size(); ++I) {
       const auto &Element = Source.Storage.Arguments.Elements[I];
-      if (!Element.Field || Element.EmptyBase)
+      const auto &Selected = Source.Arguments[I];
+      if (Selected.PlaceholderRank) {
+        const auto Identity = describeFunctionalBindPlaceholderIdentity(A.S, A.Sources, Element.getType(), A.Context);
+        if (!Identity || !Element.EmptyBase || Element.Field || Selected.Reference || Selected.WrapperCopy ||
+            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl() ||
+            Identity->Rank != Selected.PlaceholderRank || Selected.PlaceholderRank > Incoming.size() ||
+            !Selected.PlaceholderIndex || !Selected.PlaceholderGet || !Selected.PlaceholderForward ||
+            !A.Context.hasSameType(Selected.ForwardedType,
+                Source.Method->getParamDecl(Selected.PlaceholderRank - 1)->getType()))
+          reject(L, "bind placeholder projection", "The exact completed incoming slot and forwarding type are required.");
+        Arguments.push_back(utilityInvocationArgument(json::Object(Incoming[Selected.PlaceholderRank - 1]),
+            Selected.ForwardedType, Prototype->getParamType(I), nullptr, L));
+        continue;
+      }
+      if (!Element.Field || Element.EmptyBase || Selected.PlaceholderIndex ||
+          Selected.PlaceholderGet || Selected.PlaceholderForward)
         reject(L, "bind invocation field", "The exact original logical capture field is required.");
       auto Place = fieldStorage(json::Object(Bound), Element.Field, L);
       const auto Stored = Source.Object->getType().isConstQualified()
           ? A.Context.getConstType(Element.getType()) : Element.getType();
       auto Captured = snapshot(address(std::move(Place), Stored, L), L);
-      const auto &Selected = Source.Arguments[I];
       if (Selected.Reference) {
         const auto &Wrapper = Selected.Reference->Wrapper;
         if (Wrapper.Record->getCanonicalDecl() != Element.getType()->getAsCXXRecordDecl()->getCanonicalDecl())

@@ -1020,3 +1020,6 @@ Ogni proiezione in ingresso bind viene legata al tuple reale, alla sorgente sele
 
 
 La prova bind controlla separatamente il vincolo positivo del segnaposto con il pacchetto esatto della funzione selezionata e il rango. Chiude le sorgenti degli operatori originale e sostituito prima dei valori. La prova scalare zero resta invariata; corpo completo e runtime sono incompleti.
+
+
+Il lowering bind protetto acquisisce una sola volta i binding in ingresso e ne proietta i ranghi, anche ripetuti. I marcatori SDK vuoti esatti omettono letture esterne e scritture nei campi. Servono ancora certificati completi; ammissione frontend e verifica di esecuzione sono incomplete.

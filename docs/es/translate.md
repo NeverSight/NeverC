@@ -1020,3 +1020,6 @@ Cada proyección de entrada bind se vincula a su tuple real, fuente seleccionada
 
 
 La prueba bind comprueba por separado la condición positiva del marcador con el paquete exacto de la función seleccionada y su rango. Cierra las fuentes de los operadores original y sustituido antes de comprobar valores. Se mantiene la prueba escalar cero; cuerpo completo y ejecución siguen pendientes.
+
+
+El lowering bind protegido captura una sola vez las vinculaciones de entrada y proyecta sus rangos, incluidos los repetidos. Los marcadores SDK vacíos exactos omiten lecturas externas y escrituras de campos. Siguen siendo necesarios certificados completos; admisión frontend y validación de ejecución están pendientes.

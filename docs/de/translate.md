@@ -1020,3 +1020,6 @@ Jede bind-Eingangsprojektion wird an ihr tatsächliches Aufruf-tuple, die gewäh
 
 
 Der bind-Nachweis prüft die positive Platzhalterbedingung separat anhand des exakt gewählten Funktionspakets und Rangs. Originale und substituierte Operatorquellen schließen vor der Wertprüfung. Skalare Nullbedingungen bleiben erhalten; vollständiger Funktionskörper und Laufzeitunterstützung sind noch unvollständig.
+
+
+Geschütztes bind-Lowering erfasst Eingangsbindungen einmal und projiziert auch wiederholte Ränge daraus. Exakte leere SDK-Marker vermeiden externe Wertlese- und Feldschreibzugriffe. Weiterhin sind vollständige Factory-/Aufrufzertifikate erforderlich; Frontend-Freigabe und Ausführungsprüfung sind unvollständig.
