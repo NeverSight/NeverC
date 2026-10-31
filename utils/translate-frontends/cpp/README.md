@@ -1234,3 +1234,6 @@ Source collection now retains the exact pinned SDK `__ph<1>` and `__ph<2>` ident
 
 
 Eight expanded bound-pack GTests are now registered, bringing the STL golden suffix to 48 tests. Their formal and translated O0/O2 results are pending. The previously authenticated component still selects its original 40 goldens; its 164-test, 80-product execution contract is preserved until a new component is bound.
+
+
+The inert bind layout descriptor now retains the exact empty-base storage of SDK placeholders `_1` and `_2`, including distinct offsets for repeated placeholders of the same type. Generic tuple admission is unchanged. Selected construction, source closure, capture and argument projection remain unfinished; runtime placeholder support is not yet claimed. The selected call description also retains the original index variable, call-tuple `get` and `forward`, keeping the stored slot distinct from the call-argument rank.

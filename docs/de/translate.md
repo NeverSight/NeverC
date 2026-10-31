@@ -996,3 +996,6 @@ Die Quellerfassung erhält die exakten Identitäten `__ph<1>` und `__ph<2>` des 
 
 
 Acht GTests für erweiterte gebundene Argumentpakete sind registriert; der STL-Golden-Suffix umfasst nun 48 Tests. Ihre formalen und übersetzten O0/O2-Ergebnisse stehen aus. Die bisherigen 40 Fälle und der Vertrag über 164 Tests und 80 ausgeführte Produkte bleiben bis zur Bindung einer neuen Komponente erhalten.
+
+
+Die statische bind-Beschreibung erhält die exakte Speicherung der SDK-Platzhalter `_1` und `_2` als leere Basen, einschließlich verschiedener Offsets bei wiederholten gleichen Typen. Die allgemeine Tuple-Zulassung bleibt gleich. Ausgewählte Konstruktion, Quellnachweise, Erfassung und Argumentprojektion sind unvollständig; Laufzeitunterstützung wird noch nicht zugesagt. Die Aufrufbeschreibung erhält außerdem die ursprüngliche Indexvariable sowie `get` und `forward` des Aufruftuples und unterscheidet Speicherplatz und Argumentrang.

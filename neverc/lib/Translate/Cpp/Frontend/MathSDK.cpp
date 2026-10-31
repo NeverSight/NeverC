@@ -6424,13 +6424,53 @@ utilityTupleTypes(const ClassTemplateSpecializationDecl *Specialization) {
   return Types;
 }
 
+// Layout metadata for the exact two pinned placeholder types. This is not
+// a utility value or a selected construction/lifetime certificate, and is never
+// called from the Sema packet collector.
+static bool functionalBindEmptyPlaceholderStorage(
+    const State &S, const SourceManager &SM, QualType Type,
+    const ASTContext &Context) {
+  if (Type.isNull() || Type.hasQualifiers() || Type->isReferenceType()) return false;
+  const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Type, Context);
+  const auto *Record = Identity ? Identity->Record->getDefinition() : nullptr;
+  if (!Record || !Record->isCompleteDefinition() || Record->isDependentContext() ||
+      Record->isUnion() || Record->isInvalidDecl() || Record->getNumBases() ||
+      Record->getNumVBases() || Record->isDynamicClass() || !Record->field_empty() ||
+      !Record->isEmpty() || !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
+      !Record->hasTrivialDefaultConstructor() || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialDestructor() || Context.getCharWidth() != 8) return false;
+  const auto *Pattern = Identity->Primary->getTemplatedDecl();
+  if (!Pattern || !Pattern->isCompleteDefinition() || Pattern->getNumBases() ||
+      !Pattern->field_empty() || Pattern->isUnion() || Pattern->isInvalidDecl()) return false;
+  for (const auto *Declaration : Pattern->decls()) {
+    const auto *Injected = dyn_cast<CXXRecordDecl>(Declaration);
+    if (!Injected || !Injected->isImplicit() || !Injected->isInjectedClassName()) return false;
+  }
+  // Any materialized special members must remain the implicit trivial members
+  // of this SDK definition. No user redeclaration or explicit body is admitted.
+  for (const auto *Declaration : Record->decls()) {
+    if (const auto *Injected = dyn_cast<CXXRecordDecl>(Declaration)) {
+      if (Injected->isImplicit() && Injected->isInjectedClassName()) continue;
+      return false;
+    }
+    const auto *Method = dyn_cast<CXXMethodDecl>(Declaration);
+    if (!Method || !Method->isImplicit() || !Method->isDefaulted() ||
+        !Method->isTrivial() || Method->isDeleted() || Method->isUserProvided() ||
+        !approvedStandardSDKDeclaration(S, SM, Method)) return false;
+  }
+  const auto &Layout = Context.getASTRecordLayout(Record);
+  return !Layout.getFieldCount() && Layout.getSize().getQuantity() == 1 &&
+      Layout.getAlignment().getQuantity() == 1;
+}
+
 static std::optional<UtilityTupleRecord>
 approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
                                const ASTContext &Context, unsigned Depth,
                                bool RequireReferenceElements = false,
                                bool RequireMixedReferenceElements = false,
-                               UtilityCatLayoutProof *Query = nullptr);
+                               UtilityCatLayoutProof *Query = nullptr,
+                               bool BindPlaceholderStorage = false);
 
 static std::optional<UtilityTupleRecord>
 utilityTupleStorageRecord(const State &S, const SourceManager &SM,
@@ -6562,7 +6602,10 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                                const ASTContext &Context, unsigned Depth,
                                bool RequireReferenceElements,
                                bool RequireMixedReferenceElements,
-                               UtilityCatLayoutProof *Query) {
+                               UtilityCatLayoutProof *Query,
+                               bool BindPlaceholderStorage) {
+  if (BindPlaceholderStorage && (Query || RequireReferenceElements || RequireMixedReferenceElements))
+    return std::nullopt;
   if (Depth > 64)
     return std::nullopt;
   const auto *Specialization =
@@ -6606,6 +6649,8 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
           Type.isRestrictQualified() ||
           Type.getAddressSpace() != LangAS::Default)
         return std::nullopt;
+      if (BindPlaceholderStorage && functionalBindEmptyPlaceholderStorage(S, SM, Type, Context))
+        continue;
       const auto *Element = Type->getAsCXXRecordDecl();
       Element = Element ? Element->getDefinition() : nullptr;
       const bool NestedMetadata = approvedUtilityTupleMetadata(S, SM, Element);
@@ -6748,7 +6793,9 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
       const auto *Definition =
           ElementRecord ? ElementRecord->getDefinition() : nullptr;
       if (!Definition ||
-          !functionTraitObjectValue(S, SM, Definition, Context) ||
+          (!functionTraitObjectValue(S, SM, Definition, Context) &&
+           !(BindPlaceholderStorage && functionalBindEmptyPlaceholderStorage(
+               S, SM, (*Types)[Index], Context))) ||
           !LeafSpecialization->isEmpty() ||
           !LeafSpecialization->isStandardLayout() ||
           !LeafSpecialization->hasTrivialCopyConstructor() ||
@@ -16193,8 +16240,10 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
   const auto *Tuple = TemplateArguments[1].pack_size()
       ? Check.record(Bound->getType(), "tuple", {"tuple", "__fwd/tuple.h"})
       : Bound->getType()->getAsCXXRecordDecl();
-  auto Arguments = Tuple ? approvedUtilityTupleRecord(S, SM, Tuple, Context)
-                         : std::nullopt;
+  // Placeholder empty bases are described only for this exact bind storage.
+  // Generic tuple/value consumers retain their existing classification.
+  auto Arguments = Tuple ? approvedUtilityTupleRecordImpl(
+      S, SM, Tuple, Context, 0, false, false, nullptr, true) : std::nullopt;
   if (!Arguments || Arguments->Elements.size() != TemplateArguments[1].pack_size())
     return std::nullopt;
   unsigned Index = 0;
@@ -16205,6 +16254,13 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
         !Context.hasSameType(Value, Arguments->Elements[Index++].getType()))
       return std::nullopt;
     if (ScalarValue(Value)) continue;
+    if (functionalBindEmptyPlaceholderStorage(S, SM, Value, Context)) {
+      const auto &Element = Arguments->Elements[Index - 1];
+      if (Element.Field || !Element.EmptyBase ||
+          Element.EmptyBase->getCanonicalDecl() != Value->getAsCXXRecordDecl()->getCanonicalDecl())
+        return std::nullopt;
+      continue;
+    }
     const auto Reference = approvedFunctionalReferenceRecord(
         S, SM, Value->getAsCXXRecordDecl(), Context);
     if (!Reference || !ScalarValue(Reference->ReferentType)) return std::nullopt;
@@ -16534,6 +16590,9 @@ describeFunctionalBindCallSource(
     }
     std::optional<FunctionalReferenceAccessCall> Access;
     QualType Forwarded;
+    unsigned PlaceholderRank = 0;
+    const VarDecl *PlaceholderIndex = nullptr;
+    const CallExpr *PlaceholderGet = nullptr, *PlaceholderForward = nullptr;
     if (Wrapper) {
       const auto *SelectedCopy = Copy ? Copy->getConstructor() : nullptr;
       const auto *GetReference = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(UnwrapFunction)));
@@ -16547,6 +16606,89 @@ describeFunctionalBindCallSource(
           !Context.hasSameType(UnwrapFunction->getParamDecl(0)->getType(), Stored))
         return std::nullopt;
       Forwarded = Context.getLValueReferenceType(Wrapper->ReferentType);
+    } else if (const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Stored, Context)) {
+      if (Copy || !Placeholder->Rank || Placeholder->Rank > CallTypes.size() ||
+          !Context.hasSameType(UnwrapFunction->getParamDecl(0)->getType(),
+                               Context.getLValueReferenceType(Bound)) ||
+          !Context.hasSameType(UnwrapFunction->getParamDecl(1)->getType(),
+                               Context.getLValueReferenceType(CallArguments->getType())))
+        return std::nullopt;
+      const auto *Body = dyn_cast_or_null<CompoundStmt>(UnwrapFunction->getBody());
+      const auto *Declaration = Body && Body->size() == 2
+          ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
+      PlaceholderIndex = Declaration && Declaration->isSingleDecl()
+          ? dyn_cast<VarDecl>(Declaration->getSingleDecl()) : nullptr;
+      const auto *Return = Body && Body->size() == 2
+          ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+      PlaceholderForward = Return
+          ? dyn_cast_or_null<CallExpr>(Check.core(Return->getRetValue())) : nullptr;
+      const auto *Forward = PlaceholderForward ? PlaceholderForward->getDirectCallee() : nullptr;
+      const auto *ForwardArguments = Forward ? Forward->getTemplateSpecializationArgs() : nullptr;
+      const auto *ForwardPrototype = Forward ? Forward->getType()->getAs<FunctionProtoType>() : nullptr;
+      PlaceholderGet = PlaceholderForward && PlaceholderForward->getNumArgs() == 1
+          ? dyn_cast_or_null<CallExpr>(Check.core(PlaceholderForward->getArg(0))) : nullptr;
+      const auto *Getter = PlaceholderGet ? PlaceholderGet->getDirectCallee() : nullptr;
+      const auto *GetterArguments = Getter ? Getter->getTemplateSpecializationArgs() : nullptr;
+      const auto *GetterReference = PlaceholderGet
+          ? dyn_cast<DeclRefExpr>(PlaceholderGet->getCallee()->IgnoreParenImpCasts()) : nullptr;
+      const auto *ForwardReference = PlaceholderForward
+          ? dyn_cast<DeclRefExpr>(PlaceholderForward->getCallee()->IgnoreParenImpCasts()) : nullptr;
+      const auto Rank = Placeholder->Rank;
+      Forwarded = CallTypes[Rank - 1];
+      const auto LValue = Context.getLValueReferenceType(Forwarded.getNonReferenceType());
+      if (!PlaceholderIndex || !PlaceholderIndex->getIdentifier() || PlaceholderIndex->getName() != "__indx" ||
+          PlaceholderIndex->getDeclContext() != UnwrapFunction || PlaceholderIndex->isImplicit() ||
+          PlaceholderIndex->isStaticLocal() || !PlaceholderIndex->hasInit() ||
+          !PlaceholderIndex->getTypeSourceInfo() ||
+          !Context.hasSameType(PlaceholderIndex->getType(), Context.getConstType(Context.getSizeType())) ||
+          !Check.family(PlaceholderIndex, {"__functional/bind.h"}) ||
+          !Forward || !Forward->getIdentifier() || Forward->getName() != "forward" ||
+          !Forward->getPrimaryTemplate() || Forward->isVariadic() || Forward->getNumParams() != 1 ||
+          !ForwardArguments || ForwardArguments->size() != 1 ||
+          ForwardArguments->get(0).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(ForwardArguments->get(0).getAsType(), Forwarded) ||
+          !Context.hasSameType(Forward->getReturnType(), Forwarded) ||
+          !Context.hasSameType(Forward->getParamDecl(0)->getType(), LValue) ||
+          !ForwardPrototype || !ForwardPrototype->isNothrow() || ForwardPrototype->getNoexceptExpr() ||
+          !Check.family(Forward, {"__utility/forward.h"}) ||
+          !Check.location(PlaceholderForward->getExprLoc(), {"__functional/bind.h"}) ||
+          !ForwardReference || ForwardReference->getDecl() != Forward ||
+          !ForwardReference->hasExplicitTemplateArgs() || ForwardReference->getNumTemplateArgs() != 1 ||
+          !Getter || !Getter->getIdentifier() || Getter->getName() != "get" ||
+          !Getter->getPrimaryTemplate() || Getter->getNumParams() != 1 || Getter->isVariadic() ||
+          !GetterArguments || GetterArguments->size() != 2 ||
+          GetterArguments->get(0).getKind() != TemplateArgument::Integral ||
+          GetterArguments->get(0).getAsIntegral().isNegative() ||
+          GetterArguments->get(0).getAsIntegral().getLimitedValue(3) != Rank - 1 ||
+          !Context.hasSameType(GetterArguments->get(0).getIntegralType(), Context.getSizeType()) ||
+          GetterArguments->get(1).getKind() != TemplateArgument::Pack ||
+          GetterArguments->get(1).pack_size() != CallTypes.size() ||
+          PlaceholderGet->getNumArgs() != 1 ||
+          !Context.hasSameType(Getter->getParamDecl(0)->getType(),
+                               Context.getLValueReferenceType(CallArguments->getType())) ||
+          !Context.hasSameType(Getter->getReturnType(), LValue) ||
+          !ParameterReference(PlaceholderGet->getArg(0), UnwrapFunction->getParamDecl(1)) ||
+          !Check.family(Getter, {"tuple", "__fwd/tuple.h"}) ||
+          !Check.location(PlaceholderGet->getExprLoc(), {"__functional/bind.h"}) ||
+          !GetterReference || GetterReference->getDecl() != Getter ||
+          !GetterReference->hasExplicitTemplateArgs() || GetterReference->getNumTemplateArgs() != 1 ||
+          PlaceholderGet->getValueKind() != VK_LValue ||
+          PlaceholderForward->getValueKind() != Expr::getValueKindForType(Forwarded))
+        return std::nullopt;
+      unsigned Input = 0;
+      for (const auto &Argument : GetterArguments->get(1).pack_elements())
+        if (Argument.getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(Argument.getAsType(), CallTypes[Input++])) return std::nullopt;
+      const auto &WrittenIndex = GetterReference->template_arguments()[0];
+      const auto &WrittenArgument = WrittenIndex.getArgument();
+      const Expr *IndexSource = WrittenArgument.getKind() == TemplateArgument::Expression
+          ? WrittenArgument.getAsExpr() : WrittenArgument.getKind() == TemplateArgument::Integral
+          ? WrittenIndex.getSourceIntegralExpression() : nullptr;
+      const auto *IndexReference = IndexSource
+          ? dyn_cast_or_null<DeclRefExpr>(Check.core(IndexSource)) : nullptr;
+      if (!IndexReference || IndexReference->getDecl() != PlaceholderIndex ||
+          !Check.location(IndexReference->getExprLoc(), {"__functional/bind.h"})) return std::nullopt;
+      PlaceholderRank = Rank;
     } else {
       Forwarded = Context.getLValueReferenceType(Bound);
       if (Copy || !ParameterReference(Check.returned(UnwrapFunction),
@@ -16557,7 +16699,8 @@ describeFunctionalBindCallSource(
     if (!Context.hasSameType(UnwrapFunction->getReturnType(), Forwarded) ||
         !Context.hasSameType(InvokeFunction->getParamDecl(I + 1)->getType(), Forwarded))
       return std::nullopt;
-    Arguments.push_back(FunctionalBindArgumentSource{Get, Unwrap, Copy, Access, Forwarded});
+    Arguments.push_back(FunctionalBindArgumentSource{Get, Unwrap, Copy, Access, Forwarded,
+        PlaceholderRank, PlaceholderIndex, PlaceholderGet, PlaceholderForward});
   }
   const auto *Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(InvokeFunction)));
   if (!Target || Target->getDirectCallee() || Target->getNumArgs() != Arguments.size() ||
@@ -21863,6 +22006,10 @@ public:
       if (Actual->Arguments[I].Get != Call.Arguments[I].Get ||
           Actual->Arguments[I].Unwrap != Call.Arguments[I].Unwrap ||
           Actual->Arguments[I].WrapperCopy != Call.Arguments[I].WrapperCopy ||
+          Actual->Arguments[I].PlaceholderRank != Call.Arguments[I].PlaceholderRank ||
+          Actual->Arguments[I].PlaceholderIndex != Call.Arguments[I].PlaceholderIndex ||
+          Actual->Arguments[I].PlaceholderGet != Call.Arguments[I].PlaceholderGet ||
+          Actual->Arguments[I].PlaceholderForward != Call.Arguments[I].PlaceholderForward ||
           !Context.hasSameType(Actual->Arguments[I].ForwardedType, Call.Arguments[I].ForwardedType)) return false;
     // A freshly described zero-bound call has no __mu or tuple-element
     // projection operations. Its real auxiliary and invocation sources remain
