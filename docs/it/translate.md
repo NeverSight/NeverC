@@ -1014,3 +1014,6 @@ Il grafo bind conserva solo i propri sotto-oggetti segnaposto vuoti reali e le s
 
 
 La prova del getter bind controlla la foglia tuple vuota selezionata, la specializzazione parziale originale ed entrambe le conversioni reali di base privata. Le prove dei campi restano invariate. Proiezione e traduzione runtime sono incomplete; non sono risultati di esecuzione riusciti.
+
+
+Ogni proiezione in ingresso bind viene legata al tuple reale, alla sorgente selezionata e al rango. Posizioni memorizzate, ranghi in ingresso, riferimenti e const sono verificati separatamente. Permessi e cache restano limitati alla chiamata. L’esecuzione completa rimane incompleta.

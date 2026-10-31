@@ -7728,6 +7728,7 @@ class UtilityTupleQueryGraph
     std::vector<QualType> Elements;
   };
   std::vector<BindTupleElementProjection> BindTupleElementProjections;
+  unsigned BindTupleElementProjectionRoots = 0;
   std::set<const TemplateSpecializationType *> BindTupleElementProjectionAtoms;
   // A reused scalar helper can retain a written tuple from another bind.
   // These frames prove only that exact source operand, never physical storage
@@ -10038,21 +10039,23 @@ class UtilityTupleQueryGraph
         Builtin, Index, Pack, Location, Slot, std::move(Elements)};
   }
   std::optional<BindTupleElementProjection> bindTupleElementProjection(
-      const CallExpr *Get, unsigned Slot) {
-    if (!BindMetadata || Slot >= BindMetadata->Arguments.Elements.size() || !step()) return std::nullopt;
+      const CallExpr *Get, const UtilityTupleRecord &Storage, unsigned Slot) {
+    if (!BindMetadata || !Storage.Record || Slot >= Storage.Elements.size() || !step()) return std::nullopt;
     const auto *Function = Get ? Get->getDirectCallee() : nullptr;
     const auto *Definition = Function ? Function->getDefinition() : nullptr;
     const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
     const auto *Statement = Body && Body->size() == 2 ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
     const auto *Local = Statement && Statement->isSingleDecl()
         ? dyn_cast<TypeAliasDecl>(Statement->getSingleDecl()) : nullptr;
-    const UtilityTupleLikeSource Tuple{BindMetadata->Arguments.Elements, nullptr, QualType(), 0};
+    const UtilityTupleLikeSource Tuple{Storage.Elements, nullptr, QualType(), 0};
     if (!Function || Function->getNumParams() != 1 || !Definition || !Body || !Local ||
+        !Context.hasSameUnqualifiedType(Function->getParamDecl(0)->getType().getNonReferenceType(),
+                                         Context.getRecordType(Storage.Record)) ||
         Local->getDeclContext() != Definition || !Local->getIdentifier() || Local->getName() != "type" ||
         !Local->getTypeSourceInfo() || !family(Local) ||
         !approvedUtilityTupleLikeGet(S, SM, Get, Function->getParamDecl(0)->getType(), Tuple, Slot, Context))
       return std::nullopt;
-    return bindTupleElementProjectionFromType(Local->getUnderlyingType(), BindMetadata->Arguments, Slot);
+    return bindTupleElementProjectionFromType(Local->getUnderlyingType(), Storage, Slot);
   }
   bool catPackElement(const TemplateSpecializationType *Use) {
     if (!catMetadataMode() || !Use || !step()) return false;
@@ -11166,7 +11169,7 @@ public:
       const FunctionalBindCallSource &Call, const std::function<bool()> &Proof) {
     return withBindSourceChild([&] {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-          !BindTupleElementProjections.empty() || !Proof || !Call.SourceCall ||
+          !BindTupleElementProjections.empty() || BindTupleElementProjectionRoots || !Proof || !Call.SourceCall ||
           !S.owns(SM, Call.SourceCall->getExprLoc()) || Call.Storage.Record != BindMetadata->Record)
         return false;
       const auto Actual = describeFunctionalBindCallSource(S, SM, Call.SourceCall, Context);
@@ -11175,14 +11178,32 @@ public:
           Actual->Storage.Record != BindMetadata->Record || Actual->Arguments.empty() ||
           Actual->Arguments.size() != BindMetadata->Arguments.Elements.size())
         return false;
+      if (Actual->CallArguments != Call.CallArguments || Actual->CallForwards != Call.CallForwards ||
+          Actual->Arguments.size() != Call.Arguments.size()) return false;
       std::vector<BindTupleElementProjection> Projections;
       std::vector<const ClassTemplatePartialSpecializationDecl *> Partials;
-      for (unsigned I = 0; I < Actual->Arguments.size(); ++I) {
-        const auto Projection = bindTupleElementProjection(Actual->Arguments[I].Get, I);
+      auto Add = [&](const CallExpr *Get, const UtilityTupleRecord &Tuple, unsigned Slot) {
+        const auto Projection = bindTupleElementProjection(Get, Tuple, Slot);
         if (!Projection) return false;
         Projections.push_back(*Projection);
         if (std::find(Partials.begin(), Partials.end(), Projection->Partial) == Partials.end())
           Partials.push_back(Projection->Partial);
+        return true;
+      };
+      const auto Incoming = Actual->CallForwards.empty() ? std::nullopt
+          : approvedUtilityReferenceTupleRecord(S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
+      for (unsigned I = 0; I < Actual->Arguments.size(); ++I) {
+        const auto &Argument = Actual->Arguments[I], &Retained = Call.Arguments[I];
+        if (Argument.Get != Retained.Get || Argument.Unwrap != Retained.Unwrap ||
+            Argument.PlaceholderRank != Retained.PlaceholderRank ||
+            Argument.PlaceholderIndex != Retained.PlaceholderIndex ||
+            Argument.PlaceholderGet != Retained.PlaceholderGet ||
+            Argument.PlaceholderForward != Retained.PlaceholderForward ||
+            !Add(Argument.Get, BindMetadata->Arguments, I)) return false;
+        if (!Argument.PlaceholderRank) continue;
+        if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
+            Argument.PlaceholderRank > Incoming->Elements.size() ||
+            !Add(Argument.PlaceholderGet, *Incoming, Argument.PlaceholderRank - 1)) return false;
       }
       // These builtin identities exist only for this fresh get/storage/slot
       // description. Neither type nor statement memoization can export them.
@@ -11194,9 +11215,11 @@ public:
       }
       SavedTypes.swap(Types);
       SavedExpressions.swap(Expressions);
+      BindTupleElementProjectionRoots = Projections.size();
       BindTupleElementProjections = std::move(Projections);
       auto Restore = llvm::make_scope_exit([&] {
         BindTupleElementProjections.clear();
+        BindTupleElementProjectionRoots = 0;
         Types.clear();
         Types.swap(SavedTypes);
         Expressions.clear();
@@ -11268,7 +11291,7 @@ public:
     return withBindSourceChild([&] {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           BindTupleElementProjections.empty() ||
-          BindTupleElementProjections.size() != BindMetadata->Arguments.Elements.size() ||
+          BindTupleElementProjections.size() != BindTupleElementProjectionRoots ||
           !BindRecordSource) return false;
       for (const auto &Projection : BindTupleElementProjections)
         if (!TraverseBindTupleElementProjectionSource(Projection)) return false;
@@ -22201,15 +22224,42 @@ public:
             ? dyn_cast<CXXThisExpr>(Dereference->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
         return This && Context.hasSameType(This->getType(), Method->getThisType());
       };
-      const FieldDecl *BaseField = nullptr;
-      for (const auto *Field : Storage.Arguments.Record->fields()) {
-        if (BaseField || !Field->getIdentifier() || Field->getName() != "__base_" ||
-            !Field->getTypeSourceInfo() || !family(Field)) return false;
-        BaseField = Field;
-      }
-      if (!BaseField) return false;
+      struct Request {
+        const CallExpr *Get;
+        const UtilityTupleRecord *Tuple;
+        unsigned Slot;
+        bool ReadOnly;
+      };
+      const auto Incoming = Actual->CallForwards.empty() ? std::nullopt
+          : approvedUtilityReferenceTupleRecord(S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
+      std::vector<Request> Requests;
       for (unsigned I = 0; I < Actual->Arguments.size(); ++I) {
-        const auto *Get = Actual->Arguments[I].Get;
+        const auto &Argument = Actual->Arguments[I];
+        Requests.push_back({Argument.Get, &Storage.Arguments, I, Actual->Method->isConst()});
+        if (!Argument.PlaceholderRank) continue;
+        if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
+            Argument.PlaceholderRank > Incoming->Elements.size() || !Argument.PlaceholderGet) return false;
+        Requests.push_back({Argument.PlaceholderGet, &*Incoming, Argument.PlaceholderRank - 1, false});
+      }
+      for (const auto &Request : Requests) {
+        const auto &Tuple = *Request.Tuple;
+        const unsigned I = Request.Slot;
+        if (I >= Tuple.Elements.size()) return false;
+        const FieldDecl *BaseField = nullptr;
+        for (const auto *Field : Tuple.Record->fields()) {
+          if (BaseField || !Field->getIdentifier() || Field->getName() != "__base_" ||
+              !Field->getTypeSourceInfo() || !family(Field)) return false;
+          BaseField = Field;
+        }
+        if (!BaseField) return false;
+        const auto *Get = Request.Get;
+        const UtilityTupleLikeSource Elements{Tuple.Elements, nullptr, QualType(), 0};
+        const auto *Selected = Get ? Get->getDirectCallee() : nullptr;
+        if (!Selected || Selected->getNumParams() != 1 ||
+            !Context.hasSameUnqualifiedType(Selected->getParamDecl(0)->getType().getNonReferenceType(),
+                                             Context.getRecordType(Tuple.Record)) ||
+            !approvedUtilityTupleLikeGet(S, SM, Get, Selected->getParamDecl(0)->getType(), Elements, I, Context))
+          return false;
         const auto *Function = Get ? Get->getDirectCallee() : nullptr;
         const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
         const auto *Definition = Function ? Function->getDefinition() : nullptr;
@@ -22223,7 +22273,7 @@ public:
         const auto *Conversion = Cast ? dyn_cast<ImplicitCastExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
         const auto *Base = Conversion ? dyn_cast<MemberExpr>(Conversion->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
         const auto *Object = Base ? dyn_cast<DeclRefExpr>(Base->getBase()->IgnoreParenImpCasts()) : nullptr;
-        const auto &Element = Storage.Arguments.Elements[I];
+        const auto &Element = Tuple.Elements[I];
         const bool EmptyPlaceholder = Element.EmptyBase && !Element.Field;
         const auto *Leaf = Element.Field ? dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext())
                                         : EmptyPlaceholder && Method ? Method->getParent() : nullptr;
@@ -22259,11 +22309,12 @@ public:
               OriginalElementBase->isVirtual() || OriginalElementBase->getAccessSpecifier() != AS_private ||
               !ElementBase->getTypeSourceInfo() || !OriginalElementBase->getTypeSourceInfo()) return false;
         }
-        const auto Value = Actual->Method->isConst()
-            ? Context.getConstType(Storage.Arguments.Elements[I].getType()) : Storage.Arguments.Elements[I].getType();
+        const auto Stored = Element.getType();
+        const auto Value = !Stored->isReferenceType() && Request.ReadOnly
+            ? Context.getConstType(Stored) : Stored.getNonReferenceType();
         if (!Function || !Definition || !Pattern || !LeafCall || !Method || !Reference || Reference->isArrow() ||
             LeafCall->getNumArgs() || !LeafCall->isLValue() || !Method->getIdentifier() || Method->getName() != "get" ||
-            Method->getPrimaryTemplate() || Method->isConst() != Actual->Method->isConst() ||
+            Method->getPrimaryTemplate() || Method->isConst() != Request.ReadOnly ||
             Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
             !Owner || Method->getParent() != Leaf || !OriginalMethod || !OwnerPattern ||
             (EmptyPlaceholder ? !Partial : (bool(Partial) || !OriginalField)) ||

@@ -1014,3 +1014,6 @@ Der bind-Quellgraph erhält nur seine tatsächlichen leeren Platzhalter-Unterobj
 
 
 Der bind-Getter-Nachweis prüft das gewählte leere tuple-Blatt, seine ursprüngliche partielle Spezialisierung und beide privaten Basiskonvertierungen. Feldnachweise bleiben erhalten. Argumentprojektion und Laufzeitübersetzung sind unvollständig; dies ist kein erfolgreicher Ausführungsnachweis.
+
+
+Jede bind-Eingangsprojektion wird an ihr tatsächliches Aufruf-tuple, die gewählte Quelle und den Rang gebunden. Speicherposition, Eingangsrang, Referenzen und const werden getrennt geprüft. Rechte und Caches gelten nur für diesen Aufruf; vollständige Ausführung ist noch unvollständig.

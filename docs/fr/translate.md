@@ -1014,3 +1014,6 @@ Le graphe bind conserve ses seuls sous-objets réservés vides réels et les sou
 
 
 La preuve du getter bind vérifie la feuille tuple vide sélectionnée, sa spécialisation partielle originale et les deux conversions réelles de base privée. Les preuves des champs sont conservées. Projection et traduction runtime restent incomplètes ; aucune réussite d’exécution n’est déclarée.
+
+
+Chaque projection entrante bind est liée à son tuple réel, sa source sélectionnée et son rang. Positions stockées, rangs entrants, références et const sont vérifiés séparément. Permissions et caches restent limités à cet appel. L’exécution complète des espaces réservés reste à terminer.

@@ -1252,3 +1252,6 @@ The bind source graph now retains only its exact empty placeholder subobjects an
 
 
 The bind getter source proof now checks the selected empty-base tuple leaf, its original partial specialization and both real private-base casts. Field-based getters keep their existing proof. Placeholder argument projection and runtime translation remain unfinished; this is not passing execution evidence.
+
+
+Bind placeholder getter proofs now bind each incoming projection to its own actual call tuple, selected source and rank. Stored positions and incoming ranks, reference types and const qualification are checked separately; projection permissions and caches remain scoped to that call. Complete placeholder execution remains pending.

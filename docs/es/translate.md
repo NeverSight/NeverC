@@ -1014,3 +1014,6 @@ El grafo bind conserva solo sus subobjetos marcadores vacíos reales y las fuent
 
 
 La prueba del getter bind comprueba la hoja tuple vacía seleccionada, su especialización parcial original y ambas conversiones reales de base privada. Se conservan las pruebas de campos. La proyección y traducción runtime están incompletas; no son resultados de ejecución aprobados.
+
+
+Cada proyección de entrada bind se vincula a su tuple real, fuente seleccionada y rango. Se comprueban por separado posiciones almacenadas, rangos de entrada, referencias y const. Permisos y cachés se limitan a esa llamada. La ejecución completa sigue pendiente.
