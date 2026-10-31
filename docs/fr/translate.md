@@ -990,3 +990,6 @@ Les tuples de références empruntent les propriétaires admis. Les tuples de va
 
 
 Les preuves de source `declval` terminées regroupent désormais l’appel sélectionné et ses deux appels helper exacts dans une entrée de cache, en conservant la limite de 64 entrées et tous les contrôles de source ordinaires. Cette modification est vérifiée après la fusion ; ses résultats syntaxiques et d’exécution restent en attente.
+
+
+La collecte conserve les identités exactes `__ph<1>` et `__ph<2>` du SDK figé sans demander de définition ni de disposition pendant Sema. La capture, la projection des arguments et les preuves de source des espaces réservés restent à terminer. [cpp-bind-placeholder-cases.json](../../utils/ci/cpp-bind-placeholder-cases.json) contient des cas proposés, pas des résultats réussis.

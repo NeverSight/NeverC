@@ -990,3 +990,6 @@ Las tuplas de referencias toman prestados los propietarios admitidos. Las tuplas
 
 
 Las pruebas de fuente `declval` completadas agrupan la llamada seleccionada y sus dos llamadas helper exactas en una entrada de caché, conservando el límite de 64 entradas y todas las comprobaciones de fuente ordinarias. Este cambio se valida después de fusionarse; los resultados sintácticos y de ejecución siguen pendientes.
+
+
+La recopilación conserva las identidades exactas `__ph<1>` y `__ph<2>` del SDK fijado sin solicitar definiciones ni diseños durante Sema. La captura, proyección de argumentos y pruebas de fuente de los marcadores siguen pendientes. [cpp-bind-placeholder-cases.json](../../utils/ci/cpp-bind-placeholder-cases.json) contiene casos propuestos, no resultados aprobados.

@@ -990,3 +990,6 @@ Referenztupel leihen unterstützte Besitzer. Werttupel verwenden den ausgewählt
 
 
 Abgeschlossene `declval`-Quellnachweise fassen den ausgewählten Aufruf und beide exakten Helper-Aufrufe in einem Cache-Eintrag zusammen. Die Grenze von 64 Einträgen und alle gewöhnlichen Quellprüfungen bleiben erhalten. Die Prüfung erfolgt nach dem Zusammenführen; Syntax- und Laufzeitergebnisse stehen noch aus.
+
+
+Die Quellerfassung erhält die exakten Identitäten `__ph<1>` und `__ph<2>` des festen SDK, ohne während Sema Definitionen oder Layouts anzufordern. Laufzeiterfassung, Argumentprojektion und Quellnachweise für Platzhalter sind noch unvollständig. [cpp-bind-placeholder-cases.json](../../utils/ci/cpp-bind-placeholder-cases.json) enthält vorgeschlagene Fälle, keine erfolgreichen Ergebnisse.

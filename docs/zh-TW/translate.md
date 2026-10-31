@@ -990,3 +990,6 @@ merge 接受同一預設 int/int unordered_map 的左值或右值來源容器。
 
 
 已完成的 `declval` 原始碼證明現將所選呼叫與兩個精確 helper 呼叫保存在同一快取項目中，保留 64 項上限及全部一般原始碼檢查。本次修改在合併後驗證，語法與執行結果仍待回報。
+
+
+原始碼收集現保留固定 SDK 的精確 `__ph<1>`、`__ph<2>` 身分，Sema 期間不要求定義或配置。這是預留位置支援的準備工作，執行階段擷取、引數投影及原始碼證明尚未完成。擬議案例保存在 [cpp-bind-placeholder-cases.json](../../utils/ci/cpp-bind-placeholder-cases.json)，不代表已通過的結果。

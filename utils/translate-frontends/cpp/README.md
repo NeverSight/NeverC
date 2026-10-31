@@ -1228,3 +1228,6 @@ std::make_pair constructs admitted string, string_view and unique_ptr elements t
 
 
 Completed `declval` source proofs now group the selected call and both exact helper calls in one cache entry, retaining the 64-entry limit and all ordinary source checks. Validation of this change runs after the merge; its syntax and runtime results remain pending.
+
+
+Source collection now retains the exact pinned SDK `__ph<1>` and `__ph<2>` identities without requesting definitions or layouts during Sema. This is preparation for placeholders; their runtime capture, projection and source certificates remain unfinished. The proposed cases are retained in [cpp-bind-placeholder-cases.json](../../ci/cpp-bind-placeholder-cases.json); they are not passing results.

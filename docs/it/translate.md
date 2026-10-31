@@ -990,3 +990,6 @@ Le tuple di riferimenti prendono in prestito i proprietari supportati. Le tuple 
 
 
 Le prove di sorgente `declval` completate raggruppano la chiamata selezionata e le due esatte chiamate helper in una voce di cache, mantenendo il limite di 64 voci e tutti i normali controlli sorgente. La verifica avviene dopo il merge; i risultati sintattici e di esecuzione restano in attesa.
+
+
+La raccolta conserva le identità esatte `__ph<1>` e `__ph<2>` dell’SDK fisso senza richiedere definizioni o layout durante Sema. Cattura, proiezione degli argomenti e prove sorgente dei segnaposto restano incompleti. [cpp-bind-placeholder-cases.json](../../utils/ci/cpp-bind-placeholder-cases.json) contiene casi proposti, non risultati riusciti.
