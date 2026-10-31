@@ -530,6 +530,7 @@ by a scalar `void __svm_vmrun(address)` call that loses guest register outputs.
 `X86SVMContextTest` checks the installed header, layout, returning IR effects,
 invalid widths and O0/O2 ELF/COFF/Mach-O code generation. The native-signature
 and SVM-context synchronizers own the pruned tables, including both printers.
+The system-effect synchronizer also retains raw VMRUN's unknown reads/writes.
 The shared `X86SVMContext` implementation is synchronized from NeverSight
 LLVM commit `101513238669`, retaining its Apache-2.0 WITH LLVM-exception license.
 `tests/neverc/X86/verify_vmrun_context.py` runs 48 contexts per optimization

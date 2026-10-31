@@ -30,6 +30,7 @@ EFFECTS = {
                         *(f"MM{i}" for i in range(8))), ()),
     "WAIT": (0, ("FPCW", "FPSW"), ("FPSW",), ("MayRaiseFPException",)),
     "VMLOAD64": (0, ("RAX",), (), ("MayLoad",)),
+    "VMRUN64": (0, ("RAX",), (), ("MayLoad", "MayStore")),
     "VMSAVE64": (0, ("RAX",), (), ("MayStore",)),
     "INVLPGA64": (0, ("RAX", "ECX"), (), ()),
     "VMFUNC": (0, ("EAX", "ECX"), (), ("MayLoad",)),

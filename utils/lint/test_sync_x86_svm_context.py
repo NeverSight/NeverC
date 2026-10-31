@@ -27,6 +27,9 @@ class SVMContextTableTest(unittest.TestCase):
         self.assertEqual(set(registers[1:]),
                          {"RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RBP",
                           *(f"R{i}" for i in range(8, 16)), "EFLAGS"})
+        raw = SVM.TABLES.descriptor(text, "VMRUN64")
+        for flag in ("MayLoad", "MayStore", "UnmodeledSideEffects"):
+            self.assertIn(f"MCID::{flag}", raw[9])
 
     def test_dropped_effect_or_register_is_detected(self):
         text = (SVM.TABLES.TARGET / "X86GenInstrInfo.inc").read_text()
