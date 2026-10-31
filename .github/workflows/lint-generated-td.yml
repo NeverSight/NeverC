@@ -17,6 +17,8 @@ on:
       - 'utils/lint/test_sort_x86_intrinsics.py'
       - 'utils/lint/test_sync_x86_native_intrinsics.py'
       - 'utils/lint/sync-x86-kvm-hypercalls.py'
+      - 'utils/lint/sync-x86-hyperv-context.py'
+      - 'utils/lint/test_sync_x86_hyperv_context.py'
       - 'utils/lint/test_sync_x86_kvm_hypercalls.py'
       - 'utils/lint/sync-x86-native-intrinsics.py'
       - 'utils/lint/sync-x86-vmx-effects.py'
@@ -66,6 +68,8 @@ on:
       - 'utils/lint/test_sort_x86_intrinsics.py'
       - 'utils/lint/test_sync_x86_native_intrinsics.py'
       - 'utils/lint/sync-x86-kvm-hypercalls.py'
+      - 'utils/lint/sync-x86-hyperv-context.py'
+      - 'utils/lint/test_sync_x86_hyperv_context.py'
       - 'utils/lint/test_sync_x86_kvm_hypercalls.py'
       - 'utils/lint/sync-x86-native-intrinsics.py'
       - 'utils/lint/sync-x86-vmx-effects.py'
@@ -214,4 +218,6 @@ jobs:
           python3 utils/lint/test_sort_x86_intrinsics.py
           python3 utils/lint/test_sync_x86_native_intrinsics.py
           python3 utils/lint/sync-x86-kvm-hypercalls.py
+          python3 utils/lint/sync-x86-hyperv-context.py
+          python3 utils/lint/test_sync_x86_hyperv_context.py
           python3 utils/lint/test_sync_x86_kvm_hypercalls.py

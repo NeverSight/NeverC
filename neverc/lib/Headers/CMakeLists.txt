@@ -122,6 +122,7 @@ set(x86_files
   sgxintrin.h
   svmcontextintrin.h
   kvmhypercallintrin.h
+  hypervcontextintrin.h
   ia32intrin.h
   immintrin.h
   invpcidintrin.h

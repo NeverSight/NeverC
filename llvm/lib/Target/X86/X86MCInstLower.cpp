@@ -2283,6 +2283,8 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
 }
 
 void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
+  if (emitHyperVContext(MI))
+    return;
   if (emitSVMContext(MI))
     return;
   if (MI->getOpcode() == X86::NATIVE_FRAME_RETURN64) {

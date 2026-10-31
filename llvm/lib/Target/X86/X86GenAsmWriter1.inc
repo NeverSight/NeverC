@@ -20155,6 +20155,7 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// VMCALL_KVM64
     0U,	// VMMCALL_KVM32
     0U,	// VMMCALL_KVM64
+    0U,	// HYPERV_CALL64
 };
 
   static const uint32_t OpInfo1[] = {
@@ -38752,6 +38753,7 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// VMCALL_KVM64
     0U,	// VMMCALL_KVM32
     0U,	// VMMCALL_KVM64
+    0U,	// HYPERV_CALL64
 };
 
   // Emit the opcode for the instruction.

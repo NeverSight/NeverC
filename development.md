@@ -2343,3 +2343,37 @@ inputs and argument evaluation counts. Cross-format qualification covers
 x86-64 with 32/64-bit operands; the existing i686 frontend target remains
 unsupported. Separate NeverC and fork-LLVM O0/O2 objects passed 2,072,384 value
 comparisons across these eight interfaces plus MULX, PDEP and PEXT.
+
+
+### Explicit Hyper-V page ABI
+
+The header `hypervcontextintrin.h` supplies a 224-byte context and `__hyperv_call`.
+The header-free builtin `__builtin_ia32_hyperv_call(entry, gprs, xmm, stride)`
+takes three pointers and a constant vector stride (16, 32 or 64). The GPR
+bank uses x86 encoding order. It emits `llvm.x86.hyperv.call`, with unknown
+memory effects, convergence and no duplication. RCX/RDX/R8 and XMM0..5 are
+inputs; RAX/RCX/RDX/R8 and XMM0..5 are outputs. Other storage is untouched.
+
+The native emitter calls the supplied registered hypercall page. The compiler
+owns call-frame alignment and excludes live locals from the red zone.
+Caller-state replacement, faults and invalid native environments remain
+outside this returning interface. See the
+[LLVM contract](https://github.com/NeverSight/llvm-project/blob/main/llvm/docs/X86HyperVContext.rst)
+and [TLFS](https://learn.microsoft.com/en-us/virtualization/hyper-v-on-windows/tlfs/hypercall-interface).
+
+The shared `X86HyperVContext.h` and `X86HyperVContextEmitter.cpp` come from
+NeverSight LLVM commit `b5130e83dbd7`, retaining its Apache-2.0 WITH
+LLVM-exception license. `sync-x86-hyperv-context.py` owns the append-only
+machine descriptor; `sync-x86-native-intrinsics.py` owns the fixed intrinsic
+signature.
+
+`X86HyperVContextTest` checks native IR and ELF/COFF/Mach-O assembly.
+`tests/neverc/X86/verify_hyperv_context.py --compiler build-neverc/bin/neverc --keep DIRECTORY`
+checks unaligned banks, all strides, SysV/Win64 callers and live frames.
+`tests/neverc/X86/verify_hyperv_native.py --keep DIRECTORY` executes an independent
+original page-call wrapper and candidate inside KVM. Its synthetic userspace
+service exercises normal, fast and rep transport; it is not evidence for
+Microsoft Hyper-V service implementations. Missing KVM fails explicitly.
+Use `--backend-llc /path/to/llc` and `--new-pm` for the full LLVM backend;
+`--llvm-only` skips the frontend. `--source FILE --manifest FILE` qualifies
+actual NeverD C after checking the source hash and explicit page binding.

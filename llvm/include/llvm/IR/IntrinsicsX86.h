@@ -1104,6 +1104,7 @@ enum X86Intrinsics : unsigned {
     x86_getsec_bounded_state,                        // llvm.x86.getsec.bounded.state
     x86_hlt,                                         // llvm.x86.hlt
     x86_hreset,                                      // llvm.x86.hreset
+    x86_hyperv_call,                                 // llvm.x86.hyperv.call
     x86_inbyte,                                      // llvm.x86.inbyte
     x86_inbytestring,                                // llvm.x86.inbytestring
     x86_incsspd,                                     // llvm.x86.incsspd

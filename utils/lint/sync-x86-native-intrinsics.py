@@ -22,6 +22,7 @@ ENUMS = ROOT / "llvm/include/llvm/IR/IntrinsicEnums.inc"
 # Result followed by parameters, in LLVM's fixed IIT scalar/pointer vocabulary.
 DECLARATIONS = {
     "vmrun_context": ("Done", "PTR", "I32"),
+    "hyperv_call": ("Done", "PTR", "PTR", "PTR", "I32"),
     "invept": ("I8", "I64", "PTR"),
     "invvpid": ("I8", "I64", "PTR"),
     "clts": ("Done",),
@@ -344,6 +345,7 @@ def synchronize(write):
     transfer_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl)
     immediate_transfer, updated_impl = nonreturning_transfer_attribute(updated_impl, (1,))
     vmrun_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (1,), returning=True)
+    hyperv_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (3,), returning=True)
     hypercall_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, returning=True)
     address_attributes = {}
     for indices in sorted({indices for _, indices in ADDRESS_SIGNATURES.values()}):
@@ -366,6 +368,8 @@ def synchronize(write):
             attribute = immediate_transfer if FRAME_RETURNS.get(suffix) else transfer_attribute
         if suffix == "vmrun_context":
             attribute = vmrun_attribute
+        if suffix == "hyperv_call":
+            attribute = hyperv_attribute
         if suffix in KVM_HYPERCALLS:
             attribute = hypercall_attribute
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
