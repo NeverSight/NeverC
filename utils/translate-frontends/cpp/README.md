@@ -1237,3 +1237,6 @@ Eight expanded bound-pack GTests are now registered, bringing the STL golden suf
 
 
 The inert bind layout descriptor now retains the exact empty-base storage of SDK placeholders `_1` and `_2`, including distinct offsets for repeated placeholders of the same type. Generic tuple admission is unchanged. Selected construction, source closure, capture and argument projection remain unfinished; runtime placeholder support is not yet claimed. The selected call description also retains the original index variable, call-tuple `get` and `forward`, keeping the stored slot distinct from the call-argument rank.
+
+
+Reused scalar bind helpers now close each retained `tuple_element` operand against its own tuple, index and partial source in a temporary proof scope. Temporary type and statement entries are discarded on exit; this grants no construction, physical storage or lifetime permission for another bind object. Validation of this repair remains pending.

@@ -999,3 +999,6 @@ Sono registrati otto GTest per pacchetti estesi di argomenti associati; il suffi
 
 
 La descrizione statica di bind conserva la memorizzazione esatta come basi vuote dei segnaposto SDK `_1` e `_2`, con offset distinti per ripetizioni dello stesso tipo. L’ammissione generale delle tuple resta invariata. Costruzione selezionata, prove sorgente, cattura e proiezione sono incomplete; il supporto runtime non è dichiarato. La descrizione selezionata conserva anche la variabile di indice originale, `get` e `forward` della tupla di chiamata, distinguendo slot memorizzato e rango dell’argomento.
+
+
+Gli helper bind scalari riutilizzati verificano ogni operando `tuple_element` conservato con la propria tupla, indice e sorgente della specializzazione parziale in un ambito temporaneo. Le voci temporanee di tipi e istruzioni vengono eliminate all’uscita, senza autorizzare costruzione, memoria fisica o durata di un altro oggetto bind. La verifica è in attesa.
