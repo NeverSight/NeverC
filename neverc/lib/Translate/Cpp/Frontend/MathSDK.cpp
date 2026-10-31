@@ -16334,6 +16334,60 @@ describeFunctionalBindPlaceholderIdentity(
   return FunctionalBindPlaceholderIdentity{Record, Primary, Parameter, unsigned(Rank)};
 }
 
+std::optional<FunctionalBindPlaceholderOperandSource>
+describeFunctionalBindPlaceholderOperandSource(
+    const State &S, const SourceManager &SM, const Expr *Operand,
+    const ASTContext &Context) {
+  if (!Operand || !S.owns(SM, Operand->getExprLoc()) || !Operand->isLValue() ||
+      Operand->isTypeDependent() || Operand->isValueDependent()) return std::nullopt;
+  const Expr *Core = Operand;
+  for (unsigned Depth = 0; Core && Depth < 64; ++Depth) {
+    if (const auto *Parentheses = dyn_cast<ParenExpr>(Core)) {
+      Core = Parentheses->getSubExpr(); continue;
+    }
+    if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Core)) {
+      if (Cast->getCastKind() != CK_NoOp ||
+          !Context.hasSameType(Cast->getType(), Cast->getSubExpr()->getType())) return std::nullopt;
+      Core = Cast->getSubExpr(); continue;
+    }
+    break;
+  }
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Core);
+  const auto *Variable = Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+  const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Operand->getType(), Context);
+  const auto *Namespace = Variable ? dyn_cast<NamespaceDecl>(Variable->getDeclContext()) : nullptr;
+  const auto *TypeNamespace = Identity
+      ? dyn_cast<NamespaceDecl>(Identity->Record->getDeclContext()) : nullptr;
+  if (!Identity || !Reference || !Variable || !Namespace || !TypeNamespace ||
+      Namespace->getCanonicalDecl() != TypeNamespace->getCanonicalDecl() ||
+      !Reference->isLValue() || Reference->hasExplicitTemplateArgs() ||
+      !Variable->getIdentifier() || Variable->getName() != (Identity->Rank == 1 ? "_1" : "_2") ||
+      !Context.hasSameType(Operand->getType(), Variable->getType()) ||
+      !Variable->getType().isConstQualified() || Variable->getType().isVolatileQualified() ||
+      Variable->getType().isRestrictQualified() || Variable->getType().getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(Variable->getType(), Context.getRecordType(Identity->Record)))
+    return std::nullopt;
+  const VarDecl *Initializer = nullptr;
+  if (Variable->getAnyInitializer(Initializer)) return std::nullopt;
+  unsigned Declarations = 0;
+  for (const auto *Declaration : Variable->redecls()) {
+    const auto File = S.sdkFile(SM, Declaration->getLocation());
+    const auto *Owner = dyn_cast<NamespaceDecl>(Declaration->getDeclContext());
+    if (++Declarations > 64 || !File || File->Root != "libcxx" || File->Path != "__functional/bind.h" ||
+        !approvedStandardSDKDeclaration(S, SM, Declaration) ||
+        S.owns(SM, Declaration->getLocation()) || !Owner ||
+        Owner->getCanonicalDecl() != Namespace->getCanonicalDecl() ||
+        Declaration->getStorageClass() != SC_Extern || !Declaration->hasGlobalStorage() ||
+        Declaration->getTLSKind() != VarDecl::TLS_None || Declaration->isConstexpr() || Declaration->hasInit() ||
+        !Declaration->getTypeSourceInfo() ||
+        !Context.hasSameType(Declaration->getType(), Variable->getType())) return std::nullopt;
+  }
+  // The fixed SDK declares these empty objects extern const. Do not evaluate
+  // them or manufacture an initializer/definition; later capture lowering
+  // needs the complete selected copy and ordinary source certificates.
+  return FunctionalBindPlaceholderOperandSource{*Identity, Operand, Reference, Variable};
+}
+
 std::optional<FunctionalBindStorage>
 describeFunctionalBindStorage(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record,
@@ -16591,9 +16645,18 @@ describeFunctionalBindFactorySource(
                           "__functional/bind.h", Forward)) return std::nullopt;
     BoundForwards.push_back(Forward);
   }
+  std::vector<std::optional<FunctionalBindPlaceholderOperandSource>> Placeholders(
+      Storage->Arguments.Elements.size());
+  for (unsigned Index = 0; Index < Storage->Arguments.Elements.size(); ++Index) {
+    const auto &Element = Storage->Arguments.Elements[Index];
+    if (!Element.EmptyBase) continue;
+    Placeholders[Index] = describeFunctionalBindPlaceholderOperandSource(S, SM, Call->getArg(Index + 1), Context);
+    if (!Placeholders[Index] || Placeholders[Index]->Identity.Record->getCanonicalDecl() !=
+                                   Element.EmptyBase->getCanonicalDecl()) return std::nullopt;
+  }
   return FunctionalBindFactorySource{*Storage, Call, Factory, Construction,
       WeakConstruction, CallableInitializer, BoundConstruction,
-      std::move(FactoryForwards), CallableForward, std::move(BoundForwards)};
+      std::move(FactoryForwards), CallableForward, std::move(BoundForwards), std::move(Placeholders)};
 }
 
 std::optional<FunctionalBindCallSource>

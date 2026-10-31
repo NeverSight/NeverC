@@ -1005,3 +1005,6 @@ Les helpers bind scalaires réutilisés prouvent chaque opérande `tuple_element
 
 
 La description de construction bind conserve l’initialisation de base vide sélectionnée, la copie ou le déplacement trivial du SDK et les expressions de transfert de chaque espace réservé. La certification de source et l’exécution restent en attente.
+
+
+La description de fabrique lie chaque opérande original à la déclaration SDK extern const exacte `_1` ou `_2`, avec vérification de l’espace de noms, du type et des redéclarations. Elle n’évalue pas l’objet et ne crée aucun initialiseur. Les permissions ordinaires et la capture à l’exécution restent inchangées ; le support runtime est en attente.

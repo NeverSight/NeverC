@@ -1005,3 +1005,6 @@ Los helpers bind escalares reutilizados prueban cada operando `tuple_element` re
 
 
 La descripción de construcción bind conserva la inicialización de base vacía seleccionada, la copia o movimiento trivial del SDK y las expresiones de reenvío de cada marcador. La certificación de fuente y la ejecución siguen pendientes.
+
+
+La descripción de fábrica enlaza cada operando original a la declaración SDK extern const exacta `_1` o `_2`, comprobando espacio de nombres, tipo y redeclaraciones. No evalúa el objeto ni inventa inicializadores. Los permisos ordinarios y la captura en ejecución no cambian; el soporte runtime sigue pendiente.

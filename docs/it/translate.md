@@ -1005,3 +1005,6 @@ Gli helper bind scalari riutilizzati verificano ogni operando `tuple_element` co
 
 
 La descrizione di costruzione bind conserva l’inizializzazione della base vuota selezionata, copia o spostamento triviale dell’SDK e le espressioni di inoltro di ogni segnaposto. La certificazione sorgente e l’esecuzione restano in attesa.
+
+
+La descrizione della factory lega ogni operando originale alla dichiarazione SDK extern const esatta `_1` o `_2`, verificando namespace, tipo e ridichiarazioni. Non valuta l’oggetto né crea inizializzatori. Permessi ordinari e cattura runtime restano invariati; il supporto runtime è incompleto.

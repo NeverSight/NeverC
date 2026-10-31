@@ -1005,3 +1005,6 @@ Wiederverwendete skalare bind-Helper prüfen jeden erhaltenen `tuple_element`-Op
 
 
 Die bind-Konstruktionsbeschreibung erhält für jeden Platzhalter die ausgewählte Initialisierung der leeren Basis, triviale SDK-Kopier- und Verschiebeoperationen sowie Weiterleitungsausdrücke. Quellzertifizierung und Laufzeitausführung stehen aus.
+
+
+Die Factory-Beschreibung bindet jeden ursprünglichen Operanden an die exakte SDK-Deklaration extern const `_1` oder `_2` und prüft Namensraum, Typ und weitere Deklarationen. Sie wertet das Objekt nicht aus und erzeugt keinen Initialisierer. Gewöhnliche Variablenrechte und Laufzeiterfassung bleiben gleich; Laufzeitunterstützung ist unvollständig.

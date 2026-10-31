@@ -1440,3 +1440,6 @@ Reused scalar bind helpers now close each retained `tuple_element` operand again
 
 
 The bind construction descriptor now retains each placeholder’s selected empty-base initializer, trivial SDK copy/move and forwarding expressions. Source certification and runtime placeholder execution remain pending.
+
+
+Placeholder factory descriptions now bind each original operand to the exact SDK extern const `_1` or `_2` declaration and its namespace, type and redeclarations. They do not evaluate the object or invent an initializer. Ordinary variable permissions and runtime capture lowering remain unchanged; runtime support is pending.
