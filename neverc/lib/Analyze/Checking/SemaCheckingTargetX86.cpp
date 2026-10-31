@@ -543,6 +543,17 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 }
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
+  if (BuiltinID == X86::BI__builtin_ia32_vmrun_context) {
+    llvm::APSInt Width;
+    if (SemaBuiltinConstantArg(TheCall, 1, Width))
+      return true;
+    if (Width == 32 || Width == 64)
+      return false;
+    return bool(Diag(TheCall->getBeginLoc(),
+                     diag::err_x86_builtin_invalid_memory_address)
+                << TheCall->getArg(1)->getSourceRange()
+                << TheCall->getArg(1)->getSourceRange());
+  }
   auto CheckMemoryAddress = [&](unsigned WidthArgument,
                                 bool AllowStack = true) {
     llvm::APSInt Width, Prefix;

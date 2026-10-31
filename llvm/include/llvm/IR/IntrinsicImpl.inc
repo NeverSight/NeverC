@@ -75,7 +75,7 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   {llvm::StringLiteral(""), 0, 370},
   {llvm::StringLiteral("aarch64"), 370, 1432},
   // x86 entries must be sorted alphabetically: utils/lint/sort-x86-intrinsics.py
-  {llvm::StringLiteral("x86"), 1802, 1731},
+  {llvm::StringLiteral("x86"), 1802, 1732},
 };
 #endif
 
@@ -3514,6 +3514,7 @@ static constexpr IntrinsicTargetInfo TargetInfos[] = {
   "llvm.x86.vmread.address",
   "llvm.x86.vmread.reg",
   "llvm.x86.vmresume",
+  "llvm.x86.vmrun.context",
   "llvm.x86.vmsave",
   "llvm.x86.vmsave.addr32",
   "llvm.x86.vmwrite",
@@ -4498,19 +4499,19 @@ static const unsigned IIT_Table[] = {
   0x4452, 0x32, 0x22c2c2c, 0x22d2d2d, (1U<<31) | 175, 0x22c2c2c, 0x22d2d2d, (1U<<31) | 175,
   0x2c2c2c, 0x2d2d2d, (1U<<31) | 566, 0xE2, 0x4452, 0x40, 2, 0x50,
   0x40, 0xE2, 0x4452, 0xE0, 0x4450, 0xE52, 0x44552, (1U<<31) | 4232,
-  2, 0x50, 0x40, 0x552, 0xe52, 0x44552, 0, 0xE2,
-  0x4452, 0x595a5a, 0x5a5a5a, 0x595a5a5a, 0x4a4a4a4a, 0x4a4a4a4a, (1U<<31) | 1839, 0x4a4a4a,
-  0x4b4b4b, 0x4a4a4a, 0x4b4b4b, 0x0, 0x0, 0x40, 0x50, 0x40,
-  0x50, 0x540, 0x540, 0x540, 0x5ee5, 0x540, 0x40, 0xe40,
-  0xe50, 0xe40, 0xe50, 0x20, 0x4, 0x0, 0x45, 0x8989,
-  0x8a8a, 0x7a7a, 0x7b7b, 0x8989, 0x7a7a, (1U<<31) | 323, (1U<<31) | 355, (1U<<31) | 270,
-  (1U<<31) | 291, 0x2c4a, 0x2c59, 0x2c3b, 0x4a59, 0x2c4a, 0x2c59, 0x2c3b,
-  0x4a59, 0x3b4a, 0x3b59, 0x3b4a, 0x3b59, 0x2c3b, 0x4a59, 0x3b4a,
-  0x4a4a4a4a, 0x594a4a59, 0x594a4a59, 0x4a4a4a4a, 0x594a4a59, 0x594a4a59, 0x4a3b3b4a, 0x3b3b3b3b,
-  0x4a3b3b4a, 0x3b3b3b3b, 0x4a3b3b4a, 0x4a3b3b4a, 0x2c2c2c2c, 0x2c2c2c, 0x4a4a4a, 0x595959,
-  0x3b3b3b, 0x2c2c2c, 0x4a4a4a, 0x595959, 0x3b3b3b, 0x0, 0x44e0, 0x44e0,
+  2, 0x4e0, 0x50, 0x40, 0x552, 0xe52, 0x44552, 0,
+  0xE2, 0x4452, 0x595a5a, 0x5a5a5a, 0x595a5a5a, 0x4a4a4a4a, 0x4a4a4a4a, (1U<<31) | 1839,
+  0x4a4a4a, 0x4b4b4b, 0x4a4a4a, 0x4b4b4b, 0x0, 0x0, 0x40, 0x50,
+  0x40, 0x50, 0x540, 0x540, 0x540, 0x5ee5, 0x540, 0x40,
+  0xe40, 0xe50, 0xe40, 0xe50, 0x20, 0x4, 0x0, 0x45,
+  0x8989, 0x8a8a, 0x7a7a, 0x7b7b, 0x8989, 0x7a7a, (1U<<31) | 323, (1U<<31) | 355,
+  (1U<<31) | 270, (1U<<31) | 291, 0x2c4a, 0x2c59, 0x2c3b, 0x4a59, 0x2c4a, 0x2c59,
+  0x2c3b, 0x4a59, 0x3b4a, 0x3b59, 0x3b4a, 0x3b59, 0x2c3b, 0x4a59,
+  0x3b4a, 0x4a4a4a4a, 0x594a4a59, 0x594a4a59, 0x4a4a4a4a, 0x594a4a59, 0x594a4a59, 0x4a3b3b4a,
+  0x3b3b3b3b, 0x4a3b3b4a, 0x3b3b3b3b, 0x4a3b3b4a, 0x4a3b3b4a, 0x2c2c2c2c, 0x2c2c2c, 0x4a4a4a,
+  0x595959, 0x3b3b3b, 0x2c2c2c, 0x4a4a4a, 0x595959, 0x3b3b3b, 0x0, 0x44e0,
   0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0, 0x44e0,
-  0x44e0, 0x44e0, 0x4440, 0x0, 0x4
+  0x44e0, 0x44e0, 0x44e0, 0x4440, 0x0, 0x4
 };
 
 static const unsigned char IIT_LongEncodingTable[] = {
@@ -5345,6 +5346,12 @@ static AttributeSet getIntrinsicFnAttributeSet(LLVMContext &C, unsigned ID) {
     return AttributeSet::get(C, {
       Attribute::get(C, Attribute::NoUnwind),
       Attribute::get(C, Attribute::NoReturn),
+      Attribute::get(C, Attribute::Convergent),
+      Attribute::get(C, Attribute::NoDuplicate),
+    });
+  case 43:
+    return AttributeSet::get(C, {
+      Attribute::get(C, Attribute::NoUnwind),
       Attribute::get(C, Attribute::Convergent),
       Attribute::get(C, Attribute::NoDuplicate),
     });
@@ -8786,6 +8793,7 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     114, // llvm.x86.vmread.address
     11, // llvm.x86.vmread.reg
     11, // llvm.x86.vmresume
+    128, // llvm.x86.vmrun.context
     11, // llvm.x86.vmsave
     11, // llvm.x86.vmsave.addr32
     11, // llvm.x86.vmwrite
@@ -9039,6 +9047,12 @@ AttributeList Intrinsic::getAttributes(LLVMContext &C, ID id) {
     case 127: {
       AS[0] = {2, getIntrinsicArgAttributeSet(C, 0)};
       AS[1] = {AttributeList::FunctionIndex, getIntrinsicFnAttributeSet(C, 42)};
+      NumAttrs = 2;
+      break;
+    }
+    case 128: {
+      AS[0] = {2, getIntrinsicArgAttributeSet(C, 0)};
+      AS[1] = {AttributeList::FunctionIndex, getIntrinsicFnAttributeSet(C, 43)};
       NumAttrs = 2;
       break;
     }

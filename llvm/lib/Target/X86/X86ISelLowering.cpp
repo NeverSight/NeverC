@@ -21,6 +21,7 @@
 #include "X86IntrinsicsInfo.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86NativeFrameReturn.h"
+#include "X86SVMContext.h"
 #include "X86TargetMachine.h"
 #include "X86TargetObjectFile.h"
 #include "llvm/ADT/SmallBitVector.h"
@@ -28239,6 +28240,32 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
 #undef X86_FRAME_RETURN
       return lowerNativeFrameReturn(Op, Subtarget, DAG);
 
+    case Intrinsic::x86_vmrun_context: {
+      if (!Subtarget.is64Bit() ||
+          !X86::isSVMContextHelper(DAG.getMachineFunction().getFunction()))
+        report_fatal_error("VMRUN context requires an isolated 64-bit helper");
+      if (Subtarget.getFrameLowering()->hasFP(DAG.getMachineFunction()))
+        report_fatal_error("VMRUN context requires an RSP-based helper frame");
+      const auto *Width = dyn_cast<ConstantSDNode>(Op.getOperand(3));
+      if (!Width ||
+          (Width->getZExtValue() != 32 && Width->getZExtValue() != 64))
+        report_fatal_error("VMRUN context address width must be 32 or 64");
+      const SDLoc DL(Op);
+      auto &MFI = DAG.getMachineFunction().getFrameInfo();
+      const int Slot = MFI.CreateStackObject(8, Align(8), false);
+      SDValue Operands[] = {
+          Op.getOperand(2),
+          DAG.getTargetFrameIndex(Slot, MVT::i64),
+          DAG.getTargetConstant(1, DL, MVT::i8),
+          DAG.getRegister(0, MVT::i64),
+          DAG.getTargetConstant(0, DL, MVT::i32),
+          DAG.getRegister(0, MVT::i16),
+          DAG.getTargetConstant(Width->getZExtValue(), DL, MVT::i32),
+          Op.getOperand(0)};
+      return SDValue(
+          DAG.getMachineNode(X86::VMRUN_CONTEXT64, DL, MVT::Other, Operands),
+          0);
+    }
     case Intrinsic::x86_vmload:
     case Intrinsic::x86_vmsave:
     case Intrinsic::x86_invlpga:

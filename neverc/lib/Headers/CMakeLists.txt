@@ -120,6 +120,7 @@ set(x86_files
   gfniintrin.h
   hresetintrin.h
   sgxintrin.h
+  svmcontextintrin.h
   ia32intrin.h
   immintrin.h
   invpcidintrin.h

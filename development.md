@@ -503,6 +503,44 @@ The native completion runners enable LLVM machine verification in NeverC
 as well as in the full fork. These checks qualify compiler transport; they
 do not execute privileged I/O or change host interrupt/descriptor state.
 
+### Returning VMRUN with explicit register and xstate ownership
+
+`<svmcontextintrin.h>` provides the 144-byte `struct __svm_vmrun_context` and
+`__svm_vmrun_context64` / `__svm_vmrun_context32`. Both call the native
+`__builtin_ia32_vmrun_context(void *, unsigned immediate_width)` and emit
+`llvm.x86.vmrun.context(ptr, i32)`. Both require x64 code; 32 selects an addr32
+physical VMCB address, not an i386 calling convention.
+
+The context contains four u64 fields (VMCB physical address, guest XSAVE linear
+address, host XSAVE scratch linear address, XCR0 mask), followed by fourteen
+u64 guest input/output fields: RBX, RCX, RDX, RSI, RDI, RBP and R8..R15.
+RAX/RSP/RIP/RFLAGS and exit information remain in the VMCB. The mask covers
+all enabled XCR0 components; the guest leaves XCR0 unchanged. Both buffers
+must be 64-byte aligned, CPUID-sized standard XSAVE images with initialized
+reserved bytes. The context, buffers and host compiler stack remain accessible
+and disjoint from guest-writable RAM, including after loading guest xstate.
+
+The compiler owns the helper frame and restores host GPR ABI and user xstate
+after VMEXIT. The VMM owns SVM setup, GIF, intercepts, supervisor state and any
+required VMLOAD/VMSAVE. The guest must preserve the host's software-managed
+system ABI. Processor faults and arbitrary mode/system-state changes are not
+converted into normal C returns. This returning contract cannot be represented
+by a scalar `void __svm_vmrun(address)` call that loses guest register outputs.
+
+`X86SVMContextTest` checks the installed header, layout, returning IR effects,
+invalid widths and O0/O2 ELF/COFF/Mach-O code generation. The native-signature
+and SVM-context synchronizers own the pruned tables, including both printers.
+The shared `X86SVMContext` implementation is synchronized from NeverSight
+LLVM commit `101513238669`, retaining its Apache-2.0 WITH LLVM-exception license.
+`tests/neverc/X86/verify_vmrun_context.py` runs 48 contexts per optimization
+profile in QEMU TCG: eight seeds, both address widths, VMMCALL/HLT/invalid-VMCB
+exits, fourteen GPRs, x87/XMM/YMM, host state and dynamic caller frames. It
+supports direct NeverC, LLVM, NeverC bitcode to LLVM and actual NeverD LLVMC
+source via `--neverd-source`. Every guest also executes the original-byte IDA
+counterexample; the guest changes RCX from 0x1234 to 0x5678 before VMEXIT.
+The harness retains commands, hashes and exit logs. Physical AMD execution,
+supervisor xstate and raw-machine-code lifting are separate qualifications.
+
 ### Bounded history, translation and GS-state operations
 
 `__builtin_ia32_hreset(unsigned control)` emits HRESET with the complete EAX

@@ -16,6 +16,7 @@
 #include "X86.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86MacroFusion.h"
+#include "X86SVMContext.h"
 #include "X86Subtarget.h"
 #include "X86TargetObjectFile.h"
 #include "X86TargetTransformInfo.h"
@@ -332,6 +333,7 @@ MachineFunctionInfo *X86TargetMachine::createMachineFunctionInfo(
 }
 
 void X86PassConfig::addIRPasses() {
+  addPass(createX86SVMContextPass());
   addPass(createAtomicExpandPass());
 
   // We add both pass anyway and when these two passes run, we skip the pass

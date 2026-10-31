@@ -1651,6 +1651,7 @@ enum X86Intrinsics : unsigned {
     x86_vmread_address,                              // llvm.x86.vmread.address
     x86_vmread_reg,                                  // llvm.x86.vmread.reg
     x86_vmresume,                                    // llvm.x86.vmresume
+    x86_vmrun_context,                               // llvm.x86.vmrun.context
     x86_vmsave,                                      // llvm.x86.vmsave
     x86_vmsave_addr32,                               // llvm.x86.vmsave.addr32
     x86_vmwrite,                                     // llvm.x86.vmwrite

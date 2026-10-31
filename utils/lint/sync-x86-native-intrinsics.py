@@ -21,6 +21,7 @@ SPEC.loader.exec_module(SORTER)
 ENUMS = ROOT / "llvm/include/llvm/IR/IntrinsicEnums.inc"
 # Result followed by parameters, in LLVM's fixed IIT scalar/pointer vocabulary.
 DECLARATIONS = {
+    "vmrun_context": ("Done", "PTR", "I32"),
     "invept": ("I8", "I64", "PTR"),
     "invvpid": ("I8", "I64", "PTR"),
     "clts": ("Done",),
@@ -251,7 +252,7 @@ def immediate_arguments_attribute(impl, indices):
     return str(index), impl.replace(anchor, f"    case {index}: {{\n" + body + anchor, 1)
 
 
-def nonreturning_transfer_attribute(impl, indices=()):
+def nonreturning_transfer_attribute(impl, indices=(), returning=False):
     # Native terminal transfers have no default willreturn/nosync/nofree/
     # nocallback promises. Allocate the function and list recipes together.
     start = impl.index("static AttributeSet getIntrinsicFnAttributeSet")
@@ -259,7 +260,8 @@ def nonreturning_transfer_attribute(impl, indices=()):
     functions = impl[start:end]
     body = "    return AttributeSet::get(C, {\n" + "".join(
         f"      Attribute::get(C, Attribute::{name}),\n"
-        for name in ("NoUnwind", "NoReturn", "Convergent", "NoDuplicate")) + "    });\n"
+        for name in (("NoUnwind", "Convergent", "NoDuplicate") if returning else
+                     ("NoUnwind", "NoReturn", "Convergent", "NoDuplicate"))) + "    });\n"
     existing = re.search(r"  case (\d+):\n" + re.escape(body), functions)
     if existing:
         function = existing.group(1)
@@ -337,6 +339,7 @@ def synchronize(write):
     immediate_pair, updated_impl = immediate_arguments_attribute(impl, (0, 1))
     transfer_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl)
     immediate_transfer, updated_impl = nonreturning_transfer_attribute(updated_impl, (1,))
+    vmrun_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (1,), returning=True)
     address_attributes = {}
     for indices in sorted({indices for _, indices in ADDRESS_SIGNATURES.values()}):
         attribute, updated_impl = immediate_arguments_attribute(updated_impl, indices)
@@ -356,6 +359,8 @@ def synchronize(write):
             attribute = address_attributes[ADDRESS_SIGNATURES[suffix][1]]
         if suffix in TERMINAL_TRANSFERS:
             attribute = immediate_transfer if FRAME_RETURNS.get(suffix) else transfer_attribute
+        if suffix == "vmrun_context":
+            attribute = vmrun_attribute
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)
         if name in names:

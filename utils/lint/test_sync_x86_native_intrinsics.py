@@ -48,6 +48,16 @@ class NativeSignaturesTest(unittest.TestCase):
                 self.assertEqual(NATIVE.DECLARATIONS[f"{operation}{bits}"],
                                  (f"I{bits}", "PTR"))
 
+    def test_vmrun_is_a_returning_context_with_an_immediate_width(self):
+        self.assertEqual(NATIVE.DECLARATIONS["vmrun_context"],
+                         ("Done", "PTR", "I32"))
+        recipe, updated = NATIVE.nonreturning_transfer_attribute(
+            self.impl, (1,), returning=True)
+        self.assertEqual(updated, self.impl)
+        body = updated.split(f"    case {recipe}: {{\n", 1)[1].split("    }", 1)[0]
+        self.assertIn("getIntrinsicArgAttributeSet(C, 0)", body)
+        self.assertNotIn("Attribute::NoReturn", body)
+
     def test_address_controls_have_distinct_immediate_positions(self):
         first, initial = NATIVE.immediate_arguments_attribute(self.impl, (1, 2))
         second, updated = NATIVE.immediate_arguments_attribute(initial, (2, 3))
