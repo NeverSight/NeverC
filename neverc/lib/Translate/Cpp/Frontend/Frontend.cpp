@@ -23016,6 +23016,7 @@ public:
   }
   bool functionalBindCallSourceComplete(const FunctionalBindCallSource &Call) {
     const auto Inputs = functionalBindSourceInputs();
+    llvm::errs() << "BIND-PROOF-INPUTS " << bool(Inputs) << " nargs " << Call.Arguments.size() << "\n";
     return Inputs && approvedFunctionalBindCallCompleteSource(A.S, A.Sources, Call, A.Context,
         Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
   }
