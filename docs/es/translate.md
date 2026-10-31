@@ -1011,3 +1011,6 @@ La descripción de fábrica enlaza cada operando original a la declaración SDK 
 
 
 El grafo bind conserva solo sus subobjetos marcadores vacíos reales y las fuentes seleccionadas de copia y destrucción. Cada nueva descripción compara los operandos originales. Los permisos generales de tuple y variables SDK no cambian; la ejecución sigue pendiente.
+
+
+La prueba del getter bind comprueba la hoja tuple vacía seleccionada, su especialización parcial original y ambas conversiones reales de base privada. Se conservan las pruebas de campos. La proyección y traducción runtime están incompletas; no son resultados de ejecución aprobados.

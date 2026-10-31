@@ -1011,3 +1011,6 @@ La descrizione della factory lega ogni operando originale alla dichiarazione SDK
 
 
 Il grafo bind conserva solo i propri sotto-oggetti segnaposto vuoti reali e le sorgenti selezionate di copia e distruzione. Ogni nuova descrizione confronta gli operandi originali. I permessi generali tuple e variabili SDK non cambiano; l’esecuzione resta incompleta.
+
+
+La prova del getter bind controlla la foglia tuple vuota selezionata, la specializzazione parziale originale ed entrambe le conversioni reali di base privata. Le prove dei campi restano invariate. Proiezione e traduzione runtime sono incomplete; non sono risultati di esecuzione riusciti.

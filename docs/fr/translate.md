@@ -1011,3 +1011,6 @@ La description de fabrique lie chaque opérande original à la déclaration SDK 
 
 
 Le graphe bind conserve ses seuls sous-objets réservés vides réels et les sources de copie et destruction sélectionnées. Chaque opérande original est comparé lors de la redescription. Les permissions générales tuple et variables SDK restent inchangées ; l’exécution reste à terminer.
+
+
+La preuve du getter bind vérifie la feuille tuple vide sélectionnée, sa spécialisation partielle originale et les deux conversions réelles de base privée. Les preuves des champs sont conservées. Projection et traduction runtime restent incomplètes ; aucune réussite d’exécution n’est déclarée.

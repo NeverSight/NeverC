@@ -1249,3 +1249,6 @@ Placeholder factory descriptions now bind each original operand to the exact SDK
 
 
 The bind source graph now retains only its exact empty placeholder subobjects and their selected copy/destruction source. Fresh factory descriptions compare every original placeholder operand occurrence. Generic tuple admission and ordinary SDK variable permissions remain unchanged; placeholder execution is still pending.
+
+
+The bind getter source proof now checks the selected empty-base tuple leaf, its original partial specialization and both real private-base casts. Field-based getters keep their existing proof. Placeholder argument projection and runtime translation remain unfinished; this is not passing execution evidence.

@@ -22131,7 +22131,8 @@ public:
         const FunctionDecl *Function, *Pattern;
         const CXXMethodDecl *Method, *OriginalMethod;
         const FieldDecl *Field, *OriginalField, *Base;
-        const CXXBaseSpecifier *ConversionBase;
+        const CXXBaseSpecifier *ConversionBase, *ElementBase, *OriginalElementBase;
+        bool EmptyBase;
       };
       std::vector<Source> Getters;
       std::map<const MemberExpr *, const ValueDecl *> Members;
@@ -22152,6 +22153,53 @@ public:
             Method->getReturnType()->isLValueReferenceType() && Use && Use->isArrow() && This &&
             Context.hasSameType(This->getType(), Method->getThisType()) &&
             Context.hasSameType(Use->getType(), Method->getReturnType().getNonReferenceType()) && Member(Use, Field);
+      };
+      auto ReturnEmptyBase = [&](const CXXMethodDecl *Method,
+                                  const CXXRecordDecl *Empty,
+                                  const ClassTemplatePartialSpecializationDecl *Partial) {
+        const auto *Body = Method ? dyn_cast_or_null<CompoundStmt>(Method->getBody()) : nullptr;
+        const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+        const auto *Explicit = Return && Return->getRetValue()
+            ? dyn_cast<CXXStaticCastExpr>(Return->getRetValue()->IgnoreParens()) : nullptr;
+        if (!Method || !Explicit || !Explicit->getTypeInfoAsWritten() || !Explicit->isLValue() ||
+            !Method->getReturnType()->isLValueReferenceType() ||
+            !Context.hasSameType(Explicit->getTypeAsWritten(), Method->getReturnType())) return false;
+        const Expr *Input = Explicit->getSubExpr();
+        if (Partial) {
+          const auto *Parameters = Partial->getTemplateParameters();
+          const auto *Parameter = Parameters && Parameters->size() == 2
+              ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+          const auto Type = Method->getReturnType().getNonReferenceType();
+          const auto *Written = dyn_cast<TemplateTypeParmType>(Type.getUnqualifiedType().getTypePtr());
+          if (Method->getParent() != Partial || !Parameter || !Written || Written->getDecl() != Parameter ||
+              Type.isConstQualified() != Method->isConst() || Type.isVolatileQualified() ||
+              Explicit->getCastKind() != CK_Dependent || !Explicit->isTypeDependent()) return false;
+        } else {
+          const auto Identity = Empty
+              ? describeFunctionalBindPlaceholderIdentity(S, SM, Context.getRecordType(Empty), Context) : std::nullopt;
+          const auto Type = Method->isConst() ? Context.getConstType(Context.getRecordType(Empty))
+                                              : Context.getRecordType(Empty);
+          const CastExpr *Conversion = Explicit;
+          if (Explicit->getCastKind() == CK_NoOp)
+            Conversion = dyn_cast<ImplicitCastExpr>(Explicit->getSubExpr()->IgnoreParens());
+          const auto *Base = Conversion && Conversion->path_size() == 1
+              ? *Conversion->path_begin() : nullptr;
+          const auto *Record = Base ? Base->getType()->getAsCXXRecordDecl() : nullptr;
+          if (!Identity || !Conversion || !Conversion->isLValue() ||
+              (Conversion->getCastKind() != CK_DerivedToBase &&
+               Conversion->getCastKind() != CK_UncheckedDerivedToBase) ||
+              !Base || Base->isVirtual() || Base->getAccessSpecifier() != AS_private ||
+              !Base->getTypeSourceInfo() || !Record ||
+              Record->getCanonicalDecl() != Empty->getCanonicalDecl() ||
+              !Context.hasSameType(Explicit->getType(), Type) ||
+              !Context.hasSameType(Conversion->getType(), Type) ||
+              !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type))) return false;
+          Input = Conversion->getSubExpr();
+        }
+        const auto *Dereference = Input ? dyn_cast<UnaryOperator>(Input->IgnoreParenImpCasts()) : nullptr;
+        const auto *This = Dereference && Dereference->getOpcode() == UO_Deref
+            ? dyn_cast<CXXThisExpr>(Dereference->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+        return This && Context.hasSameType(This->getType(), Method->getThisType());
       };
       const FieldDecl *BaseField = nullptr;
       for (const auto *Field : Storage.Arguments.Record->fields()) {
@@ -22175,27 +22223,52 @@ public:
         const auto *Conversion = Cast ? dyn_cast<ImplicitCastExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
         const auto *Base = Conversion ? dyn_cast<MemberExpr>(Conversion->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
         const auto *Object = Base ? dyn_cast<DeclRefExpr>(Base->getBase()->IgnoreParenImpCasts()) : nullptr;
-        const auto *StoredField = Storage.Arguments.Elements[I].Field;
-        // Empty-base getters need their separate selected cast/source proof.
-        // Reject them here until that proof is implemented, without dereferencing a missing field.
-        if (!StoredField) return false;
-        const auto *Leaf = dyn_cast<CXXRecordDecl>(StoredField->getDeclContext());
+        const auto &Element = Storage.Arguments.Elements[I];
+        const bool EmptyPlaceholder = Element.EmptyBase && !Element.Field;
+        const auto *Leaf = Element.Field ? dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext())
+                                        : EmptyPlaceholder && Method ? Method->getParent() : nullptr;
         const auto *Owner = Leaf ? dyn_cast<ClassTemplateSpecializationDecl>(Leaf) : nullptr;
         const auto *OriginalMethod = Method
             ? dyn_cast_or_null<CXXMethodDecl>(Method->getInstantiatedFromMemberFunction()) : nullptr;
-        const auto *OwnerPattern = Owner ? Owner->getSpecializedTemplate()->getTemplatedDecl()->getDefinition() : nullptr;
-        const auto *OriginalField = OwnerPattern && std::distance(OwnerPattern->field_begin(), OwnerPattern->field_end()) == 1
+        const auto *Partial = Owner ? Owner->getSpecializedTemplateOrPartial()
+            .dyn_cast<ClassTemplatePartialSpecializationDecl *>() : nullptr;
+        const auto *OwnerPattern = EmptyPlaceholder
+            ? (Partial ? Partial->getDefinition() : nullptr)
+            : Owner ? Owner->getSpecializedTemplate()->getTemplatedDecl()->getDefinition() : nullptr;
+        const auto *OriginalField = !EmptyPlaceholder && OwnerPattern &&
+            std::distance(OwnerPattern->field_begin(), OwnerPattern->field_end()) == 1
             ? *OwnerPattern->field_begin() : nullptr;
+        const CXXBaseSpecifier *ElementBase = nullptr, *OriginalElementBase = nullptr;
+        if (EmptyPlaceholder) {
+          const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
+          if (!Identity || Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl() ||
+              !Owner || !Partial || !OwnerPattern || !Owner->field_empty() || Owner->getNumBases() != 1 ||
+              !OwnerPattern->field_empty() || OwnerPattern->getNumBases() != 1 ||
+              Owner->getTemplateArgs().size() != 3 || !family(Partial)) return false;
+          const auto &Arguments = Owner->getTemplateArgs();
+          if (Arguments[0].getKind() != TemplateArgument::Integral || Arguments[0].getAsIntegral().isNegative() ||
+              Arguments[0].getAsIntegral().getLimitedValue(65) != I ||
+              !Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType()) ||
+              Arguments[1].getKind() != TemplateArgument::Type ||
+              !Context.hasSameType(Arguments[1].getAsType(), Element.getType()) ||
+              Arguments[2].getKind() != TemplateArgument::Integral ||
+              !Context.hasSameType(Arguments[2].getIntegralType(), Context.BoolTy) ||
+              !Arguments[2].getAsIntegral().getBoolValue()) return false;
+          ElementBase = &*Owner->bases_begin(); OriginalElementBase = &*OwnerPattern->bases_begin();
+          if (ElementBase->isVirtual() || ElementBase->getAccessSpecifier() != AS_private ||
+              OriginalElementBase->isVirtual() || OriginalElementBase->getAccessSpecifier() != AS_private ||
+              !ElementBase->getTypeSourceInfo() || !OriginalElementBase->getTypeSourceInfo()) return false;
+        }
         const auto Value = Actual->Method->isConst()
             ? Context.getConstType(Storage.Arguments.Elements[I].getType()) : Storage.Arguments.Elements[I].getType();
         if (!Function || !Definition || !Pattern || !LeafCall || !Method || !Reference || Reference->isArrow() ||
             LeafCall->getNumArgs() || !LeafCall->isLValue() || !Method->getIdentifier() || Method->getName() != "get" ||
             Method->getPrimaryTemplate() || Method->isConst() != Actual->Method->isConst() ||
             Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-            !Owner || Method->getParent() != Leaf || !OriginalMethod || !OwnerPattern || !OriginalField ||
-            Owner->getSpecializedTemplateOrPartial().is<ClassTemplatePartialSpecializationDecl *>() ||
+            !Owner || Method->getParent() != Leaf || !OriginalMethod || !OwnerPattern ||
+            (EmptyPlaceholder ? !Partial : (bool(Partial) || !OriginalField)) ||
             OriginalMethod->getParent() != OwnerPattern || OriginalMethod->getInstantiatedFromMemberFunction() ||
-            OriginalField->getLocation() != Storage.Arguments.Elements[I].Field->getLocation() ||
+            (!EmptyPlaceholder && OriginalField->getLocation() != Element.Field->getLocation()) ||
             !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Value)) ||
             !Cast || Cast->getCastKind() != CK_NoOp || !Cast->getTypeInfoAsWritten() ||
             !Cast->getTypeAsWritten()->isLValueReferenceType() || !Conversion ||
@@ -22206,8 +22279,11 @@ public:
             Cast->getType().isConstQualified() != Method->isConst() ||
             !Base || Base->isArrow() || Base->getMemberDecl() != BaseField ||
             !Object || Object->getDecl() != Definition->getParamDecl(0) ||
-            !ReturnMember(Method, Storage.Arguments.Elements[I].Field) ||
-            !ReturnMember(OriginalMethod, OriginalField) || !Member(Base, BaseField) || !Member(Reference, Method))
+            (EmptyPlaceholder
+                ? (!ReturnEmptyBase(Method, Element.EmptyBase, nullptr) ||
+                   !ReturnEmptyBase(OriginalMethod, nullptr, Partial))
+                : (!ReturnMember(Method, Element.Field) || !ReturnMember(OriginalMethod, OriginalField))) ||
+            !Member(Base, BaseField) || !Member(Reference, Method))
           return false;
         const auto *ConversionBase = *Conversion->path_begin();
         if (!ConversionBase || ConversionBase->isVirtual() || !ConversionBase->getTypeSourceInfo() ||
@@ -22266,7 +22342,7 @@ public:
             !WrittenIndex || WrittenIndex->getDecl() != Index || !WrittenAlias || WrittenAlias->getDecl() != OriginalAlias)
           return false;
         Getters.push_back({Get, LeafCall, OriginalCall, Function, Pattern, Method, OriginalMethod,
-            Storage.Arguments.Elements[I].Field, OriginalField, BaseField, ConversionBase});
+            Element.Field, OriginalField, BaseField, ConversionBase, ElementBase, OriginalElementBase, EmptyPlaceholder});
       }
       return Graph.withBindSourceMemberUses(Members, [&] {
         auto RestoreCalls = llvm::make_scope_exit([&] { TupleGetMemberSources.clear(); });
@@ -22279,8 +22355,10 @@ public:
                 Method->isConst() != Get.Method->isConst() ||
                 Method->isStatic() || Method->isVariadic() || Method->getNumParams() ||
                 Method->isDeleted() || Method->isInvalidDecl() || !Method->isInlined() ||
-                !Prototype || !Prototype->isNothrow() || !Method->getBody() || !family(Entry.second) ||
-                !Graph.TraverseTypeLoc(Entry.second->getTypeSourceInfo()->getTypeLoc())) return false;
+                !Prototype || !Prototype->isNothrow() || !Method->getBody() ||
+                (!Get.EmptyBase && !Entry.second) ||
+                (Entry.second && (!family(Entry.second) || !Entry.second->getTypeSourceInfo() ||
+                 !Graph.TraverseTypeLoc(Entry.second->getTypeSourceInfo()->getTypeLoc())))) return false;
             for (const auto *Declaration : Method->redecls())
               if (!Declaration->getTypeSourceInfo() || !family(Declaration) || !Graph.function(Declaration) ||
                   !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
@@ -22293,6 +22371,9 @@ public:
           }
           if (!Graph.TraverseTypeLoc(Get.Base->getTypeSourceInfo()->getTypeLoc()) ||
               !Graph.TraverseTypeLoc(Get.ConversionBase->getTypeSourceInfo()->getTypeLoc())) return false;
+          for (const auto *Base : {Get.ElementBase, Get.OriginalElementBase})
+            if (Base && (!Base->getTypeSourceInfo() ||
+                !Graph.TraverseTypeLoc(Base->getTypeSourceInfo()->getTypeLoc()))) return false;
           auto Signature = [&](const FunctionDecl *Declaration) {
             const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
             if (!Declaration->getIdentifier() || Declaration->getName() != "get" ||

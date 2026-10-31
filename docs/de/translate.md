@@ -1011,3 +1011,6 @@ Die Factory-Beschreibung bindet jeden ursprünglichen Operanden an die exakte SD
 
 
 Der bind-Quellgraph erhält nur seine tatsächlichen leeren Platzhalter-Unterobjekte und die gewählten Kopier- und Destruktionsquellen. Jede erneute Beschreibung vergleicht die ursprünglichen Operanden. Allgemeine tuple- und SDK-Variablenrechte bleiben gleich; die Ausführung ist noch unvollständig.
+
+
+Der bind-Getter-Nachweis prüft das gewählte leere tuple-Blatt, seine ursprüngliche partielle Spezialisierung und beide privaten Basiskonvertierungen. Feldnachweise bleiben erhalten. Argumentprojektion und Laufzeitübersetzung sind unvollständig; dies ist kein erfolgreicher Ausführungsnachweis.
