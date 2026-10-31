@@ -1023,3 +1023,6 @@ Der bind-Nachweis prüft die positive Platzhalterbedingung separat anhand des ex
 
 
 Geschütztes bind-Lowering erfasst Eingangsbindungen einmal und projiziert auch wiederholte Ränge daraus. Exakte leere SDK-Marker vermeiden externe Wertlese- und Feldschreibzugriffe. Weiterhin sind vollständige Factory-/Aufrufzertifikate erforderlich; Frontend-Freigabe und Ausführungsprüfung sind unvollständig.
+
+
+Bind-eigene Platzhalter-tuples erhalten eigene Layout-, Abhängigkeits- und Nullinitialisierungspfade. Die Ausgabe verlangt vollständige Zertifikate aller Eigentümer und prüft Felder, leere Positionen, Größe, Ausrichtung und Padding erneut. Allgemeine tuple-Rechte bleiben gleich; vollständiger Körper und Ausführungsprüfung sind unvollständig.

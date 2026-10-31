@@ -1261,3 +1261,6 @@ The bind source proof now checks the separate positive placeholder constraint ag
 
 
 Guarded bind lowering now retains incoming argument bindings once and projects placeholder ranks from those bindings, including repeated ranks. Exact empty SDK markers omit external-object value loads and field writes. These paths still require complete verified factory/call certificates; frontend placeholder admission and execution validation remain unfinished.
+
+
+Bind-owned placeholder tuples now have a dedicated layout, dependency and zero-initialization path. Output requires complete certificates for every owning bind record and rechecks actual fields, empty offsets, size, alignment and padding. Generic tuple type/value permissions are unchanged. Full placeholder body and execution validation remain unfinished.

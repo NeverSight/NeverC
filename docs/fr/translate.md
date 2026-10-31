@@ -1023,3 +1023,6 @@ La preuve bind vérifie séparément la contrainte positive du rang avec le paqu
 
 
 Le lowering bind protégé conserve une seule fois les liaisons entrantes et projette leurs rangs, y compris répétés. Les marqueurs SDK vides exacts omettent lecture d’objet externe et écriture de champ. Ces chemins exigent toujours les certificats complets ; admission frontend et validation d’exécution restent inachevées.
+
+
+Les tuples réservés appartenant à bind disposent d’un chemin dédié de disposition, dépendances et initialisation zéro. La sortie exige les certificats complets de tous les bind propriétaires et revérifie champs, positions vides, taille, alignement et remplissage. Les permissions tuple générales ne changent pas ; corps complet et exécution restent à valider.

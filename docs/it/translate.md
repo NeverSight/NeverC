@@ -1023,3 +1023,6 @@ La prova bind controlla separatamente il vincolo positivo del segnaposto con il 
 
 
 Il lowering bind protetto acquisisce una sola volta i binding in ingresso e ne proietta i ranghi, anche ripetuti. I marcatori SDK vuoti esatti omettono letture esterne e scritture nei campi. Servono ancora certificati completi; ammissione frontend e verifica di esecuzione sono incomplete.
+
+
+I tuple segnaposto di bind hanno percorsi dedicati per layout, dipendenze e inizializzazione a zero. L’output richiede certificati completi di tutti i bind proprietari e ricontrolla campi, posizioni vuote, dimensione, allineamento e padding. I permessi tuple generali non cambiano; corpo completo ed esecuzione restano incompleti.

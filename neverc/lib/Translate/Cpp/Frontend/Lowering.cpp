@@ -28704,10 +28704,9 @@ class FunctionLowering {
         {"type", type(Source.Storage.CallableType, L)}, {"name", "nct_bind_callable"},
         {"args", json::Array{json::Object(Result)}}, {"loc", A.loc(L)}};
     assign(std::move(CallableField), std::move(Callable), L);
-    const auto BoundType = Source.Storage.BoundArguments->getType();
-    Expression Bound{{"kind", "member"}, {"type", type(BoundType, L)},
+    Expression Bound{{"kind", "member"}, {"type", A.functionalBindTupleStorageType(Source.Storage, L)},
         {"name", "nct_bind_bound"}, {"args", json::Array{json::Object(Result)}}, {"loc", A.loc(L)}};
-    initializeZero(json::Object(Bound), BoundType, L);
+    assign(json::Object(Bound), A.zeroFunctionalBindTupleStorage(Source.Storage, L), L);
     for (unsigned I = 0; I < Source.Storage.Arguments.Elements.size(); ++I) {
       const auto &Element = Source.Storage.Arguments.Elements[I];
       if (Element.EmptyBase) {
@@ -28752,7 +28751,7 @@ class FunctionLowering {
         {"args", json::Array{dereference(json::Object(Address), L)}}, {"loc", A.loc(L)}};
     auto Callable = snapshot(std::move(CallableField), L);
     Expression Bound{{"kind", "member"},
-        {"type", type(Source.Storage.BoundArguments->getType(), L)}, {"name", "nct_bind_bound"},
+        {"type", A.functionalBindTupleStorageType(Source.Storage, L)}, {"name", "nct_bind_bound"},
         {"args", json::Array{dereference(std::move(Address), L)}}, {"loc", A.loc(L)}};
     json::Array Arguments;
     for (unsigned I = 0; I < Source.Arguments.size(); ++I) {

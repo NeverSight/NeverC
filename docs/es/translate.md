@@ -1023,3 +1023,6 @@ La prueba bind comprueba por separado la condición positiva del marcador con el
 
 
 El lowering bind protegido captura una sola vez las vinculaciones de entrada y proyecta sus rangos, incluidos los repetidos. Los marcadores SDK vacíos exactos omiten lecturas externas y escrituras de campos. Siguen siendo necesarios certificados completos; admisión frontend y validación de ejecución están pendientes.
+
+
+Los tuples marcadores de bind tienen rutas propias de diseño, dependencias e inicialización cero. La salida exige certificados completos de todos los bind propietarios y revisa campos, posiciones vacías, tamaño, alineación y relleno. Los permisos generales de tuple no cambian; cuerpo completo y ejecución siguen pendientes.
