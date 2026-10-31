@@ -539,6 +539,8 @@ exits, fourteen GPRs, x87/XMM/YMM, host state and dynamic caller frames. It
 supports direct NeverC, LLVM, NeverC bitcode to LLVM and actual NeverD LLVMC
 source via `--neverd-source`. Every guest also executes the original-byte IDA
 counterexample; the guest changes RCX from 0x1234 to 0x5678 before VMEXIT.
+One additional generated-context call executes that same guest and checks
+RCX=0x5678; the NeverD routes also check the actual exported function's return.
 The harness retains commands, hashes and exit logs. Physical AMD execution,
 supervisor xstate and raw-machine-code lifting are separate qualifications.
 

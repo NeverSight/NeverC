@@ -191,6 +191,21 @@ unsigned probe(void) {
           return fail(7, Q(host_output, 0));
       }
   }
+  /* Execute the identical RCX-writing guest through the generated interface,
+   * then through the original host bytes analyzed by IDA. */
+  init_vmcb(guest_rcx);
+  seed(input, 0);
+  struct Context context = {(U64)vmcb, (U64)input, (U64)scratch, 7, {0}};
+  context.gpr[1] = 0x1234;
+#ifdef NEVERD_RCXSOURCE
+  U64 projected = vmrun_rcx_result((void *)&context);
+  if (projected != 0x5678)
+    return fail(9, projected);
+#else
+  VMRUN64(&context);
+#endif
+  if (context.gpr[1] != 0x5678)
+    return fail(10, context.gpr[1]);
   init_vmcb(guest_rcx);
   U64 actual = ida_vmrun_rcx_result((U64)vmcb);
   if (actual != 0x5678)

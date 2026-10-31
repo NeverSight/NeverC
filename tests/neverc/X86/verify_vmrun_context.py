@@ -84,7 +84,7 @@ def source(args, llvm_route):
     if llvm_route:
         code = ('extern void __builtin_ia32_vmrun_context(void *, unsigned) '
                 '__asm__("llvm.x86.vmrun.context");\n' + code)
-    return code, 48
+    return code, 49
 
 
 def digest(path):
@@ -146,10 +146,10 @@ def main():
             GUEST.check_guest(args, args.keep, 64, opt,
                               lambda mode, route: source(args, route), boot)
             profiles.append({"optimization": opt,
-                             "contexts": 0 if args.baseline else 48,
+                             "contexts": 0 if args.baseline else 49,
                              "original_ida_counterexample": True})
             message = ("original VMRUN returned RCX=0x5678" if args.baseline else
-                       "48 returning VMRUN contexts and IDA counterexample passed")
+                       "49 returning VMRUN contexts and IDA counterexample passed")
             print(f"{opt}: {message}", flush=True)
     finally:
         subprocess.run = original
