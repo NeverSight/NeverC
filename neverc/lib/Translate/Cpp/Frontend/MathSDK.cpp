@@ -19004,7 +19004,13 @@ class BindSourceProof {
   std::map<const CallExpr *, const FunctionDecl *> UnwrapReferenceSources;
   std::map<const CallExpr *, const FunctionDecl *> TupleGetMemberSources;
   const FunctionalBindCallSource *ActiveCompleteCall = nullptr;
-  std::map<const CallExpr *, const FunctionDecl *> ClosedCompleteCalls;
+  struct CompletedCallSource {
+    const FunctionDecl *Function = nullptr;
+    const CallExpr *HelperCall = nullptr;
+    const FunctionDecl *Helper = nullptr;
+    const CallExpr *PrimaryHelperCall = nullptr;
+  };
+  std::map<const CallExpr *, CompletedCallSource> ClosedCompleteCalls;
   std::map<const CXXConstructExpr *, const CXXConstructorDecl *> ClosedCallTupleConstructors;
   const FunctionalBindTryCallSignatureSource *ActiveTryCallSignature = nullptr;
   bool Ready = false;
@@ -20808,12 +20814,20 @@ class BindSourceProof {
       return Graph.bindSourceComplete();
     });
   }
+  std::optional<const FunctionDecl *> completedCallFunction(const CallExpr *Call) const {
+    if (!ActiveCompleteCall || !Call) return std::nullopt;
+    const auto Found = ClosedCompleteCalls.find(Call);
+    if (Found != ClosedCompleteCalls.end()) return Found->second.Function;
+    for (const auto &[Root, Source] : ClosedCompleteCalls) {
+      if (Call == Source.HelperCall) return Source.Helper;
+      if (Call == Source.PrimaryHelperCall)
+        return static_cast<const FunctionDecl *>(nullptr);
+    }
+    return std::nullopt;
+  }
   bool callSource(const CallExpr *Call) {
     const auto *Function = Call ? Call->getDirectCallee() : nullptr;
-    if (ActiveCompleteCall) {
-      const auto Found = ClosedCompleteCalls.find(Call);
-      if (Found != ClosedCompleteCalls.end()) return Function == Found->second;
-    }
+    if (const auto Closed = completedCallFunction(Call)) return Function == *Closed;
     if (ActiveUnwrapSource && UnwrapScalarConstraintSources.count(Call))
       return !Function;
     if (const auto Found = UnwrapReferenceSources.find(Call); Found != UnwrapReferenceSources.end())
@@ -21209,10 +21223,9 @@ public:
       });
       auto Close = [&](const CallExpr *Expression, const FunctionDecl *Function) {
         if (!Expression) return false;
-        const auto Existing = ClosedCompleteCalls.find(Expression);
-        if (Existing != ClosedCompleteCalls.end()) return Existing->second == Function;
+        if (const auto Existing = completedCallFunction(Expression)) return *Existing == Function;
         if (ClosedCompleteCalls.size() == 64) return false;
-        return ClosedCompleteCalls.emplace(Expression, Function).second;
+        return ClosedCompleteCalls.emplace(Expression, CompletedCallSource{Function}).second;
       };
       for (const auto &Argument : Actual->Arguments)
         if (!Argument.Get->getDirectCallee() || !Argument.Unwrap->getDirectCallee() ||
@@ -21238,10 +21251,25 @@ public:
           if (!Source || Source->Call != Expression || Source->Function != Selected || !Source->Helper ||
               !Source->HelperCall || Source->HelperCall->getDirectCallee() != Source->Helper ||
               !Source->PrimaryHelperCall || Source->PrimaryHelperCall->getDirectCallee()) return false;
-          // The completed outer signature consumed these exact real helper
-          // declarations. Reentry still walks their ordinary types and children.
-          return Close(Expression, Selected) && Close(Source->HelperCall, Source->Helper) &&
-              Close(Source->PrimaryHelperCall, nullptr);
+          // One completed declval source binds its selected call and both
+          // exact helper calls. Keep that source in one of the same 64 slots;
+          // reentry still walks every ordinary written type and child.
+          if (Source->HelperCall == Expression || Source->PrimaryHelperCall == Expression ||
+              Source->HelperCall == Source->PrimaryHelperCall || !Close(Expression, Selected)) return false;
+          const auto Found = ClosedCompleteCalls.find(Expression);
+          if (Found == ClosedCompleteCalls.end()) return false;
+          auto &Closed = Found->second;
+          if ((Closed.HelperCall && Closed.HelperCall != Source->HelperCall) ||
+              (Closed.Helper && Closed.Helper != Source->Helper) ||
+              (Closed.PrimaryHelperCall && Closed.PrimaryHelperCall != Source->PrimaryHelperCall)) return false;
+          if (const auto Existing = completedCallFunction(Source->HelperCall))
+            if (*Existing != Source->Helper) return false;
+          if (const auto Existing = completedCallFunction(Source->PrimaryHelperCall))
+            if (*Existing) return false;
+          Closed.HelperCall = Source->HelperCall;
+          Closed.Helper = Source->Helper;
+          Closed.PrimaryHelperCall = Source->PrimaryHelperCall;
+          return true;
         };
         for (const auto *Expression : Probe.Declvals)
           if (!CloseDeclval(Expression)) return false;
