@@ -10,6 +10,8 @@ void *memcpy(void *to, const void *from, __SIZE_TYPE__ size) {
 }
 extern void *memset(void *, int, __SIZE_TYPE__);
 static volatile unsigned continuation_failed;
+extern uint64_t original_vmrun_invalid_cr2(uint64_t, uint64_t);
+extern uint64_t original_vmrun_addr32_invalid_cr2(uint64_t, uint64_t);
 static void continuation_vmrun(void *opaque, unsigned width) {
   uint64_t *context = opaque;
   uint8_t *xstate = (void *)(uintptr_t)context[1];
@@ -20,6 +22,8 @@ static void continuation_vmrun(void *opaque, unsigned width) {
     state.GPR[registers[i]] = context[4 + i];
   state.GPR[0] = context[0];
   state.GPR[4] = 0x70000; /* Original host RSP is hardware-restored. */
+  const uint64_t prior_cr2 = 0x12345000 + (context[5] & 0xfff);
+  state.CR2 = prior_cr2;
   state.RFlags = 0x10246; /* RF clears on completed VMRUN. */
   state.PC = width == 32 ? 0x1010 : 0x1020;
   state.SVM.GuestXState = context[1];
@@ -42,6 +46,20 @@ static void continuation_vmrun(void *opaque, unsigned width) {
       state.GPR[0] != context[0] || state.GPR[4] != 0x70000 ||
       state.RFlags != 0x246 || state.CR2 != actual_cr2)
     continuation_failed = 1;
+  /* ASID zero exits before installing guest CR2. The explicit original state
+   * must survive, independently of the compiler host's ambient CR2. */
+  const uintptr_t vmcb = width == 32 ? (uint32_t)context[0] : context[0];
+  unsigned asid;
+  memcpy(&asid, (const void *)(vmcb + 0x58), 4);
+  if (!asid) {
+    const uint64_t original =
+        width == 32 ? original_vmrun_addr32_invalid_cr2(context[0], prior_cr2)
+                    : original_vmrun_invalid_cr2(context[0], prior_cr2);
+    if (original != prior_cr2)
+      continuation_failed = 7;
+    else if (state.CR2 != original)
+      continuation_failed = 6;
+  }
   for (unsigned i = 0; i < 14; ++i)
     context[4 + i] = state.GPR[registers[i]];
   memcpy(&present, xstate + 512, 8);

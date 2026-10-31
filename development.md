@@ -553,6 +553,9 @@ plus the independent original-byte checks. Add `--new-pm` with `--backend-llc`
 or `--llc` to qualify the full fork's new codegen pass manager. HighC and
 LLVM C, direct NeverC and both full-fork pass managers, at O0/O2 give 600
 calls across twelve profiles.
+Sixteen invalid VMCB cases per profile also compare CR2 against independent
+original addr64/addr32 VMRUN instructions. Distinct explicit CR2 inputs must
+survive early exits; the compiler host's ambient CR2 cannot supply them.
 The harness retains commands, hashes and exit logs. Physical AMD execution,
 supervisor xstate and arbitrary ordinary-ABI lifting remain unqualified.
 

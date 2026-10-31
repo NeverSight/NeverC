@@ -63,6 +63,20 @@ original_vmrun_addr32_rax:
   mov %rdi,%rax
   .byte 0x67,0x0f,0x01,0xd8
   ret
+.global original_vmrun_invalid_cr2
+original_vmrun_invalid_cr2:
+  mov %rdi,%rax
+  mov %rsi,%cr2
+  vmrun %rax
+  mov %cr2,%rax
+  ret
+.global original_vmrun_addr32_invalid_cr2
+original_vmrun_addr32_invalid_cr2:
+  mov %rdi,%rax
+  mov %rsi,%cr2
+  .byte 0x67,0x0f,0x01,0xd8
+  mov %cr2,%rax
+  ret
 .section .rodata
 .balign 32
 addend: .quad 0x1234,0x1234,0x1234,0x1234
@@ -185,7 +199,9 @@ def main():
                              50 if args.neverd_continuation else 49,
                              "original_ida_counterexample": True,
                              "original_addr32_rax": bool(args.baseline or
-                                                         args.neverd_continuation)})
+                                                         args.neverd_continuation),
+                             "original_invalid_cr2": 16
+                             if args.neverd_continuation else 0})
             message = ("original VMRUN returned RCX=0x5678" if args.baseline else
                        f"{50 if args.neverd_continuation else 49} returning VMRUN contexts "
                        "and IDA counterexample passed")
