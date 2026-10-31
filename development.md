@@ -549,10 +549,19 @@ the complete original-byte MOV/VMRUN/MOV/RET path: VMEXIT must stop with status
 fourteen GPR/SIMD outputs, and resume to return 0x5678. The fixture separately
 executes original addr32 VMRUN with high RAX bits set to verify only its VMCB
 address truncates. Each source profile executes 50 generated-context calls
-plus the independent original-byte checks. HighC and LLVM C, both backends
-and O0/O2 give 400 calls across eight profiles.
+plus the independent original-byte checks. Add `--new-pm` with `--backend-llc`
+or `--llc` to qualify the full fork's new codegen pass manager. HighC and
+LLVM C, direct NeverC and both full-fork pass managers, at O0/O2 give 600
+calls across twelve profiles.
 The harness retains commands, hashes and exit logs. Physical AMD execution,
 supervisor xstate and arbitrary ordinary-ABI lifting remain unqualified.
+
+The complete generated driver also exposed two backend defects independent
+of SVM. The full fork repairs unrelated loop-exit PHI inputs after LSR edge
+splitting and makes tied-operand rewriting mandatory for `optnone` functions.
+NeverC's embedded legacy backend already runs the required tied-operand pass;
+its LSR now shares the full fork's delayed LCSSA repair after all fixups and
+before dead-instruction cleanup.
 
 ### Bounded history, translation and GS-state operations
 

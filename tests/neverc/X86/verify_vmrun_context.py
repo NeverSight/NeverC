@@ -125,6 +125,8 @@ def main():
     parser.add_argument("--compiler", type=Path, default=BASE / "build-neverc/bin/neverc")
     parser.add_argument("--keep", type=Path, required=True)
     parser.add_argument("--opt", choices=("O0", "O2"), action="append")
+    parser.add_argument("--new-pm", action="store_true",
+                        help="use the full LLVM backend's new codegen pass manager")
     neverd = parser.add_mutually_exclusive_group()
     neverd.add_argument("--neverd-source", type=Path,
                         help="execute the actual exported LLVMC vmrun_rcx_result wrapper")
@@ -144,6 +146,8 @@ def main():
             setattr(args, key, getattr(args, key).resolve())
     if args.baseline and (args.neverd_source or args.neverd_continuation):
         parser.error("--baseline cannot execute a NeverD projection")
+    if args.new_pm and not (args.llc or args.backend_llc):
+        parser.error("--new-pm requires --llc or --backend-llc")
     args.keep.mkdir(parents=True, exist_ok=True)
     tools = {str(path): digest(path) for path in
              (args.compiler, args.llc, args.backend_llc, args.clang,
@@ -160,6 +164,8 @@ def main():
             command += ["-fno-strict-aliasing"]
         if command[0] == args.qemu:
             command += ["-debugcon", "stdio"]
+        if args.new_pm and command[0] in (str(args.llc), str(args.backend_llc)):
+            command += ["--enable-new-pm"]
         result = original(command, *positional, **kwargs)
         commands.append({"argv": command, "returncode": result.returncode})
         (args.keep / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
@@ -188,6 +194,7 @@ def main():
         subprocess.run = original
     assert tools == {path: digest(path) for path in tools}, "compiler changed during execution"
     record = {"passed": True, "profiles": profiles, "tools": tools,
+              "codegen_pass_manager": "new" if args.new_pm else "default",
               "fixture_sha256": digest(FIXTURE), "verifier_sha256": digest(__file__),
               "neverd_source_sha256": digest(args.neverd_source) if args.neverd_source else None,
               "neverd_continuation_sha256": digest(args.neverd_continuation)
