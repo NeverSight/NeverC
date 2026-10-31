@@ -21177,7 +21177,9 @@ public:
         const auto *Owner = Method->getParent()->getDefinition();
         if (!Owner || (Owner->getCanonicalDecl() != OriginalOwner->getCanonicalDecl() &&
             Owner->getCanonicalDecl() != Storage.Record->getCanonicalDecl())) return false;
-        std::vector<const FieldDecl *> Fields(Owner->field_begin(), Owner->field_end());
+        std::vector<const FieldDecl *> Fields;
+        for (const auto *Field : Owner->fields())
+          Fields.push_back(Field);
         if (Fields.size() != 2 || Fields[0]->getName() != "__f_" || Fields[1]->getName() != "__bound_args_") return false;
         for (unsigned I = 0; I < 2; ++I) {
           const auto *Member = dyn_cast_or_null<MemberExpr>(Check.stripped(Expression->getArg(I)));
