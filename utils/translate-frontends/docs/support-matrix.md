@@ -401,3 +401,6 @@ std::make_pair constructs admitted string, string_view and unique_ptr elements t
 
 
 `cpp-core-v2`: Fully bound `std::bind` adapters with an admitted ordinary function pointer also accept one or two unused scalar call arguments. Each call argument is evaluated once; its effects occur before the callback reads stored values or borrowed bindings. Receiver selection precedes those argument effects. Checked const and rvalue receivers, void and live reference results, and reentry through the same adapter retain these rules. Placeholders, nested bind expressions and callable objects require further support. NeverC remains C23-only.
+
+
+`cpp-core-v2`: `std::bind` also accepts an admitted ordinary nullary function pointer with zero stored arguments. The factory captures the pointer once; copies, const calls and rvalue calls preserve that captured target. Calls accept zero, one or two unused scalar arguments and evaluate their effects once before invoking the target. Admitted scalar, void and live reference results retain their checked behavior. The empty SDK tuple and selected call sources are authenticated. Placeholders, nested bind expressions and callable objects require further support. NeverC remains C23-only.

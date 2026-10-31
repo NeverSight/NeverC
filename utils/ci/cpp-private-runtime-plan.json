@@ -1,28 +1,28 @@
 {
-  "component_commit": "917930553da4bb7f501e789d92f9804404c198fa",
-  "component_run_id": 41059085659,
-  "component_actual_job": 124073962535,
+  "component_commit": "a98b53bbc69762bf0e2ec5ad9cb1519df2516ca0",
+  "component_run_id": 41141114797,
+  "component_actual_job": 124355326674,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 12984907094,
-    "name": "cpp-bind-call-arguments-clean456-917930553da4bb7f501e789d92f9804404c198fa",
-    "digest": "sha256:1956e90f06519bc8e8b7e49daed4e91f61a71d7005bb813f5d5cae968df5bbdb"
+    "id": 13019480670,
+    "name": "cpp-bind-call-arguments-clean456-a98b53bbc69762bf0e2ec5ad9cb1519df2516ca0",
+    "digest": "sha256:834df0c2dd3860f0d7a4448eae68f05a762811c02cc6633cef769c514e0377cf"
   },
   "component_archive_artifact": {
-    "id": 12984662408,
-    "name": "cpp-current-private-archive-remote-only-917930553da4bb7f501e789d92f9804404c198fa",
-    "digest": "sha256:904f327540ec11a22934659542ba4c56213045c8d1a7e54906e3bce19fb5bdb0"
+    "id": 13019990063,
+    "name": "cpp-current-private-archive-remote-only-a98b53bbc69762bf0e2ec5ad9cb1519df2516ca0",
+    "digest": "sha256:006cf6fd255d589636928b6f4a81914b9c75acd796ea1293796a1d066d18a173"
   },
-  "component_report_sha256": "685b57d01266419f9b434f48d9b8fe5e46a2f39945c450ba3f71cef02a549517",
-  "private_archive_sha256": "cd813e516f86fa32d2d3e42a38e5332ebe37a6c2dbf52b1a9912124612064f93",
-  "frontend_build_id": "cpp-frontend-1-aa050ff31e133edc5047cff0372764c3eee11d9758574f08a548d561b867ec1f",
+  "component_report_sha256": "dc3f0ea97032f79cb64a56cedb263016cd725c730f1dbae8a0020364e6aafa13",
+  "private_archive_sha256": "e27e4858326ef0ac8ed7db77939504d2c0e6d1b0500f084b31e4c0547c6ddb99",
+  "frontend_build_id": "cpp-frontend-1-59a626d6a5485cbad53256067b875704d158c92a1111418967743694b754dd17",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "2e3d767d541b26f1f8cb08da8367fa391cf8ef853463bc67365b5b98ad1ef2df",
+    "Frontend.cpp": "1f9625e6f65ced6778de8ac96f91b6f70ab8b702e32e5ff2d1a807559333b61b",
     "Lowering.cpp": "01bf7bdf9e09d6ab3fc5b96f5892c2c2c9b467160b8fbb2304c251c73f4b16a7",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "cdc04456de307fcb87ec7b7e7d1e093adde5f42b57a97c257b46dcfaf46cd291",
+    "MathSDK.cpp": "d372cb7d93b2943702550ffbb5bf2351654dc232dc15f9ce37eb682e34e6a67b",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "907e55674e3d0923818a0209c604eecb765b99226f79c91f4990767c31866179",
+    "Frontend.h": "a5c5f1990c2a51812632fe1e5a909fa0872039540aab6484ee1080f24999d06d",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -46,7 +46,7 @@
   "dependency_producer_run_id": 40624781946,
   "private_prefix_sha256": "cf4d69ade740f971db56cc3f4e1b811d8094d2549a0aed84f6d97f9eaed140f8",
   "authenticated_system_libraries_sha256": "1c998ace53fdcebd4e6836bc2f9d50b481b0aa38c2625f9c73fd75c0234f820e",
-  "original_tests_file_sha256": "b30cba17a5378fabc41f5aa381f6ae5caabaadfa032facec8d6b1017d20c0423",
+  "original_tests_file_sha256": "bcb391dec4e2db6181eda34c778404b2d8846fd7f05c487c6e6e57c06e7a06fc",
   "formal_manifest_sha256": "a4e047df483c770a7dd077e50abad961d8a0833c86e56d1bbcb47e92a6c27979",
   "required_actual_original_gtest_xml": 124,
   "original_gtest_bodies_modified": false,
@@ -71,13 +71,16 @@
     "utils/ci/bind-twenty-one-formal-additions.cpp",
     "utils/ci/bind-thirty-two-formal-additions.cpp",
     "utils/ci/bind-call-arguments-eleven-formal-additions.cpp",
-    "tests/neverc/TranslateTests.cpp"
+    "tests/neverc/TranslateTests.cpp",
+    "utils/ci/bind-zero-bound-eight-formal-additions.cpp",
+    "utils/ci/bind-forty-formal-additions.cpp",
+    "tests/neverc/NotFnRegisteredGTestsTests.py"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,
   "actual_current_translate_owners_required": true,
   "actual_fresh_host_private_abi_audit_required": true,
-  "scope": "original124_plus_twelve_not_fn_plus_twenty_bind_current_private_gtest_and_generated_programs",
+  "scope": "Actual original124 plus40 registered STL goldens,80 generated executions and775 current frontend requests",
   "full_ci_passed": false,
   "published_to_dev": false,
   "goal_complete": false,
@@ -128,8 +131,8 @@
     ],
     "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
   },
-  "not_fn_formal_additions_path": "utils/ci/bind-thirty-two-formal-additions.cpp",
-  "not_fn_formal_additions_sha256": "304a075bc7b2a52190b0d94f09dba6c5b45aa3f3e690063ca83f9343c3a55e4f",
+  "not_fn_formal_additions_path": "utils/ci/bind-forty-formal-additions.cpp",
+  "not_fn_formal_additions_sha256": "48e16535ad52835351d6beb425f6b69690209d1014cd24df4da2ba4fe8f8ae1d",
   "not_fn_formal_cases": [
     {
       "name": "not-fn-function-pointer",
@@ -322,19 +325,67 @@
       "formal_test_name": "TranslateTest.CoreV2BindCallUnusedRvalueScalarRunAtBothOptimizations",
       "source_sha256": "0fac1197a39c14cbeb34f9672d2c7c457bb08217e43f69a01acabdccb671d762",
       "gtest_body_sha256": "0e971c0a50957c0b06eaa7106eb95d704664b24ae1f355d51d856a23d7433117"
+    },
+    {
+      "name": "bind-zero-bound-value",
+      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundValueRunAtBothOptimizations",
+      "source_sha256": "de9c183a26860cf349390ff7541b895ce21e8528252421584a44eb0848b8c40b",
+      "gtest_body_sha256": "c789d898242de34da7a4a1aa1bdae5fe2f57a6518ba1451581f089c5e222a3d9"
+    },
+    {
+      "name": "bind-zero-bound-designator",
+      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundDesignatorRunAtBothOptimizations",
+      "source_sha256": "d32cbec368c9d84d665f20f76731bacdb957dd38d73de5755b40626aa1dcdf75",
+      "gtest_body_sha256": "e7807db2e30a9086e0255088216d653c649ec4282361384615bafbdcb6a524a8"
+    },
+    {
+      "name": "bind-zero-bound-copy-cvref",
+      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundCopyCvrefRunAtBothOptimizations",
+      "source_sha256": "eca7e15458d8206c7316e8716cec1a9b7d4c265e9915b7e288a8f80885f0fd47",
+      "gtest_body_sha256": "21c326b7599339650ed9e907864be09afafa66b71a04fd039d9c1b58799aa7e3"
+    },
+    {
+      "name": "bind-zero-bound-factory-once",
+      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundFactoryOnceRunAtBothOptimizations",
+      "source_sha256": "42569cbc4e7d2e27ea5c82038af17ff062c84100d12848380c69be3a3a762a6d",
+      "gtest_body_sha256": "ec1e556a6bcac2cbc16ec48ad4244c8bc2ca4437fe0e22e647583c42894b4890"
+    },
+    {
+      "name": "bind-zero-bound-void-target",
+      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundVoidTargetRunAtBothOptimizations",
+      "source_sha256": "692d348f695124bb6001b732d7e9f3684a31128d06a4379df2828d75e1a1153c",
+      "gtest_body_sha256": "127590b4009f4bf598b54ada51365eda93e11617618183cfc08617b5c828a5fa"
+    },
+    {
+      "name": "bind-zero-bound-reference-result",
+      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundReferenceResultRunAtBothOptimizations",
+      "source_sha256": "2dfd7995c72d3cdafe166bf1658c3e870184a3d3e4249c5fd668204a672a7871",
+      "gtest_body_sha256": "2cd2f8ee6d2932f9539b6672d3ac5c00a29524a2ba6ae1837f640f24c057168b"
+    },
+    {
+      "name": "bind-zero-bound-unused-effects",
+      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundUnusedEffectsRunAtBothOptimizations",
+      "source_sha256": "579b4c3c3e8fb036b3a572ab04e41ea6d781aef3651518cffba1af0981cac451",
+      "gtest_body_sha256": "46076b00f1b3b1d80caebdad412bbdaa5e0bda63d601cf16a770957b40441df3"
+    },
+    {
+      "name": "bind-zero-bound-result-kinds",
+      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundResultKindsRunAtBothOptimizations",
+      "source_sha256": "302be284785ab81a26632e0ffc8edc647ca64faf15eb09467588037700be81da",
+      "gtest_body_sha256": "b1563663deb72d6fae1b124b5e36e6de9e561cfcc8ea1ef7b62c2717fcf6cd7e"
     }
   ],
-  "required_actual_total_gtest_xml": 156,
-  "required_actual_not_fn_gtest_xml": 32,
-  "required_actual_not_fn_generated_o0_o2_products": 64,
-  "not_fn_registered_previous_additions_path": "utils/ci/bind-thirty-two-formal-additions.cpp",
-  "not_fn_registered_previous_additions_sha256": "304a075bc7b2a52190b0d94f09dba6c5b45aa3f3e690063ca83f9343c3a55e4f",
-  "required_actual_frontend_requests": 767,
+  "required_actual_total_gtest_xml": 164,
+  "required_actual_not_fn_gtest_xml": 40,
+  "required_actual_not_fn_generated_o0_o2_products": 80,
+  "not_fn_registered_previous_additions_path": "utils/ci/bind-forty-formal-additions.cpp",
+  "not_fn_registered_previous_additions_sha256": "48e16535ad52835351d6beb425f6b69690209d1014cd24df4da2ba4fe8f8ae1d",
+  "required_actual_frontend_requests": 775,
   "actual_new_signature_native_reference_verified": false,
   "actual_prior_custom_native_reference_verified": true,
   "preparation_only": false,
   "execution_binding_required": true,
-  "current_clean_syntax6_proof_sha256": "d6205037268285482c0d8b56ffd0d72a77b1b0611ca640322eab161c77e69bf9",
+  "current_clean_syntax6_proof_sha256": "c1aa506821fb621bd316e96926a4b3d04f1dc864608922cf0d076a005e19c27c",
   "dependency_producer_actual_job": 122606984385,
   "dependency_producer_attempt": 1,
   "dependency_producer_authentication_sha256": "7b4188218f280d74d6b87c34443f96cc1df246ae05d0827f240d084424c6b730",
@@ -342,5 +393,5 @@
   "required_component_reject": 160,
   "required_component_invalid": 8,
   "required_component_requests": 456,
-  "current_full456_proof_sha256": "fa4099f9e795824d428be3ab013118fd316e6a36cc38b6ac6297cd440f5bb913"
+  "current_full456_proof_sha256": "0a0a21d5a624d4e999a11be37ba889fd0b0aaa4e2d6d9279556cd79459a51205"
 }
