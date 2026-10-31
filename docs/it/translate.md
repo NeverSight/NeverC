@@ -984,3 +984,6 @@ Le tuple di riferimenti prendono in prestito i proprietari supportati. Le tuple 
 
 
 `cpp-core-v2`: `std::bind` accetta anche un puntatore a una normale funzione senza parametri e senza argomenti memorizzati. La factory acquisisce il puntatore una sola volta; copie e chiamate const o su rvalue conservano tale destinazione. Le chiamate accettano zero, uno o due argomenti scalari inutilizzati e ne valutano gli effetti una sola volta prima della funzione di destinazione. I risultati scalari, void e riferimenti validi ammessi mantengono i controlli esistenti. La tupla SDK vuota e i sorgenti delle chiamate selezionate vengono autenticati. Segnaposto, espressioni bind annidate e oggetti invocabili richiedono ulteriore supporto. Il linguaggio sorgente di NeverC rimane C23.
+
+
+`cpp-core-v2`: La gestione dei pacchetti estesi di argomenti memorizzati di `std::bind` è integrata come lavoro in sviluppo. La verifica soddisfa 584 aspettative su 600; restano 16 rifiuti in `bind-bound-pack-eight-values` e `bind-bound-pack-result-kinds` su otto ABI. I controlli sintattici e 72 esecuzioni native di riferimento passano. I test formali e la verifica O0/O2 del codice tradotto di questo incremento restano da eseguire. Segnaposto, espressioni bind annidate e oggetti invocabili richiedono ulteriore supporto. NeverC resta limitato a C23.
