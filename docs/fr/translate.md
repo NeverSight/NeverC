@@ -1008,3 +1008,6 @@ La description de construction bind conserve l’initialisation de base vide sé
 
 
 La description de fabrique lie chaque opérande original à la déclaration SDK extern const exacte `_1` ou `_2`, avec vérification de l’espace de noms, du type et des redéclarations. Elle n’évalue pas l’objet et ne crée aucun initialiseur. Les permissions ordinaires et la capture à l’exécution restent inchangées ; le support runtime est en attente.
+
+
+Le graphe bind conserve ses seuls sous-objets réservés vides réels et les sources de copie et destruction sélectionnées. Chaque opérande original est comparé lors de la redescription. Les permissions générales tuple et variables SDK restent inchangées ; l’exécution reste à terminer.

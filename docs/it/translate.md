@@ -1008,3 +1008,6 @@ La descrizione di costruzione bind conserva l’inizializzazione della base vuot
 
 
 La descrizione della factory lega ogni operando originale alla dichiarazione SDK extern const esatta `_1` o `_2`, verificando namespace, tipo e ridichiarazioni. Non valuta l’oggetto né crea inizializzatori. Permessi ordinari e cattura runtime restano invariati; il supporto runtime è incompleto.
+
+
+Il grafo bind conserva solo i propri sotto-oggetti segnaposto vuoti reali e le sorgenti selezionate di copia e distruzione. Ogni nuova descrizione confronta gli operandi originali. I permessi generali tuple e variabili SDK non cambiano; l’esecuzione resta incompleta.

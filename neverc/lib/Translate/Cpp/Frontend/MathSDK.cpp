@@ -7640,6 +7640,24 @@ static std::optional<QualType> functionalNotFnNestedQueryResultSource(
 
 enum class UtilityTupleQueryMode { Construction, CatSignature, PairConstruction, NotFnSignature, BindSignature };
 
+// Re-description must retain each original SDK operand occurrence, including
+// repeated placeholders. A matching rank or canonical type alone is not proof.
+static bool sameFunctionalBindPlaceholderOperands(
+    const FunctionalBindFactorySource &Left,
+    const FunctionalBindFactorySource &Right) {
+  if (Left.Placeholders.size() != Right.Placeholders.size()) return false;
+  for (unsigned I = 0; I < Left.Placeholders.size(); ++I) {
+    const auto &L = Left.Placeholders[I], &R = Right.Placeholders[I];
+    if (bool(L) != bool(R)) return false;
+    if (L && (L->Operand != R->Operand || L->Reference != R->Reference ||
+              L->Variable != R->Variable || L->Identity.Record != R->Identity.Record ||
+              L->Identity.Primary != R->Identity.Primary ||
+              L->Identity.Parameter != R->Identity.Parameter ||
+              L->Identity.Rank != R->Identity.Rank)) return false;
+  }
+  return true;
+}
+
 class UtilityTupleQueryGraph
     : public RecursiveASTVisitor<UtilityTupleQueryGraph> {
   const State &S;
@@ -11054,7 +11072,17 @@ public:
     for (const auto *Field : Actual->Arguments.Record->fields())
       if (const auto *Record = Field->getType()->getAsCXXRecordDecl()) Records.push_back(Record);
     for (const auto &Element : Actual->Arguments.Elements) {
-      if (!Element.Field || Element.EmptyBase) return false;
+      if (Element.EmptyBase) {
+        const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
+        if (Element.Field || !Identity ||
+            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return false;
+        // The freshly described bind tuple owns this exact empty subobject.
+        // Its actual implementation/leaf bases are walked below as usual;
+        // no ordinary tuple consumer gains placeholder or member permission.
+        Records.push_back(Element.EmptyBase);
+        continue;
+      }
+      if (!Element.Field) return false;
       const auto *Leaf = dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext());
       if (!Leaf) return false;
       Records.push_back(Leaf);
@@ -11094,6 +11122,7 @@ public:
         !S.owns(SM, Factory.SourceCall->getExprLoc())) return false;
     const auto Actual = describeFunctionalBindFactorySource(S, SM, Factory.SourceCall, Context);
     if (!Actual || Actual->Factory != Factory.Factory || Actual->Storage.Record != BindMetadata->Record ||
+        !sameFunctionalBindPlaceholderOperands(*Actual, Factory) ||
         Use.Kind != TemplateSourceKind::Function || Use.Declaration != Actual->Factory ||
         Use.Template != Actual->Factory->getPrimaryTemplate() ||
         !Use.Canonical || !Use.Sugared || Use.Canonical->size() != 2 || Use.Sugared->size() != 2 ||
@@ -18325,6 +18354,7 @@ describeFunctionalBindTupleConstructionSource(
     const FunctionalBindFactorySource &Factory, const ASTContext &Context) {
   const auto Actual = describeFunctionalBindFactorySource(S, SM, Factory.SourceCall, Context);
   if (!Actual || Actual->Factory != Factory.Factory ||
+      !sameFunctionalBindPlaceholderOperands(*Actual, Factory) ||
       Actual->Construction != Factory.Construction ||
       Actual->BoundConstruction != Factory.BoundConstruction ||
       Actual->Storage.Record != Factory.Storage.Record ||
@@ -18461,6 +18491,13 @@ bool shouldRetainFunctionalBindSpecialMemberSource(
       Record->getSpecializationKind() != TSK_ImplicitInstantiation) return false;
   // No definition, layout, triviality, or special-member computation may be
   // requested during Sema's producer callback. Later proofs bind exact roots.
+  if (Origin->Path == "__functional/bind.h" && Record->getName() == "__ph") {
+    const auto &Context = Method->getASTContext();
+    const auto Identity = describeFunctionalBindPlaceholderIdentity(
+        S, SM, Context.getRecordType(Record), Context);
+    return Identity && Identity->Record == Record &&
+        (isa<CXXDestructorDecl>(Method) || (Constructor && Constructor->isCopyOrMoveConstructor()));
+  }
   if (Origin->Path == "__functional/bind.h" && Record->getName() == "__bind" &&
       Record->getTemplateArgs().size() == 2 &&
       Record->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
@@ -21630,6 +21667,7 @@ public:
     const auto *Bound = Parameters && Parameters->size() == 2
         ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
     if (!Actual || !Tuple || Actual->Construction != Factory.Construction ||
+        !sameFunctionalBindPlaceholderOperands(*Actual, Factory) ||
         Actual->Factory != Factory.Factory || !Reference ||
         Reference->getDecl() != Factory.Factory || Reference->hasExplicitTemplateArgs() ||
         !S.owns(SM, Reference->getExprLoc()) ||
@@ -22137,7 +22175,11 @@ public:
         const auto *Conversion = Cast ? dyn_cast<ImplicitCastExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
         const auto *Base = Conversion ? dyn_cast<MemberExpr>(Conversion->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
         const auto *Object = Base ? dyn_cast<DeclRefExpr>(Base->getBase()->IgnoreParenImpCasts()) : nullptr;
-        const auto *Leaf = dyn_cast<CXXRecordDecl>(Storage.Arguments.Elements[I].Field->getDeclContext());
+        const auto *StoredField = Storage.Arguments.Elements[I].Field;
+        // Empty-base getters need their separate selected cast/source proof.
+        // Reject them here until that proof is implemented, without dereferencing a missing field.
+        if (!StoredField) return false;
+        const auto *Leaf = dyn_cast<CXXRecordDecl>(StoredField->getDeclContext());
         const auto *Owner = Leaf ? dyn_cast<ClassTemplateSpecializationDecl>(Leaf) : nullptr;
         const auto *OriginalMethod = Method
             ? dyn_cast_or_null<CXXMethodDecl>(Method->getInstantiatedFromMemberFunction()) : nullptr;

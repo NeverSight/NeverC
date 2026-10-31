@@ -1008,3 +1008,6 @@ Die bind-Konstruktionsbeschreibung erhält für jeden Platzhalter die ausgewähl
 
 
 Die Factory-Beschreibung bindet jeden ursprünglichen Operanden an die exakte SDK-Deklaration extern const `_1` oder `_2` und prüft Namensraum, Typ und weitere Deklarationen. Sie wertet das Objekt nicht aus und erzeugt keinen Initialisierer. Gewöhnliche Variablenrechte und Laufzeiterfassung bleiben gleich; Laufzeitunterstützung ist unvollständig.
+
+
+Der bind-Quellgraph erhält nur seine tatsächlichen leeren Platzhalter-Unterobjekte und die gewählten Kopier- und Destruktionsquellen. Jede erneute Beschreibung vergleicht die ursprünglichen Operanden. Allgemeine tuple- und SDK-Variablenrechte bleiben gleich; die Ausführung ist noch unvollständig.
