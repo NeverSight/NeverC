@@ -518,7 +518,8 @@ RAX/RSP/RIP/RFLAGS and exit information remain in the VMCB. The mask covers
 all enabled XCR0 components; the guest leaves XCR0 unchanged. Both buffers
 must be 64-byte aligned, CPUID-sized standard XSAVE images with initialized
 reserved bytes. The context, buffers and host compiler stack remain accessible
-and disjoint from guest-writable RAM, including after loading guest xstate.
+and disjoint from guest-writable RAM and hardware-written VMCB/VM_HSAVE_PA
+pages, including after loading guest xstate.
 
 The compiler owns the helper frame and restores host GPR ABI and user xstate
 after VMEXIT. The VMM owns SVM setup, GIF, intercepts, supervisor state and any
@@ -541,8 +542,17 @@ source via `--neverd-source`. Every guest also executes the original-byte IDA
 counterexample; the guest changes RCX from 0x1234 to 0x5678 before VMEXIT.
 One additional generated-context call executes that same guest and checks
 RCX=0x5678; the NeverD routes also check the actual exported function's return.
+`--neverd-continuation FILE` also compiles actual NeverD `amd-svm-v10` exported
+source, through direct NeverC or `--backend-llc` for the full LLVM fork. It adds
+the complete original-byte MOV/VMRUN/MOV/RET path: VMEXIT must stop with status
+13, preserve hardware-restored RAX/RSP, clear RF, publish actual CR2 and all
+fourteen GPR/SIMD outputs, and resume to return 0x5678. The fixture separately
+executes original addr32 VMRUN with high RAX bits set to verify only its VMCB
+address truncates. Each source profile executes 50 generated-context calls
+plus the independent original-byte checks. HighC and LLVM C, both backends
+and O0/O2 give 400 calls across eight profiles.
 The harness retains commands, hashes and exit logs. Physical AMD execution,
-supervisor xstate and raw-machine-code lifting are separate qualifications.
+supervisor xstate and arbitrary ordinary-ABI lifting remain unqualified.
 
 ### Bounded history, translation and GS-state operations
 

@@ -21,6 +21,7 @@ SPEC = importlib.util.spec_from_file_location(
 GUEST = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(GUEST)
 FIXTURE = BASE / "tests/fixtures/x86/svm-context/guest.c"
+CONTINUATION = BASE / "tests/fixtures/x86/svm-context/continuation.c"
 
 
 def boot(mode):
@@ -57,6 +58,11 @@ ida_vmrun_rcx_result:
   vmrun %rax
   mov %rcx,%rax
   ret
+.global original_vmrun_addr32_rax
+original_vmrun_addr32_rax:
+  mov %rdi,%rax
+  .byte 0x67,0x0f,0x01,0xd8
+  ret
 .section .rodata
 .balign 32
 addend: .quad 0x1234,0x1234,0x1234,0x1234
@@ -73,6 +79,11 @@ def source(args, llvm_route):
   init_vmcb(guest_rcx);
   U64 actual=ida_vmrun_rcx_result((U64)vmcb);
   if(actual!=0x5678) return fail(8,actual);
+  init_vmcb(guest_rcx);
+  extern U64 original_vmrun_addr32_rax(U64);
+  U64 address=(U64)vmcb|0xfedcba9800000000ULL;
+  U64 restored=original_vmrun_addr32_rax(address);
+  if(restored!=address) return fail(0x410,restored);
   put('I'); put('D'); put('A'); put(':'); put('5'); put('6'); put('7'); put('8'); put('\\n');
   return 16;
 }
@@ -81,10 +92,24 @@ def source(args, llvm_route):
         code = (args.neverd_source.read_text() +
                 "#define VMRUN64(p) ((void)vmrun_rcx_result((void *)(p)))\n"
                 "#define NEVERD_RCXSOURCE 1\n" + code)
+    if args.neverd_continuation:
+        code = (args.neverd_continuation.read_text() + CONTINUATION.read_text() + code)
+        code = code.replace("U64 actual = ida_vmrun_rcx_result((U64)vmcb);", """
+  init_vmcb(guest_rcx);
+  U64 projected = continuation_rcx(&context);
+  if (projected != 0x5678 || continuation_failed)
+    return fail(0x400 + continuation_failed, projected);
+  init_vmcb(guest_rcx);
+  extern U64 original_vmrun_addr32_rax(U64);
+  U64 address = (U64)vmcb | 0xfedcba9800000000ULL;
+  U64 restored = original_vmrun_addr32_rax(address);
+  if (restored != address) return fail(0x410, restored);
+  init_vmcb(guest_rcx);
+  U64 actual = ida_vmrun_rcx_result((U64)vmcb);""")
     if llvm_route:
         code = ('extern void __builtin_ia32_vmrun_context(void *, unsigned) '
                 '__asm__("llvm.x86.vmrun.context");\n' + code)
-    return code, 49
+    return code, 50 if args.neverd_continuation else 49
 
 
 def digest(path):
@@ -100,8 +125,11 @@ def main():
     parser.add_argument("--compiler", type=Path, default=BASE / "build-neverc/bin/neverc")
     parser.add_argument("--keep", type=Path, required=True)
     parser.add_argument("--opt", choices=("O0", "O2"), action="append")
-    parser.add_argument("--neverd-source", type=Path,
+    neverd = parser.add_mutually_exclusive_group()
+    neverd.add_argument("--neverd-source", type=Path,
                         help="execute the actual exported LLVMC vmrun_rcx_result wrapper")
+    neverd.add_argument("--neverd-continuation", type=Path,
+                       help="execute exported amd-svm-v10 original-byte continuation source")
     args = parser.parse_args()
     for option, tool in (("clang", "clang"), ("linker", "ld.lld"),
                          ("objcopy", "objcopy"), ("qemu", "qemu-system-x86_64")):
@@ -110,10 +138,11 @@ def main():
             parser.error(f"{tool} is required")
     if args.baseline:
         args.compiler = Path(args.clang)
-    for key in ("compiler", "llc", "backend_llc", "keep", "neverd_source"):
+    for key in ("compiler", "llc", "backend_llc", "keep", "neverd_source",
+                "neverd_continuation"):
         if getattr(args, key):
             setattr(args, key, getattr(args, key).resolve())
-    if args.baseline and args.neverd_source:
+    if args.baseline and (args.neverd_source or args.neverd_continuation):
         parser.error("--baseline cannot execute a NeverD projection")
     args.keep.mkdir(parents=True, exist_ok=True)
     tools = {str(path): digest(path) for path in
@@ -146,10 +175,14 @@ def main():
             GUEST.check_guest(args, args.keep, 64, opt,
                               lambda mode, route: source(args, route), boot)
             profiles.append({"optimization": opt,
-                             "contexts": 0 if args.baseline else 49,
-                             "original_ida_counterexample": True})
+                             "contexts": 0 if args.baseline else
+                             50 if args.neverd_continuation else 49,
+                             "original_ida_counterexample": True,
+                             "original_addr32_rax": bool(args.baseline or
+                                                         args.neverd_continuation)})
             message = ("original VMRUN returned RCX=0x5678" if args.baseline else
-                       "49 returning VMRUN contexts and IDA counterexample passed")
+                       f"{50 if args.neverd_continuation else 49} returning VMRUN contexts "
+                       "and IDA counterexample passed")
             print(f"{opt}: {message}", flush=True)
     finally:
         subprocess.run = original
@@ -157,6 +190,10 @@ def main():
     record = {"passed": True, "profiles": profiles, "tools": tools,
               "fixture_sha256": digest(FIXTURE), "verifier_sha256": digest(__file__),
               "neverd_source_sha256": digest(args.neverd_source) if args.neverd_source else None,
+              "neverd_continuation_sha256": digest(args.neverd_continuation)
+              if args.neverd_continuation else None,
+              "continuation_fixture_sha256": digest(CONTINUATION)
+              if args.neverd_continuation else None,
               "files": {path.name: digest(path) for path in sorted(args.keep.iterdir())
                         if path.is_file() and path.name != "qualification.json"},
               "scope": "QEMU TCG long-mode SVM, XCR0=7; no physical AMD qualification"}

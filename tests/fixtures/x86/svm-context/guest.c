@@ -17,6 +17,9 @@ struct Context {
 #ifndef VMRUN64
 #define VMRUN64(context) __builtin_ia32_vmrun_context(context, 64)
 #endif
+#ifndef VMRUN32
+#define VMRUN32(context) __builtin_ia32_vmrun_context(context, 32)
+#endif
 static U8 vmcb[4096] __attribute__((aligned(4096)));
 static U8 hsave[4096] __attribute__((aligned(4096)));
 static U8 input[4096] __attribute__((aligned(64)));
@@ -110,7 +113,7 @@ __attribute__((noinline)) static U64 invoke32(struct Context *p, unsigned n) {
   for (unsigned i = 0; i < 32; ++i)
     local[i] = 0xabc000 + i + n;
   dynamic[n] = 0x5a;
-  __builtin_ia32_vmrun_context(p, 32);
+  VMRUN32(p);
   U64 result = dynamic[n];
   for (unsigned i = 0; i < 32; ++i)
     result += local[i];
