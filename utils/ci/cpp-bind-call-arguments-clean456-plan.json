@@ -603,6 +603,79 @@
       "source_sha256": "ba029bedfb5855e2a5839ceda381ac0628b76de5116eb91f244c39a3e29d39e2",
       "expected_proposed_not_observed": true,
       "expected": "reject"
+    },
+    {
+      "name": "bind-bound-pack-three-values",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackThreeValuesRunAtBothOptimizations",
+      "source": "#include <functional>\nint sum(int a,int b,int c){return a+b+c;}\nint main(){auto f=std::bind(&sum,2,3,5);return f()!=10;}\n",
+      "source_sha256": "c1f19e90acc41293f21f375cf1337bd95c9644ee75e3d2b988b6744f79b5ccc7",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-bound-pack-four-mixed",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackFourMixedRunAtBothOptimizations",
+      "source": "#include <functional>\ndouble combine(int a,double b,bool c,int* p){*p+=a;return b+*p+(c?1:0);}\nint main(){int n=2;auto f=std::bind(&combine,3,0.5,true,&n);return f()!=6.5||n!=5;}\n",
+      "source_sha256": "b93c128ab57c417aca14b8a738f3b08f1b65da46804f8d007a01350821f09fc2",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-bound-pack-eight-values",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackEightValuesRunAtBothOptimizations",
+      "source": "#include <functional>\nint sum(int a,int b,int c,int d,int e,int f,int g,int h){return a+b+c+d+e+f+g+h;}\nint main(){auto f=std::bind(&sum,1,2,3,4,5,6,7,8);return f()!=36;}\n",
+      "source_sha256": "3dec1384520f343d4a09b3ed62e269d117db19cb06fffd2f2f4690f1be74377e",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-bound-pack-third-reference",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackThirdReferenceRunAtBothOptimizations",
+      "source": "#include <functional>\nint add_to(int a,int b,int& n){n+=a+b;return n;}\nint main(){int n=5;auto f=std::bind(&add_to,2,3,std::ref(n));const auto copy=f;return f()!=10||copy()!=15||f((n=20))!=25||n!=25;}\n",
+      "source_sha256": "38d2e17f8c0d07d1495c6cd221b78be41905ff20525bd7c60d6b6cc7db11426a",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-bound-pack-copied-state",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCopiedStateRunAtBothOptimizations",
+      "source": "#include <functional>\n#include <utility>\nint advance(int a,int b,int& c){return a+b+ ++c;}\nint main(){auto f=std::bind(&advance,4,5,6);auto copy=f;return f()!=16||std::move(f)()!=17||copy()!=16||f()!=18;}\n",
+      "source_sha256": "e15b66e3e19ff701280dd00ee12f242a6b0a291a5f8b0543bdbe7cefa3a3d92c",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-bound-pack-capture-effects",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCaptureEffectsRunAtBothOptimizations",
+      "source": "#include <functional>\nint left_builds,middle_builds,right_builds,calls;\nint left(){++left_builds;return 3;}int middle(){++middle_builds;return 5;}int right(){++right_builds;return 7;}\nint sum(int a,int b,int c){++calls;return a+b+c;}\nint main(){auto f=std::bind(&sum,left(),middle(),right());int unused=0;return left_builds!=1||middle_builds!=1||right_builds!=1||calls!=0||f(++unused,++unused)!=15||unused!=2||calls!=1;}\n",
+      "source_sha256": "dc249ceecf6c93776599f74db9e1272a8abda04fcc44572f8869376529e1f9a7",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-bound-pack-captured-pointer",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCapturedPointerRunAtBothOptimizations",
+      "source": "#include <functional>\n#include <utility>\nint first(int a,int b,int c){return a+b+c;}int second(int,int,int){return -1;}\nint main(){int(*pointer)(int,int,int)=&first;auto f=std::bind(pointer,2,3,5);pointer=&second;const auto copy=f;return f()!=10||copy()!=10||std::move(f)()!=10||pointer(2,3,5)!=-1;}\n",
+      "source_sha256": "64339a034b7b5050e0236608ce35bbd1c9e38b415f2a1877689710c6c66fa36e",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-bound-pack-result-kinds",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackResultKindsRunAtBothOptimizations",
+      "source": "#include <functional>\n#include <type_traits>\nvoid store(int* p,int a,int b){*p=a+b;}int& identity(int& n,int,int){return n;}\nint main(){int n=0;auto write=std::bind(&store,&n,3,4);write();auto live=std::bind(&identity,std::ref(n),1,2);using F=decltype(live);static_assert(std::is_bind_expression<F>::value,\"bind expression\");static_assert(std::is_same<decltype(live()),int&>::value,\"live reference\");static_assert(!std::is_nothrow_invocable<F&>::value,\"pinned bind exception signature\");if(n!=7)return 1;live()=14;return n!=14||&live()!=&n;}\n",
+      "source_sha256": "b9c0397bb30478fb7af852bf2081416dd36b715bd12cac562829173f4e4e7dc6",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-bound-pack-ordinary-body-guard",
+      "source": "#include <functional>\nint forbidden(int a,int b,int c){asm(\"\");return a+b+c;}\nint main(){auto f=std::bind(&forbidden,2,3,5);return f()!=10;}\n",
+      "source_sha256": "dd79ee29a87321a9aa0ff935624518701524a9724873cc82a1198cfbee998a28",
+      "expected": "reject",
+      "diagnostic": "TR0201",
+      "ast_kind": "GCCAsmStmt",
+      "expected_proposed_not_observed": true
     }
   ],
   "producer_actual_job": 122606984385,
@@ -655,10 +728,10 @@
     "i686-unknown-linux-gnu"
   ],
   "fixture_group": "bind-call-arguments-clean456",
-  "source_repair_commit": "231a76516f49359e507204e916593c8a6441ca69",
-  "clean_source_basis": "231a76516f49359e507204e916593c8a6441ca69",
-  "required_requests": 528,
-  "required_acceptances": 352,
+  "source_repair_commit": "3f921743615bd557770d55d895680936c3b80ccb",
+  "clean_source_basis": "3f921743615bd557770d55d895680936c3b80ccb",
+  "required_requests": 600,
+  "required_acceptances": 416,
   "required_sdk_guard_rejections": 80,
   "required_unimplemented_not_fn_runtime_refusals": 8,
   "required_failed_substitutions": 8,
@@ -669,7 +742,7 @@
   "required_original216_sdk_guards": 80,
   "required_original216_unsupported": 0,
   "required_original216_invalid": 8,
-  "required_pid_files": 2640,
+  "required_pid_files": 3000,
   "graph_budget_observation_only": false,
   "unchanged_graph_node_limit": 200000,
   "unchanged_graph_depth_limit": 64,
@@ -683,7 +756,7 @@
   "source_trace_included": false,
   "inverse_source_edits": {},
   "frontend_execution_timeout_seconds": 60,
-  "actual_same_source_six_report_sha256": "43cc4f2b4268133b33da880bc71d0bfd6a029e3e901c722362ba447597abaadd",
+  "actual_same_source_six_report_sha256": "20af95c8b626d2d9973f2f05054dabbca39a035516e8dddf0257ea9054091036",
   "reference_full_plan_commit": "f961e1f5cc09ba6fd54a708b73e4639a6952f651",
   "reference_full_plan_path": "utils/ci/cpp-not-fn-nested-clean288-plan.json",
   "reference_full_plan_sha256": "b3dfb130b4e1a5b970262f6f8cd3cf1adc87a918214ac9573e75714f59c3ac45",
@@ -697,7 +770,7 @@
   "required_original240_requests": 240,
   "required_original240_acceptances": 128,
   "required_original240_owned_body_guards": 16,
-  "required_command_count": 545,
+  "required_command_count": 617,
   "actual_owned_four32_report_sha256": null,
   "actual_inherited240_report_sha256": null,
   "added_owned_callable_source_guards_sha256": "be222b5e55dbdd5ed6c1f5a6c77963ccd63a9543015b9f723684444f48a4b167",
@@ -712,7 +785,7 @@
   "preparation_only": false,
   "prepared_owned256_template_sha256": "97da3970cc9f7555ac534a4f559a471fdb5ce41854aa4ba6cbf19642b8c4e796",
   "execution_binding_required": true,
-  "required_pid_records": 528,
+  "required_pid_records": 600,
   "required_original272_requests": 272,
   "required_original272_acceptances": 128,
   "required_original272_expected_reject": 136,
@@ -732,7 +805,7 @@
     "Frontend.cpp": "1f9625e6f65ced6778de8ac96f91b6f70ab8b702e32e5ff2d1a807559333b61b",
     "Lowering.cpp": "01bf7bdf9e09d6ab3fc5b96f5892c2c2c9b467160b8fbb2304c251c73f4b16a7",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "d372cb7d93b2943702550ffbb5bf2351654dc232dc15f9ce37eb682e34e6a67b",
+    "MathSDK.cpp": "42e766253904d6319c8e19fcb1fe44facc1cf17bdca2850ea8380003fdd0a26b",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "a5c5f1990c2a51812632fe1e5a909fa0872039540aab6484ee1080f24999d06d",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -749,13 +822,13 @@
     "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
-  "actual_same_source_six_proof_sha256": "c1aa506821fb621bd316e96926a4b3d04f1dc864608922cf0d076a005e19c27c",
+  "actual_same_source_six_proof_sha256": "51634186617fd2ffa29e830934dce57fae8b752b03223ac3cfa17f9ad5fa8e59",
   "required_original288_requests": 288,
   "required_original288_acceptances": 128,
   "required_original288_expected_reject": 152,
   "required_original288_invalid": 8,
-  "required_added_bind_requests": 240,
-  "required_added_bind_acceptances": 224,
+  "required_added_bind_requests": 312,
+  "required_added_bind_acceptances": 288,
   "private_bind_admission_implemented": true,
   "bind_lowering_implemented": true,
   "bind_source_contract_sha256": "e71b11486d5ce55e759950d55163e60cb12215064b055cbaa58ce6fa6353bb8f",
@@ -779,5 +852,9 @@
   "required_zero_bound_bind_acceptances": 64,
   "required_zero_bound_body_guard_refusals": 8,
   "zero_bound_cases_contract_sha256": "e3766090a950cfd3510d80519f610a1cda0bf27cc464f1d8d8a76f6af6ea7397",
-  "requires_current_source6_before_dispatch": true
+  "requires_current_source6_before_dispatch": true,
+  "required_expanded_bound_pack_requests": 72,
+  "required_expanded_bound_pack_acceptances": 64,
+  "required_expanded_bound_pack_body_guard_refusals": 8,
+  "expanded_bound_pack_cases_contract_sha256": "1345a813ac0fdd6056fb11aeebdabf3b758eab26960f9610f06d8b8396539549"
 }
