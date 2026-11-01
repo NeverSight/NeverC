@@ -1056,3 +1056,6 @@ Die echte Spur mit neunzehn Anfragen akzeptiert acht Werte auf x86-64, lehnt abe
 
 
 Die Erfassung reiner Platzhalter prüft direkte const-Referenzparameter des festen Tupelkonstruktors und ursprüngliche Tag-Ausschnitte. Referenzen auf SDK-Platzhalterspeicher samt Adressbildung benötigen die exakt bewiesene bind-Argumentrolle. Die Korrektur folgt der echten Spur; vollständige Aufrufe und aktuelle Regressionsergebnisse stehen aus.
+
+
+Der __mu-Prüfer beweist die tatsächliche Indexdeklaration und Rückgabe getrennt. Der verschachtelte Getter benötigt einen vollständigen Quellnachweis; forward prüft den echten erfolgreichen Funktionsdatensatz und ursprünglichen Rumpf. Ursprüngliche Namenssuche und Indexzugriffe bleiben auf diesen Rumpf beschränkt. Vollständige Unterstützung erfordert einen aktuellen Ausführungslauf.

@@ -1056,3 +1056,6 @@ La traccia reale di diciannove richieste accetta otto valori su x86-64, ma rifiu
 
 
 La cattura di soli segnaposto verifica i parametri diretti per riferimento costante del costruttore fissato e le sezioni originali dei tag. I riferimenti allo storage dei segnaposto SDK, incluso l’indirizzo, richiedono l’esatto argomento bind già provato. Correzione basata sulla traccia reale; chiamate complete e regressione corrente restano da verificare.
+
+
+Il controllo di __mu prova separatamente la dichiarazione reale dell’indice e il ritorno. Il getter interno richiede una prova completa; forward mantiene il vero record di funzione riuscito e il corpo originale. Ricerche e letture dell’indice restano locali a quel corpo esatto. Il supporto completo attende l’esecuzione del codice corrente.

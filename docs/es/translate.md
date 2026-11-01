@@ -1056,3 +1056,6 @@ La traza real de diecinueve solicitudes acepta ocho valores en x86-64, pero rech
 
 
 La captura de solo marcadores comprueba los parámetros directos por referencia constante del constructor fijado y los segmentos originales de etiquetas. Las referencias al almacenamiento de marcadores del SDK, incluida su dirección, requieren el argumento bind exacto ya probado. La corrección sigue la traza real; las llamadas completas y la regresión actual siguen pendientes.
+
+
+El verificador de __mu prueba por separado la declaración real del índice y el retorno. El getter interno requiere una prueba completa; forward conserva el registro real de función exitoso y el cuerpo original. Las búsquedas y lecturas del índice quedan limitadas a ese cuerpo exacto. El soporte completo espera la ejecución del código actual.

@@ -1056,3 +1056,6 @@ La trace réelle de dix-neuf requêtes accepte huit valeurs sur x86-64, mais rej
 
 
 La capture de seuls espaces réservés vérifie les paramètres directs par référence constante du constructeur figé et les tranches originales des étiquettes. Toute référence au stockage des espaces réservés du SDK, y compris son adresse, exige le rôle exact d’argument bind prouvé. Correction issue de la trace réelle ; appels complets et régression du code actuel restent à vérifier.
+
+
+Le vérificateur de __mu prouve séparément la déclaration réelle d’indice et le retour. Le getter imbriqué exige une preuve complète ; forward conserve son véritable enregistrement de fonction réussi et son corps original. Recherches et lectures d’indice restent locales à ce corps exact. Le support complet attend l’exécution du code actuel.

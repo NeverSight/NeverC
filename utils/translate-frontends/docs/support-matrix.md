@@ -476,3 +476,6 @@ The real nineteen-request trace accepted eight bound values on x86-64 but still 
 
 
 Pure placeholder capture now checks the pinned tuple constructor’s direct const-reference parameter edges and original tuple-tag slices. Ordinary references to SDK placeholder storage, including taking its address, require the exact completed bind argument role. These repairs follow the real factory trace; complete placeholder invocation and current-source regression results remain pending.
+
+
+The placeholder __mu source checker now handles its real index declaration and return as separate obligations. The nested getter must already have a complete source proof; builtin forward retains its real successful function packet and original body. Original lookup and index-read nodes stay local to that exact body. Current-source execution is still required before claiming complete placeholder support.
