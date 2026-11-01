@@ -123,6 +123,7 @@ set(x86_files
   svmcontextintrin.h
   kvmhypercallintrin.h
   hypervcontextintrin.h
+  snpcontextintrin.h
   ia32intrin.h
   immintrin.h
   invpcidintrin.h

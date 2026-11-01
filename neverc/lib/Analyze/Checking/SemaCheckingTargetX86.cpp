@@ -18,12 +18,13 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86APXAtomicNative.h"
+#include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
 #include "llvm/IR/X86RepStringState.h"
 #include "llvm/IR/X86SgxIntrinsics.h"
 #include "llvm/IR/X86SmxIntrinsics.h"
+#include "llvm/IR/X86SnpState.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include <bitset>
@@ -543,6 +544,46 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 }
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
+  std::optional<llvm::X86Snp::Operation> Snp;
+  switch (BuiltinID) {
+  case X86::BI__builtin_ia32_psmash_context:
+    Snp = llvm::X86Snp::Operation::Psmash;
+    break;
+  case X86::BI__builtin_ia32_pvalidate_context:
+    Snp = llvm::X86Snp::Operation::Pvalidate;
+    break;
+  case X86::BI__builtin_ia32_rmpadjust_context:
+    Snp = llvm::X86Snp::Operation::Rmpadjust;
+    break;
+  case X86::BI__builtin_ia32_rmpupdate_context:
+    Snp = llvm::X86Snp::Operation::Rmpupdate;
+    break;
+  case X86::BI__builtin_ia32_rmpquery_context:
+    Snp = llvm::X86Snp::Operation::Rmpquery;
+    break;
+  case X86::BI__builtin_ia32_rmpread_context:
+    Snp = llvm::X86Snp::Operation::Rmpread;
+    break;
+  case X86::BI__builtin_ia32_rmpopt_context:
+    Snp = llvm::X86Snp::Operation::Rmpopt;
+    break;
+  case X86::BI__builtin_ia32_rmpchkd_context:
+    Snp = llvm::X86Snp::Operation::Rmpchkd;
+    break;
+  default:
+    break;
+  }
+  if (Snp) {
+    llvm::APSInt Control;
+    if (SemaBuiltinConstantArg(TheCall, 2, Control))
+      return true;
+    if (llvm::X86Snp::validControl(*Snp, Control.getZExtValue()))
+      return false;
+    return bool(Diag(TheCall->getBeginLoc(),
+                     diag::err_x86_builtin_invalid_memory_address)
+                << TheCall->getArg(2)->getSourceRange()
+                << TheCall->getArg(2)->getSourceRange());
+  }
   if (BuiltinID == X86::BI__builtin_ia32_vmrun_context) {
     llvm::APSInt Width;
     if (SemaBuiltinConstantArg(TheCall, 1, Width))

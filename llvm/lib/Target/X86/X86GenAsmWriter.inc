@@ -1877,6 +1877,10 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
   /* 19307 */ "frstors\t\0"
   /* 19316 */ "erets\t\0"
   /* 19323 */ "eretu\t\0"
+  /* 19330 */ "rmpread\t\0"
+  /* 19339 */ "rmpopt\t\0"
+  /* 19347 */ "rmpchkd\t\0"
+  /* 19356 */ "vmgexit\t\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -20478,6 +20482,11 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// VMMCALL_KVM32
     0U,	// VMMCALL_KVM64
     0U,	// HYPERV_CALL64
+    19331U,	// RMPREAD
+    19340U,	// RMPOPT
+    19348U,	// RMPCHKD
+    19357U,	// VMGEXIT
+    0U,	// SNP_CONTEXT64
 };
 
   static const uint16_t OpInfo1[] = {
@@ -39076,6 +39085,11 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// VMMCALL_KVM32
     0U,	// VMMCALL_KVM64
     0U,	// HYPERV_CALL64
+    0U,	// RMPREAD
+    0U,	// RMPOPT
+    0U,	// RMPCHKD
+    0U,	// VMGEXIT
+    0U,	// SNP_CONTEXT64
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57674,6 +57688,11 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// VMMCALL_KVM32
     0U,	// VMMCALL_KVM64
     0U,	// HYPERV_CALL64
+    0U,	// RMPREAD
+    0U,	// RMPOPT
+    0U,	// RMPCHKD
+    0U,	// VMGEXIT
+    0U,	// SNP_CONTEXT64
 };
 
   // Emit the opcode for the instruction.

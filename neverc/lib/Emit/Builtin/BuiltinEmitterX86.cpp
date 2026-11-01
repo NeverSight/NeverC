@@ -3520,6 +3520,33 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   }
 #include "neverc/Foundation/Builtin/X86NativeTransfers.def"
 #undef X86_NATIVE_TRANSFER
+  case X86::BI__builtin_ia32_psmash_context:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_psmash_context,
+                                   Ops);
+  case X86::BI__builtin_ia32_pvalidate_context:
+    return Builder.CreateIntrinsic(VoidTy,
+                                   llvm::Intrinsic::x86_pvalidate_context, Ops);
+  case X86::BI__builtin_ia32_rmpadjust_context:
+    return Builder.CreateIntrinsic(VoidTy,
+                                   llvm::Intrinsic::x86_rmpadjust_context, Ops);
+  case X86::BI__builtin_ia32_rmpupdate_context:
+    return Builder.CreateIntrinsic(VoidTy,
+                                   llvm::Intrinsic::x86_rmpupdate_context, Ops);
+  case X86::BI__builtin_ia32_rmpquery_context:
+    return Builder.CreateIntrinsic(VoidTy,
+                                   llvm::Intrinsic::x86_rmpquery_context, Ops);
+  case X86::BI__builtin_ia32_rmpread_context:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_rmpread_context,
+                                   Ops);
+  case X86::BI__builtin_ia32_rmpopt_context:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_rmpopt_context,
+                                   Ops);
+  case X86::BI__builtin_ia32_rmpchkd_context:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_rmpchkd_context,
+                                   Ops);
+  case X86::BI__builtin_ia32_vmgexit_sev:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmgexit_sev,
+                                   Ops);
   case X86::BI__builtin_ia32_hyperv_call:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_hyperv_call,
                                    Ops);

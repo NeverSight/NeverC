@@ -2377,3 +2377,48 @@ Microsoft Hyper-V service implementations. Missing KVM fails explicitly.
 Use `--backend-llc /path/to/llc` and `--new-pm` for the full LLVM backend;
 `--llvm-only` skips the frontend. `--source FILE --manifest FILE` qualifies
 actual NeverD C after checking the source hash and explicit page binding.
+
+## Native SNP and SEV-ES completion
+
+`<snpcontextintrin.h>` supplies `struct __snp_context` (RAX/RCX/RDX/RFLAGS,
+32 bytes), `__snp_psmash`, `__snp_pvalidate`, `__snp_pvalidate_addr32`,
+`__snp_rmpadjust`, `__snp_rmpupdate`, `__snp_rmpquery`, `__snp_rmpread`,
+`__snp_rmpopt`, `__snp_rmpchkd`, and `__sev_vmgexit`.
+
+Eight raw `__builtin_ia32_<instruction>_context(gprs, flags, control)` builtins
+lower directly to `llvm.x86.<instruction>.context(ptr, ptr, i32 immarg)`.
+The register bank has three unaligned u64 slots, and the flags pointer names
+a separate unaligned u64. `llvm/IR/X86SnpState.h` owns inputs, outputs and flag
+masks. The API preserves nonoutputs, returns RMPQUERY's complete bank and
+RMPCHKD's partial-progress registers, and merges actual modified flags.
+RMPCHKD's undefined arithmetic bits are native values, not invented zeros.
+Only PVALIDATE accepts control bit 0 (address32); bits 15:8 optionally hold a
+native segment-prefix byte. Context addresses retain default full-width
+linear addressing. The memory objects, compiler frame and instruction-owned
+memory/RMP/mapping changes must be disjoint and accessible.
+
+The x64 native backend emits instructions directly with unknown memory
+effects. Register loads, the operation, output stores and LAHF/SETO flag
+capture form one compiler pseudo; no inline assembly is emitted. The native
+CPU owns SNP, paging, RMP, permission and restart behavior. Only normal
+completion publishes outputs; contexts are not fault or exception images.
+`__builtin_ia32_vmgexit_sev(parameter)` supplies the optional RAX parameter
+under an explicit returning SEV-ES/GHCB service contract. Private CPU state
+and compiler execution state must survive. Non-SEV-ES VMMCALL fallback and
+caller-state replacement need different contracts.
+
+`sync-x86-native-intrinsics.py`, `sync-x86-system-effects.py` and
+`sync-x86-snp-context.py` own the generated tables. Existing opcode IDs stay
+stable. The SNP generator appends RMPREAD/RMPOPT/RMPCHKD/VMGEXIT and the native
+completion pseudo, with independent uses/defs, encoding and drift tests.
+The installed header is listed in `neverc/lib/Headers/CMakeLists.txt`.
+
+Run `X86SNPContextTest.*` for C23 frontend, ELF/COFF/Mach-O and immediate/mode
+checks. `tests/neverc/X86/verify_snp_context.py --keep OUTPUT` compares native
+builtins against separate raw instruction/PUSHFQ references. Use
+`--backend-llc PATH` and optionally `--new-pm` for the full LLVM backend, or
+`--llvm-only` to bypass the frontend. `--source FILE --manifest FILE` checks
+actual NeverD exports against their source digest and explicit bindings.
+The Linux x64 signal service tests encoding, unaligned transport, complete
+register/flag outputs, live values and fault-before-publication. It does not
+qualify physical AMD RMP algorithms or actual SEV-ES services.

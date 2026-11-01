@@ -23,6 +23,7 @@ ENUMS = ROOT / "llvm/include/llvm/IR/IntrinsicEnums.inc"
 DECLARATIONS = {
     "vmrun_context": ("Done", "PTR", "I32"),
     "hyperv_call": ("Done", "PTR", "PTR", "PTR", "I32"),
+    "vmgexit_sev": ("Done", "I64"),
     "invept": ("I8", "I64", "PTR"),
     "invvpid": ("I8", "I64", "PTR"),
     "clts": ("Done",),
@@ -51,6 +52,9 @@ DECLARATIONS = {
     "lkgs_reg": ("Done", "I16"),
     "lkgs_mem": ("Done", "PTR"),
 }
+SNP_CONTEXTS = {name + "_context" for name in ('psmash', 'pvalidate', 'rmpadjust', 'rmpupdate', 'rmpquery', 'rmpread', 'rmpopt', 'rmpchkd')}
+for name in sorted(SNP_CONTEXTS):
+    DECLARATIONS[name] = ("Done", "PTR", "PTR", "I32")
 for operation in ("vmload", "vmsave"):
     DECLARATIONS[operation] = ("Done", "I64")
 KVM_HYPERCALLS = {name + suffix for name in ("vmcall", "vmmcall")
@@ -346,6 +350,7 @@ def synchronize(write):
     immediate_transfer, updated_impl = nonreturning_transfer_attribute(updated_impl, (1,))
     vmrun_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (1,), returning=True)
     hyperv_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (3,), returning=True)
+    snp_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (2,), returning=True)
     hypercall_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, returning=True)
     address_attributes = {}
     for indices in sorted({indices for _, indices in ADDRESS_SIGNATURES.values()}):
@@ -370,7 +375,9 @@ def synchronize(write):
             attribute = vmrun_attribute
         if suffix == "hyperv_call":
             attribute = hyperv_attribute
-        if suffix in KVM_HYPERCALLS:
+        if suffix in SNP_CONTEXTS:
+            attribute = snp_attribute
+        if suffix in KVM_HYPERCALLS or suffix == "vmgexit_sev":
             attribute = hypercall_attribute
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)

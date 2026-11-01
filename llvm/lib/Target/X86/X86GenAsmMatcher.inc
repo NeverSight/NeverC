@@ -8413,7 +8413,11 @@ static const char MnemonicTable[] =
     "\007fnsaves"
     "\007frstors"
     "\005erets"
-    "\005eretu";
+    "\005eretu"
+    "\007rmpread"
+    "\006rmpopt"
+    "\007rmpchkd"
+    "\007vmgexit";
 
 // Feature bitsets.
 enum : uint8_t {
@@ -11068,8 +11072,11 @@ static const MatchEntry MatchTable0[] = {
   { 7204 /* rex64 */, X86::REX64_PREFIX, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7210 /* rmpadjust */, X86::RMPADJUST, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7210 /* rmpadjust */, X86::RMPADJUST, Convert_NoOperands, AMFBS_In64BitMode, { MCK_RAX, MCK_RCX, MCK_RDX }, },
+  { 18982 /* rmpchkd */, X86::RMPCHKD, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
+  { 18975 /* rmpopt */, X86::RMPOPT, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7220 /* rmpquery */, X86::RMPQUERY, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7220 /* rmpquery */, X86::RMPQUERY, Convert_NoOperands, AMFBS_In64BitMode, { MCK_RAX, MCK_RDX }, },
+  { 18967 /* rmpread */, X86::RMPREAD, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7229 /* rmpupdate */, X86::RMPUPDATE, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7229 /* rmpupdate */, X86::RMPUPDATE, Convert_NoOperands, AMFBS_In64BitMode, { MCK_RAX, MCK_RCX }, },
   { 7243 /* rolb */, X86::ROL8r1, Convert__Reg1_0__Tie0_1_1, AMFBS_None, { MCK_GR8 }, },
@@ -17988,6 +17995,7 @@ static const MatchEntry MatchTable0[] = {
   { 13379 /* vmcall */, X86::VMCALL, Convert_NoOperands, AMFBS_None, {  }, },
   { 13386 /* vmclear */, X86::VMCLEARm, Convert__Mem645_0, AMFBS_None, { MCK_Mem64 }, },
   { 13394 /* vmfunc */, X86::VMFUNC, Convert_NoOperands, AMFBS_None, {  }, },
+  { 18990 /* vmgexit */, X86::VMGEXIT, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 13401 /* vminpd */, X86::VMINPDrr, Convert__Reg1_2__Reg1_1__Reg1_0, AMFBS_None, { MCK_FR16, MCK_FR16, MCK_FR16 }, },
   { 13401 /* vminpd */, X86::VMINPDYrr, Convert__Reg1_2__Reg1_1__Reg1_0, AMFBS_None, { MCK_VR256, MCK_VR256, MCK_VR256 }, },
   { 13401 /* vminpd */, X86::VMINPDZ128rr, Convert__Reg1_2__Reg1_1__Reg1_0, AMFBS_None, { MCK_FR16X, MCK_FR16X, MCK_FR16X }, },
@@ -28868,8 +28876,11 @@ static const MatchEntry MatchTable1[] = {
   { 7204 /* rex64 */, X86::REX64_PREFIX, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7210 /* rmpadjust */, X86::RMPADJUST, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7210 /* rmpadjust */, X86::RMPADJUST, Convert_NoOperands, AMFBS_In64BitMode, { MCK_RDX, MCK_RCX, MCK_RAX }, },
+  { 18982 /* rmpchkd */, X86::RMPCHKD, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
+  { 18975 /* rmpopt */, X86::RMPOPT, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7220 /* rmpquery */, X86::RMPQUERY, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7220 /* rmpquery */, X86::RMPQUERY, Convert_NoOperands, AMFBS_In64BitMode, { MCK_RDX, MCK_RAX }, },
+  { 18967 /* rmpread */, X86::RMPREAD, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7229 /* rmpupdate */, X86::RMPUPDATE, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 7229 /* rmpupdate */, X86::RMPUPDATE, Convert_NoOperands, AMFBS_In64BitMode, { MCK_RCX, MCK_RAX }, },
   { 7239 /* rol */, X86::ROL16r1, Convert__Reg1_0__Tie0_1_1, AMFBS_None, { MCK_GR16 }, },
@@ -35458,6 +35469,7 @@ static const MatchEntry MatchTable1[] = {
   { 13379 /* vmcall */, X86::VMCALL, Convert_NoOperands, AMFBS_None, {  }, },
   { 13386 /* vmclear */, X86::VMCLEARm, Convert__Mem645_0, AMFBS_None, { MCK_Mem64 }, },
   { 13394 /* vmfunc */, X86::VMFUNC, Convert_NoOperands, AMFBS_None, {  }, },
+  { 18990 /* vmgexit */, X86::VMGEXIT, Convert_NoOperands, AMFBS_In64BitMode, {  }, },
   { 13401 /* vminpd */, X86::VMINPDrr, Convert__Reg1_0__Reg1_1__Reg1_2, AMFBS_None, { MCK_FR16, MCK_FR16, MCK_FR16 }, },
   { 13401 /* vminpd */, X86::VMINPDrm, Convert__Reg1_0__Reg1_1__Mem1285_2, AMFBS_None, { MCK_FR16, MCK_FR16, MCK_Mem128 }, },
   { 13401 /* vminpd */, X86::VMINPDYrr, Convert__Reg1_0__Reg1_1__Reg1_2, AMFBS_None, { MCK_VR256, MCK_VR256, MCK_VR256 }, },

@@ -1274,8 +1274,10 @@ enum X86Intrinsics : unsigned {
     x86_pclmulqdq,                                   // llvm.x86.pclmulqdq
     x86_pclmulqdq_256,                               // llvm.x86.pclmulqdq.256
     x86_pclmulqdq_512,                               // llvm.x86.pclmulqdq.512
+    x86_psmash_context,                              // llvm.x86.psmash.context
     x86_ptwrite32,                                   // llvm.x86.ptwrite32
     x86_ptwrite64,                                   // llvm.x86.ptwrite64
+    x86_pvalidate_context,                           // llvm.x86.pvalidate.context
     x86_rdfsbase_32,                                 // llvm.x86.rdfsbase.32
     x86_rdfsbase_64,                                 // llvm.x86.rdfsbase.64
     x86_rdgsbase_32,                                 // llvm.x86.rdgsbase.32
@@ -1318,6 +1320,12 @@ enum X86Intrinsics : unsigned {
     x86_retf32_imm,                                  // llvm.x86.retf32.imm
     x86_retf64,                                      // llvm.x86.retf64
     x86_retf64_imm,                                  // llvm.x86.retf64.imm
+    x86_rmpadjust_context,                           // llvm.x86.rmpadjust.context
+    x86_rmpchkd_context,                             // llvm.x86.rmpchkd.context
+    x86_rmpopt_context,                              // llvm.x86.rmpopt.context
+    x86_rmpquery_context,                            // llvm.x86.rmpquery.context
+    x86_rmpread_context,                             // llvm.x86.rmpread.context
+    x86_rmpupdate_context,                           // llvm.x86.rmpupdate.context
     x86_rsm,                                         // llvm.x86.rsm
     x86_rstorssp,                                    // llvm.x86.rstorssp
     x86_saveprevssp,                                 // llvm.x86.saveprevssp
@@ -1643,6 +1651,7 @@ enum X86Intrinsics : unsigned {
     x86_vmclear,                                     // llvm.x86.vmclear
     x86_vmclear_address,                             // llvm.x86.vmclear.address
     x86_vmfunc_eptp_switch,                          // llvm.x86.vmfunc.eptp.switch
+    x86_vmgexit_sev,                                 // llvm.x86.vmgexit.sev
     x86_vmlaunch,                                    // llvm.x86.vmlaunch
     x86_vmload,                                      // llvm.x86.vmload
     x86_vmload_addr32,                               // llvm.x86.vmload.addr32

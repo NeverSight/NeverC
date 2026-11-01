@@ -16,6 +16,11 @@ TABLE = ROOT / "llvm/lib/Target/X86/X86GenInstrInfo.inc"
 # Explicit operand count, implicit uses/definitions, memory effects.
 EFFECTS = {
     "CLTS": (0, (), (), ()),
+    "PSMASH": (0, ('RAX',), ('EAX', 'EFLAGS'), ("MayLoad", "MayStore")),
+    "PVALIDATE64": (0, ('RAX', 'ECX', 'EDX'), ('EAX', 'EFLAGS'), ("MayLoad", "MayStore")),
+    "RMPADJUST": (0, ('RAX', 'RCX', 'RDX'), ('EAX', 'EFLAGS'), ("MayLoad", "MayStore")),
+    "RMPUPDATE": (0, ('RAX', 'RCX'), ('EAX', 'EFLAGS'), ("MayLoad", "MayStore")),
+    "RMPQUERY": (0, ('RAX', 'RDX'), ('RAX', 'RCX', 'RDX', 'EFLAGS'), ("MayLoad", "MayStore")),
     "FNOP": (0, ("FPCW", "FPSW"), ("FPSW",),
              ("MayLoad", "MayStore", "MayRaiseFPException")),
     "FNSTCW16m": (5, ("FPCW",), ("FPSW",), ("MayStore",)),
