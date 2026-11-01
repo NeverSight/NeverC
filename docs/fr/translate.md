@@ -1029,3 +1029,6 @@ Les tuples réservés appartenant à bind disposent d’un chemin dédié de dis
 
 
 La preuve de type bind consomme le TSI de la déclaration SDK extern réelle, le paramètre int primaire et le rang littéral écrit. Elle ne fabrique ni déduction, ni arguments, ni initialiseur, ni permission de valeur. Son cache de deux preuves appartient au seul bind exact. L’exécution reste inachevée.
+
+
+Le sélecteur de retour bind prouve séparément sa comparaison positive écrite et substituée. Il vérifie le TSI de retour, le propriétaire du typedef sélectionné et les paramètres et propriétaires de substitution, indépendamment de la contrainte NTTP distincte. Une valeur true canonique ne remplace pas la preuve source. Le corps et sa validation restent inachevés.

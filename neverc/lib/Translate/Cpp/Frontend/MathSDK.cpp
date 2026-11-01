@@ -19695,6 +19695,174 @@ class BindSourceProof {
       return true;
   }
 
+  bool unwrapPlaceholderPositiveSource(const TemplateUseSource &Source,
+      const TemplateTypeParmDecl *Input, const Expr *WrittenSource, const Expr *ActualSource,
+      unsigned PlaceholderRank, const std::function<bool()> &Children) {
+    const auto *Primary = dyn_cast_or_null<FunctionTemplateDecl>(Source.Template);
+    if (!ActiveUnwrapSource || ActiveScalarParameter != &Source || !Primary || !Input ||
+        !PlaceholderRank || PlaceholderRank > ActiveUnwrapSource->CallForwards.size() || !Children)
+      return false;
+    auto Core = [](const Expr *Expression) -> const Expr * {
+      if (!Expression) return nullptr;
+      Expression = Expression->IgnoreParenImpCasts();
+      if (const auto *Constant = dyn_cast<ConstantExpr>(Expression))
+        Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
+      return Expression;
+    };
+    const auto *Written = Core(WrittenSource);
+    const auto *Comparison = dyn_cast_or_null<CXXOperatorCallExpr>(Written);
+    const auto *Binary = dyn_cast_or_null<BinaryOperator>(Written);
+    const Expr *Left = nullptr, *Right = nullptr;
+    SourceLocation OperatorLocation;
+    if (Comparison) {
+      const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Comparison->getCallee()->IgnoreParenImpCasts());
+      if (Comparison->getDirectCallee() || !Comparison->isTypeDependent() ||
+          Comparison->getOperator() != OO_Less || Comparison->getNumArgs() != 2 ||
+          !Lookup || !Lookup->requiresADL() || Lookup->hasExplicitTemplateArgs() ||
+          !Lookup->getNumDecls() || Lookup->getNumDecls() > 64 ||
+          Lookup->getName().getNameKind() != DeclarationName::CXXOperatorName ||
+          Lookup->getName().getCXXOverloadedOperator() != OO_Less) return false;
+      for (const auto *Candidate : Lookup->decls()) if (!family(Candidate)) return false;
+      Left = Comparison->getArg(0); Right = Comparison->getArg(1);
+      OperatorLocation = Comparison->getOperatorLoc();
+    } else {
+      if (!Binary || Binary->getOpcode() != BO_LT || !Binary->isValueDependent() ||
+          !Context.hasSameType(Binary->getType(), Context.BoolTy)) return false;
+      Left = Binary->getLHS(); Right = Binary->getRHS(); OperatorLocation = Binary->getOperatorLoc();
+    }
+    const auto *Converted = dyn_cast_or_null<BinaryOperator>(Core(ActualSource));
+    const auto *Zero = dyn_cast_or_null<IntegerLiteral>(Core(Left));
+    const auto *Read = Converted ? dyn_cast<ImplicitCastExpr>(Converted->getRHS()) : nullptr;
+    if (!Converted || Converted->getOpcode() != BO_LT || Converted->isTypeDependent() ||
+        Converted->isValueDependent() || !Converted->isPRValue() ||
+        !Context.hasSameType(Converted->getType(), Context.BoolTy) ||
+        !Zero || !Zero->getValue().isZero() || !Context.hasSameType(Zero->getType(), Context.IntTy) ||
+        Core(Converted->getLHS()) != Zero || !Read || Read->getCastKind() != CK_LValueToRValue ||
+        !Context.hasSameType(Read->getType(), Context.IntTy) ||
+        Converted->getOperatorLoc() != OperatorLocation ||
+        Written->getBeginLoc() != Converted->getBeginLoc() || Written->getEndLoc() != Converted->getEndLoc() ||
+        !Check.location(Written->getExprLoc(), {"__functional/bind.h"}) ||
+        !unwrapConstraintTraitSource(Source, Primary, Input, Right, Read, "is_placeholder", true)) return false;
+    // Each positive comparison owns its original and substituted children.
+    // The return selector cannot borrow the distinct NTTP constraint's proof.
+    if (!Graph.withBindScalarConstraintSource([&] {
+          if (!Graph.TraverseStmt(const_cast<Expr *>(ActualSource))) return false;
+          if (Comparison) UnwrapScalarConstraintSources.insert(Comparison);
+          return Graph.TraverseStmt(const_cast<Expr *>(WrittenSource)) && Children();
+        })) return false;
+    Expr::EvalResult Positive, Rank;
+    return Converted->EvaluateAsInt(Positive, Context, Expr::SE_NoSideEffects) &&
+        Positive.Val.isInt() && Positive.Val.getInt().getBoolValue() &&
+        Read->EvaluateAsInt(Rank, Context, Expr::SE_NoSideEffects) && Rank.Val.isInt() &&
+        !Rank.Val.getInt().isNegative() && Rank.Val.getInt().getLimitedValue(3) == PlaceholderRank;
+  }
+
+  bool unwrapPlaceholderReturnConstraintSource(const TemplateUseSource &Source,
+      const TemplateTypeParmDecl *Input, const TemplateTypeParmDecl *Incoming,
+      const FunctionalBindArgumentSource &Argument) {
+    const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    if (!Function || !Pattern || Source.Declaration != Function || Source.Template != Primary ||
+        ActiveScalarParameter != &Source || !Source.Canonical || !Source.Sugared ||
+        Source.Canonical->size() != 3 || Source.Sugared->size() != 3 || !Input || !Incoming)
+      return false;
+    auto Return = [](const FunctionDecl *Declaration) -> TypeLoc {
+      const auto *Type = Declaration ? Declaration->getTypeSourceInfo() : nullptr;
+      const auto Prototype = Type ? Type->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
+      return Prototype ? Prototype.getReturnLoc() : TypeLoc();
+    };
+    auto Selector = [](TypeLoc Return, bool Dependent,
+                       const TypedefNameDecl **Alias) -> TemplateSpecializationTypeLoc {
+      if (Return.isNull()) return {};
+      NestedNameSpecifierLoc Qualifier;
+      if (const auto Elaborated = Return.getAs<ElaboratedTypeLoc>()) {
+        Qualifier = Elaborated.getQualifierLoc();
+        Return = Elaborated.getNamedTypeLoc();
+      }
+      if (Dependent) {
+        const auto Name = Return.getAs<DependentNameTypeLoc>();
+        if (!Name || !Name.getTypePtr()->getIdentifier() ||
+            Name.getTypePtr()->getIdentifier()->getName() != "type") return {};
+        const auto WrittenQualifier = Name.getQualifierLoc();
+        if (Qualifier && WrittenQualifier &&
+            Qualifier.getNestedNameSpecifier() != WrittenQualifier.getNestedNameSpecifier()) return {};
+        if (!Qualifier) Qualifier = WrittenQualifier;
+      } else {
+        const auto Name = Return.getAs<TypedefTypeLoc>();
+        if (!Name || !Alias) return {};
+        *Alias = Name.getTypedefNameDecl();
+      }
+      if (!Qualifier || !Qualifier.getNestedNameSpecifier()->getAsType() ||
+          Qualifier.getTypeLoc().isNull()) return {};
+      auto Type = Qualifier.getTypeLoc().getUnqualifiedLoc();
+      if (const auto Elaborated = Type.getAs<ElaboratedTypeLoc>()) Type = Elaborated.getNamedTypeLoc();
+      return Type.getAs<TemplateSpecializationTypeLoc>();
+    };
+    const TypedefNameDecl *Alias = nullptr;
+    const auto Original = Selector(Return(Pattern), true, nullptr);
+    const auto Actual = Selector(Return(Function), false, &Alias);
+    const auto *Template = Original
+        ? dyn_cast_or_null<ClassTemplateDecl>(Original.getTypePtr()->getTemplateName().getAsTemplateDecl())
+        : nullptr;
+    const auto *Owner = Alias ? dyn_cast<ClassTemplateSpecializationDecl>(Alias->getDeclContext()) : nullptr;
+    const auto *Parameters = Template ? Template->getTemplateParameters() : nullptr;
+    if (!Original || !Actual || !Template || !Template->getIdentifier() ||
+        Template->getName() != "__mu_return2" || !Check.family(Template, {"__functional/bind.h"}) ||
+        Original.getNumArgs() != 3 || Actual.getNumArgs() != 3 ||
+        Actual.getTypePtr()->getTemplateName().getAsTemplateDecl() != Template ||
+        !Original.getTypePtr()->isDependentType() || Actual.getTypePtr()->isDependentType() ||
+        !Alias || !Alias->getIdentifier() || Alias->getName() != "type" ||
+        !Alias->getTypeSourceInfo() || !family(Alias) || !Owner ||
+        Owner->getSpecializedTemplate() != Template ||
+        Owner->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Actual.getTypePtr()->getAsCXXRecordDecl() != Owner ||
+        !Parameters || Parameters->size() != 3 || Owner->getTemplateArgs().size() != 3) return false;
+    const auto *Positive = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
+    if (!Positive || Positive->getIndex() || Positive->isParameterPack() || Positive->hasDefaultArgument() ||
+        !Context.hasSameType(Positive->getType(), Context.BoolTy) || !family(Positive)) return false;
+    const auto &Selected = Owner->getTemplateArgs();
+    if (Selected[0].getKind() != TemplateArgument::Integral ||
+        !Context.hasSameType(Selected[0].getIntegralType(), Context.BoolTy) ||
+        !Selected[0].getAsIntegral().getBoolValue()) return false;
+    for (unsigned I = 1; I < 3; ++I) {
+      const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
+      const auto OriginalArgument = Original.getArgLoc(I);
+      const auto ActualArgument = Actual.getArgLoc(I);
+      if (!Parameter || Parameter->getIndex() != I || Parameter->isParameterPack() ||
+          Parameter->hasDefaultArgument() || !family(Parameter) ||
+          OriginalArgument.getArgument().getKind() != TemplateArgument::Type ||
+          ActualArgument.getArgument().getKind() != TemplateArgument::Type ||
+          !OriginalArgument.getTypeSourceInfo() || !ActualArgument.getTypeSourceInfo() ||
+          Selected[I].getKind() != TemplateArgument::Type ||
+          Source.Canonical->get(I - 1).getKind() != TemplateArgument::Type ||
+          Source.Sugared->get(I - 1).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Selected[I].getAsType(), Source.Canonical->get(I - 1).getAsType())) return false;
+      const auto *Written = dyn_cast<TemplateTypeParmType>(OriginalArgument.getArgument().getAsType().getTypePtr());
+      const auto *Substituted = dyn_cast<SubstTemplateTypeParmType>(
+          ActualArgument.getArgument().getAsType().getTypePtr());
+      const auto *Expected = I == 1 ? Input : Incoming;
+      if (!Written || Written->getDecl() != Expected || !Substituted ||
+          Substituted->getAssociatedDecl() != Primary || Substituted->getReplacedParameter() != Expected ||
+          Substituted->getPackIndex() ||
+          Substituted->getReplacementType() != Source.Sugared->get(I - 1).getAsType()) return false;
+    }
+    auto Expression = [](const TemplateArgumentLoc &Location) -> const Expr * {
+      const auto &Argument = Location.getArgument();
+      return Argument.getKind() == TemplateArgument::Expression ? Argument.getAsExpr()
+          : Argument.getKind() == TemplateArgument::Integral ? Location.getSourceIntegralExpression() : nullptr;
+    };
+    const auto *Written = Expression(Original.getArgLoc(0));
+    const auto *Converted = Expression(Actual.getArgLoc(0));
+    return Written && Converted &&
+        unwrapPlaceholderPositiveSource(Source, Input, Written, Converted, Argument.PlaceholderRank, [&] {
+          for (unsigned I = 1; I < 3; ++I)
+            if (!Graph.TraverseTemplateArgumentLoc(Original.getArgLoc(I)) ||
+                !Graph.TraverseTemplateArgumentLoc(Actual.getArgLoc(I))) return false;
+          return true;
+        });
+  }
+
   bool unwrapPlaceholderParameterSource(const TemplateUseSource &Source,
       const NonTypeTemplateParmDecl *Parameter, TypeSourceInfo *ActualType,
       const FunctionalBindArgumentSource &Argument) {
@@ -19742,13 +19910,6 @@ class BindSourceProof {
       if (const auto *Name = dyn_cast<ElaboratedType>(Type.getTypePtr())) Type = Name->getNamedType();
       return dyn_cast<TemplateSpecializationType>(Type.getTypePtr());
     };
-    auto Core = [](const Expr *Expression) -> const Expr * {
-      if (!Expression) return nullptr;
-      Expression = Expression->IgnoreParenImpCasts();
-      if (const auto *Constant = dyn_cast<ConstantExpr>(Expression))
-        Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
-      return Expression;
-    };
     const auto *Original = Enable(Parameter->getTypeSourceInfo()->getType());
     const auto *Actual = Enable(ActualType->getType());
     const auto *Alias = Original
@@ -19763,54 +19924,12 @@ class BindSourceProof {
           Arguments[1].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return false;
     }
-    const auto *Written = Core(Original->template_arguments()[0].getAsExpr());
-    const auto *Comparison = dyn_cast_or_null<CXXOperatorCallExpr>(Written);
-    const auto *Binary = dyn_cast_or_null<BinaryOperator>(Written);
-    const Expr *Left = nullptr, *Right = nullptr;
-    SourceLocation OperatorLocation;
-    if (Comparison) {
-      const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Comparison->getCallee()->IgnoreParenImpCasts());
-      if (Comparison->getDirectCallee() || !Comparison->isTypeDependent() ||
-          Comparison->getOperator() != OO_Less || Comparison->getNumArgs() != 2 ||
-          !Lookup || !Lookup->requiresADL() || Lookup->hasExplicitTemplateArgs() ||
-          !Lookup->getNumDecls() || Lookup->getNumDecls() > 64 ||
-          Lookup->getName().getNameKind() != DeclarationName::CXXOperatorName ||
-          Lookup->getName().getCXXOverloadedOperator() != OO_Less) return false;
-      for (const auto *Candidate : Lookup->decls()) if (!family(Candidate)) return false;
-      Left = Comparison->getArg(0); Right = Comparison->getArg(1);
-      OperatorLocation = Comparison->getOperatorLoc();
-    } else {
-      if (!Binary || Binary->getOpcode() != BO_LT || !Binary->isValueDependent() ||
-          !Context.hasSameType(Binary->getType(), Context.BoolTy)) return false;
-      Left = Binary->getLHS(); Right = Binary->getRHS(); OperatorLocation = Binary->getOperatorLoc();
-    }
-    const auto *Converted = dyn_cast_or_null<BinaryOperator>(Core(Actual->template_arguments()[0].getAsExpr()));
-    const auto *Zero = dyn_cast_or_null<IntegerLiteral>(Core(Left));
-    const auto *Read = Converted ? dyn_cast<ImplicitCastExpr>(Converted->getRHS()) : nullptr;
-    if (!Converted || Converted->getOpcode() != BO_LT || Converted->isTypeDependent() ||
-        Converted->isValueDependent() || !Converted->isPRValue() ||
-        !Context.hasSameType(Converted->getType(), Context.BoolTy) ||
-        !Zero || !Zero->getValue().isZero() || !Context.hasSameType(Zero->getType(), Context.IntTy) ||
-        Core(Converted->getLHS()) != Zero || !Read || Read->getCastKind() != CK_LValueToRValue ||
-        !Context.hasSameType(Read->getType(), Context.IntTy) ||
-        Converted->getOperatorLoc() != OperatorLocation ||
-        Written->getBeginLoc() != Converted->getBeginLoc() || Written->getEndLoc() != Converted->getEndLoc() ||
-        !Check.location(Written->getExprLoc(), {"__functional/bind.h"}) ||
-        !unwrapConstraintTraitSource(Source, Primary, Input, Right, Read, "is_placeholder", true)) return false;
-    // Close both real source graphs before checking their converted values.
-    // Only this exact original dependent operator receives the witness.
-    if (!Graph.withBindScalarConstraintSource([&] {
-          if (!Graph.TraverseStmt(const_cast<BinaryOperator *>(Converted))) return false;
-          if (Comparison) UnwrapScalarConstraintSources.insert(Comparison);
+    return unwrapPlaceholderPositiveSource(Source, Input,
+        Original->template_arguments()[0].getAsExpr(), Actual->template_arguments()[0].getAsExpr(),
+        Argument.PlaceholderRank, [&] {
           return Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) &&
               Graph.TraverseTypeLoc(ActualType->getTypeLoc());
-        })) return false;
-    Expr::EvalResult Positive, Rank;
-    return Converted->EvaluateAsInt(Positive, Context, Expr::SE_NoSideEffects) &&
-        Positive.Val.isInt() && Positive.Val.getInt().getBoolValue() &&
-        Read->EvaluateAsInt(Rank, Context, Expr::SE_NoSideEffects) && Rank.Val.isInt() &&
-        !Rank.Val.getInt().isNegative() &&
-        Rank.Val.getInt().getLimitedValue(3) == Argument.PlaceholderRank;
+        }) && unwrapPlaceholderReturnConstraintSource(Source, Input, Incoming, Argument);
   }
 
   bool unwrapScalarParameterSource(const TemplateUseSource &Source,

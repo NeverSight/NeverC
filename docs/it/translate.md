@@ -1029,3 +1029,6 @@ I tuple segnaposto di bind hanno percorsi dedicati per layout, dipendenze e iniz
 
 
 La prova di tipo bind usa il TSI della dichiarazione SDK extern reale, il parametro int primario e il rango letterale scritto. Non crea deduzioni, argomenti, inizializzatori o permessi sui valori. La cache di due prove appartiene solo al bind esatto. L’esecuzione resta incompleta.
+
+
+Il selettore di ritorno bind dimostra separatamente il confronto positivo scritto e sostituito. Verifica TSI di ritorno, proprietario del typedef selezionato, parametri e proprietari della sostituzione indipendentemente dal distinto vincolo NTTP. Un true canonico non sostituisce la prova del sorgente. Corpo e verifica di esecuzione restano incompleti.

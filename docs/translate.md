@@ -1464,3 +1464,6 @@ Bind-owned placeholder tuples now have a dedicated layout, dependency and zero-i
 
 
 Bind placeholder type proofs now consume the actual SDK extern declaration TSI, primary int parameter and written rank literal. This fully explicit leaf creates no deduction event, argument list, initializer or variable-value permission. Its two-entry type proof cache belongs only to the exact bind root. Complete placeholder execution remains unfinished.
+
+
+The bind placeholder return selector now proves its own actual written and substituted positive comparison. Its function return TSI, selected typedef owner, primary parameters and substitution owners are checked independently of the separate NTTP constraint. No canonical true value supplies source permission. Placeholder body and runtime validation remain unfinished.

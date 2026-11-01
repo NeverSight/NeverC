@@ -1029,3 +1029,6 @@ Bind-eigene Platzhalter-tuples erhalten eigene Layout-, Abhängigkeits- und Null
 
 
 Der bind-Typnachweis prüft die tatsächliche SDK-extern-TSI, den primären int-Parameter und das geschriebene Rangliteral. Er erzeugt keine Deduktionsdaten, Argumentlisten, Initialisierer oder Variablenwertrechte. Der Cache aus zwei Typnachweisen gehört nur zur exakten bind-Wurzel; die Ausführung ist unvollständig.
+
+
+Der bind-Rückgabetypselektor weist seinen geschriebenen und substituierten positiven Vergleich eigenständig nach. Rückgabe-TSI, Eigentümer des ausgewählten typedef sowie primäre Parameter und Substitutionseigentümer werden unabhängig von der separaten NTTP-Bedingung geprüft. Ein kanonischer true-Wert ersetzt keinen Quellnachweis. Rumpf und Laufzeitprüfung sind unvollständig.

@@ -1029,3 +1029,6 @@ Los tuples marcadores de bind tienen rutas propias de diseño, dependencias e in
 
 
 La prueba de tipo bind consume el TSI de la declaración SDK extern real, el parámetro int primario y el rango literal escrito. No fabrica deducción, argumentos, inicializadores ni permisos de valores. La caché de dos pruebas pertenece solo al bind exacto. La ejecución sigue pendiente.
+
+
+El selector de retorno bind prueba por separado su comparación positiva escrita y sustituida. Comprueba el TSI de retorno, el propietario del typedef seleccionado y los parámetros y propietarios de sustitución, independientemente de la restricción NTTP distinta. Un true canónico no reemplaza la prueba del código fuente. El cuerpo y su validación siguen pendientes.
