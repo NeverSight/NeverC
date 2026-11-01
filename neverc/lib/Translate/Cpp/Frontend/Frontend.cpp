@@ -24752,6 +24752,18 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()))
       return true;
+    if (const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl())) {
+      const auto *Space = dyn_cast<NamespaceDecl>(Variable->getDeclContext());
+      const auto File = A.S.sdkFile(A.Sources, Variable->getLocation());
+      if (Space && Space->getIdentifier() && Space->getName() == "placeholders" &&
+          File && File->Root == "libcxx" && File->Path == "__functional/bind.h" &&
+          approvedStandardSDKDeclaration(A.S, A.Sources, Variable)) {
+        if (!bindPlaceholderFactoryOperand(Reference))
+          A.reject(Reference->getLocation(), "standard placeholder storage",
+              "A pinned placeholder requires its exact checked bind argument occurrence.");
+        return true;
+      }
+    }
     if (const auto *Binding = dyn_cast<BindingDecl>(Reference->getDecl());
         Binding && !A.decompositionBinding(Binding)) {
       A.reject(Reference->getLocation(), "structured binding reference",

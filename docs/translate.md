@@ -1485,3 +1485,12 @@ Placeholder getter source checks now bind the exact written get<__indx> referenc
 
 
 The other selected placeholder index occurrence, inside forward<tuple_element<__indx, Uj>::type>, now requires that exact written alias, its tuple_element owner, selected rank and incoming tuple substitution. It shares the getter read’s fresh original/selected initializer proof. This adds only a scoped metadata read; the full original body and forward operand source, runtime acceptance and Actions validation are still pending.
+
+
+The real nineteen-request trace accepted eight bound values on x86-64 but still rejected the return-kind combination: a reused scalar __mu retained a tuple_element alias from another bind. The repair independently closes every exact retained function projection against its own tuple, keeps those sources through selected/original signature traversal, and restores both caches afterward. The 64/depth/node/time limits and SDK operation rules stay unchanged. A new complete 600-request result is still required.
+
+
+Pure placeholder capture now checks the pinned tuple constructor’s direct const-reference parameter edges and original tuple-tag slices. Ordinary references to SDK placeholder storage, including taking its address, require the exact completed bind argument role. These repairs follow the real factory trace; complete placeholder invocation and current-source regression results remain pending.
+
+
+The placeholder __mu source checker now handles its real index declaration and return as separate obligations. The nested getter must already have a complete source proof; builtin forward retains its real successful function packet and original body. Original lookup and index-read nodes stay local to that exact body. Current-source execution is still required before claiming complete placeholder support.
