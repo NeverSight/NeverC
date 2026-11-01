@@ -19,6 +19,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/IR/X86APXAtomicNative.h"
+#include "llvm/IR/X86HleState.h"
 #include "llvm/IR/X86MpxState.h"
 #include "llvm/IR/X86NativeMemoryAddress.h"
 #include "llvm/IR/X86RepStringState.h"
@@ -544,6 +545,19 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 }
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
+  if (BuiltinID == X86::BI__builtin_ia32_hle_context) {
+    llvm::APSInt Control, Bytes;
+    if (SemaBuiltinConstantArg(TheCall, 3, Control) ||
+        SemaBuiltinConstantArg(TheCall, 4, Bytes))
+      return true;
+    if (llvm::X86Hle::validControl(Control.getZExtValue(),
+                                   Bytes.getZExtValue()))
+      return false;
+    return bool(Diag(TheCall->getBeginLoc(),
+                     diag::err_x86_builtin_invalid_memory_address)
+                << TheCall->getArg(3)->getSourceRange()
+                << TheCall->getArg(4)->getSourceRange());
+  }
   std::optional<llvm::X86Snp::Operation> Snp;
   switch (BuiltinID) {
   case X86::BI__builtin_ia32_psmash_context:

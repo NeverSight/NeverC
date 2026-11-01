@@ -2422,3 +2422,42 @@ actual NeverD exports against their source digest and explicit bindings.
 The Linux x64 signal service tests encoding, unaligned transport, complete
 register/flag outputs, live values and fault-before-publication. It does not
 qualify physical AMD RMP algorithms or actual SEV-ES services.
+
+## Native HLE operation contexts
+
+`<hlecontextintrin.h>` exposes `__builtin_ia32_hle_context(memory, gprs, flags,
+control, bytes)` and the typed `__hle_native` / `__hle_step` forms. Both controls
+must be constants. `llvm/IR/X86HleState.h` owns the 19 operation identities,
+legal widths, register inputs/outputs and flag masks; its implementation is
+shared with the LLVM fork. The pointers address native flat memory and disjoint
+unaligned RAX/RCX/RDX/RBX and RFLAGS objects. Long-mode LAHF/SAHF and the selected
+underlying instruction must be available. Native faults do not publish a new
+context.
+
+The native form leaves ownership of the entire HLE region to the C caller.
+The standalone step requires entry outside RTM and external HLE. It executes a
+native PAUSE after the prefixed memory instruction and before publication. As
+specified by Intel SDM Volume 1 §17.3.9.1, PAUSE aborts an active transaction;
+HLE retries its acquire without elision. The step thus returns a real native
+nontransactional completion, including on CPUs that natively ignore legal HLE
+hints. It does not replace the instruction with an ordinary C atomic or invent
+an abort result.
+
+`sync-x86-hle-context.py` appends the pseudo without renumbering prior opcodes.
+`x86_context_tables.py` owns the common context descriptor construction used by
+both SNP and HLE. The native-intrinsic generator supplies the two immediate
+arguments and conservative effects. `X86HLEContextTest.*` checks the frontend,
+object formats and control diagnostics. `verify_hle_context.py` compares 136
+legal width/hint combinations against separate raw assembly, including unaligned
+contexts, signed bit indexes, native register/defined-flag and memory outputs,
+live integer/FP values and fault-before-publication. Undefined flags remain
+architectural choices; native fallback qualification does not establish physical
+HLE commits or generic RTM rollback support.
+
+The Microsoft HLE compatibility surface also uses this native interface:
+exchange, exchange-add, compare-exchange (including pointer forms), and the
+three release stores. All 17 `_Interlocked*HLE*`/`_Store*HLERelease` wrappers
+are installed through `<hleinterlockedintrin.h>` and the normal Microsoft
+intrinsic includes. They retain the caller-owned region contract without
+inserting a PAUSE, and emit no inline assembly. Windows long remains 32 bits;
+64-bit and pointer forms remain 64 bits.

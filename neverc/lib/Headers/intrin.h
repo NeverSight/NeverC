@@ -107,6 +107,7 @@ void __cdecl _enable(void);
 long _InterlockedAddLargeStatistic(__int64 volatile *_Addend, long _Value);
 unsigned char _interlockedbittestandreset(long volatile *, long);
 unsigned char _interlockedbittestandset(long volatile *, long);
+#if !defined(__x86_64__)
 void *_InterlockedCompareExchangePointer_HLEAcquire(void *volatile *, void *,
                                                     void *);
 void *_InterlockedCompareExchangePointer_HLERelease(void *volatile *, void *,
@@ -115,14 +116,17 @@ long _InterlockedExchangeAdd_HLEAcquire(long volatile *, long);
 long _InterlockedExchangeAdd_HLERelease(long volatile *, long);
 __int64 _InterlockedExchangeAdd64_HLEAcquire(__int64 volatile *, __int64);
 __int64 _InterlockedExchangeAdd64_HLERelease(__int64 volatile *, __int64);
+#endif
 void _ReadBarrier(void);
 void _ReadWriteBarrier(void);
 #if __STDC_HOSTED__
 int __cdecl _setjmp(jmp_buf);
 #endif
+#if !defined(__x86_64__)
 void _Store_HLERelease(long volatile *, long);
 void _Store64_HLERelease(__int64 volatile *, __int64);
 void _StorePointer_HLERelease(void *volatile *, void *);
+#endif
 void _WriteBarrier(void);
 unsigned int _xbegin(void);
 void _xend(void);

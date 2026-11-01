@@ -124,6 +124,8 @@ set(x86_files
   kvmhypercallintrin.h
   hypervcontextintrin.h
   snpcontextintrin.h
+  hlecontextintrin.h
+  hleinterlockedintrin.h
   ia32intrin.h
   immintrin.h
   invpcidintrin.h

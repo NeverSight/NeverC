@@ -80,6 +80,7 @@ class LLVM_LIBRARY_VISIBILITY X86AsmPrinter : public AsmPrinter {
   bool emitSVMContext(const MachineInstr *MI);
   bool emitHyperVContext(const MachineInstr *MI);
   bool emitSNPContext(const MachineInstr *MI);
+  bool emitHLEContext(const MachineInstr *MI);
   void LowerSTACKMAP(const MachineInstr &MI);
   void LowerPATCHPOINT(const MachineInstr &MI, X86MCInstLower &MCIL);
   void LowerSTATEPOINT(const MachineInstr &MI, X86MCInstLower &MCIL);

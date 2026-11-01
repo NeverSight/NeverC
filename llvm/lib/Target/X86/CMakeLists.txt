@@ -16,6 +16,7 @@ set(sources
   X86SVMContextEmitter.cpp
   X86HyperVContextEmitter.cpp
   X86SNPContextEmitter.cpp
+  X86HLEContextEmitter.cpp
   X86LowerAMXIntrinsics.cpp
   X86TileConfig.cpp
   X86FastPreTileConfig.cpp

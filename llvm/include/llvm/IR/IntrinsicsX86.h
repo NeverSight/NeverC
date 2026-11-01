@@ -1102,6 +1102,7 @@ enum X86Intrinsics : unsigned {
     x86_fxsave64,                                    // llvm.x86.fxsave64
     x86_getsec_bounded,                              // llvm.x86.getsec.bounded
     x86_getsec_bounded_state,                        // llvm.x86.getsec.bounded.state
+    x86_hle_context,                                 // llvm.x86.hle.context
     x86_hlt,                                         // llvm.x86.hlt
     x86_hreset,                                      // llvm.x86.hreset
     x86_hyperv_call,                                 // llvm.x86.hyperv.call

@@ -3520,6 +3520,9 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   }
 #include "neverc/Foundation/Builtin/X86NativeTransfers.def"
 #undef X86_NATIVE_TRANSFER
+  case X86::BI__builtin_ia32_hle_context:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_hle_context,
+                                   Ops);
   case X86::BI__builtin_ia32_psmash_context:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_psmash_context,
                                    Ops);

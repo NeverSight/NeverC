@@ -24,6 +24,7 @@ DECLARATIONS = {
     "vmrun_context": ("Done", "PTR", "I32"),
     "hyperv_call": ("Done", "PTR", "PTR", "PTR", "I32"),
     "vmgexit_sev": ("Done", "I64"),
+    "hle_context": ("Done", "PTR", "PTR", "PTR", "I32", "I32"),
     "invept": ("I8", "I64", "PTR"),
     "invvpid": ("I8", "I64", "PTR"),
     "clts": ("Done",),
@@ -351,6 +352,7 @@ def synchronize(write):
     vmrun_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (1,), returning=True)
     hyperv_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (3,), returning=True)
     snp_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (2,), returning=True)
+    hle_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (3, 4), returning=True)
     hypercall_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, returning=True)
     address_attributes = {}
     for indices in sorted({indices for _, indices in ADDRESS_SIGNATURES.values()}):
@@ -377,6 +379,8 @@ def synchronize(write):
             attribute = hyperv_attribute
         if suffix in SNP_CONTEXTS:
             attribute = snp_attribute
+        if suffix == "hle_context":
+            attribute = hle_attribute
         if suffix in KVM_HYPERCALLS or suffix == "vmgexit_sev":
             attribute = hypercall_attribute
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")

@@ -20,6 +20,9 @@ on:
       - 'utils/lint/sync-x86-hyperv-context.py'
       - 'utils/lint/sync-x86-snp-context.py'
       - 'utils/lint/test_sync_x86_snp_context.py'
+      - 'utils/lint/x86_context_tables.py'
+      - 'utils/lint/sync-x86-hle-context.py'
+      - 'utils/lint/test_sync_x86_hle_context.py'
       - 'utils/lint/test_sync_x86_hyperv_context.py'
       - 'utils/lint/test_sync_x86_kvm_hypercalls.py'
       - 'utils/lint/sync-x86-native-intrinsics.py'
@@ -73,6 +76,9 @@ on:
       - 'utils/lint/sync-x86-hyperv-context.py'
       - 'utils/lint/sync-x86-snp-context.py'
       - 'utils/lint/test_sync_x86_snp_context.py'
+      - 'utils/lint/x86_context_tables.py'
+      - 'utils/lint/sync-x86-hle-context.py'
+      - 'utils/lint/test_sync_x86_hle_context.py'
       - 'utils/lint/test_sync_x86_hyperv_context.py'
       - 'utils/lint/test_sync_x86_kvm_hypercalls.py'
       - 'utils/lint/sync-x86-native-intrinsics.py'
@@ -225,5 +231,7 @@ jobs:
           python3 utils/lint/sync-x86-hyperv-context.py
           python3 utils/lint/sync-x86-snp-context.py
           python3 utils/lint/test_sync_x86_snp_context.py
+          python3 utils/lint/sync-x86-hle-context.py
+          python3 utils/lint/test_sync_x86_hle_context.py
           python3 utils/lint/test_sync_x86_hyperv_context.py
           python3 utils/lint/test_sync_x86_kvm_hypercalls.py

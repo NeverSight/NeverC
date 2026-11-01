@@ -18612,7 +18612,8 @@ namespace X86 {
     RMPCHKD	= 18597,
     VMGEXIT	= 18598,
     SNP_CONTEXT64	= 18599,
-    INSTRUCTION_LIST_END = 18600
+    HLE_CONTEXT64	= 18600,
+    INSTRUCTION_LIST_END = 18601
   };
 
 } // end namespace X86
@@ -21003,11 +21004,11 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18600];
+  MCInstrDesc Insts[18601];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5524];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[989];
+  MCPhysReg ImplicitOps[997];
 };
 
 } // end namespace llvm
@@ -21022,6 +21023,7 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18600,	2,	0,	0,	8,	3,	5,	X86ImpOpBase + 989,	15,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18600 = HLE_CONTEXT64
     { 18599,	2,	0,	0,	8,	2,	4,	X86ImpOpBase + 983,	15,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18599 = SNP_CONTEXT64
     { 18598,	0,	0,	0,	8,	1,	0,	X86ImpOpBase + 3,	1,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x80003059ULL },  // Inst #18598 = VMGEXIT
     { 18597,	0,	0,	0,	8,	2,	3,	X86ImpOpBase + 978,	1,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x8000307cULL },  // Inst #18597 = RMPCHKD
@@ -40941,6 +40943,7 @@ extern const X86InstrTable X86Descs = {
     /* 975 */ X86::RAX, X86::RCX, X86::EFLAGS,
     /* 978 */ X86::RAX, X86::RCX, X86::RAX, X86::RCX, X86::EFLAGS,
     /* 983 */ X86::R10, X86::R11, X86::RAX, X86::RCX, X86::RDX, X86::EFLAGS,
+    /* 989 */ X86::R9, X86::R10, X86::R11, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::EFLAGS,
   }
 };
 
@@ -58633,6 +58636,7 @@ extern const char X86InstrNameData[] = {
   /* 260554 */ "RMPCHKD\0"
   /* 260562 */ "VMGEXIT\0"
   /* 260570 */ "SNP_CONTEXT64\0"
+  /* 260584 */ "HLE_CONTEXT64\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -61097,10 +61101,11 @@ extern const unsigned X86InstrNameIndices[] = {
     260554U,
     260562U,
     260570U,
+    260584U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18600);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18601);
 }
 
 } // end namespace llvm
@@ -61160,7 +61165,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18600);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18601);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98585,6 +98590,8 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     /* VMGEXIT */
     34288,
     /* SNP_CONTEXT64 */
+    1,
+    /* HLE_CONTEXT64 */
     1,
   };
 
@@ -154054,9 +154061,10 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // RMPCHKD = 18597
     CEFBS_In64BitMode, // VMGEXIT = 18598
     CEFBS_In64BitMode, // SNP_CONTEXT64 = 18599
+    CEFBS_In64BitMode, // HLE_CONTEXT64 = 18600
   };
 
-  assert(Opcode < 18600);
+  assert(Opcode < 18601);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

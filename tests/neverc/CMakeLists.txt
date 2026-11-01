@@ -69,6 +69,7 @@ set(NEVERC_TEST_SOURCES
   X86/KVMHypercallFrontendTests.cpp
   X86/HyperVContextFrontendTests.cpp
   X86/SNPContextFrontendTests.cpp
+  X86/HLEContextFrontendTests.cpp
   X86/SystemReturnFrontendTests.cpp
   X86/FrameReturnFrontendTests.cpp
   X86/MMXStateFrontendTests.cpp
