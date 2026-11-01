@@ -1,28 +1,28 @@
 {
-  "component_commit": "a98b53bbc69762bf0e2ec5ad9cb1519df2516ca0",
-  "component_run_id": 41141114797,
-  "component_actual_job": 124355326674,
+  "component_commit": "a45841bddbed04a7dd11448e57bf859a72110148",
+  "component_run_id": 41305038746,
+  "component_actual_job": 124843602512,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 13019480670,
-    "name": "cpp-bind-call-arguments-clean456-a98b53bbc69762bf0e2ec5ad9cb1519df2516ca0",
-    "digest": "sha256:834df0c2dd3860f0d7a4448eae68f05a762811c02cc6633cef769c514e0377cf"
+    "id": 13086320016,
+    "name": "cpp-bind-call-arguments-clean456-a45841bddbed04a7dd11448e57bf859a72110148",
+    "digest": "sha256:7e1256cc74f902c6772d4533fea37003ac885dbd761c844d2aa19b17eacf0357"
   },
   "component_archive_artifact": {
-    "id": 13019990063,
-    "name": "cpp-current-private-archive-remote-only-a98b53bbc69762bf0e2ec5ad9cb1519df2516ca0",
-    "digest": "sha256:006cf6fd255d589636928b6f4a81914b9c75acd796ea1293796a1d066d18a173"
+    "id": 13086275097,
+    "name": "cpp-current-private-archive-remote-only-a45841bddbed04a7dd11448e57bf859a72110148",
+    "digest": "sha256:ed5bc5bcbe8d550e0fbbbd8c0ff382decfe5b17469cd761289be00a71a6c7816"
   },
-  "component_report_sha256": "dc3f0ea97032f79cb64a56cedb263016cd725c730f1dbae8a0020364e6aafa13",
-  "private_archive_sha256": "e27e4858326ef0ac8ed7db77939504d2c0e6d1b0500f084b31e4c0547c6ddb99",
-  "frontend_build_id": "cpp-frontend-1-59a626d6a5485cbad53256067b875704d158c92a1111418967743694b754dd17",
+  "component_report_sha256": "cbf86f442d94aa5aad7a0af7d5ce63a9fe0f80c44ee6920573b2e6c7de9f0604",
+  "private_archive_sha256": "a41ab2275017c3738ee422849fab750a5f456cd20fac7cf767737af0376d65a8",
+  "frontend_build_id": "cpp-frontend-1-4e3447017f4821341dba8b2f7fee237654bc3ac620c5f158d6d2ea1d29d9e946",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "1f9625e6f65ced6778de8ac96f91b6f70ab8b702e32e5ff2d1a807559333b61b",
-    "Lowering.cpp": "01bf7bdf9e09d6ab3fc5b96f5892c2c2c9b467160b8fbb2304c251c73f4b16a7",
+    "Frontend.cpp": "af37dafc18876a46a3207f41959bae7c47874d5bca276c9972c778088e4cae4e",
+    "Lowering.cpp": "a2def7fd200b58588bcc7c5a5d7cd59c56abcac20b247f349a0ad952d627152e",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "d372cb7d93b2943702550ffbb5bf2351654dc232dc15f9ce37eb682e34e6a67b",
+    "MathSDK.cpp": "d99cbb882c6a867836fbb023010046cfbb2bdd77db78ccf9f8d241448985c9c8",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "a5c5f1990c2a51812632fe1e5a909fa0872039540aab6484ee1080f24999d06d",
+    "Frontend.h": "2ed7b142423c9e364d5efe2361095d4b5798ff271878d3c138b964f963fc8670",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -133,8 +133,8 @@
     ],
     "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
   },
-  "not_fn_formal_additions_path": "utils/ci/bind-forty-formal-additions.cpp",
-  "not_fn_formal_additions_sha256": "48e16535ad52835351d6beb425f6b69690209d1014cd24df4da2ba4fe8f8ae1d",
+  "not_fn_formal_additions_path": "utils/ci/bind-forty-eight-formal-additions.cpp",
+  "not_fn_formal_additions_sha256": "620adce3d4aa3c926ade2dd4e76c048cca4b10ac1b645eed6caa889cc910ec88",
   "not_fn_formal_cases": [
     {
       "name": "not-fn-function-pointer",
@@ -375,38 +375,73 @@
       "formal_test_name": "TranslateTest.CoreV2BindZeroBoundResultKindsRunAtBothOptimizations",
       "source_sha256": "302be284785ab81a26632e0ffc8edc647ca64faf15eb09467588037700be81da",
       "gtest_body_sha256": "b1563663deb72d6fae1b124b5e36e6de9e561cfcc8ea1ef7b62c2717fcf6cd7e"
+    },
+    {
+      "name": "bind-bound-pack-three-values",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackThreeValuesRunAtBothOptimizations",
+      "source_sha256": "c1f19e90acc41293f21f375cf1337bd95c9644ee75e3d2b988b6744f79b5ccc7",
+      "gtest_body_sha256": "550cdb345c860958a40c09bd953b24a7a50dffa7d975df7c5c806a3c4cedf75c"
+    },
+    {
+      "name": "bind-bound-pack-four-mixed",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackFourMixedRunAtBothOptimizations",
+      "source_sha256": "b93c128ab57c417aca14b8a738f3b08f1b65da46804f8d007a01350821f09fc2",
+      "gtest_body_sha256": "1df27ba28fdcce98fa24a8579273fe5fa489137d63722c4a9992f4854e17cb08"
+    },
+    {
+      "name": "bind-bound-pack-eight-values",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackEightValuesRunAtBothOptimizations",
+      "source_sha256": "3dec1384520f343d4a09b3ed62e269d117db19cb06fffd2f2f4690f1be74377e",
+      "gtest_body_sha256": "b0124a991e47974cafd036d1ca9f05b9de4242d72c240bfb706cef4e4731c12a"
+    },
+    {
+      "name": "bind-bound-pack-third-reference",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackThirdReferenceRunAtBothOptimizations",
+      "source_sha256": "38d2e17f8c0d07d1495c6cd221b78be41905ff20525bd7c60d6b6cc7db11426a",
+      "gtest_body_sha256": "a22b0b38e74b5c6a9decbc0ea379e6d91f2c7f4fb97fe3d69575e7fa5e7a75c2"
+    },
+    {
+      "name": "bind-bound-pack-copied-state",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCopiedStateRunAtBothOptimizations",
+      "source_sha256": "e15b66e3e19ff701280dd00ee12f242a6b0a291a5f8b0543bdbe7cefa3a3d92c",
+      "gtest_body_sha256": "3c839796ca59e13a9079cb1db174120dc55335e67dff8c5507bbe0297671df70"
+    },
+    {
+      "name": "bind-bound-pack-capture-effects",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCaptureEffectsRunAtBothOptimizations",
+      "source_sha256": "dc249ceecf6c93776599f74db9e1272a8abda04fcc44572f8869376529e1f9a7",
+      "gtest_body_sha256": "16ac500e8c66a29c3eeeeec41547da2955b10bd3b4fcf8572c079f6952619283"
+    },
+    {
+      "name": "bind-bound-pack-captured-pointer",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCapturedPointerRunAtBothOptimizations",
+      "source_sha256": "64339a034b7b5050e0236608ce35bbd1c9e38b415f2a1877689710c6c66fa36e",
+      "gtest_body_sha256": "a50c38a7241369fee8c688c8ab75ab98ff5eb576265c2cead7154ac394fb8ac9"
+    },
+    {
+      "name": "bind-bound-pack-result-kinds",
+      "formal_test_name": "TranslateTest.CoreV2BindBoundPackResultKindsRunAtBothOptimizations",
+      "source_sha256": "b9c0397bb30478fb7af852bf2081416dd36b715bd12cac562829173f4e4e7dc6",
+      "gtest_body_sha256": "be37bb627a7e764974aedcf3763ea3555c1f111d33a5f6dd7563ecc545068660"
     }
   ],
-  "required_actual_total_gtest_xml": 164,
-  "required_actual_not_fn_gtest_xml": 40,
-  "required_actual_not_fn_generated_o0_o2_products": 80,
+  "required_actual_total_gtest_xml": 172,
+  "required_actual_not_fn_gtest_xml": 48,
+  "required_actual_not_fn_generated_o0_o2_products": 96,
   "not_fn_registered_previous_additions_path": "utils/ci/bind-forty-eight-formal-additions.cpp",
   "not_fn_registered_previous_additions_sha256": "620adce3d4aa3c926ade2dd4e76c048cca4b10ac1b645eed6caa889cc910ec88",
-  "required_actual_frontend_requests": 775,
+  "required_actual_frontend_requests": 783,
   "actual_new_signature_native_reference_verified": false,
   "actual_prior_custom_native_reference_verified": true,
   "preparation_only": false,
   "execution_binding_required": true,
-  "current_clean_syntax6_proof_sha256": "c1aa506821fb621bd316e96926a4b3d04f1dc864608922cf0d076a005e19c27c",
+  "current_clean_syntax6_proof_sha256": "d06536b2a66da375b2313e4c2c4605563d3becc0c42e075e4484d6c55f0df9e9",
   "dependency_producer_actual_job": 122606984385,
   "dependency_producer_attempt": 1,
   "dependency_producer_authentication_sha256": "7b4188218f280d74d6b87c34443f96cc1df246ae05d0827f240d084424c6b730",
-  "required_component_accept": 288,
-  "required_component_reject": 160,
+  "required_component_accept": 416,
+  "required_component_reject": 176,
   "required_component_invalid": 8,
-  "required_component_requests": 456,
-  "current_full456_proof_sha256": "0a0a21d5a624d4e999a11be37ba889fd0b0aaa4e2d6d9279556cd79459a51205",
-  "registered_stl_goldens": 48,
-  "registered_pending_component_formal_cases": [
-    "TranslateTest.CoreV2BindBoundPackThreeValuesRunAtBothOptimizations",
-    "TranslateTest.CoreV2BindBoundPackFourMixedRunAtBothOptimizations",
-    "TranslateTest.CoreV2BindBoundPackEightValuesRunAtBothOptimizations",
-    "TranslateTest.CoreV2BindBoundPackThirdReferenceRunAtBothOptimizations",
-    "TranslateTest.CoreV2BindBoundPackCopiedStateRunAtBothOptimizations",
-    "TranslateTest.CoreV2BindBoundPackCaptureEffectsRunAtBothOptimizations",
-    "TranslateTest.CoreV2BindBoundPackCapturedPointerRunAtBothOptimizations",
-    "TranslateTest.CoreV2BindBoundPackResultKindsRunAtBothOptimizations"
-  ],
-  "pending_expanded_formal_gtests": 172,
-  "pending_expanded_generated_o0_o2_products": 96
+  "required_component_requests": 600,
+  "current_full456_proof_sha256": "6d252f143ccf2dc0de8469f6f9e58dbb9363f868d367254be879fff27095ac80"
 }
