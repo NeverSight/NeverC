@@ -101,7 +101,7 @@ TEST_F(X86SGXTransferContextTest,
                           unsigned size, volatile unsigned *marker) {
   _Alignas(64) volatile unsigned char local[size+32];
   local[0]=17;*marker=local[0];
-  __sgx_transfer_at(context,4096ULL);
+  __sgx_transfer_at(context,0x100001000ULL);
 }
 )C");
   for (const char *Target :
@@ -142,7 +142,7 @@ TEST_F(X86SGXTransferContextTest,
           EXPECT_NE(Text.find("@llvm.x86.enclu.transfer.at.context(ptr"),
                     std::string::npos)
               << Text;
-          EXPECT_NE(Text.find("i64 4096"), std::string::npos) << Text;
+          EXPECT_NE(Text.find("i64 4294971392"), std::string::npos) << Text;
           EXPECT_EQ(Text.find("asm sideeffect"), std::string::npos) << Text;
         } else {
           EXPECT_TRUE(std::regex_search(
@@ -150,7 +150,8 @@ TEST_F(X86SGXTransferContextTest,
                                "\\t]+\\(%rax\\), %rax\\n[ \\t]*jmpq[ "
                                "\\t]+\\*[^\\n]+\\(%rip\\)")))
               << Text;
-          EXPECT_TRUE(std::regex_search(Text, std::regex("\\.quad[ \\t]+4096")))
+          EXPECT_TRUE(
+              std::regex_search(Text, std::regex("\\.quad[ \\t]+4294971392")))
               << Text;
           EXPECT_NE(Text.find("xrstor64"), std::string::npos) << Text;
           EXPECT_EQ(Text.find("\tenclu"), std::string::npos) << Text;
