@@ -3256,6 +3256,8 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalNotFnPointers;
   // Layout metadata is separate from the final runtime operation maps.
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalBindRecords;
+  // Metadata ownership only; ordinary tuple/value admission never reads this map.
+  std::map<const clang::CXXRecordDecl *, std::set<const clang::CXXRecordDecl *>> RequiredFunctionalBindTuples;
   std::function<bool(const clang::CXXRecordDecl *)> CheckBindDestructionSource;
   // Empty until exact production source/body/operand/lifetime gates publish
   // their own purpose-bound certificates. A shape description never inserts.
@@ -3305,6 +3307,13 @@ public:
                           unsigned Depth = 0);
   bool requireUtilityTuple(const clang::CXXRecordDecl *Record,
                            clang::SourceLocation Location, unsigned Depth = 0);
+  bool requireFunctionalBindTupleStorage(const FunctionalBindStorage &Storage,
+      clang::SourceLocation Location, unsigned Depth = 0);
+  std::string functionalBindTupleStorageType(const FunctionalBindStorage &Storage,
+      clang::SourceLocation Location);
+  std::optional<UtilityTupleRecord> verifiedFunctionalBindTupleLayout(const clang::CXXRecordDecl *Record);
+  json::Object zeroFunctionalBindTupleStorage(const FunctionalBindStorage &Storage,
+      clang::SourceLocation Location);
   bool requireUtilityArray(const clang::CXXRecordDecl *Record,
                            clang::SourceLocation Location,
                            unsigned Depth = 0);

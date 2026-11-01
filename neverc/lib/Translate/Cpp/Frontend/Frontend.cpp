@@ -13631,7 +13631,7 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (const auto Bind = describeFunctionalBindNaturalLayout(S, Sources, D, Context)) {
         if (RequiredFunctionalBindRecords.insert(D->getCanonicalDecl()).second) {
           if (type(Bind->Storage.CallableType, L, false, Depth + 1).empty() ||
-              type(Bind->Storage.BoundArguments->getType(), L, false, Depth + 1).empty()) return {};
+              !requireFunctionalBindTupleStorage(Bind->Storage, L, Depth + 1)) return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
       } else if (approvedFunctionalReferenceRecord(S, Sources, D, Context)) {
@@ -13730,6 +13730,122 @@ bool Adapter::requireUtilityPair(const CXXRecordDecl *Record,
       return false;
   Records.push_back(const_cast<CXXRecordDecl *>(Pair->Record));
   return true;
+}
+
+// A bind-owned physical tuple description never grants ordinary tuple
+// constructors, SDK variable access or placeholder value operations.
+static bool sameFunctionalBindTupleStorage(const FunctionalBindStorage &Left,
+    const FunctionalBindStorage &Right, const ASTContext &Context) {
+  if (Left.Record != Right.Record || Left.WeakResult != Right.WeakResult ||
+      Left.Callable != Right.Callable || Left.BoundArguments != Right.BoundArguments ||
+      !Context.hasSameType(Left.CallableType, Right.CallableType) ||
+      Left.CallableOffsetBits != Right.CallableOffsetBits || Left.BoundOffsetBits != Right.BoundOffsetBits ||
+      Left.SizeBytes != Right.SizeBytes || Left.AlignmentBytes != Right.AlignmentBytes ||
+      Left.Arguments.Record != Right.Arguments.Record ||
+      Left.Arguments.StoragePaddingBytes != Right.Arguments.StoragePaddingBytes ||
+      Left.Arguments.SelectedStringCarrierValues != Right.Arguments.SelectedStringCarrierValues ||
+      Left.Arguments.RequiresSelectedElementOperations != Right.Arguments.RequiresSelectedElementOperations ||
+      Left.Arguments.Elements.size() != Right.Arguments.Elements.size()) return false;
+  for (unsigned I = 0; I < Left.Arguments.Elements.size(); ++I) {
+    const auto &L = Left.Arguments.Elements[I], &R = Right.Arguments.Elements[I];
+    if (L.Field != R.Field || L.EmptyBase != R.EmptyBase || L.OffsetBits != R.OffsetBits ||
+        !Context.hasSameType(L.getType(), R.getType())) return false;
+  }
+  return true;
+}
+
+bool Adapter::requireFunctionalBindTupleStorage(const FunctionalBindStorage &Storage,
+    SourceLocation Location, unsigned Depth) {
+  if (Depth > 64 || !Storage.Record || !Storage.BoundArguments ||
+      !RequiredFunctionalBindRecords.count(Storage.Record->getCanonicalDecl())) {
+    reject(Location, "bind tuple layout", "The exact owning bind record and bounded layout are required.", "TR0203");
+    return false;
+  }
+  const bool HasPlaceholder = llvm::any_of(Storage.Arguments.Elements,
+      [](const UtilityTupleElement &Element) { return bool(Element.EmptyBase); });
+  if (!HasPlaceholder)
+    return !type(Storage.BoundArguments->getType(), Location, false, Depth).empty();
+  const auto Actual = describeFunctionalBindNaturalLayout(S, Sources, Storage.Record, Context);
+  if (!Actual || !sameFunctionalBindTupleStorage(Storage, Actual->Storage, Context)) {
+    reject(Location, "bind tuple layout", "The current target tuple must match its exact owning storage.", "TR0203");
+    return false;
+  }
+  chargeExpansion(1, Location);
+  const auto *Tuple = Storage.Arguments.Record->getCanonicalDecl();
+  auto Found = RequiredFunctionalBindTuples.find(Tuple);
+  if (Found != RequiredFunctionalBindTuples.end()) {
+    Found->second.insert(Storage.Record->getCanonicalDecl());
+    return true;
+  }
+  for (const auto &Element : Storage.Arguments.Elements) {
+    if (Element.EmptyBase) {
+      const auto Identity = describeFunctionalBindPlaceholderIdentity(S, Sources, Element.getType(), Context);
+      if (Element.Field || !Identity ||
+          Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) {
+        reject(Location, "bind empty tuple element", "Only the exact owned SDK placeholder may omit a value field.", "TR0203");
+        return false;
+      }
+    } else if (!Element.Field || type(Element.getType(), Location, false, Depth + 2).empty()) return false;
+  }
+  RequiredFunctionalBindTuples[Tuple].insert(Storage.Record->getCanonicalDecl());
+  Records.push_back(const_cast<CXXRecordDecl *>(Storage.Arguments.Record));
+  return true;
+}
+
+std::string Adapter::functionalBindTupleStorageType(const FunctionalBindStorage &Storage,
+    SourceLocation Location) {
+  const bool HasPlaceholder = llvm::any_of(Storage.Arguments.Elements,
+      [](const UtilityTupleElement &Element) { return bool(Element.EmptyBase); });
+  if (!HasPlaceholder) return type(Storage.BoundArguments->getType(), Location);
+  const auto Actual = describeFunctionalBindNaturalLayout(S, Sources, Storage.Record, Context);
+  const auto Found = RequiredFunctionalBindTuples.find(Storage.Arguments.Record->getCanonicalDecl());
+  if (!Actual || !sameFunctionalBindTupleStorage(Storage, Actual->Storage, Context) ||
+      Found == RequiredFunctionalBindTuples.end() ||
+      !Found->second.count(Storage.Record->getCanonicalDecl())) {
+    reject(Location, "bind tuple layout identity", "The tuple must already belong to this exact required bind storage.", "TR0203");
+    throw Failure{};
+  }
+  return name(Storage.Arguments.Record);
+}
+
+std::optional<UtilityTupleRecord> Adapter::verifiedFunctionalBindTupleLayout(const CXXRecordDecl *Record) {
+  const auto Found = Record ? RequiredFunctionalBindTuples.find(Record->getCanonicalDecl())
+                            : RequiredFunctionalBindTuples.end();
+  if (Found == RequiredFunctionalBindTuples.end()) return std::nullopt;
+  std::optional<UtilityTupleRecord> Tuple;
+  for (const auto *Owner : Found->second) {
+    const auto Verified = VerifiedBindRecords.find(Owner);
+    const auto Actual = describeFunctionalBindNaturalLayout(S, Sources, Owner, Context);
+    if (Verified == VerifiedBindRecords.end() || !Actual ||
+        !sameFunctionalBindTupleStorage(Verified->second.Storage, Actual->Storage, Context) ||
+        Actual->Storage.Arguments.Record->getCanonicalDecl() != Record->getCanonicalDecl()) {
+      reject(Record->getLocation(), "bind tuple layout certificate",
+          "Every owning bind storage needs its complete source and lifecycle certificate.", "TR0203");
+      throw Failure{};
+    }
+    Tuple = Actual->Storage.Arguments;
+  }
+  if (!Tuple) throw Failure{};
+  return Tuple;
+}
+
+json::Object Adapter::zeroFunctionalBindTupleStorage(const FunctionalBindStorage &Storage,
+    SourceLocation Location) {
+  const bool HasPlaceholder = llvm::any_of(Storage.Arguments.Elements,
+      [](const UtilityTupleElement &Element) { return bool(Element.EmptyBase); });
+  if (!HasPlaceholder) return zero(Storage.BoundArguments->getType(), Location);
+  const auto Tuple = verifiedFunctionalBindTupleLayout(Storage.Arguments.Record);
+  const auto Verified = VerifiedBindRecords.find(Storage.Record->getCanonicalDecl());
+  if (!Tuple || Verified == VerifiedBindRecords.end() ||
+      !sameFunctionalBindTupleStorage(Storage, Verified->second.Storage, Context)) throw Failure{};
+  json::Array Values;
+  for (const auto &Element : Tuple->Elements)
+    if (Element.Field) Values.push_back(zero(Element.getType(), Location));
+  if (Tuple->StoragePaddingBytes)
+    Values.push_back(zero(Context.getConstantArrayType(Context.UnsignedCharTy,
+        llvm::APInt(64, Tuple->StoragePaddingBytes), nullptr, ArraySizeModifier::Normal, 0), Location));
+  return json::Object{{"kind", "aggregate"}, {"type", functionalBindTupleStorageType(Storage, Location)},
+      {"args", std::move(Values)}, {"loc", loc(Location)}};
 }
 
 bool Adapter::requireUtilityTuple(const CXXRecordDecl *Record,
@@ -14208,7 +14324,7 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       if (!Bind || Found->second.PaddedBase != Bind->PaddedBase) throw Failure{};
       if (Bind->PaddedBase) Args.push_back(zero(Context.getSizeType(), L));
       Args.push_back(zero(Bind->Storage.CallableType, L));
-      Args.push_back(zero(Bind->Storage.BoundArguments->getType(), L));
+      Args.push_back(zeroFunctionalBindTupleStorage(Bind->Storage, L));
     } else if (auto Wrapper =
                    approvedFunctionalReferenceRecord(S, Sources, R, Context)) {
       if (Wrapper->PaddedBase)
@@ -14967,6 +15083,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const CXXMethodDecl *, SourceLocation> AlgorithmPredicateMethods;
   std::map<const CXXRecordDecl *, FunctionalBindNaturalLayout> PendingBindRecords;
   std::map<const CallExpr *, FunctionalBindFactorySource> PendingBindFactories;
+  const FunctionalBindFactorySource *ActiveBindPlaceholderFactory = nullptr;
   std::map<const CallExpr *, FunctionalBindCallSource> PendingBindCalls;
   std::map<const CXXConstructExpr *, FunctionalBindCopySource> PendingBindCopies;
   std::map<const CXXRecordDecl *, FunctionalBindDestructionSource> PendingBindDestructions;
@@ -26521,6 +26638,57 @@ public:
     }
     return true;
   }
+  const CXXRecordDecl *bindPlaceholderFactoryOperand(const Stmt *Statement) const {
+    const auto *Factory = ActiveBindPlaceholderFactory;
+    if (!A.S.coreV2() || !Factory || !Statement || !Factory->SourceCall ||
+        !A.S.owns(A.Sources, Factory->SourceCall->getExprLoc()) ||
+        Factory->Placeholders.size() != Factory->Storage.Arguments.Elements.size() ||
+        Factory->SourceCall->getNumArgs() != Factory->Placeholders.size() + 1) return nullptr;
+    const auto *Record = Factory->Storage.Record->getCanonicalDecl();
+    const auto Layout = PendingBindRecords.find(Record);
+    const auto Destruction = PendingBindDestructions.find(Record);
+    if (Layout == PendingBindRecords.end() || Destruction == PendingBindDestructions.end() ||
+        !sameBindStorage(Factory->Storage, Layout->second.Storage) ||
+        !sameBindStorage(Factory->Storage, Destruction->second.Layout.Storage)) return nullptr;
+    for (unsigned I = 0; I < Factory->Placeholders.size(); ++I) {
+      if (!Factory->Placeholders[I]) continue;
+      const auto &Source = *Factory->Placeholders[I];
+      const auto &Element = Factory->Storage.Arguments.Elements[I];
+      if (Factory->SourceCall->getArg(I + 1) != Source.Operand ||
+          Element.Field || !Element.EmptyBase ||
+          Element.EmptyBase->getCanonicalDecl() != Source.Identity.Record->getCanonicalDecl()) continue;
+      const Expr *Node = Source.Operand;
+      bool Found = false;
+      for (unsigned Depth = 0; Node && Depth < 64; ++Depth) {
+        Found |= Statement == Node;
+        if (Node == Source.Reference) break;
+        if (const auto *Parentheses = dyn_cast<ParenExpr>(Node)) {
+          Node = Parentheses->getSubExpr(); continue;
+        }
+        if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Node);
+            Cast && Cast->getCastKind() == CK_NoOp &&
+            A.Context.hasSameType(Cast->getType(), Cast->getSubExpr()->getType())) {
+          Node = Cast->getSubExpr(); continue;
+        }
+        return nullptr;
+      }
+      if (!Found || Node != Source.Reference) continue;
+      const auto *Expression = dyn_cast<Expr>(Statement);
+      if (!Expression || !A.S.owns(A.Sources, Expression->getExprLoc()) ||
+          !A.S.owns(A.Sources, Expression->getBeginLoc()) ||
+          !A.S.owns(A.Sources, Expression->getEndLoc())) return nullptr;
+      const auto Fresh = describeFunctionalBindPlaceholderOperandSource(
+          A.S, A.Sources, Source.Operand, A.Context);
+      if (!Fresh || Fresh->Operand != Source.Operand || Fresh->Reference != Source.Reference ||
+          Fresh->Variable != Source.Variable || Fresh->Identity.Record != Source.Identity.Record ||
+          Fresh->Identity.Primary != Source.Identity.Primary ||
+          Fresh->Identity.Parameter != Source.Identity.Parameter ||
+          Fresh->Identity.Rank != Source.Identity.Rank) return nullptr;
+      return Record;
+    }
+    return nullptr;
+  }
+
   bool retainBindRuntimeSource(const FunctionalBindStorage &Storage, SourceLocation Location) {
     const auto Layout = describeFunctionalBindNaturalLayout(A.S, A.Sources, Storage.Record, A.Context);
     const auto Destruction = describeFunctionalBindDestructionSource(
@@ -26563,10 +26731,25 @@ public:
         return true;
       }
       A.type(Source->Storage.CallableType, Call->getExprLoc());
-      for (const auto *Argument : Call->arguments())
-        if (!TraverseStmt(const_cast<Expr *>(Argument))) return false;
+      const bool HasPlaceholders = std::any_of(Source->Placeholders.begin(), Source->Placeholders.end(),
+          [](const auto &Placeholder) { return Placeholder.has_value(); });
+      // The erased extern marker has no value initializer. Close its factory
+      // graph and the exact trivial SDK lifecycle before giving its original
+      // argument occurrence a role; ordinary captures keep their existing order.
+      if (HasPlaceholders && !retainBindRuntimeSource(Source->Storage, Call->getExprLoc())) {
+        A.reject(Call->getExprLoc(), "bind factory lifetime source",
+            "The exact storage and complete trivial SDK lifecycle source are required.", "TR0203");
+        return true;
+      }
+      {
+        const auto *Previous = ActiveBindPlaceholderFactory;
+        if (HasPlaceholders) ActiveBindPlaceholderFactory = &*Source;
+        auto Restore = llvm::make_scope_exit([&] { ActiveBindPlaceholderFactory = Previous; });
+        for (const auto *Argument : Call->arguments())
+          if (!TraverseStmt(const_cast<Expr *>(Argument))) return false;
+      }
       if (!A.S.Diagnostics.empty()) return true;
-      if (!retainBindRuntimeSource(Source->Storage, Call->getExprLoc())) {
+      if (!HasPlaceholders && !retainBindRuntimeSource(Source->Storage, Call->getExprLoc())) {
         A.reject(Call->getExprLoc(), "bind factory lifetime source",
             "The exact storage and complete trivial SDK lifecycle source are required.", "TR0203");
         return true;
@@ -26636,7 +26819,7 @@ public:
     });
   }
   bool finishBindRuntimeSources() {
-    if (!A.S.Diagnostics.empty() || A.CheckingSource ||
+    if (!A.S.Diagnostics.empty() || A.CheckingSource || ActiveBindPlaceholderFactory ||
         !A.VerifiedBindRecords.empty() || !A.VerifiedBindFactories.empty() ||
         !A.VerifiedBindCalls.empty() || !A.VerifiedBindCopies.empty() ||
         !A.VerifiedBindDestructions.empty()) return false;
@@ -28352,6 +28535,17 @@ public:
   bool VisitStmt(Stmt *S) {
     if (!S)
       return true;
+    if (const auto *Record = bindPlaceholderFactoryOperand(S)) {
+      // Only these real side-effect-free argument nodes belong to a fully
+      // proved factory and lifecycle. RAV still visits their actual wrappers,
+      // qualifier and name. No SDK object value, address, initializer or general
+      // placeholder type is added to ordinary operation dependencies.
+      A.chargeExpansion(1, S->getBeginLoc());
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Destructions.insert(Record).second)
+          A.chargeExpansion(1, S->getBeginLoc());
+      return true;
+    }
     if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S))
       registerUnevaluatedOperations(Query->getOperand());
     if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S);
@@ -29797,6 +29991,8 @@ static void orderCoreV2Records(Adapter &A) {
     if (!UtilityTuple)
       UtilityTuple = approvedUtilityMixedReferenceTupleRecord(
           A.S, A.Sources, R, A.Context);
+    const auto BindTuple = A.verifiedFunctionalBindTupleLayout(R);
+    if (!UtilityTuple && BindTuple) UtilityTuple = BindTuple;
     const auto UtilityArray =
         approvedUtilityArrayRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityOptional =
@@ -29867,7 +30063,8 @@ static void orderCoreV2Records(Adapter &A) {
     std::vector<std::pair<QualType, SourceLocation>> DependencyTypes;
     if (UtilityTuple) {
       for (const auto &Field : UtilityTuple->Elements)
-        DependencyTypes.emplace_back(Field.getType(), Field.getLocation());
+        if (!BindTuple || Field.Field)
+          DependencyTypes.emplace_back(Field.getType(), Field.getLocation());
     } else if (UtilityArray) {
       DependencyTypes.emplace_back(
           UtilityArray->Size ? UtilityArray->Elements->getType()
@@ -30080,6 +30277,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     if (S.coreV2() && !UtilityTuple)
       UtilityTuple =
           approvedUtilityMixedReferenceTupleRecord(S, Sources, R, Context);
+    const auto BindTuple = S.coreV2() ? verifiedFunctionalBindTupleLayout(R)
+                                    : std::optional<UtilityTupleRecord>();
+    if (!UtilityTuple && BindTuple) UtilityTuple = BindTuple;
     const auto UtilityArray =
         S.coreV2() ? approvedUtilityArrayRecord(S, Sources, R, Context)
                    : std::optional<UtilityArrayRecord>();
@@ -30165,7 +30365,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       Fields.push_back(json::Object{{"name", "nct_bind_callable"},
           {"type", type(Bind->Storage.CallableType, R->getLocation())}});
       Fields.push_back(json::Object{{"name", "nct_bind_bound"},
-          {"type", type(Bind->Storage.BoundArguments->getType(), R->getLocation())}});
+          {"type", functionalBindTupleStorageType(Bind->Storage, R->getLocation())}});
     } else if (FunctionalReference) {
       if (FunctionalReference->PaddedBase)
         Fields.push_back(json::Object{

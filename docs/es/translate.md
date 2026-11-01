@@ -1011,3 +1011,33 @@ La descripción de fábrica enlaza cada operando original a la declaración SDK 
 
 
 El grafo bind conserva solo sus subobjetos marcadores vacíos reales y las fuentes seleccionadas de copia y destrucción. Cada nueva descripción compara los operandos originales. Los permisos generales de tuple y variables SDK no cambian; la ejecución sigue pendiente.
+
+
+La prueba del getter bind comprueba la hoja tuple vacía seleccionada, su especialización parcial original y ambas conversiones reales de base privada. Se conservan las pruebas de campos. La proyección y traducción runtime están incompletas; no son resultados de ejecución aprobados.
+
+
+Cada proyección de entrada bind se vincula a su tuple real, fuente seleccionada y rango. Se comprueban por separado posiciones almacenadas, rangos de entrada, referencias y const. Permisos y cachés se limitan a esa llamada. La ejecución completa sigue pendiente.
+
+
+La prueba bind comprueba por separado la condición positiva del marcador con el paquete exacto de la función seleccionada y su rango. Cierra las fuentes de los operadores original y sustituido antes de comprobar valores. Se mantiene la prueba escalar cero; cuerpo completo y ejecución siguen pendientes.
+
+
+El lowering bind protegido captura una sola vez las vinculaciones de entrada y proyecta sus rangos, incluidos los repetidos. Los marcadores SDK vacíos exactos omiten lecturas externas y escrituras de campos. Siguen siendo necesarios certificados completos; admisión frontend y validación de ejecución están pendientes.
+
+
+Los tuples marcadores de bind tienen rutas propias de diseño, dependencias e inicialización cero. La salida exige certificados completos de todos los bind propietarios y revisa campos, posiciones vacías, tamaño, alineación y relleno. Los permisos generales de tuple no cambian; cuerpo completo y ejecución siguen pendientes.
+
+
+La prueba de tipo bind consume el TSI de la declaración SDK extern real, el parámetro int primario y el rango literal escrito. No fabrica deducción, argumentos, inicializadores ni permisos de valores. La caché de dos pruebas pertenece solo al bind exacto. La ejecución sigue pendiente.
+
+
+El selector de retorno bind prueba por separado su comparación positiva escrita y sustituida. Comprueba el TSI de retorno, el propietario del typedef seleccionado y los parámetros y propietarios de sustitución, independientemente de la restricción NTTP distinta. Un true canónico no reemplaza la prueba del código fuente. El cuerpo y su validación siguen pendientes.
+
+
+Solo tras cerrar las pruebas completas de fábrica y vida trivial, el nodo argumento SDK _1/_2 original recibe un papel local de objeto vacío. Se conservan paréntesis, envolturas sin operación, nombres, calificadores y la revalidación final. No se autorizan valores independientes, direcciones, alias ni argumentos con efectos. Los casos límite están preparados; invocación y validación siguen pendientes.
+
+
+La prueba del índice local bind comprueba las declaraciones const size_t original y seleccionada, sus tipos escritos y ambos inicializadores. Vincula lectura del trait, propietario de sustitución, resta y literal 1 antes de evaluar rango menos uno. No añade permisos de lectura, cuerpo, getter o reenvío. Invocación y validación siguen pendientes.
+
+
+La traza real de siete solicitudes reproduce el fallo de ocho valores con 64 fuentes completas, dos sondas y 36 declval. La corrección adjunta los metadatos reales de retorno/noexcept de sondas y despachadores ya probados a su fuente propietaria existente. Se mantienen recorrido de hijos y límites de 64 entradas, profundidad, nodos y tiempo. La nueva validación Actions está pendiente.

@@ -1011,3 +1011,33 @@ La description de fabrique lie chaque opérande original à la déclaration SDK 
 
 
 Le graphe bind conserve ses seuls sous-objets réservés vides réels et les sources de copie et destruction sélectionnées. Chaque opérande original est comparé lors de la redescription. Les permissions générales tuple et variables SDK restent inchangées ; l’exécution reste à terminer.
+
+
+La preuve du getter bind vérifie la feuille tuple vide sélectionnée, sa spécialisation partielle originale et les deux conversions réelles de base privée. Les preuves des champs sont conservées. Projection et traduction runtime restent incomplètes ; aucune réussite d’exécution n’est déclarée.
+
+
+Chaque projection entrante bind est liée à son tuple réel, sa source sélectionnée et son rang. Positions stockées, rangs entrants, références et const sont vérifiés séparément. Permissions et caches restent limités à cet appel. L’exécution complète des espaces réservés reste à terminer.
+
+
+La preuve bind vérifie séparément la contrainte positive du rang avec le paquet exact de la fonction sélectionnée. Les sources des opérateurs original et substitué sont fermées avant toute vérification de valeur. La preuve scalaire zéro est conservée ; corps complet et exécution restent inachevés.
+
+
+Le lowering bind protégé conserve une seule fois les liaisons entrantes et projette leurs rangs, y compris répétés. Les marqueurs SDK vides exacts omettent lecture d’objet externe et écriture de champ. Ces chemins exigent toujours les certificats complets ; admission frontend et validation d’exécution restent inachevées.
+
+
+Les tuples réservés appartenant à bind disposent d’un chemin dédié de disposition, dépendances et initialisation zéro. La sortie exige les certificats complets de tous les bind propriétaires et revérifie champs, positions vides, taille, alignement et remplissage. Les permissions tuple générales ne changent pas ; corps complet et exécution restent à valider.
+
+
+La preuve de type bind consomme le TSI de la déclaration SDK extern réelle, le paramètre int primaire et le rang littéral écrit. Elle ne fabrique ni déduction, ni arguments, ni initialiseur, ni permission de valeur. Son cache de deux preuves appartient au seul bind exact. L’exécution reste inachevée.
+
+
+Le sélecteur de retour bind prouve séparément sa comparaison positive écrite et substituée. Il vérifie le TSI de retour, le propriétaire du typedef sélectionné et les paramètres et propriétaires de substitution, indépendamment de la contrainte NTTP distincte. Une valeur true canonique ne remplace pas la preuve source. Le corps et sa validation restent inachevés.
+
+
+Après fermeture des preuves complètes de fabrique et de durée de vie triviale, seul le nœud argument SDK _1/_2 original reçoit un rôle local d’objet vide. Les parenthèses, enveloppes sans opération, noms, qualifications et la revalidation finale sont conservés. Aucune permission ne couvre les valeurs autonomes, adresses, alias ou arguments à effets. Les cas limites sont préparés ; invocation et validation restent inachevées.
+
+
+La preuve de l’indice local bind vérifie les déclarations const size_t originale et sélectionnée, leurs types écrits et leurs deux initialiseurs. Lecture du trait, propriétaire de substitution, soustraction et littéral 1 sont liés avant évaluation du rang moins un. Aucun droit de lecture, corps, getter ou transfert n’est ajouté. Invocation et validation restent inachevées.
+
+
+La trace réelle de sept requêtes reproduit l’échec des huit valeurs à 64 sources terminées, deux sondes et 36 declval. La correction rattache les appels réels de métadonnées retour/noexcept des sondes et répartiteurs déjà prouvés à leur source propriétaire existante. Parcours des enfants et limites de 64 entrées, profondeur, nœuds et temps restent inchangés. La nouvelle validation Actions est en attente.

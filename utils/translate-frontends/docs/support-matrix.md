@@ -431,3 +431,33 @@ Placeholder factory descriptions now bind each original operand to the exact SDK
 
 
 The bind source graph now retains only its exact empty placeholder subobjects and their selected copy/destruction source. Fresh factory descriptions compare every original placeholder operand occurrence. Generic tuple admission and ordinary SDK variable permissions remain unchanged; placeholder execution is still pending.
+
+
+The bind getter source proof now checks the selected empty-base tuple leaf, its original partial specialization and both real private-base casts. Field-based getters keep their existing proof. Placeholder argument projection and runtime translation remain unfinished; this is not passing execution evidence.
+
+
+Bind placeholder getter proofs now bind each incoming projection to its own actual call tuple, selected source and rank. Stored positions and incoming ranks, reference types and const qualification are checked separately; projection permissions and caches remain scoped to that call. Complete placeholder execution remains pending.
+
+
+The bind source proof now checks the separate positive placeholder constraint against the exact selected function packet and rank. Both original and substituted operator sources close before any value check. Scalar zero constraints keep their existing proof; complete placeholder body and runtime support remain unfinished.
+
+
+Guarded bind lowering now retains incoming argument bindings once and projects placeholder ranks from those bindings, including repeated ranks. Exact empty SDK markers omit external-object value loads and field writes. These paths still require complete verified factory/call certificates; frontend placeholder admission and execution validation remain unfinished.
+
+
+Bind-owned placeholder tuples now have a dedicated layout, dependency and zero-initialization path. Output requires complete certificates for every owning bind record and rechecks actual fields, empty offsets, size, alignment and padding. Generic tuple type/value permissions are unchanged. Full placeholder body and execution validation remain unfinished.
+
+
+Bind placeholder type proofs now consume the actual SDK extern declaration TSI, primary int parameter and written rank literal. This fully explicit leaf creates no deduction event, argument list, initializer or variable-value permission. Its two-entry type proof cache belongs only to the exact bind root. Complete placeholder execution remains unfinished.
+
+
+The bind placeholder return selector now proves its own actual written and substituted positive comparison. Its function return TSI, selected typedef owner, primary parameters and substitution owners are checked independently of the separate NTTP constraint. No canonical true value supplies source permission. Placeholder body and runtime validation remain unfinished.
+
+
+Factory traversal now gives only the exact original SDK _1/_2 argument occurrence a scoped empty-object role, after its complete factory source graph and trivial lifecycle close. Actual parentheses, no-op wrappers, name and qualifier are still visited; the existing final reproof remains the sole publisher for guarded lowering. Standalone marker values, addresses, aliases and effectful operands receive no permission. Factory boundary fixtures are proposed; placeholder invocation and runtime verification remain unfinished.
+
+
+The bind placeholder local index proof now checks the actual original and selected const size_t declarations, their written type sources and both initializers. The trait read, substitution owner, minus operator and literal one are matched before evaluating rank minus one. This adds no local-variable read, body, getter or forwarding permission. Placeholder invocation and runtime verification remain unfinished.
+
+
+The actual seven-request trace reproduced the eight-bound-value failure at 64 completed source entries, with two probes and 36 declvals. The repair attaches each already completed probe or dispatcher’s exact result/noexcept metadata calls to that existing owner source, as with declval helper children. Every real child still traverses and the 64-entry, depth, node and timeout limits remain unchanged. New Actions verification is pending; this is not a new passing regression result.

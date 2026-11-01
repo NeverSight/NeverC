@@ -7728,6 +7728,7 @@ class UtilityTupleQueryGraph
     std::vector<QualType> Elements;
   };
   std::vector<BindTupleElementProjection> BindTupleElementProjections;
+  unsigned BindTupleElementProjectionRoots = 0;
   std::set<const TemplateSpecializationType *> BindTupleElementProjectionAtoms;
   // A reused scalar helper can retain a written tuple from another bind.
   // These frames prove only that exact source operand, never physical storage
@@ -10038,21 +10039,23 @@ class UtilityTupleQueryGraph
         Builtin, Index, Pack, Location, Slot, std::move(Elements)};
   }
   std::optional<BindTupleElementProjection> bindTupleElementProjection(
-      const CallExpr *Get, unsigned Slot) {
-    if (!BindMetadata || Slot >= BindMetadata->Arguments.Elements.size() || !step()) return std::nullopt;
+      const CallExpr *Get, const UtilityTupleRecord &Storage, unsigned Slot) {
+    if (!BindMetadata || !Storage.Record || Slot >= Storage.Elements.size() || !step()) return std::nullopt;
     const auto *Function = Get ? Get->getDirectCallee() : nullptr;
     const auto *Definition = Function ? Function->getDefinition() : nullptr;
     const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
     const auto *Statement = Body && Body->size() == 2 ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
     const auto *Local = Statement && Statement->isSingleDecl()
         ? dyn_cast<TypeAliasDecl>(Statement->getSingleDecl()) : nullptr;
-    const UtilityTupleLikeSource Tuple{BindMetadata->Arguments.Elements, nullptr, QualType(), 0};
+    const UtilityTupleLikeSource Tuple{Storage.Elements, nullptr, QualType(), 0};
     if (!Function || Function->getNumParams() != 1 || !Definition || !Body || !Local ||
+        !Context.hasSameUnqualifiedType(Function->getParamDecl(0)->getType().getNonReferenceType(),
+                                         Context.getRecordType(Storage.Record)) ||
         Local->getDeclContext() != Definition || !Local->getIdentifier() || Local->getName() != "type" ||
         !Local->getTypeSourceInfo() || !family(Local) ||
         !approvedUtilityTupleLikeGet(S, SM, Get, Function->getParamDecl(0)->getType(), Tuple, Slot, Context))
       return std::nullopt;
-    return bindTupleElementProjectionFromType(Local->getUnderlyingType(), BindMetadata->Arguments, Slot);
+    return bindTupleElementProjectionFromType(Local->getUnderlyingType(), Storage, Slot);
   }
   bool catPackElement(const TemplateSpecializationType *Use) {
     if (!catMetadataMode() || !Use || !step()) return false;
@@ -11166,7 +11169,7 @@ public:
       const FunctionalBindCallSource &Call, const std::function<bool()> &Proof) {
     return withBindSourceChild([&] {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-          !BindTupleElementProjections.empty() || !Proof || !Call.SourceCall ||
+          !BindTupleElementProjections.empty() || BindTupleElementProjectionRoots || !Proof || !Call.SourceCall ||
           !S.owns(SM, Call.SourceCall->getExprLoc()) || Call.Storage.Record != BindMetadata->Record)
         return false;
       const auto Actual = describeFunctionalBindCallSource(S, SM, Call.SourceCall, Context);
@@ -11175,14 +11178,32 @@ public:
           Actual->Storage.Record != BindMetadata->Record || Actual->Arguments.empty() ||
           Actual->Arguments.size() != BindMetadata->Arguments.Elements.size())
         return false;
+      if (Actual->CallArguments != Call.CallArguments || Actual->CallForwards != Call.CallForwards ||
+          Actual->Arguments.size() != Call.Arguments.size()) return false;
       std::vector<BindTupleElementProjection> Projections;
       std::vector<const ClassTemplatePartialSpecializationDecl *> Partials;
-      for (unsigned I = 0; I < Actual->Arguments.size(); ++I) {
-        const auto Projection = bindTupleElementProjection(Actual->Arguments[I].Get, I);
+      auto Add = [&](const CallExpr *Get, const UtilityTupleRecord &Tuple, unsigned Slot) {
+        const auto Projection = bindTupleElementProjection(Get, Tuple, Slot);
         if (!Projection) return false;
         Projections.push_back(*Projection);
         if (std::find(Partials.begin(), Partials.end(), Projection->Partial) == Partials.end())
           Partials.push_back(Projection->Partial);
+        return true;
+      };
+      const auto Incoming = Actual->CallForwards.empty() ? std::nullopt
+          : approvedUtilityReferenceTupleRecord(S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
+      for (unsigned I = 0; I < Actual->Arguments.size(); ++I) {
+        const auto &Argument = Actual->Arguments[I], &Retained = Call.Arguments[I];
+        if (Argument.Get != Retained.Get || Argument.Unwrap != Retained.Unwrap ||
+            Argument.PlaceholderRank != Retained.PlaceholderRank ||
+            Argument.PlaceholderIndex != Retained.PlaceholderIndex ||
+            Argument.PlaceholderGet != Retained.PlaceholderGet ||
+            Argument.PlaceholderForward != Retained.PlaceholderForward ||
+            !Add(Argument.Get, BindMetadata->Arguments, I)) return false;
+        if (!Argument.PlaceholderRank) continue;
+        if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
+            Argument.PlaceholderRank > Incoming->Elements.size() ||
+            !Add(Argument.PlaceholderGet, *Incoming, Argument.PlaceholderRank - 1)) return false;
       }
       // These builtin identities exist only for this fresh get/storage/slot
       // description. Neither type nor statement memoization can export them.
@@ -11194,9 +11215,11 @@ public:
       }
       SavedTypes.swap(Types);
       SavedExpressions.swap(Expressions);
+      BindTupleElementProjectionRoots = Projections.size();
       BindTupleElementProjections = std::move(Projections);
       auto Restore = llvm::make_scope_exit([&] {
         BindTupleElementProjections.clear();
+        BindTupleElementProjectionRoots = 0;
         Types.clear();
         Types.swap(SavedTypes);
         Expressions.clear();
@@ -11268,7 +11291,7 @@ public:
     return withBindSourceChild([&] {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           BindTupleElementProjections.empty() ||
-          BindTupleElementProjections.size() != BindMetadata->Arguments.Elements.size() ||
+          BindTupleElementProjections.size() != BindTupleElementProjectionRoots ||
           !BindRecordSource) return false;
       for (const auto &Projection : BindTupleElementProjections)
         if (!TraverseBindTupleElementProjectionSource(Projection)) return false;
@@ -19512,6 +19535,8 @@ class BindSourceProof {
   std::map<const CallExpr *, const CXXConstructorDecl *> TupleReferenceQueries;
   std::set<const CallExpr *> FactoryBuiltinForwards;
   std::set<const CallExpr *> CompletedBuiltinForwards;
+  const TemplateSpecializationType *ActivePlaceholderDeclarationType = nullptr;
+  std::set<const TemplateSpecializationType *> CompletedPlaceholderDeclarationTypes;
   const FunctionalBindDeclvalSource *ActiveDeclval = nullptr;
   const FunctionalBindInvokeSignatureSource *ActiveInvokeSignature = nullptr;
   const FunctionalBindCallSource *ActiveRuntimeInvoke = nullptr;
@@ -19529,6 +19554,7 @@ class BindSourceProof {
     const CallExpr *HelperCall = nullptr;
     const FunctionDecl *Helper = nullptr;
     const CallExpr *PrimaryHelperCall = nullptr;
+    std::vector<const CallExpr *> MetadataCalls;
   };
   std::map<const CallExpr *, CompletedCallSource> ClosedCompleteCalls;
   std::map<const CXXConstructExpr *, const CXXConstructorDecl *> ClosedCallTupleConstructors;
@@ -19616,9 +19642,394 @@ class BindSourceProof {
     return Expression->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects) &&
         Value.Val.isInt() && Value.Val.getInt() == Canonical.getAsIntegral();
   }
+  bool unwrapConstraintTraitSource(const TemplateUseSource &Source,
+      const FunctionTemplateDecl *Primary, const TemplateTypeParmDecl *Input,
+      const Expr *Written, const Expr *Substituted, llvm::StringRef Name, bool Integer) {
+    auto Enable = [](QualType Type) -> const TemplateSpecializationType * {
+      if (Type.isNull()) return nullptr;
+      if (const auto *Elaborated = dyn_cast<ElaboratedType>(Type.getTypePtr()))
+        Type = Elaborated->getNamedType();
+      return dyn_cast<TemplateSpecializationType>(Type.getTypePtr());
+    };
+    auto Core = [](const Expr *Expression) -> const Expr * {
+      if (!Expression) return nullptr;
+      Expression = Expression->IgnoreParenImpCasts();
+      if (const auto *Constant = dyn_cast<ConstantExpr>(Expression))
+        Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
+      return Expression;
+    };
+      const auto *OriginalRead = dyn_cast_or_null<DependentScopeDeclRefExpr>(Core(Written));
+      const auto *ActualRead = dyn_cast_or_null<DeclRefExpr>(Core(Substituted));
+      const auto *OriginalQualifier = OriginalRead ? OriginalRead->getQualifier() : nullptr;
+      const auto *ActualQualifier = ActualRead ? ActualRead->getQualifier() : nullptr;
+      const auto *OriginalType = OriginalQualifier ? OriginalQualifier->getAsType() : nullptr;
+      const auto *SubstitutedType = ActualQualifier ? ActualQualifier->getAsType() : nullptr;
+      const auto *OriginalTrait = OriginalType ? Enable(QualType(OriginalType, 0)) : nullptr;
+      const auto *ActualTrait = SubstitutedType ? Enable(QualType(SubstitutedType, 0)) : nullptr;
+      const auto *Template = OriginalTrait
+          ? dyn_cast_or_null<ClassTemplateDecl>(OriginalTrait->getTemplateName().getAsTemplateDecl()) : nullptr;
+      const auto *Argument = OriginalTrait && OriginalTrait->template_arguments().size() == 1 &&
+          OriginalTrait->template_arguments()[0].getKind() == TemplateArgument::Type
+          ? dyn_cast<TemplateTypeParmType>(OriginalTrait->template_arguments()[0].getAsType().getTypePtr()) : nullptr;
+      const auto *Variable = ActualRead ? dyn_cast<VarDecl>(ActualRead->getDecl()) : nullptr;
+      const auto *ActualArgument = ActualTrait && ActualTrait->template_arguments().size() == 1 &&
+          ActualTrait->template_arguments()[0].getKind() == TemplateArgument::Type
+          ? dyn_cast<SubstTemplateTypeParmType>(ActualTrait->template_arguments()[0].getAsType().getTypePtr())
+          : nullptr;
+      if (!OriginalRead || OriginalRead->getDeclName().getAsString() != "value" ||
+          OriginalRead->hasExplicitTemplateArgs() || !ActualRead || ActualRead->hasExplicitTemplateArgs() ||
+          OriginalRead->getBeginLoc() != ActualRead->getBeginLoc() ||
+          OriginalRead->getEndLoc() != ActualRead->getEndLoc() || !Template ||
+          !Template->getIdentifier() || Template->getName() != Name ||
+          !Check.family(Template, {Name == "__is_reference_wrapper"
+              ? "__type_traits/is_reference_wrapper.h" : "__functional/bind.h"}) ||
+          !Argument || Argument->getDecl() != Input ||
+          !ActualTrait || ActualTrait->isDependentType() || ActualTrait->template_arguments().size() != 1 ||
+          ActualTrait->getTemplateName().getAsTemplateDecl() != Template ||
+          !ActualArgument || ActualArgument->getAssociatedDecl() != Primary ||
+          ActualArgument->getReplacedParameter() != Input || ActualArgument->getPackIndex() ||
+          ActualArgument->getReplacementType() != Source.Sugared->get(0).getAsType() ||
+          !Variable || !Variable->getIdentifier() || Variable->getName() != "value" ||
+          !Variable->isStaticDataMember() || !Variable->hasInit() || !Variable->getType().isConstQualified() ||
+          !Context.hasSameType(Variable->getType().getUnqualifiedType(), Integer ? Context.IntTy : Context.BoolTy))
+        return false;
+      return true;
+  }
+
+  bool unwrapPlaceholderPositiveSource(const TemplateUseSource &Source,
+      const TemplateTypeParmDecl *Input, const Expr *WrittenSource, const Expr *ActualSource,
+      unsigned PlaceholderRank, const std::function<bool()> &Children) {
+    const auto *Primary = dyn_cast_or_null<FunctionTemplateDecl>(Source.Template);
+    if (!ActiveUnwrapSource || ActiveScalarParameter != &Source || !Primary || !Input ||
+        !PlaceholderRank || PlaceholderRank > ActiveUnwrapSource->CallForwards.size() || !Children)
+      return false;
+    auto Core = [](const Expr *Expression) -> const Expr * {
+      if (!Expression) return nullptr;
+      Expression = Expression->IgnoreParenImpCasts();
+      if (const auto *Constant = dyn_cast<ConstantExpr>(Expression))
+        Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
+      return Expression;
+    };
+    const auto *Written = Core(WrittenSource);
+    const auto *Comparison = dyn_cast_or_null<CXXOperatorCallExpr>(Written);
+    const auto *Binary = dyn_cast_or_null<BinaryOperator>(Written);
+    const Expr *Left = nullptr, *Right = nullptr;
+    SourceLocation OperatorLocation;
+    if (Comparison) {
+      const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Comparison->getCallee()->IgnoreParenImpCasts());
+      if (Comparison->getDirectCallee() || !Comparison->isTypeDependent() ||
+          Comparison->getOperator() != OO_Less || Comparison->getNumArgs() != 2 ||
+          !Lookup || !Lookup->requiresADL() || Lookup->hasExplicitTemplateArgs() ||
+          !Lookup->getNumDecls() || Lookup->getNumDecls() > 64 ||
+          Lookup->getName().getNameKind() != DeclarationName::CXXOperatorName ||
+          Lookup->getName().getCXXOverloadedOperator() != OO_Less) return false;
+      for (const auto *Candidate : Lookup->decls()) if (!family(Candidate)) return false;
+      Left = Comparison->getArg(0); Right = Comparison->getArg(1);
+      OperatorLocation = Comparison->getOperatorLoc();
+    } else {
+      if (!Binary || Binary->getOpcode() != BO_LT || !Binary->isValueDependent() ||
+          !Context.hasSameType(Binary->getType(), Context.BoolTy)) return false;
+      Left = Binary->getLHS(); Right = Binary->getRHS(); OperatorLocation = Binary->getOperatorLoc();
+    }
+    const auto *Converted = dyn_cast_or_null<BinaryOperator>(Core(ActualSource));
+    const auto *Zero = dyn_cast_or_null<IntegerLiteral>(Core(Left));
+    const auto *Read = Converted ? dyn_cast<ImplicitCastExpr>(Converted->getRHS()) : nullptr;
+    if (!Converted || Converted->getOpcode() != BO_LT || Converted->isTypeDependent() ||
+        Converted->isValueDependent() || !Converted->isPRValue() ||
+        !Context.hasSameType(Converted->getType(), Context.BoolTy) ||
+        !Zero || !Zero->getValue().isZero() || !Context.hasSameType(Zero->getType(), Context.IntTy) ||
+        Core(Converted->getLHS()) != Zero || !Read || Read->getCastKind() != CK_LValueToRValue ||
+        !Context.hasSameType(Read->getType(), Context.IntTy) ||
+        Converted->getOperatorLoc() != OperatorLocation ||
+        Written->getBeginLoc() != Converted->getBeginLoc() || Written->getEndLoc() != Converted->getEndLoc() ||
+        !Check.location(Written->getExprLoc(), {"__functional/bind.h"}) ||
+        !unwrapConstraintTraitSource(Source, Primary, Input, Right, Read, "is_placeholder", true)) return false;
+    // Each positive comparison owns its original and substituted children.
+    // The return selector cannot borrow the distinct NTTP constraint's proof.
+    if (!Graph.withBindScalarConstraintSource([&] {
+          if (!Graph.TraverseStmt(const_cast<Expr *>(ActualSource))) return false;
+          if (Comparison) UnwrapScalarConstraintSources.insert(Comparison);
+          return Graph.TraverseStmt(const_cast<Expr *>(WrittenSource)) && Children();
+        })) return false;
+    Expr::EvalResult Positive, Rank;
+    return Converted->EvaluateAsInt(Positive, Context, Expr::SE_NoSideEffects) &&
+        Positive.Val.isInt() && Positive.Val.getInt().getBoolValue() &&
+        Read->EvaluateAsInt(Rank, Context, Expr::SE_NoSideEffects) && Rank.Val.isInt() &&
+        !Rank.Val.getInt().isNegative() && Rank.Val.getInt().getLimitedValue(3) == PlaceholderRank;
+  }
+
+  bool unwrapPlaceholderReturnConstraintSource(const TemplateUseSource &Source,
+      const TemplateTypeParmDecl *Input, const TemplateTypeParmDecl *Incoming,
+      const FunctionalBindArgumentSource &Argument) {
+    const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    if (!Function || !Pattern || Source.Declaration != Function || Source.Template != Primary ||
+        ActiveScalarParameter != &Source || !Source.Canonical || !Source.Sugared ||
+        Source.Canonical->size() != 3 || Source.Sugared->size() != 3 || !Input || !Incoming)
+      return false;
+    auto Return = [](const FunctionDecl *Declaration) -> TypeLoc {
+      const auto *Type = Declaration ? Declaration->getTypeSourceInfo() : nullptr;
+      const auto Prototype = Type ? Type->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
+      return Prototype ? Prototype.getReturnLoc() : TypeLoc();
+    };
+    auto Selector = [](TypeLoc Return, bool Dependent,
+                       const TypedefNameDecl **Alias) -> TemplateSpecializationTypeLoc {
+      if (Return.isNull()) return {};
+      NestedNameSpecifierLoc Qualifier;
+      if (const auto Elaborated = Return.getAs<ElaboratedTypeLoc>()) {
+        Qualifier = Elaborated.getQualifierLoc();
+        Return = Elaborated.getNamedTypeLoc();
+      }
+      if (Dependent) {
+        const auto Name = Return.getAs<DependentNameTypeLoc>();
+        if (!Name || !Name.getTypePtr()->getIdentifier() ||
+            Name.getTypePtr()->getIdentifier()->getName() != "type") return {};
+        const auto WrittenQualifier = Name.getQualifierLoc();
+        if (Qualifier && WrittenQualifier &&
+            Qualifier.getNestedNameSpecifier() != WrittenQualifier.getNestedNameSpecifier()) return {};
+        if (!Qualifier) Qualifier = WrittenQualifier;
+      } else {
+        const auto Name = Return.getAs<TypedefTypeLoc>();
+        if (!Name || !Alias) return {};
+        *Alias = Name.getTypedefNameDecl();
+      }
+      if (!Qualifier || !Qualifier.getNestedNameSpecifier()->getAsType() ||
+          Qualifier.getTypeLoc().isNull()) return {};
+      auto Type = Qualifier.getTypeLoc().getUnqualifiedLoc();
+      if (const auto Elaborated = Type.getAs<ElaboratedTypeLoc>()) Type = Elaborated.getNamedTypeLoc();
+      return Type.getAs<TemplateSpecializationTypeLoc>();
+    };
+    const TypedefNameDecl *Alias = nullptr;
+    const auto Original = Selector(Return(Pattern), true, nullptr);
+    const auto Actual = Selector(Return(Function), false, &Alias);
+    const auto *Template = Original
+        ? dyn_cast_or_null<ClassTemplateDecl>(Original.getTypePtr()->getTemplateName().getAsTemplateDecl())
+        : nullptr;
+    const auto *Owner = Alias ? dyn_cast<ClassTemplateSpecializationDecl>(Alias->getDeclContext()) : nullptr;
+    const auto *Parameters = Template ? Template->getTemplateParameters() : nullptr;
+    if (!Original || !Actual || !Template || !Template->getIdentifier() ||
+        Template->getName() != "__mu_return2" || !Check.family(Template, {"__functional/bind.h"}) ||
+        Original.getNumArgs() != 3 || Actual.getNumArgs() != 3 ||
+        Actual.getTypePtr()->getTemplateName().getAsTemplateDecl() != Template ||
+        !Original.getTypePtr()->isDependentType() || Actual.getTypePtr()->isDependentType() ||
+        !Alias || !Alias->getIdentifier() || Alias->getName() != "type" ||
+        !Alias->getTypeSourceInfo() || !family(Alias) || !Owner ||
+        Owner->getSpecializedTemplate() != Template ||
+        Owner->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Actual.getTypePtr()->getAsCXXRecordDecl() != Owner ||
+        !Parameters || Parameters->size() != 3 || Owner->getTemplateArgs().size() != 3) return false;
+    const auto *Positive = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
+    if (!Positive || Positive->getIndex() || Positive->isParameterPack() || Positive->hasDefaultArgument() ||
+        !Context.hasSameType(Positive->getType(), Context.BoolTy) || !family(Positive)) return false;
+    const auto &Selected = Owner->getTemplateArgs();
+    if (Selected[0].getKind() != TemplateArgument::Integral ||
+        !Context.hasSameType(Selected[0].getIntegralType(), Context.BoolTy) ||
+        !Selected[0].getAsIntegral().getBoolValue()) return false;
+    for (unsigned I = 1; I < 3; ++I) {
+      const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
+      const auto OriginalArgument = Original.getArgLoc(I);
+      const auto ActualArgument = Actual.getArgLoc(I);
+      if (!Parameter || Parameter->getIndex() != I || Parameter->isParameterPack() ||
+          Parameter->hasDefaultArgument() || !family(Parameter) ||
+          OriginalArgument.getArgument().getKind() != TemplateArgument::Type ||
+          ActualArgument.getArgument().getKind() != TemplateArgument::Type ||
+          !OriginalArgument.getTypeSourceInfo() || !ActualArgument.getTypeSourceInfo() ||
+          Selected[I].getKind() != TemplateArgument::Type ||
+          Source.Canonical->get(I - 1).getKind() != TemplateArgument::Type ||
+          Source.Sugared->get(I - 1).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Selected[I].getAsType(), Source.Canonical->get(I - 1).getAsType())) return false;
+      const auto *Written = dyn_cast<TemplateTypeParmType>(OriginalArgument.getArgument().getAsType().getTypePtr());
+      const auto *Substituted = dyn_cast<SubstTemplateTypeParmType>(
+          ActualArgument.getArgument().getAsType().getTypePtr());
+      const auto *Expected = I == 1 ? Input : Incoming;
+      if (!Written || Written->getDecl() != Expected || !Substituted ||
+          Substituted->getAssociatedDecl() != Primary || Substituted->getReplacedParameter() != Expected ||
+          Substituted->getPackIndex() ||
+          Substituted->getReplacementType() != Source.Sugared->get(I - 1).getAsType()) return false;
+    }
+    auto Expression = [](const TemplateArgumentLoc &Location) -> const Expr * {
+      const auto &Argument = Location.getArgument();
+      return Argument.getKind() == TemplateArgument::Expression ? Argument.getAsExpr()
+          : Argument.getKind() == TemplateArgument::Integral ? Location.getSourceIntegralExpression() : nullptr;
+    };
+    const auto *Written = Expression(Original.getArgLoc(0));
+    const auto *Converted = Expression(Actual.getArgLoc(0));
+    return Written && Converted &&
+        unwrapPlaceholderPositiveSource(Source, Input, Written, Converted, Argument.PlaceholderRank, [&] {
+          for (unsigned I = 1; I < 3; ++I)
+            if (!Graph.TraverseTemplateArgumentLoc(Original.getArgLoc(I)) ||
+                !Graph.TraverseTemplateArgumentLoc(Actual.getArgLoc(I))) return false;
+          return true;
+        });
+  }
+
+  bool unwrapPlaceholderIndexSource(const TemplateUseSource &Source,
+      const TemplateTypeParmDecl *Input, const FunctionalBindArgumentSource &Argument) {
+    const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    if (!ActiveUnwrapSource || ActiveScalarParameter != &Source || !Function || !Primary || !Pattern ||
+        Source.Declaration != Function || Source.Template != Primary || !Input ||
+        !Argument.PlaceholderRank || Argument.PlaceholderRank > ActiveUnwrapSource->CallForwards.size() ||
+        !Argument.PlaceholderIndex || !Argument.PlaceholderGet || !Argument.PlaceholderForward) return false;
+    auto Index = [&](const FunctionDecl *Declaration) -> const VarDecl * {
+      const auto *Body = Declaration ? dyn_cast_or_null<CompoundStmt>(Declaration->getBody()) : nullptr;
+      const auto *Statement = Body && Body->size() == 2 ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
+      const auto *Variable = Statement && Statement->isSingleDecl()
+          ? dyn_cast<VarDecl>(Statement->getSingleDecl()) : nullptr;
+      const auto *Return = Body && Body->size() == 2 ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+      if (!Variable || !Return || !Return->getRetValue() ||
+          !Variable->getIdentifier() || Variable->getName() != "__indx" ||
+          Variable->getDeclContext() != Declaration || !Variable->isLocalVarDecl() ||
+          Variable->isImplicit() || Variable->isInvalidDecl() || Variable->hasAttrs() ||
+          Variable->getStorageClass() != SC_None || Variable->getTLSKind() != VarDecl::TLS_None ||
+          Variable->hasGlobalStorage() || Variable->isStaticLocal() || Variable->isConstexpr() ||
+          !Variable->getTypeSourceInfo() || !Variable->hasInit() ||
+          !Context.hasSameType(Variable->getType(), Context.getConstType(Context.getSizeType())) ||
+          !Check.family(Variable, {"__functional/bind.h"}) ||
+          !Check.location(Statement->getBeginLoc(), {"__functional/bind.h"}) ||
+          !Check.location(Return->getReturnLoc(), {"__functional/bind.h"})) return nullptr;
+      return Variable;
+    };
+    const auto *Original = Index(Pattern);
+    const auto *Actual = Index(Function);
+    if (!Original || !Actual || Actual != Argument.PlaceholderIndex ||
+        Original->getLocation() != Actual->getLocation() ||
+        Original->getBeginLoc() != Actual->getBeginLoc() || Original->getEndLoc() != Actual->getEndLoc())
+      return false;
+    auto Core = [](const Expr *Expression) -> const Expr * {
+      if (!Expression) return nullptr;
+      Expression = Expression->IgnoreParenImpCasts();
+      if (const auto *Constant = dyn_cast<ConstantExpr>(Expression))
+        Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
+      return Expression;
+    };
+    const auto *Written = Core(Original->getInit());
+    const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Written);
+    const auto *Binary = dyn_cast_or_null<BinaryOperator>(Written);
+    const Expr *Left = nullptr, *Right = nullptr;
+    SourceLocation OperatorLocation;
+    if (Operator) {
+      const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Operator->getCallee()->IgnoreParenImpCasts());
+      if (Operator->getDirectCallee() || !Operator->isTypeDependent() ||
+          Operator->getOperator() != OO_Minus || Operator->getNumArgs() != 2 ||
+          !Lookup || !Lookup->requiresADL() || Lookup->hasExplicitTemplateArgs() ||
+          !Lookup->getNumDecls() || Lookup->getNumDecls() > 64 ||
+          Lookup->getName().getNameKind() != DeclarationName::CXXOperatorName ||
+          Lookup->getName().getCXXOverloadedOperator() != OO_Minus) return false;
+      for (const auto *Candidate : Lookup->decls()) if (!family(Candidate)) return false;
+      Left = Operator->getArg(0); Right = Operator->getArg(1); OperatorLocation = Operator->getOperatorLoc();
+    } else {
+      if (!Binary || Binary->getOpcode() != BO_Sub || !Binary->isValueDependent()) return false;
+      Left = Binary->getLHS(); Right = Binary->getRHS(); OperatorLocation = Binary->getOperatorLoc();
+    }
+    const auto *Converted = dyn_cast_or_null<BinaryOperator>(Core(Actual->getInit()));
+    const auto *One = dyn_cast_or_null<IntegerLiteral>(Core(Right));
+    const auto *Read = Converted ? dyn_cast<ImplicitCastExpr>(Converted->getLHS()) : nullptr;
+    if (!Converted || Converted->getOpcode() != BO_Sub || Converted->isTypeDependent() ||
+        Converted->isValueDependent() || !Converted->isPRValue() ||
+        !Context.hasSameType(Converted->getType(), Context.IntTy) ||
+        !One || !One->getValue().isOne() || !Context.hasSameType(One->getType(), Context.IntTy) ||
+        Core(Converted->getRHS()) != One || !Read || Read->getCastKind() != CK_LValueToRValue ||
+        !Context.hasSameType(Read->getType(), Context.IntTy) ||
+        Converted->getOperatorLoc() != OperatorLocation ||
+        Written->getBeginLoc() != Converted->getBeginLoc() || Written->getEndLoc() != Converted->getEndLoc() ||
+        !Context.hasSameType(Actual->getInit()->getType().getUnqualifiedType(), Context.getSizeType()) ||
+        !unwrapConstraintTraitSource(Source, Primary, Input, Left, Read, "is_placeholder", true)) return false;
+    // A local size_t index is not an arbitrary SDK variable value. Close both
+    // real declaration TSIs and initializers; no read or runtime permission is
+    // published here. Later body/get/forward proofs must own their occurrences.
+    if (!Graph.withBindScalarConstraintSource([&] {
+          if (!Graph.TraverseTypeLoc(Actual->getTypeSourceInfo()->getTypeLoc()) ||
+              !Graph.TraverseStmt(const_cast<Expr *>(Actual->getInit()))) return false;
+          if (Operator) UnwrapScalarConstraintSources.insert(Operator);
+          return Graph.TraverseTypeLoc(Original->getTypeSourceInfo()->getTypeLoc()) &&
+              Graph.TraverseStmt(const_cast<Expr *>(Original->getInit()));
+        })) return false;
+    Expr::EvalResult Value;
+    return Actual->getInit()->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects) &&
+        Value.Val.isInt() && !Value.Val.getInt().isNegative() &&
+        Value.Val.getInt().getLimitedValue(3) == Argument.PlaceholderRank - 1;
+  }
+
+  bool unwrapPlaceholderParameterSource(const TemplateUseSource &Source,
+      const NonTypeTemplateParmDecl *Parameter, TypeSourceInfo *ActualType,
+      const FunctionalBindArgumentSource &Argument) {
+    const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    const auto *Input = Parameters && Parameters->size() == 3
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+    const auto *Incoming = Parameters && Parameters->size() == 3
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+    if (!ActiveUnwrapSource || !Argument.PlaceholderRank || Argument.Reference ||
+        !Argument.PlaceholderIndex || !Argument.PlaceholderGet || !Argument.PlaceholderForward ||
+        Argument.PlaceholderRank > ActiveUnwrapSource->CallForwards.size() ||
+        !Function || Source.Declaration != Function || Source.Kind != TemplateSourceKind::Function ||
+        !Primary || !Parameters || Parameters->size() != 3 ||
+        Source.Template != Primary || !Parameter || !ActualType ||
+        Parameters->getParam(2) != Parameter || Parameter->getIndex() != 2 ||
+        Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
+        !Parameter->getTypeSourceInfo() || !Input || Input->getIndex() ||
+        Input->isParameterPack() || Input->hasDefaultArgument() ||
+        !Incoming || Incoming->getIndex() != 1 || Incoming->isParameterPack() ||
+        Incoming->hasDefaultArgument() || !family(Input) || !family(Incoming) ||
+        !Check.family(Primary, {"__functional/bind.h"}) ||
+        !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 3 ||
+        Source.Sugared->size() != 3) return false;
+    for (const auto *Arguments : {Source.Canonical, Source.Sugared}) {
+      if (Arguments->get(0).getKind() != TemplateArgument::Type ||
+          Arguments->get(1).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments->get(1).getAsType(), ActiveUnwrapSource->CallArguments->getType()) ||
+          Arguments->get(2).getKind() != TemplateArgument::Integral ||
+          !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy) ||
+          !Arguments->get(2).getAsIntegral().isZero()) return false;
+      const auto Identity = describeFunctionalBindPlaceholderIdentity(
+          S, SM, Arguments->get(0).getAsType(), Context);
+      if (!Identity || Identity->Rank != Argument.PlaceholderRank) return false;
+    }
+    if (!Context.hasSameType(Source.Canonical->get(0).getAsType(), Source.Sugared->get(0).getAsType()) ||
+        ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+    ActiveScalarParameter = &Source;
+    auto Restore = llvm::make_scope_exit([&] {
+      ActiveScalarValues.clear(); CompletedScalarValues.clear(); ActiveScalarParameter = nullptr;
+    });
+    auto Enable = [](QualType Type) -> const TemplateSpecializationType * {
+      if (Type.isNull()) return nullptr;
+      if (const auto *Name = dyn_cast<ElaboratedType>(Type.getTypePtr())) Type = Name->getNamedType();
+      return dyn_cast<TemplateSpecializationType>(Type.getTypePtr());
+    };
+    const auto *Original = Enable(Parameter->getTypeSourceInfo()->getType());
+    const auto *Actual = Enable(ActualType->getType());
+    const auto *Alias = Original
+        ? dyn_cast_or_null<TypeAliasTemplateDecl>(Original->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (!Original || !Actual || !Alias || !Alias->getIdentifier() || Alias->getName() != "__enable_if_t" ||
+        !Check.family(Alias, {"__type_traits/enable_if.h"}) || !Original->isTypeAlias() || !Actual->isTypeAlias() ||
+        Actual->getTemplateName().getAsTemplateDecl() != Alias || !Original->isDependentType() ||
+        Actual->isDependentType() || !Context.hasSameType(ActualType->getType(), Context.IntTy)) return false;
+    for (const auto *Type : {Original, Actual}) {
+      const auto Arguments = Type->template_arguments();
+      if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Expression ||
+          Arguments[1].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return false;
+    }
+    return unwrapPlaceholderPositiveSource(Source, Input,
+        Original->template_arguments()[0].getAsExpr(), Actual->template_arguments()[0].getAsExpr(),
+        Argument.PlaceholderRank, [&] {
+          return Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) &&
+              Graph.TraverseTypeLoc(ActualType->getTypeLoc());
+        }) && unwrapPlaceholderReturnConstraintSource(Source, Input, Incoming, Argument) &&
+        unwrapPlaceholderIndexSource(Source, Input, Argument);
+  }
+
   bool unwrapScalarParameterSource(const TemplateUseSource &Source,
       const NonTypeTemplateParmDecl *Parameter, TypeSourceInfo *ActualType) {
     const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration);
+    if (ActiveUnwrapSource && Function)
+      for (const auto &Argument : ActiveUnwrapSource->Arguments)
+        if (Argument.PlaceholderRank && Argument.Unwrap && Argument.Unwrap->getDirectCallee() == Function)
+          return unwrapPlaceholderParameterSource(Source, Parameter, ActualType, Argument);
     bool Scalar = false;
     if (ActiveUnwrapSource && Function)
       for (const auto &Argument : ActiveUnwrapSource->Arguments)
@@ -19689,42 +20100,7 @@ class BindSourceProof {
         OriginalRoot->getEndLoc() != ActualRoot->getEndLoc()) return false;
     auto Trait = [&](const Expr *Written, const Expr *Substituted, llvm::StringRef Name,
                      bool Integer) {
-      const auto *OriginalRead = dyn_cast_or_null<DependentScopeDeclRefExpr>(Core(Written));
-      const auto *ActualRead = dyn_cast_or_null<DeclRefExpr>(Core(Substituted));
-      const auto *OriginalQualifier = OriginalRead ? OriginalRead->getQualifier() : nullptr;
-      const auto *ActualQualifier = ActualRead ? ActualRead->getQualifier() : nullptr;
-      const auto *OriginalType = OriginalQualifier ? OriginalQualifier->getAsType() : nullptr;
-      const auto *SubstitutedType = ActualQualifier ? ActualQualifier->getAsType() : nullptr;
-      const auto *OriginalTrait = OriginalType ? Enable(QualType(OriginalType, 0)) : nullptr;
-      const auto *ActualTrait = SubstitutedType ? Enable(QualType(SubstitutedType, 0)) : nullptr;
-      const auto *Template = OriginalTrait
-          ? dyn_cast_or_null<ClassTemplateDecl>(OriginalTrait->getTemplateName().getAsTemplateDecl()) : nullptr;
-      const auto *Argument = OriginalTrait && OriginalTrait->template_arguments().size() == 1 &&
-          OriginalTrait->template_arguments()[0].getKind() == TemplateArgument::Type
-          ? dyn_cast<TemplateTypeParmType>(OriginalTrait->template_arguments()[0].getAsType().getTypePtr()) : nullptr;
-      const auto *Variable = ActualRead ? dyn_cast<VarDecl>(ActualRead->getDecl()) : nullptr;
-      const auto *ActualArgument = ActualTrait && ActualTrait->template_arguments().size() == 1 &&
-          ActualTrait->template_arguments()[0].getKind() == TemplateArgument::Type
-          ? dyn_cast<SubstTemplateTypeParmType>(ActualTrait->template_arguments()[0].getAsType().getTypePtr())
-          : nullptr;
-      if (!OriginalRead || OriginalRead->getDeclName().getAsString() != "value" ||
-          OriginalRead->hasExplicitTemplateArgs() || !ActualRead || ActualRead->hasExplicitTemplateArgs() ||
-          OriginalRead->getBeginLoc() != ActualRead->getBeginLoc() ||
-          OriginalRead->getEndLoc() != ActualRead->getEndLoc() || !Template ||
-          !Template->getIdentifier() || Template->getName() != Name ||
-          !Check.family(Template, {Name == "__is_reference_wrapper"
-              ? "__type_traits/is_reference_wrapper.h" : "__functional/bind.h"}) ||
-          !Argument || Argument->getDecl() != Input ||
-          !ActualTrait || ActualTrait->isDependentType() || ActualTrait->template_arguments().size() != 1 ||
-          ActualTrait->getTemplateName().getAsTemplateDecl() != Template ||
-          !ActualArgument || ActualArgument->getAssociatedDecl() != Primary ||
-          ActualArgument->getReplacedParameter() != Input || ActualArgument->getPackIndex() ||
-          ActualArgument->getReplacementType() != Source.Sugared->get(0).getAsType() ||
-          !Variable || !Variable->getIdentifier() || Variable->getName() != "value" ||
-          !Variable->isStaticDataMember() || !Variable->hasInit() || !Variable->getType().isConstQualified() ||
-          !Context.hasSameType(Variable->getType().getUnqualifiedType(), Integer ? Context.IntTy : Context.BoolTy))
-        return false;
-      return true;
+      return unwrapConstraintTraitSource(Source, Primary, Input, Written, Substituted, Name, Integer);
     };
     auto Negation = [&](const Expr *Written, const Expr *Substituted, llvm::StringRef Name) {
       const auto *OriginalNot = dyn_cast_or_null<UnaryOperator>(Core(Written));
@@ -20171,11 +20547,127 @@ class BindSourceProof {
     return true;
   }
 
+  bool seedPlaceholderDeclarationTypes() {
+    // The fixed SDK leaf is fully explicit: int rank, no defaults, packs or
+    // partial deduction. Consume its actual declaration TSI and literal, never
+    // fabricate a template-use event or a canonical argument list.
+    for (const auto &Element : Storage.Arguments.Elements) {
+      if (!Element.EmptyBase) continue;
+      const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
+      const auto *Namespace = Identity ? dyn_cast<NamespaceDecl>(Identity->Record->getDeclContext()) : nullptr;
+      if (!Identity || !Namespace || Element.Field ||
+          Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return false;
+      const VarDecl *Variable = nullptr;
+      unsigned Namespaces = 0, Declarations = 0;
+      for (const auto *Owner : Namespace->redecls()) {
+        if (++Namespaces > 64) return false;
+        for (const auto *Declaration : Owner->decls()) {
+          if (++Declarations > 64) return false;
+          const auto *Candidate = dyn_cast<VarDecl>(Declaration);
+          if (!Candidate || !Candidate->getIdentifier() ||
+              Candidate->getName() != (Identity->Rank == 1 ? "_1" : "_2")) continue;
+          if (Variable && Variable->getCanonicalDecl() != Candidate->getCanonicalDecl()) return false;
+          Variable = Candidate;
+        }
+      }
+      const VarDecl *Initializer = nullptr;
+      if (!Variable || Variable->getAnyInitializer(Initializer) ||
+          !Variable->getType().isConstQualified() || Variable->getType().isVolatileQualified() ||
+          Variable->getType().isRestrictQualified() || Variable->getType().getAddressSpace() != LangAS::Default ||
+          !Context.hasSameUnqualifiedType(Variable->getType(), Element.getType())) return false;
+      unsigned Redeclarations = 0;
+      for (const auto *Declaration : Variable->redecls()) {
+        const auto *Owner = dyn_cast<NamespaceDecl>(Declaration->getDeclContext());
+        const auto *Info = Declaration->getTypeSourceInfo();
+        if (++Redeclarations > 64 || !Owner ||
+            Owner->getCanonicalDecl() != Namespace->getCanonicalDecl() ||
+            Declaration->getStorageClass() != SC_Extern || !Declaration->hasGlobalStorage() ||
+            Declaration->getTLSKind() != VarDecl::TLS_None || Declaration->isConstexpr() || Declaration->hasInit() ||
+            !Info || !Context.hasSameType(Declaration->getType(), Variable->getType()) ||
+            !Check.family(Declaration, {"__functional/bind.h"}) ||
+            S.owns(SM, Declaration->getLocation())) return false;
+        auto Written = Info->getTypeLoc().getUnqualifiedLoc();
+        if (const auto Name = Written.getAs<ElaboratedTypeLoc>()) {
+          if (Name.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Name.getQualifierLoc()) return false;
+          Written = Name.getNamedTypeLoc();
+        }
+        const auto Location = Written.getAs<TemplateSpecializationTypeLoc>();
+        const auto *Type = Location ? Location.getTypePtr() : nullptr;
+        const auto *Record = Type ? Type->getAsCXXRecordDecl() : nullptr;
+        if (!Type || Location.getNumArgs() != 1 || Type->isDependentType() || Type->isTypeAlias() ||
+            Type->getTemplateName().getAsTemplateDecl() != Identity->Primary ||
+            !Record || Record->getCanonicalDecl() != Identity->Record->getCanonicalDecl() ||
+            Type->template_arguments().size() != 1 ||
+            !Check.location(Written.getBeginLoc(), {"__functional/bind.h"}) ||
+            !Check.location(Written.getEndLoc(), {"__functional/bind.h"})) return false;
+        const auto Argument = Location.getArgLoc(0);
+        const Expr *Expression = Argument.getArgument().getKind() == TemplateArgument::Integral
+            ? Argument.getSourceIntegralExpression()
+            : Argument.getArgument().getKind() == TemplateArgument::Expression
+                ? Argument.getArgument().getAsExpr() : nullptr;
+        // Sema may retain a constant cache around the written int literal.
+        // Keep every original child; only source-preserving int wrappers may
+        // be peeled here, and the ordinary graph still traverses them below.
+        const Expr *Spelling = Expression;
+        for (unsigned Depth = 0; Spelling && Depth < 64; ++Depth) {
+          const Expr *Child = nullptr;
+          if (const auto *Parentheses = dyn_cast<ParenExpr>(Spelling)) Child = Parentheses->getSubExpr();
+          else if (const auto *Constant = dyn_cast<ConstantExpr>(Spelling)) {
+            Child = Constant->getSubExpr();
+            if (!Child || Constant->isTypeDependent() || Constant->isValueDependent() ||
+                Constant->getValueKind() != Child->getValueKind() ||
+                Constant->getBeginLoc() != Child->getBeginLoc() || Constant->getEndLoc() != Child->getEndLoc())
+              return false;
+          } else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Spelling)) {
+            if (Cast->getCastKind() != CK_NoOp) return false;
+            Child = Cast->getSubExpr();
+          } else break;
+          if (!Child || !Context.hasSameType(Spelling->getType(), Context.IntTy) ||
+              !Context.hasSameType(Child->getType(), Context.IntTy)) return false;
+          Spelling = Child;
+        }
+        const auto *Literal = dyn_cast_or_null<IntegerLiteral>(Spelling);
+        if (!Literal || !Context.hasSameType(Literal->getType(), Context.IntTy) ||
+            Literal->getValue().getLimitedValue(3) != Identity->Rank ||
+            !Check.location(Literal->getExprLoc(), {"__functional/bind.h"})) return false;
+        const auto &Converted = Type->template_arguments()[0];
+        if (Converted.getKind() == TemplateArgument::Integral) {
+          if (!Context.hasSameType(Converted.getIntegralType(), Context.IntTy) ||
+              Converted.getAsIntegral().isNegative() ||
+              Converted.getAsIntegral().getLimitedValue(3) != Identity->Rank) return false;
+        } else if (Converted.getKind() != TemplateArgument::Expression ||
+                   (Converted.getAsExpr() != Literal && Converted.getAsExpr() != Expression)) return false;
+        if (ActivePlaceholderDeclarationType || !Identity->Parameter->getTypeSourceInfo()) return false;
+        ActivePlaceholderDeclarationType = Type;
+        auto Restore = llvm::make_scope_exit([&] { ActivePlaceholderDeclarationType = nullptr; });
+        if (!Graph.withBindSourceChild([&] {
+              return Graph.withBindTemplateParameters(Identity->Primary, Identity->Primary->getTemplateParameters(), [&] {
+                return Graph.TraverseTypeLoc(Identity->Parameter->getTypeSourceInfo()->getTypeLoc()) &&
+                    Graph.TraverseTypeLoc(Info->getTypeLoc());
+              });
+            })) return false;
+        // This is a completed fixed SDK type leaf within this owning bind
+        // proof, not permission to read the extern variable or run an operation.
+        CompletedPlaceholderDeclarationTypes.insert(Type);
+        if (CompletedPlaceholderDeclarationTypes.size() > 2) return false;
+      }
+    }
+    return Graph.bindSourceComplete();
+  }
+
   bool typeSource(const TemplateSpecializationType *Type) {
     return Graph.withBindSourceChild([&] {
       const auto *Template = Type ? dyn_cast_or_null<TemplateDecl>(
           Type->getTemplateName().getAsTemplateDecl()) : nullptr;
       if (!Type || !Template || !family(Template)) return false;
+      if (Type == ActivePlaceholderDeclarationType || CompletedPlaceholderDeclarationTypes.count(Type)) {
+        const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, QualType(Type, 0), Context);
+        if (!Identity || Template != Identity->Primary) return false;
+        for (const auto &Element : Storage.Arguments.Elements)
+          if (Element.EmptyBase && Identity->Record->getCanonicalDecl() == Element.EmptyBase->getCanonicalDecl())
+            return Graph.bindSourceComplete();
+        return false;
+      }
       bool Found = false;
       for (const auto *Use : Sources) {
         if (!Use || Use->Kind != TemplateSourceKind::Type || Use->Type != Type) continue;
@@ -21365,7 +21857,8 @@ class BindSourceProof {
     if (Found != ClosedCompleteCalls.end()) return Found->second.Function;
     for (const auto &[Root, Source] : ClosedCompleteCalls) {
       if (Call == Source.HelperCall) return Source.Helper;
-      if (Call == Source.PrimaryHelperCall)
+      if (Call == Source.PrimaryHelperCall ||
+          std::find(Source.MetadataCalls.begin(), Source.MetadataCalls.end(), Call) != Source.MetadataCalls.end())
         return static_cast<const FunctionDecl *>(nullptr);
     }
     return std::nullopt;
@@ -21653,6 +22146,7 @@ public:
         [this](const TemplateSpecializationType *Type, const std::function<bool()> &Proof) {
           return typeTraversalSource(Type, Proof);
         });
+    Ready = Ready && seedPlaceholderDeclarationTypes();
   }
   bool factory(const FunctionalBindFactorySource &Factory) {
     if (!Ready || Factory.Storage.Record != Storage.Record ||
@@ -21773,6 +22267,31 @@ public:
         if (ClosedCompleteCalls.size() == 64) return false;
         return ClosedCompleteCalls.emplace(Expression, CompletedCallSource{Function}).second;
       };
+      auto CloseMetadata = [&](const CallExpr *Owner, const FunctionDecl *Function,
+                               llvm::ArrayRef<const CallExpr *> Expressions) {
+        const auto Found = ClosedCompleteCalls.find(Owner);
+        if (!Owner || !Function || Owner->getDirectCallee() != Function ||
+            Found == ClosedCompleteCalls.end() || Found->second.Function != Function ||
+            Found->second.HelperCall || Found->second.Helper || Found->second.PrimaryHelperCall ||
+            Expressions.size() > 64) return false;
+        std::vector<const CallExpr *> Children;
+        for (const auto *Expression : Expressions) {
+          if (!Expression) continue;
+          if (Expression == Owner || Expression->getDirectCallee()) return false;
+          if (const auto Existing = completedCallFunction(Expression))
+            if (*Existing) return false;
+          if (std::find(Children.begin(), Children.end(), Expression) == Children.end())
+            Children.push_back(Expression);
+        }
+        auto &Closed = Found->second;
+        if (!Closed.MetadataCalls.empty()) return Closed.MetadataCalls == Children;
+        // The probe/dispatcher source already closed above. Its exact original,
+        // substituted result and noexcept nodes are children of that source,
+        // not additional completed sources. Keep the same 64 owner slots and
+        // re-traverse every real written child on each metadata occurrence.
+        Closed.MetadataCalls = std::move(Children);
+        return true;
+      };
       for (const auto &Argument : Actual->Arguments)
         if (!Argument.Get->getDirectCallee() || !Argument.Unwrap->getDirectCallee() ||
             !Close(Argument.Get, Argument.Get->getDirectCallee()) ||
@@ -21821,8 +22340,9 @@ public:
           if (!CloseDeclval(Expression)) return false;
         for (const auto *Expression : Dispatcher.SpecializedDeclvals)
           if (!CloseDeclval(Expression)) return false;
-        for (const auto *Expression : Probe.OriginalInvokes)
-          if (!Expression || Expression->getDirectCallee() || !Close(Expression, nullptr)) return false;
+        if (std::any_of(Probe.OriginalInvokes.begin(), Probe.OriginalInvokes.end(),
+                [](const auto *Expression) { return !Expression; }) ||
+            !CloseMetadata(Probe.ResultCall, Probe.Function, Probe.OriginalInvokes)) return false;
         const auto *PrimaryException = dyn_cast_or_null<CXXNoexceptExpr>(Dispatcher.PrimaryException);
         const auto *PrimaryNoexcept = PrimaryException
             ? dyn_cast_or_null<CallExpr>(Check.stripped(PrimaryException->getOperand())) : nullptr;
@@ -21830,11 +22350,9 @@ public:
         const auto *ActualNoexcept = ActualException
             ? dyn_cast_or_null<CallExpr>(Check.stripped(ActualException->getOperand())) : nullptr;
         if (!Dispatcher.SignatureCall || !Dispatcher.SpecializedCall) return false;
-        for (const auto *Expression : {Dispatcher.SignatureCall, Dispatcher.SpecializedCall,
-                                       PrimaryNoexcept, ActualNoexcept}) {
-          if (!Expression) continue;
-          if (Expression->getDirectCallee() || !Close(Expression, nullptr)) return false;
-        }
+        const CallExpr *Expressions[] = {Dispatcher.SignatureCall, Dispatcher.SpecializedCall,
+                                          PrimaryNoexcept, ActualNoexcept};
+        if (!CloseMetadata(Probe.Invoke, Dispatcher.Function, Expressions)) return false;
       }
       // The exact probe and dispatcher sources closed above in this same graph.
       // Re-entering their written result/noexcept expressions still walks every
@@ -22131,7 +22649,8 @@ public:
         const FunctionDecl *Function, *Pattern;
         const CXXMethodDecl *Method, *OriginalMethod;
         const FieldDecl *Field, *OriginalField, *Base;
-        const CXXBaseSpecifier *ConversionBase;
+        const CXXBaseSpecifier *ConversionBase, *ElementBase, *OriginalElementBase;
+        bool EmptyBase;
       };
       std::vector<Source> Getters;
       std::map<const MemberExpr *, const ValueDecl *> Members;
@@ -22153,15 +22672,89 @@ public:
             Context.hasSameType(This->getType(), Method->getThisType()) &&
             Context.hasSameType(Use->getType(), Method->getReturnType().getNonReferenceType()) && Member(Use, Field);
       };
-      const FieldDecl *BaseField = nullptr;
-      for (const auto *Field : Storage.Arguments.Record->fields()) {
-        if (BaseField || !Field->getIdentifier() || Field->getName() != "__base_" ||
-            !Field->getTypeSourceInfo() || !family(Field)) return false;
-        BaseField = Field;
-      }
-      if (!BaseField) return false;
+      auto ReturnEmptyBase = [&](const CXXMethodDecl *Method,
+                                  const CXXRecordDecl *Empty,
+                                  const ClassTemplatePartialSpecializationDecl *Partial) {
+        const auto *Body = Method ? dyn_cast_or_null<CompoundStmt>(Method->getBody()) : nullptr;
+        const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+        const auto *Explicit = Return && Return->getRetValue()
+            ? dyn_cast<CXXStaticCastExpr>(Return->getRetValue()->IgnoreParens()) : nullptr;
+        if (!Method || !Explicit || !Explicit->getTypeInfoAsWritten() || !Explicit->isLValue() ||
+            !Method->getReturnType()->isLValueReferenceType() ||
+            !Context.hasSameType(Explicit->getTypeAsWritten(), Method->getReturnType())) return false;
+        const Expr *Input = Explicit->getSubExpr();
+        if (Partial) {
+          const auto *Parameters = Partial->getTemplateParameters();
+          const auto *Parameter = Parameters && Parameters->size() == 2
+              ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+          const auto Type = Method->getReturnType().getNonReferenceType();
+          const auto *Written = dyn_cast<TemplateTypeParmType>(Type.getUnqualifiedType().getTypePtr());
+          if (Method->getParent() != Partial || !Parameter || !Written || Written->getDecl() != Parameter ||
+              Type.isConstQualified() != Method->isConst() || Type.isVolatileQualified() ||
+              Explicit->getCastKind() != CK_Dependent || !Explicit->isTypeDependent()) return false;
+        } else {
+          const auto Identity = Empty
+              ? describeFunctionalBindPlaceholderIdentity(S, SM, Context.getRecordType(Empty), Context) : std::nullopt;
+          const auto Type = Method->isConst() ? Context.getConstType(Context.getRecordType(Empty))
+                                              : Context.getRecordType(Empty);
+          const CastExpr *Conversion = Explicit;
+          if (Explicit->getCastKind() == CK_NoOp)
+            Conversion = dyn_cast<ImplicitCastExpr>(Explicit->getSubExpr()->IgnoreParens());
+          const auto *Base = Conversion && Conversion->path_size() == 1
+              ? *Conversion->path_begin() : nullptr;
+          const auto *Record = Base ? Base->getType()->getAsCXXRecordDecl() : nullptr;
+          if (!Identity || !Conversion || !Conversion->isLValue() ||
+              (Conversion->getCastKind() != CK_DerivedToBase &&
+               Conversion->getCastKind() != CK_UncheckedDerivedToBase) ||
+              !Base || Base->isVirtual() || Base->getAccessSpecifier() != AS_private ||
+              !Base->getTypeSourceInfo() || !Record ||
+              Record->getCanonicalDecl() != Empty->getCanonicalDecl() ||
+              !Context.hasSameType(Explicit->getType(), Type) ||
+              !Context.hasSameType(Conversion->getType(), Type) ||
+              !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type))) return false;
+          Input = Conversion->getSubExpr();
+        }
+        const auto *Dereference = Input ? dyn_cast<UnaryOperator>(Input->IgnoreParenImpCasts()) : nullptr;
+        const auto *This = Dereference && Dereference->getOpcode() == UO_Deref
+            ? dyn_cast<CXXThisExpr>(Dereference->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+        return This && Context.hasSameType(This->getType(), Method->getThisType());
+      };
+      struct Request {
+        const CallExpr *Get;
+        const UtilityTupleRecord *Tuple;
+        unsigned Slot;
+        bool ReadOnly;
+      };
+      const auto Incoming = Actual->CallForwards.empty() ? std::nullopt
+          : approvedUtilityReferenceTupleRecord(S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
+      std::vector<Request> Requests;
       for (unsigned I = 0; I < Actual->Arguments.size(); ++I) {
-        const auto *Get = Actual->Arguments[I].Get;
+        const auto &Argument = Actual->Arguments[I];
+        Requests.push_back({Argument.Get, &Storage.Arguments, I, Actual->Method->isConst()});
+        if (!Argument.PlaceholderRank) continue;
+        if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
+            Argument.PlaceholderRank > Incoming->Elements.size() || !Argument.PlaceholderGet) return false;
+        Requests.push_back({Argument.PlaceholderGet, &*Incoming, Argument.PlaceholderRank - 1, false});
+      }
+      for (const auto &Request : Requests) {
+        const auto &Tuple = *Request.Tuple;
+        const unsigned I = Request.Slot;
+        if (I >= Tuple.Elements.size()) return false;
+        const FieldDecl *BaseField = nullptr;
+        for (const auto *Field : Tuple.Record->fields()) {
+          if (BaseField || !Field->getIdentifier() || Field->getName() != "__base_" ||
+              !Field->getTypeSourceInfo() || !family(Field)) return false;
+          BaseField = Field;
+        }
+        if (!BaseField) return false;
+        const auto *Get = Request.Get;
+        const UtilityTupleLikeSource Elements{Tuple.Elements, nullptr, QualType(), 0};
+        const auto *Selected = Get ? Get->getDirectCallee() : nullptr;
+        if (!Selected || Selected->getNumParams() != 1 ||
+            !Context.hasSameUnqualifiedType(Selected->getParamDecl(0)->getType().getNonReferenceType(),
+                                             Context.getRecordType(Tuple.Record)) ||
+            !approvedUtilityTupleLikeGet(S, SM, Get, Selected->getParamDecl(0)->getType(), Elements, I, Context))
+          return false;
         const auto *Function = Get ? Get->getDirectCallee() : nullptr;
         const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
         const auto *Definition = Function ? Function->getDefinition() : nullptr;
@@ -22175,27 +22768,53 @@ public:
         const auto *Conversion = Cast ? dyn_cast<ImplicitCastExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
         const auto *Base = Conversion ? dyn_cast<MemberExpr>(Conversion->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
         const auto *Object = Base ? dyn_cast<DeclRefExpr>(Base->getBase()->IgnoreParenImpCasts()) : nullptr;
-        const auto *StoredField = Storage.Arguments.Elements[I].Field;
-        // Empty-base getters need their separate selected cast/source proof.
-        // Reject them here until that proof is implemented, without dereferencing a missing field.
-        if (!StoredField) return false;
-        const auto *Leaf = dyn_cast<CXXRecordDecl>(StoredField->getDeclContext());
+        const auto &Element = Tuple.Elements[I];
+        const bool EmptyPlaceholder = Element.EmptyBase && !Element.Field;
+        const auto *Leaf = Element.Field ? dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext())
+                                        : EmptyPlaceholder && Method ? Method->getParent() : nullptr;
         const auto *Owner = Leaf ? dyn_cast<ClassTemplateSpecializationDecl>(Leaf) : nullptr;
         const auto *OriginalMethod = Method
             ? dyn_cast_or_null<CXXMethodDecl>(Method->getInstantiatedFromMemberFunction()) : nullptr;
-        const auto *OwnerPattern = Owner ? Owner->getSpecializedTemplate()->getTemplatedDecl()->getDefinition() : nullptr;
-        const auto *OriginalField = OwnerPattern && std::distance(OwnerPattern->field_begin(), OwnerPattern->field_end()) == 1
+        const auto *Partial = Owner ? Owner->getSpecializedTemplateOrPartial()
+            .dyn_cast<ClassTemplatePartialSpecializationDecl *>() : nullptr;
+        const auto *OwnerPattern = EmptyPlaceholder
+            ? (Partial ? Partial->getDefinition() : nullptr)
+            : Owner ? Owner->getSpecializedTemplate()->getTemplatedDecl()->getDefinition() : nullptr;
+        const auto *OriginalField = !EmptyPlaceholder && OwnerPattern &&
+            std::distance(OwnerPattern->field_begin(), OwnerPattern->field_end()) == 1
             ? *OwnerPattern->field_begin() : nullptr;
-        const auto Value = Actual->Method->isConst()
-            ? Context.getConstType(Storage.Arguments.Elements[I].getType()) : Storage.Arguments.Elements[I].getType();
+        const CXXBaseSpecifier *ElementBase = nullptr, *OriginalElementBase = nullptr;
+        if (EmptyPlaceholder) {
+          const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
+          if (!Identity || Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl() ||
+              !Owner || !Partial || !OwnerPattern || !Owner->field_empty() || Owner->getNumBases() != 1 ||
+              !OwnerPattern->field_empty() || OwnerPattern->getNumBases() != 1 ||
+              Owner->getTemplateArgs().size() != 3 || !family(Partial)) return false;
+          const auto &Arguments = Owner->getTemplateArgs();
+          if (Arguments[0].getKind() != TemplateArgument::Integral || Arguments[0].getAsIntegral().isNegative() ||
+              Arguments[0].getAsIntegral().getLimitedValue(65) != I ||
+              !Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType()) ||
+              Arguments[1].getKind() != TemplateArgument::Type ||
+              !Context.hasSameType(Arguments[1].getAsType(), Element.getType()) ||
+              Arguments[2].getKind() != TemplateArgument::Integral ||
+              !Context.hasSameType(Arguments[2].getIntegralType(), Context.BoolTy) ||
+              !Arguments[2].getAsIntegral().getBoolValue()) return false;
+          ElementBase = &*Owner->bases_begin(); OriginalElementBase = &*OwnerPattern->bases_begin();
+          if (ElementBase->isVirtual() || ElementBase->getAccessSpecifier() != AS_private ||
+              OriginalElementBase->isVirtual() || OriginalElementBase->getAccessSpecifier() != AS_private ||
+              !ElementBase->getTypeSourceInfo() || !OriginalElementBase->getTypeSourceInfo()) return false;
+        }
+        const auto Stored = Element.getType();
+        const auto Value = !Stored->isReferenceType() && Request.ReadOnly
+            ? Context.getConstType(Stored) : Stored.getNonReferenceType();
         if (!Function || !Definition || !Pattern || !LeafCall || !Method || !Reference || Reference->isArrow() ||
             LeafCall->getNumArgs() || !LeafCall->isLValue() || !Method->getIdentifier() || Method->getName() != "get" ||
-            Method->getPrimaryTemplate() || Method->isConst() != Actual->Method->isConst() ||
+            Method->getPrimaryTemplate() || Method->isConst() != Request.ReadOnly ||
             Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-            !Owner || Method->getParent() != Leaf || !OriginalMethod || !OwnerPattern || !OriginalField ||
-            Owner->getSpecializedTemplateOrPartial().is<ClassTemplatePartialSpecializationDecl *>() ||
+            !Owner || Method->getParent() != Leaf || !OriginalMethod || !OwnerPattern ||
+            (EmptyPlaceholder ? !Partial : (bool(Partial) || !OriginalField)) ||
             OriginalMethod->getParent() != OwnerPattern || OriginalMethod->getInstantiatedFromMemberFunction() ||
-            OriginalField->getLocation() != Storage.Arguments.Elements[I].Field->getLocation() ||
+            (!EmptyPlaceholder && OriginalField->getLocation() != Element.Field->getLocation()) ||
             !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Value)) ||
             !Cast || Cast->getCastKind() != CK_NoOp || !Cast->getTypeInfoAsWritten() ||
             !Cast->getTypeAsWritten()->isLValueReferenceType() || !Conversion ||
@@ -22206,8 +22825,11 @@ public:
             Cast->getType().isConstQualified() != Method->isConst() ||
             !Base || Base->isArrow() || Base->getMemberDecl() != BaseField ||
             !Object || Object->getDecl() != Definition->getParamDecl(0) ||
-            !ReturnMember(Method, Storage.Arguments.Elements[I].Field) ||
-            !ReturnMember(OriginalMethod, OriginalField) || !Member(Base, BaseField) || !Member(Reference, Method))
+            (EmptyPlaceholder
+                ? (!ReturnEmptyBase(Method, Element.EmptyBase, nullptr) ||
+                   !ReturnEmptyBase(OriginalMethod, nullptr, Partial))
+                : (!ReturnMember(Method, Element.Field) || !ReturnMember(OriginalMethod, OriginalField))) ||
+            !Member(Base, BaseField) || !Member(Reference, Method))
           return false;
         const auto *ConversionBase = *Conversion->path_begin();
         if (!ConversionBase || ConversionBase->isVirtual() || !ConversionBase->getTypeSourceInfo() ||
@@ -22266,7 +22888,7 @@ public:
             !WrittenIndex || WrittenIndex->getDecl() != Index || !WrittenAlias || WrittenAlias->getDecl() != OriginalAlias)
           return false;
         Getters.push_back({Get, LeafCall, OriginalCall, Function, Pattern, Method, OriginalMethod,
-            Storage.Arguments.Elements[I].Field, OriginalField, BaseField, ConversionBase});
+            Element.Field, OriginalField, BaseField, ConversionBase, ElementBase, OriginalElementBase, EmptyPlaceholder});
       }
       return Graph.withBindSourceMemberUses(Members, [&] {
         auto RestoreCalls = llvm::make_scope_exit([&] { TupleGetMemberSources.clear(); });
@@ -22279,8 +22901,10 @@ public:
                 Method->isConst() != Get.Method->isConst() ||
                 Method->isStatic() || Method->isVariadic() || Method->getNumParams() ||
                 Method->isDeleted() || Method->isInvalidDecl() || !Method->isInlined() ||
-                !Prototype || !Prototype->isNothrow() || !Method->getBody() || !family(Entry.second) ||
-                !Graph.TraverseTypeLoc(Entry.second->getTypeSourceInfo()->getTypeLoc())) return false;
+                !Prototype || !Prototype->isNothrow() || !Method->getBody() ||
+                (!Get.EmptyBase && !Entry.second) ||
+                (Entry.second && (!family(Entry.second) || !Entry.second->getTypeSourceInfo() ||
+                 !Graph.TraverseTypeLoc(Entry.second->getTypeSourceInfo()->getTypeLoc())))) return false;
             for (const auto *Declaration : Method->redecls())
               if (!Declaration->getTypeSourceInfo() || !family(Declaration) || !Graph.function(Declaration) ||
                   !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
@@ -22293,6 +22917,9 @@ public:
           }
           if (!Graph.TraverseTypeLoc(Get.Base->getTypeSourceInfo()->getTypeLoc()) ||
               !Graph.TraverseTypeLoc(Get.ConversionBase->getTypeSourceInfo()->getTypeLoc())) return false;
+          for (const auto *Base : {Get.ElementBase, Get.OriginalElementBase})
+            if (Base && (!Base->getTypeSourceInfo() ||
+                !Graph.TraverseTypeLoc(Base->getTypeSourceInfo()->getTypeLoc()))) return false;
           auto Signature = [&](const FunctionDecl *Declaration) {
             const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
             if (!Declaration->getIdentifier() || Declaration->getName() != "get" ||

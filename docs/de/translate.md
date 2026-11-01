@@ -1011,3 +1011,33 @@ Die Factory-Beschreibung bindet jeden ursprünglichen Operanden an die exakte SD
 
 
 Der bind-Quellgraph erhält nur seine tatsächlichen leeren Platzhalter-Unterobjekte und die gewählten Kopier- und Destruktionsquellen. Jede erneute Beschreibung vergleicht die ursprünglichen Operanden. Allgemeine tuple- und SDK-Variablenrechte bleiben gleich; die Ausführung ist noch unvollständig.
+
+
+Der bind-Getter-Nachweis prüft das gewählte leere tuple-Blatt, seine ursprüngliche partielle Spezialisierung und beide privaten Basiskonvertierungen. Feldnachweise bleiben erhalten. Argumentprojektion und Laufzeitübersetzung sind unvollständig; dies ist kein erfolgreicher Ausführungsnachweis.
+
+
+Jede bind-Eingangsprojektion wird an ihr tatsächliches Aufruf-tuple, die gewählte Quelle und den Rang gebunden. Speicherposition, Eingangsrang, Referenzen und const werden getrennt geprüft. Rechte und Caches gelten nur für diesen Aufruf; vollständige Ausführung ist noch unvollständig.
+
+
+Der bind-Nachweis prüft die positive Platzhalterbedingung separat anhand des exakt gewählten Funktionspakets und Rangs. Originale und substituierte Operatorquellen schließen vor der Wertprüfung. Skalare Nullbedingungen bleiben erhalten; vollständiger Funktionskörper und Laufzeitunterstützung sind noch unvollständig.
+
+
+Geschütztes bind-Lowering erfasst Eingangsbindungen einmal und projiziert auch wiederholte Ränge daraus. Exakte leere SDK-Marker vermeiden externe Wertlese- und Feldschreibzugriffe. Weiterhin sind vollständige Factory-/Aufrufzertifikate erforderlich; Frontend-Freigabe und Ausführungsprüfung sind unvollständig.
+
+
+Bind-eigene Platzhalter-tuples erhalten eigene Layout-, Abhängigkeits- und Nullinitialisierungspfade. Die Ausgabe verlangt vollständige Zertifikate aller Eigentümer und prüft Felder, leere Positionen, Größe, Ausrichtung und Padding erneut. Allgemeine tuple-Rechte bleiben gleich; vollständiger Körper und Ausführungsprüfung sind unvollständig.
+
+
+Der bind-Typnachweis prüft die tatsächliche SDK-extern-TSI, den primären int-Parameter und das geschriebene Rangliteral. Er erzeugt keine Deduktionsdaten, Argumentlisten, Initialisierer oder Variablenwertrechte. Der Cache aus zwei Typnachweisen gehört nur zur exakten bind-Wurzel; die Ausführung ist unvollständig.
+
+
+Der bind-Rückgabetypselektor weist seinen geschriebenen und substituierten positiven Vergleich eigenständig nach. Rückgabe-TSI, Eigentümer des ausgewählten typedef sowie primäre Parameter und Substitutionseigentümer werden unabhängig von der separaten NTTP-Bedingung geprüft. Ein kanonischer true-Wert ersetzt keinen Quellnachweis. Rumpf und Laufzeitprüfung sind unvollständig.
+
+
+Erst nach vollständigem Fabrikquell- und trivialem Lebensdauernachweis erhält der originale SDK-Argumentknoten _1/_2 eine lokale Leerobjektrolle. Tatsächliche Klammern, No-op-Hüllen, Namen, Qualifizierer und abschließende Neuprüfung bleiben erhalten. Eigenständige Werte, Adressen, Aliase und nebenwirkende Argumente erhalten keine Freigabe. Grenzfälle sind vorbereitet; Aufruf und Laufzeitprüfung bleiben unvollständig.
+
+
+Der lokale bind-Indexnachweis prüft originale und ausgewählte const-size_t-Deklarationen, geschriebene Typquellen und beide Initialisierer. Trait-Lesezugriff, Substitutionseigentümer, Subtraktion und Literal 1 werden vor der Rang-minus-eins-Auswertung zugeordnet. Es entstehen keine Lese-, Rumpf-, Getter- oder Weiterleitungsrechte. Aufruf und Laufzeitprüfung bleiben unvollständig.
+
+
+Die echte Spur mit sieben Anfragen reproduziert den Achtwertefehler bei 64 abgeschlossenen Quellen, zwei Proben und 36 declval. Die Korrektur ordnet tatsächliche Rückgabe-/noexcept-Metadatenaufrufe bereits bewiesener Proben und Verteiler ihrer bestehenden Eigentümerquelle zu. Kinddurchläufe sowie Grenzen für 64 Einträge, Tiefe, Knoten und Zeit bleiben unverändert. Neue Actions-Prüfungen stehen aus.
