@@ -1041,3 +1041,12 @@ La prova dell’indice locale bind verifica le dichiarazioni const size_t origin
 
 
 La traccia reale di sette richieste riproduce il guasto con otto valori a 64 sorgenti completati, due sonde e 36 declval. La correzione associa i metadati reali di ritorno/noexcept di sonde e dispatcher già provati al sorgente proprietario esistente. Restano visita dei figli e limiti di 64 elementi, profondità, nodi e tempo. La nuova verifica Actions è in attesa.
+
+
+Actions ha rilevato due errori di compilazione: variabili dedotte come UnqualTypeLoc ricevevano valori TypeLoc. Le due dichiarazioni usano ora TypeLoc esplicito, conservando nodi AST, controlli e limiti. L’esperimento di sedici richieste si è fermato in compilazione senza eseguire richieste di prova. La correzione resta da verificare.
+
+
+Il controllo del getter collega il riferimento reale get<__indx> alla sua dichiarazione locale e al pacchetto __mu selezionato. Ogni lettura ricontrolla condizione positiva, selettore di ritorno e inizializzazioni originali e istanziate, anche con la cache. La variabile non entra nella cache generale e l’ambito viene ripristinato. Corpo completo, forward e verifica Actions restano incompleti; non è prova di nuovo supporto runtime.
+
+
+L’altro riferimento all’indice selezionato, in forward<tuple_element<__indx, Uj>::type>, richiede l’alias scritto esatto, il proprietario tuple_element, l’indice e la sostituzione della tupla entrante. Condivide la prova rinnovata delle inizializzazioni originali e istanziate del getter. Si aggiunge solo una lettura di metadati limitata all’ambito. Corpo originale completo, operando forward, accettazione runtime e Actions restano da completare.

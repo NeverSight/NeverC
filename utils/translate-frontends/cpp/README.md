@@ -1279,3 +1279,12 @@ The bind placeholder local index proof now checks the actual original and select
 
 
 The actual seven-request trace reproduced the eight-bound-value failure at 64 completed source entries, with two probes and 36 declvals. The repair attaches each already completed probe or dispatcher’s exact result/noexcept metadata calls to that existing owner source, as with declval helper children. Every real child still traverses and the 64-entry, depth, node and timeout limits remain unchanged. New Actions verification is pending; this is not a new passing regression result.
+
+
+Actions found two compilation errors where inferred UnqualTypeLoc variables received TypeLoc values. Both declarations now use TypeLoc explicitly, preserving the same AST nodes, source checks and limits. The sixteen-request experiment stopped during compilation and executed no test requests; verification of this repair is pending.
+
+
+Placeholder getter source checks now bind the exact written get<__indx> reference to its actual local declaration and selected __mu packet. Every read freshly checks the positive constraint, return selector and both original/selected index initializers, including cached packets; it never enters the general completed-variable cache. The scope restores on exit. Full placeholder body/forward closure and Actions verification remain pending; this is not new runtime support evidence.
+
+
+The other selected placeholder index occurrence, inside forward<tuple_element<__indx, Uj>::type>, now requires that exact written alias, its tuple_element owner, selected rank and incoming tuple substitution. It shares the getter read’s fresh original/selected initializer proof. This adds only a scoped metadata read; the full original body and forward operand source, runtime acceptance and Actions validation are still pending.

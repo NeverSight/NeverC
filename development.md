@@ -2411,7 +2411,7 @@ caller-state replacement need different contracts.
 `sync-x86-snp-context.py` own the generated tables. Existing opcode IDs stay
 stable. The SNP generator appends RMPREAD/RMPOPT/RMPCHKD/VMGEXIT and the native
 completion pseudo, with independent uses/defs, encoding and drift tests.
-The installed header is listed in `neverc/lib/Headers/CMakeLists.txt`.
+The installed header is listed in [neverc/lib/Headers/CMakeLists.txt](neverc/lib/Headers/CMakeLists.txt).
 
 Run `X86SNPContextTest.*` for C23 frontend, ELF/COFF/Mach-O and immediate/mode
 checks. `tests/neverc/X86/verify_snp_context.py --keep OUTPUT` compares native

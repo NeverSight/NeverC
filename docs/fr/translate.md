@@ -1041,3 +1041,12 @@ La preuve de l’indice local bind vérifie les déclarations const size_t origi
 
 
 La trace réelle de sept requêtes reproduit l’échec des huit valeurs à 64 sources terminées, deux sondes et 36 declval. La correction rattache les appels réels de métadonnées retour/noexcept des sondes et répartiteurs déjà prouvés à leur source propriétaire existante. Parcours des enfants et limites de 64 entrées, profondeur, nœuds et temps restent inchangés. La nouvelle validation Actions est en attente.
+
+
+Actions a détecté deux erreurs de compilation : des variables déduites UnqualTypeLoc recevaient des valeurs TypeLoc. Les deux déclarations utilisent désormais explicitement TypeLoc, sans changer les nœuds AST, contrôles ni limites. L’expérience de seize requêtes s’est arrêtée à la compilation sans exécuter de requête. La correction reste à vérifier.
+
+
+La vérification du getter lie la référence réelle get<__indx> à sa déclaration locale et au paquet __mu sélectionné. Chaque lecture revérifie la condition positive, le sélecteur de retour et les initialisations originales et instanciées, même avec un paquet en cache. La variable ne rejoint pas le cache général et la portée est restaurée. Le corps complet, forward et la validation Actions restent incomplets ; aucun nouveau support d’exécution n’est établi.
+
+
+L’autre référence d’indice sélectionnée, dans forward<tuple_element<__indx, Uj>::type>, exige l’alias écrit exact, son propriétaire tuple_element, le rang et la substitution du tuple entrant. Elle partage la preuve renouvelée des initialisations originales et instanciées du getter. Seule une lecture de métadonnées limitée à la portée est ajoutée. Corps original complet, opérande forward, acceptation à l’exécution et validation Actions restent en attente.
