@@ -47,7 +47,7 @@ def operands(text, kinds, ties=None):
     for index, kind in enumerate(kinds):
         if kind.endswith("mem"):
             values.append(memory)
-        elif kind == "i32imm":
+        elif kind in ("i32imm", "i64imm"):
             values.append("{ -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },")
         else:
             tie = f"MCOI_TIED_TO({ties[index]})" if ties and index in ties else "0"

@@ -2541,3 +2541,58 @@ XINUSE may legally be set even for an initial component. The projection mode
 also retains the independent original image before NeverD imports its state.
 These tests do not qualify bare-metal firmware, SMI selection/entry emulation,
 SGX/CET/VMX interactions, faults or asynchronous interruption.
+
+## Terminal native SGX state and original instruction sites
+
+`<sgxcontextintrin.h>` exposes the 144-byte `__sgx_transfer_context` with sixteen
+complete GPRs in encoding order, RFLAGS and a standard XSAVE image pointer.
+`__sgx_transfer` emits `llvm.x86.enclu.transfer.context(ptr)` for EENTER,
+ERESUME or EEXIT (low EAX 2/3/4). Other leaves trap before xstate import or
+target-stack installation. The full input RAX, including its upper half,
+is retained. A final terminal pseudo imports x87/SSE/AVX, flags and all GPRs,
+then emits ENCLU/UD2 without an epilogue. The existing C frame is abandoned.
+
+`__sgx_transfer_at(context, constant_pc)` emits
+`llvm.x86.enclu.transfer.at.context(ptr, i64 immarg)`. It performs the same
+state import followed by a RIP-relative indirect jump through a code-local
+address literal. The literal is naturally aligned so CPL3 alignment checking
+with CR0.AM=1 and restored AC=1 cannot fault on the jump's own memory read.
+This consumes no restored GPR and preserves flags. The
+original immutable executable ENCLU bytes and native continuation/AEP must
+remain mapped. EENTER therefore exposes the original next PC in RCX; it is
+not silently rebound to a different generated address. Subsequent enclave
+execution, SSA restoration and AEX use the actual processor and original
+native runtime. The direct interface's generated return PC deliberately traps
+and instead requires a protocol that never returns to that address.
+
+Both interfaces require native code64 SGX, XCR0=7, valid aligned images,
+disjoint accessible storage, no concurrent mutation, CPL3-realizable POPF
+flags and disabled CET. Input transport is not atomic and supplies no
+original-PC fault recovery midway through its instructions. FS/GS caches,
+EPC/TCS/SSA and other untransported state belong to the native environment.
+NeverC's frontend remains x64-only; the full LLVM fork also provides code32
+and x32 lowering, including their original-site branch encodings.
+
+`sync-x86-sgx-transfer-context.py` owns the pseudos' complete GPR/FS/GS/flags
+definitions, incoming compiler RSP use, conservative memory effects and
+terminal barriers. The intrinsic generator owns signatures, noreturn effects
+and the constant-site operand. `X86SGXTransferContextTest.*` exercises the
+installed header, both native interfaces, all three x64 object formats and
+invalid signatures/features/nonconstant sites. Run
+`tests/neverc/X86/verify_sgx_transfer_context.py --llvm-bin LLVM_BIN --neverc
+COMPILER --output OUTPUT` and repeat with `--original-site` for KVM input
+transport comparison across compiler backends, optimization levels and modes.
+The oracle stops immediately before ENCLU and executes **zero enclave
+instructions**. It compares every represented GPR, flags, unchanged memory
+and x87/SSE/AVX against independent original XRSTOR bytes; missing-XRSTOR and
+wrong-original-site mutations must fail. CR0.AM stays enabled throughout,
+including inputs with AC set. It does not certify successful
+enclave entry, exit, resume or AEX on a machine without SGX.
+
+The November 1 qualification passes 36 compiler/mode/optimization profiles
+across the two interfaces: 331,776 input-state observations and 864 rejected
+invalid leaves. This includes code32/code64/x32 through full LLVM, code64
+through NeverC and both LLVM backend pass managers. All 13 adjacent frontend
+tests and 26 generator tests pass. The shared XSAVE fixture also passes six
+SMM compiler profiles with 18,432 complete native state pairs. These counts
+retain the instruction-boundary scope above: zero enclave instructions ran.

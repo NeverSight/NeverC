@@ -2307,6 +2307,8 @@ void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
     return;
   if (emitSMMContext(MI))
     return;
+  if (emitSGXTransferContext(MI))
+    return;
   if (MI->getOpcode() == X86::NATIVE_FRAME_RETURN64) {
     const bool Wide = true;
     const auto Info = X86::nativeFrameReturnInfo(MI->getOperand(1).getImm());

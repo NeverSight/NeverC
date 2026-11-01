@@ -15,6 +15,7 @@ set(sources
   X86SVMContext.cpp
   X86SVMContextEmitter.cpp
   X86SMMContextEmitter.cpp
+  X86SGXTransferContextEmitter.cpp
   X86HyperVContextEmitter.cpp
   X86SNPContextEmitter.cpp
   X86HLEContextEmitter.cpp

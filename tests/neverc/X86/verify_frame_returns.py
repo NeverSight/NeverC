@@ -246,7 +246,7 @@ SECTIONS {
               "Native frame input transport and successful IRET/RETF/SYSENTER transfers; CET disabled",
         host=platform.platform(), code_bits=32 if args.i386 else 64, profiles=results,
         smm_software_context=args.smm_context,
-        source_sha256={p.name: sha256(p) for p in (Path(__file__), ROOT / "frame_return_kvm.c", ROOT / "smm_return_kvm.c", ROOT / "KvmTransferFixture.h")},
+        source_sha256={p.name: sha256(p) for p in (Path(__file__), ROOT / "frame_return_kvm.c", ROOT / "smm_return_kvm.c", ROOT / "KvmTransferFixture.h", ROOT / "NativeXStateFixture.h")},
         tools={name: dict(path=path, sha256=sha256(path)) for name, path in tools.items()},
         reference="Intel SDM Vol. 2 IRET/RET/SYSENTER; Vol. 3C 34.4.1 SMM state",
         reference_url="https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf",

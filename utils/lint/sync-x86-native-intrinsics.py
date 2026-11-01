@@ -79,8 +79,11 @@ for name, immediate in re.findall(
 DECLARATIONS["sysenter"] = ("Done",)
 DECLARATIONS["rsm"] = ("Done",)
 DECLARATIONS["rsm_context"] = ("Done", "PTR")
+DECLARATIONS["enclu_transfer_context"] = ("Done", "PTR")
+DECLARATIONS["enclu_transfer_at_context"] = ("Done", "PTR", "I64")
 TERMINAL_TRANSFERS = {"skinit", "sysret32", "sysret64", "sysexit32", "sysexit64",
-                      "sysenter", "rsm", "rsm_context", *FRAME_RETURNS}
+                      "sysenter", "rsm", "rsm_context", "enclu_transfer_context",
+                      "enclu_transfer_at_context", *FRAME_RETURNS}
 DECLARATIONS["invlpga"] = ("Done", "I64", "I32")
 for operation in ("vmload", "vmsave"):
     DECLARATIONS[operation + "_addr32"] = ("Done", "I32")
@@ -375,7 +378,8 @@ def synchronize(write):
         if suffix in ADDRESS_SIGNATURES:
             attribute = address_attributes[ADDRESS_SIGNATURES[suffix][1]]
         if suffix in TERMINAL_TRANSFERS:
-            attribute = immediate_transfer if FRAME_RETURNS.get(suffix) else transfer_attribute
+            attribute = (immediate_transfer if FRAME_RETURNS.get(suffix) or
+                         suffix == "enclu_transfer_at_context" else transfer_attribute)
         if suffix == "vmrun_context":
             attribute = vmrun_attribute
         if suffix == "hyperv_call":

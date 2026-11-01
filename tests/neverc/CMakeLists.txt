@@ -67,6 +67,7 @@ set(NEVERC_TEST_SOURCES
   X86/SkinitFrontendTests.cpp
   X86/SVMContextFrontendTests.cpp
   X86/SMMContextFrontendTests.cpp
+  X86/SGXTransferContextFrontendTests.cpp
   X86/KVMHypercallFrontendTests.cpp
   X86/HyperVContextFrontendTests.cpp
   X86/SNPContextFrontendTests.cpp

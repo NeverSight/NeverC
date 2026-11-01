@@ -1,6 +1,7 @@
 // KVM-mediated SMM qualification: SMI-created save image, compiled
 // RSM, and independent original-byte RSM on a second vCPU in SMM.
 #include "KvmTransferFixture.h"
+#include "NativeXStateFixture.h"
 
 static void enter_smm(struct cpu *cpu, struct kvm_regs saved) {
   CHECK(ioctl(cpu->fd, KVM_SET_REGS, &saved) == 0);
@@ -20,25 +21,6 @@ static void enter_smm(struct cpu *cpu, struct kvm_regs saved) {
   CHECK(ioctl(cpu->fd, KVM_SET_SREGS, &cpu->initial) == 0);
   cpu->run->cr8 = cpu->initial.cr8;
   CHECK(ioctl(cpu->fd, KVM_GET_VCPU_EVENTS, &events) == 0 && events.smi.smm);
-}
-
-// KVM may materialize an initial component while saving its host FPU context.
-// XINUSE=1 does not imply non-initial register values (SDM 13.6). Compare the
-// represented architectural values, not that permitted tracking choice.
-static void canonical_xsave7(struct kvm_xsave *state) {
-  uint8_t *b = (void *)state;
-  const uint64_t bv = *(uint64_t *)(b + 512);
-  if (!(bv & 1)) {
-    memset(b, 0, 24);
-    *(uint16_t *)b = 0x37f;
-    memset(b + 32, 0, 128);
-  }
-  if (!(bv & 2))
-    memset(b + 160, 0, 256);
-  if (!(bv & 4))
-    memset(b + 576, 0, 256);
-  // Standard XRSTOR loads MXCSR even for initial SSE/AVX components.
-  *(uint64_t *)(b + 512) = bv | 7;
 }
 
 static uint64_t get_kernel_gs(int fd) {
