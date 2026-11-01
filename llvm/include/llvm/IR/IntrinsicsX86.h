@@ -1334,6 +1334,10 @@ enum X86Intrinsics : unsigned {
     x86_rstorssp,                                    // llvm.x86.rstorssp
     x86_rtm_abort_pair,                              // llvm.x86.rtm.abort.pair
     x86_saveprevssp,                                 // llvm.x86.saveprevssp
+    x86_sdivrem16,                                   // llvm.x86.sdivrem16
+    x86_sdivrem32,                                   // llvm.x86.sdivrem32
+    x86_sdivrem64,                                   // llvm.x86.sdivrem64
+    x86_sdivrem8,                                    // llvm.x86.sdivrem8
     x86_seh_lsda,                                    // llvm.x86.seh.lsda
     x86_senduipi,                                    // llvm.x86.senduipi
     x86_serialize,                                   // llvm.x86.serialize
@@ -1615,6 +1619,10 @@ enum X86Intrinsics : unsigned {
     x86_tlbsync,                                     // llvm.x86.tlbsync
     x86_tmmultf32ps,                                 // llvm.x86.tmmultf32ps
     x86_tpause,                                      // llvm.x86.tpause
+    x86_udivrem16,                                   // llvm.x86.udivrem16
+    x86_udivrem32,                                   // llvm.x86.udivrem32
+    x86_udivrem64,                                   // llvm.x86.udivrem64
+    x86_udivrem8,                                    // llvm.x86.udivrem8
     x86_uiret,                                       // llvm.x86.uiret
     x86_umonitor,                                    // llvm.x86.umonitor
     x86_umwait,                                      // llvm.x86.umwait

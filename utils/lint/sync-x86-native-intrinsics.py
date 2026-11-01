@@ -54,6 +54,11 @@ DECLARATIONS = {
     "lkgs_reg": ("Done", "I16"),
     "lkgs_mem": ("Done", "PTR"),
 }
+NATIVE_DIVISIONS = {f"{kind}divrem{bits}" for kind in ("u", "s")
+                    for bits in (8, 16, 32, 64)}
+for name in sorted(NATIVE_DIVISIONS):
+    bits = re.search(r"(\d+)$", name).group(1)
+    DECLARATIONS[name] = ("STRUCT2",) + (f"I{bits}",) * 5
 SNP_CONTEXTS = {name + "_context" for name in ('psmash', 'pvalidate', 'rmpadjust', 'rmpupdate', 'rmpquery', 'rmpread', 'rmpopt', 'rmpchkd')}
 for name in sorted(SNP_CONTEXTS):
     DECLARATIONS[name] = ("Done", "PTR", "PTR", "I32")
@@ -390,7 +395,7 @@ def synchronize(write):
             attribute = hle_attribute
         if suffix == "rtm_abort_pair":
             attribute = rtm_abort_attribute
-        if suffix in KVM_HYPERCALLS or suffix == "vmgexit_sev":
+        if suffix in KVM_HYPERCALLS or suffix in NATIVE_DIVISIONS or suffix == "vmgexit_sev":
             attribute = hypercall_attribute
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)

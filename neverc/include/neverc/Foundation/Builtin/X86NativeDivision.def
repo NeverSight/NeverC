@@ -1,0 +1,10 @@
+// Native DIV/IDIV bit-pattern interfaces. Define X86_NATIVE_DIVISION first.
+// Each returns the quotient and takes low, high, divisor, remainder-pointer.
+X86_NATIVE_DIVISION(udivrem8, "Uc")
+X86_NATIVE_DIVISION(sdivrem8, "Uc")
+X86_NATIVE_DIVISION(udivrem16, "Us")
+X86_NATIVE_DIVISION(sdivrem16, "Us")
+X86_NATIVE_DIVISION(udivrem32, "Ui")
+X86_NATIVE_DIVISION(sdivrem32, "Ui")
+X86_NATIVE_DIVISION(udivrem64, "ULLi")
+X86_NATIVE_DIVISION(sdivrem64, "ULLi")

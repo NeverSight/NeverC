@@ -3102,33 +3102,22 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntCast(MulResult, ResType, IsSigned);
   }
 
+#define X86_NATIVE_DIVISION(Name, Type)                                        \
+  case X86::BI__builtin_ia32_##Name: {                                         \
+    auto *Pair = Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_##Name),    \
+                                    {Ops[0], Ops[1], Ops[2]});                 \
+    Builder.CreateStore(Builder.CreateExtractValue(Pair, 1),                   \
+                        genPointerWithAlignment(E->getArg(3)));                \
+    return Builder.CreateExtractValue(Pair, 0);                                \
+  }
+#include "neverc/Foundation/Builtin/X86NativeDivision.def"
+#undef X86_NATIVE_DIVISION
   case X86::BI_udiv128: {
-    llvm::Type *ResType = convertType(E->getType());
-    llvm::Type *Int128Ty = llvm::IntegerType::get(getLLVMContext(), 128);
-
-    // Retrieve operands
-    Value *HighDividend = Builder.CreateIntCast(Ops[0], Int128Ty, false);
-    Value *LowDividend = Builder.CreateZExt(Ops[1], Int128Ty);
-    Value *Divisor = Ops[2];
-
-    // Combine HighDividend and LowDividend into a 128-bit dividend
-    Value *Dividend = Builder.CreateShl(HighDividend, 64);
-    Dividend = Builder.CreateOr(Dividend, LowDividend);
-
-    Value *DivisorExt = Builder.CreateZExt(Divisor, Int128Ty);
-
-    // Perform division
-    Value *Quotient = Builder.CreateUDiv(Dividend, DivisorExt);
-    Value *Remainder = Builder.CreateURem(Dividend, DivisorExt);
-
-    // Truncate results to 64 bits
-    Quotient = Builder.CreateTrunc(Quotient, ResType);
-    Remainder = Builder.CreateTrunc(Remainder, ResType);
-
-    Address RemainderAddr = genPointerWithAlignment(E->getArg(3));
-    Builder.CreateStore(Remainder, RemainderAddr);
-
-    return Quotient;
+    auto *Pair = Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_udivrem64),
+                                    {Ops[1], Ops[0], Ops[2]});
+    Builder.CreateStore(Builder.CreateExtractValue(Pair, 1),
+                        genPointerWithAlignment(E->getArg(3)));
+    return Builder.CreateExtractValue(Pair, 0);
   }
   case X86::BI__faststorefence: {
     return Builder.CreateFence(llvm::AtomicOrdering::SequentiallyConsistent,

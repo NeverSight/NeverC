@@ -48,6 +48,17 @@ class NativeSignaturesTest(unittest.TestCase):
                 self.assertEqual(NATIVE.DECLARATIONS[f"{operation}{bits}"],
                                  (f"I{bits}", "PTR"))
 
+    def test_native_divisions_return_two_words_from_three_input_words(self):
+        self.assertEqual(len(NATIVE.NATIVE_DIVISIONS), 8)
+        for bits in (8, 16, 32, 64):
+            for kind in ("u", "s"):
+                self.assertEqual(NATIVE.DECLARATIONS[f"{kind}divrem{bits}"],
+                                 ("STRUCT2",) + (f"I{bits}",) * 5)
+        recipe, updated = NATIVE.nonreturning_transfer_attribute(self.impl, returning=True)
+        self.assertEqual(updated, self.impl)
+        body = updated.split(f"    case {recipe}: {{\n", 1)[1].split("    }", 1)[0]
+        self.assertNotIn("getIntrinsicArgAttributeSet", body)
+
     def test_vmrun_is_a_returning_context_with_an_immediate_width(self):
         self.assertEqual(NATIVE.DECLARATIONS["vmrun_context"],
                          ("Done", "PTR", "I32"))

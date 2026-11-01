@@ -20,7 +20,7 @@ TARGET_HEADER_BUILTIN(__mulh,  "LLiLLiLLi",    "nch", INTRIN_H, ALL_MS_LANGUAGES
 TARGET_HEADER_BUILTIN(__umulh, "ULLiULLiULLi", "nch", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(_mul128, "LLiLLiLLiLLi*",      "nch",   INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(_umul128, "ULLiULLiULLiULLi*", "nch",   INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(_udiv128, "ULLiULLiULLiULLiULLi*", "nch",   INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(_udiv128, "ULLiULLiULLiULLiULLi*", "nh",   INTRIN_H, ALL_MS_LANGUAGES, "")
 
 TARGET_HEADER_BUILTIN(__faststorefence, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__shiftleft128, "ULLiULLiULLiUc", "nch", INTRIN_H, ALL_MS_LANGUAGES, "")
@@ -200,6 +200,12 @@ TARGET_HEADER_BUILTIN(__svm_vmload, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__svm_vmsave, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__svm_skinit, "vi", "nrh", INTRIN_H, ALL_MS_LANGUAGES, "")
 BUILTIN(__builtin_ia32_skinit, "vUi", "nr")
+// Explicit full-dividend division. Results and operands are bit patterns;
+// the native operation owns divide errors before the remainder store.
+#define X86_NATIVE_DIVISION(Name, Type) \
+  BUILTIN(__builtin_ia32_##Name, Type Type Type Type Type "*", "n")
+#include "X86NativeDivision.def"
+#undef X86_NATIVE_DIVISION
 #define X86_NATIVE_TRANSFER(Name, Type, Features) \
   TARGET_BUILTIN(__builtin_ia32_##Name, Type, "nr", Features)
 #include "X86NativeTransfers.def"

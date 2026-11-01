@@ -58,6 +58,7 @@ set(NEVERC_TEST_SOURCES
   X86/CompressExpandTests.cpp
   X86/FourSourceTests.cpp
   X86/LegacyAtomicTests.cpp
+  X86/NativeDivisionFrontendTests.cpp
   X86/TransactionFrontendTests.cpp
   X86/TBMFrontendTests.cpp
   X86/ADXFrontendTests.cpp

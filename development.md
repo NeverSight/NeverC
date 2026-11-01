@@ -2596,3 +2596,33 @@ through NeverC and both LLVM backend pass managers. All 13 adjacent frontend
 tests and 26 generator tests pass. The shared XSAVE fixture also passes six
 SMM compiler profiles with 18,432 complete native state pairs. These counts
 retain the instruction-boundary scope above: zero enclave instructions ran.
+
+## Native full-dividend division
+
+`__builtin_ia32_udivrem8/16/32/64` and `__builtin_ia32_sdivrem8/16/32/64`
+accept `low, high, divisor, remainder_pointer`, return the quotient, and write
+the remainder after the instruction completes. All integer arguments/results
+are unsigned bit-pattern carriers at the indicated width (`unsigned char`,
+`unsigned short`, `unsigned int`, `unsigned long long`). The signed operation
+interprets the entire double-width dividend and divisor as two's complement.
+Each builtin emits the matching pair-valued LLVM intrinsic and one DIV/IDIV.
+The existing `_udiv128(high, low, divisor, remainder_pointer)` uses the same
+64-bit operation, retaining its Microsoft parameter order.
+
+Zero divisors and unrepresentable quotients produce actual #DE, even for
+unused results. These are not ordinary C `/` or `%` operations with undefined
+exceptional inputs. Native calls have conservative memory effects, nounwind,
+convergent and noduplicate attributes. Compiler ABI state remains compiler-owned;
+flags are undefined and are not outputs. The pointer store is a subsequent C
+memory effect: a fault on that store does not turn the operation into memory DIV.
+
+`X86NativeDivision.h` contains the same backend lowering in the full LLVM fork
+and NeverC's trimmed backend. `sync-x86-native-intrinsics.py` owns all eight
+pair signatures and updates intrinsic identities and DAG references together.
+`NativeDivisionFrontendTests.cpp` checks native IR, unused effects, source types
+and Microsoft overflow on ELF/COFF/Mach-O at O0/O2. Run
+`tests/neverc/X86/verify_native_division.py --llvm-bin LLVM_BIN --neverc NEVERC
+--output OUTPUT` for original-instruction comparisons through direct LLVM,
+NeverC and NeverC IR through both LLVM backends. The declared i386 matrix uses
+full LLVM; NeverC's frontend remains x64-only. A 32-bit libc development
+installation is required to run the native i386 signal oracle.

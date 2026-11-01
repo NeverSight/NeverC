@@ -23,6 +23,7 @@
 #include "X86IntrinsicsInfo.h"
 #include "X86KVMHypercall.h"
 #include "X86MachineFunctionInfo.h"
+#include "X86NativeDivision.h"
 #include "X86NativeFrameReturn.h"
 #include "X86RTMAbortPair.h"
 #include "X86SNPContext.h"
@@ -27987,6 +27988,16 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
   const IntrinsicData *IntrData = getIntrinsicWithChain(IntNo);
   if (!IntrData) {
     switch (IntNo) {
+    case Intrinsic::x86_udivrem8:
+    case Intrinsic::x86_sdivrem8:
+    case Intrinsic::x86_udivrem16:
+    case Intrinsic::x86_sdivrem16:
+    case Intrinsic::x86_udivrem32:
+    case Intrinsic::x86_sdivrem32:
+    case Intrinsic::x86_udivrem64:
+    case Intrinsic::x86_sdivrem64:
+      return X86::lowerNativeDivision(Op, false /* x64-only target */,
+                                      Subtarget.is64Bit(), DAG);
     case Intrinsic::x86_rtm_abort_pair:
       return X86::lowerRTMAbortPair(Op, false /* x64-only target */, DAG);
     case Intrinsic::x86_hle_context:
@@ -35089,6 +35100,10 @@ void X86TargetLowering::ReplaceNodeResults(SDNode *N,
     default:
       llvm_unreachable("Do not know how to custom type "
                        "legalize this intrinsic operation!");
+    case Intrinsic::x86_udivrem64:
+    case Intrinsic::x86_sdivrem64:
+      report_fatal_error(
+          "native division intrinsic does not match target code mode");
     case Intrinsic::x86_lfs64:
     case Intrinsic::x86_lgs64:
     case Intrinsic::x86_lss64:
