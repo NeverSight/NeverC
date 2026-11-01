@@ -1473,3 +1473,6 @@ Factory traversal now gives only the exact original SDK _1/_2 argument occurrenc
 
 
 The bind placeholder local index proof now checks the actual original and selected const size_t declarations, their written type sources and both initializers. The trait read, substitution owner, minus operator and literal one are matched before evaluating rank minus one. This adds no local-variable read, body, getter or forwarding permission. Placeholder invocation and runtime verification remain unfinished.
+
+
+The actual seven-request trace reproduced the eight-bound-value failure at 64 completed source entries, with two probes and 36 declvals. The repair attaches each already completed probe or dispatcher’s exact result/noexcept metadata calls to that existing owner source, as with declval helper children. Every real child still traverses and the 64-entry, depth, node and timeout limits remain unchanged. New Actions verification is pending; this is not a new passing regression result.

@@ -1038,3 +1038,6 @@ Solo dopo la chiusura delle prove complete di fabbrica e durata banale, il nodo 
 
 
 La prova dell’indice locale bind verifica le dichiarazioni const size_t originale e selezionata, i tipi scritti e i due inizializzatori. Collega lettura del trait, proprietario della sostituzione, sottrazione e letterale 1 prima di valutare rango meno uno. Non aggiunge permessi di lettura, corpo, getter o inoltro. Invocazione e verifica restano incomplete.
+
+
+La traccia reale di sette richieste riproduce il guasto con otto valori a 64 sorgenti completati, due sonde e 36 declval. La correzione associa i metadati reali di ritorno/noexcept di sonde e dispatcher già provati al sorgente proprietario esistente. Restano visita dei figli e limiti di 64 elementi, profondità, nodi e tempo. La nuova verifica Actions è in attesa.

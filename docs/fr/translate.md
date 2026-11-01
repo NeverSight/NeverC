@@ -1038,3 +1038,6 @@ Après fermeture des preuves complètes de fabrique et de durée de vie triviale
 
 
 La preuve de l’indice local bind vérifie les déclarations const size_t originale et sélectionnée, leurs types écrits et leurs deux initialiseurs. Lecture du trait, propriétaire de substitution, soustraction et littéral 1 sont liés avant évaluation du rang moins un. Aucun droit de lecture, corps, getter ou transfert n’est ajouté. Invocation et validation restent inachevées.
+
+
+La trace réelle de sept requêtes reproduit l’échec des huit valeurs à 64 sources terminées, deux sondes et 36 declval. La correction rattache les appels réels de métadonnées retour/noexcept des sondes et répartiteurs déjà prouvés à leur source propriétaire existante. Parcours des enfants et limites de 64 entrées, profondeur, nœuds et temps restent inchangés. La nouvelle validation Actions est en attente.

@@ -1038,3 +1038,6 @@ Solo tras cerrar las pruebas completas de fábrica y vida trivial, el nodo argum
 
 
 La prueba del índice local bind comprueba las declaraciones const size_t original y seleccionada, sus tipos escritos y ambos inicializadores. Vincula lectura del trait, propietario de sustitución, resta y literal 1 antes de evaluar rango menos uno. No añade permisos de lectura, cuerpo, getter o reenvío. Invocación y validación siguen pendientes.
+
+
+La traza real de siete solicitudes reproduce el fallo de ocho valores con 64 fuentes completas, dos sondas y 36 declval. La corrección adjunta los metadatos reales de retorno/noexcept de sondas y despachadores ya probados a su fuente propietaria existente. Se mantienen recorrido de hijos y límites de 64 entradas, profundidad, nodos y tiempo. La nueva validación Actions está pendiente.

@@ -19554,6 +19554,7 @@ class BindSourceProof {
     const CallExpr *HelperCall = nullptr;
     const FunctionDecl *Helper = nullptr;
     const CallExpr *PrimaryHelperCall = nullptr;
+    std::vector<const CallExpr *> MetadataCalls;
   };
   std::map<const CallExpr *, CompletedCallSource> ClosedCompleteCalls;
   std::map<const CXXConstructExpr *, const CXXConstructorDecl *> ClosedCallTupleConstructors;
@@ -21856,7 +21857,8 @@ class BindSourceProof {
     if (Found != ClosedCompleteCalls.end()) return Found->second.Function;
     for (const auto &[Root, Source] : ClosedCompleteCalls) {
       if (Call == Source.HelperCall) return Source.Helper;
-      if (Call == Source.PrimaryHelperCall)
+      if (Call == Source.PrimaryHelperCall ||
+          std::find(Source.MetadataCalls.begin(), Source.MetadataCalls.end(), Call) != Source.MetadataCalls.end())
         return static_cast<const FunctionDecl *>(nullptr);
     }
     return std::nullopt;
@@ -22265,6 +22267,31 @@ public:
         if (ClosedCompleteCalls.size() == 64) return false;
         return ClosedCompleteCalls.emplace(Expression, CompletedCallSource{Function}).second;
       };
+      auto CloseMetadata = [&](const CallExpr *Owner, const FunctionDecl *Function,
+                               llvm::ArrayRef<const CallExpr *> Expressions) {
+        const auto Found = ClosedCompleteCalls.find(Owner);
+        if (!Owner || !Function || Owner->getDirectCallee() != Function ||
+            Found == ClosedCompleteCalls.end() || Found->second.Function != Function ||
+            Found->second.HelperCall || Found->second.Helper || Found->second.PrimaryHelperCall ||
+            Expressions.size() > 64) return false;
+        std::vector<const CallExpr *> Children;
+        for (const auto *Expression : Expressions) {
+          if (!Expression) continue;
+          if (Expression == Owner || Expression->getDirectCallee()) return false;
+          if (const auto Existing = completedCallFunction(Expression))
+            if (*Existing) return false;
+          if (std::find(Children.begin(), Children.end(), Expression) == Children.end())
+            Children.push_back(Expression);
+        }
+        auto &Closed = Found->second;
+        if (!Closed.MetadataCalls.empty()) return Closed.MetadataCalls == Children;
+        // The probe/dispatcher source already closed above. Its exact original,
+        // substituted result and noexcept nodes are children of that source,
+        // not additional completed sources. Keep the same 64 owner slots and
+        // re-traverse every real written child on each metadata occurrence.
+        Closed.MetadataCalls = std::move(Children);
+        return true;
+      };
       for (const auto &Argument : Actual->Arguments)
         if (!Argument.Get->getDirectCallee() || !Argument.Unwrap->getDirectCallee() ||
             !Close(Argument.Get, Argument.Get->getDirectCallee()) ||
@@ -22313,8 +22340,9 @@ public:
           if (!CloseDeclval(Expression)) return false;
         for (const auto *Expression : Dispatcher.SpecializedDeclvals)
           if (!CloseDeclval(Expression)) return false;
-        for (const auto *Expression : Probe.OriginalInvokes)
-          if (!Expression || Expression->getDirectCallee() || !Close(Expression, nullptr)) return false;
+        if (std::any_of(Probe.OriginalInvokes.begin(), Probe.OriginalInvokes.end(),
+                [](const auto *Expression) { return !Expression; }) ||
+            !CloseMetadata(Probe.ResultCall, Probe.Function, Probe.OriginalInvokes)) return false;
         const auto *PrimaryException = dyn_cast_or_null<CXXNoexceptExpr>(Dispatcher.PrimaryException);
         const auto *PrimaryNoexcept = PrimaryException
             ? dyn_cast_or_null<CallExpr>(Check.stripped(PrimaryException->getOperand())) : nullptr;
@@ -22322,11 +22350,9 @@ public:
         const auto *ActualNoexcept = ActualException
             ? dyn_cast_or_null<CallExpr>(Check.stripped(ActualException->getOperand())) : nullptr;
         if (!Dispatcher.SignatureCall || !Dispatcher.SpecializedCall) return false;
-        for (const auto *Expression : {Dispatcher.SignatureCall, Dispatcher.SpecializedCall,
-                                       PrimaryNoexcept, ActualNoexcept}) {
-          if (!Expression) continue;
-          if (Expression->getDirectCallee() || !Close(Expression, nullptr)) return false;
-        }
+        const CallExpr *Expressions[] = {Dispatcher.SignatureCall, Dispatcher.SpecializedCall,
+                                          PrimaryNoexcept, ActualNoexcept};
+        if (!CloseMetadata(Probe.Invoke, Dispatcher.Function, Expressions)) return false;
       }
       // The exact probe and dispatcher sources closed above in this same graph.
       // Re-entering their written result/noexcept expressions still walks every
