@@ -19863,6 +19863,95 @@ class BindSourceProof {
         });
   }
 
+  bool unwrapPlaceholderIndexSource(const TemplateUseSource &Source,
+      const TemplateTypeParmDecl *Input, const FunctionalBindArgumentSource &Argument) {
+    const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    if (!ActiveUnwrapSource || ActiveScalarParameter != &Source || !Function || !Primary || !Pattern ||
+        Source.Declaration != Function || Source.Template != Primary || !Input ||
+        !Argument.PlaceholderRank || Argument.PlaceholderRank > ActiveUnwrapSource->CallForwards.size() ||
+        !Argument.PlaceholderIndex || !Argument.PlaceholderGet || !Argument.PlaceholderForward) return false;
+    auto Index = [&](const FunctionDecl *Declaration) -> const VarDecl * {
+      const auto *Body = Declaration ? dyn_cast_or_null<CompoundStmt>(Declaration->getBody()) : nullptr;
+      const auto *Statement = Body && Body->size() == 2 ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
+      const auto *Variable = Statement && Statement->isSingleDecl()
+          ? dyn_cast<VarDecl>(Statement->getSingleDecl()) : nullptr;
+      const auto *Return = Body && Body->size() == 2 ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+      if (!Variable || !Return || !Return->getRetValue() ||
+          !Variable->getIdentifier() || Variable->getName() != "__indx" ||
+          Variable->getDeclContext() != Declaration || !Variable->isLocalVarDecl() ||
+          Variable->isImplicit() || Variable->isInvalidDecl() || Variable->hasAttrs() ||
+          Variable->getStorageClass() != SC_None || Variable->getTLSKind() != VarDecl::TLS_None ||
+          Variable->hasGlobalStorage() || Variable->isStaticLocal() || Variable->isConstexpr() ||
+          !Variable->getTypeSourceInfo() || !Variable->hasInit() ||
+          !Context.hasSameType(Variable->getType(), Context.getConstType(Context.getSizeType())) ||
+          !Check.family(Variable, {"__functional/bind.h"}) ||
+          !Check.location(Statement->getBeginLoc(), {"__functional/bind.h"}) ||
+          !Check.location(Return->getReturnLoc(), {"__functional/bind.h"})) return nullptr;
+      return Variable;
+    };
+    const auto *Original = Index(Pattern);
+    const auto *Actual = Index(Function);
+    if (!Original || !Actual || Actual != Argument.PlaceholderIndex ||
+        Original->getLocation() != Actual->getLocation() ||
+        Original->getBeginLoc() != Actual->getBeginLoc() || Original->getEndLoc() != Actual->getEndLoc())
+      return false;
+    auto Core = [](const Expr *Expression) -> const Expr * {
+      if (!Expression) return nullptr;
+      Expression = Expression->IgnoreParenImpCasts();
+      if (const auto *Constant = dyn_cast<ConstantExpr>(Expression))
+        Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
+      return Expression;
+    };
+    const auto *Written = Core(Original->getInit());
+    const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Written);
+    const auto *Binary = dyn_cast_or_null<BinaryOperator>(Written);
+    const Expr *Left = nullptr, *Right = nullptr;
+    SourceLocation OperatorLocation;
+    if (Operator) {
+      const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Operator->getCallee()->IgnoreParenImpCasts());
+      if (Operator->getDirectCallee() || !Operator->isTypeDependent() ||
+          Operator->getOperator() != OO_Minus || Operator->getNumArgs() != 2 ||
+          !Lookup || !Lookup->requiresADL() || Lookup->hasExplicitTemplateArgs() ||
+          !Lookup->getNumDecls() || Lookup->getNumDecls() > 64 ||
+          Lookup->getName().getNameKind() != DeclarationName::CXXOperatorName ||
+          Lookup->getName().getCXXOverloadedOperator() != OO_Minus) return false;
+      for (const auto *Candidate : Lookup->decls()) if (!family(Candidate)) return false;
+      Left = Operator->getArg(0); Right = Operator->getArg(1); OperatorLocation = Operator->getOperatorLoc();
+    } else {
+      if (!Binary || Binary->getOpcode() != BO_Sub || !Binary->isValueDependent()) return false;
+      Left = Binary->getLHS(); Right = Binary->getRHS(); OperatorLocation = Binary->getOperatorLoc();
+    }
+    const auto *Converted = dyn_cast_or_null<BinaryOperator>(Core(Actual->getInit()));
+    const auto *One = dyn_cast_or_null<IntegerLiteral>(Core(Right));
+    const auto *Read = Converted ? dyn_cast<ImplicitCastExpr>(Converted->getLHS()) : nullptr;
+    if (!Converted || Converted->getOpcode() != BO_Sub || Converted->isTypeDependent() ||
+        Converted->isValueDependent() || !Converted->isPRValue() ||
+        !Context.hasSameType(Converted->getType(), Context.IntTy) ||
+        !One || !One->getValue().isOne() || !Context.hasSameType(One->getType(), Context.IntTy) ||
+        Core(Converted->getRHS()) != One || !Read || Read->getCastKind() != CK_LValueToRValue ||
+        !Context.hasSameType(Read->getType(), Context.IntTy) ||
+        Converted->getOperatorLoc() != OperatorLocation ||
+        Written->getBeginLoc() != Converted->getBeginLoc() || Written->getEndLoc() != Converted->getEndLoc() ||
+        !Context.hasSameType(Actual->getInit()->getType().getUnqualifiedType(), Context.getSizeType()) ||
+        !unwrapConstraintTraitSource(Source, Primary, Input, Left, Read, "is_placeholder", true)) return false;
+    // A local size_t index is not an arbitrary SDK variable value. Close both
+    // real declaration TSIs and initializers; no read or runtime permission is
+    // published here. Later body/get/forward proofs must own their occurrences.
+    if (!Graph.withBindScalarConstraintSource([&] {
+          if (!Graph.TraverseTypeLoc(Actual->getTypeSourceInfo()->getTypeLoc()) ||
+              !Graph.TraverseStmt(const_cast<Expr *>(Actual->getInit()))) return false;
+          if (Operator) UnwrapScalarConstraintSources.insert(Operator);
+          return Graph.TraverseTypeLoc(Original->getTypeSourceInfo()->getTypeLoc()) &&
+              Graph.TraverseStmt(const_cast<Expr *>(Original->getInit()));
+        })) return false;
+    Expr::EvalResult Value;
+    return Actual->getInit()->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects) &&
+        Value.Val.isInt() && !Value.Val.getInt().isNegative() &&
+        Value.Val.getInt().getLimitedValue(3) == Argument.PlaceholderRank - 1;
+  }
+
   bool unwrapPlaceholderParameterSource(const TemplateUseSource &Source,
       const NonTypeTemplateParmDecl *Parameter, TypeSourceInfo *ActualType,
       const FunctionalBindArgumentSource &Argument) {
@@ -19929,7 +20018,8 @@ class BindSourceProof {
         Argument.PlaceholderRank, [&] {
           return Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) &&
               Graph.TraverseTypeLoc(ActualType->getTypeLoc());
-        }) && unwrapPlaceholderReturnConstraintSource(Source, Input, Incoming, Argument);
+        }) && unwrapPlaceholderReturnConstraintSource(Source, Input, Incoming, Argument) &&
+        unwrapPlaceholderIndexSource(Source, Input, Argument);
   }
 
   bool unwrapScalarParameterSource(const TemplateUseSource &Source,

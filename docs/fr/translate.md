@@ -1035,3 +1035,6 @@ Le sélecteur de retour bind prouve séparément sa comparaison positive écrite
 
 
 Après fermeture des preuves complètes de fabrique et de durée de vie triviale, seul le nœud argument SDK _1/_2 original reçoit un rôle local d’objet vide. Les parenthèses, enveloppes sans opération, noms, qualifications et la revalidation finale sont conservés. Aucune permission ne couvre les valeurs autonomes, adresses, alias ou arguments à effets. Les cas limites sont préparés ; invocation et validation restent inachevées.
+
+
+La preuve de l’indice local bind vérifie les déclarations const size_t originale et sélectionnée, leurs types écrits et leurs deux initialiseurs. Lecture du trait, propriétaire de substitution, soustraction et littéral 1 sont liés avant évaluation du rang moins un. Aucun droit de lecture, corps, getter ou transfert n’est ajouté. Invocation et validation restent inachevées.

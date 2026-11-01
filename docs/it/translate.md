@@ -1035,3 +1035,6 @@ Il selettore di ritorno bind dimostra separatamente il confronto positivo scritt
 
 
 Solo dopo la chiusura delle prove complete di fabbrica e durata banale, il nodo argomento SDK _1/_2 originale riceve un ruolo locale di oggetto vuoto. Restano la visita di parentesi, involucri senza operazioni, nomi, qualificatori e la verifica finale. Nessun permesso copre valori autonomi, indirizzi, alias o argomenti con effetti. I casi limite sono preparati; invocazione e verifica restano incomplete.
+
+
+La prova dell’indice locale bind verifica le dichiarazioni const size_t originale e selezionata, i tipi scritti e i due inizializzatori. Collega lettura del trait, proprietario della sostituzione, sottrazione e letterale 1 prima di valutare rango meno uno. Non aggiunge permessi di lettura, corpo, getter o inoltro. Invocazione e verifica restano incomplete.

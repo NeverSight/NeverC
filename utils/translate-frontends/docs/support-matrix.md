@@ -455,3 +455,6 @@ The bind placeholder return selector now proves its own actual written and subst
 
 
 Factory traversal now gives only the exact original SDK _1/_2 argument occurrence a scoped empty-object role, after its complete factory source graph and trivial lifecycle close. Actual parentheses, no-op wrappers, name and qualifier are still visited; the existing final reproof remains the sole publisher for guarded lowering. Standalone marker values, addresses, aliases and effectful operands receive no permission. Factory boundary fixtures are proposed; placeholder invocation and runtime verification remain unfinished.
+
+
+The bind placeholder local index proof now checks the actual original and selected const size_t declarations, their written type sources and both initializers. The trait read, substitution owner, minus operator and literal one are matched before evaluating rank minus one. This adds no local-variable read, body, getter or forwarding permission. Placeholder invocation and runtime verification remain unfinished.

@@ -1035,3 +1035,6 @@ El selector de retorno bind prueba por separado su comparación positiva escrita
 
 
 Solo tras cerrar las pruebas completas de fábrica y vida trivial, el nodo argumento SDK _1/_2 original recibe un papel local de objeto vacío. Se conservan paréntesis, envolturas sin operación, nombres, calificadores y la revalidación final. No se autorizan valores independientes, direcciones, alias ni argumentos con efectos. Los casos límite están preparados; invocación y validación siguen pendientes.
+
+
+La prueba del índice local bind comprueba las declaraciones const size_t original y seleccionada, sus tipos escritos y ambos inicializadores. Vincula lectura del trait, propietario de sustitución, resta y literal 1 antes de evaluar rango menos uno. No añade permisos de lectura, cuerpo, getter o reenvío. Invocación y validación siguen pendientes.

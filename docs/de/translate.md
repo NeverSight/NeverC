@@ -1035,3 +1035,6 @@ Der bind-Rückgabetypselektor weist seinen geschriebenen und substituierten posi
 
 
 Erst nach vollständigem Fabrikquell- und trivialem Lebensdauernachweis erhält der originale SDK-Argumentknoten _1/_2 eine lokale Leerobjektrolle. Tatsächliche Klammern, No-op-Hüllen, Namen, Qualifizierer und abschließende Neuprüfung bleiben erhalten. Eigenständige Werte, Adressen, Aliase und nebenwirkende Argumente erhalten keine Freigabe. Grenzfälle sind vorbereitet; Aufruf und Laufzeitprüfung bleiben unvollständig.
+
+
+Der lokale bind-Indexnachweis prüft originale und ausgewählte const-size_t-Deklarationen, geschriebene Typquellen und beide Initialisierer. Trait-Lesezugriff, Substitutionseigentümer, Subtraktion und Literal 1 werden vor der Rang-minus-eins-Auswertung zugeordnet. Es entstehen keine Lese-, Rumpf-, Getter- oder Weiterleitungsrechte. Aufruf und Laufzeitprüfung bleiben unvollständig.
