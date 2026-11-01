@@ -1476,3 +1476,6 @@ The bind placeholder local index proof now checks the actual original and select
 
 
 The actual seven-request trace reproduced the eight-bound-value failure at 64 completed source entries, with two probes and 36 declvals. The repair attaches each already completed probe or dispatcher’s exact result/noexcept metadata calls to that existing owner source, as with declval helper children. Every real child still traverses and the 64-entry, depth, node and timeout limits remain unchanged. New Actions verification is pending; this is not a new passing regression result.
+
+
+Actions found two compilation errors where inferred UnqualTypeLoc variables received TypeLoc values. Both declarations now use TypeLoc explicitly, preserving the same AST nodes, source checks and limits. The sixteen-request experiment stopped during compilation and executed no test requests; verification of this repair is pending.

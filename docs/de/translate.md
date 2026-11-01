@@ -1041,3 +1041,6 @@ Der lokale bind-Indexnachweis prüft originale und ausgewählte const-size_t-Dek
 
 
 Die echte Spur mit sieben Anfragen reproduziert den Achtwertefehler bei 64 abgeschlossenen Quellen, zwei Proben und 36 declval. Die Korrektur ordnet tatsächliche Rückgabe-/noexcept-Metadatenaufrufe bereits bewiesener Proben und Verteiler ihrer bestehenden Eigentümerquelle zu. Kinddurchläufe sowie Grenzen für 64 Einträge, Tiefe, Knoten und Zeit bleiben unverändert. Neue Actions-Prüfungen stehen aus.
+
+
+Actions fand zwei Compilerfehler: Als UnqualTypeLoc abgeleitete Variablen erhielten TypeLoc-Werte. Beide Deklarationen verwenden nun ausdrücklich TypeLoc; AST-Knoten, Quellprüfungen und Grenzen bleiben erhalten. Das Experiment mit sechzehn Anfragen endete beim Kompilieren, ohne Testanfragen auszuführen. Die Korrektur ist noch zu prüfen.

@@ -1041,3 +1041,6 @@ La prova dell’indice locale bind verifica le dichiarazioni const size_t origin
 
 
 La traccia reale di sette richieste riproduce il guasto con otto valori a 64 sorgenti completati, due sonde e 36 declval. La correzione associa i metadati reali di ritorno/noexcept di sonde e dispatcher già provati al sorgente proprietario esistente. Restano visita dei figli e limiti di 64 elementi, profondità, nodi e tempo. La nuova verifica Actions è in attesa.
+
+
+Actions ha rilevato due errori di compilazione: variabili dedotte come UnqualTypeLoc ricevevano valori TypeLoc. Le due dichiarazioni usano ora TypeLoc esplicito, conservando nodi AST, controlli e limiti. L’esperimento di sedici richieste si è fermato in compilazione senza eseguire richieste di prova. La correzione resta da verificare.

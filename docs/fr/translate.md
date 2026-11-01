@@ -1041,3 +1041,6 @@ La preuve de l’indice local bind vérifie les déclarations const size_t origi
 
 
 La trace réelle de sept requêtes reproduit l’échec des huit valeurs à 64 sources terminées, deux sondes et 36 declval. La correction rattache les appels réels de métadonnées retour/noexcept des sondes et répartiteurs déjà prouvés à leur source propriétaire existante. Parcours des enfants et limites de 64 entrées, profondeur, nœuds et temps restent inchangés. La nouvelle validation Actions est en attente.
+
+
+Actions a détecté deux erreurs de compilation : des variables déduites UnqualTypeLoc recevaient des valeurs TypeLoc. Les deux déclarations utilisent désormais explicitement TypeLoc, sans changer les nœuds AST, contrôles ni limites. L’expérience de seize requêtes s’est arrêtée à la compilation sans exécuter de requête. La correction reste à vérifier.
