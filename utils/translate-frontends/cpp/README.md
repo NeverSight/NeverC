@@ -1297,3 +1297,6 @@ Pure placeholder capture now checks the pinned tuple constructor’s direct cons
 
 
 The placeholder __mu source checker now handles its real index declaration and return as separate obligations. The nested getter must already have a complete source proof; builtin forward retains its real successful function packet and original body. Original lookup and index-read nodes stay local to that exact body. Current-source execution is still required before claiming complete placeholder support.
+
+
+The pure-placeholder tuple constructor now closes its real _And template default and scoped boolean definitions. Its exact factory, construction, owner and empty placeholder elements must match; the incoming reference-tuple limit remains two and the stored bound-pack limit remains eight. No default record is synthesized. Current-source execution remains pending.

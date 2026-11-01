@@ -20369,11 +20369,24 @@ class BindSourceProof {
         !Check.family(Pack, {"tuple"}) || Owner->getTemplateArgs().size() != 1 ||
         Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
         Owner->getTemplateArgs()[0].pack_size() < 1 ||
-        Owner->getTemplateArgs()[0].pack_size() > 2) return false;
-    for (const auto &Argument : Owner->getTemplateArgs()[0].pack_elements())
-      if (Argument.getKind() != TemplateArgument::Type ||
-          !Argument.getAsType()->isLValueReferenceType() ||
-          !Argument.getAsType().getNonReferenceType()->isScalarType()) return false;
+        Owner->getTemplateArgs()[0].pack_size() > 8) return false;
+    const bool PlaceholderCopy = Owner->getCanonicalDecl() == Storage.Arguments.Record->getCanonicalDecl();
+    if (PlaceholderCopy) {
+      if (Owner->getTemplateArgs()[0].pack_size() != Storage.Arguments.Elements.size()) return false;
+      unsigned I = 0;
+      for (const auto &Argument : Owner->getTemplateArgs()[0].pack_elements()) {
+        const auto &Element = Storage.Arguments.Elements[I++];
+        if (Argument.getKind() != TemplateArgument::Type || Element.Field || !Element.EmptyBase ||
+            !Context.hasSameType(Argument.getAsType(), Element.getType()) ||
+            !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context)) return false;
+      }
+    } else {
+      if (Owner->getTemplateArgs()[0].pack_size() > 2) return false;
+      for (const auto &Argument : Owner->getTemplateArgs()[0].pack_elements())
+        if (Argument.getKind() != TemplateArgument::Type ||
+            !Argument.getAsType()->isLValueReferenceType() ||
+            !Argument.getAsType().getNonReferenceType()->isScalarType()) return false;
+    }
     const auto &Original = Parameter->getDefaultArgument().getArgument();
     if (Original.getKind() != TemplateArgument::Template) return false;
     const auto *Target = Original.getAsTemplate().getAsTemplateDecl();
@@ -22155,6 +22168,40 @@ class BindSourceProof {
       return true;
     });
   }
+  bool boundTupleConstructorSource(const FunctionalBindFactorySource &Factory,
+      const FunctionalBindTupleConstructionSource &Tuple) {
+    const auto *Constructor = Tuple.Tuple ? Tuple.Tuple->getConstructor() : nullptr;
+    const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    if (!Parameters || Parameters->size() != 2 ||
+        !isa<TemplateTemplateParmDecl>(Parameters->getParam(0)))
+      return Constructor && functionUse(Tuple.Tuple, Constructor);
+    if (!Factory.SourceCall || !S.owns(SM, Factory.SourceCall->getExprLoc()) ||
+        Factory.BoundConstruction != Tuple.Tuple || Factory.Storage.Record != Storage.Record ||
+        Constructor->getParent()->getCanonicalDecl() != Storage.Arguments.Record->getCanonicalDecl() ||
+        Storage.Arguments.Elements.empty() || Storage.Arguments.Elements.size() > 8 ||
+        ActiveCallTupleConstructor || ActiveScalarParameter || ActiveCompleteCall ||
+        !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+    const auto Actual = describeFunctionalBindFactorySource(S, SM, Factory.SourceCall, Context);
+    const auto Construction = Actual
+        ? describeFunctionalBindTupleConstructionSource(S, SM, *Actual, Context) : std::nullopt;
+    if (!Actual || !Construction || !sameFunctionalBindPlaceholderOperands(*Actual, Factory) ||
+        Construction->Tuple != Tuple.Tuple || Construction->Implementation != Tuple.Implementation ||
+        Actual->BoundConstruction != Tuple.Tuple) return false;
+    for (const auto &Element : Storage.Arguments.Elements)
+      if (Element.Field || !Element.EmptyBase ||
+          !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context)) return false;
+    // Only this freshly described const-element constructor can use its
+    // actual _And default and scoped boolean definitions. Other factory
+    // constructors retain their existing source path.
+    ActiveCallTupleConstructor = Constructor;
+    auto Restore = llvm::make_scope_exit([&] {
+      ActiveCallTupleConstructor = nullptr;
+      ActiveScalarValues.clear(); CompletedScalarValues.clear();
+    });
+    return functionUse(Tuple.Tuple, Constructor);
+  }
+
   bool functionUse(const Expr *Expression, const FunctionDecl *Function) {
     return functionSource(Expression, Function, [&] {
       if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Function))
@@ -22720,7 +22767,7 @@ public:
         !functionUse(Factory.SourceCall, Factory.Factory) ||
         !functionUse(Factory.Construction, Factory.Construction->getConstructor()) ||
         (!Storage.Arguments.Elements.empty() &&
-         (!functionUse(Tuple->Tuple, Tuple->Tuple->getConstructor()) ||
+         (!boundTupleConstructorSource(Factory, *Tuple) ||
           !functionUse(Tuple->Implementation, Tuple->Implementation->getConstructor())))) return false;
     for (const auto *Leaf : Tuple->Leaves)
       if (!functionUse(Leaf, Leaf->getConstructor())) return false;

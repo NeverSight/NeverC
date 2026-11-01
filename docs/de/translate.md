@@ -1059,3 +1059,6 @@ Die Erfassung reiner Platzhalter prüft direkte const-Referenzparameter des fest
 
 
 Der __mu-Prüfer beweist die tatsächliche Indexdeklaration und Rückgabe getrennt. Der verschachtelte Getter benötigt einen vollständigen Quellnachweis; forward prüft den echten erfolgreichen Funktionsdatensatz und ursprünglichen Rumpf. Ursprüngliche Namenssuche und Indexzugriffe bleiben auf diesen Rumpf beschränkt. Vollständige Unterstützung erfordert einen aktuellen Ausführungslauf.
+
+
+Der reine Platzhalter-Tupelkonstruktor prüft seinen echten _And-Template-Standard und lokale boolesche Definitionen. Fabrik, Konstruktion, Eigentümertyp und leere Elemente müssen exakt passen. Grenzen bleiben zwei eingehende Referenzen und acht gebundene Elemente; keine Standarddatensätze werden erzeugt. Die aktuelle Ausführung steht aus.

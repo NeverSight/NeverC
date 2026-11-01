@@ -1059,3 +1059,6 @@ La captura de solo marcadores comprueba los parámetros directos por referencia 
 
 
 El verificador de __mu prueba por separado la declaración real del índice y el retorno. El getter interno requiere una prueba completa; forward conserva el registro real de función exitoso y el cuerpo original. Las búsquedas y lecturas del índice quedan limitadas a ese cuerpo exacto. El soporte completo espera la ejecución del código actual.
+
+
+El constructor del tuple de solo marcadores prueba su valor de plantilla _And real y las definiciones booleanas locales. Fábrica, construcción, propietario y elementos vacíos deben coincidir exactamente. Siguen los límites de dos referencias entrantes y ocho elementos ligados; no se sintetizan valores predeterminados. La ejecución actual sigue pendiente.
