@@ -2442,7 +2442,7 @@ shared with the LLVM fork. `sync-x86-rtm-abort-pair.py` appends its opcode and
 preserves prior IDs; `X86TransactionTest` checks diagnostics, both optimization
 levels, native IR, exact contiguous object bytes and all three x64 formats.
 
-`tests/neverc/X86/verify_rtm_abort_pair.py` compares all 256 immediate codes
+[verify_rtm_abort_pair.py](tests/neverc/X86/verify_rtm_abort_pair.py) compares all 256 immediate codes
 with an independent raw-byte reference. It exercises integer/SIMD values live
 across the pair, memory order and exact status at O0/O2 through NeverC or the
 LLVM fork's legacy/new backend pass managers. Pass `--compiler`, `--sde` and

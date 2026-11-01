@@ -1062,3 +1062,6 @@ Il controllo di __mu prova separatamente la dichiarazione reale dell’indice e 
 
 
 Il costruttore del tuple di soli segnaposto prova il vero valore predefinito del template _And e le definizioni booleane locali. Factory, costruzione, proprietario ed elementi vuoti devono coincidere esattamente. Restano due riferimenti in ingresso e otto elementi legati; nessun record predefinito viene sintetizzato. L’esecuzione corrente è da verificare.
+
+
+La correzione delle fonti di funzioni conservate `6fd61042ba94` ha realmente superato 600/600 richieste e 72 esecuzioni native di riferimento. Non certifica le successive modifiche ai segnaposto. Il controllo del ritorno confronta i tipi sostituiti con l’equivalenza Clang, qualificatori inclusi: Sema può eliminare l’alias conservato dell’elemento tuple. Restano necessari proprietario esatto del template, identità del parametro sostituito e visite indipendenti delle fonti scritte e istanziate. Nuova correzione, test formali, codice generato e STL completo restano da verificare.
