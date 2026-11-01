@@ -19796,7 +19796,7 @@ class BindSourceProof {
       }
       if (!Qualifier || !Qualifier.getNestedNameSpecifier()->getAsType() ||
           Qualifier.getTypeLoc().isNull()) return {};
-      auto Type = Qualifier.getTypeLoc().getUnqualifiedLoc();
+      TypeLoc Type = Qualifier.getTypeLoc().getUnqualifiedLoc();
       if (const auto Elaborated = Type.getAs<ElaboratedTypeLoc>()) Type = Elaborated.getNamedTypeLoc();
       return Type.getAs<TemplateSpecializationTypeLoc>();
     };
@@ -20586,7 +20586,7 @@ class BindSourceProof {
             !Info || !Context.hasSameType(Declaration->getType(), Variable->getType()) ||
             !Check.family(Declaration, {"__functional/bind.h"}) ||
             S.owns(SM, Declaration->getLocation())) return false;
-        auto Written = Info->getTypeLoc().getUnqualifiedLoc();
+        TypeLoc Written = Info->getTypeLoc().getUnqualifiedLoc();
         if (const auto Name = Written.getAs<ElaboratedTypeLoc>()) {
           if (Name.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Name.getQualifierLoc()) return false;
           Written = Name.getNamedTypeLoc();
