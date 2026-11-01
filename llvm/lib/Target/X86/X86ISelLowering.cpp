@@ -28267,6 +28267,15 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
 #undef X86_FRAME_RETURN
       return lowerNativeFrameReturn(Op, Subtarget, DAG);
 
+    case Intrinsic::x86_rsm_context:
+      if (!Subtarget.is64Bit() || !Subtarget.hasXSAVE())
+        report_fatal_error("RSM context requires 64-bit mode and XSAVE");
+      // An x32 ABI pointer is a zero-extended linear address in code64.
+      return SDValue(DAG.getMachineNode(
+                         X86::RSM_CONTEXT64, SDLoc(Op), MVT::Other,
+                         {DAG.getZExtOrTrunc(Op.getOperand(2), SDLoc(Op), MVT::i64),
+                          Op.getOperand(0)}),
+                     0);
     case Intrinsic::x86_vmrun_context: {
       if (!Subtarget.is64Bit() ||
           !X86::isSVMContextHelper(DAG.getMachineFunction().getFunction()))

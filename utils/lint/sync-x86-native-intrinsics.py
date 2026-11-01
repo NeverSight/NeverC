@@ -78,8 +78,9 @@ for name, immediate in re.findall(
     DECLARATIONS[name] = ("Done", "PTR", "I16") if FRAME_RETURNS[name] else ("Done", "PTR")
 DECLARATIONS["sysenter"] = ("Done",)
 DECLARATIONS["rsm"] = ("Done",)
+DECLARATIONS["rsm_context"] = ("Done", "PTR")
 TERMINAL_TRANSFERS = {"skinit", "sysret32", "sysret64", "sysexit32", "sysexit64",
-                      "sysenter", "rsm", *FRAME_RETURNS}
+                      "sysenter", "rsm", "rsm_context", *FRAME_RETURNS}
 DECLARATIONS["invlpga"] = ("Done", "I64", "I32")
 for operation in ("vmload", "vmsave"):
     DECLARATIONS[operation + "_addr32"] = ("Done", "I32")

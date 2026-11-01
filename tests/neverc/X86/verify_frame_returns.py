@@ -83,9 +83,12 @@ def main():
     parser.add_argument("--profile", choices=PROFILES, action="append")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--smm", action="store_true", help="qualify RSM using KVM SMM save state")
+    modes.add_argument("--smm-context", action="store_true",
+                        help="qualify software SMM state and atomic XRSTOR/RSM")
     modes.add_argument("--i386", action="store_true",
                         help="qualify the code32 LLVM frame transfers")
     args = parser.parse_args()
+    smm = args.smm or args.smm_context
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, TMPDIR=str(output))
@@ -116,10 +119,19 @@ def main():
     if args.i386 and any(not profile.startswith("llvm-") for profile in profiles):
         parser.error("NeverC's native target is x86-64")
     operations = {"rsm": (4, 64, 0, "rsm")} if args.smm else OPERATIONS
+    if args.smm_context:
+        # Kind zero generates the one-pointer API; the oracle manifest uses
+        # RSM's native kind after source generation.
+        operations = {"rsm_context": (0, 64, 0, "rsm")}
     ir, c = sources(args.i386, operations)
+    if args.smm_context:
+        operations = {"rsm_context": (4, 64, 0, "rsm")}
+        ir = ir.replace('"frame-pointer"="all"',
+                        '"frame-pointer"="all" "target-features"="+xsave,+avx"')
     (output / "input.ll").write_text(ir)
     (output / "input.c").write_text(c)
-    entry = "generated_rsm_plain" if args.smm else "generated_iret16_plain"
+    entry = ("generated_rsm_context_plain" if args.smm_context else
+             "generated_rsm_plain" if args.smm else "generated_iret16_plain")
     (output / "guest.ld").write_text(f"ENTRY({entry})\n" + """
 SECTIONS {
   . = 0x10000;
@@ -132,7 +144,7 @@ SECTIONS {
 """)
     runner = output / "kvm-runner"
     run([tools["clang"], "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
-         ROOT / ("smm_return_kvm.c" if args.smm else "frame_return_kvm.c"), "-o", runner], "host-build")
+         ROOT / ("smm_return_kvm.c" if smm else "frame_return_kvm.c"), "-o", runner], "host-build")
     results = []
     for profile in profiles:
         compiler, level = profile.rsplit("-", 1)
@@ -143,6 +155,7 @@ SECTIONS {
                        "-std=c23", f"-{level}", "-fno-lto", "-ffreestanding",
                        "-fno-builtin-mimalloc", "-fno-stack-protector",
                        "-fno-pic", "-fno-omit-frame-pointer", "-mgeneral-regs-only",
+                       *(["-mxsave", "-mavx"] if args.smm_context else []),
                        "-Werror", "-mllvm", "-verify-machineinstrs"]
             if compiler == "neverc":
                 run([*options, "-c", output / "input.c", "-o", obj], profile + "-compile")
@@ -167,7 +180,7 @@ SECTIONS {
         assembly = run([tools["llvm-objdump"], "-d", elf], profile + "-disassembly")
         functions = re.findall(r"^([0-9a-f]+) <(generated_\w+)>:\n(.*?)(?=\n[0-9a-f]+ <|\Z)",
                                assembly, re.M | re.S)
-        expected_functions = 4 if args.smm else 28 if args.i386 else 40
+        expected_functions = 4 if smm else 28 if args.i386 else 40
         assert len(functions) == expected_functions, assembly
         manifest = []
         first_switch = None
@@ -193,13 +206,14 @@ SECTIONS {
         manifest_path = output / f"{profile}.manifest"
         manifest_path.write_text("\n".join(manifest) + "\n")
         mode = "32" if args.i386 else "64"
-        native = json.loads(run([runner, binary, manifest_path, mode], profile + "-native"))
-        assert native["complete_state_pairs"] == expected_functions * (96 if args.smm else 192), native
+        native = json.loads(run([runner, binary, manifest_path, mode,
+                                 *(["context"] if args.smm_context else [])], profile + "-native"))
+        assert native["complete_state_pairs"] == expected_functions * (768 if args.smm_context else 96 if args.smm else 192), native
         # Feed an unrelated register into SP while keeping the native opcode.
         # This must fail operand transport before consulting the CPU oracle.
         corrupted = bytearray(binary.read_bytes())
-        if args.smm:
-            plain = next(line.split() for line in manifest if line.startswith("generated_rsm_plain "))
+        if smm:
+            plain = next(line.split() for line in manifest if line.startswith(entry + " "))
             offset = int(plain[2], 16) - 0x10000
             corrupted[offset:offset + 2] = bytes.fromhex("0f 0b")
         else:
@@ -207,23 +221,38 @@ SECTIONS {
             corrupted[offset:offset + (2 if args.i386 else 3)] = bytes.fromhex("89 cc" if args.i386 else "48 89 cc")
         negative = output / f"{profile}-corrupted.bin"
         negative.write_bytes(corrupted)
-        run([runner, negative, manifest_path, mode], profile + "-negative", expected=1)
+        run([runner, negative, manifest_path, mode,
+             *(["context"] if args.smm_context else [])], profile + "-negative", expected=1)
         diagnostic = (output / f"{profile}-negative.stderr").read_text()
-        assert ("smram[instruction]" if args.smm else "boundary.rsp == frame") in diagnostic
+        assert ("smram[instruction]" if smm else "boundary.rsp == frame") in diagnostic
+        if args.smm_context:
+            # Retain RSM but omit XRSTOR. The represented x87/SIMD values must
+            # fail, including after permitted XINUSE choices are normalized.
+            damaged = bytearray(binary.read_bytes())
+            assert damaged[offset - 4:offset] == bytes.fromhex("49 0f ae 2b")
+            damaged[offset - 4:offset] = bytes.fromhex("90 90 90 90")
+            negative_xstate = output / f"{profile}-missing-xrstor.bin"
+            negative_xstate.write_bytes(damaged)
+            run([runner, negative_xstate, manifest_path, mode, "context"],
+                profile + "-negative-xstate", expected=1)
+            assert "actual_xstate" in (output / f"{profile}-negative-xstate.stderr").read_text()
         results.append(dict(profile=profile, **native, elf_sha256=sha256(elf),
-                            negative_control="wrong opcode rejected" if args.smm else "wrong stack rejected"))
+                            negative_control="wrong opcode rejected" if smm else "wrong stack rejected",
+                            **({"negative_xstate_control": "missing XRSTOR rejected"}
+                               if args.smm_context else {})))
         print(f"{profile}: {native['complete_state_pairs']} complete state pairs", flush=True)
     report = dict(
-        scope="KVM-mediated SMM save/restore through native RSM" if args.smm else
+        scope="KVM-mediated SMM save/restore through native RSM" if smm else
               "Native frame input transport and successful IRET/RETF/SYSENTER transfers; CET disabled",
         host=platform.platform(), code_bits=32 if args.i386 else 64, profiles=results,
+        smm_software_context=args.smm_context,
         source_sha256={p.name: sha256(p) for p in (Path(__file__), ROOT / "frame_return_kvm.c", ROOT / "smm_return_kvm.c", ROOT / "KvmTransferFixture.h")},
         tools={name: dict(path=path, sha256=sha256(path)) for name, path in tools.items()},
-        reference="Intel SDM 325462-085US, Vol. 2 IRET/RET/SYSENTER; Vol. 1 3.4.1.1",
+        reference="Intel SDM Vol. 2 IRET/RET/SYSENTER; Vol. 3C 34.4.1 SMM state",
         reference_url="https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf",
-        exclusions=["complete original-image register restoration", "CET enabled",
+        exclusions=[*([] if smm else ["complete original-image register restoration"]), "CET enabled",
                     "FRED and UIRET successful paths", "bare-metal SMM implementation",
-                    "NT task return", "XSTATE",
+                    "NT task return", *([] if args.smm_context else ["XSTATE"]),
                     "fault ordering", "asynchronous unwind/interrupt delivery",
                     "other CPU models",
                     "architectural promises for compatibility GPR high halves"])

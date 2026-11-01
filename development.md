@@ -2507,3 +2507,37 @@ assembly, each independently used output, live leaf/subleaf values, leaf-only
 queries and argument/lvalue evaluation at O0/O2. It also executes the assembly
 fallback. The realigned SysV/MS frame test retains an independent raw CPUID
 reference, so changing the header does not merge the implementation and oracle.
+
+## Native SMM software-state restoration
+
+`<smmcontextintrin.h>` provides a 40-byte `__smm_rsm_context` and terminal
+`__smm_rsm_context64` wrapper. The underlying builtin
+`__builtin_ia32_rsm_context(const void *)` emits
+`void llvm.x86.rsm.context(ptr)`, requiring code64 and XSAVE. Its five u64 slots
+carry the standard XSAVE image address, restore mask, CR2, CR8 and
+IA32_KERNEL_GS_BASE. The native environment owns active SMM, live XCR0, valid
+component images, accessible disjoint storage and all other software-managed
+state. The processor's actual SMI save image owns the hardware-restored banks.
+
+One terminal backend pseudo writes the three system registers, then emits
+adjacent XRSTOR64/RSM after register allocation and scheduling. No compiler
+instruction or context-memory access follows XRSTOR. The caller's compiler
+frame is abandoned; there is no ordinary C return. The intrinsic retains
+convergent, noduplicate, noreturn, nounwind and conservative memory effects.
+`sync-x86-smm-context.py` appends its opcode without renumbering earlier IDs;
+the native-intrinsic generator owns its signature and effects. The emitter
+is shared with the LLVM fork, including zero extension of x32 pointers.
+
+`X86SMMContextTest.*` checks the installed header, native IR, terminal sequence,
+three x64 object formats and invalid signatures/features. Run
+`tests/neverc/X86/verify_frame_returns.py --smm-context --neverc COMPILER
+--llvm-bin LLVM_BIN --output OUTPUT` for native KVM-mediated SMM comparisons
+through NeverC, LLVM and NeverC IR through LLVM at O0/O2. Each profile compares
+3,072 complete state pairs with original XRSTOR/RSM bytes, including x87,
+SSE/AVX, nonzero register high halves, CR2/CR8/KernelGSBase, four compiler-frame
+shapes, both memory spaces and event state. Replacing RSM or omitting XRSTOR
+must fail. Initial XSAVE components are compared by architectural values;
+XINUSE may legally be set even for an initial component. The projection mode
+also retains the independent original image before NeverD imports its state.
+These tests do not qualify bare-metal firmware, SMI selection/entry emulation,
+SGX/CET/VMX interactions, faults or asynchronous interruption.

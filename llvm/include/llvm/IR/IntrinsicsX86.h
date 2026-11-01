@@ -1328,6 +1328,7 @@ enum X86Intrinsics : unsigned {
     x86_rmpread_context,                             // llvm.x86.rmpread.context
     x86_rmpupdate_context,                           // llvm.x86.rmpupdate.context
     x86_rsm,                                         // llvm.x86.rsm
+    x86_rsm_context,                                 // llvm.x86.rsm.context
     x86_rstorssp,                                    // llvm.x86.rstorssp
     x86_rtm_abort_pair,                              // llvm.x86.rtm.abort.pair
     x86_saveprevssp,                                 // llvm.x86.saveprevssp

@@ -18614,7 +18614,8 @@ namespace X86 {
     SNP_CONTEXT64	= 18599,
     HLE_CONTEXT64	= 18600,
     RTM_ABORT_PAIR	= 18601,
-    INSTRUCTION_LIST_END = 18602
+    RSM_CONTEXT64	= 18602,
+    INSTRUCTION_LIST_END = 18603
   };
 
 } // end namespace X86
@@ -21005,11 +21006,11 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18602];
+  MCInstrDesc Insts[18603];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5524];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[997];
+  MCPhysReg ImplicitOps[1022];
 };
 
 } // end namespace llvm
@@ -21024,6 +21025,7 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18602,	1,	0,	0,	8,	0,	25,	X86ImpOpBase + 997,	152,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier), 0x0ULL },  // Inst #18602 = RSM_CONTEXT64
     { 18601,	1,	0,	0,	8,	0,	2,	X86ImpOpBase + 41,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18601 = RTM_ABORT_PAIR
     { 18600,	2,	0,	0,	8,	3,	5,	X86ImpOpBase + 989,	15,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18600 = HLE_CONTEXT64
     { 18599,	2,	0,	0,	8,	2,	4,	X86ImpOpBase + 983,	15,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18599 = SNP_CONTEXT64
@@ -40946,6 +40948,7 @@ extern const X86InstrTable X86Descs = {
     /* 978 */ X86::RAX, X86::RCX, X86::RAX, X86::RCX, X86::EFLAGS,
     /* 983 */ X86::R10, X86::R11, X86::RAX, X86::RCX, X86::RDX, X86::EFLAGS,
     /* 989 */ X86::R9, X86::R10, X86::R11, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::EFLAGS,
+    /* 997 */ X86::CS, X86::SS, X86::DS, X86::ES, X86::FS, X86::GS, X86::EFLAGS, X86::CR2, X86::CR8, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::RSP, X86::RBP, X86::RSI, X86::RDI, X86::R8, X86::R9, X86::R10, X86::R11, X86::R12, X86::R13, X86::R14, X86::R15,
   }
 };
 
@@ -58640,6 +58643,7 @@ extern const char X86InstrNameData[] = {
   /* 260570 */ "SNP_CONTEXT64\0"
   /* 260584 */ "HLE_CONTEXT64\0"
   /* 260598 */ "RTM_ABORT_PAIR\0"
+  /* 260613 */ "RSM_CONTEXT64\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -61106,10 +61110,11 @@ extern const unsigned X86InstrNameIndices[] = {
     260570U,
     260584U,
     260598U,
+    260613U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18602);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18603);
 }
 
 } // end namespace llvm
@@ -61169,7 +61174,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18602);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18603);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98599,6 +98604,8 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     1,
     /* RTM_ABORT_PAIR */
     1,
+    /* RSM_CONTEXT64 */
+    673,
   };
 
   using namespace OpTypes;
@@ -154069,9 +154076,10 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // SNP_CONTEXT64 = 18599
     CEFBS_In64BitMode, // HLE_CONTEXT64 = 18600
     CEFBS_In64BitMode, // RTM_ABORT_PAIR = 18601
+    CEFBS_In64BitMode, // RSM_CONTEXT64 = 18602
   };
 
-  assert(Opcode < 18602);
+  assert(Opcode < 18603);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 
