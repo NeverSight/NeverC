@@ -8,7 +8,6 @@ TEST_F(X86NativeRegisterTest, CpuidPreservesRealignedFramesAndResults) {
 #else
   const auto Source = tmpFile("native_register_frame.c");
   writeFile(Source, R"(
-#include <cpuid.h>
 #include <stdint.h>
 __attribute__((noinline)) void touch(void *p) {
   *(volatile unsigned char *)p = 0xa5;
@@ -26,7 +25,9 @@ PROBE(sysv_probe, sysv_abi)
 PROBE(ms_probe, ms_abi)
 int main(void) {
   unsigned expected[4];
-  __cpuid_count(0, 0, expected[0], expected[1], expected[2], expected[3]);
+  __asm__ volatile("cpuid" : "=a"(expected[0]), "=b"(expected[1]),
+                            "=c"(expected[2]), "=d"(expected[3])
+                   : "0"(0), "2"(0));
   for (unsigned n = 65; n < 2048; n += 113) {
     int out[4];
     if (sysv_probe(n, out) != (0x12345678 ^ 0x76543210)) return 1;

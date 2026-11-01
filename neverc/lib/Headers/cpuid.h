@@ -235,20 +235,37 @@
 #define bit_RDPRU 0x00000010
 #define bit_WBNOINVD 0x00000200
 
-/* x86-64 uses %rbx as the base register, so preserve it. */
+#if __has_builtin(__builtin_ia32_cpuidex)
+/* The native operation owns all four register results and RBX preservation.
+ * Evaluate each argument and output lvalue once, including unused results. */
+#define __cpuid_count(__leaf, __count, __eax, __ebx, __ecx, __edx)             \
+  do {                                                                        \
+    int __cpuid_registers[4];                                                  \
+    __builtin_ia32_cpuidex(__cpuid_registers, (__leaf), (__count));             \
+    (__eax) = (unsigned int)__cpuid_registers[0];                              \
+    (__ebx) = (unsigned int)__cpuid_registers[1];                              \
+    (__ecx) = (unsigned int)__cpuid_registers[2];                              \
+    (__edx) = (unsigned int)__cpuid_registers[3];                              \
+  } while (0)
+#define __cpuid(__leaf, __eax, __ebx, __ecx, __edx)                            \
+  __cpuid_count(__leaf, 0, __eax, __ebx, __ecx, __edx)
+#else
+/* The first exchange writes the temporary before CPUID consumes its inputs.
+ * It must not overlap EAX/ECX, even when their outputs are unused. */
 #define __cpuid(__leaf, __eax, __ebx, __ecx, __edx)                            \
   __asm("  xchgq  %%rbx,%q1\n"                                                 \
         "  cpuid\n"                                                            \
         "  xchgq  %%rbx,%q1"                                                   \
-        : "=a"(__eax), "=r"(__ebx), "=c"(__ecx), "=d"(__edx)                   \
+        : "=a"(__eax), "=&r"(__ebx), "=c"(__ecx), "=d"(__edx)                  \
         : "0"(__leaf))
 
 #define __cpuid_count(__leaf, __count, __eax, __ebx, __ecx, __edx)             \
   __asm("  xchgq  %%rbx,%q1\n"                                                 \
         "  cpuid\n"                                                            \
         "  xchgq  %%rbx,%q1"                                                   \
-        : "=a"(__eax), "=r"(__ebx), "=c"(__ecx), "=d"(__edx)                   \
+        : "=a"(__eax), "=&r"(__ebx), "=c"(__ecx), "=d"(__edx)                  \
         : "0"(__leaf), "2"(__count))
+#endif
 
 static __inline unsigned int __get_cpuid_max(unsigned int __leaf,
                                              unsigned int *__sig) {

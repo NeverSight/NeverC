@@ -7,6 +7,66 @@
 
 class X86TransactionTest : public X86NativeBuiltinTest {};
 
+TEST_F(X86TransactionTest, CpuidHeaderKeepsDeadOutputsAndSingleEvaluation) {
+  const auto Source = tmpFile("cpuid-header.c"),
+             IR = tmpFile("cpuid-header.ll");
+  writeFile(Source, R"C(
+#ifdef TEST_FALLBACK
+#undef __has_builtin
+#define __has_builtin(name) 0
+#endif
+#include <cpuid.h>
+#define PROBE(name, result) \
+__attribute__((noinline)) unsigned name(unsigned leaf, unsigned subleaf) { \
+  unsigned a,b,c,d; __cpuid_count(leaf,subleaf,a,b,c,d); return result; \
+}
+PROBE(word_a,a)
+PROBE(word_b,b)
+PROBE(word_c,c)
+PROBE(word_d,d)
+__attribute__((noinline)) unsigned leaf_b(unsigned leaf) {
+  unsigned a,b,c,d;__cpuid(leaf,a,b,c,d);return b;
+}
+int main(void) {
+  const unsigned leaves[]={0,7,0x80000000};
+  for(unsigned i=0;i<3;++i) {
+    unsigned leaf=leaves[i]; int expected[4];
+    __builtin_ia32_cpuidex(expected,leaf,0);
+    if(word_a(leaf,0)!=(unsigned)expected[0] ||
+       word_b(leaf,0)!=(unsigned)expected[1] ||
+       word_c(leaf,0)!=(unsigned)expected[2] ||
+       word_d(leaf,0)!=(unsigned)expected[3])return 1;
+  }
+  int expected[4];__builtin_ia32_cpuidex(expected,0,0);
+  if(leaf_b(0)!=(unsigned)expected[1])return 2;
+  unsigned leaf=0,subleaf=0,out[4],indices[4]={0,1,2,3};
+  __cpuid_count(leaf++,subleaf++,out[indices[0]++],out[indices[1]++],
+                out[indices[2]++],out[indices[3]++]);
+  if(leaf!=1 || subleaf!=1)return 3;
+  for(unsigned i=0;i<4;++i)
+    if(indices[i]!=i+1 || out[i]!=(unsigned)expected[i])return 4;
+  return 0;
+}
+)C");
+  for (const char *Opt : {"-O0", "-O2"}) {
+    auto Result = ncc({"--target=x86_64-unknown-linux-gnu", Opt,
+                       "-ffreestanding", "-fno-lto", "-fno-builtin-mimalloc",
+                       "-S", "-emit-llvm", Source.string(), "-o", IR.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    const auto Text = readFile(IR);
+    EXPECT_NE(Text.find("@llvm.x86.cpuidex("), std::string::npos);
+    EXPECT_EQ(Text.find("asm "), std::string::npos);
+#if defined(__linux__) && defined(__x86_64__)
+    for (const char *Mode : {"", " -DTEST_FALLBACK"})
+      compileRunAndCheck(std::string("cpuid-header") + Opt + Mode,
+                         Source.string(),
+                         std::string("-std=c23 -fno-lto "
+                                     "-fno-builtin-mimalloc ") +
+                             Opt + Mode);
+#endif
+  }
+}
+
 TEST_F(X86TransactionTest, GenericCpuidEvaluatesEachArgumentOnce) {
   const auto Source = tmpFile("cpuid-once.c"), IR = tmpFile("cpuid-once.ll");
   writeFile(Source, R"C(

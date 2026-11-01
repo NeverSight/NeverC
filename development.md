@@ -1304,7 +1304,7 @@ Intrinsic signatures and capability macros are unchanged. Accumulator exchanges
 use the canonical short encoding, including the REP SCAS flag window, so object
 emission and both assembly dialects round-trip to identical bytes.
 
-`X86NativeRegisterTest` runs CPUID against an independent header-assembly
+`X86NativeRegisterTest` runs CPUID against an independent raw-assembly
 reference with dynamic stack canaries under SysV and Microsoft calling
 conventions. The SGX/SMX completion oracle includes realigned dynamic frames
 and verifies the callee-saved registers, all native results and six arithmetic
@@ -2491,3 +2491,19 @@ are installed through `<hleinterlockedintrin.h>` and the normal Microsoft
 intrinsic includes. They retain the caller-owned region contract without
 inserting a PAUSE, and emit no inline assembly. Windows long remains 32 bits;
 64-bit and pointer forms remain 64 bits.
+
+## Native CPUID header dispatch
+
+`cpuid.h` now routes `__cpuid` and `__cpuid_count` through the generic native
+`__builtin_ia32_cpuidex` interface, including max-leaf and feature helpers.
+Leaf, subleaf and output lvalues are evaluated once. The compatibility assembly
+uses an early-clobber temporary because its first XCHG precedes CPUID's input
+consumption. Without it, an EBX-only result could share EAX, change the leaf and
+corrupt RBX when other outputs were dead. The LLVM fork's Clang header carries
+the same constraint correction.
+
+`CpuidHeaderKeepsDeadOutputsAndSingleEvaluation` checks native IR without
+assembly, each independently used output, live leaf/subleaf values, leaf-only
+queries and argument/lvalue evaluation at O0/O2. It also executes the assembly
+fallback. The realigned SysV/MS frame test retains an independent raw CPUID
+reference, so changing the header does not merge the implementation and oracle.
