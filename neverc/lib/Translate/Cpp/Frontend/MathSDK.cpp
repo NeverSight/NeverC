@@ -7663,7 +7663,7 @@ static bool sameFunctionalBindPlaceholderOperands(
 
 // Temporary bounded observational state, never a source/body permission.
 struct FunctionalBindDiagnosticRing {
-  unsigned Lines[128] = {}, Count = 0, Next = 0, ProjectionMismatches = 0;
+  unsigned Lines[128] = {}, Count = 0, Next = 0, ProjectionMismatches = 0, ReturnSubstitutions = 0;
 };
 static FunctionalBindDiagnosticRing FunctionalBindDiagnostic;
 static bool functionalBindDiagnosticFailure(unsigned Line) {
@@ -7676,7 +7676,7 @@ static bool functionalBindDiagnosticFailure(unsigned Line) {
   return false;
 }
 static void functionalBindDiagnosticReset() {
-  FunctionalBindDiagnostic.Count = FunctionalBindDiagnostic.Next = FunctionalBindDiagnostic.ProjectionMismatches = 0;
+  FunctionalBindDiagnostic.Count = FunctionalBindDiagnostic.Next = FunctionalBindDiagnostic.ProjectionMismatches = FunctionalBindDiagnostic.ReturnSubstitutions = 0;
 }
 static void functionalBindDiagnosticDump() {
   if (!std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) return;
@@ -20080,6 +20080,18 @@ class BindSourceProof {
       const auto *Substituted = dyn_cast<SubstTemplateTypeParmType>(
           ActualArgument.getArgument().getAsType().getTypePtr());
       const auto *Expected = I == 1 ? Input : Incoming;
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE") && FunctionalBindDiagnostic.ReturnSubstitutions++ < 8) {
+        std::fprintf(stderr, "BIND-PLACEHOLDER-RETURN slot=%u written=%u written_match=%u substituted=%u owner_primary=%u owner_pattern=%u parameter_match=%u pack=%u replacement_exact=%u replacement_same=%u actual=%.500s retained=%.500s\n",
+            I, unsigned(bool(Written)), unsigned(Written && Written->getDecl() == Expected),
+            unsigned(bool(Substituted)), unsigned(Substituted && Substituted->getAssociatedDecl() == Primary),
+            unsigned(Substituted && Substituted->getAssociatedDecl() == Pattern),
+            unsigned(Substituted && Substituted->getReplacedParameter() == Expected),
+            unsigned(Substituted && bool(Substituted->getPackIndex())),
+            unsigned(Substituted && Substituted->getReplacementType() == Source.Sugared->get(I - 1).getAsType()),
+            unsigned(Substituted && Context.hasSameType(Substituted->getReplacementType(), Source.Sugared->get(I - 1).getAsType())),
+            ActualArgument.getArgument().getAsType().getAsString().c_str(),
+            Source.Sugared->get(I - 1).getAsType().getAsString().c_str());
+      }
       if (!Written || Written->getDecl() != Expected || !Substituted ||
           Substituted->getAssociatedDecl() != Primary || Substituted->getReplacedParameter() != Expected ||
           Substituted->getPackIndex() ||
