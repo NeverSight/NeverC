@@ -728,8 +728,8 @@
     "i686-unknown-linux-gnu"
   ],
   "fixture_group": "bind-call-arguments-clean456",
-  "source_repair_commit": "83f8b6c0b0669ca1cc12d2aff37ea6390d2c0377",
-  "clean_source_basis": "83f8b6c0b0669ca1cc12d2aff37ea6390d2c0377",
+  "source_repair_commit": "d21b63538450ea90c78a8b03585a4a6bbec26c34",
+  "clean_source_basis": "d21b63538450ea90c78a8b03585a4a6bbec26c34",
   "required_requests": 600,
   "required_acceptances": 416,
   "required_sdk_guard_rejections": 80,
@@ -802,7 +802,7 @@
   "actual_reference272_report_sha256": "6054ea4cbfcf6b3ceee84a9ba45138c7ec64f91cb7c8d64f2a665343ef2e6c16",
   "actual_same_source_six48_report_sha256": null,
   "current_private_input_sha256": {
-    "Frontend.cpp": "9d889a4d52a87fda70abe62036ccdca53db78731acb000b349f3c6b1f3967ef3",
+    "Frontend.cpp": "6ce5c2791bd63e9d2f2a2410f3ebfb1ac8aa7676ca200ab450104781b4664102",
     "Lowering.cpp": "a2def7fd200b58588bcc7c5a5d7cd59c56abcac20b247f349a0ad952d627152e",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
     "MathSDK.cpp": "280fc1cd5e0a4e17fd8ce05de913a59e8e11435912b0c8ac8c48fb89b721c915",
