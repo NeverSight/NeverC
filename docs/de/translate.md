@@ -1047,3 +1047,6 @@ Actions fand zwei Compilerfehler: Als UnqualTypeLoc abgeleitete Variablen erhiel
 
 
 Die Getter-Quellprüfung bindet die tatsächliche Referenz get<__indx> an ihre lokale Deklaration und das ausgewählte __mu-Paket. Jeder Zugriff prüft positive Bedingung, Rückgabetypauswahl und ursprüngliche sowie instanziierte Indexinitialisierung erneut, auch bei vorhandenen Cache-Einträgen. Kein allgemeiner Variablencache wird erweitert; der Geltungsbereich wird wiederhergestellt. Vollständiger Rumpf, forward und Actions-Prüfung bleiben offen; neue Laufzeitunterstützung ist nicht belegt.
+
+
+Der weitere ausgewählte Indexzugriff in forward<tuple_element<__indx, Uj>::type> verlangt den exakten geschriebenen Alias, seinen tuple_element-Eigentümer, den Index und die Ersetzung des Eingabetupels. Er nutzt den frischen Nachweis der ursprünglichen und instanziierten Initialisierung des Getter-Zugriffs. Hinzu kommt nur ein begrenzter Metadatenzugriff. Vollständiger Originalrumpf, forward-Operand, Laufzeitfreigabe und Actions-Prüfung stehen aus.

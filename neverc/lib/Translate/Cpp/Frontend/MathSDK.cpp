@@ -21418,6 +21418,79 @@ class BindSourceProof {
       return Graph.TraverseStmt(const_cast<Expr *>(Original->getInit()));
     });
   }
+  const DeclRefExpr *unwrapPlaceholderForwardIndexReference(
+      const FunctionalBindArgumentSource &Argument) {
+    const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    const auto *Incoming = Parameters && Parameters->size() == 3
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+    const auto *Call = Argument.PlaceholderForward;
+    const auto *Forward = Call ? Call->getDirectCallee() : nullptr;
+    const auto *Callee = Call ? dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
+    if (!ActiveUnwrapSource || !ActiveUnwrapSource->CallArguments || !Function || !Primary || !Incoming ||
+        Incoming->getIndex() != 1 || Incoming->isParameterPack() || Incoming->hasDefaultArgument() ||
+        !Argument.PlaceholderRank || !Argument.PlaceholderIndex || !Argument.PlaceholderGet ||
+        !Call || Call->getNumArgs() != 1 || Check.core(Call->getArg(0)) != Argument.PlaceholderGet ||
+        !Forward || !Callee || Callee->getDecl() != Forward ||
+        !Callee->hasExplicitTemplateArgs() || Callee->getNumTemplateArgs() != 1 ||
+        !Check.family(Forward, {"__utility/forward.h"}) ||
+        !Check.location(Call->getExprLoc(), {"__functional/bind.h"})) return nullptr;
+    const auto &Written = Callee->template_arguments()[0];
+    const auto *Info = Written.getArgument().getKind() == TemplateArgument::Type
+        ? Written.getTypeSourceInfo() : nullptr;
+    if (!Info || !Context.hasSameType(Info->getType(), Argument.ForwardedType)) return nullptr;
+    TypeLoc Name = Info->getTypeLoc();
+    const auto Elaborated = Name.getAs<ElaboratedTypeLoc>();
+    if (!Elaborated || !Elaborated.getQualifierLoc()) return nullptr;
+    const auto Qualifier = Elaborated.getQualifierLoc();
+    if (!Qualifier.getNestedNameSpecifier()->getAsType() || Qualifier.getTypeLoc().isNull()) return nullptr;
+    Name = Elaborated.getNamedTypeLoc();
+    const auto AliasName = Name.getAs<TypedefTypeLoc>();
+    const auto *Alias = AliasName ? dyn_cast<TypeAliasDecl>(AliasName.getTypedefNameDecl()) : nullptr;
+    const auto *Owner = Alias ? dyn_cast<ClassTemplateSpecializationDecl>(Alias->getDeclContext()) : nullptr;
+    TypeLoc Location = Qualifier.getTypeLoc().getUnqualifiedLoc();
+    if (const auto Named = Location.getAs<ElaboratedTypeLoc>()) Location = Named.getNamedTypeLoc();
+    const auto Element = Location.getAs<TemplateSpecializationTypeLoc>();
+    const auto *Template = Element
+        ? dyn_cast_or_null<ClassTemplateDecl>(Element.getTypePtr()->getTemplateName().getAsTemplateDecl())
+        : nullptr;
+    if (!Element || Element.getNumArgs() != 2 || !Template || !Template->getIdentifier() ||
+        Template->getName() != "tuple_element" ||
+        !Check.family(Template, {"__fwd/tuple.h", "__tuple/tuple_element.h"}) ||
+        !Check.location(Element.getTemplateNameLoc(), {"__functional/bind.h"}) ||
+        !Alias || !Alias->getIdentifier() || Alias->getName() != "type" ||
+        !Alias->getTypeSourceInfo() || !family(Alias) ||
+        !Context.hasSameType(Alias->getUnderlyingType(), Argument.ForwardedType) ||
+        !Owner || Owner->getSpecializedTemplate() != Template ||
+        Owner->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Element.getTypePtr()->getAsCXXRecordDecl() != Owner ||
+        Owner->getTemplateArgs().size() != 2) return nullptr;
+    const auto &Selected = Owner->getTemplateArgs();
+    if (Selected[0].getKind() != TemplateArgument::Integral ||
+        Selected[0].getAsIntegral().isNegative() ||
+        !Context.hasSameType(Selected[0].getIntegralType(), Context.getSizeType()) ||
+        Selected[0].getAsIntegral().getLimitedValue(3) != Argument.PlaceholderRank - 1 ||
+        Selected[1].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Selected[1].getAsType(), ActiveUnwrapSource->CallArguments->getType()))
+      return nullptr;
+    const auto Tuple = Element.getArgLoc(1);
+    const auto *Substitution = Tuple.getArgument().getKind() == TemplateArgument::Type
+        ? dyn_cast<SubstTemplateTypeParmType>(Tuple.getArgument().getAsType().getTypePtr()) : nullptr;
+    if (!Tuple.getTypeSourceInfo() || !Substitution ||
+        Substitution->getAssociatedDecl() != Primary || Substitution->getReplacedParameter() != Incoming ||
+        Substitution->getPackIndex() ||
+        !Context.hasSameType(Substitution->getReplacementType(), Selected[1].getAsType())) return nullptr;
+    const auto Index = Element.getArgLoc(0);
+    const auto &Value = Index.getArgument();
+    const Expr *Expression = Value.getKind() == TemplateArgument::Expression
+        ? Value.getAsExpr() : Value.getKind() == TemplateArgument::Integral
+        ? Index.getSourceIntegralExpression() : nullptr;
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Check.core(Expression));
+    return Reference && Reference->getDecl() == Argument.PlaceholderIndex &&
+        Check.location(Reference->getExprLoc(), {"__functional/bind.h"}) ? Reference : nullptr;
+  }
+
   bool unwrapPlaceholderGetterIndexReadSource(const DeclRefExpr *Reference,
                                                const VarDecl *Variable) {
     if (!ActiveUnwrapSource || ActiveScalarParameter || !Reference || !Variable ||
@@ -21443,7 +21516,8 @@ class BindSourceProof {
       const Expr *Expression = ArgumentValue.getKind() == TemplateArgument::Expression
           ? ArgumentValue.getAsExpr() : ArgumentValue.getKind() == TemplateArgument::Integral
           ? Written.getSourceIntegralExpression() : nullptr;
-      if (Check.core(Expression) != Reference) continue;
+      if (Check.core(Expression) != Reference &&
+          unwrapPlaceholderForwardIndexReference(Argument) != Reference) continue;
       // Repeated placeholders may share one instantiated __mu body. Bind the
       // exact getter, local declaration and selected function, not just a rank.
       if (Owner && (Owner->PlaceholderGet != Argument.PlaceholderGet ||

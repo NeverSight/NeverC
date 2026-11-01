@@ -1047,3 +1047,6 @@ Actions a détecté deux erreurs de compilation : des variables déduites Unqual
 
 
 La vérification du getter lie la référence réelle get<__indx> à sa déclaration locale et au paquet __mu sélectionné. Chaque lecture revérifie la condition positive, le sélecteur de retour et les initialisations originales et instanciées, même avec un paquet en cache. La variable ne rejoint pas le cache général et la portée est restaurée. Le corps complet, forward et la validation Actions restent incomplets ; aucun nouveau support d’exécution n’est établi.
+
+
+L’autre référence d’indice sélectionnée, dans forward<tuple_element<__indx, Uj>::type>, exige l’alias écrit exact, son propriétaire tuple_element, le rang et la substitution du tuple entrant. Elle partage la preuve renouvelée des initialisations originales et instanciées du getter. Seule une lecture de métadonnées limitée à la portée est ajoutée. Corps original complet, opérande forward, acceptation à l’exécution et validation Actions restent en attente.

@@ -1047,3 +1047,6 @@ Actions detectó dos errores de compilación: variables deducidas como UnqualTyp
 
 
 La comprobación del getter vincula la referencia real get<__indx> a su declaración local y al paquete __mu seleccionado. Cada lectura vuelve a comprobar la condición positiva, el selector de retorno y las inicializaciones originales e instanciadas, incluso con caché. La variable no entra en la caché general y se restaura el ámbito. El cuerpo completo, forward y la validación Actions siguen pendientes; no se acredita soporte de ejecución nuevo.
+
+
+La otra referencia de índice seleccionada, en forward<tuple_element<__indx, Uj>::type>, exige el alias escrito exacto, su propietario tuple_element, el índice y la sustitución de la tupla entrante. Comparte la prueba renovada de inicializaciones originales e instanciadas del getter. Solo se añade una lectura de metadatos limitada al ámbito. Siguen pendientes el cuerpo original completo, el operando forward, la aceptación en ejecución y Actions.
