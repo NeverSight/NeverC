@@ -24,6 +24,7 @@
 #include "X86KVMHypercall.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86NativeFrameReturn.h"
+#include "X86RTMAbortPair.h"
 #include "X86SNPContext.h"
 #include "X86SVMContext.h"
 #include "X86TargetMachine.h"
@@ -27986,6 +27987,8 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
   const IntrinsicData *IntrData = getIntrinsicWithChain(IntNo);
   if (!IntrData) {
     switch (IntNo) {
+    case Intrinsic::x86_rtm_abort_pair:
+      return X86::lowerRTMAbortPair(Op, false /* x64-only target */, DAG);
     case Intrinsic::x86_hle_context:
       return X86::lowerHLEContext(Op, Subtarget, DAG);
     case Intrinsic::x86_psmash_context:

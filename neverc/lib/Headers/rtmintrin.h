@@ -48,6 +48,14 @@ static __inline__ void __DEFAULT_FN_ATTRS _xend(void) { __builtin_ia32_xend(); }
 
 #define _xabort(imm) __builtin_ia32_xabort((imm))
 
+/* Returns the actual status of one XBEGIN followed immediately by XABORT.
+ * Requires RTM support and entry outside RTM/HLE. No transaction spans the
+ * call; early aborts are retained instead of synthesizing an explicit status.
+ */
+#if __has_builtin(__builtin_ia32_rtm_abort_pair)
+#define __rtm_abort_pair(imm) __builtin_ia32_rtm_abort_pair((imm))
+#endif
+
 #undef __DEFAULT_FN_ATTRS
 
 #endif /* __RTMINTRIN_H */

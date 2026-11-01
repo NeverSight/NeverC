@@ -1,6 +1,126 @@
 #include "NativeBuiltinFixture.h"
 
+#include <cstdint>
+#include <iterator>
+#include <regex>
+#include <vector>
+
 class X86TransactionTest : public X86NativeBuiltinTest {};
+
+TEST_F(X86TransactionTest, GenericCpuidEvaluatesEachArgumentOnce) {
+  const auto Source = tmpFile("cpuid-once.c"), IR = tmpFile("cpuid-once.ll");
+  writeFile(Source, R"C(
+extern int *next_pointer(void);
+extern unsigned next_leaf(void), next_subleaf(void);
+void query(void) {
+  __builtin_ia32_cpuidex(next_pointer(),next_leaf(),next_subleaf());
+}
+)C");
+  for (const char *Opt : {"-O0", "-O2"}) {
+    const auto Result =
+        ncc({"--target=x86_64-unknown-linux-gnu", Opt, "-ffreestanding",
+             "-fno-lto", "-fno-builtin-mimalloc", "-S", "-emit-llvm",
+             Source.string(), "-o", IR.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    const auto Text = readFile(IR);
+    for (const char *Name : {"next_pointer", "next_leaf", "next_subleaf"}) {
+      const std::regex Call(std::string("call [^\\n]*@") + Name + "\\(");
+      EXPECT_EQ(
+          std::distance(std::sregex_iterator(Text.begin(), Text.end(), Call),
+                        std::sregex_iterator()),
+          1)
+          << Text;
+    }
+  }
+}
+
+TEST_F(X86TransactionTest, AbortPairAndCpuidUseNativeInstructions) {
+  const auto Source = tmpFile("abort-pair.c");
+  writeFile(Source, R"C(
+unsigned pair(unsigned live, unsigned *memory) {
+  *memory=71;
+  unsigned status=__builtin_ia32_rtm_abort_pair(167);
+  *memory=73;
+  return status+live;
+}
+unsigned limits(void) {
+  return __builtin_ia32_rtm_abort_pair(0) +
+         __builtin_ia32_rtm_abort_pair(255);
+}
+void query(int *out, unsigned leaf, unsigned subleaf) {
+  __builtin_ia32_cpuidex(out,leaf,subleaf);
+}
+)C");
+  for (const char *Target :
+       {"--target=x86_64-unknown-linux-gnu", "--target=x86_64-pc-windows-msvc",
+        "--target=x86_64-apple-darwin"})
+    for (const char *Opt : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Target);
+      SCOPED_TRACE(Opt);
+      for (const char *Kind : {"assembly", "ir", "object"}) {
+        SCOPED_TRACE(Kind);
+        const auto Output = tmpFile(Kind);
+        std::vector<std::string> Args{Target,
+                                      Opt,
+                                      "-std=c23",
+                                      "-ffreestanding",
+                                      "-fno-lto",
+                                      "-fno-builtin-mimalloc",
+                                      "-mllvm",
+                                      "-verify-machineinstrs",
+                                      std::string(Kind) == "object" ? "-c"
+                                                                    : "-S"};
+        if (std::string(Kind) == "ir")
+          Args.push_back("-emit-llvm");
+        Args.insert(Args.end(), {Source.string(), "-o", Output.string()});
+        const auto Result = ncc(Args);
+        ASSERT_EQ(Result.exitCode, 0) << Result.err;
+        const auto Text = readFile(Output);
+        if (std::string(Kind) == "object") {
+          for (unsigned Code : {0u, 167u, 255u}) {
+            const unsigned char Bytes[] = {0xc7, 0xf8,         3, 0, 0, 0, 0xc6,
+                                           0xf8, uint8_t(Code)};
+            EXPECT_NE(
+                Text.find(std::string(reinterpret_cast<const char *>(Bytes),
+                                      sizeof(Bytes))),
+                std::string::npos);
+          }
+        } else if (std::string(Kind) == "ir") {
+          EXPECT_NE(Text.find("@llvm.x86.rtm.abort.pair(i32 167)"),
+                    std::string::npos);
+          EXPECT_NE(Text.find("@llvm.x86.cpuidex("), std::string::npos);
+          EXPECT_NE(Text.find("convergent noduplicate nounwind"),
+                    std::string::npos);
+          EXPECT_EQ(Text.find("asm "), std::string::npos);
+        } else {
+          EXPECT_NE(Text.find("xbegin"), std::string::npos);
+          EXPECT_NE(Text.find("xabort"), std::string::npos);
+          EXPECT_NE(Text.find("cpuid"), std::string::npos);
+          EXPECT_EQ(Text.find("#APP"), std::string::npos);
+          EXPECT_EQ(Text.find("\tcall"), std::string::npos);
+        }
+      }
+    }
+}
+
+TEST_F(X86TransactionTest, AbortPairValidatesConstantCodeAndHeader) {
+  const auto Source = tmpFile("abort-pair-constant.c");
+  for (const char *Code : {"256", "-1", "n"}) {
+    writeFile(Source, std::string("unsigned f(unsigned n){return ") +
+                          "__builtin_ia32_rtm_abort_pair(" + Code + ");}\n");
+    const auto Result = ncc({"-std=c23", "-fsyntax-only", Source.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.err;
+  }
+  writeFile(Source, "#include <immintrin.h>\n"
+                    "unsigned f(void){return __rtm_abort_pair(255);}\n");
+  for (const char *Target :
+       {"--target=x86_64-unknown-linux-gnu", "--target=x86_64-pc-windows-msvc",
+        "--target=x86_64-apple-darwin"}) {
+    const auto Result = ncc({Target, "-std=c23", "-mrtm", "-ffreestanding",
+                             "-fsyntax-only", Source.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.err;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // TSX: xbegin, xabort, xend, xtest

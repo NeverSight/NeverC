@@ -2423,6 +2423,36 @@ The Linux x64 signal service tests encoding, unaligned transport, complete
 register/flag outputs, live values and fault-before-publication. It does not
 qualify physical AMD RMP algorithms or actual SEV-ES services.
 
+## Native immediate-abort RTM pairs
+
+`__builtin_ia32_rtm_abort_pair(code)` and `<immintrin.h>`'s
+`__rtm_abort_pair(code)` return the actual abort status of a single XBEGIN /
+XABORT pair. The constant code must be in 0..255. Entry requires RTM support
+outside an existing RTM/HLE region; an early abort may have a different status
+from an explicit abort. One machine pseudo owns both instructions and the
+local fallback, so no spill, call, padding or C return splits the checkpoint.
+This does not execute a general transaction body or restore an external one.
+
+The generic x64 `__builtin_ia32_cpuidex(int *, unsigned, unsigned)` spelling
+uses the existing native CPUID interface, including RBX preservation. Callers
+can check RTM availability without inline assembly or Microsoft language mode.
+The pair uses `llvm.x86.rtm.abort.pair`, with an immediate argument and
+conservative memory, convergence and no-duplication effects. Its lowering is
+shared with the LLVM fork. `sync-x86-rtm-abort-pair.py` appends its opcode and
+preserves prior IDs; `X86TransactionTest` checks diagnostics, both optimization
+levels, native IR, exact contiguous object bytes and all three x64 formats.
+
+`tests/neverc/X86/verify_rtm_abort_pair.py` compares all 256 immediate codes
+with an independent raw-byte reference. It exercises integer/SIMD values live
+across the pair, memory order and exact status at O0/O2 through NeverC or the
+LLVM fork's legacy/new backend pass managers. Pass `--compiler`, `--sde` and
+`--keep`; add `--backend-llc` and optionally `--new-pm` for the LLVM fork.
+SDE 10.13.1 requires `-tsx` only in full mode: that option overrides abort mode.
+Forced abort checks omit it and require exact statuses 0, 2, 6 and 8. This mode
+also clears CPUID.RTM, so only the fixture's explicit `sde-abort-N` entry
+bypasses discovery under SDE. Production providers retain their CPUID guard.
+Emulator results do not establish physical RTM behavior or general rollback.
+
 ## Native HLE operation contexts
 
 `<hlecontextintrin.h>` exposes `__builtin_ia32_hle_context(memory, gprs, flags,

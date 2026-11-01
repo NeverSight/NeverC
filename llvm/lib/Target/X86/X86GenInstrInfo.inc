@@ -18613,7 +18613,8 @@ namespace X86 {
     VMGEXIT	= 18598,
     SNP_CONTEXT64	= 18599,
     HLE_CONTEXT64	= 18600,
-    INSTRUCTION_LIST_END = 18601
+    RTM_ABORT_PAIR	= 18601,
+    INSTRUCTION_LIST_END = 18602
   };
 
 } // end namespace X86
@@ -21004,7 +21005,7 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18601];
+  MCInstrDesc Insts[18602];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5524];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
@@ -21023,6 +21024,7 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18601,	1,	0,	0,	8,	0,	2,	X86ImpOpBase + 41,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18601 = RTM_ABORT_PAIR
     { 18600,	2,	0,	0,	8,	3,	5,	X86ImpOpBase + 989,	15,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18600 = HLE_CONTEXT64
     { 18599,	2,	0,	0,	8,	2,	4,	X86ImpOpBase + 983,	15,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18599 = SNP_CONTEXT64
     { 18598,	0,	0,	0,	8,	1,	0,	X86ImpOpBase + 3,	1,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x80003059ULL },  // Inst #18598 = VMGEXIT
@@ -58637,6 +58639,7 @@ extern const char X86InstrNameData[] = {
   /* 260562 */ "VMGEXIT\0"
   /* 260570 */ "SNP_CONTEXT64\0"
   /* 260584 */ "HLE_CONTEXT64\0"
+  /* 260598 */ "RTM_ABORT_PAIR\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -61102,10 +61105,11 @@ extern const unsigned X86InstrNameIndices[] = {
     260562U,
     260570U,
     260584U,
+    260598U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18601);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18602);
 }
 
 } // end namespace llvm
@@ -61165,7 +61169,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18601);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18602);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98592,6 +98596,8 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     /* SNP_CONTEXT64 */
     1,
     /* HLE_CONTEXT64 */
+    1,
+    /* RTM_ABORT_PAIR */
     1,
   };
 
@@ -154062,9 +154068,10 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // VMGEXIT = 18598
     CEFBS_In64BitMode, // SNP_CONTEXT64 = 18599
     CEFBS_In64BitMode, // HLE_CONTEXT64 = 18600
+    CEFBS_In64BitMode, // RTM_ABORT_PAIR = 18601
   };
 
-  assert(Opcode < 18601);
+  assert(Opcode < 18602);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

@@ -2283,6 +2283,20 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
 }
 
 void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
+  if (MI->getOpcode() == X86::RTM_ABORT_PAIR) {
+    const int64_t Code = MI->getOperand(0).getImm();
+    if (Code < 0 || Code > 255)
+      report_fatal_error("RTM abort pair requires an imm8 abort code");
+    SMShadowTracker.emitShadowPadding(*OutStreamer, getSubtargetInfo());
+    NoAutoPaddingScope NoPadScope(*OutStreamer);
+    MCSymbol *Abort = OutContext.createTempSymbol("rtm_abort");
+    EmitAndCountInstruction(
+        MCInstBuilder(X86::XBEGIN_4)
+            .addExpr(MCSymbolRefExpr::create(Abort, OutContext)));
+    EmitAndCountInstruction(MCInstBuilder(X86::XABORT).addImm(Code));
+    OutStreamer->emitLabel(Abort);
+    return;
+  }
   if (emitHLEContext(MI))
     return;
   if (emitSNPContext(MI))

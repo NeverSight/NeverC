@@ -3054,11 +3054,12 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   }
 
   case X86::BI__cpuid:
+  case X86::BI__builtin_ia32_cpuidex:
   case X86::BI__cpuidex: {
-    Value *BasePtr = genScalarExpr(E->getArg(0));
-    Value *FuncId = genScalarExpr(E->getArg(1));
-    Value *SubFuncId = BuiltinID == X86::BI__cpuidex
-                           ? genScalarExpr(E->getArg(2))
+    Value *BasePtr = Ops[0];
+    Value *FuncId = Ops[1];
+    Value *SubFuncId = BuiltinID != X86::BI__cpuid
+                           ? Ops[2]
                            : llvm::ConstantInt::get(Int32Ty, 0);
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_cpuidex,
                                    {BasePtr, FuncId, SubFuncId});
@@ -3522,6 +3523,9 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
 #undef X86_NATIVE_TRANSFER
   case X86::BI__builtin_ia32_hle_context:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_hle_context,
+                                   Ops);
+  case X86::BI__builtin_ia32_rtm_abort_pair:
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_rtm_abort_pair,
                                    Ops);
   case X86::BI__builtin_ia32_psmash_context:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_psmash_context,
