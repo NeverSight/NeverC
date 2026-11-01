@@ -19883,7 +19883,7 @@ class BindSourceProof {
           ActualTrait->getTemplateName().getAsTemplateDecl() != Template ||
           !ActualArgument || ActualArgument->getAssociatedDecl() != Primary ||
           ActualArgument->getReplacedParameter() != Input || ActualArgument->getPackIndex() ||
-          ActualArgument->getReplacementType() != Source.Sugared->get(0).getAsType() ||
+          !Context.hasSameType(ActualArgument->getReplacementType(), Source.Sugared->get(0).getAsType()) ||
           !Variable || !Variable->getIdentifier() || Variable->getName() != "value" ||
           !Variable->isStaticDataMember() || !Variable->hasInit() || !Variable->getType().isConstQualified() ||
           !Context.hasSameType(Variable->getType().getUnqualifiedType(), Integer ? Context.IntTy : Context.BoolTy))

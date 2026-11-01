@@ -1065,3 +1065,6 @@ Der reine Platzhalter-Tupelkonstruktor prüft seinen echten _And-Template-Standa
 
 
 Die Korrektur erhaltener Funktionsquellen `6fd61042ba94` besteht tatsächlich 600/600 Anfragen und 72 native Referenzausführungen. Dies bestätigt keine späteren Platzhalteränderungen. Die Rückgabeprüfung vergleicht Ersetzungstypen durch Clang-Typäquivalenz einschließlich Qualifizierern, da Sema den erhaltenen Tupel-Elementalias entfernen kann. Exakter Template-Eigentümer, Identität des ersetzten Parameters und unabhängige Quellprüfungen bleiben erforderlich. Die neue Korrektur, formale Tests, generierter Code und vollständige STL-Unterstützung sind noch nicht validiert.
+
+
+Das Platzhalter-Trait-Argument nutzt Clang-Typäquivalenz einschließlich Qualifizierern, wenn Sema den erhaltenen Tupel-Elementalias entfernt. Die Korrektur setzt eine Diagnose voraus, die identische Eigentümer, Parameter, Quellpositionen und Konstantentypen sowie ausschließlich unterschiedliche Aliasdarstellung bestätigt. Quellprüfungen, SDK-Schranken und Ressourcenlimits bleiben erhalten. Der Vorgänger besteht Syntax6, Full600 und Native72; neue Korrektur und vollständige STL-Unterstützung stehen noch aus.

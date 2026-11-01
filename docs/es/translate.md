@@ -1065,3 +1065,6 @@ El constructor del tuple de solo marcadores prueba su valor de plantilla _And re
 
 
 La reparación de fuentes de funciones retenidas `6fd61042ba94` ha cumplido realmente 600/600 solicitudes y 72 ejecuciones nativas de referencia. No certifica cambios posteriores de marcadores. El retorno compara tipos sustituidos mediante equivalencia de Clang, incluidos los calificadores: Sema puede eliminar el alias retenido del elemento de tuple. Siguen siendo obligatorios el propietario exacto de plantilla, la identidad del parámetro sustituido y los recorridos independientes de fuentes escritas e instanciadas. La nueva reparación, las pruebas formales, el código generado y el STL completo siguen pendientes.
+
+
+El argumento del trait de marcador usa equivalencia de tipos Clang, incluidos calificadores, si Sema elimina el alias retenido del elemento de tuple. Solo se repara tras confirmar en el diagnóstico propietario, parámetro, ubicaciones y tipo constante idénticos, con la representación del alias como única diferencia. Se mantienen los recorridos de fuentes, guardas SDK y límites. La versión anterior pasa sintaxis6, full600 y native72; la nueva reparación y el STL completo siguen pendientes.

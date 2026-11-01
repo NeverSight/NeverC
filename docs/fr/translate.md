@@ -1065,3 +1065,6 @@ Le constructeur du tuple de seuls espaces réservés prouve son vrai défaut de 
 
 
 La correction des sources de fonctions retenues `6fd61042ba94` a réellement satisfait 600/600 requêtes et 72 exécutions natives de référence. Ces résultats ne certifient pas les changements ultérieurs des espaces réservés. Le contrôle du retour compare les types substitués par équivalence Clang, qualificateurs compris : Sema peut supprimer l’alias de l’élément du tuple. Propriétaire du modèle, identité du paramètre remplacé et parcours indépendants des sources écrites et instanciées restent obligatoires. La nouvelle correction, les tests formels, le code généré et le STL complet restent à valider.
+
+
+L’argument du trait d’espace réservé utilise l’équivalence de type Clang, qualificateurs compris, si Sema élimine l’alias retenu de l’élément du tuple. La correction exige un diagnostic confirmant propriétaire, paramètre, positions source et type constant identiques, seule la représentation de l’alias différant. Parcours des sources écrites et instanciées, gardes SDK et limites restent obligatoires. La version précédente passe syntaxe6, full600 et native72 ; la nouvelle correction et le STL complet restent à vérifier.
