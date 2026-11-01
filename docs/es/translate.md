@@ -1062,3 +1062,6 @@ El verificador de __mu prueba por separado la declaración real del índice y el
 
 
 El constructor del tuple de solo marcadores prueba su valor de plantilla _And real y las definiciones booleanas locales. Fábrica, construcción, propietario y elementos vacíos deben coincidir exactamente. Siguen los límites de dos referencias entrantes y ocho elementos ligados; no se sintetizan valores predeterminados. La ejecución actual sigue pendiente.
+
+
+La reparación de fuentes de funciones retenidas `6fd61042ba94` ha cumplido realmente 600/600 solicitudes y 72 ejecuciones nativas de referencia. No certifica cambios posteriores de marcadores. El retorno compara tipos sustituidos mediante equivalencia de Clang, incluidos los calificadores: Sema puede eliminar el alias retenido del elemento de tuple. Siguen siendo obligatorios el propietario exacto de plantilla, la identidad del parámetro sustituido y los recorridos independientes de fuentes escritas e instanciadas. La nueva reparación, las pruebas formales, el código generado y el STL completo siguen pendientes.

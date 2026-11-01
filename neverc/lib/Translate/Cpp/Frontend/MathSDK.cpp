@@ -20041,7 +20041,8 @@ class BindSourceProof {
       if (!Written || Written->getDecl() != Expected || !Substituted ||
           Substituted->getAssociatedDecl() != Primary || Substituted->getReplacedParameter() != Expected ||
           Substituted->getPackIndex() ||
-          Substituted->getReplacementType() != Source.Sugared->get(I - 1).getAsType()) return false;
+          !Context.hasSameType(Substituted->getReplacementType(),
+              Source.Sugared->get(I - 1).getAsType())) return false;
     }
     auto Expression = [](const TemplateArgumentLoc &Location) -> const Expr * {
       const auto &Argument = Location.getArgument();

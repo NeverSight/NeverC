@@ -1062,3 +1062,6 @@ Der __mu-Prüfer beweist die tatsächliche Indexdeklaration und Rückgabe getren
 
 
 Der reine Platzhalter-Tupelkonstruktor prüft seinen echten _And-Template-Standard und lokale boolesche Definitionen. Fabrik, Konstruktion, Eigentümertyp und leere Elemente müssen exakt passen. Grenzen bleiben zwei eingehende Referenzen und acht gebundene Elemente; keine Standarddatensätze werden erzeugt. Die aktuelle Ausführung steht aus.
+
+
+Die Korrektur erhaltener Funktionsquellen `6fd61042ba94` besteht tatsächlich 600/600 Anfragen und 72 native Referenzausführungen. Dies bestätigt keine späteren Platzhalteränderungen. Die Rückgabeprüfung vergleicht Ersetzungstypen durch Clang-Typäquivalenz einschließlich Qualifizierern, da Sema den erhaltenen Tupel-Elementalias entfernen kann. Exakter Template-Eigentümer, Identität des ersetzten Parameters und unabhängige Quellprüfungen bleiben erforderlich. Die neue Korrektur, formale Tests, generierter Code und vollständige STL-Unterstützung sind noch nicht validiert.

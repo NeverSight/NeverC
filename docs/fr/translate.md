@@ -1062,3 +1062,6 @@ Le vérificateur de __mu prouve séparément la déclaration réelle d’indice 
 
 
 Le constructeur du tuple de seuls espaces réservés prouve son vrai défaut de modèle _And et ses définitions booléennes locales. Fabrique, construction, propriétaire et éléments vides doivent correspondre exactement. Les limites restent deux références entrantes et huit valeurs liées ; aucun défaut n’est synthétisé. L’exécution actuelle reste à vérifier.
+
+
+La correction des sources de fonctions retenues `6fd61042ba94` a réellement satisfait 600/600 requêtes et 72 exécutions natives de référence. Ces résultats ne certifient pas les changements ultérieurs des espaces réservés. Le contrôle du retour compare les types substitués par équivalence Clang, qualificateurs compris : Sema peut supprimer l’alias de l’élément du tuple. Propriétaire du modèle, identité du paramètre remplacé et parcours indépendants des sources écrites et instanciées restent obligatoires. La nouvelle correction, les tests formels, le code généré et le STL complet restent à valider.

@@ -482,3 +482,6 @@ The placeholder __mu source checker now handles its real index declaration and r
 
 
 The pure-placeholder tuple constructor now closes its real _And template default and scoped boolean definitions. Its exact factory, construction, owner and empty placeholder elements must match; the incoming reference-tuple limit remains two and the stored bound-pack limit remains eight. No default record is synthesized. Current-source execution remains pending.
+
+
+The retained-function repair at `6fd61042ba94` now has an actual 600/600 request result and 72 passing native reference executions. This does not certify later placeholder changes. The placeholder return-source check now compares replacement types with Clang type equivalence, including qualifiers, because Sema can remove the retained tuple-element alias. Exact template ownership, replaced-parameter identity and independent written/instantiated source walks remain required. Execution of this new repair is pending; placeholder, formal/generated and complete STL support remain unfinished.
