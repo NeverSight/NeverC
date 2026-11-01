@@ -1059,3 +1059,6 @@ La cattura di soli segnaposto verifica i parametri diretti per riferimento costa
 
 
 Il controllo di __mu prova separatamente la dichiarazione reale dell’indice e il ritorno. Il getter interno richiede una prova completa; forward mantiene il vero record di funzione riuscito e il corpo originale. Ricerche e letture dell’indice restano locali a quel corpo esatto. Il supporto completo attende l’esecuzione del codice corrente.
+
+
+Il costruttore del tuple di soli segnaposto prova il vero valore predefinito del template _And e le definizioni booleane locali. Factory, costruzione, proprietario ed elementi vuoti devono coincidere esattamente. Restano due riferimenti in ingresso e otto elementi legati; nessun record predefinito viene sintetizzato. L’esecuzione corrente è da verificare.

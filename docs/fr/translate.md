@@ -1059,3 +1059,6 @@ La capture de seuls espaces réservés vérifie les paramètres directs par réf
 
 
 Le vérificateur de __mu prouve séparément la déclaration réelle d’indice et le retour. Le getter imbriqué exige une preuve complète ; forward conserve son véritable enregistrement de fonction réussi et son corps original. Recherches et lectures d’indice restent locales à ce corps exact. Le support complet attend l’exécution du code actuel.
+
+
+Le constructeur du tuple de seuls espaces réservés prouve son vrai défaut de modèle _And et ses définitions booléennes locales. Fabrique, construction, propriétaire et éléments vides doivent correspondre exactement. Les limites restent deux références entrantes et huit valeurs liées ; aucun défaut n’est synthétisé. L’exécution actuelle reste à vérifier.
