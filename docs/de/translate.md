@@ -1053,3 +1053,6 @@ Der weitere ausgewählte Indexzugriff in forward<tuple_element<__indx, Uj>::type
 
 
 Die echte Spur mit neunzehn Anfragen akzeptiert acht Werte auf x86-64, lehnt aber die Rückgabetypkombination ab: Ein wiederverwendetes skalares __mu behält einen tuple_element-Alias eines anderen bind. Die Korrektur beweist jede tatsächliche Funktionsprojektion anhand ihres eigenen Tupels, hält sie während beider Signaturdurchläufe und stellt die Caches wieder her. Grenzen für 64 Einträge, Tiefe, Knoten, Zeit und SDK-Operationen bleiben unverändert. Ein neuer vollständiger Lauf mit 600 Anfragen ist erforderlich.
+
+
+Die Erfassung reiner Platzhalter prüft direkte const-Referenzparameter des festen Tupelkonstruktors und ursprüngliche Tag-Ausschnitte. Referenzen auf SDK-Platzhalterspeicher samt Adressbildung benötigen die exakt bewiesene bind-Argumentrolle. Die Korrektur folgt der echten Spur; vollständige Aufrufe und aktuelle Regressionsergebnisse stehen aus.

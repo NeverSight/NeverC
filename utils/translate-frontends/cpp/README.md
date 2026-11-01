@@ -1291,3 +1291,6 @@ The other selected placeholder index occurrence, inside forward<tuple_element<__
 
 
 The real nineteen-request trace accepted eight bound values on x86-64 but still rejected the return-kind combination: a reused scalar __mu retained a tuple_element alias from another bind. The repair independently closes every exact retained function projection against its own tuple, keeps those sources through selected/original signature traversal, and restores both caches afterward. The 64/depth/node/time limits and SDK operation rules stay unchanged. A new complete 600-request result is still required.
+
+
+Pure placeholder capture now checks the pinned tuple constructor’s direct const-reference parameter edges and original tuple-tag slices. Ordinary references to SDK placeholder storage, including taking its address, require the exact completed bind argument role. These repairs follow the real factory trace; complete placeholder invocation and current-source regression results remain pending.

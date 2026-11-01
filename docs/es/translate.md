@@ -1053,3 +1053,6 @@ La otra referencia de índice seleccionada, en forward<tuple_element<__indx, Uj>
 
 
 La traza real de diecinueve solicitudes acepta ocho valores en x86-64, pero rechaza la combinación de retornos: un __mu escalar reutilizado conserva un alias tuple_element de otro bind. La corrección prueba cada proyección real con su propia tupla, mantiene esas fuentes durante ambas firmas y restaura las cachés. Se conservan los límites de 64 entradas, profundidad, nodos, tiempo y operaciones SDK. Sigue siendo necesario un nuevo resultado completo de 600 solicitudes.
+
+
+La captura de solo marcadores comprueba los parámetros directos por referencia constante del constructor fijado y los segmentos originales de etiquetas. Las referencias al almacenamiento de marcadores del SDK, incluida su dirección, requieren el argumento bind exacto ya probado. La corrección sigue la traza real; las llamadas completas y la regresión actual siguen pendientes.

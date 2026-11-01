@@ -1053,3 +1053,6 @@ L’altro riferimento all’indice selezionato, in forward<tuple_element<__indx,
 
 
 La traccia reale di diciannove richieste accetta otto valori su x86-64, ma rifiuta la combinazione dei ritorni: uno __mu scalare riutilizzato conserva un alias tuple_element di un altro bind. La correzione prova ogni proiezione reale sulla propria tupla, mantiene le sorgenti durante entrambe le firme e ripristina le cache. Restano limiti di 64 elementi, profondità, nodi, tempo e operazioni SDK. Serve ancora un nuovo risultato completo di 600 richieste.
+
+
+La cattura di soli segnaposto verifica i parametri diretti per riferimento costante del costruttore fissato e le sezioni originali dei tag. I riferimenti allo storage dei segnaposto SDK, incluso l’indirizzo, richiedono l’esatto argomento bind già provato. Correzione basata sulla traccia reale; chiamate complete e regressione corrente restano da verificare.

@@ -1053,3 +1053,6 @@ L’autre référence d’indice sélectionnée, dans forward<tuple_element<__in
 
 
 La trace réelle de dix-neuf requêtes accepte huit valeurs sur x86-64, mais rejette encore la combinaison des retours : un __mu scalaire réutilisé garde un alias tuple_element d’un autre bind. La correction prouve chaque projection réelle sur son propre tuple, maintient ces sources pendant les signatures sélectionnées et originales, puis restaure les caches. Limites de 64 entrées, profondeur, nœuds, temps et opérations SDK inchangées. Un nouveau résultat complet de 600 requêtes reste nécessaire.
+
+
+La capture de seuls espaces réservés vérifie les paramètres directs par référence constante du constructeur figé et les tranches originales des étiquettes. Toute référence au stockage des espaces réservés du SDK, y compris son adresse, exige le rôle exact d’argument bind prouvé. Correction issue de la trace réelle ; appels complets et régression du code actuel restent à vérifier.

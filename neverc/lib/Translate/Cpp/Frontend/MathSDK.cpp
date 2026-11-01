@@ -12666,6 +12666,21 @@ public:
         Tuple.Tuple == BindCallMetadata->CallArguments &&
         Primary->getTemplateParameters()->size() == 2 &&
         isa<TemplateTemplateParmDecl>(Primary->getTemplateParameters()->getParam(0));
+    const bool PlaceholderCopy = !BindCallMetadata &&
+        InputTuple.Record == BindMetadata->Arguments.Record &&
+        Primary->getTemplateParameters()->size() == 2 &&
+        isa<TemplateTemplateParmDecl>(Primary->getTemplateParameters()->getParam(0));
+    if (PlaceholderCopy) {
+      if (Constructor->getNumParams() != Count) return false;
+      for (unsigned I = 0; I < Count; ++I) {
+        const auto &Element = InputTuple.Elements[I];
+        if (Element.Field || !Element.EmptyBase ||
+            !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context) ||
+            !Context.hasSameType(Constructor->getParamDecl(I)->getType(),
+                Context.getLValueReferenceType(Context.getConstType(Element.getType()))) ||
+            !family(Constructor->getParamDecl(I))) return false;
+      }
+    }
     if (ReferenceCopy) {
       if (Constructor->getNumParams() != Count) return false;
       for (unsigned I = 0; I < Count; ++I)
@@ -12674,12 +12689,13 @@ public:
                                  InputTuple.Elements[I].getType()) ||
             !family(Constructor->getParamDecl(I))) return false;
     }
+    const bool CopyInputs = ReferenceCopy || PlaceholderCopy;
     std::set<const NamedDecl *> InputPacks, StoredPacks;
     std::set<const FunctionTemplateDecl *> Templates;
     for (const auto *Current = Primary; Current;) {
       if (!step() || !Templates.insert(Current).second || !family(Current) ||
           !Current->getTemplateParameters()->size()) return false;
-      if (ReferenceCopy) {
+      if (CopyInputs) {
         const auto *Parameters = Current->getTemplateParameters();
         const auto *Alias = dyn_cast<TemplateTemplateParmDecl>(Parameters->getParam(0));
         const auto *Value = Parameters->size() == 2
@@ -12709,7 +12725,7 @@ public:
       if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
       StoredPacks.insert(Pack);
     }
-    if (ReferenceCopy) InputPacks = StoredPacks;
+    if (CopyInputs) InputPacks = StoredPacks;
     std::vector<const TypeSourceInfo *> WrittenTags;
     for (unsigned I = 0; I < 4; ++I) {
       const auto *Construction = Tags[I].Construction;
@@ -12739,7 +12755,7 @@ public:
       const auto *Use = Location.isNull() ? nullptr : Location.getTypePtr();
       const auto *Template = Use ? Use->getTemplateName().getAsTemplateDecl() : nullptr;
       const auto *Slice = Use ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(Use->getAsCXXRecordDecl()) : nullptr;
-      const auto Slots = I == 1 || ReferenceCopy ? 2U : 3U;
+      const auto Slots = I == 1 || CopyInputs ? 2U : 3U;
       if (!Use || !Template || !Slice || !Template->getIdentifier() ||
           Template->getName() != "__make_tuple_types" || !family(Template) ||
           Location.getNumArgs() != Slots || Use->template_arguments().size() != Slots ||
@@ -12752,7 +12768,7 @@ public:
         const auto Kind = Argument.getArgument().getKind();
         const Expr *Expression = Kind == TemplateArgument::Expression ? Argument.getSourceExpression()
             : Kind == TemplateArgument::Integral ? Argument.getSourceIntegralExpression() : nullptr;
-        if (ReferenceCopy && I == 3) {
+        if (CopyInputs && I == 3) {
           const Expr *Core = Expression ? Expression->IgnoreParenImpCasts() : nullptr;
           if (const auto *Constant = dyn_cast_or_null<ConstantExpr>(Core))
             Core = Constant->getSubExpr()->IgnoreParenImpCasts();
@@ -12768,8 +12784,8 @@ public:
             !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return false;
       }
       if (!BindTupleTagSlices.emplace(Slice->getCanonicalDecl(),
-              BindTupleTagSlice{Use, I == 1 || ReferenceCopy ? 0U : unsigned(Count),
-                                ReferenceCopy && I == 3 ? 0U : unsigned(Count)}).second) return false;
+              BindTupleTagSlice{Use, I == 1 || CopyInputs ? 0U : unsigned(Count),
+                                CopyInputs && I == 3 ? 0U : unsigned(Count)}).second) return false;
     }
     // Bind both exact slices before traversing their actual original TypeLocs.
     // The retained Sema packets still close defaults and selected partials.
@@ -18386,6 +18402,27 @@ describeFunctionalBindTupleConstructionSourceImpl(
     const auto *Argument = Implementation->getArg(I + 4);
     const auto *Direct = dyn_cast_or_null<DeclRefExpr>(
         utilityTupleCarrierQualification(Argument, Context));
+    if (Direct && !CallReferenceInputs && Arguments.Elements[I].EmptyBase &&
+        !Arguments.Elements[I].Field && functionalBindEmptyPlaceholderStorage(
+            S, SM, Arguments.Elements[I].getType(), Context)) {
+      // The pinned const-element tuple constructor passes its parameters
+      // directly. This is a source edge, not a call to std::forward.
+      const auto Type = Context.getLValueReferenceType(
+          Context.getConstType(Arguments.Elements[I].getType()));
+      const auto *Primary = TupleConstructor->getPrimaryTemplate();
+      const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+      const auto *Destination = ImplementationConstructor->getParamDecl(I + 4);
+      if (!Parameters || Parameters->size() != 2 ||
+          !isa<TemplateTemplateParmDecl>(Parameters->getParam(0)) ||
+          !Context.hasSameType(Parameter->getType(), Type) ||
+          !Context.hasSameType(Destination->getType(), Type) ||
+          Direct->getDecl() != Parameter || !Direct->isLValue() ||
+          Direct->getQualifier() || Direct->hasExplicitTemplateArgs() ||
+          !Context.hasSameType(Direct->getType(), Type.getNonReferenceType()) ||
+          !Check.family(Parameter, {"tuple"}) || !Check.family(Destination, {"tuple"}) ||
+          !Check.location(Direct->getExprLoc(), {"tuple"})) return std::nullopt;
+      continue;
+    }
     if (CallReferenceInputs && Direct) {
       // The selected copy-style incoming tuple constructor passes its exact
       // lvalue reference parameters directly into the implementation.
