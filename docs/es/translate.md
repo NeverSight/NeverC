@@ -1050,3 +1050,6 @@ La comprobación del getter vincula la referencia real get<__indx> a su declarac
 
 
 La otra referencia de índice seleccionada, en forward<tuple_element<__indx, Uj>::type>, exige el alias escrito exacto, su propietario tuple_element, el índice y la sustitución de la tupla entrante. Comparte la prueba renovada de inicializaciones originales e instanciadas del getter. Solo se añade una lectura de metadatos limitada al ámbito. Siguen pendientes el cuerpo original completo, el operando forward, la aceptación en ejecución y Actions.
+
+
+La traza real de diecinueve solicitudes acepta ocho valores en x86-64, pero rechaza la combinación de retornos: un __mu escalar reutilizado conserva un alias tuple_element de otro bind. La corrección prueba cada proyección real con su propia tupla, mantiene esas fuentes durante ambas firmas y restaura las cachés. Se conservan los límites de 64 entradas, profundidad, nodos, tiempo y operaciones SDK. Sigue siendo necesario un nuevo resultado completo de 600 solicitudes.

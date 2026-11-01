@@ -1050,3 +1050,6 @@ Il controllo del getter collega il riferimento reale get<__indx> alla sua dichia
 
 
 L’altro riferimento all’indice selezionato, in forward<tuple_element<__indx, Uj>::type>, richiede l’alias scritto esatto, il proprietario tuple_element, l’indice e la sostituzione della tupla entrante. Condivide la prova rinnovata delle inizializzazioni originali e istanziate del getter. Si aggiunge solo una lettura di metadati limitata all’ambito. Corpo originale completo, operando forward, accettazione runtime e Actions restano da completare.
+
+
+La traccia reale di diciannove richieste accetta otto valori su x86-64, ma rifiuta la combinazione dei ritorni: uno __mu scalare riutilizzato conserva un alias tuple_element di un altro bind. La correzione prova ogni proiezione reale sulla propria tupla, mantiene le sorgenti durante entrambe le firme e ripristina le cache. Restano limiti di 64 elementi, profondità, nodi, tempo e operazioni SDK. Serve ancora un nuovo risultato completo di 600 richieste.

@@ -1050,3 +1050,6 @@ Die Getter-Quellprüfung bindet die tatsächliche Referenz get<__indx> an ihre l
 
 
 Der weitere ausgewählte Indexzugriff in forward<tuple_element<__indx, Uj>::type> verlangt den exakten geschriebenen Alias, seinen tuple_element-Eigentümer, den Index und die Ersetzung des Eingabetupels. Er nutzt den frischen Nachweis der ursprünglichen und instanziierten Initialisierung des Getter-Zugriffs. Hinzu kommt nur ein begrenzter Metadatenzugriff. Vollständiger Originalrumpf, forward-Operand, Laufzeitfreigabe und Actions-Prüfung stehen aus.
+
+
+Die echte Spur mit neunzehn Anfragen akzeptiert acht Werte auf x86-64, lehnt aber die Rückgabetypkombination ab: Ein wiederverwendetes skalares __mu behält einen tuple_element-Alias eines anderen bind. Die Korrektur beweist jede tatsächliche Funktionsprojektion anhand ihres eigenen Tupels, hält sie während beider Signaturdurchläufe und stellt die Caches wieder her. Grenzen für 64 Einträge, Tiefe, Knoten, Zeit und SDK-Operationen bleiben unverändert. Ein neuer vollständiger Lauf mit 600 Anfragen ist erforderlich.

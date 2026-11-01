@@ -11717,6 +11717,123 @@ public:
       return Proof() && !Failed;
     });
   }
+  bool withBindRetainedUnwrapProjectionSource(const TemplateUseSource &Use,
+      const std::function<bool()> &Proof) {
+    if (!Proof) return false;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
+        BindTupleElementProjections.empty() || Use.Kind != TemplateSourceKind::Function ||
+        !Use.Template || !Use.Template->getIdentifier() || Use.Template->getName() != "__mu")
+      return Proof();
+    const auto *Function = dyn_cast_or_null<FunctionDecl>(Use.Declaration);
+    const auto *Primary = dyn_cast<FunctionTemplateDecl>(Use.Template);
+    const auto *Selected = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+    if (!Function || !Primary || Function->getPrimaryTemplate() != Primary ||
+        Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        Function->getNumParams() != 2 || !Use.FunctionalBindConstraint ||
+        Use.Type || Use.Underlying || Use.Written || Use.Instantiation || Use.Selection ||
+        !Selected || Selected->size() != 3 || !Use.Canonical || !Use.Sugared ||
+        Use.Canonical->size() != 3 || Use.Sugared->size() != 3 ||
+        !cstddefOrigin(S, SM, Use.Location, "libcxx", "__functional/bind.h") ||
+        !family(Function) || !family(Primary)) return false;
+    for (unsigned I = 0; I < 3; ++I)
+      if (!Use.Canonical->get(I).structurallyEquals(Selected->get(I)) ||
+          !Use.Canonical->get(I).structurallyEquals(
+              Context.getCanonicalTemplateArgument(Use.Sugared->get(I)))) return false;
+    const auto &Input = Use.Sugared->get(0);
+    if (Input.getKind() != TemplateArgument::Type ||
+        !utilityScalar(Context, Input.getAsType().getUnqualifiedType())) return Proof();
+    bool ActualUnwrap = false;
+    for (const auto &Argument : BindCallMetadata->Arguments)
+      ActualUnwrap |= !Argument.Reference && !Argument.PlaceholderRank && Argument.Unwrap &&
+          Argument.Unwrap->getDirectCallee() == Function &&
+          Argument.Unwrap->getExprLoc() == Use.Location;
+    if (!ActualUnwrap || !BindCallMetadata->SourceCall ||
+        !S.owns(SM, BindCallMetadata->SourceCall->getExprLoc())) return false;
+    QualType ProjectionType = Input.getAsType();
+    const TypeAliasDecl *RootAlias = nullptr;
+    for (unsigned Depth = 0; !ProjectionType.isNull() && Depth < 64; ++Depth) {
+      if (const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(ProjectionType.getTypePtr())) {
+        ProjectionType = Substitution->getReplacementType(); continue;
+      }
+      if (const auto *Elaborated = dyn_cast<ElaboratedType>(ProjectionType.getTypePtr())) {
+        ProjectionType = Elaborated->getNamedType(); continue;
+      }
+      const auto *Alias = dyn_cast<TypedefType>(ProjectionType.getTypePtr());
+      RootAlias = Alias ? dyn_cast<TypeAliasDecl>(Alias->getDecl()) : nullptr;
+      break;
+    }
+    const auto *Root = RootAlias
+        ? dyn_cast<ClassTemplateSpecializationDecl>(RootAlias->getDeclContext()) : nullptr;
+    if (!RootAlias || !RootAlias->getIdentifier() || RootAlias->getName() != "type" ||
+        !Root || !Root->getIdentifier() || Root->getName() != "tuple_element") return Proof();
+    const auto &Arguments = Root->getTemplateArgs();
+    if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Integral ||
+        Arguments[0].getAsIntegral().isNegative() || Arguments[1].getKind() != TemplateArgument::Type)
+      return false;
+    const auto Object = Arguments[1].getAsType();
+    const auto *TupleRecord = Object.isNull() ? nullptr : Object->getAsCXXRecordDecl();
+    if (TupleRecord && TupleRecord->getCanonicalDecl() == BindMetadata->Arguments.Record->getCanonicalDecl())
+      return Proof();
+    return withBindSourceChild([&] {
+      const auto *Info = RootAlias->getTypeSourceInfo();
+      if (!Info || !family(RootAlias) || !family(Root) ||
+          Root->getSpecializationKind() != TSK_ImplicitInstantiation ||
+          !Context.hasSameType(Info->getType(), Input.getAsType()) ||
+          !Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType()) ||
+          Object.hasQualifiers() || !TupleRecord || BindRetainedTupleProjections.size() == 64)
+        return false;
+      const auto Storage = approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
+      if (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
+          Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())
+        return false;
+      const auto Slot = unsigned(Arguments[0].getAsIntegral().getZExtValue());
+      auto Scalar = [&](QualType Value) {
+        return !Value.isNull() && !Value->isReferenceType() && !Value.isVolatileQualified() &&
+            !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default &&
+            utilityScalar(Context, Value.getUnqualifiedType());
+      };
+      if (!Scalar(Storage->Elements[Slot].getType()) ||
+          !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Input.getAsType())) return false;
+      for (const auto &Element : Storage->Elements) {
+        if (!Element.Field || Element.EmptyBase) return false;
+        if (Scalar(Element.getType())) continue;
+        const auto Wrapper = approvedFunctionalReferenceRecord(
+            S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
+        if (!Wrapper || !Scalar(Wrapper->ReferentType)) return false;
+      }
+      const auto Projection = bindTupleElementProjectionFromType(ProjectionType, *Storage, Slot);
+      if (!Projection) return false;
+      bool BoundParameters = false;
+      for (const auto &Current : BindTupleElementProjections)
+        BoundParameters |= Projection->Partial == Current.Partial && Projection->Builtin == Current.Builtin &&
+            Projection->Index == Current.Index && Projection->Types == Current.Types &&
+            Projection->Original == Current.Original;
+      if (!BoundParameters) return false;
+      for (const auto &Active : BindRetainedTupleProjections)
+        if (Active.Projection.Actual == Projection->Actual && Active.Projection.Owner == Projection->Owner &&
+            Active.Projection.Slot == Slot &&
+            Active.Storage.Record->getCanonicalDecl() == Storage->Record->getCanonicalDecl())
+          return Active.Complete && Proof();
+      std::set<const Type *> SavedTypes;
+      std::set<const Stmt *> SavedExpressions;
+      SavedTypes.swap(Types); SavedExpressions.swap(Expressions);
+      BindTupleElementProjectionAtoms.insert(Projection->Actual);
+      BindTupleElementProjectionAtoms.insert(Projection->Original);
+      // This real function packet has no written argument event. Retain its
+      // actual alias definition TSI; never manufacture a TemplateArgumentLoc.
+      BindRetainedTupleProjections.push_back({&Use, 0, Info, *Storage, *Projection});
+      auto &Active = BindRetainedTupleProjections.back();
+      auto Restore = llvm::make_scope_exit([&] {
+        BindRetainedTupleProjections.pop_back();
+        Types.clear(); Types.swap(SavedTypes);
+        Expressions.clear(); Expressions.swap(SavedExpressions);
+      });
+      if (!TraverseBindTupleElementProjectionSource(Active.Projection)) return false;
+      Active.Complete = true;
+      return Proof() && !Failed;
+    });
+  }
+
   bool withBindRetainedTupleProjectionSources(const TemplateUseSource &Use,
       const std::function<bool()> &Proof) {
     if (!Proof) return false;
@@ -21605,6 +21722,42 @@ class BindSourceProof {
       });
     });
   }
+  bool withUnwrapFunctionSourceProjections(const Expr *Expression,
+      const FunctionDecl *Function, const std::function<bool()> &Proof) {
+    if (!Proof) return false;
+    const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+    if (!ActiveUnwrapSource || !Function || !Function->getIdentifier() || Function->getName() != "__mu" ||
+        !Arguments || Arguments->size() != 3 || Arguments->get(0).getKind() != TemplateArgument::Type ||
+        !utilityScalar(Context, Arguments->get(0).getAsType().getUnqualifiedType())) return Proof();
+    bool Actual = false;
+    for (const auto &Argument : ActiveUnwrapSource->Arguments)
+      Actual |= !Argument.Reference && !Argument.PlaceholderRank && Argument.Unwrap == Expression &&
+          Argument.Unwrap->getDirectCallee() == Function;
+    if (!Actual || !Check.family(Function, {"__functional/bind.h"})) return false;
+    std::vector<const TemplateUseSource *> Uses;
+    for (const auto *Selection : Selections) {
+      if (!Selection || Selection->Expression != Expression || Selection->Function != Function) continue;
+      if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
+      for (const auto *Use : Sources) {
+        if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
+            Use->Location != Selection->Location) continue;
+        if (std::find(Uses.begin(), Uses.end(), Use) == Uses.end()) {
+          if (Uses.size() == 64) return false;
+          Uses.push_back(Use);
+        }
+      }
+    }
+    if (Uses.empty()) return false;
+    // All retained packets still close in functionSource below. Their exact
+    // projection sources must remain in scope through the selected/original
+    // signatures too: Clang can reuse one scalar __mu across different binds.
+    std::function<bool(unsigned)> Scope = [&](unsigned I) {
+      if (I == Uses.size()) return Proof();
+      return Graph.withBindRetainedUnwrapProjectionSource(*Uses[I], [&] { return Scope(I + 1); });
+    };
+    return Scope(0);
+  }
+
   bool functionSource(const Expr *Expression, const FunctionDecl *Function,
                       std::function<bool()> Signature) {
     return Graph.withBindSourceChild([&] {
@@ -21612,32 +21765,34 @@ class BindSourceProof {
       const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
       if (!Expression || !Function || !Primary || !Arguments || !Signature || !family(Function) ||
           Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
-      bool Found = false;
-      for (const auto *Selection : Selections) {
-        if (!Selection || Selection->Expression != Expression || Selection->Function != Function) continue;
-        if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
-        bool UseFound = false;
-        for (const auto *Use : Sources) {
-          if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
-              Use->Location != Selection->Location) continue;
-          if (Use->Template != Primary || Use->Type || Use->Underlying || Use->Written ||
-              Use->Instantiation || Use->Selection || !same(Use->Canonical, Arguments)) return false;
-          if (Function->getIdentifier() && Function->getName() == "bind" &&
-              Check.family(Function, {"__functional/bind.h"})) {
-            const auto *Call = dyn_cast<CallExpr>(Expression);
-            const auto Factory = Call
-                ? describeFunctionalBindFactorySource(S, SM, Call, Context) : std::nullopt;
-            if (!Factory || Factory->Factory != Function || Factory->Storage.Record != Storage.Record ||
-                !Graph.bindFunctionalBindOwnedInputAliases(*Factory, *Use, OwnedInputAliasSource)) return false;
+      return withUnwrapFunctionSourceProjections(Expression, Function, [&] {
+        bool Found = false;
+        for (const auto *Selection : Selections) {
+          if (!Selection || Selection->Expression != Expression || Selection->Function != Function) continue;
+          if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
+          bool UseFound = false;
+          for (const auto *Use : Sources) {
+            if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
+                Use->Location != Selection->Location) continue;
+            if (Use->Template != Primary || Use->Type || Use->Underlying || Use->Written ||
+                Use->Instantiation || Use->Selection || !same(Use->Canonical, Arguments)) return false;
+            if (Function->getIdentifier() && Function->getName() == "bind" &&
+                Check.family(Function, {"__functional/bind.h"})) {
+              const auto *Call = dyn_cast<CallExpr>(Expression);
+              const auto Factory = Call
+                  ? describeFunctionalBindFactorySource(S, SM, Call, Context) : std::nullopt;
+              if (!Factory || Factory->Factory != Function || Factory->Storage.Record != Storage.Record ||
+                  !Graph.bindFunctionalBindOwnedInputAliases(*Factory, *Use, OwnedInputAliasSource)) return false;
+            }
+            if (!source(*Use, Primary->getTemplateParameters())) return false;
+            UseFound = true;
           }
-          if (!source(*Use, Primary->getTemplateParameters())) return false;
-          UseFound = true;
+          if (!UseFound) return false;
+          Found = true;
         }
-        if (!UseFound) return false;
-        Found = true;
-      }
-      if (!Found) return false;
-      return Signature();
+        if (!Found) return false;
+        return Signature();
+      });
     });
   }
   bool tupleReferenceQuerySource(const CallExpr *Call) {

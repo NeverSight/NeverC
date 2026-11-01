@@ -1050,3 +1050,6 @@ La vérification du getter lie la référence réelle get<__indx> à sa déclara
 
 
 L’autre référence d’indice sélectionnée, dans forward<tuple_element<__indx, Uj>::type>, exige l’alias écrit exact, son propriétaire tuple_element, le rang et la substitution du tuple entrant. Elle partage la preuve renouvelée des initialisations originales et instanciées du getter. Seule une lecture de métadonnées limitée à la portée est ajoutée. Corps original complet, opérande forward, acceptation à l’exécution et validation Actions restent en attente.
+
+
+La trace réelle de dix-neuf requêtes accepte huit valeurs sur x86-64, mais rejette encore la combinaison des retours : un __mu scalaire réutilisé garde un alias tuple_element d’un autre bind. La correction prouve chaque projection réelle sur son propre tuple, maintient ces sources pendant les signatures sélectionnées et originales, puis restaure les caches. Limites de 64 entrées, profondeur, nœuds, temps et opérations SDK inchangées. Un nouveau résultat complet de 600 requêtes reste nécessaire.
