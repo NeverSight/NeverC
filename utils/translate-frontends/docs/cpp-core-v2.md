@@ -17393,3 +17393,6 @@ The pure-placeholder tuple constructor now closes its real _And template default
 
 
 The retained-function repair at `6fd61042ba94` now has an actual 600/600 request result and 72 passing native reference executions. This does not certify later placeholder changes. The placeholder return-source check now compares replacement types with Clang type equivalence, including qualifiers, because Sema can remove the retained tuple-element alias. Exact template ownership, replaced-parameter identity and independent written/instantiated source walks remain required. Execution of this new repair is pending; placeholder, formal/generated and complete STL support remain unfinished.
+
+
+The placeholder trait argument now uses Clang type equivalence, including qualifiers, when Sema removes a retained tuple-element alias. This repair is permitted only after the exact diagnostic confirms matching template ownership, parameter identity, source locations and constant type, with type sugar as the sole mismatch. Original and instantiated source walks, SDK guards and resource limits remain required. The preceding source passed syntax6, full600 and native72; execution of this new repair remains pending. Complete STL support is unfinished.
