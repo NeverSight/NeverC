@@ -19542,6 +19542,7 @@ class BindSourceProof {
   const FunctionalBindCallSource *ActiveRuntimeInvoke = nullptr;
   const CallExpr *ActiveRuntimeOriginalInvoke = nullptr;
   const FunctionalBindCallSource *ActiveUnwrapSource = nullptr;
+  std::set<const VarDecl *> ActivePlaceholderIndexReads;
   std::set<const CallExpr *> UnwrapScalarConstraintSources;
   const TemplateUseSource *ActiveScalarParameter = nullptr;
   const CXXConstructorDecl *ActiveCallTupleConstructor = nullptr;
@@ -21417,11 +21418,79 @@ class BindSourceProof {
       return Graph.TraverseStmt(const_cast<Expr *>(Original->getInit()));
     });
   }
+  bool unwrapPlaceholderGetterIndexReadSource(const DeclRefExpr *Reference,
+                                               const VarDecl *Variable) {
+    if (!ActiveUnwrapSource || ActiveScalarParameter || !Reference || !Variable ||
+        Reference->getDecl() != Variable || Reference->hasExplicitTemplateArgs() ||
+        Reference->getQualifier() || !Reference->isLValue() ||
+        !Variable->isLocalVarDecl() || Variable->getStorageClass() != SC_None ||
+        Variable->getTLSKind() != VarDecl::TLS_None || Variable->isStaticLocal() ||
+        Variable->hasGlobalStorage() || Variable->isConstexpr() || Variable->hasAttrs() ||
+        !Variable->getTypeSourceInfo() ||
+        !Context.hasSameType(Variable->getType(), Context.getConstType(Context.getSizeType())) ||
+        !Context.hasSameType(Reference->getType(), Variable->getType()) ||
+        !Check.location(Reference->getExprLoc(), {"__functional/bind.h"})) return false;
+    const FunctionalBindArgumentSource *Owner = nullptr;
+    for (const auto &Argument : ActiveUnwrapSource->Arguments) {
+      if (!Argument.PlaceholderRank || Argument.PlaceholderIndex != Variable ||
+          !Argument.PlaceholderGet || !Argument.Unwrap) continue;
+      const auto *Callee = dyn_cast<DeclRefExpr>(
+          Argument.PlaceholderGet->getCallee()->IgnoreParenImpCasts());
+      if (!Callee || !Callee->hasExplicitTemplateArgs() || Callee->getNumTemplateArgs() != 1)
+        return false;
+      const auto &Written = Callee->template_arguments()[0];
+      const auto &ArgumentValue = Written.getArgument();
+      const Expr *Expression = ArgumentValue.getKind() == TemplateArgument::Expression
+          ? ArgumentValue.getAsExpr() : ArgumentValue.getKind() == TemplateArgument::Integral
+          ? Written.getSourceIntegralExpression() : nullptr;
+      if (Check.core(Expression) != Reference) continue;
+      // Repeated placeholders may share one instantiated __mu body. Bind the
+      // exact getter, local declaration and selected function, not just a rank.
+      if (Owner && (Owner->PlaceholderGet != Argument.PlaceholderGet ||
+          Owner->PlaceholderRank != Argument.PlaceholderRank ||
+          Owner->Unwrap->getDirectCallee() != Argument.Unwrap->getDirectCallee())) return false;
+      Owner = &Argument;
+    }
+    const auto *Function = Owner ? Owner->Unwrap->getDirectCallee() : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    const auto *Parameter = Parameters && Parameters->size() == 3
+        ? dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(2)) : nullptr;
+    if (!Owner || !Function || !Primary || !Parameter ||
+        Variable->getDeclContext() != Function || !Owner->PlaceholderForward ||
+        !ActivePlaceholderIndexReads.insert(Variable).second) return false;
+    auto Restore = llvm::make_scope_exit([&] { ActivePlaceholderIndexReads.erase(Variable); });
+    return functionSource(Owner->Unwrap, Function, [&] {
+      bool Found = false;
+      for (const auto *Use : Sources) {
+        if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
+            Use->Location != Owner->Unwrap->getExprLoc()) continue;
+        if (Use->Template != Primary || !Use->FunctionalBindConstraint) return false;
+        unsigned Matches = 0;
+        for (const auto &Entry : Use->ParameterTypes) {
+          if (Entry.Parameter != Parameter) continue;
+          if (++Matches != 1 || Entry.PackIndex || !Entry.Type ||
+              !Graph.withBindTemplateParameters(Primary, Parameters, [&] {
+                return unwrapPlaceholderParameterSource(*Use, Parameter, Entry.Type, *Owner);
+              })) return false;
+        }
+        if (Matches != 1) return false;
+        Found = true;
+      }
+      // Even a cached function packet must freshly close the positive/return
+      // constraints and both original/selected index TSIs and initializers.
+      // This one metadata read never enters CompletedVariables and grants no
+      // ordinary SDK local, forward operand or runtime body permission.
+      return Found && Graph.bindSourceComplete();
+    });
+  }
+
   bool variableSource(const DeclRefExpr *Reference) {
     return Graph.withBindSourceChild([&] {
       const auto *Variable = Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
       if (!Variable || !family(Variable) || !Variable->getType().isConstQualified() ||
           Variable->getType().isVolatileQualified() || !Variable->hasInit()) return false;
+      if (Variable->isLocalVarDecl()) return unwrapPlaceholderGetterIndexReadSource(Reference, Variable);
       return withWeakDerivesVariableSource(Variable, [&] {
       if (!weakHasResultVariableSource(Variable)) return false;
       if (const auto Constant = scalarConstantValueSource(Reference, Variable)) return *Constant;
@@ -22639,8 +22708,19 @@ public:
     if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Storage.Record != Storage.Record ||
-        Actual->Arguments.size() != Storage.Arguments.Elements.size() ||
-        !Graph.TraverseBindCallAuxiliarySource(*Actual)) return false;
+        Actual->Arguments.size() != Storage.Arguments.Elements.size()) return false;
+    const bool Placeholders = std::any_of(Actual->Arguments.begin(), Actual->Arguments.end(),
+        [](const auto &Argument) { return Argument.PlaceholderRank != 0; });
+    if (Placeholders && (ActiveUnwrapSource || !ActivePlaceholderIndexReads.empty() ||
+        !UnwrapScalarConstraintSources.empty())) return false;
+    if (Placeholders) ActiveUnwrapSource = &*Actual;
+    auto RestorePlaceholderSource = llvm::make_scope_exit([&] {
+      if (Placeholders) {
+        ActiveUnwrapSource = nullptr;
+        UnwrapScalarConstraintSources.clear();
+      }
+    });
+    if (!Graph.TraverseBindCallAuxiliarySource(*Actual)) return false;
     if (Actual->Arguments.empty()) return Graph.bindSourceComplete();
     return Graph.withBindTupleElementProjections(*Actual, [&] {
       if (!Graph.TraverseBindTupleElementProjectionSources()) return false;

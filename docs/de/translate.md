@@ -1044,3 +1044,6 @@ Die echte Spur mit sieben Anfragen reproduziert den Achtwertefehler bei 64 abges
 
 
 Actions fand zwei Compilerfehler: Als UnqualTypeLoc abgeleitete Variablen erhielten TypeLoc-Werte. Beide Deklarationen verwenden nun ausdrücklich TypeLoc; AST-Knoten, Quellprüfungen und Grenzen bleiben erhalten. Das Experiment mit sechzehn Anfragen endete beim Kompilieren, ohne Testanfragen auszuführen. Die Korrektur ist noch zu prüfen.
+
+
+Die Getter-Quellprüfung bindet die tatsächliche Referenz get<__indx> an ihre lokale Deklaration und das ausgewählte __mu-Paket. Jeder Zugriff prüft positive Bedingung, Rückgabetypauswahl und ursprüngliche sowie instanziierte Indexinitialisierung erneut, auch bei vorhandenen Cache-Einträgen. Kein allgemeiner Variablencache wird erweitert; der Geltungsbereich wird wiederhergestellt. Vollständiger Rumpf, forward und Actions-Prüfung bleiben offen; neue Laufzeitunterstützung ist nicht belegt.

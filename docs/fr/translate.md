@@ -1044,3 +1044,6 @@ La trace réelle de sept requêtes reproduit l’échec des huit valeurs à 64 s
 
 
 Actions a détecté deux erreurs de compilation : des variables déduites UnqualTypeLoc recevaient des valeurs TypeLoc. Les deux déclarations utilisent désormais explicitement TypeLoc, sans changer les nœuds AST, contrôles ni limites. L’expérience de seize requêtes s’est arrêtée à la compilation sans exécuter de requête. La correction reste à vérifier.
+
+
+La vérification du getter lie la référence réelle get<__indx> à sa déclaration locale et au paquet __mu sélectionné. Chaque lecture revérifie la condition positive, le sélecteur de retour et les initialisations originales et instanciées, même avec un paquet en cache. La variable ne rejoint pas le cache général et la portée est restaurée. Le corps complet, forward et la validation Actions restent incomplets ; aucun nouveau support d’exécution n’est établi.

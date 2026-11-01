@@ -1044,3 +1044,6 @@ La traccia reale di sette richieste riproduce il guasto con otto valori a 64 sor
 
 
 Actions ha rilevato due errori di compilazione: variabili dedotte come UnqualTypeLoc ricevevano valori TypeLoc. Le due dichiarazioni usano ora TypeLoc esplicito, conservando nodi AST, controlli e limiti. L’esperimento di sedici richieste si è fermato in compilazione senza eseguire richieste di prova. La correzione resta da verificare.
+
+
+Il controllo del getter collega il riferimento reale get<__indx> alla sua dichiarazione locale e al pacchetto __mu selezionato. Ogni lettura ricontrolla condizione positiva, selettore di ritorno e inizializzazioni originali e istanziate, anche con la cache. La variabile non entra nella cache generale e l’ambito viene ripristinato. Corpo completo, forward e verifica Actions restano incompleti; non è prova di nuovo supporto runtime.

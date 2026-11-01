@@ -1044,3 +1044,6 @@ La traza real de siete solicitudes reproduce el fallo de ocho valores con 64 fue
 
 
 Actions detectó dos errores de compilación: variables deducidas como UnqualTypeLoc recibían valores TypeLoc. Ambas declaraciones usan ahora TypeLoc explícito, conservando nodos AST, comprobaciones y límites. El experimento de dieciséis solicitudes se detuvo al compilar sin ejecutar solicitudes de prueba. La corrección aún debe verificarse.
+
+
+La comprobación del getter vincula la referencia real get<__indx> a su declaración local y al paquete __mu seleccionado. Cada lectura vuelve a comprobar la condición positiva, el selector de retorno y las inicializaciones originales e instanciadas, incluso con caché. La variable no entra en la caché general y se restaura el ámbito. El cuerpo completo, forward y la validación Actions siguen pendientes; no se acredita soporte de ejecución nuevo.
