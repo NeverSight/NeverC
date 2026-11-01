@@ -1,0 +1,97 @@
+{
+  "preparation_only": true,
+  "runtime_support_verified": false,
+  "diagnostic_only": true,
+  "support_evidence": false,
+  "scope": "factory operands only; placeholder invocation remains unfinished",
+  "ranks": [
+    1,
+    2
+  ],
+  "cases": [
+    {
+      "name": "factory-placeholder-one",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){auto f=std::bind(&identity,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "2bc72d49eff66c701b5f363a4b92e286279a74c952be41d527bab2043dafacee",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-parentheses",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){auto f=std::bind(&sum,(std::placeholders::_2),((std::placeholders::_1)));return 0;}\n",
+      "source_sha256": "ad78048d644d52b0a7809f527fc43701b4ae28f94380c2beb636911ef57d4bae",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-repeated",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){auto f=std::bind(&sum,std::placeholders::_1,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "0b82de2fa082badfe0f03826e08fe497391cdac8e01aa02acb59b5a4d60392dc",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-mixed-reference",
+      "source": "#include <functional>\nint combine(int& n,int a,int b){return n+a+b;}\nint main(){int n=2;auto f=std::bind(&combine,std::ref(n),4,std::placeholders::_1);return n!=2;}\n",
+      "source_sha256": "a253f6b47ec769f65ec23a25ea4d8297c6e11204035e484936bcf8196deb7ff7",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-effects",
+      "source": "#include <functional>\nusing Callback=int(*)(int,int);int selections,captures;int sum(int a,int b){return a+b;}Callback select(){++selections;return &sum;}int capture(){++captures;return 7;}\nint main(){auto f=std::bind(select(),capture(),std::placeholders::_1);return selections!=1||captures!=1;}\n",
+      "source_sha256": "f00b6810b51467cd5e1c66840e6d9c2fdfc9806741eff8f7fbc897440c737961",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-standalone-value",
+      "source": "#include <functional>\nint main(){auto p=std::placeholders::_1;return 0;}\n",
+      "source_sha256": "b6ebffe058bdf177f47cc1c2e15d528366cc7a3b1c8e3b2ccae720d9c5814a00",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-standalone-address",
+      "source": "#include <functional>\nint main(){auto p=&std::placeholders::_1;return p==nullptr;}\n",
+      "source_sha256": "f966efa93d9601ce55ec77b6cdb05e9687a08365917450134b32a024e6ec916c",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-third-rank",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){auto f=std::bind(&identity,std::placeholders::_3);return 0;}\n",
+      "source_sha256": "7cb2ddf6de77f68d828d28f696e76630beff69d084a0fc779b1e6bf3ba60f22e",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-local-alias",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){const auto p=std::placeholders::_1;auto f=std::bind(&identity,p);return 0;}\n",
+      "source_sha256": "7566d67005105115066d248da5a38f96769964fb52ed25360901c02c82e7b574",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-comma-effect",
+      "source": "#include <functional>\nint effects;void tick(){++effects;}int identity(int n){return n;}\nint main(){auto f=std::bind(&identity,(tick(),std::placeholders::_1));return 0;}\n",
+      "source_sha256": "28c53996c7bc3d355e0a9de272adc8c98f7fcde66381002240995be0fd06e502",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-conditional",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){int flag=1;auto f=std::bind(&identity,flag?std::placeholders::_1:std::placeholders::_1);return 0;}\n",
+      "source_sha256": "43a2e4d85fd893d3ec2527666661608f24ea85e52a4841458df0ce91d295d570",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-ordinary-body-guard",
+      "source": "#include <functional>\nint forbidden(int n){asm(\"\");return n;}\nint main(){auto f=std::bind(&forbidden,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "606f517c6c7df157fa7dd33886b66273f93758df975966a53dcb7d71e179d5de",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    }
+  ]
+}

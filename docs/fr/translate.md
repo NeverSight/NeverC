@@ -1032,3 +1032,6 @@ La preuve de type bind consomme le TSI de la déclaration SDK extern réelle, le
 
 
 Le sélecteur de retour bind prouve séparément sa comparaison positive écrite et substituée. Il vérifie le TSI de retour, le propriétaire du typedef sélectionné et les paramètres et propriétaires de substitution, indépendamment de la contrainte NTTP distincte. Une valeur true canonique ne remplace pas la preuve source. Le corps et sa validation restent inachevés.
+
+
+Après fermeture des preuves complètes de fabrique et de durée de vie triviale, seul le nœud argument SDK _1/_2 original reçoit un rôle local d’objet vide. Les parenthèses, enveloppes sans opération, noms, qualifications et la revalidation finale sont conservés. Aucune permission ne couvre les valeurs autonomes, adresses, alias ou arguments à effets. Les cas limites sont préparés ; invocation et validation restent inachevées.

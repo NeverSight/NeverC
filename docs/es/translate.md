@@ -1032,3 +1032,6 @@ La prueba de tipo bind consume el TSI de la declaración SDK extern real, el par
 
 
 El selector de retorno bind prueba por separado su comparación positiva escrita y sustituida. Comprueba el TSI de retorno, el propietario del typedef seleccionado y los parámetros y propietarios de sustitución, independientemente de la restricción NTTP distinta. Un true canónico no reemplaza la prueba del código fuente. El cuerpo y su validación siguen pendientes.
+
+
+Solo tras cerrar las pruebas completas de fábrica y vida trivial, el nodo argumento SDK _1/_2 original recibe un papel local de objeto vacío. Se conservan paréntesis, envolturas sin operación, nombres, calificadores y la revalidación final. No se autorizan valores independientes, direcciones, alias ni argumentos con efectos. Los casos límite están preparados; invocación y validación siguen pendientes.

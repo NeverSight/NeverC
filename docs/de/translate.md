@@ -1032,3 +1032,6 @@ Der bind-Typnachweis prüft die tatsächliche SDK-extern-TSI, den primären int-
 
 
 Der bind-Rückgabetypselektor weist seinen geschriebenen und substituierten positiven Vergleich eigenständig nach. Rückgabe-TSI, Eigentümer des ausgewählten typedef sowie primäre Parameter und Substitutionseigentümer werden unabhängig von der separaten NTTP-Bedingung geprüft. Ein kanonischer true-Wert ersetzt keinen Quellnachweis. Rumpf und Laufzeitprüfung sind unvollständig.
+
+
+Erst nach vollständigem Fabrikquell- und trivialem Lebensdauernachweis erhält der originale SDK-Argumentknoten _1/_2 eine lokale Leerobjektrolle. Tatsächliche Klammern, No-op-Hüllen, Namen, Qualifizierer und abschließende Neuprüfung bleiben erhalten. Eigenständige Werte, Adressen, Aliase und nebenwirkende Argumente erhalten keine Freigabe. Grenzfälle sind vorbereitet; Aufruf und Laufzeitprüfung bleiben unvollständig.

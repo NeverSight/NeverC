@@ -1032,3 +1032,6 @@ La prova di tipo bind usa il TSI della dichiarazione SDK extern reale, il parame
 
 
 Il selettore di ritorno bind dimostra separatamente il confronto positivo scritto e sostituito. Verifica TSI di ritorno, proprietario del typedef selezionato, parametri e proprietari della sostituzione indipendentemente dal distinto vincolo NTTP. Un true canonico non sostituisce la prova del sorgente. Corpo e verifica di esecuzione restano incompleti.
+
+
+Solo dopo la chiusura delle prove complete di fabbrica e durata banale, il nodo argomento SDK _1/_2 originale riceve un ruolo locale di oggetto vuoto. Restano la visita di parentesi, involucri senza operazioni, nomi, qualificatori e la verifica finale. Nessun permesso copre valori autonomi, indirizzi, alias o argomenti con effetti. I casi limite sono preparati; invocazione e verifica restano incomplete.

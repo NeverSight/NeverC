@@ -452,3 +452,6 @@ Bind placeholder type proofs now consume the actual SDK extern declaration TSI, 
 
 
 The bind placeholder return selector now proves its own actual written and substituted positive comparison. Its function return TSI, selected typedef owner, primary parameters and substitution owners are checked independently of the separate NTTP constraint. No canonical true value supplies source permission. Placeholder body and runtime validation remain unfinished.
+
+
+Factory traversal now gives only the exact original SDK _1/_2 argument occurrence a scoped empty-object role, after its complete factory source graph and trivial lifecycle close. Actual parentheses, no-op wrappers, name and qualifier are still visited; the existing final reproof remains the sole publisher for guarded lowering. Standalone marker values, addresses, aliases and effectful operands receive no permission. Factory boundary fixtures are proposed; placeholder invocation and runtime verification remain unfinished.

@@ -15083,6 +15083,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const CXXMethodDecl *, SourceLocation> AlgorithmPredicateMethods;
   std::map<const CXXRecordDecl *, FunctionalBindNaturalLayout> PendingBindRecords;
   std::map<const CallExpr *, FunctionalBindFactorySource> PendingBindFactories;
+  const FunctionalBindFactorySource *ActiveBindPlaceholderFactory = nullptr;
   std::map<const CallExpr *, FunctionalBindCallSource> PendingBindCalls;
   std::map<const CXXConstructExpr *, FunctionalBindCopySource> PendingBindCopies;
   std::map<const CXXRecordDecl *, FunctionalBindDestructionSource> PendingBindDestructions;
@@ -26637,6 +26638,57 @@ public:
     }
     return true;
   }
+  const CXXRecordDecl *bindPlaceholderFactoryOperand(const Stmt *Statement) const {
+    const auto *Factory = ActiveBindPlaceholderFactory;
+    if (!A.S.coreV2() || !Factory || !Statement || !Factory->SourceCall ||
+        !A.S.owns(A.Sources, Factory->SourceCall->getExprLoc()) ||
+        Factory->Placeholders.size() != Factory->Storage.Arguments.Elements.size() ||
+        Factory->SourceCall->getNumArgs() != Factory->Placeholders.size() + 1) return nullptr;
+    const auto *Record = Factory->Storage.Record->getCanonicalDecl();
+    const auto Layout = PendingBindRecords.find(Record);
+    const auto Destruction = PendingBindDestructions.find(Record);
+    if (Layout == PendingBindRecords.end() || Destruction == PendingBindDestructions.end() ||
+        !sameBindStorage(Factory->Storage, Layout->second.Storage) ||
+        !sameBindStorage(Factory->Storage, Destruction->second.Layout.Storage)) return nullptr;
+    for (unsigned I = 0; I < Factory->Placeholders.size(); ++I) {
+      if (!Factory->Placeholders[I]) continue;
+      const auto &Source = *Factory->Placeholders[I];
+      const auto &Element = Factory->Storage.Arguments.Elements[I];
+      if (Factory->SourceCall->getArg(I + 1) != Source.Operand ||
+          Element.Field || !Element.EmptyBase ||
+          Element.EmptyBase->getCanonicalDecl() != Source.Identity.Record->getCanonicalDecl()) continue;
+      const Expr *Node = Source.Operand;
+      bool Found = false;
+      for (unsigned Depth = 0; Node && Depth < 64; ++Depth) {
+        Found |= Statement == Node;
+        if (Node == Source.Reference) break;
+        if (const auto *Parentheses = dyn_cast<ParenExpr>(Node)) {
+          Node = Parentheses->getSubExpr(); continue;
+        }
+        if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Node);
+            Cast && Cast->getCastKind() == CK_NoOp &&
+            A.Context.hasSameType(Cast->getType(), Cast->getSubExpr()->getType())) {
+          Node = Cast->getSubExpr(); continue;
+        }
+        return nullptr;
+      }
+      if (!Found || Node != Source.Reference) continue;
+      const auto *Expression = dyn_cast<Expr>(Statement);
+      if (!Expression || !A.S.owns(A.Sources, Expression->getExprLoc()) ||
+          !A.S.owns(A.Sources, Expression->getBeginLoc()) ||
+          !A.S.owns(A.Sources, Expression->getEndLoc())) return nullptr;
+      const auto Fresh = describeFunctionalBindPlaceholderOperandSource(
+          A.S, A.Sources, Source.Operand, A.Context);
+      if (!Fresh || Fresh->Operand != Source.Operand || Fresh->Reference != Source.Reference ||
+          Fresh->Variable != Source.Variable || Fresh->Identity.Record != Source.Identity.Record ||
+          Fresh->Identity.Primary != Source.Identity.Primary ||
+          Fresh->Identity.Parameter != Source.Identity.Parameter ||
+          Fresh->Identity.Rank != Source.Identity.Rank) return nullptr;
+      return Record;
+    }
+    return nullptr;
+  }
+
   bool retainBindRuntimeSource(const FunctionalBindStorage &Storage, SourceLocation Location) {
     const auto Layout = describeFunctionalBindNaturalLayout(A.S, A.Sources, Storage.Record, A.Context);
     const auto Destruction = describeFunctionalBindDestructionSource(
@@ -26679,10 +26731,25 @@ public:
         return true;
       }
       A.type(Source->Storage.CallableType, Call->getExprLoc());
-      for (const auto *Argument : Call->arguments())
-        if (!TraverseStmt(const_cast<Expr *>(Argument))) return false;
+      const bool HasPlaceholders = std::any_of(Source->Placeholders.begin(), Source->Placeholders.end(),
+          [](const auto &Placeholder) { return Placeholder.has_value(); });
+      // The erased extern marker has no value initializer. Close its factory
+      // graph and the exact trivial SDK lifecycle before giving its original
+      // argument occurrence a role; ordinary captures keep their existing order.
+      if (HasPlaceholders && !retainBindRuntimeSource(Source->Storage, Call->getExprLoc())) {
+        A.reject(Call->getExprLoc(), "bind factory lifetime source",
+            "The exact storage and complete trivial SDK lifecycle source are required.", "TR0203");
+        return true;
+      }
+      {
+        const auto *Previous = ActiveBindPlaceholderFactory;
+        if (HasPlaceholders) ActiveBindPlaceholderFactory = &*Source;
+        auto Restore = llvm::make_scope_exit([&] { ActiveBindPlaceholderFactory = Previous; });
+        for (const auto *Argument : Call->arguments())
+          if (!TraverseStmt(const_cast<Expr *>(Argument))) return false;
+      }
       if (!A.S.Diagnostics.empty()) return true;
-      if (!retainBindRuntimeSource(Source->Storage, Call->getExprLoc())) {
+      if (!HasPlaceholders && !retainBindRuntimeSource(Source->Storage, Call->getExprLoc())) {
         A.reject(Call->getExprLoc(), "bind factory lifetime source",
             "The exact storage and complete trivial SDK lifecycle source are required.", "TR0203");
         return true;
@@ -26752,7 +26819,7 @@ public:
     });
   }
   bool finishBindRuntimeSources() {
-    if (!A.S.Diagnostics.empty() || A.CheckingSource ||
+    if (!A.S.Diagnostics.empty() || A.CheckingSource || ActiveBindPlaceholderFactory ||
         !A.VerifiedBindRecords.empty() || !A.VerifiedBindFactories.empty() ||
         !A.VerifiedBindCalls.empty() || !A.VerifiedBindCopies.empty() ||
         !A.VerifiedBindDestructions.empty()) return false;
@@ -28468,6 +28535,17 @@ public:
   bool VisitStmt(Stmt *S) {
     if (!S)
       return true;
+    if (const auto *Record = bindPlaceholderFactoryOperand(S)) {
+      // Only these real side-effect-free argument nodes belong to a fully
+      // proved factory and lifecycle. RAV still visits their actual wrappers,
+      // qualifier and name. No SDK object value, address, initializer or general
+      // placeholder type is added to ordinary operation dependencies.
+      A.chargeExpansion(1, S->getBeginLoc());
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Destructions.insert(Record).second)
+          A.chargeExpansion(1, S->getBeginLoc());
+      return true;
+    }
     if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S))
       registerUnevaluatedOperations(Query->getOperand());
     if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S);
