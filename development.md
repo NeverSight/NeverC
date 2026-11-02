@@ -1485,7 +1485,7 @@ segment override or an address-size override.
 two appended write pseudos. The last generator preserves existing opcode IDs;
 its tests check the physical definitions and absence of EFLAGS clobbers.
 
-`tests/neverc/X86/verify_segment_moves.py` compares all 22 register/memory
+[verify_segment_moves.py](tests/neverc/X86/verify_segment_moves.py) compares all 22 register/memory
 forms with independent original bytes on Linux x64. It saves and restores
 ambient selectors and FS/GS bases around each invocation. The November 2
 P-core and E-core runs each passed six LLVM/NeverC/combined O0/O2 profiles:

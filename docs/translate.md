@@ -1503,3 +1503,6 @@ The retained-function repair at `6fd61042ba94` now has an actual 600/600 request
 
 
 The placeholder trait argument now uses Clang type equivalence, including qualifiers, when Sema removes a retained tuple-element alias. This repair is permitted only after the exact diagnostic confirms matching template ownership, parameter identity, source locations and constant type, with type sugar as the sole mismatch. Original and instantiated source walks, SDK guards and resource limits remain required. The preceding source passed syntax6, full600 and native72; execution of this new repair remains pending. Complete STL support is unfinished.
+
+
+Placeholder index-trait substitutions now bind to the exact checked local index declaration and its instantiated function. The initializer must contain the same trait read; its function, primary template, SDK origin, const size type and current source scope must match. Signature trait checks keep their original template ownership. Both original and instantiated declarations and initializers still require complete source walks. This repair awaits execution; complete STL support remains unfinished.

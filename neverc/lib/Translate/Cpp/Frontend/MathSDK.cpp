@@ -19839,7 +19839,8 @@ class BindSourceProof {
   }
   bool unwrapConstraintTraitSource(const TemplateUseSource &Source,
       const FunctionTemplateDecl *Primary, const TemplateTypeParmDecl *Input,
-      const Expr *Written, const Expr *Substituted, llvm::StringRef Name, bool Integer) {
+      const Expr *Written, const Expr *Substituted, llvm::StringRef Name, bool Integer,
+      const VarDecl *IndexDeclaration = nullptr) {
     auto Enable = [](QualType Type) -> const TemplateSpecializationType * {
       if (Type.isNull()) return nullptr;
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Type.getTypePtr()))
@@ -19853,6 +19854,18 @@ class BindSourceProof {
         Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
       return Expression;
     };
+    const auto *IndexFunction = IndexDeclaration
+        ? dyn_cast_or_null<FunctionDecl>(Source.Declaration) : nullptr;
+    const auto *IndexSubtract = IndexDeclaration
+        ? dyn_cast_or_null<BinaryOperator>(Core(IndexDeclaration->getInit())) : nullptr;
+    if (IndexDeclaration && (!ActiveUnwrapSource || ActiveScalarParameter != &Source ||
+        Name != "is_placeholder" || !Integer || !IndexFunction || Source.Template != Primary ||
+        IndexFunction->getPrimaryTemplate() != Primary ||
+        IndexDeclaration->getDeclContext() != IndexFunction || !IndexDeclaration->isLocalVarDecl() ||
+        !IndexDeclaration->getIdentifier() || IndexDeclaration->getName() != "__indx" ||
+        !Context.hasSameType(IndexDeclaration->getType(), Context.getConstType(Context.getSizeType())) ||
+        !Check.family(IndexDeclaration, {"__functional/bind.h"}) || !IndexSubtract ||
+        IndexSubtract->getOpcode() != BO_Sub || IndexSubtract->getLHS() != Substituted)) return false;
       const auto *OriginalRead = dyn_cast_or_null<DependentScopeDeclRefExpr>(Core(Written));
       const auto *ActualRead = dyn_cast_or_null<DeclRefExpr>(Core(Substituted));
       const auto *OriginalQualifier = OriginalRead ? OriginalRead->getQualifier() : nullptr;
@@ -19881,7 +19894,9 @@ class BindSourceProof {
           !Argument || Argument->getDecl() != Input ||
           !ActualTrait || ActualTrait->isDependentType() || ActualTrait->template_arguments().size() != 1 ||
           ActualTrait->getTemplateName().getAsTemplateDecl() != Template ||
-          !ActualArgument || ActualArgument->getAssociatedDecl() != Primary ||
+          !ActualArgument ||
+          (ActualArgument->getAssociatedDecl() != Primary &&
+           (!IndexDeclaration || ActualArgument->getAssociatedDecl() != IndexFunction)) ||
           ActualArgument->getReplacedParameter() != Input || ActualArgument->getPackIndex() ||
           !Context.hasSameType(ActualArgument->getReplacementType(), Source.Sugared->get(0).getAsType()) ||
           !Variable || !Variable->getIdentifier() || Variable->getName() != "value" ||
@@ -20133,7 +20148,7 @@ class BindSourceProof {
         Converted->getOperatorLoc() != OperatorLocation ||
         Written->getBeginLoc() != Converted->getBeginLoc() || Written->getEndLoc() != Converted->getEndLoc() ||
         !Context.hasSameType(Actual->getInit()->getType().getUnqualifiedType(), Context.getSizeType()) ||
-        !unwrapConstraintTraitSource(Source, Primary, Input, Left, Read, "is_placeholder", true)) return false;
+        !unwrapConstraintTraitSource(Source, Primary, Input, Left, Read, "is_placeholder", true, Actual)) return false;
     // A local size_t index is not an arbitrary SDK variable value. Close both
     // real declaration TSIs and initializers; no read or runtime permission is
     // published here. Later body/get/forward proofs must own their occurrences.

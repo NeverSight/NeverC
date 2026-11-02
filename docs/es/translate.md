@@ -1068,3 +1068,6 @@ La reparación de fuentes de funciones retenidas `6fd61042ba94` ha cumplido real
 
 
 El argumento del trait de marcador usa equivalencia de tipos Clang, incluidos calificadores, si Sema elimina el alias retenido del elemento de tuple. Solo se repara tras confirmar en el diagnóstico propietario, parámetro, ubicaciones y tipo constante idénticos, con la representación del alias como única diferencia. Se mantienen los recorridos de fuentes, guardas SDK y límites. La versión anterior pasa sintaxis6, full600 y native72; la nueva reparación y el STL completo siguen pendientes.
+
+
+Las sustituciones del trait de índice se vinculan a la declaración local exacta verificada y su función instanciada. El inicializador debe contener la misma lectura; función, plantilla primaria, origen SDK, tipo de tamaño const y ámbito deben coincidir. Se conservan la propiedad de plantilla en firmas y los recorridos completos de declaraciones e inicializadores originales e instanciados. La ejecución y el STL completo siguen pendientes.

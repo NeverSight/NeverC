@@ -1068,3 +1068,6 @@ La correction des sources de fonctions retenues `6fd61042ba94` a réellement sat
 
 
 L’argument du trait d’espace réservé utilise l’équivalence de type Clang, qualificateurs compris, si Sema élimine l’alias retenu de l’élément du tuple. La correction exige un diagnostic confirmant propriétaire, paramètre, positions source et type constant identiques, seule la représentation de l’alias différant. Parcours des sources écrites et instanciées, gardes SDK et limites restent obligatoires. La version précédente passe syntaxe6, full600 et native72 ; la nouvelle correction et le STL complet restent à vérifier.
+
+
+Les substitutions du trait d’indice sont liées à la déclaration locale exacte vérifiée et à sa fonction instanciée. L’initialiseur doit contenir la même lecture ; fonction, modèle primaire, origine SDK, type de taille const et portée source doivent correspondre. Les signatures gardent leur propriétaire de modèle ; déclarations et initialiseurs écrits et instanciés restent entièrement parcourus. Exécution et STL complet restent à vérifier.

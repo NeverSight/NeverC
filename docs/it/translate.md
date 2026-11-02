@@ -1068,3 +1068,6 @@ La correzione delle fonti di funzioni conservate `6fd61042ba94` ha realmente sup
 
 
 L’argomento del trait segnaposto usa l’equivalenza Clang con i qualificatori quando Sema elimina l’alias conservato dell’elemento tuple. La correzione richiede una diagnosi che confermi proprietario, parametro, posizioni e tipo costante identici, con la sola rappresentazione dell’alias diversa. Visite delle fonti, controlli SDK e limiti restano obbligatori. La versione precedente supera sintassi6, full600 e native72; nuova correzione e STL completo restano da verificare.
+
+
+Le sostituzioni del trait di indice sono legate alla dichiarazione locale esatta verificata e alla sua funzione istanziata. L’inizializzatore deve contenere la stessa lettura; funzione, template primario, origine SDK, tipo di dimensione const e ambito devono coincidere. Restano proprietà del template nelle firme e visite complete di dichiarazioni e inizializzatori originali e istanziati. Esecuzione e STL completo restano da verificare.

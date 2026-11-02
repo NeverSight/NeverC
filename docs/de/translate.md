@@ -1068,3 +1068,6 @@ Die Korrektur erhaltener Funktionsquellen `6fd61042ba94` besteht tatsächlich 60
 
 
 Das Platzhalter-Trait-Argument nutzt Clang-Typäquivalenz einschließlich Qualifizierern, wenn Sema den erhaltenen Tupel-Elementalias entfernt. Die Korrektur setzt eine Diagnose voraus, die identische Eigentümer, Parameter, Quellpositionen und Konstantentypen sowie ausschließlich unterschiedliche Aliasdarstellung bestätigt. Quellprüfungen, SDK-Schranken und Ressourcenlimits bleiben erhalten. Der Vorgänger besteht Syntax6, Full600 und Native72; neue Korrektur und vollständige STL-Unterstützung stehen noch aus.
+
+
+Platzhalter-Indextypen werden an die exakt geprüfte lokale Indexdeklaration und ihre instanziierte Funktion gebunden. Initialisierer und Trait-Lesezugriff sowie Funktion, Primärtemplate, SDK-Herkunft, const-Größentyp und Quellbereich müssen passen. Signaturen behalten ihre Template-Eigentümerprüfung; ursprüngliche und instanziierte Deklarationen samt Initialisierern werden vollständig geprüft. Ausführung und vollständige STL-Unterstützung stehen aus.
