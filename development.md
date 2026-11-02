@@ -1445,6 +1445,61 @@ repeated reads, repeated writes, write/read sequences, ordinary memory
 ordering, undefined-flag clobbers and callee-saved registers at O0/O2. These
 are controlled compiler completions, not native privileged execution tests.
 
+### Native segment selector MOV
+
+Four header-free builtins retain one architectural MOV for each selector
+access, without source-level assembly:
+
+```c
+unsigned short __builtin_ia32_readseg(unsigned segment);
+void __builtin_ia32_readseg_mem(unsigned segment, void *destination);
+void __builtin_ia32_writeseg(unsigned segment, unsigned short selector);
+void __builtin_ia32_writeseg_mem(unsigned segment, const void *source);
+```
+
+The register number must be a constant architectural encoding: ES=0, CS=1,
+SS=2, DS=3, FS=4, GS=5. Writing CS is rejected. The matching LLVM interfaces
+are `i16 @llvm.x86.readseg(i32 immarg)`,
+`void @llvm.x86.readseg.mem(i32 immarg, ptr)`,
+`void @llvm.x86.writeseg(i32 immarg, i16)` and
+`void @llvm.x86.writeseg.mem(i32 immarg, ptr)`. The full fork supports 32- and
+64-bit code; NeverC's pruned backend supports x64. Code16 is rejected.
+
+Memory forms access exactly two bytes inside the MOV. Segment writes also own
+descriptor validation, hidden-cache installation and conditional descriptor
+accessed-bit writes. These calls retain unknown memory effects, including when
+a read result is unused. Lowering materializes a physical segment definition
+before machine optimization and retains both explicit and implicit memory
+references. The MOV does not define EFLAGS. Machine scheduling keeps the
+segment boundary intact.
+
+These APIs operate on ambient CPU state. Callers must preserve the enclosing
+ABI's segment, TLS and stack invariants. MOV SS inhibits events at the next
+machine-instruction boundary; the compiler chooses that instruction. A pair of
+C calls does not establish an atomic stack switch or an original-PC restart
+contract. The memory interfaces use ordinary pointers and do not encode a
+segment override or an address-size override.
+
+`sync-x86-native-intrinsics.py`, `sync-x86-system-effects.py` and
+`sync-x86-segment-moves.py` own the pruned generated declarations, effects and
+two appended write pseudos. The last generator preserves existing opcode IDs;
+its tests check the physical definitions and absence of EFLAGS clobbers.
+
+`tests/neverc/X86/verify_segment_moves.py` compares all 22 register/memory
+forms with independent original bytes on Linux x64. It saves and restores
+ambient selectors and FS/GS bases around each invocation. The November 2
+P-core and E-core runs each passed six LLVM/NeverC/combined O0/O2 profiles:
+27,648 state pairs, 264 boundary observations and 1,488 fault observations
+(744 original/generated pairs) in total. Cases include LDT descriptors, exact
+two-byte end-of-page operands, invalid selectors, missing pages, read-only
+destinations and low-word truncation. Fault checks retain the original marker,
+selectors and bases and authenticate the faulting MOV form. These tests do not
+qualify i386 execution, other processor models, CPL0..2 descriptor faults,
+alignment checking, asynchronous events, or complete original GPR/flags restart
+state. Null selectors 1..3 are excluded because Linux normalizes them on signal
+return. The frontend/backend regressions separately check native IR, repeated
+calls, diagnostics and ELF/COFF/Mach-O object emission.
+
 ### EFLAGS (pushfq / popfq)
 
 Uses `RDFLAGS64` / `WRFLAGS64` pseudo-instructions (not a direct passthrough):

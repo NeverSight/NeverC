@@ -109,6 +109,15 @@ EFFECTS = {
 REGISTER_RESULTS = {f"{operation}{bits}r"
                     for operation in ("SLDT", "STR", "SMSW")
                     for bits in (16, 32, 64)}
+for bits in (16, 32, 64):
+    # Segment registers are explicit operands and defs, unlike far loads.
+    for suffix, memory in (("rs", ()), ("sr", ("MayLoad", "MayStore"))):
+        name = f"MOV{bits}{suffix}"
+        REGISTER_RESULTS.add(name)
+        EFFECTS[name] = (2, (), (), memory)
+REGISTER_RESULTS.add("MOV16sm")
+EFFECTS["MOV16sm"] = (6, (), (), ("MayLoad", "MayStore"))
+EFFECTS["MOV16ms"] = (6, (), (), ("MayStore",))
 for operation in ("LSS", "LFS", "LGS"):
     for bits in (16, 32, 64):
         name = f"{operation}{bits}rm"

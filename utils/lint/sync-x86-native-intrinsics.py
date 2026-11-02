@@ -128,6 +128,10 @@ EXISTING_FIRST_IMMEDIATE_SIGNATURES = {
     "xabort": ("Done", "I8"),
 }
 FIRST_IMMEDIATE_SIGNATURES = {
+    "readseg": ("I16", "I32"),
+    "readseg_mem": ("Done", "I32", "PTR"),
+    "writeseg": ("Done", "I32", "I16"),
+    "writeseg_mem": ("Done", "I32", "PTR"),
     **{name + "_bounded_state": ("STRUCT5", "I64", "I64", "I64", "I64", "I16",
                                   "I64", "I64", "I64", "I64", "I16")
        for name in ("enclu", "getsec")},

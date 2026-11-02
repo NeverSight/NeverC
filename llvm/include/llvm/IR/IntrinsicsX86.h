@@ -1303,6 +1303,8 @@ enum X86Intrinsics : unsigned {
     x86_rdtscp,                                      // llvm.x86.rdtscp
     x86_readcr,                                      // llvm.x86.readcr
     x86_readdr,                                      // llvm.x86.readdr
+    x86_readseg,                                     // llvm.x86.readseg
+    x86_readseg_mem,                                 // llvm.x86.readseg.mem
     x86_rep_cmps_state,                              // llvm.x86.rep.cmps.state
     x86_rep_cmps_state32,                            // llvm.x86.rep.cmps.state32
     x86_rep_ins_state,                               // llvm.x86.rep.ins.state
@@ -1705,6 +1707,8 @@ enum X86Intrinsics : unsigned {
     x86_wrgsbase_64,                                 // llvm.x86.wrgsbase.64
     x86_writecr,                                     // llvm.x86.writecr
     x86_writedr,                                     // llvm.x86.writedr
+    x86_writeseg,                                    // llvm.x86.writeseg
+    x86_writeseg_mem,                                // llvm.x86.writeseg.mem
     x86_wrmsr,                                       // llvm.x86.wrmsr
     x86_wrmsrlist,                                   // llvm.x86.wrmsrlist
     x86_wrmsrns,                                     // llvm.x86.wrmsrns

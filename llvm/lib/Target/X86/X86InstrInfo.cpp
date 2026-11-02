@@ -8539,6 +8539,14 @@ bool X86InstrInfo::isSchedulingBoundary(const MachineInstr &MI,
   // The hidden segment descriptor changes the meaning of later accesses.
   // Keep scheduling on each side of the native segment-load boundary.
   switch (Opcode) {
+  case X86::MOV16rs:
+  case X86::MOV32rs:
+  case X86::MOV64rs:
+  case X86::MOV16ms:
+  case X86::MOV16sr:
+  case X86::MOV32sr:
+  case X86::MOV64sr:
+  case X86::MOV16sm:
 #define X86_FAR_POINTER_LOAD(Name, Inst, Bits, Segment, Legacy) case X86::Inst:
 #include "X86FarPointerLoads.def"
 #undef X86_FAR_POINTER_LOAD

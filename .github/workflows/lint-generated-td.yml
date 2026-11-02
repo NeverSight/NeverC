@@ -30,6 +30,8 @@ on:
       - 'utils/lint/sync-x86-native-intrinsics.py'
       - 'utils/lint/sync-x86-vmx-effects.py'
       - 'utils/lint/sync-x86-system-effects.py'
+      - 'utils/lint/sync-x86-segment-moves.py'
+      - 'utils/lint/test_sync_x86_segment_moves.py'
       - 'utils/lint/sync-x86-system-returns.py'
       - 'utils/lint/sync-x86-frame-returns.py'
       - 'utils/lint/test_sync_x86_system_returns.py'
@@ -88,6 +90,8 @@ on:
       - 'utils/lint/sync-x86-native-intrinsics.py'
       - 'utils/lint/sync-x86-vmx-effects.py'
       - 'utils/lint/sync-x86-system-effects.py'
+      - 'utils/lint/sync-x86-segment-moves.py'
+      - 'utils/lint/test_sync_x86_segment_moves.py'
       - 'utils/lint/sync-x86-system-returns.py'
       - 'utils/lint/sync-x86-frame-returns.py'
       - 'utils/lint/test_sync_x86_system_returns.py'
@@ -226,6 +230,8 @@ jobs:
         run: |
           python3 utils/lint/sync-x86-system-pseudos.py
           python3 utils/lint/test_sync_x86_system_pseudos.py
+          python3 utils/lint/sync-x86-segment-moves.py
+          python3 utils/lint/test_sync_x86_segment_moves.py
 
       - name: Test intrinsic metadata synchronization
         run: |

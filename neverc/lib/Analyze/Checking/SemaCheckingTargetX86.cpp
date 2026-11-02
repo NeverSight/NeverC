@@ -931,6 +931,21 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_readdr:
   case X86::BI__builtin_ia32_writedr:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0, 7);
+  case X86::BI__builtin_ia32_readseg:
+  case X86::BI__builtin_ia32_readseg_mem:
+    return SemaBuiltinConstantArgRange(TheCall, 0, 0, 5);
+  case X86::BI__builtin_ia32_writeseg:
+  case X86::BI__builtin_ia32_writeseg_mem: {
+    llvm::APSInt Index;
+    if (SemaBuiltinConstantArgRange(TheCall, 0, 0, 5) ||
+        SemaBuiltinConstantArg(TheCall, 0, Index))
+      return true;
+    if (Index != 1)
+      return false;
+    return Diag(TheCall->getBeginLoc(),
+                diag::err_x86_builtin_write_code_segment)
+           << TheCall->getArg(0)->getSourceRange();
+  }
   case X86::BI__builtin_ia32_readcr:
   case X86::BI__builtin_ia32_writecr: {
     llvm::APSInt Index;

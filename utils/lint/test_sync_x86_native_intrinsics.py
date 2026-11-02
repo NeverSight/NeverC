@@ -48,6 +48,14 @@ class NativeSignaturesTest(unittest.TestCase):
                 self.assertEqual(NATIVE.DECLARATIONS[f"{operation}{bits}"],
                                  (f"I{bits}", "PTR"))
 
+    def test_segment_moves_own_the_immediate_register_and_exact_operand(self):
+        expected = {"readseg": ("I16", "I32"),
+                    "readseg_mem": ("Done", "I32", "PTR"),
+                    "writeseg": ("Done", "I32", "I16"),
+                    "writeseg_mem": ("Done", "I32", "PTR")}
+        for name, signature in expected.items():
+            self.assertEqual(NATIVE.FIRST_IMMEDIATE_SIGNATURES[name], signature)
+
     def test_native_divisions_return_two_words_from_three_input_words(self):
         self.assertEqual(len(NATIVE.NATIVE_DIVISIONS), 8)
         for bits in (8, 16, 32, 64):

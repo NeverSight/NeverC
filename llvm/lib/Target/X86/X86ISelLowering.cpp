@@ -26551,6 +26551,73 @@ static SDValue lowerGetsecBounded(SDValue Op, const X86Subtarget &Subtarget,
   return DAG.getMergeValues(Results, DL);
 }
 
+// Preserve one MOV for the selector access, including descriptor effects and
+// faults. A CopyFromReg/CopyToReg does not describe this ordered operation.
+static SDValue lowerSegmentAccess(SDValue Op, const X86Subtarget &Subtarget,
+                                  SelectionDAG &DAG) {
+  if (!Subtarget.is64Bit())
+    report_fatal_error("segment move intrinsic requires 64-bit code mode");
+  const unsigned ID = Op.getConstantOperandVal(1);
+  const bool Read =
+      ID == Intrinsic::x86_readseg || ID == Intrinsic::x86_readseg_mem;
+  const bool Memory =
+      ID == Intrinsic::x86_readseg_mem || ID == Intrinsic::x86_writeseg_mem;
+  const auto *Index = dyn_cast<ConstantSDNode>(Op.getOperand(2));
+  if (!Index)
+    report_fatal_error(
+        "segment move intrinsic requires a constant register index");
+  const uint64_t Number = Index->getZExtValue();
+  static const unsigned Registers[] = {X86::ES, X86::CS, X86::SS,
+                                       X86::DS, X86::FS, X86::GS};
+  if (Number >= std::size(Registers))
+    report_fatal_error("segment register index must be in [0, 5]");
+  if (!Read && Number == 1)
+    report_fatal_error("MOV cannot write the CS segment register");
+
+  const SDLoc DL(Op);
+  SmallVector<SDValue, 8> Operands;
+  if (!Read)
+    Operands.push_back(DAG.getTargetConstant(Registers[Number], DL, MVT::i32));
+  if (Memory) {
+    const MVT PtrVT = Subtarget.is64Bit() ? MVT::i64 : MVT::i32;
+    Operands.append({Op.getOperand(3), DAG.getTargetConstant(1, DL, MVT::i8),
+                     DAG.getRegister(0, PtrVT),
+                     DAG.getTargetConstant(0, DL, MVT::i32),
+                     DAG.getRegister(0, MVT::i16)});
+  } else if (!Read) {
+    Operands.push_back(Op.getOperand(3));
+  }
+  if (Read)
+    Operands.push_back(DAG.getRegister(Registers[Number], MVT::i16));
+  Operands.push_back(Op.getOperand(0));
+  const unsigned Opcode =
+      Read ? (Memory ? X86::MOV16ms : X86::MOV16rs)
+           : (Memory ? X86::WRITE_SEGMENT_MEM : X86::WRITE_SEGMENT_REG);
+  auto *Access =
+      DAG.getMachineNode(Opcode, DL,
+                         Read && !Memory ? DAG.getVTList(MVT::i16, MVT::Other)
+                                         : DAG.getVTList(MVT::Other),
+                         Operands);
+  SmallVector<MachineMemOperand *, 2> References;
+  auto &MF = DAG.getMachineFunction();
+  if (Memory)
+    References.push_back(MF.getMachineMemOperand(
+        MachinePointerInfo(),
+        MachineMemOperand::MOVolatile |
+            (Read ? MachineMemOperand::MOStore : MachineMemOperand::MOLoad),
+        2, Align(1)));
+  if (!Read)
+    References.push_back(MF.getMachineMemOperand(
+        MachinePointerInfo(),
+        MachineMemOperand::MOLoad | MachineMemOperand::MOStore |
+            MachineMemOperand::MOVolatile,
+        LLT(), Align(1)));
+  DAG.setNodeMemRefs(Access, References);
+  if (Read && !Memory)
+    return DAG.getMergeValues({SDValue(Access, 0), SDValue(Access, 1)}, DL);
+  return SDValue(Access, 0);
+}
+
 // Keep the coupled offset/selector load and descriptor validation in one
 // native instruction. The returned integer is only the offset; the selected
 // segment (including its hidden descriptor) remains ambient machine state.
@@ -28601,6 +28668,12 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDNode *N = DAG.getMachineNode(X86::OUT32rr, dl, Tys, {Chain, Glue});
       return SDValue(N, 0);
     }
+    case Intrinsic::x86_readseg:
+    case Intrinsic::x86_readseg_mem:
+    case Intrinsic::x86_writeseg:
+    case Intrinsic::x86_writeseg_mem:
+      return lowerSegmentAccess(Op, Subtarget, DAG);
+
     case Intrinsic::x86_readcr:
     case Intrinsic::x86_writecr:
     case Intrinsic::x86_readdr:
@@ -37801,6 +37874,20 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
   switch (MI.getOpcode()) {
   default:
     llvm_unreachable("Unexpected instr type to insert");
+  case X86::WRITE_SEGMENT_REG:
+  case X86::WRITE_SEGMENT_MEM: {
+    const unsigned Segment = MI.getOperand(0).getImm();
+    const bool Memory = MI.getOpcode() == X86::WRITE_SEGMENT_MEM;
+    assert(X86::SEGMENT_REGRegClass.contains(Segment) && Segment != X86::CS &&
+           "invalid segment write");
+    auto Move = BuildMI(
+        *BB, MI, MIMD, TII->get(Memory ? X86::MOV16sm : X86::MOV16sr), Segment);
+    for (unsigned I = 1; I < (Memory ? 6U : 2U); ++I)
+      Move.add(MI.getOperand(I));
+    Move.cloneMemRefs(MI);
+    MI.eraseFromParent();
+    return BB;
+  }
   case X86::WRITE_SYSREG64: {
     const unsigned Register = MI.getOperand(0).getImm();
     const bool Control = X86::CONTROL_REGRegClass.contains(Register);

@@ -619,6 +619,7 @@ DIAG(err_vm_func_decl, CLASS_ERROR, (unsigned)diag::Severity::Error, "function d
 DIAG(err_void_only_param, CLASS_ERROR, (unsigned)diag::Severity::Error, "'void' must be the first and only parameter if specified", 0, false, true, true, false, 2)
 DIAG(err_void_param_qualified, CLASS_ERROR, (unsigned)diag::Severity::Error, "'void' as parameter must not have type qualifiers", 0, false, true, true, false, 2)
 DIAG(err_x86_builtin_invalid_control_register, CLASS_ERROR, (unsigned)diag::Severity::Error, "control register index must be 0, 2, 3, 4, or 8", 0, false, true, true, false, 2)
+DIAG(err_x86_builtin_write_code_segment, CLASS_ERROR, (unsigned)diag::Severity::Error, "MOV cannot write the CS segment register", 0, false, true, true, false, 2)
 DIAG(err_x86_builtin_invalid_getsec_leaf, CLASS_ERROR, (unsigned)diag::Severity::Error, "bounded GETSEC requires a fallthrough leaf (0, 6..8)", 0, false, true, true, false, 2)
 DIAG(err_x86_builtin_invalid_memory_address, CLASS_ERROR, (unsigned)diag::Severity::Error, "native memory addressing requires width 32 or 64 and a valid segment prefix (0, 0x26, 0x2e, 0x36, 0x3e, 0x64, 0x65); stack-reference bit 0x100 requires a supported ordinary address with width 64 and no FS/GS override", 0, false, true, true, false, 2)
 DIAG(err_x86_builtin_invalid_enclu_leaf, CLASS_ERROR, (unsigned)diag::Severity::Error, "bounded ENCLU requires a fallthrough leaf (0, 1, 5..11)", 0, false, true, true, false, 2)

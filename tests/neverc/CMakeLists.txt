@@ -78,6 +78,7 @@ set(NEVERC_TEST_SOURCES
   X86/MMXStateFrontendTests.cpp
   X86/X87ControlFrontendTests.cpp
   X86/FarPointerFrontendTests.cpp
+  X86/SegmentMoveFrontendTests.cpp
   X86/X87EnvironmentFrontendTests.cpp
   X86/ThreeDNowFrontendTests.cpp
   X86HeaderTests.cpp

@@ -8,6 +8,13 @@
 #  define TARGET_HEADER_BUILTIN(ID, TYPE, ATTRS, HEADER, LANG, FEATURE) BUILTIN(ID, TYPE, ATTRS)
 #endif
 
+// Native MOV segment selectors (ES=0, CS=1, SS=2, DS=3, FS=4, GS=5).
+// CS is read-only. Memory forms own a two-byte access inside the instruction.
+BUILTIN(__builtin_ia32_readseg, "UsIUi", "n")
+BUILTIN(__builtin_ia32_readseg_mem, "vIUiv*", "n")
+BUILTIN(__builtin_ia32_writeseg, "vIUiUs", "n")
+BUILTIN(__builtin_ia32_writeseg_mem, "vIUivC*", "n")
+
 // Native packed far-pointer loads; selector validation stays instruction-owned.
 BUILTIN(__builtin_ia32_lss16, "UsvC*", "n")
 BUILTIN(__builtin_ia32_lss32, "UivC*", "n")
