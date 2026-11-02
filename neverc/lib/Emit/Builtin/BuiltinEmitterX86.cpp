@@ -3106,8 +3106,8 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_##Name: {                                         \
     auto *Pair = Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_##Name),    \
                                     {Ops[0], Ops[1], Ops[2]});                 \
-    Builder.CreateStore(Builder.CreateExtractValue(Pair, 1),                   \
-                        genPointerWithAlignment(E->getArg(3)));                \
+    Builder.CreateAlignedStore(Builder.CreateExtractValue(Pair, 1), Ops[3],  \
+                               Align(1));                                    \
     return Builder.CreateExtractValue(Pair, 0);                                \
   }
 #include "neverc/Foundation/Builtin/X86NativeDivision.def"
@@ -3115,8 +3115,8 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI_udiv128: {
     auto *Pair = Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_udivrem64),
                                     {Ops[1], Ops[0], Ops[2]});
-    Builder.CreateStore(Builder.CreateExtractValue(Pair, 1),
-                        genPointerWithAlignment(E->getArg(3)));
+    Builder.CreateAlignedStore(Builder.CreateExtractValue(Pair, 1), Ops[3],
+                               Align(1));
     return Builder.CreateExtractValue(Pair, 0);
   }
   case X86::BI__faststorefence: {
