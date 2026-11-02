@@ -7663,7 +7663,7 @@ static bool sameFunctionalBindPlaceholderOperands(
 
 // Temporary bounded observational state, never a source/body permission.
 struct FunctionalBindDiagnosticRing {
-  unsigned Lines[128] = {}, Count = 0, Next = 0, ProjectionMismatches = 0;
+  unsigned Lines[128] = {}, Count = 0, Next = 0, ProjectionMismatches = 0, ConstraintTraits = 0;
 };
 static FunctionalBindDiagnosticRing FunctionalBindDiagnostic;
 static bool functionalBindDiagnosticFailure(unsigned Line) {
@@ -7676,7 +7676,7 @@ static bool functionalBindDiagnosticFailure(unsigned Line) {
   return false;
 }
 static void functionalBindDiagnosticReset() {
-  FunctionalBindDiagnostic.Count = FunctionalBindDiagnostic.Next = FunctionalBindDiagnostic.ProjectionMismatches = 0;
+  FunctionalBindDiagnostic.Count = FunctionalBindDiagnostic.Next = FunctionalBindDiagnostic.ProjectionMismatches = FunctionalBindDiagnostic.ConstraintTraits = 0;
 }
 static void functionalBindDiagnosticDump() {
   if (!std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) return;
@@ -19928,8 +19928,42 @@ class BindSourceProof {
           !Context.hasSameType(ActualArgument->getReplacementType(), Source.Sugared->get(0).getAsType()) ||
           !Variable || !Variable->getIdentifier() || Variable->getName() != "value" ||
           !Variable->isStaticDataMember() || !Variable->hasInit() || !Variable->getType().isConstQualified() ||
-          !Context.hasSameType(Variable->getType().getUnqualifiedType(), Integer ? Context.IntTy : Context.BoolTy))
+          !Context.hasSameType(Variable->getType().getUnqualifiedType(), Integer ? Context.IntTy : Context.BoolTy)) {
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE") && FunctionalBindDiagnostic.ConstraintTraits++ < 8) {
+        std::fprintf(stderr, "BIND-CONSTRAINT-TRAIT name=%s integer=%u original=%u original_name=%u original_noargs=%u actual=%u actual_noargs=%u begin=%u end=%u template=%u template_name=%u template_family=%u written_parameter=%u actual_trait=%u actual_dependent=%u actual_arity=%u actual_template=%u substituted=%u owner=%u owner_source=%u owner_pattern=%u parameter=%u pack=%u replacement_exact=%u replacement_same=%u variable=%u variable_name=%u static=%u init=%u constant=%u variable_type=%u replacement=%.500s retained=%.500s value_type=%.200s actual_argument=%.500s written_argument=%.500s\n",
+            Name.str().c_str(), unsigned(Integer), unsigned(bool(OriginalRead)),
+            unsigned(OriginalRead && OriginalRead->getDeclName().getAsString() == "value"),
+            unsigned(OriginalRead && !OriginalRead->hasExplicitTemplateArgs()),
+            unsigned(bool(ActualRead)), unsigned(ActualRead && !ActualRead->hasExplicitTemplateArgs()),
+            unsigned(OriginalRead && ActualRead && OriginalRead->getBeginLoc() == ActualRead->getBeginLoc()),
+            unsigned(OriginalRead && ActualRead && OriginalRead->getEndLoc() == ActualRead->getEndLoc()),
+            unsigned(bool(Template)), unsigned(Template && Template->getIdentifier() && Template->getName() == Name),
+            unsigned(Template && Check.family(Template, {Name == "__is_reference_wrapper" ? "__type_traits/is_reference_wrapper.h" : "__functional/bind.h"})),
+            unsigned(Argument && Argument->getDecl() == Input), unsigned(bool(ActualTrait)),
+            unsigned(ActualTrait && ActualTrait->isDependentType()),
+            unsigned(ActualTrait ? ActualTrait->template_arguments().size() : 0),
+            unsigned(ActualTrait && ActualTrait->getTemplateName().getAsTemplateDecl() == Template),
+            unsigned(bool(ActualArgument)), unsigned(ActualArgument && ActualArgument->getAssociatedDecl() == Primary),
+            unsigned(ActualArgument && ActualArgument->getAssociatedDecl() == Source.Declaration),
+            unsigned(ActualArgument && Primary && ActualArgument->getAssociatedDecl() == Primary->getTemplatedDecl()),
+            unsigned(ActualArgument && ActualArgument->getReplacedParameter() == Input),
+            unsigned(ActualArgument && bool(ActualArgument->getPackIndex())),
+            unsigned(ActualArgument && ActualArgument->getReplacementType() == Source.Sugared->get(0).getAsType()),
+            unsigned(ActualArgument && Context.hasSameType(ActualArgument->getReplacementType(), Source.Sugared->get(0).getAsType())),
+            unsigned(bool(Variable)), unsigned(Variable && Variable->getIdentifier() && Variable->getName() == "value"),
+            unsigned(Variable && Variable->isStaticDataMember()), unsigned(Variable && Variable->hasInit()),
+            unsigned(Variable && Variable->getType().isConstQualified()),
+            unsigned(Variable && Context.hasSameType(Variable->getType().getUnqualifiedType(), Integer ? Context.IntTy : Context.BoolTy)),
+            ActualArgument ? ActualArgument->getReplacementType().getAsString().c_str() : "<none>",
+            Source.Sugared->get(0).getAsType().getAsString().c_str(),
+            Variable ? Variable->getType().getAsString().c_str() : "<none>",
+            ActualTrait && ActualTrait->template_arguments().size() == 1 && ActualTrait->template_arguments()[0].getKind() == TemplateArgument::Type
+                ? ActualTrait->template_arguments()[0].getAsType().getAsString().c_str() : "<none>",
+            OriginalTrait && OriginalTrait->template_arguments().size() == 1 && OriginalTrait->template_arguments()[0].getKind() == TemplateArgument::Type
+                ? OriginalTrait->template_arguments()[0].getAsType().getAsString().c_str() : "<none>");
+      }
         return functionalBindDiagnosticFailure(__LINE__);
+      }
       return true;
   }
 
