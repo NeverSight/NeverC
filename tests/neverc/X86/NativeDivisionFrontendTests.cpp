@@ -122,3 +122,39 @@ TEST_F(X86NativeDivisionTest, RejectsWrongArityAndRemainderType) {
     EXPECT_NE(Result.exitCode, 0) << Result.err;
   }
 }
+
+TEST_F(X86NativeDivisionTest, EvaluatesRemainderPointerOnce) {
+  for (const char *Level : {"-O0", "-O2"})
+    for (unsigned Bits : {8U, 16U, 32U, 64U})
+      for (const char *Kind : {"u", "s", "ms"}) {
+        if (std::string(Kind) == "ms" && Bits != 64)
+          continue;
+        const std::string Type = Bits == 8    ? "unsigned char"
+                                 : Bits == 16 ? "unsigned short"
+                                 : Bits == 32 ? "unsigned int"
+                                              : "unsigned long long";
+        const std::string Name = std::string(Kind) == "ms"
+                                     ? "_udiv128"
+                                     : "__builtin_ia32_" + std::string(Kind) +
+                                           "divrem" + std::to_string(Bits);
+        SCOPED_TRACE(Name + Level);
+        const auto Input = tmpFile("division-pointer.c");
+        writeFile(Input, "#include <intrin.h>\n" + Type +
+                             " *next_remainder(void);\n" + Type + " probe(" +
+                             Type + " a," + Type + " b," + Type +
+                             " c) { return " + Name +
+                             "(a,b,c,next_remainder()); }\n");
+        const auto Output = tmpFile("division-pointer.ll");
+        const auto Result = ncc(
+            {"--target=x86_64-pc-windows-msvc", "-std=c23", Level,
+             "-ffreestanding", "-fno-lto", "-fno-builtin-mimalloc", "-S",
+             "-emit-llvm", Input.string(), "-o", Output.string()});
+        ASSERT_EQ(Result.exitCode, 0) << Result.err;
+        const auto Text = readFile(Output);
+        const std::regex Call("call[^\\n]*@next_remainder\\(");
+        EXPECT_EQ(std::distance(std::sregex_iterator(Text.begin(), Text.end(), Call),
+                                std::sregex_iterator()),
+                  1)
+            << Text;
+      }
+}
