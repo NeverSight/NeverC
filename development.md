@@ -85,8 +85,9 @@ effects; source after a builtin is unreachable.
 dynamic frames and malformed arguments at O0/O2 on ELF, COFF and Mach-O.
 `sync-x86-system-returns.py` owns the pruned stack-carrier records; its checks
 also reject accidental ordinary-return metadata and retain existing opcode IDs.
-The full LLVM fork additionally tests i386 SYSEXIT32 and rejects code16 and
-SYSRET/SYSEXIT64 in 32-bit code.
+The full LLVM fork additionally supports SYSEXIT32 in protected 16/32-bit
+code and rejects SYSRET/SYSEXIT64 outside 64-bit code. Code16 retains the
+32-bit compiler stack ABI; it is not real-mode support.
 
 Run the independent Linux x64 privileged oracle with:
 
@@ -108,7 +109,11 @@ required; unavailable hardware is not a pass. This fixture disables CET and
 does not qualify faults, asynchronous events or other CPU models. Add `--i386`
 to run the two LLVM profiles in native protected 32-bit mode: four SYSEXIT32
 functions and 21,760 complete state pairs per profile, with an independently
-corrupted ECX move rejected. NeverC itself retains its x86-64 target. The contract follows [Intel SDM SYSRET/SYSEXIT and section
+corrupted ECX move rejected. Add `--code16` instead to run the same LLVM
+profiles from a 16-bit code segment, retaining a 32-bit stack segment and ABI.
+The disassembler and negative control use the selected code width. Neither
+option enables an i386/code16 frontend in NeverC; its builtins retain their
+x86-64 target. The contract follows [Intel SDM SYSRET/SYSEXIT and section
 3.4.1.1](https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf).
 
 ## Native frame and SMM transfers

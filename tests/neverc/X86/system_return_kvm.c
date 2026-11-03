@@ -16,8 +16,10 @@ static void check_segments(struct cpu *cpu, struct kvm_sregs *out,
 }
 
 int main(int argc, char **argv) {
-  CHECK(argc == 4 && (!strcmp(argv[3], "32") || !strcmp(argv[3], "64")));
-  const int protected_mode = !strcmp(argv[3], "32");
+  CHECK(argc == 4 && (!strcmp(argv[3], "16") || !strcmp(argv[3], "32") ||
+                      !strcmp(argv[3], "64")));
+  const int protected_mode = strcmp(argv[3], "64") != 0;
+  const int code16 = !strcmp(argv[3], "16");
   const int kvm = open("/dev/kvm", O_RDWR | O_CLOEXEC);
   if (kvm < 0) {
     fprintf(stderr, "KVM unavailable: errno %d\n", errno);
@@ -57,6 +59,11 @@ int main(int argc, char **argv) {
   CHECK(run_size > 0);
   struct cpu candidate = create_cpu(vm, 0, run_size, cpuid, protected_mode);
   struct cpu oracle = create_cpu(vm, 1, run_size, cpuid, protected_mode);
+  if (code16) {
+    // Code16 retains the compiler's 32-bit stack ABI. SYSEXIT itself always
+    // selects a flat 32-bit target for the unprefixed opcode.
+    candidate.initial.cs.db = oracle.initial.cs.db = 0;
+  }
   uint8_t *before_memory = malloc(RAM_SIZE);
   CHECK(before_memory);
   FILE *manifest = fopen(argv[2], "r");

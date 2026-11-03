@@ -26918,7 +26918,7 @@ static SDValue lowerBoundedSystemState(SDValue Op,
     const bool Wide =
         ID == Intrinsic::x86_sysret64 || ID == Intrinsic::x86_sysexit64;
     // NeverC's pruned backend supports x86-64 only. The full LLVM fork owns
-    // the additional protected-mode SYSEXIT32 lowering and code16 rejection.
+    // additional protected 16/32-bit SYSEXIT32 lowering.
     if (!Subtarget.is64Bit())
       report_fatal_error(
           "system-return intrinsic does not match the target code mode");
