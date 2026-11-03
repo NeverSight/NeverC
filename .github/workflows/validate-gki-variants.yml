@@ -1,0 +1,158 @@
+name: validate-gki-variants
+
+# Complete kernel builds are intentionally manual; ordinary CI keeps using
+# the existing release-pinned nine-family gate.
+on:
+  workflow_dispatch:
+    inputs:
+      compiler_run_id:
+        description: linux-x64 compiler artifact run for this exact source SHA
+        required: true
+        type: string
+      variant:
+        description: Measured configured kernel alternative
+        type: choice
+        options: [all, 612-kmi7, 618-kmi6, 703-stable]
+        default: all
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.inputs.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify compiler provenance and select variants
+        id: inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.compiler_run_id }}
+          SELECTED: ${{ inputs.variant }}
+          SOURCE_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          test "$REPOSITORY" = NeverSight/NeverC
+          test "$REPOSITORY_ID" = 1240844551
+          gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" > /tmp/compiler-run.json
+          jq -e --arg sha "$SOURCE_SHA" --argjson repo "$REPOSITORY_ID" '
+            .head_sha == $sha and .event == "push" and
+            .path == ".github/workflows/build-linux-x64.yml" and
+            .repository.id == $repo and .head_repository.id == $repo
+          ' /tmp/compiler-run.json
+          gh api "repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" |
+            jq -e '[.artifacts[] | select(.name == "linux-x64-neverc-compiler" and .expired == false)] | length == 1'
+          python3 - <<'PY'
+          import json,os
+          records=json.load(open('runtime/android/kernel/arm64/gki-variants.json'))['variants']
+          keys=[r['key'] for r in records]
+          selected=os.environ['SELECTED']
+          if selected != 'all':
+              if selected not in keys: raise SystemExit('unknown variant')
+              keys=[selected]
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write('matrix='+json.dumps(keys)+'\n')
+          PY
+
+  kernel:
+    name: Build and boot ${{ matrix.variant }}
+    needs: prepare
+    runs-on: ubuntu-24.04
+    container: ubuntu:26.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        variant: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      VARIANT: ${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux-x64-neverc-compiler
+          path: compiler-artifact
+          run-id: ${{ inputs.compiler_run_id }}
+          github-token: ${{ github.token }}
+      - name: Install native kernel and QEMU toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git make gcc g++ \
+            bc bison flex cpio libelf-dev libssl-dev libdw-dev pkg-config python3 \
+            python3-pyelftools rsync xz-utils zstd dwarves clang-20 lld-20 llvm-20 \
+            libclang-20-dev qemu-system-arm ipxe-qemu gcc-aarch64-linux-gnu unzip
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup.sh
+          sh /tmp/rustup.sh -y --profile minimal --default-toolchain 1.97.1
+          export PATH="$HOME/.cargo/bin:/usr/lib/llvm-20/bin:$PATH"
+          case "$VARIANT" in
+            612-kmi7) rust=1.82.0; bindgen=0.69.5 ;;
+            618-kmi6) rust=1.91.1; bindgen=0.71.1 ;;
+            703-stable) rust=1.97.1; bindgen=0.71.1 ;;
+            *) exit 2 ;;
+          esac
+          rustup toolchain install "$rust" --profile minimal --component rust-src --component rustfmt
+          cargo +1.97.1 install bindgen-cli --version "$bindgen" --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo /usr/lib/llvm-20/bin >> "$GITHUB_PATH"
+          echo "RUSTUP_TOOLCHAIN=$rust" >> "$GITHUB_ENV"
+      - name: Fetch pinned kernel source and build complete artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit=$(python3 -c 'import json,os; print(next(r["source_commit"] for r in json.load(open("runtime/android/kernel/arm64/gki-variants.json"))["variants"] if r["key"]==os.environ["VARIANT"]))')
+          git init kernel
+          git -C kernel remote add origin https://android.googlesource.com/kernel/common
+          git -C kernel fetch --depth=1 origin "$commit"
+          git -C kernel checkout --detach FETCH_HEAD
+          bash runtime/android/kernel/tools/build-gki-variant.sh \
+            "$VARIANT" kernel kernel-out artifacts 2
+      - name: Validate SDK and boot loader, SDK, and runtime probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -q compiler-artifact/linux-x64-neverc-compiler.zip -d compiler-root
+          compiler="$PWD/compiler-root/install/bin/neverc"
+          chmod +x "$compiler"
+          test ! -e compiler-root/install/runtime
+          cp -a runtime compiler-root/install/runtime
+          profile=${VARIANT%%-*}
+          python3 runtime/android/kernel/tools/verify-gki-variant.py \
+            --variant "$VARIANT" --artifacts artifacts --module artifacts/probe.ko --neverc "$compiler"
+          for source in gki-qemu-smoke-module gki-sdk-smoke-module gki-runtime-layout-smoke; do
+            for mode in auto full none; do
+              flags=()
+              case "$mode" in full) flags=(-flto=full) ;; none) flags=(-fno-lto) ;; esac
+              module="$PWD/artifacts/$source-$mode.ko"
+              "$compiler" --target=aarch64-linux-android -fandroid-kernel-driver-mode \
+                -DNVK_KERNEL="$profile" -Iruntime/android/kernel/arm64/include \
+                -Iruntime/android/kernel/include -O2 -r -nostdlib "${flags[@]}" \
+                "runtime/android/kernel/tools/$source.c" -o "$module"
+              extra=()
+              if [ "$source" = gki-runtime-layout-smoke ]; then extra=(--runtime-layouts); fi
+              bash runtime/android/kernel/tools/run-gki-qemu-smoke.sh \
+                --image artifacts/dist/Image --module "$module" \
+                --output-dir "artifacts/qemu-$source-$mode" "${extra[@]}"
+            done
+          done
+      - name: Preserve configured build and validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gki-variant-${{ matrix.variant }}
+          path: artifacts
+          retention-days: 14
+          if-no-files-found: warn

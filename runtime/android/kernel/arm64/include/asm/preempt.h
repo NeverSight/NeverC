@@ -4,13 +4,15 @@
 
 #include <linux/compiler.h>
 #include <linux/types.h>
+#include <linux/sched.h>
 #include <nvkmod_version.h>
 
 #define PREEMPT_NEED_RESCHED (1ULL << 32)
 #define PREEMPT_ENABLED      PREEMPT_NEED_RESCHED
 
 /*
- * arm64 stores current in SP_EL0 and embeds thread_info at task offset zero.
+ * arm64 embeds thread_info at task offset zero; current selects the measured
+ * system register at runtime.
  * Only this 64-bit preemption word is accessed; the rest of task_struct and
  * thread_info remain opaque.  Header linkage must be static because these are
  * caller-side operations emitted into every module translation unit.
@@ -26,9 +28,7 @@ union neverc_krt_preempt_state {
 static __always_inline volatile union neverc_krt_preempt_state *
 neverc_krt_current_preempt_state(void)
 {
-	unsigned long task;
-
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+	unsigned long task = (unsigned long)current;
 	return (volatile union neverc_krt_preempt_state *)
 		(task + NEVERC_KRT_TASK_PREEMPT_COUNT);
 }

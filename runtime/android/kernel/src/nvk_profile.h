@@ -88,7 +88,13 @@ struct neverc_krt_maps_ioctl_layout {
   unsigned long proc_maps_private_mm;
 };
 
+enum neverc_krt_current_task_register {
+  NEVERC_KRT_CURRENT_SP_EL0,
+  NEVERC_KRT_CURRENT_TPIDRRO_EL0,
+};
+
 struct neverc_krt_runtime_caps {
+  enum neverc_krt_current_task_register current_task_register;
   enum neverc_krt_ftrace_callback_abi ftrace_callback_abi;
   enum neverc_krt_filldir_abi filldir_abi;
   enum neverc_krt_kallsyms_iter_abi kallsyms_iter_abi;
@@ -103,6 +109,7 @@ struct neverc_krt_runtime_caps {
 
 struct neverc_krt_profile {
   unsigned int legacy_id;
+  unsigned int layout_id;
   unsigned int linux_major;
   unsigned int linux_minor;
   unsigned int linux_patch;
@@ -132,6 +139,12 @@ struct neverc_krt_observed_identity {
   unsigned long release_token_length;
   unsigned char has_android_identity;
 };
+
+/* Known measured alternatives augment the default family; an unrecognized
+ * identity continues to use the family's existing COMPAT policy. */
+const struct neverc_krt_profile *neverc_krt_resolve_observed_profile(
+    const struct neverc_krt_profile *family,
+    const struct neverc_krt_observed_identity *identity);
 
 /*
  * Exact means the numeric KMI identity matches: Linux patch, Android

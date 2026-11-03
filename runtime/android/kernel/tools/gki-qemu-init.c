@@ -9,6 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/reboot.h>
+#ifdef NEVERC_GKI_MOUNT_PROC
+#include <sys/mount.h>
+#include <sys/stat.h>
+#endif
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -26,12 +30,14 @@
 #define NEVERC_GKI_MODULE_NAME "neverc_gki_smoke"
 #endif
 
+static int log_fd = STDOUT_FILENO;
+
 static void emit(const char *format, ...)
 {
 	va_list arguments;
 
 	va_start(arguments, format);
-	vdprintf(STDOUT_FILENO, format, arguments);
+	vdprintf(log_fd, format, arguments);
 	va_end(arguments);
 }
 
@@ -46,6 +52,7 @@ int main(void)
 {
 	int console;
 	int module;
+	int kernel_log;
 	int saved_errno;
 
 	console = open("/dev/console", O_WRONLY | O_CLOEXEC);
@@ -55,7 +62,19 @@ int main(void)
 		if (console > STDERR_FILENO)
 			(void)close(console);
 	}
+	/* Serialize guest markers with module printk records. Direct console
+	 * writes can be split by an asynchronous printk console flush. */
+	kernel_log = open("/dev/kmsg", O_WRONLY | O_CLOEXEC);
+	if (kernel_log >= 0)
+		log_fd = kernel_log;
 
+#ifdef NEVERC_GKI_MOUNT_PROC
+	(void)mkdir("/proc", 0555);
+	if (mount("proc", "/proc", "proc", 0, NULL) != 0) {
+		emit("NEVERC_GKI_LOAD_FAIL syscall=mount-proc errno=%d\n", errno);
+		power_off(1);
+	}
+#endif
 	module = open(NEVERC_GKI_MODULE_PATH, O_RDONLY | O_CLOEXEC);
 	if (module < 0) {
 		saved_errno = errno;

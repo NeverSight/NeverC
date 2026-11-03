@@ -19,7 +19,7 @@ static __always_inline u32 _neverc_krt_se_current_uid(void)
 
 	if (!layout)
 		return 0xFFFFFFFFU;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+	task = (unsigned long)current;
 
 	unsigned long cred_ptr;
 	if (neverc_krt_mem_read(&cred_ptr,

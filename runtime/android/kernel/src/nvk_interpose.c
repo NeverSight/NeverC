@@ -30,7 +30,7 @@ neverc_krt_interpose_enter(struct neverc_krt_interpose *interpose)
 	unsigned long task;
 	unsigned long previous;
 
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+	task = (unsigned long)current;
 	previous = __atomic_exchange_n(&interpose->guard, task, __ATOMIC_ACQUIRE);
 	if (previous == task)
 		return 0;
@@ -398,6 +398,7 @@ static __always_inline int neverc_krt_a64_is_hazardous(u32 insn)
 #define _A64E_MRS_NZCV(t)     (0xD53B4200U|(u32)(t))
 #define _A64E_MSR_NZCV(t)     (0xD51B4200U|(u32)(t))
 #define _A64E_MRS_SP_EL0(d)   (0xD5384100U|(u32)(d))
+#define _A64E_MRS_TPIDRRO_EL0(d) (0xD53BD060U|(u32)(d))
 #define _A64E_MOV_FROM_SP(d)  (0x910003E0U|(u32)(d))
 #define _A64E_MOV_REG(d,n)    (0xAA0003E0U|((u32)(n)<<16)|(u32)(d))
 #define _A64E_CMP_REG(n,m)    (0xEB00001FU|((u32)(m)<<16)|((u32)(n)<<5))
@@ -655,6 +656,7 @@ static const u32 _neverc_krt_ctx_stub_template[] = {
 };
 
 #define _CTX_STUB_LEN     (sizeof(_neverc_krt_ctx_stub_template) / sizeof(u32))
+#define _CTX_CURRENT_SLOT 164
 #define _CTX_INFLIGHT_SLOT_ENTER 3
 #define _CTX_ENABLED_SLOT 11
 #define _CTX_GUARD_SLOT_A 45
@@ -1415,7 +1417,7 @@ _neverc_krt_ctx_guard_enter(volatile unsigned long *slots,
 
 	if (!slots)
 		return 0;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+	task = (unsigned long)current;
 	if (!task)
 		return 0;
 
@@ -1449,7 +1451,7 @@ _neverc_krt_ctx_guard_leave(volatile unsigned long *slots,
 
 	if (!slots || token == 0 || token > _CTX_GUARD_SLOTS)
 		return;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+	task = (unsigned long)current;
 	if (!task)
 		return;
 	if (__atomic_load_n(&slots[(token - 1) * 2],
@@ -1740,6 +1742,11 @@ static int _neverc_krt_interpose_install_ctx_impl(
 
 	for (i = 0; i < (int)_CTX_STUB_LEN; i++)
 		page[i] = _neverc_krt_ctx_stub_template[i];
+	{
+		const struct neverc_krt_runtime_caps *caps = _neverc_krt_current_caps();
+		if (caps && caps->current_task_register == NEVERC_KRT_CURRENT_TPIDRRO_EL0)
+			page[_CTX_CURRENT_SLOT] = _A64E_MRS_TPIDRRO_EL0(10);
+	}
 
 	_neverc_krt_patch_mov64(page, _CTX_INFLIGHT_SLOT_ENTER, 16,
 			 (u64)(unsigned long)h->stub_inflight);

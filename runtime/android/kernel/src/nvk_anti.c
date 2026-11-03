@@ -662,10 +662,9 @@ int neverc_krt_anti_timing_check(u64 start, u64 max_cycles)
 
 int neverc_krt_anti_check_stack_depth(void)
 {
-	unsigned long sp, sp_el0;
+	unsigned long sp, task = (unsigned long)current;
 	__asm__ __volatile__("mov %0, sp" : "=r"(sp));
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(sp_el0));
-	if ((sp_el0 - sp) > 0x4000)
+	if ((task - sp) > 0x4000)
 		return 1;
 	return 0;
 }

@@ -26,6 +26,7 @@ CALLER_SIDE_PUBLIC_FUNCTIONS = {
     },
 }
 BARE_ALWAYS_INLINE = re.compile(r"^\s*__always_inline\b")
+RAW_CURRENT_REGISTER = re.compile(r'"mrs [^"\n]*,\s*(?:sp_el0|tpidrro_el0)\b', re.IGNORECASE)
 VERSION_BRANCH = re.compile(
     r"^\s*#\s*(?:if|elif)\b.*\bNEVERC_KRT_KERNEL\b"
 )
@@ -122,6 +123,10 @@ def check_public_header(path):
                 (path, line_number,
                  "header function must begin with static __always_inline")
             )
+        if RAW_CURRENT_REGISTER.search(line):
+            violations.append(
+                (path, line_number, "current-task register must use the runtime accessor")
+            )
         if "_NEVERC_KRT_IMPL" in line:
             violations.append(
                 (path, line_number,
@@ -188,6 +193,10 @@ def check_source(path):
     for line_number, line in enumerate(
         path.read_text(encoding="utf-8").splitlines(), 1
     ):
+        if path.name != "nvk_current.c" and RAW_CURRENT_REGISTER.search(line):
+            violations.append(
+                (path, line_number, "current-task register must use the runtime accessor")
+            )
         if VERSION_BRANCH.match(line):
             violations.append(
                 (path, line_number,

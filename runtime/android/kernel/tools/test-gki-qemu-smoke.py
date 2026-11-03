@@ -81,6 +81,9 @@ class InitramfsTests(unittest.TestCase):
             console = entries["dev/console"]
             self.assertTrue(stat.S_ISCHR(console["mode"]))
             self.assertEqual((console["rdevmajor"], console["rdevminor"]), (5, 1))
+            kernel_log = entries["dev/kmsg"]
+            self.assertTrue(stat.S_ISCHR(kernel_log["mode"]))
+            self.assertEqual((kernel_log["rdevmajor"], kernel_log["rdevminor"]), (1, 11))
             self.assertEqual(entries["init"]["data"], b"init-binary")
             self.assertEqual(entries["neverc-smoke.ko"]["data"], b"module-binary")
 
@@ -306,6 +309,19 @@ class HarnessTests(unittest.TestCase):
                 sys.stdout.buffer.write(
                     b'NEVERC_GKI_LOAD_PASS\\r\\nNEVERC_GKI_UNLOAD_PASS\\r\\n'
                 )
+            elif scenario == 'runtime-success-crlf':
+                sys.stdout.buffer.write(
+                    b'[    3.25] NEVERC_GKI_RUNTIME_LAYOUT_PASS\\r\\n'
+                    b'NEVERC_GKI_LOAD_PASS\\r\\nNEVERC_GKI_UNLOAD_PASS\\r\\n'
+                )
+            elif scenario == 'kernel-log-markers':
+                print('[    3.25][    T1] NEVERC_GKI_LOAD_PASS')
+                print('[    3.26][    T1] NEVERC_GKI_RUNTIME_LAYOUT_PASS')
+                print('[    3.27][    T1] NEVERC_GKI_UNLOAD_PASS')
+            elif scenario == 'invalid-marker-text':
+                print('bootargs=NEVERC_GKI_LOAD_PASS')
+                print('[    3.25][    T1] NEVERC_GKI_LOAD_PASS_EXTRA')
+                print('NEVERC_GKI_UNLOAD_PASS')
             elif scenario == 'load-failure':
                 print('NEVERC_GKI_LOAD_FAIL errno=8 Exec format error')
             elif scenario == 'unload-failure':
@@ -330,7 +346,7 @@ class HarnessTests(unittest.TestCase):
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
         return path
 
-    def run_harness(self, scenario, timeout="2"):
+    def run_harness(self, scenario, timeout="2", runtime_layouts=False):
         output = self.root / f"output-{scenario}"
         environment = os.environ.copy()
         environment["FAKE_QEMU_SCENARIO"] = scenario
@@ -350,7 +366,7 @@ class HarnessTests(unittest.TestCase):
                 str(self.qemu),
                 "--timeout",
                 timeout,
-            ],
+            ] + (["--runtime-layouts"] if runtime_layouts else []),
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -366,12 +382,26 @@ class HarnessTests(unittest.TestCase):
         self.assertIn("NEVERC_GKI_LOAD_PASS", log)
         self.assertIn("NEVERC_GKI_UNLOAD_PASS", log)
 
+    def test_runtime_layout_marker_is_required_and_accepts_kernel_crlf(self):
+        result, _ = self.run_harness("success", runtime_layouts=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing kernel private-layout success marker", result.stdout)
+        result, _ = self.run_harness("runtime-success-crlf", runtime_layouts=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_success_accepts_real_qemu_crlf_markers(self):
         result, _ = self.run_harness("success-crlf")
         self.assertEqual(result.returncode, 0, result.stdout)
         raw_log = (self.root / "output-success-crlf/qemu.log").read_bytes()
         self.assertIn(b"NEVERC_GKI_LOAD_PASS\r\n", raw_log)
         self.assertIn(b"NEVERC_GKI_UNLOAD_PASS\r\n", raw_log)
+
+    def test_success_accepts_serialized_kmsg_records_but_not_embedded_text(self):
+        result, _ = self.run_harness("kernel-log-markers", runtime_layouts=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        result, _ = self.run_harness("invalid-marker-text")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing guest success markers", result.stdout)
 
     def test_load_failure_is_rejected(self):
         result, _ = self.run_harness("load-failure")

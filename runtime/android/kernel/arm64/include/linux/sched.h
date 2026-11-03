@@ -9,11 +9,12 @@ struct task_struct; /* opaque */
 struct mm_struct;   /* opaque */
 struct pid;         /* opaque */
 
+/* The 618/KMI6 alternative changed the current-task system register. */
+struct task_struct *neverc_krt_current_task(void);
+
 static __always_inline struct task_struct *get_current(void)
 {
-	uintptr_t sp_el0;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(sp_el0));
-	return (struct task_struct *)sp_el0;
+	return neverc_krt_current_task();
 }
 #define current get_current()
 

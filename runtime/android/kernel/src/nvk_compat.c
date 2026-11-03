@@ -2,6 +2,7 @@
 #include <nvk.h>
 #include "nvk_internal.h"
 #include "nvk_compat_table.inc"
+#include "nvk_variant_layouts.inc"
 
 static const struct neverc_krt_profile *_neverc_krt_selected_profile;
 static struct neverc_krt_gki_layout _neverc_krt_active_effective_layout;
@@ -34,6 +35,10 @@ _neverc_krt_find_layout(unsigned int profile_id)
 	for (i = 0; i < NEVERC_KRT_LAYOUT_COUNT; i++) {
 		if (_neverc_krt_layouts[i].profile_id == profile_id)
 			return &_neverc_krt_layouts[i];
+	}
+	for (i = 0; i < NEVERC_KRT_VARIANT_LAYOUT_COUNT; i++) {
+		if (_neverc_krt_variant_layouts[i].profile_id == profile_id)
+			return &_neverc_krt_variant_layouts[i];
 	}
 	return (const struct neverc_krt_layout_entry *)0;
 }
@@ -311,7 +316,7 @@ int _neverc_krt_version_setup(unsigned int profile_id)
 		neverc_krt_find_profile(profile_id);
 	const struct neverc_krt_profile *selected;
 
-	if (!profile || !_neverc_krt_find_layout(profile->legacy_id))
+	if (!profile || !_neverc_krt_find_layout(profile->layout_id))
 		return -1;
 	selected = __atomic_load_n(&_neverc_krt_selected_profile,
 				   __ATOMIC_ACQUIRE);
@@ -442,7 +447,7 @@ _neverc_krt_activate_observed(
 	selected = __atomic_load_n(&_neverc_krt_selected_profile,
 				   __ATOMIC_ACQUIRE);
 	if (selected) {
-		profile = selected;
+		profile = neverc_krt_resolve_observed_profile(selected, identity);
 		profile_match = neverc_krt_match_profile(profile, identity);
 		if (profile_match == NEVERC_KRT_PROFILE_MATCH_NONE)
 			return -1;
@@ -463,7 +468,7 @@ _neverc_krt_activate_observed(
 		    selected->legacy_id != profile->legacy_id)
 			return -2;
 	}
-	layout = _neverc_krt_find_layout(profile->legacy_id);
+	layout = _neverc_krt_find_layout(profile->layout_id);
 	if (!layout)
 		return -1;
 	__builtin_memcpy(&_neverc_krt_active_effective_layout, &layout->layout,

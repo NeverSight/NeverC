@@ -457,7 +457,60 @@ static void check_certificate_select_is_token_exact(void) {
                                                 &identity) == NULL);
 }
 
+static void check_measured_kmi_variants(void) {
+  struct neverc_krt_observed_identity id;
+  const struct neverc_krt_profile *family = neverc_krt_find_profile(612);
+  const struct neverc_krt_profile *resolved;
+  assert(neverc_krt_parse_banner_identity(
+      "Linux version 6.12.96-android16-7-oem-4k SMP", &id) == 0);
+  id.page_shift = 12;
+  resolved = neverc_krt_resolve_observed_profile(family, &id);
+  assert(resolved != family && resolved->legacy_id == 612);
+  assert(resolved->caps.procmap_ioctl.proc_maps_private_mm == 96);
+  assert(family->caps.procmap_ioctl.proc_maps_private_mm == 16);
+  id.linux_patch++;
+  assert(neverc_krt_resolve_observed_profile(family, &id) == resolved);
+  assert(neverc_krt_match_profile(family, &id) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+  id.kmi_generation = 99;
+  assert(neverc_krt_resolve_observed_profile(family, &id) == family);
+  assert(neverc_krt_match_profile(family, &id) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+  id.kmi_generation = 6;
+  assert(neverc_krt_resolve_observed_profile(family, &id) == family);
+  id.kmi_generation = 7;
+  id.page_shift = 14;
+  assert(neverc_krt_match_profile(family, &id) == NEVERC_KRT_PROFILE_MATCH_NONE);
+  id.page_shift = 12;
+  id.android_release = 17;
+  assert(neverc_krt_match_profile(family, &id) == NEVERC_KRT_PROFILE_MATCH_NONE);
+
+  family = neverc_krt_find_profile(618);
+  assert(neverc_krt_parse_banner_identity(
+      "Linux version 6.18.33-android17-6-oem SMP", &id) == 0);
+  id.page_shift = 12;
+  resolved = neverc_krt_resolve_observed_profile(family, &id);
+  assert(resolved != family && resolved->legacy_id == 618);
+  assert(resolved->caps.current_task_register == NEVERC_KRT_CURRENT_TPIDRRO_EL0);
+  assert(family->caps.current_task_register == NEVERC_KRT_CURRENT_SP_EL0);
+  id.kmi_generation = 5;
+  assert(neverc_krt_resolve_observed_profile(family, &id) == family);
+  assert(neverc_krt_match_profile(family, &id) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+
+  family = neverc_krt_find_profile(703);
+  assert(neverc_krt_parse_banner_identity(
+      "Linux version 7.3.0-android18-0-maybe-dirty-neverc-production-4k SMP", &id) == 0);
+  id.page_shift = 12;
+  resolved = neverc_krt_resolve_observed_profile(family, &id);
+  assert(resolved != family && resolved->linux_minor == 3);
+  assert(neverc_krt_match_profile(family, &id) == NEVERC_KRT_PROFILE_MATCH_EXACT);
+  assert(neverc_krt_find_profile_by_identity(
+      7, 3, 0, 18, 0, 12, id.release_token, id.release_token_length) == resolved);
+}
+
 int main(void) {
+  check_measured_kmi_variants();
   check_exact_lookup();
   check_identity_lookup();
   check_selected_profile_compatibility();

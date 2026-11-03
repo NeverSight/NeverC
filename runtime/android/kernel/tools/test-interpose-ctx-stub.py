@@ -150,6 +150,7 @@ def main() -> int:
                 "--target=aarch64-linux-android",
                 "-fandroid-kernel-driver-mode",
                 "-DNVK_KERNEL=612",
+                f"-I{KERNEL_ROOT / 'arm64/include'}",
                 f"-I{KERNEL_ROOT / 'include'}",
                 f"-I{KERNEL_ROOT / 'src'}",
                 "-O0",

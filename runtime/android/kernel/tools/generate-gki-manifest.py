@@ -161,6 +161,12 @@ CONFIG_KEYS = (
     "CONFIG_VMAP_STACK",
 )
 CONFIG_INPUT_KEYS = (*CONFIG_KEYS, "CONFIG_CFI")
+VARIANT_CONFIG_KEYS = (
+    "CONFIG_KASAN_HW_TAGS", "CONFIG_KCOV", "CONFIG_LOCKDEP",
+    "CONFIG_SHADOW_CALL_STACK", "CONFIG_SCHED_PROXY_EXEC",
+    "CONFIG_RANDOMIZE_KSTACK_OFFSET", "CONFIG_GKI_TASK_STRUCT_VENDOR_SIZE_MAX",
+    "CONFIG_ANDROID_BINDER_IPC", "CONFIG_ANDROID_BINDER_IPC_RUST",
+)
 SHF_COMPRESSED = 0x800
 ELF_HASH_CHUNK_SIZE = 1024 * 1024
 
@@ -234,8 +240,8 @@ def parse_config_value(value):
         return value
 
 
-def read_config(path):
-    values = {key: False for key in CONFIG_INPUT_KEYS}
+def read_config(path, extra_keys=()):
+    values = {key: False for key in (*CONFIG_INPUT_KEYS, *extra_keys)}
     with path.open(encoding="utf-8") as stream:
         for raw_line in stream:
             line = raw_line.strip()
@@ -477,6 +483,10 @@ def main():
     )
     parser.add_argument("--compiler", default="clang")
     parser.add_argument(
+        "--runtime-variant", action="store_true",
+        help="also measure procmap private-context and seq_file layouts",
+    )
+    parser.add_argument(
         "--discovery",
         action="store_true",
         help="collect an unverified new family's layouts and full export list",
@@ -509,6 +519,10 @@ def main():
             flush=True,
         )
         requested_structures = STRUCTURES
+        if args.runtime_variant:
+            requested_structures += (
+                "proc_maps_private", "proc_maps_locking_ctx", "seq_file",
+            )
         if base is None:
             requested_structures += OPTIONAL_STRUCTURES
         else:
@@ -553,7 +567,7 @@ def main():
 
         evidence = elf_evidence(args.vmlinux)
         if args.config is not None:
-            config = read_config(args.config)
+            config = read_config(args.config, VARIANT_CONFIG_KEYS if args.runtime_variant else ())
             evidence["config_sha256"] = sha256_file(args.config)
         else:
             config = base["config"]

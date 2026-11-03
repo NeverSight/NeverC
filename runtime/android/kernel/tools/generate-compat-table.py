@@ -20,6 +20,9 @@ DEFAULT_PROFILE_IDS_HEADER = RUNTIME_ROOT / "include/nvk_profile_ids.h"
 DEFAULT_PROFILE_HEADER = RUNTIME_ROOT / "include/nvk_profile_config.h"
 DEFAULT_PROFILE_TABLE = RUNTIME_ROOT / "src/nvk_profile_table.inc"
 DEFAULT_COMPAT_TABLE = RUNTIME_ROOT / "src/nvk_compat_table.inc"
+DEFAULT_VARIANTS = RUNTIME_ROOT / "arm64/gki-variants.json"
+DEFAULT_VARIANT_PROFILES = RUNTIME_ROOT / "src/nvk_profile_variants.inc"
+DEFAULT_VARIANT_LAYOUTS = RUNTIME_ROOT / "src/nvk_variant_layouts.inc"
 
 KCFI_MODES = {
     "disabled": ("NEVERC_KRT_KCFI_MODE_DISABLED", 0),
@@ -241,7 +244,11 @@ PROFILE_KEYS = frozenset({
     "shadow_call_stack_mode",
     "symbol",
 })
-OPTIONAL_PROFILE_KEYS = frozenset({"aliases", "vermagic", "linux_extraversion"})
+OPTIONAL_PROFILE_KEYS = frozenset({"aliases", "vermagic", "linux_extraversion", "current_task_register"})
+CURRENT_TASK_REGISTERS = {
+    "sp_el0": "NEVERC_KRT_CURRENT_SP_EL0",
+    "tpidrro_el0": "NEVERC_KRT_CURRENT_TPIDRRO_EL0",
+}
 EXPECTED_KCFI_TYPEIDS = {
     "disabled": None,
     "classic": {
@@ -1521,8 +1528,9 @@ def require_u32(record, key, context, *, allow_zero=True):
     return value
 
 
-def load_catalog(path):
-    document = json.loads(path.read_text(encoding="utf-8"))
+def load_catalog(path, document=None):
+    if document is None:
+        document = json.loads(path.read_text(encoding="utf-8"))
     if document.get("schema") != 1:
         raise ValueError(f"{path}: unsupported schema")
     records = document.get("profiles")
@@ -1543,6 +1551,9 @@ def load_catalog(path):
         ):
             raise ValueError(f"{context}: profile keys do not match schema")
         profile = dict(original)
+        current_register = profile.get("current_task_register", "sp_el0")
+        if not isinstance(current_register, str) or current_register not in CURRENT_TASK_REGISTERS:
+            raise ValueError(f"{context}: invalid current_task_register")
         legacy_id = require_u32(
             profile, "legacy_id", context, allow_zero=False
         )
@@ -1668,11 +1679,14 @@ def load_catalog(path):
     return sorted(profiles, key=lambda profile: profile["legacy_id"])
 
 
-def validate_evidence(profiles, manifest_root, release_lock_path):
+def validate_evidence(profiles, manifest_root, release_lock_path, *,
+                      manifest_paths=None, release_profiles=None):
     catalog_ids = {profile["legacy_id"] for profile in profiles}
-    manifest_paths = {int(path.stem): path for path in manifest_root.glob("*.json")}
-    release_document = json.loads(release_lock_path.read_text(encoding="utf-8"))
-    release_profiles = release_document.get("profiles", {})
+    if manifest_paths is None:
+        manifest_paths = {int(path.stem): path for path in manifest_root.glob("*.json")}
+    if release_profiles is None:
+        release_document = json.loads(release_lock_path.read_text(encoding="utf-8"))
+        release_profiles = release_document.get("profiles", {})
     try:
         release_ids = {int(profile_id) for profile_id in release_profiles}
     except ValueError as error:
@@ -2309,6 +2323,62 @@ def render_profile_header(profile_evidence):
     return "\n".join(lines)
 
 
+def render_profile_entries(profile_evidence):
+    lines = []
+    for profile, manifest, release in profile_evidence:
+        caps = profile["capabilities"]
+        module_memory = compile_module_memory_layout(manifest)
+        lines.extend([
+            "\t{",
+            f"\t\t.legacy_id = {profile['legacy_id']},",
+            f"\t\t.layout_id = {profile.get('layout_id', profile['legacy_id'])},",
+            f"\t\t.linux_major = {profile['linux_major']},",
+            f"\t\t.linux_minor = {profile['linux_minor']},",
+            f"\t\t.linux_patch = {profile['linux_patch']},",
+            f"\t\t.android_release = {profile['android_release']},",
+            f"\t\t.kmi_generation = {profile['kmi_generation']},",
+            f"\t\t.page_shift = {profile['page_shift']},",
+            f"\t\t.require_release_token = {int(profile.get('require_release_token', bool(profile.get('linux_extraversion'))))},",
+            f"\t\t.release_token = {json.dumps(release['release_token'])},",
+            f"\t\t.kimage_vaddr = "
+            f"0x{profile['kimage_vaddr_value']:016X}UL,",
+            f"\t\t.kcfi_mode = {KCFI_MODES[profile['kcfi_mode']][0]},",
+            f"\t\t.module_memory_offset = "
+            f"{module_memory['memory_offset']},",
+            f"\t\t.module_memory_count = {module_memory['count']},",
+            f"\t\t.module_memory_stride = {module_memory['stride']},",
+            f"\t\t.module_memory_base = {module_memory['base_offset']},",
+            f"\t\t.module_memory_size = {module_memory['size_offset']},",
+            "\t\t.caps = {",
+            f"\t\t\t.current_task_register = "
+            f"{CURRENT_TASK_REGISTERS[profile.get('current_task_register', 'sp_el0')]},",
+            f"\t\t\t.ftrace_callback_abi = "
+            f"{abi_runtime_symbol('ftrace_callback_abi', caps['ftrace_callback_abi'])},",
+            f"\t\t\t.filldir_abi = "
+            f"{abi_runtime_symbol('filldir_abi', caps['filldir_abi'])},",
+            f"\t\t\t.kallsyms_iter_abi = "
+            f"{abi_runtime_symbol('kallsyms_iter_abi', caps['kallsyms_iter_abi'])},",
+            f"\t\t\t.do_mmap_abi = "
+            f"{abi_runtime_symbol('do_mmap_abi', caps['do_mmap_abi'])},",
+            f"\t\t\t.binder_filter_backend = "
+            f"{abi_runtime_symbol('binder_filter_backend', caps['binder_filter_backend'])},",
+            f"\t\t\t.vmalloc_visibility_backend = "
+            f"{abi_runtime_symbol('vmalloc_visibility_backend', caps['vmalloc_visibility_backend'])},",
+            f"\t\t\t.user_ptmap_backend = "
+            f"{abi_runtime_symbol('user_ptmap_backend', caps['user_ptmap_backend'])},",
+            f"\t\t\t.procmap_ioctl_layout = "
+            f"{abi_runtime_symbol('procmap_ioctl_layout', caps['procmap_ioctl_layout'])},",
+        ])
+        lines.extend(render_procmap_ioctl_fields(caps["procmap_ioctl"], "\t\t\t"))
+        lines.extend([
+            f"\t\t\t.has_ftrace_registration_api = "
+            f"{int(caps['ftrace_registration_api'])},",
+            "\t\t},",
+            "\t},",
+        ])
+    return lines
+
+
 def render_profile_table(profile_evidence):
     remaps = [
         (alias, profile["legacy_id"])
@@ -2337,54 +2407,7 @@ def render_profile_table(profile_evidence):
         "static const struct neverc_krt_profile",
         "_neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {",
     ])
-    for profile, manifest, release in profile_evidence:
-        caps = profile["capabilities"]
-        module_memory = compile_module_memory_layout(manifest)
-        lines.extend([
-            "\t{",
-            f"\t\t.legacy_id = {profile['legacy_id']},",
-            f"\t\t.linux_major = {profile['linux_major']},",
-            f"\t\t.linux_minor = {profile['linux_minor']},",
-            f"\t\t.linux_patch = {profile['linux_patch']},",
-            f"\t\t.android_release = {profile['android_release']},",
-            f"\t\t.kmi_generation = {profile['kmi_generation']},",
-            f"\t\t.page_shift = {profile['page_shift']},",
-            f"\t\t.require_release_token = {int(bool(profile.get('linux_extraversion')))},",
-            f"\t\t.release_token = {json.dumps(release['release_token'])},",
-            f"\t\t.kimage_vaddr = "
-            f"0x{profile['kimage_vaddr_value']:016X}UL,",
-            f"\t\t.kcfi_mode = {KCFI_MODES[profile['kcfi_mode']][0]},",
-            f"\t\t.module_memory_offset = "
-            f"{module_memory['memory_offset']},",
-            f"\t\t.module_memory_count = {module_memory['count']},",
-            f"\t\t.module_memory_stride = {module_memory['stride']},",
-            f"\t\t.module_memory_base = {module_memory['base_offset']},",
-            f"\t\t.module_memory_size = {module_memory['size_offset']},",
-            "\t\t.caps = {",
-            f"\t\t\t.ftrace_callback_abi = "
-            f"{abi_runtime_symbol('ftrace_callback_abi', caps['ftrace_callback_abi'])},",
-            f"\t\t\t.filldir_abi = "
-            f"{abi_runtime_symbol('filldir_abi', caps['filldir_abi'])},",
-            f"\t\t\t.kallsyms_iter_abi = "
-            f"{abi_runtime_symbol('kallsyms_iter_abi', caps['kallsyms_iter_abi'])},",
-            f"\t\t\t.do_mmap_abi = "
-            f"{abi_runtime_symbol('do_mmap_abi', caps['do_mmap_abi'])},",
-            f"\t\t\t.binder_filter_backend = "
-            f"{abi_runtime_symbol('binder_filter_backend', caps['binder_filter_backend'])},",
-            f"\t\t\t.vmalloc_visibility_backend = "
-            f"{abi_runtime_symbol('vmalloc_visibility_backend', caps['vmalloc_visibility_backend'])},",
-            f"\t\t\t.user_ptmap_backend = "
-            f"{abi_runtime_symbol('user_ptmap_backend', caps['user_ptmap_backend'])},",
-            f"\t\t\t.procmap_ioctl_layout = "
-            f"{abi_runtime_symbol('procmap_ioctl_layout', caps['procmap_ioctl_layout'])},",
-        ])
-        lines.extend(render_procmap_ioctl_fields(caps["procmap_ioctl"], "\t\t\t"))
-        lines.extend([
-            f"\t\t\t.has_ftrace_registration_api = "
-            f"{int(caps['ftrace_registration_api'])},",
-            "\t\t},",
-            "\t},",
-        ])
+    lines.extend(render_profile_entries(profile_evidence))
     lines.extend(["};", ""])
     return "\n".join(lines)
 
@@ -2849,6 +2872,124 @@ def profile_contract(profile_evidence, legacy_id):
     raise ValueError(f"unsupported profile ID {legacy_id}")
 
 
+def variant_procmap_layout(manifest):
+    """Project the private procfs context from this target's binary layouts."""
+    try:
+        layouts = manifest["layouts"]
+        file, seq = layouts["file"], layouts["seq_file"]
+        private, locking = layouts["proc_maps_private"], layouts["proc_maps_locking_ctx"]
+        return {
+            "file_size": file["size"],
+            "file_private_data": file["members"]["private_data"],
+            "seq_file_size": seq["size"],
+            "seq_file_file": seq["members"]["file"],
+            "seq_file_operations": seq["members"]["op"],
+            "seq_file_private": seq["members"]["private"],
+            "proc_maps_private_size": private["size"],
+            "proc_maps_private_mm": private["members"]["lock_ctx"] + locking["members"]["mm"],
+        }
+    except KeyError as error:
+        raise ValueError("variant needs complete procmap binary layout evidence") from error
+
+
+def load_variant_evidence(path, family_evidence):
+    """Load measured alternatives without replacing permissive family defaults."""
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if set(document) != {"schema", "variants"} or document["schema"] != 1:
+        raise ValueError(f"{path}: invalid variant document")
+    if not isinstance(document["variants"], list):
+        raise ValueError(f"{path}: variants must be an array")
+    families = {p["legacy_id"]: (p, m, r) for p, m, r in family_evidence}
+    keys, layout_ids, identities = set(), set(families), set()
+    result = []
+    for record in document["variants"]:
+        if not isinstance(record, dict) or set(record) != {
+            "key", "layout_id", "profile_id", "source_commit", "profile",
+            "require_release_token",
+        }:
+            raise ValueError(f"{path}: invalid variant keys")
+        key = record["key"]
+        if not isinstance(key, str) or not re.fullmatch(r"[0-9]+-[a-z0-9-]+", key):
+            raise ValueError(f"{path}: invalid variant key")
+        layout_id = require_u32(record, "layout_id", key, allow_zero=False)
+        family_id = require_u32(record, "profile_id", key, allow_zero=False)
+        if key in keys or layout_id in layout_ids or family_id not in families:
+            raise ValueError(f"{key}: duplicate variant or unknown family")
+        if not isinstance(record["require_release_token"], bool):
+            raise ValueError(f"{key}: require_release_token must be boolean")
+        if not re.fullmatch(r"[0-9a-f]{40}", str(record["source_commit"])):
+            raise ValueError(f"{key}: source_commit must be pinned")
+        profile = load_catalog(path, {"schema": 1, "profiles": [record["profile"]]})[0]
+        family, family_manifest, _ = families[family_id]
+        if profile["legacy_id"] != family_id or profile["aliases"]:
+            raise ValueError(f"{key}: variant must retain its compile family")
+        for field in ("kernel_name", "android_release", "page_shift", "kcfi_mode",
+                      "shadow_call_stack_mode", "kimage_vaddr"):
+            if profile[field] != family[field]:
+                raise ValueError(f"{key}: {field} differs from compile family")
+        identity = tuple(profile[f] for f in (
+            "linux_major", "linux_minor", "android_release", "kmi_generation", "page_shift"
+        ))
+        if identity in identities:
+            raise ValueError(f"{key}: ambiguous variant identity")
+        manifest_path = path.parent / "gki-variant-manifests" / f"{key}.json"
+        evidence = validate_evidence(
+            [profile], manifest_path.parent, DEFAULT_RELEASE_LOCK,
+            manifest_paths={family_id: manifest_path}, release_profiles={},
+        )[0]
+        if compile_loader_abi_contract(evidence[1]) != compile_loader_abi_contract(family_manifest):
+            raise ValueError(f"{key}: loader ABI differs; use a separate compile profile")
+        if compile_module_memory_layout(evidence[1]) != compile_module_memory_layout(family_manifest):
+            raise ValueError(f"{key}: module memory ABI differs from compile family")
+        native_layout = compile_layout_contract(evidence[1])
+        family_layout = compile_layout_contract(family_manifest)
+        for field in ("task_preempt_count", "has_task_cpu", "task_cpu"):
+            if native_layout[field] != family_layout[field]:
+                raise ValueError(f"{key}: caller-side {field} differs from compile family")
+        if profile["capabilities"]["procmap_ioctl"] != variant_procmap_layout(evidence[1]):
+            raise ValueError(f"{key}: procmap capabilities differ from binary layouts")
+        profile["layout_id"] = layout_id
+        profile["require_release_token"] = record["require_release_token"]
+        profile["variant_key"] = key
+        keys.add(key)
+        layout_ids.add(layout_id)
+        identities.add(identity)
+        result.append(evidence)
+    return result
+
+
+def render_variant_profiles(variants):
+    lines = [
+        "/* SPDX-License-Identifier: GPL-2.0 */",
+        "/* Generated by tools/generate-compat-table.py. Do not edit. */",
+        f"#define NEVERC_KRT_VARIANT_COUNT {len(variants)}UL",
+        "static const struct neverc_krt_profile",
+        "_neverc_krt_variants[NEVERC_KRT_VARIANT_COUNT] = {",
+    ]
+    lines.extend(render_profile_entries(variants))
+    return "\n".join(lines + ["};", ""])
+
+
+def render_variant_layouts(variants):
+    lines = [
+        "/* SPDX-License-Identifier: GPL-2.0 */",
+        "/* Generated by tools/generate-compat-table.py. Do not edit. */",
+        f"#define NEVERC_KRT_VARIANT_LAYOUT_COUNT {len(variants)}UL",
+        "static const struct neverc_krt_layout_entry",
+        "_neverc_krt_variant_layouts[NEVERC_KRT_VARIANT_LAYOUT_COUNT] = {",
+    ]
+    for profile, manifest, _ in variants:
+        layout = compile_runtime_layout(manifest)
+        lines += ["\t{", f"\t\t.profile_id = {profile['layout_id']},",
+                  f"\t\t.module_size = {layout['module_size']},",
+                  f"\t\t.file_dentry_off = {layout['file_dentry']},",
+                  f"\t\t.off_init = {layout['module_init']},",
+                  f"\t\t.off_exit = {layout['module_exit']},", "\t\t.layout = {"]
+        lines.extend(render_runtime_layout_fields(layout, "\t\t\t"))
+        lines += ["\t\t},", "\t},"]
+    return "\n".join(lines + ["};", ""])
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="generate Android GKI profile policy and compatibility data"
@@ -2875,6 +3016,10 @@ def main():
         "--profile-table", type=Path, default=DEFAULT_PROFILE_TABLE
     )
     parser.add_argument("--output", type=Path, default=DEFAULT_COMPAT_TABLE)
+    parser.add_argument("--variants", type=Path, default=DEFAULT_VARIANTS)
+    parser.add_argument("--variant-profiles", type=Path, default=DEFAULT_VARIANT_PROFILES)
+    parser.add_argument("--variant-layouts", type=Path, default=DEFAULT_VARIANT_LAYOUTS)
+    parser.add_argument("--query-variant", metavar="KEY")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -2896,6 +3041,15 @@ def main():
         layout_certificates = load_layout_certificates(
             args.layout_certificates, profile_evidence
         )
+        variants = load_variant_evidence(args.variants, profile_evidence)
+        if args.query_variant is not None:
+            if args.check or args.query_profile is not None:
+                raise ValueError("--query-variant cannot be combined with --check or --query-profile")
+            matching = [entry for entry in variants if entry[0]["variant_key"] == args.query_variant]
+            if len(matching) != 1:
+                raise ValueError(f"unsupported variant {args.query_variant}")
+            print(json.dumps(profile_contract(matching, matching[0][0]["legacy_id"]), sort_keys=True))
+            return 0
         if args.query_profile is not None:
             if args.check:
                 raise ValueError("--query-profile and --check are mutually exclusive")
@@ -2910,6 +3064,8 @@ def main():
             (args.profile_ids_header, render_profile_ids_header(profiles)),
             (args.profile_header, render_profile_header(profile_evidence)),
             (args.profile_table, render_profile_table(profile_evidence)),
+            (args.variant_profiles, render_variant_profiles(variants)),
+            (args.variant_layouts, render_variant_layouts(variants)),
             (
                 args.output,
                 render_compat_table(profile_evidence, layout_certificates),

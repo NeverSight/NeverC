@@ -1,0 +1,1846 @@
+{
+  "config": {
+    "CONFIG_ANDROID_BINDER_IPC": true,
+    "CONFIG_ANDROID_BINDER_IPC_RUST": "m",
+    "CONFIG_ARM64_16K_PAGES": false,
+    "CONFIG_ARM64_4K_PAGES": true,
+    "CONFIG_ARM64_64K_PAGES": false,
+    "CONFIG_ARM64_PA_BITS": 48,
+    "CONFIG_ARM64_VA_BITS": 39,
+    "CONFIG_CFI_CLANG": true,
+    "CONFIG_COMPAT": true,
+    "CONFIG_DEBUG_INFO_BTF_MODULES": true,
+    "CONFIG_DEBUG_LOCK_ALLOC": false,
+    "CONFIG_DEBUG_SPINLOCK": false,
+    "CONFIG_GKI_TASK_STRUCT_VENDOR_SIZE_MAX": 1280,
+    "CONFIG_KASAN_GENERIC": false,
+    "CONFIG_KASAN_HW_TAGS": true,
+    "CONFIG_KASAN_SW_TAGS": false,
+    "CONFIG_KCOV": false,
+    "CONFIG_LOCKDEP": false,
+    "CONFIG_MMU": true,
+    "CONFIG_MODULE_UNLOAD": true,
+    "CONFIG_NR_CPUS": 32,
+    "CONFIG_PGTABLE_LEVELS": 3,
+    "CONFIG_PREEMPT_RT": false,
+    "CONFIG_RANDOMIZE_KSTACK_OFFSET": true,
+    "CONFIG_SCHED_PROXY_EXEC": true,
+    "CONFIG_SECCOMP": true,
+    "CONFIG_SHADOW_CALL_STACK": true,
+    "CONFIG_VMAP_STACK": true,
+    "PAGE_SHIFT": 12,
+    "THREAD_SIZE": 16384
+  },
+  "evidence": {
+    "config_sha256": "2eed99a6bcc2e6adc20454442503d2341ec515b70e48356d6ba10397c6e7e78c",
+    "layout_format": "BTF",
+    "layout_sha256": "11bee2caaabb812350eb46cb32a11e6a88a5850546ae78ebb857cf845e422092",
+    "symvers_sha256": "930c873ebc6b6b6dc2b3f2307c9d3b30f0e79998215fbaaa6cf76193d31f988a",
+    "vmlinux_build_id": "42160b4e5c1d3724472681e1e123b695cc17b3dd"
+  },
+  "kernel_name": "android17-6.18",
+  "layouts": {
+    "attribute": {
+      "members": {
+        "mode": 8,
+        "name": 0
+      },
+      "size": 16
+    },
+    "attribute_group": {
+      "members": {
+        "attrs": 32,
+        "bin_attrs": 40,
+        "bin_size": 24,
+        "is_bin_visible": 16,
+        "is_visible": 8,
+        "name": 0
+      },
+      "size": 48
+    },
+    "callback_head": {
+      "members": {
+        "func": 8,
+        "next": 0
+      },
+      "size": 16
+    },
+    "completion": {
+      "members": {
+        "done": 0,
+        "wait": 8
+      },
+      "size": 32
+    },
+    "cpumask": {
+      "members": {
+        "bits": 0
+      },
+      "size": 8
+    },
+    "cred": {
+      "member_sizes": {
+        "egid": 4,
+        "euid": 4,
+        "fsgid": 4,
+        "fsuid": 4,
+        "gid": 4,
+        "sgid": 4,
+        "suid": 4,
+        "uid": 4
+      },
+      "members": {
+        "cap_ambient": 80,
+        "cap_bset": 72,
+        "cap_effective": 64,
+        "cap_inheritable": 48,
+        "cap_permitted": 56,
+        "egid": 28,
+        "euid": 24,
+        "fsgid": 36,
+        "fsuid": 32,
+        "gid": 12,
+        "group_info": 160,
+        "jit_keyring": 88,
+        "non_rcu": 168,
+        "process_keyring": 104,
+        "rcu": 168,
+        "request_key_auth": 120,
+        "securebits": 40,
+        "security": 128,
+        "session_keyring": 96,
+        "sgid": 20,
+        "suid": 16,
+        "thread_keyring": 112,
+        "ucounts": 152,
+        "uid": 8,
+        "usage": 0,
+        "user": 136,
+        "user_ns": 144
+      },
+      "size": 184
+    },
+    "delayed_work": {
+      "members": {
+        "__kabi_reserved1": 88,
+        "__kabi_reserved2": 96,
+        "cpu": 80,
+        "timer": 32,
+        "work": 0,
+        "wq": 72
+      },
+      "size": 104
+    },
+    "dentry": {
+      "member_sizes": {
+        "d_inode": 8
+      },
+      "members": {
+        "__d_name": 32,
+        "__kabi_reserved1": 192,
+        "__kabi_reserved2": 200,
+        "d_children": 168,
+        "d_flags": 0,
+        "d_fsdata": 120,
+        "d_hash": 8,
+        "d_inode": 48,
+        "d_lockref": 128,
+        "d_lru": 136,
+        "d_name": 32,
+        "d_op": 96,
+        "d_parent": 24,
+        "d_sb": 104,
+        "d_seq": 4,
+        "d_shortname": 56,
+        "d_sib": 152,
+        "d_time": 112,
+        "d_u": 176,
+        "d_wait": 136
+      },
+      "size": 208
+    },
+    "dev_pm_ops": {
+      "members": {
+        "__kabi_reserved1": 184,
+        "complete": 8,
+        "freeze": 32,
+        "freeze_late": 80,
+        "freeze_noirq": 128,
+        "poweroff": 48,
+        "poweroff_late": 96,
+        "poweroff_noirq": 144,
+        "prepare": 0,
+        "restore": 56,
+        "restore_early": 104,
+        "restore_noirq": 152,
+        "resume": 24,
+        "resume_early": 72,
+        "resume_noirq": 120,
+        "runtime_idle": 176,
+        "runtime_resume": 168,
+        "runtime_suspend": 160,
+        "suspend": 16,
+        "suspend_late": 64,
+        "suspend_noirq": 112,
+        "thaw": 40,
+        "thaw_early": 88,
+        "thaw_noirq": 136
+      },
+      "size": 192
+    },
+    "dir_context": {
+      "member_sizes": {
+        "actor": 8,
+        "count": 4,
+        "dt_flags_mask": 4,
+        "pos": 8
+      },
+      "members": {
+        "actor": 0,
+        "count": 16,
+        "dt_flags_mask": 20,
+        "pos": 8
+      },
+      "size": 24
+    },
+    "file": {
+      "members": {
+        "__f_path": 64,
+        "__kabi_reserved1": 192,
+        "__kabi_reserved2": 200,
+        "f_cred": 48,
+        "f_ep": 144,
+        "f_flags": 40,
+        "f_freeptr": 152,
+        "f_inode": 32,
+        "f_iocb_flags": 44,
+        "f_llist": 152,
+        "f_lock": 0,
+        "f_mapping": 16,
+        "f_mode": 4,
+        "f_op": 8,
+        "f_owner": 56,
+        "f_path": 64,
+        "f_pipe": 80,
+        "f_pos": 120,
+        "f_pos_lock": 80,
+        "f_ra": 152,
+        "f_ref": 184,
+        "f_sb_err": 140,
+        "f_security": 128,
+        "f_task_work": 152,
+        "f_wb_err": 136,
+        "private_data": 24
+      },
+      "size": 208
+    },
+    "file_operations": {
+      "members": {
+        "check_flags": 160,
+        "compat_ioctl": 88,
+        "copy_file_range": 224,
+        "fadvise": 240,
+        "fallocate": 208,
+        "fasync": 136,
+        "flock": 168,
+        "flush": 112,
+        "fop_flags": 8,
+        "fsync": 128,
+        "get_unmapped_area": 152,
+        "iopoll": 56,
+        "iterate_shared": 64,
+        "llseek": 16,
+        "lock": 144,
+        "mmap": 96,
+        "mmap_prepare": 264,
+        "open": 104,
+        "owner": 0,
+        "poll": 72,
+        "read": 24,
+        "read_iter": 40,
+        "release": 120,
+        "remap_file_range": 232,
+        "setlease": 200,
+        "show_fdinfo": 216,
+        "splice_eof": 192,
+        "splice_read": 184,
+        "splice_write": 176,
+        "unlocked_ioctl": 80,
+        "uring_cmd": 248,
+        "uring_cmd_iopoll": 256,
+        "write": 32,
+        "write_iter": 48
+      },
+      "size": 272
+    },
+    "filename": {
+      "member_sizes": {
+        "name": 8
+      },
+      "members": {
+        "name": 0
+      },
+      "size": 32
+    },
+    "firmware": {
+      "members": {
+        "data": 8,
+        "priv": 16,
+        "size": 0
+      },
+      "size": 24
+    },
+    "hrtimer": {
+      "members": {
+        "_softexpires": 32,
+        "base": 48,
+        "function": 40,
+        "is_hard": 59,
+        "is_rel": 57,
+        "is_soft": 58,
+        "node": 0,
+        "state": 56
+      },
+      "size": 64
+    },
+    "idr": {
+      "members": {
+        "idr_base": 16,
+        "idr_next": 20,
+        "idr_rt": 0
+      },
+      "size": 24
+    },
+    "inode": {
+      "member_sizes": {
+        "i_atime_nsec": 4,
+        "i_atime_sec": 8,
+        "i_mtime_nsec": 4,
+        "i_mtime_sec": 8
+      },
+      "members": {
+        "i_atime_nsec": 112,
+        "i_atime_sec": 88,
+        "i_mtime_nsec": 116,
+        "i_mtime_sec": 96
+      },
+      "size": 688
+    },
+    "kobject": {
+      "bitfields": {
+        "state_add_uevent_sent": {
+          "bit_offset": 482,
+          "bit_size": 1
+        },
+        "state_in_sysfs": {
+          "bit_offset": 481,
+          "bit_size": 1
+        },
+        "state_initialized": {
+          "bit_offset": 480,
+          "bit_size": 1
+        },
+        "state_remove_uevent_sent": {
+          "bit_offset": 483,
+          "bit_size": 1
+        },
+        "uevent_suppress": {
+          "bit_offset": 484,
+          "bit_size": 1
+        }
+      },
+      "members": {
+        "__kabi_reserved1": 64,
+        "__kabi_reserved2": 72,
+        "__kabi_reserved3": 80,
+        "__kabi_reserved4": 88,
+        "entry": 8,
+        "kref": 56,
+        "kset": 32,
+        "ktype": 40,
+        "name": 0,
+        "parent": 24,
+        "sd": 48
+      },
+      "size": 96
+    },
+    "kprobe": {
+      "members": {
+        "addr": 40,
+        "ainsn": 88,
+        "flags": 112,
+        "hlist": 0,
+        "list": 16,
+        "nmissed": 32,
+        "offset": 56,
+        "opcode": 80,
+        "post_handler": 72,
+        "pre_handler": 64,
+        "symbol_name": 48
+      },
+      "size": 120
+    },
+    "kref": {
+      "members": {
+        "refcount": 0
+      },
+      "size": 4
+    },
+    "kstat": {
+      "members": {
+        "atime": 64,
+        "atomic_write_segments_max": 184,
+        "atomic_write_unit_max": 176,
+        "atomic_write_unit_max_opt": 180,
+        "atomic_write_unit_min": 172,
+        "attributes": 16,
+        "attributes_mask": 24,
+        "blksize": 12,
+        "blocks": 128,
+        "btime": 112,
+        "change_cookie": 144,
+        "ctime": 96,
+        "dev": 40,
+        "dio_mem_align": 160,
+        "dio_offset_align": 164,
+        "dio_read_offset_align": 168,
+        "gid": 52,
+        "ino": 32,
+        "mnt_id": 136,
+        "mode": 4,
+        "mtime": 80,
+        "nlink": 8,
+        "rdev": 44,
+        "result_mask": 0,
+        "size": 56,
+        "subvol": 152,
+        "uid": 48
+      },
+      "size": 192
+    },
+    "miscdevice": {
+      "members": {
+        "fops": 16,
+        "groups": 56,
+        "list": 24,
+        "minor": 0,
+        "mode": 72,
+        "name": 8,
+        "nodename": 64,
+        "parent": 40,
+        "this_device": 48
+      },
+      "size": 80
+    },
+    "mm_struct": {
+      "member_sizes": {
+        "mm_count": 4,
+        "mmap_lock": 64,
+        "page_table_lock": 4,
+        "pgd": 8
+      },
+      "members": {
+        "mm_count": 0,
+        "mmap_lock": 136,
+        "page_table_lock": 132,
+        "pgd": 104
+      },
+      "size": 1344
+    },
+    "module": {
+      "members": {
+        "__kabi_reserved1": 1576,
+        "__kabi_reserved2": 1584,
+        "__kabi_reserved3": 1592,
+        "__kabi_reserved4": 1600,
+        "arch": 888,
+        "args": 1288,
+        "async_probe_requested": 358,
+        "bpf_raw_events": 1360,
+        "btf_base_data": 1384,
+        "btf_base_data_size": 1372,
+        "btf_data": 1376,
+        "btf_data_size": 1368,
+        "bug_list": 1208,
+        "bug_table": 1224,
+        "build_id": 80,
+        "core_kallsyms": 1240,
+        "crcs": 280,
+        "dyndbg_info": 1552,
+        "exit": 1536,
+        "extable": 368,
+        "flagstab": 288,
+        "holders_dir": 264,
+        "init": 376,
+        "jump_entries": 1392,
+        "kallsyms": 1232,
+        "kp": 344,
+        "kprobe_blacklist": 1464,
+        "kprobes_text_size": 1456,
+        "kprobes_text_start": 1448,
+        "kunit_init_suites": 1480,
+        "kunit_suites": 1496,
+        "list": 8,
+        "mem": 384,
+        "mkobj": 104,
+        "modinfo_attrs": 232,
+        "name": 24,
+        "noinstr_text_size": 1320,
+        "noinstr_text_start": 1312,
+        "notes_attrs": 1280,
+        "num_bpf_raw_events": 1352,
+        "num_bugs": 1200,
+        "num_exentries": 360,
+        "num_jump_entries": 1400,
+        "num_kp": 352,
+        "num_kprobe_blacklist": 1472,
+        "num_kunit_init_suites": 1476,
+        "num_kunit_suites": 1488,
+        "num_srcu_structs": 1336,
+        "num_syms": 296,
+        "num_trace_bprintk_fmt": 1404,
+        "num_trace_evals": 1440,
+        "num_trace_events": 1424,
+        "num_tracepoints": 1324,
+        "param_lock": 304,
+        "percpu": 1296,
+        "percpu_size": 1304,
+        "refcnt": 1544,
+        "scmversion": 256,
+        "sect_attrs": 1272,
+        "sig_ok": 357,
+        "source_list": 1504,
+        "srcu_struct_ptrs": 1344,
+        "srcversion": 248,
+        "state": 0,
+        "syms": 272,
+        "taints": 1192,
+        "target_list": 1520,
+        "trace_bprintk_fmt_start": 1408,
+        "trace_evals": 1432,
+        "trace_events": 1416,
+        "tracepoints_ptrs": 1328,
+        "using_gplonly_symbols": 356,
+        "version": 240
+      },
+      "size": 1664
+    },
+    "module_kobject": {
+      "members": {
+        "drivers_dir": 104,
+        "kobj": 0,
+        "kobj_completion": 120,
+        "mod": 96,
+        "mp": 112
+      },
+      "size": 128
+    },
+    "mutex": {
+      "members": {
+        "android_oem_data1": 32,
+        "osq": 12,
+        "owner": 0,
+        "wait_list": 16,
+        "wait_lock": 8
+      },
+      "size": 40
+    },
+    "netlink_kernel_cfg": {
+      "members": {
+        "bind": 16,
+        "flags": 4,
+        "groups": 0,
+        "input": 8,
+        "release": 32,
+        "unbind": 24
+      },
+      "size": 40
+    },
+    "nf_hook_ops": {
+      "bitfields": {
+        "hook_ops_type": {
+          "bit_offset": 456,
+          "bit_size": 8
+        }
+      },
+      "members": {
+        "dev": 40,
+        "hook": 32,
+        "hooknum": 60,
+        "list": 0,
+        "pf": 56,
+        "priority": 64,
+        "priv": 48,
+        "rcu": 16
+      },
+      "size": 72
+    },
+    "nf_hook_state": {
+      "members": {
+        "hook": 0,
+        "in": 8,
+        "net": 32,
+        "okfn": 40,
+        "out": 16,
+        "pf": 1,
+        "sk": 24
+      },
+      "size": 48
+    },
+    "nlmsghdr": {
+      "members": {
+        "nlmsg_flags": 6,
+        "nlmsg_len": 0,
+        "nlmsg_pid": 12,
+        "nlmsg_seq": 8,
+        "nlmsg_type": 4
+      },
+      "size": 16
+    },
+    "notifier_block": {
+      "members": {
+        "next": 8,
+        "notifier_call": 0,
+        "priority": 16
+      },
+      "size": 24
+    },
+    "nsproxy": {
+      "members": {
+        "cgroup_ns": 64,
+        "count": 0,
+        "ipc_ns": 16,
+        "mnt_ns": 24,
+        "net_ns": 40,
+        "pid_ns_for_children": 32,
+        "time_ns": 48,
+        "time_ns_for_children": 56,
+        "uts_ns": 8
+      },
+      "size": 72
+    },
+    "optimistic_spin_queue": {
+      "members": {
+        "tail": 0
+      },
+      "size": 4
+    },
+    "path": {
+      "member_sizes": {
+        "dentry": 8
+      },
+      "members": {
+        "dentry": 8,
+        "mnt": 0
+      },
+      "size": 16
+    },
+    "proc_maps_locking_ctx": {
+      "members": {
+        "locked_vma": 16,
+        "mm": 0,
+        "mmap_locked": 8
+      },
+      "size": 24
+    },
+    "proc_maps_private": {
+      "members": {
+        "inode": 0,
+        "iter": 16,
+        "last_pos": 104,
+        "lock_ctx": 112,
+        "task": 8
+      },
+      "size": 136
+    },
+    "proc_ops": {
+      "members": {
+        "proc_compat_ioctl": 72,
+        "proc_flags": 0,
+        "proc_get_unmapped_area": 88,
+        "proc_ioctl": 64,
+        "proc_lseek": 40,
+        "proc_mmap": 80,
+        "proc_open": 8,
+        "proc_poll": 56,
+        "proc_read": 16,
+        "proc_read_iter": 24,
+        "proc_release": 48,
+        "proc_write": 32
+      },
+      "size": 96
+    },
+    "pt_regs": {
+      "member_sizes": {
+        "pc": 8,
+        "pstate": 8,
+        "regs": 248,
+        "sp": 8
+      },
+      "members": {
+        "orig_x0": 272,
+        "pc": 256,
+        "pmr": 284,
+        "pstate": 264,
+        "regs": 0,
+        "sdei_ttbr1": 288,
+        "sp": 248,
+        "stackframe": 296,
+        "syscallno": 280,
+        "user_regs": 0
+      },
+      "size": 320
+    },
+    "qstr": {
+      "members": {
+        "hash": 0,
+        "hash_len": 0,
+        "len": 4,
+        "name": 8
+      },
+      "size": 16
+    },
+    "rb_node": {
+      "members": {
+        "__rb_parent_color": 0,
+        "rb_left": 16,
+        "rb_right": 8
+      },
+      "size": 24
+    },
+    "rb_root": {
+      "members": {
+        "rb_node": 0
+      },
+      "size": 8
+    },
+    "regmap_config": {
+      "members": {
+        "__kabi_reserved1": 312,
+        "cache_type": 236,
+        "can_multi_write": 276,
+        "can_sleep": 136,
+        "disable_locking": 139,
+        "fast_io": 137,
+        "hwlock_id": 280,
+        "hwlock_mode": 284,
+        "io_port": 138,
+        "lock": 144,
+        "lock_arg": 160,
+        "max_raw_read": 120,
+        "max_raw_write": 128,
+        "max_register": 168,
+        "max_register_is_0": 172,
+        "name": 0,
+        "num_ranges": 304,
+        "num_reg_defaults": 232,
+        "num_reg_defaults_raw": 248,
+        "pad_bits": 24,
+        "precious_reg": 56,
+        "precious_table": 200,
+        "ranges": 296,
+        "rd_noinc_table": 216,
+        "rd_table": 184,
+        "read": 104,
+        "read_flag_mask": 256,
+        "readable_noinc_reg": 72,
+        "readable_reg": 40,
+        "reg_base": 20,
+        "reg_bits": 8,
+        "reg_defaults": 224,
+        "reg_defaults_raw": 240,
+        "reg_format_endian": 288,
+        "reg_read": 80,
+        "reg_shift": 16,
+        "reg_stride": 12,
+        "reg_update_bits": 96,
+        "reg_write": 88,
+        "unlock": 152,
+        "use_hwlock": 277,
+        "use_raw_spinlock": 278,
+        "use_relaxed_mmio": 275,
+        "use_single_read": 273,
+        "use_single_write": 274,
+        "val_bits": 28,
+        "val_format_endian": 292,
+        "volatile_reg": 48,
+        "volatile_table": 192,
+        "wr_noinc_table": 208,
+        "wr_table": 176,
+        "write": 112,
+        "write_flag_mask": 264,
+        "writeable_noinc_reg": 64,
+        "writeable_reg": 32,
+        "zero_flag_mask": 272
+      },
+      "size": 320
+    },
+    "resource": {
+      "members": {
+        "__kabi_reserved1": 64,
+        "__kabi_reserved2": 72,
+        "__kabi_reserved3": 80,
+        "__kabi_reserved4": 88,
+        "child": 56,
+        "desc": 32,
+        "end": 8,
+        "flags": 24,
+        "name": 16,
+        "parent": 40,
+        "sibling": 48,
+        "start": 0
+      },
+      "size": 96
+    },
+    "rw_semaphore": {
+      "members": {
+        "android_oem_data1": 48,
+        "android_vendor_data1": 40,
+        "count": 0,
+        "osq": 16,
+        "owner": 8,
+        "wait_list": 24,
+        "wait_lock": 20
+      },
+      "size": 64
+    },
+    "scatterlist": {
+      "members": {
+        "dma_address": 16,
+        "dma_flags": 28,
+        "dma_length": 24,
+        "length": 12,
+        "offset": 8,
+        "page_link": 0
+      },
+      "size": 32
+    },
+    "seccomp": {
+      "members": {
+        "filter": 8,
+        "filter_count": 4,
+        "mode": 0
+      },
+      "size": 16
+    },
+    "semaphore": {
+      "members": {
+        "count": 4,
+        "last_holder": 24,
+        "lock": 0,
+        "wait_list": 8
+      },
+      "size": 32
+    },
+    "seq_file": {
+      "members": {
+        "buf": 0,
+        "count": 24,
+        "file": 112,
+        "from": 16,
+        "index": 40,
+        "lock": 56,
+        "op": 96,
+        "pad_until": 32,
+        "poll_event": 104,
+        "private": 120,
+        "read_pos": 48,
+        "size": 8
+      },
+      "size": 128
+    },
+    "seq_operations": {
+      "members": {
+        "next": 16,
+        "show": 24,
+        "start": 0,
+        "stop": 8
+      },
+      "size": 32
+    },
+    "sg_table": {
+      "members": {
+        "nents": 8,
+        "orig_nents": 12,
+        "sgl": 0
+      },
+      "size": 16
+    },
+    "signal_struct": {
+      "member_sizes": {
+        "thread_head": 16
+      },
+      "members": {
+        "thread_head": 16
+      },
+      "size": 1176
+    },
+    "sk_buff": {
+      "bitfields": {
+        "cloned": {
+          "bit_offset": 1008,
+          "bit_size": 1
+        },
+        "csum_complete_sw": {
+          "bit_offset": 1037,
+          "bit_size": 1
+        },
+        "csum_level": {
+          "bit_offset": 1038,
+          "bit_size": 2
+        },
+        "csum_valid": {
+          "bit_offset": 1048,
+          "bit_size": 1
+        },
+        "dst_pending_confirm": {
+          "bit_offset": 1028,
+          "bit_size": 1
+        },
+        "encap_hdr_csum": {
+          "bit_offset": 1047,
+          "bit_size": 1
+        },
+        "encapsulation": {
+          "bit_offset": 1046,
+          "bit_size": 1
+        },
+        "fclone": {
+          "bit_offset": 1010,
+          "bit_size": 2
+        },
+        "from_ingress": {
+          "bit_offset": 1053,
+          "bit_size": 1
+        },
+        "head_frag": {
+          "bit_offset": 1013,
+          "bit_size": 1
+        },
+        "ignore_df": {
+          "bit_offset": 1027,
+          "bit_size": 1
+        },
+        "inner_protocol_type": {
+          "bit_offset": 1040,
+          "bit_size": 1
+        },
+        "ip_summed": {
+          "bit_offset": 1029,
+          "bit_size": 2
+        },
+        "l4_hash": {
+          "bit_offset": 1041,
+          "bit_size": 1
+        },
+        "ndisc_nodetype": {
+          "bit_offset": 1049,
+          "bit_size": 2
+        },
+        "nf_skip_egress": {
+          "bit_offset": 1054,
+          "bit_size": 1
+        },
+        "nf_trace": {
+          "bit_offset": 1051,
+          "bit_size": 1
+        },
+        "no_fcs": {
+          "bit_offset": 1045,
+          "bit_size": 1
+        },
+        "nohdr": {
+          "bit_offset": 1009,
+          "bit_size": 1
+        },
+        "ooo_okay": {
+          "bit_offset": 1031,
+          "bit_size": 1
+        },
+        "peeked": {
+          "bit_offset": 1012,
+          "bit_size": 1
+        },
+        "pfmemalloc": {
+          "bit_offset": 1014,
+          "bit_size": 1
+        },
+        "pkt_type": {
+          "bit_offset": 1024,
+          "bit_size": 3
+        },
+        "pp_recycle": {
+          "bit_offset": 1015,
+          "bit_size": 1
+        },
+        "redirected": {
+          "bit_offset": 1052,
+          "bit_size": 1
+        },
+        "remcsum_offload": {
+          "bit_offset": 1036,
+          "bit_size": 1
+        },
+        "slow_gro": {
+          "bit_offset": 1055,
+          "bit_size": 1
+        },
+        "sw_hash": {
+          "bit_offset": 1042,
+          "bit_size": 1
+        },
+        "tc_at_ingress": {
+          "bit_offset": 1034,
+          "bit_size": 1
+        },
+        "tc_skip_classify": {
+          "bit_offset": 1035,
+          "bit_size": 1
+        },
+        "tstamp_type": {
+          "bit_offset": 1032,
+          "bit_size": 2
+        },
+        "unreadable": {
+          "bit_offset": 1056,
+          "bit_size": 1
+        },
+        "wifi_acked": {
+          "bit_offset": 1044,
+          "bit_size": 1
+        },
+        "wifi_acked_valid": {
+          "bit_offset": 1043,
+          "bit_size": 1
+        }
+      },
+      "members": {
+        "__cloned_offset": 126,
+        "__kabi_reserved1": 192,
+        "__kabi_reserved2": 200,
+        "__mono_tc_offset": 129,
+        "__pkt_type_offset": 128,
+        "_nfct": 104,
+        "_sk_redir": 88,
+        "_skb_refdst": 88,
+        "active_extensions": 127,
+        "alloc_cpu": 136,
+        "cb": 40,
+        "csum": 140,
+        "csum_offset": 142,
+        "csum_start": 140,
+        "data": 224,
+        "data_len": 116,
+        "destructor": 96,
+        "dev": 16,
+        "dev_scratch": 16,
+        "end": 212,
+        "extensions": 240,
+        "hash": 152,
+        "hdr_len": 122,
+        "head": 216,
+        "headers": 128,
+        "inner_ipproto": 172,
+        "inner_mac_header": 178,
+        "inner_network_header": 176,
+        "inner_protocol": 172,
+        "inner_transport_header": 174,
+        "len": 112,
+        "list": 0,
+        "ll_node": 0,
+        "mac_header": 186,
+        "mac_len": 120,
+        "mark": 168,
+        "napi_id": 160,
+        "network_header": 184,
+        "next": 0,
+        "prev": 8,
+        "priority": 144,
+        "protocol": 180,
+        "queue_mapping": 124,
+        "rbnode": 0,
+        "reserved_tailroom": 168,
+        "secmark": 164,
+        "sender_cpu": 160,
+        "sk": 24,
+        "skb_iif": 148,
+        "skb_mstamp_ns": 32,
+        "tail": 208,
+        "tc_index": 134,
+        "tcp_tsorted_anchor": 88,
+        "transport_header": 182,
+        "truesize": 232,
+        "tstamp": 32,
+        "users": 236,
+        "vlan_all": 156,
+        "vlan_proto": 156,
+        "vlan_tci": 158
+      },
+      "size": 248
+    },
+    "sock_common": {
+      "bitfields": {
+        "skc_ipv6only": {
+          "bit_offset": 157,
+          "bit_size": 1
+        },
+        "skc_net_refcnt": {
+          "bit_offset": 158,
+          "bit_size": 1
+        },
+        "skc_reuse": {
+          "bit_offset": 152,
+          "bit_size": 4
+        },
+        "skc_reuseport": {
+          "bit_offset": 156,
+          "bit_size": 1
+        }
+      },
+      "members": {
+        "skc_addrpair": 0,
+        "skc_bind_node": 24,
+        "skc_bound_dev_if": 20,
+        "skc_cookie": 88,
+        "skc_daddr": 0,
+        "skc_dontcopy_begin": 104,
+        "skc_dontcopy_end": 132,
+        "skc_dport": 12,
+        "skc_family": 16,
+        "skc_flags": 96,
+        "skc_hash": 8,
+        "skc_incoming_cpu": 124,
+        "skc_listener": 96,
+        "skc_net": 48,
+        "skc_node": 104,
+        "skc_nulls_node": 104,
+        "skc_num": 14,
+        "skc_portaddr_node": 24,
+        "skc_portpair": 12,
+        "skc_prot": 40,
+        "skc_rcv_saddr": 4,
+        "skc_rcv_wnd": 124,
+        "skc_refcnt": 128,
+        "skc_rx_queue_mapping": 122,
+        "skc_rxhash": 132,
+        "skc_state": 18,
+        "skc_tw_dr": 96,
+        "skc_tw_rcv_nxt": 124,
+        "skc_tw_snd_nxt": 132,
+        "skc_tx_queue_mapping": 120,
+        "skc_u16hashes": 8,
+        "skc_v6_daddr": 56,
+        "skc_v6_rcv_saddr": 72,
+        "skc_window_clamp": 132
+      },
+      "size": 136
+    },
+    "task_struct": {
+      "bitfields": {
+        "frozen": {
+          "bit_offset": 14471,
+          "bit_size": 1
+        },
+        "in_eventfd": {
+          "bit_offset": 14475,
+          "bit_size": 1
+        },
+        "in_execve": {
+          "bit_offset": 14467,
+          "bit_size": 1
+        },
+        "in_iowait": {
+          "bit_offset": 14468,
+          "bit_size": 1
+        },
+        "in_lru_fault": {
+          "bit_offset": 14469,
+          "bit_size": 1
+        },
+        "in_memstall": {
+          "bit_offset": 14473,
+          "bit_size": 1
+        },
+        "in_nf_duplicate": {
+          "bit_offset": 14477,
+          "bit_size": 1
+        },
+        "in_page_owner": {
+          "bit_offset": 14474,
+          "bit_size": 1
+        },
+        "in_thrashing": {
+          "bit_offset": 14476,
+          "bit_size": 1
+        },
+        "no_cgroup_migration": {
+          "bit_offset": 14470,
+          "bit_size": 1
+        },
+        "sched_contributes_to_load": {
+          "bit_offset": 14433,
+          "bit_size": 1
+        },
+        "sched_migrated": {
+          "bit_offset": 14434,
+          "bit_size": 1
+        },
+        "sched_remote_wakeup": {
+          "bit_offset": 14464,
+          "bit_size": 1
+        },
+        "sched_reset_on_fork": {
+          "bit_offset": 14432,
+          "bit_size": 1
+        },
+        "sched_rt_mutex": {
+          "bit_offset": 14465,
+          "bit_size": 1
+        },
+        "sched_task_hot": {
+          "bit_offset": 14435,
+          "bit_size": 1
+        },
+        "use_memdelay": {
+          "bit_offset": 14472,
+          "bit_size": 1
+        },
+        "user_dumpable": {
+          "bit_offset": 14466,
+          "bit_size": 1
+        }
+      },
+      "member_sizes": {
+        "comm": 16,
+        "flags": 4,
+        "group_leader": 8,
+        "mm": 8,
+        "parent": 8,
+        "pid": 4,
+        "real_cred": 8,
+        "real_parent": 8,
+        "signal": 8,
+        "stack": 8,
+        "stack_refcount": 4,
+        "tasks": 16,
+        "thread_node": 16,
+        "thread_pid": 8,
+        "usage": 4
+      },
+      "members": {
+        "__kabi_reserved1": 3488,
+        "__kabi_reserved2": 3496,
+        "__kabi_reserved3": 3504,
+        "__kabi_reserved4": 3512,
+        "__state": 64,
+        "acct_rss_mem1": 2888,
+        "acct_timexpd": 2904,
+        "acct_vm_mem1": 2896,
+        "active_memcg": 3224,
+        "active_mm": 1760,
+        "alloc_lock": 2608,
+        "alloc_tag": 96,
+        "android_oem_data1": 3432,
+        "android_vendor_data1": 3384,
+        "atomic_flags": 1816,
+        "audit_context": 2560,
+        "bio_list": 2768,
+        "blocked": 2480,
+        "blocked_activation_node": 2728,
+        "blocked_donor": 2664,
+        "blocked_head": 2696,
+        "blocked_lock": 2688,
+        "blocked_node": 2712,
+        "blocked_on": 2672,
+        "blocker": 2752,
+        "bpf_ctx": 3360,
+        "bpf_net_context": 3368,
+        "bpf_storage": 3352,
+        "cached_requested_key": 2384,
+        "capture_control": 2800,
+        "cg_list": 2936,
+        "cgroups": 2928,
+        "children": 1912,
+        "clear_child_tid": 2088,
+        "comm": 2392,
+        "compat_robust_list": 2960,
+        "cpus_mask": 1456,
+        "cpus_ptr": 1440,
+        "cpuset_mem_spread_rotor": 2924,
+        "cred": 2376,
+        "default_timer_slack_ns": 3192,
+        "delays": 3160,
+        "dirty_paused_when": 3176,
+        "dl": 592,
+        "dl_server": 864,
+        "dmabuf_info": 3520,
+        "exit_code": 1780,
+        "exit_signal": 1784,
+        "exit_state": 1776,
+        "faults_disabled_mapping": 1768,
+        "files": 2440,
+        "flags": 84,
+        "fs": 2432,
+        "futex_exit_mutex": 2992,
+        "futex_state": 3032,
+        "group_leader": 1944,
+        "gtime": 2120,
+        "io_context": 2792,
+        "io_uring": 2448,
+        "ioac": 2824,
+        "is_blocked": 164,
+        "jobctl": 1792,
+        "journal_info": 2760,
+        "kmap_ctrl": 3256,
+        "kretprobe_instances": 3480,
+        "kstack_offset": 3376,
+        "kunit_test": 3200,
+        "last_siginfo": 2816,
+        "last_switch_count": 2416,
+        "last_switch_time": 2424,
+        "last_wakee": 144,
+        "loginuid": 2568,
+        "maj_flt": 2208,
+        "max_allowed_capacity": 1424,
+        "max_state": 2136,
+        "memcg_nr_pages_over_high": 3216,
+        "mems_allowed": 2912,
+        "mems_allowed_seq": 2920,
+        "migration_disabled": 1472,
+        "migration_flags": 1474,
+        "migration_pending": 1464,
+        "min_flt": 2200,
+        "mm": 1752,
+        "nameidata": 2408,
+        "nivcsw": 2176,
+        "normal_prio": 176,
+        "nr_cpus_allowed": 1432,
+        "nr_dirtied": 3168,
+        "nr_dirtied_pause": 3172,
+        "nsproxy": 2456,
+        "nvcsw": 2168,
+        "objcg": 3232,
+        "on_cpu": 104,
+        "on_rq": 160,
+        "oom_reaper_list": 3280,
+        "oom_reaper_timer": 3288,
+        "pagefault_disabled": 3276,
+        "parent": 1904,
+        "parent_exec_id": 2592,
+        "pdeath_signal": 1788,
+        "pending": 2504,
+        "perf_ctx_data": 3104,
+        "perf_event_ctxp": 3040,
+        "perf_event_list": 3088,
+        "perf_event_mutex": 3048,
+        "perf_recursion": 3036,
+        "personality": 1800,
+        "pi_blocked_on": 2656,
+        "pi_lock": 2612,
+        "pi_state_cache": 2984,
+        "pi_state_list": 2968,
+        "pi_top_task": 2648,
+        "pi_waiters": 2632,
+        "pid": 1880,
+        "pid_links": 1992,
+        "plug": 2776,
+        "policy": 1416,
+        "posix_cputimers": 2216,
+        "posix_cputimers_work": 2296,
+        "preempt_notifiers": 1408,
+        "prev_cputime": 2144,
+        "prio": 168,
+        "psi_flags": 2880,
+        "ptrace": 88,
+        "ptrace_entry": 1968,
+        "ptrace_message": 2808,
+        "ptraced": 1952,
+        "ptracer_cred": 2360,
+        "pushable_dl_tasks": 1728,
+        "pushable_tasks": 1688,
+        "rcu": 3256,
+        "rcu_blocked_node": 1504,
+        "rcu_node_entry": 1488,
+        "rcu_read_lock_nesting": 1476,
+        "rcu_read_unlock_special": 1480,
+        "rcu_tasks_exit_cpu": 1544,
+        "rcu_tasks_exit_list": 1552,
+        "rcu_tasks_holdout": 1520,
+        "rcu_tasks_holdout_list": 1528,
+        "rcu_tasks_idle_cpu": 1524,
+        "rcu_tasks_idx": 1521,
+        "rcu_tasks_nvcsw": 1512,
+        "rcu_users": 3272,
+        "real_blocked": 2488,
+        "real_cred": 2368,
+        "real_parent": 1896,
+        "recent_used_cpu": 152,
+        "reclaim_state": 2784,
+        "restart_block": 1824,
+        "robust_list": 2952,
+        "rt": 512,
+        "rt_priority": 180,
+        "sas_ss_flags": 2544,
+        "sas_ss_size": 2536,
+        "sas_ss_sp": 2528,
+        "saved_sigmask": 2496,
+        "saved_state": 68,
+        "sched_class": 1072,
+        "sched_info": 1624,
+        "sched_task_group": 1080,
+        "sched_throttle_work": 1088,
+        "scx": 872,
+        "se": 192,
+        "seccomp": 2576,
+        "security": 3344,
+        "self_exec_id": 2600,
+        "sessionid": 2572,
+        "set_child_tid": 2080,
+        "sibling": 1928,
+        "sighand": 2472,
+        "signal": 2464,
+        "sleeping_owner": 2744,
+        "splice_pipe": 3136,
+        "stack": 72,
+        "stack_canary": 1888,
+        "stack_refcount": 3336,
+        "stack_vm_area": 3328,
+        "start_boottime": 2192,
+        "start_time": 2184,
+        "static_prio": 172,
+        "stats": 1152,
+        "stime": 2112,
+        "syscall_dispatch": 2592,
+        "task_frag": 3144,
+        "task_works": 2552,
+        "tasks": 1672,
+        "tgid": 1884,
+        "thread": 3536,
+        "thread_info": 0,
+        "thread_node": 2056,
+        "thread_pid": 1984,
+        "throttle_disk": 3240,
+        "throttle_node": 1104,
+        "throttled": 1120,
+        "time_in_state": 2128,
+        "timer_slack_ns": 3184,
+        "tlb_ubc": 3112,
+        "trace_recursion": 3208,
+        "trc_blkd_cpu": 1616,
+        "trc_blkd_node": 1600,
+        "trc_holdout_list": 1584,
+        "trc_ipi_to_cpu": 1572,
+        "trc_reader_nesting": 1568,
+        "trc_reader_special": 1576,
+        "uclamp": 1132,
+        "uclamp_req": 1124,
+        "usage": 80,
+        "user_cpus_ptr": 1448,
+        "utask": 3248,
+        "utime": 2104,
+        "vfork_done": 2072,
+        "wake_cpu": 156,
+        "wake_entry": 112,
+        "wake_q": 2616,
+        "wake_q_count": 2624,
+        "wakee_flip_decay_ts": 136,
+        "wakee_flips": 128,
+        "worker_private": 2096
+      },
+      "size": 4736
+    },
+    "tasklet_struct": {
+      "members": {
+        "callback": 24,
+        "count": 16,
+        "data": 32,
+        "func": 24,
+        "next": 0,
+        "state": 8,
+        "use_callback": 20
+      },
+      "size": 40
+    },
+    "thread_info": {
+      "members": {
+        "__kabi_reserved1": 48,
+        "__kabi_reserved2": 56,
+        "cpu": 40,
+        "flags": 0,
+        "preempt": 16,
+        "preempt_count": 16,
+        "scs_base": 24,
+        "scs_sp": 32,
+        "ttbr0": 8
+      },
+      "size": 64
+    },
+    "timer_list": {
+      "members": {
+        "entry": 0,
+        "expires": 16,
+        "flags": 32,
+        "function": 24
+      },
+      "size": 40
+    },
+    "timespec64": {
+      "member_sizes": {
+        "tv_nsec": 8,
+        "tv_sec": 8
+      },
+      "members": {
+        "tv_nsec": 8,
+        "tv_sec": 0
+      },
+      "size": 16
+    },
+    "vm_area_struct": {
+      "member_sizes": {
+        "vm_end": 8,
+        "vm_start": 8
+      },
+      "members": {
+        "__kabi_reserved1": 184,
+        "__kabi_reserved2": 192,
+        "__kabi_reserved_backport1": 200,
+        "__kabi_reserved_backport2": 208,
+        "__vm_flags": 32,
+        "anon_name": 168,
+        "anon_vma": 64,
+        "anon_vma_chain": 48,
+        "shared": 136,
+        "swap_readahead_info": 104,
+        "vm_end": 8,
+        "vm_file": 88,
+        "vm_flags": 32,
+        "vm_freeptr": 0,
+        "vm_lock_seq": 40,
+        "vm_mm": 16,
+        "vm_ops": 72,
+        "vm_page_prot": 24,
+        "vm_pgoff": 80,
+        "vm_private_data": 96,
+        "vm_refcnt": 128,
+        "vm_start": 0,
+        "vm_userfaultfd_ctx": 176
+      },
+      "size": 256
+    },
+    "vmap_area": {
+      "members": {
+        "flags": 64,
+        "list": 40,
+        "rb_node": 16,
+        "subtree_max_size": 56,
+        "va_end": 8,
+        "va_start": 0,
+        "vm": 56
+      },
+      "size": 72
+    },
+    "wait_queue_entry": {
+      "members": {
+        "entry": 24,
+        "flags": 0,
+        "func": 16,
+        "private": 8
+      },
+      "size": 40
+    },
+    "wait_queue_head": {
+      "members": {
+        "head": 8,
+        "lock": 0
+      },
+      "size": 24
+    },
+    "work_struct": {
+      "members": {
+        "data": 0,
+        "entry": 8,
+        "func": 24
+      },
+      "size": 32
+    }
+  },
+  "module_memory_layout": {
+    "base_offset": 0,
+    "count": 7,
+    "memory_offset": 384,
+    "size_offset": 12,
+    "stride": 72
+  },
+  "profile": 618,
+  "schema": 1,
+  "sdk_exports": [
+    "__alloc_skb",
+    "__const_udelay",
+    "__cpu_online_mask",
+    "__cpu_possible_mask",
+    "__devm_regmap_init_mmio_clk",
+    "__flush_workqueue",
+    "__init_rwsem",
+    "__kmalloc_noprof",
+    "__kvmalloc_node_noprof",
+    "__mutex_init",
+    "__netdev_alloc_skb",
+    "__netlink_kernel_create",
+    "__num_online_cpus",
+    "__platform_driver_register",
+    "__put_cred",
+    "__rcu_read_lock",
+    "__rcu_read_unlock",
+    "__release_region",
+    "__request_region",
+    "__tasklet_hi_schedule",
+    "__tasklet_schedule",
+    "__vmalloc_noprof",
+    "__wake_up",
+    "_raw_read_lock",
+    "_raw_read_unlock",
+    "_raw_spin_lock",
+    "_raw_spin_lock_bh",
+    "_raw_spin_lock_irq",
+    "_raw_spin_lock_irqsave",
+    "_raw_spin_trylock",
+    "_raw_spin_unlock",
+    "_raw_spin_unlock_bh",
+    "_raw_spin_unlock_irq",
+    "_raw_spin_unlock_irqrestore",
+    "_raw_write_lock",
+    "_raw_write_unlock",
+    "add_timer",
+    "alloc_chrdev_region",
+    "alloc_workqueue_noprof",
+    "atomic_notifier_call_chain",
+    "atomic_notifier_chain_register",
+    "atomic_notifier_chain_unregister",
+    "autoremove_wake_function",
+    "blocking_notifier_call_chain",
+    "blocking_notifier_chain_register",
+    "blocking_notifier_chain_unregister",
+    "bsearch",
+    "call_rcu",
+    "cancel_delayed_work",
+    "cancel_delayed_work_sync",
+    "cancel_work_sync",
+    "capable",
+    "complete",
+    "complete_all",
+    "completion_done",
+    "consume_skb",
+    "debugfs_create_bool",
+    "debugfs_create_dir",
+    "debugfs_create_file_full",
+    "debugfs_create_u32",
+    "debugfs_create_u64",
+    "debugfs_remove",
+    "delayed_work_timer_fn",
+    "destroy_workqueue",
+    "disable_irq",
+    "disable_irq_nosync",
+    "dma_alloc_attrs",
+    "dma_free_attrs",
+    "dma_map_page_attrs",
+    "dma_set_coherent_mask",
+    "dma_set_mask",
+    "dma_unmap_page_attrs",
+    "down",
+    "down_interruptible",
+    "down_read",
+    "down_read_trylock",
+    "down_timeout",
+    "down_trylock",
+    "down_write",
+    "down_write_trylock",
+    "downgrade_write",
+    "enable_irq",
+    "fd_install",
+    "fget",
+    "filp_close",
+    "find_task_by_vpid",
+    "finish_wait",
+    "flush_work",
+    "fput",
+    "free_irq",
+    "get_random_bytes",
+    "get_random_u32",
+    "get_random_u64",
+    "get_unused_fd_flags",
+    "hrtimer_cancel",
+    "hrtimer_forward",
+    "hrtimer_setup",
+    "hrtimer_start_range_ns",
+    "hrtimer_try_to_cancel",
+    "idr_alloc",
+    "idr_destroy",
+    "idr_find",
+    "idr_get_next",
+    "idr_remove",
+    "input_allocate_device",
+    "input_event",
+    "input_free_device",
+    "input_register_device",
+    "input_set_capability",
+    "input_unregister_device",
+    "iomem_resource",
+    "iounmap",
+    "irq_of_parse_and_map",
+    "irq_set_irq_type",
+    "jiffies",
+    "kernel_bind",
+    "kernel_connect",
+    "kernel_kobj",
+    "kernel_listen",
+    "kernel_recvmsg",
+    "kernel_sendmsg",
+    "kfree",
+    "kobject_create_and_add",
+    "kobject_del",
+    "kobject_init_and_add",
+    "kobject_put",
+    "krealloc_node_align_noprof",
+    "kthread_create_on_node",
+    "kthread_park",
+    "kthread_parkme",
+    "kthread_should_park",
+    "kthread_should_stop",
+    "kthread_stop",
+    "kthread_unpark",
+    "ktime_get",
+    "ktime_get_real_ts64",
+    "ktime_get_ts64",
+    "ktime_get_with_offset",
+    "kvfree",
+    "memcmp",
+    "memcpy",
+    "memdup_user",
+    "memmove",
+    "memset",
+    "misc_deregister",
+    "misc_register",
+    "mod_delayed_work_on",
+    "mod_timer",
+    "msleep",
+    "msleep_interruptible",
+    "mutex_lock",
+    "mutex_lock_interruptible",
+    "mutex_trylock",
+    "mutex_unlock",
+    "netlink_broadcast",
+    "netlink_kernel_release",
+    "netlink_unicast",
+    "nf_register_net_hook",
+    "nf_register_net_hooks",
+    "nf_unregister_net_hook",
+    "nf_unregister_net_hooks",
+    "nr_cpu_ids",
+    "ns_capable",
+    "of_find_compatible_node",
+    "of_find_node_by_name",
+    "of_find_node_opts_by_path",
+    "of_find_property",
+    "of_property_count_elems_of_size",
+    "of_property_read_string",
+    "of_property_read_u64",
+    "of_property_read_variable_u32_array",
+    "platform_driver_unregister",
+    "platform_get_irq",
+    "platform_get_resource",
+    "preempt_schedule",
+    "prepare_to_wait",
+    "prepare_to_wait_event",
+    "proc_create",
+    "proc_create_data",
+    "proc_create_seq_private",
+    "proc_mkdir",
+    "proc_remove",
+    "put_unused_fd",
+    "queue_delayed_work_on",
+    "queue_work_on",
+    "rb_erase",
+    "rb_first",
+    "rb_first_postorder",
+    "rb_insert_color",
+    "rb_last",
+    "rb_next",
+    "rb_next_postorder",
+    "rb_prev",
+    "rb_replace_node",
+    "rcu_barrier",
+    "register_chrdev_region",
+    "register_kprobe",
+    "register_reboot_notifier",
+    "regmap_read",
+    "regmap_update_bits_base",
+    "regmap_write",
+    "release_firmware",
+    "remove_proc_entry",
+    "request_firmware",
+    "request_firmware_nowait",
+    "request_threaded_irq",
+    "schedule",
+    "schedule_timeout",
+    "scnprintf",
+    "send_sig",
+    "send_sig_info",
+    "seq_lseek",
+    "seq_open",
+    "seq_printf",
+    "seq_putc",
+    "seq_read",
+    "seq_release",
+    "seq_write",
+    "sg_alloc_table",
+    "sg_free_table",
+    "sg_init_one",
+    "sg_init_table",
+    "single_open",
+    "single_release",
+    "skb_clone",
+    "skb_copy",
+    "skb_pull",
+    "skb_push",
+    "skb_put",
+    "snprintf",
+    "sock_create_kern",
+    "sock_release",
+    "sort",
+    "strchr",
+    "strcmp",
+    "strcpy",
+    "strlen",
+    "strncat",
+    "strncmp",
+    "strncpy",
+    "strnlen",
+    "strstr",
+    "synchronize_rcu",
+    "sysfs_create_file_ns",
+    "sysfs_create_group",
+    "sysfs_remove_file_ns",
+    "sysfs_remove_group",
+    "system_percpu_wq",
+    "tasklet_init",
+    "tasklet_kill",
+    "timer_delete",
+    "timer_delete_sync",
+    "timer_init_key",
+    "try_wait_for_completion",
+    "unregister_chrdev_region",
+    "unregister_kprobe",
+    "unregister_reboot_notifier",
+    "up",
+    "up_read",
+    "up_write",
+    "vfree",
+    "vmalloc_noprof",
+    "vmalloc_user_noprof",
+    "vzalloc_noprof",
+    "wait_for_completion",
+    "wait_for_completion_interruptible",
+    "wait_for_completion_timeout",
+    "wake_up_process"
+  ]
+}

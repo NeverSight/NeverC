@@ -18,6 +18,7 @@ static const struct neverc_krt_profile
 _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 	{
 		.legacy_id = 510,
+		.layout_id = 510,
 		.linux_major = 5,
 		.linux_minor = 10,
 		.linux_patch = 257,
@@ -34,6 +35,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 		.module_memory_base = 0,
 		.module_memory_size = 8,
 		.caps = {
+			.current_task_register = NEVERC_KRT_CURRENT_SP_EL0,
 			.ftrace_callback_abi = NEVERC_KRT_FTRACE_ABI_PT_REGS,
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_INT,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE,
@@ -57,6 +59,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 	},
 	{
 		.legacy_id = 515,
+		.layout_id = 515,
 		.linux_major = 5,
 		.linux_minor = 15,
 		.linux_patch = 208,
@@ -73,6 +76,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 		.module_memory_base = 0,
 		.module_memory_size = 8,
 		.caps = {
+			.current_task_register = NEVERC_KRT_CURRENT_SP_EL0,
 			.ftrace_callback_abi = NEVERC_KRT_FTRACE_ABI_FTRACE_REGS,
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_INT,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE,
@@ -96,6 +100,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 	},
 	{
 		.legacy_id = 601,
+		.layout_id = 601,
 		.linux_major = 6,
 		.linux_minor = 1,
 		.linux_patch = 174,
@@ -112,6 +117,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 		.module_memory_base = 0,
 		.module_memory_size = 8,
 		.caps = {
+			.current_task_register = NEVERC_KRT_CURRENT_SP_EL0,
 			.ftrace_callback_abi = NEVERC_KRT_FTRACE_ABI_FTRACE_REGS,
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE,
@@ -135,6 +141,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 	},
 	{
 		.legacy_id = 606,
+		.layout_id = 606,
 		.linux_major = 6,
 		.linux_minor = 6,
 		.linux_patch = 139,
@@ -151,6 +158,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 		.module_memory_base = 0,
 		.module_memory_size = 8,
 		.caps = {
+			.current_task_register = NEVERC_KRT_CURRENT_SP_EL0,
 			.ftrace_callback_abi = NEVERC_KRT_FTRACE_ABI_FTRACE_REGS,
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_ADDRESS_ONLY,
@@ -174,6 +182,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 	},
 	{
 		.legacy_id = 612,
+		.layout_id = 612,
 		.linux_major = 6,
 		.linux_minor = 12,
 		.linux_patch = 89,
@@ -190,6 +199,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 		.module_memory_base = 0,
 		.module_memory_size = 8,
 		.caps = {
+			.current_task_register = NEVERC_KRT_CURRENT_SP_EL0,
 			.ftrace_callback_abi = NEVERC_KRT_FTRACE_ABI_FTRACE_REGS,
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_ADDRESS_ONLY,
@@ -213,6 +223,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 	},
 	{
 		.legacy_id = 618,
+		.layout_id = 618,
 		.linux_major = 6,
 		.linux_minor = 18,
 		.linux_patch = 24,
@@ -229,6 +240,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 		.module_memory_base = 0,
 		.module_memory_size = 12,
 		.caps = {
+			.current_task_register = NEVERC_KRT_CURRENT_SP_EL0,
 			.ftrace_callback_abi = NEVERC_KRT_FTRACE_ABI_FTRACE_REGS,
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_ADDRESS_ONLY,
@@ -252,6 +264,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 	},
 	{
 		.legacy_id = 703,
+		.layout_id = 703,
 		.linux_major = 7,
 		.linux_minor = 2,
 		.linux_patch = 0,
@@ -268,6 +281,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 		.module_memory_base = 0,
 		.module_memory_size = 12,
 		.caps = {
+			.current_task_register = NEVERC_KRT_CURRENT_SP_EL0,
 			.ftrace_callback_abi = NEVERC_KRT_FTRACE_ABI_FTRACE_REGS,
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_ADDRESS_ONLY,
@@ -291,6 +305,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 	},
 	{
 		.legacy_id = 51013,
+		.layout_id = 51013,
 		.linux_major = 5,
 		.linux_minor = 10,
 		.linux_patch = 223,
@@ -307,6 +322,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 		.module_memory_base = 0,
 		.module_memory_size = 8,
 		.caps = {
+			.current_task_register = NEVERC_KRT_CURRENT_SP_EL0,
 			.ftrace_callback_abi = NEVERC_KRT_FTRACE_ABI_PT_REGS,
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_INT,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE,
@@ -330,6 +346,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 	},
 	{
 		.legacy_id = 51514,
+		.layout_id = 51514,
 		.linux_major = 5,
 		.linux_minor = 15,
 		.linux_patch = 164,
@@ -346,6 +363,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 		.module_memory_base = 0,
 		.module_memory_size = 8,
 		.caps = {
+			.current_task_register = NEVERC_KRT_CURRENT_SP_EL0,
 			.ftrace_callback_abi = NEVERC_KRT_FTRACE_ABI_FTRACE_REGS,
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_INT,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE,

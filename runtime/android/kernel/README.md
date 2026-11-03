@@ -190,6 +190,58 @@ but a KCOV-enabled build needs a separately certified profile. The catalog recor
 verified build artifacts, so a newer upstream branch tip alone is insufficient
 to advance its pinned patch or regenerate module offsets.
 
+### Measured KMI alternatives and stable 7.3
+
+The original nine compile profiles, manifests, and release pins remain available.
+`arm64/gki-variants.json` adds measured runtime alternatives for `612` on
+Android 16 / KMI7, `618` on Android 17 / KMI6, and `703` on stable Linux 7.3.
+Their complete layout manifests live in `arm64/gki-variant-manifests/`.
+Continue compiling with `NVK_KERNEL=612`, `618`, or `703`; no new public profile
+number is required. The generator checks that each alternative retains the
+compile family's module-loader and module-memory ABI.
+
+For 612/KMI7 and 618/KMI6, the observed Linux series, Android generation, KMI,
+and page size select the measured layout and capabilities. OEM suffixes and
+later patch numbers do not prevent this selection. An unmatched identity
+continues through the existing permissive family `COMPAT` path. The original
+KMI6/KMI5 tables are preserved. An exact-token certificate can still overlay
+the selected data. In particular, 612/KMI7 uses the measured nested
+`proc_maps_private.lock_ctx.mm` position rather than the old direct `mm` slot.
+618/KMI6 obtains `current` from `TPIDRRO_EL0`; the original 618/KMI5 uses
+`SP_EL0`. The runtime selects this register with the measured capabilities.
+CPU/preemption helpers, recursion guards, and generated context-stub cleanup
+use the same selection; caller-side thread-info offsets are checked against
+the compile family.
+Initialize the runtime in module entry before using it in atomic callbacks.
+
+Stable 703 uses `android18-7.3-stable-production.fragment`, which keeps current
+GKI options, including proxy execution, and disables lock debugging. It binds
+the measured `7.3.0-android18-0-maybe-dirty-neverc-production-4k` token. The
+original 7.2 RC preview and its exact-token configuration remain supported;
+the stock lock-debug configuration still needs its own evidence.
+
+`tools/build-gki-variant.sh VARIANT SOURCE OUTPUT ARTIFACTS [JOBS]` builds the
+pinned complete kernel and modules, plus an independent native-header ABI
+probe. Put LLVM 20, the branch's Rust toolchain with `rust-src` and `rustfmt`,
+and bindgen on PATH. The validated native builds use Rust 1.82.0 and bindgen
+0.69.5 for 612; Rust 1.91.1 / bindgen 0.71.1 for 618; and Rust 1.97.1 /
+bindgen 0.71.1 for 703. Bindgen 0.69.4 is unsuitable with libclang 20.
+The script selects LTO=none and uncompressed debug information; it does not
+disable the GKI's CFI or Rust configuration.
+
+`tools/verify-gki-variant.py` regenerates fresh binary/config/export evidence,
+checks the native probe's module ABI, KCFI entries, and current-task register,
+and can verify the SDK
+with `--neverc`. `gki-runtime-layout-smoke.c` exercises PID/comm, credentials,
+thread enumeration, the user stack reference, a real procmap mm lease,
+CPU/preemption helpers, the task recursion guard, and a live context redirect
+through its generated return/cleanup path.
+Run it through `run-gki-qemu-smoke.sh --runtime-layouts`; that mode mounts
+procfs and requires the runtime success marker in addition to load/unload.
+The manual `validate-gki-variants` workflow repeats complete builds and QEMU
+checks using a compiler artifact from the exact same NeverC source SHA.
+The ordinary nine-family release consumer continues to use its existing pins.
+
 ### Android 18 / Linux 7.3 production preview
 
 `-DNVK_KERNEL=703` selects the **production preview** of official branch

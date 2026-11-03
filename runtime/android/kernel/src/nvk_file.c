@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /* neverc_krt_file.c — kernel file I/O operations. */
 #include <nvk.h>
+#include <linux/err.h>
 #include "nvk_internal.h"
 
 /* ---- internal types ---- */
@@ -61,7 +62,7 @@ int neverc_krt_file_open(struct neverc_krt_file *f, const char *path, int flags)
 	if (!_neverc_krt_filp_open) return -1;
 
 	f->filp = _neverc_krt_filp_open(path, flags, 0644);
-	if (!f->filp || (long)f->filp < 0) {
+	if (IS_ERR_OR_NULL(f->filp)) {
 		int err = (int)(long)f->filp;
 		f->filp = (void *)0;
 		return err ? err : -1;

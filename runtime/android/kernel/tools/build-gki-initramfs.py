@@ -55,6 +55,7 @@ def build_archive(init_path, module_path, module_name="neverc-smoke.ko"):
         (".", stat.S_IFDIR | 0o755, b"", 0, 0),
         ("dev", stat.S_IFDIR | 0o755, b"", 0, 0),
         ("dev/console", stat.S_IFCHR | 0o600, b"", 5, 1),
+        ("dev/kmsg", stat.S_IFCHR | 0o600, b"", 1, 11),
         ("init", stat.S_IFREG | 0o755, Path(init_path).read_bytes(), 0, 0),
         (
             module_name,

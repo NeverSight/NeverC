@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include "nvk_profile.h"
 #include "nvk_profile_table.inc"
+#include "nvk_profile_variants.inc"
 
 const struct neverc_krt_profile *
 neverc_krt_find_profile(unsigned int legacy_id) {
@@ -22,9 +23,35 @@ static int neverc_krt_release_token_equal(const char *expected,
                                               observed, observed_length);
 }
 
+const struct neverc_krt_profile *neverc_krt_resolve_observed_profile(
+    const struct neverc_krt_profile *family,
+    const struct neverc_krt_observed_identity *identity) {
+  unsigned long i;
+  if (!family || !identity || !identity->has_android_identity)
+    return family;
+  for (i = 0; i < NEVERC_KRT_VARIANT_COUNT; i++) {
+    const struct neverc_krt_profile *variant = &_neverc_krt_variants[i];
+    if (variant->legacy_id != family->legacy_id ||
+        variant->linux_major != identity->linux_major ||
+        variant->linux_minor != identity->linux_minor ||
+        variant->android_release != identity->android_release ||
+        variant->kmi_generation != identity->kmi_generation ||
+        variant->page_shift != identity->page_shift)
+      continue;
+    if (variant->require_release_token &&
+        !neverc_krt_release_token_equal(variant->release_token,
+                                      identity->release_token,
+                                      identity->release_token_length))
+      continue;
+    return variant;
+  }
+  return family;
+}
+
 enum neverc_krt_profile_match
 neverc_krt_match_profile(const struct neverc_krt_profile *profile,
                          const struct neverc_krt_observed_identity *identity) {
+  profile = neverc_krt_resolve_observed_profile(profile, identity);
   if (!profile || !identity || profile->linux_major != identity->linux_major ||
       profile->linux_minor != identity->linux_minor || !identity->page_shift ||
       profile->page_shift != identity->page_shift)
@@ -81,7 +108,8 @@ const struct neverc_krt_profile *neverc_krt_find_profile_by_identity(
   if (!release_token || !release_token_length)
     return (const struct neverc_krt_profile *)0;
   for (i = 0; i < NEVERC_KRT_PROFILE_COUNT; i++) {
-    const struct neverc_krt_profile *profile = &_neverc_krt_profiles[i];
+    const struct neverc_krt_profile *profile =
+        neverc_krt_resolve_observed_profile(&_neverc_krt_profiles[i], &identity);
 
     if (neverc_krt_match_profile(profile, &identity) ==
             NEVERC_KRT_PROFILE_MATCH_EXACT &&

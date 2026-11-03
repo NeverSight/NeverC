@@ -65,8 +65,7 @@ static int _neverc_krt_pid_is_filtered(int pid)
 
 static int _neverc_krt_pid_actor_acquire(void *orig)
 {
-	unsigned long self;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(self));
+	unsigned long self = (unsigned long)current;
 	int i;
 	for (i = 0; i < _NEVERC_KRT_PID_ACTOR_SLOTS; i++) {
 		if (__atomic_load_n(&_neverc_krt_pid_actors[i].task,
@@ -90,8 +89,7 @@ static int _neverc_krt_pid_actor_acquire(void *orig)
 
 static void *_neverc_krt_pid_actor_get_orig(void)
 {
-	unsigned long self;
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(self));
+	unsigned long self = (unsigned long)current;
 	int i;
 	for (i = 0; i < _NEVERC_KRT_PID_ACTOR_SLOTS; i++) {
 		if (__atomic_load_n(&_neverc_krt_pid_actors[i].task,

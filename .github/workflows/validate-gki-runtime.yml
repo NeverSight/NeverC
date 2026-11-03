@@ -252,6 +252,8 @@ jobs:
           python3 runtime/android/kernel/tools/test-gki-qemu-smoke.py -v
           python3 runtime/android/kernel/tools/generate-compat-table.py --check
           python3 runtime/android/kernel/tools/test-profile-policy.py
+          python3 runtime/android/kernel/tools/test-gki-variants.py -v
+          python3 runtime/android/kernel/tools/test-file-error-pointers.py
 
       - name: Run all SDK layout and runtime linkage gates
         env:

@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <linux/compiler.h>
+#include <linux/sched.h>
 #include <nvkmod_version.h>
 
 /*
@@ -29,9 +30,7 @@ static __always_inline unsigned int raw_smp_processor_id(void)
 #else
 static __always_inline unsigned int raw_smp_processor_id(void)
 {
-	unsigned long task;
-
-	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(task));
+	unsigned long task = (unsigned long)current;
 	return READ_ONCE(*(const unsigned int *)(task + NEVERC_KRT_TASK_CPU));
 }
 #endif

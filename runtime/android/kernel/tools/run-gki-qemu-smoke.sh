@@ -21,6 +21,7 @@ Options:
   --python BIN       Python 3 interpreter (default: python3)
   --timeout-bin BIN  GNU timeout executable (default: timeout)
   --timeout SECONDS  boot deadline (default: 120)
+  --runtime-layouts  mount procfs and require private-layout runtime checks
   -h, --help         show this help
 EOF
 }
@@ -38,6 +39,7 @@ QEMU=qemu-system-aarch64
 PYTHON=python3
 TIMEOUT_BIN=timeout
 TIMEOUT_SECONDS=120
+RUNTIME_LAYOUTS=false
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -49,6 +51,7 @@ while [ "$#" -gt 0 ]; do
 	--python) [ "$#" -ge 2 ] || die "--python needs a binary"; PYTHON=$2; shift 2 ;;
 	--timeout-bin) [ "$#" -ge 2 ] || die "--timeout-bin needs a binary"; TIMEOUT_BIN=$2; shift 2 ;;
 	--timeout) [ "$#" -ge 2 ] || die "--timeout needs seconds"; TIMEOUT_SECONDS=$2; shift 2 ;;
+	--runtime-layouts) RUNTIME_LAYOUTS=true; shift ;;
 	-h | --help) usage; exit 0 ;;
 	*) die "unknown argument: $1" ;;
 	esac
@@ -94,7 +97,11 @@ printf '[host] qemu: '
 printf '[host] timeout: '
 "$TIMEOUT_BIN" --version | sed -n '1p'
 
-"$CROSS_CC" \
+INIT_COMMAND=("$CROSS_CC")
+if [ "$RUNTIME_LAYOUTS" = true ]; then
+	INIT_COMMAND+=(-DNEVERC_GKI_MOUNT_PROC=1)
+fi
+"${INIT_COMMAND[@]}" \
 	-static -no-pie -Os -Wall -Wextra -Werror \
 	-DNEVERC_GKI_MODULE_PATH="\"/$MODULE_FILE\"" \
 	-DNEVERC_GKI_MODULE_NAME="\"$MODULE_NAME\"" \
@@ -108,7 +115,7 @@ printf '[host] timeout: '
 set +e
 "$TIMEOUT_BIN" --foreground "${TIMEOUT_SECONDS}s" \
 	"$QEMU" \
-	-machine virt,gic-version=3 \
+	-machine virt,gic-version=3,virtualization=on \
 	-cpu cortex-a57 \
 	-accel tcg,thread=multi \
 	-smp 1 \
@@ -138,6 +145,8 @@ has_exact_guest_marker() {
 	# escape \r as a carriage return: GNU grep treats it as a literal "r".
 	LC_ALL=C awk -v expected="$expected" '
 		{ gsub(/\r/, "") }
+		# /dev/kmsg adds the kernel timestamp and optional task prefix.
+		{ sub(/^\[[[:space:]]*[0-9]+\.[0-9]+\][[:space:]]*(\[[[:space:]]*[TC][0-9]+\][[:space:]]*)?/, "") }
 		$0 == expected { found = 1 }
 		END { exit(found ? 0 : 1) }
 	' "$QEMU_LOG"
@@ -155,6 +164,13 @@ fi
 if ! has_exact_guest_marker NEVERC_GKI_LOAD_PASS || \
 	! has_exact_guest_marker NEVERC_GKI_UNLOAD_PASS; then
 	fail_with_log "missing guest success markers"
+fi
+if [ "$RUNTIME_LAYOUTS" = true ] && ! LC_ALL=C awk '
+    { gsub(/\r/, "") }
+    /(^|\] )NEVERC_GKI_RUNTIME_LAYOUT_PASS$/ { found = 1 }
+    END { exit(found ? 0 : 1) }
+  ' "$QEMU_LOG"; then
+	fail_with_log "missing kernel private-layout success marker"
 fi
 
 printf '[host] PASS: smoke module loaded and unloaded; log=%s\n' "$QEMU_LOG"
