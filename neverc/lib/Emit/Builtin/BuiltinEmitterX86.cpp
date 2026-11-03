@@ -3097,8 +3097,8 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     if (BuiltinID == X86::BI__mulh || BuiltinID == X86::BI__umulh)
       return HigherBits;
 
-    Address HighBitsAddress = genPointerWithAlignment(E->getArg(2));
-    Builder.CreateStore(HigherBits, HighBitsAddress);
+    // The output pointer has already been evaluated into Ops.
+    Builder.CreateAlignedStore(HigherBits, Ops[2], Align(1));
     return Builder.CreateIntCast(MulResult, ResType, IsSigned);
   }
 
