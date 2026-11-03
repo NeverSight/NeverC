@@ -1071,3 +1071,6 @@ L’argument du trait d’espace réservé utilise l’équivalence de type Clan
 
 
 Les substitutions du trait d’indice sont liées à la déclaration locale exacte vérifiée et à sa fonction instanciée. L’initialiseur doit contenir la même lecture ; fonction, modèle primaire, origine SDK, type de taille const et portée source doivent correspondre. Les signatures gardent leur propriétaire de modèle ; déclarations et initialiseurs écrits et instanciés restent entièrement parcourus. Exécution et STL complet restent à vérifier.
+
+
+Les substitutions de type du transfert sont liées à la fonction instanciée exacte et à son indice local. Les déclarations array get non sélectionnées sont vérifiées dans leurs en-têtes SDK de déclaration et définition, uniquement dans la recherche qualifiée originale. Le getter tuple sélectionné et les deux corps gardent leurs vérifications complètes indépendantes. Exécution et STL complet restent à vérifier.

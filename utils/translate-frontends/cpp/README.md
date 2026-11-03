@@ -1309,3 +1309,6 @@ The placeholder trait argument now uses Clang type equivalence, including qualif
 
 
 Placeholder index-trait substitutions now bind to the exact checked local index declaration and its instantiated function. The initializer must contain the same trait read; its function, primary template, SDK origin, const size type and current source scope must match. Signature trait checks keep their original template ownership. Both original and instantiated declarations and initializers still require complete source walks. This repair awaits execution; complete STL support remains unfinished.
+
+
+Placeholder body forwarding now binds substituted tuple types to the exact instantiated unwrap function and its local index. Unselected array get overload declarations are checked across their exact SDK forward and definition headers only within the original qualified lookup; the selected tuple getter and both bodies still need independent complete source checks. Execution validation is pending, and full STL support remains unfinished.

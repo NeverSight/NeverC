@@ -1071,3 +1071,6 @@ El argumento del trait de marcador usa equivalencia de tipos Clang, incluidos ca
 
 
 Las sustituciones del trait de índice se vinculan a la declaración local exacta verificada y su función instanciada. El inicializador debe contener la misma lectura; función, plantilla primaria, origen SDK, tipo de tamaño const y ámbito deben coincidir. Se conservan la propiedad de plantilla en firmas y los recorridos completos de declaraciones e inicializadores originales e instanciados. La ejecución y el STL completo siguen pendientes.
+
+
+Las sustituciones de tipo del reenvío se vinculan a la función instanciada exacta y su índice local. Las declaraciones array get no seleccionadas se verifican en sus cabeceras SDK de declaración y definición, solo en la búsqueda cualificada original. El getter tuple seleccionado y ambos cuerpos conservan sus verificaciones completas independientes. Ejecución y STL completo siguen pendientes.

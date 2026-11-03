@@ -1071,3 +1071,6 @@ L’argomento del trait segnaposto usa l’equivalenza Clang con i qualificatori
 
 
 Le sostituzioni del trait di indice sono legate alla dichiarazione locale esatta verificata e alla sua funzione istanziata. L’inizializzatore deve contenere la stessa lettura; funzione, template primario, origine SDK, tipo di dimensione const e ambito devono coincidere. Restano proprietà del template nelle firme e visite complete di dichiarazioni e inizializzatori originali e istanziati. Esecuzione e STL completo restano da verificare.
+
+
+Le sostituzioni del tipo inoltrato sono legate alla funzione istanziata esatta e al suo indice locale. Le dichiarazioni array get non selezionate sono verificate nei rispettivi header SDK di dichiarazione e definizione, solo nella ricerca qualificata originale. Il getter tuple selezionato ed entrambi i corpi mantengono verifiche complete indipendenti. Esecuzione e STL completo restano da verificare.

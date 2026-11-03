@@ -21657,6 +21657,9 @@ class BindSourceProof {
     if (!ActiveUnwrapSource || !ActiveUnwrapSource->CallArguments || !Function || !Primary || !Incoming ||
         Incoming->getIndex() != 1 || Incoming->isParameterPack() || Incoming->hasDefaultArgument() ||
         !Argument.PlaceholderRank || !Argument.PlaceholderIndex || !Argument.PlaceholderGet ||
+        !Argument.PlaceholderIndex->isLocalVarDecl() ||
+        Argument.PlaceholderIndex->getDeclContext() != Function ||
+        !Check.family(Function, {"__functional/bind.h"}) ||
         !Call || Call->getNumArgs() != 1 || Check.core(Call->getArg(0)) != Argument.PlaceholderGet ||
         !Forward || !Callee || Callee->getDecl() != Forward ||
         !Callee->hasExplicitTemplateArgs() || Callee->getNumTemplateArgs() != 1 ||
@@ -21704,7 +21707,7 @@ class BindSourceProof {
     const auto *Substitution = Tuple.getArgument().getKind() == TemplateArgument::Type
         ? dyn_cast<SubstTemplateTypeParmType>(Tuple.getArgument().getAsType().getTypePtr()) : nullptr;
     if (!Tuple.getTypeSourceInfo() || !Substitution ||
-        Substitution->getAssociatedDecl() != Primary || Substitution->getReplacedParameter() != Incoming ||
+        Substitution->getAssociatedDecl() != Function || Substitution->getReplacedParameter() != Incoming ||
         Substitution->getPackIndex() ||
         !Context.hasSameType(Substitution->getReplacementType(), Selected[1].getAsType())) return nullptr;
     const auto Index = Element.getArgLoc(0);
@@ -21830,9 +21833,16 @@ class BindSourceProof {
       bool Found = false;
       for (const auto *Candidate : Use->decls()) {
         const auto *Template = dyn_cast<FunctionTemplateDecl>(Candidate);
-        if (!Template || !Template->getIdentifier() || Template->getName() != Name || !family(Template))
+        if (!Template || !Template->getIdentifier() || Template->getName() != Name)
           return nullptr;
-        Found |= Template->getCanonicalDecl() == Selected->getCanonicalDecl();
+        const bool SelectedCandidate = Template->getCanonicalDecl() == Selected->getCanonicalDecl();
+        // A qualified dependent get lookup also retains the unselected array
+        // overloads. Check their complete declaration family across its exact
+        // forward/definition headers without granting their bodies permission.
+        if (!family(Template) &&
+            (Name != "get" || SelectedCandidate ||
+             !Check.family(Template, {"__fwd/array.h", "array"}))) return nullptr;
+        Found |= SelectedCandidate;
       }
       return Found ? Use : nullptr;
     };

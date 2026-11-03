@@ -1071,3 +1071,6 @@ Das Platzhalter-Trait-Argument nutzt Clang-Typäquivalenz einschließlich Qualif
 
 
 Platzhalter-Indextypen werden an die exakt geprüfte lokale Indexdeklaration und ihre instanziierte Funktion gebunden. Initialisierer und Trait-Lesezugriff sowie Funktion, Primärtemplate, SDK-Herkunft, const-Größentyp und Quellbereich müssen passen. Signaturen behalten ihre Template-Eigentümerprüfung; ursprüngliche und instanziierte Deklarationen samt Initialisierern werden vollständig geprüft. Ausführung und vollständige STL-Unterstützung stehen aus.
+
+
+Typersetzungen beim Weiterreichen werden an die genaue instanziierte Funktion und ihren lokalen Index gebunden. Nicht ausgewählte array-get-Deklarationen werden nur bei der ursprünglichen qualifizierten Namenssuche über ihre SDK-Vorwärtsdeklarationen und Definitionen geprüft. Der ausgewählte tuple-Getter und beide Funktionskörper behalten unabhängige vollständige Prüfungen. Ausführung und vollständige STL-Unterstützung stehen aus.
