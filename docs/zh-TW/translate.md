@@ -1083,3 +1083,6 @@ Actions 發現兩處編譯錯誤：推導為 UnqualTypeLoc 的變數被賦予 Ty
 
 
 STL 驗證下載 LLVM 安裝腳本時，現會有界重試暫時 HTTPS 或 DNS 故障。固定 LLVM 版本、編譯選項及測試預算維持不變。最新來源仍待執行結果，完整 STL 支援尚未完成。
+
+
+目前兩項 STL 驗證可在 LLVM APT 網域解析故障時，透過下載站 CDN 恢復連線。必須先通過 apt.llvm.org 的 HTTPS 憑證驗證，才在暫時 runner 加入該網域的主機記錄。LLVM 版本、來源檢查與執行預算維持固定；STL 修復仍待實際回歸結果。

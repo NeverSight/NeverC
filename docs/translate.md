@@ -1518,3 +1518,6 @@ Qualified placeholder-body get lookup now verifies unselected array and pair dec
 
 
 STL validation now retries transient HTTPS or DNS failures while downloading the LLVM installer. The pinned LLVM versions, compiler options and test budgets are unchanged. The latest source still requires its execution results; full STL support remains unfinished.
+
+
+The two current STL validation jobs can recover an LLVM APT DNS outage through the download host’s CDN. Recovery requires successful HTTPS certificate validation for apt.llvm.org before adding a temporary runner host entry. LLVM versions, source checks and execution budgets remain fixed; the repaired STL source still needs its actual regression results.

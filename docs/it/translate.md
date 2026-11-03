@@ -1083,3 +1083,6 @@ La ricerca get qualificata verifica separatamente le famiglie array/pair non sel
 
 
 La verifica STL riprova con limiti fissi il download dell’installatore LLVM in caso di errori temporanei HTTPS o DNS. Versioni LLVM, opzioni di compilazione e budget dei test restano invariati. I risultati del codice attuale e il supporto STL completo restano da verificare.
+
+
+Le due verifiche STL attuali possono recuperare un guasto DNS LLVM APT tramite il CDN di download. Il certificato HTTPS di apt.llvm.org deve essere verificato prima di aggiungere quel host al runner temporaneo. Versioni LLVM, controlli del codice e budget restano fissi; i risultati reali delle regressioni STL sono ancora attesi.

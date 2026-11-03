@@ -1083,3 +1083,6 @@ La recherche get qualifiée vérifie séparément les familles array/pair non s�
 
 
 La validation STL réessaie désormais les téléchargements de l’installateur LLVM lors de pannes HTTPS ou DNS temporaires, avec des limites fixes. Versions LLVM, options de compilation et budgets de tests restent inchangés. Les résultats d’exécution du dernier code et le STL complet restent à vérifier.
+
+
+Les deux validations STL actuelles peuvent récupérer une panne DNS LLVM APT via le CDN de téléchargement, après validation du certificat HTTPS apt.llvm.org et ajout du seul hôte dans le runner temporaire. Versions LLVM, contrôles du code et budgets restent fixes ; les résultats réels de régression STL sont encore attendus.

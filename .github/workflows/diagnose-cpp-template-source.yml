@@ -2034,6 +2034,7 @@ jobs:
         PY
     - name: Install matching Clang20 source diagnostic toolchain
       run: |
+        python3 utils/ci/ensure-llvm-apt-host.py
         curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https" -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
         sudo bash "$RUNNER_TEMP/llvm.sh" 20
         sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev
@@ -3978,6 +3979,8 @@ jobs:
         python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert
         callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/python.log"
 
+        python3 utils/ci/ensure-llvm-apt-host.py
+
         curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https" -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
 
         sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/clang-install.log"
@@ -3989,6 +3992,8 @@ jobs:
       run: 'mkdir -p "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap"
 
         set -o pipefail
+
+        python3 utils/ci/ensure-llvm-apt-host.py
 
         curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https" -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
 

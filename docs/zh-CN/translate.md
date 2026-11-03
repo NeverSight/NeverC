@@ -1083,3 +1083,6 @@ Actions 发现两处编译错误：推导为 UnqualTypeLoc 的变量被赋予 Ty
 
 
 STL 验证下载 LLVM 安装脚本时，现会有界重试临时 HTTPS 或 DNS 故障。固定 LLVM 版本、编译选项和测试预算保持不变。最新源码仍待执行结果，完整 STL 支持尚未完成。
+
+
+当前两项 STL 验证任务可在 LLVM APT 域名解析故障时使用下载站的 CDN 恢复连接。恢复前必须通过 apt.llvm.org 的 HTTPS 证书校验，之后仅在临时 runner 中加入该域名的主机记录。LLVM 版本、源码检查和执行预算保持固定；STL 修复仍待实际回归结果。

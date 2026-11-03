@@ -1083,3 +1083,6 @@ Die qualifizierte get-Suche prüft nicht ausgewählte array/pair-Deklarationsfam
 
 
 Die STL-Prüfung wiederholt den LLVM-Installer-Download bei vorübergehenden HTTPS- oder DNS-Fehlern mit festen Grenzen. LLVM-Versionen, Compileroptionen und Testbudgets bleiben gleich. Ausführungsergebnisse des aktuellen Quelltexts und vollständige STL-Unterstützung stehen aus.
+
+
+Die beiden aktuellen STL-Prüfungen können einen LLVM-APT-DNS-Ausfall über das Download-CDN überbrücken. Erst nach Prüfung des HTTPS-Zertifikats für apt.llvm.org wird der Host im temporären Runner eingetragen. LLVM-Versionen, Quellprüfungen und Ausführungsbudgets bleiben fest; echte STL-Regressionsergebnisse stehen noch aus.

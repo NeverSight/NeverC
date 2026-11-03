@@ -1083,3 +1083,6 @@ La búsqueda get cualificada verifica por separado las familias array/pair no se
 
 
 La validación STL reintenta con límites fijos la descarga del instalador LLVM ante fallos temporales de HTTPS o DNS. Se mantienen las versiones LLVM, opciones de compilación y presupuestos de pruebas. Los resultados del código actual y el STL completo siguen pendientes.
+
+
+Las dos validaciones STL actuales pueden recuperar una caída DNS de LLVM APT mediante el CDN de descarga. Se exige validar el certificado HTTPS de apt.llvm.org antes de añadir ese host al runner temporal. Versiones LLVM, controles de código y presupuestos siguen fijos; faltan los resultados reales de regresión STL.
