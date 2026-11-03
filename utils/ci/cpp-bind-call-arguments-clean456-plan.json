@@ -22,587 +22,161 @@
   ],
   "cases": [
     {
-      "name": "ordinary-source-cstddef-predefines",
-      "source": "#include <cstddef>\n#ifdef _MSC_VER\n#error host MSVC version leaked\n#endif\nint main(){return sizeof(wchar_t)==0;}\n",
-      "source_sha256": "68dbc9f86f6c0cb3ae562fa8c825b193a6b565b591256e731123d9250bde2109",
-      "expected": "accept",
-      "original_name": "cstddef-predefines"
-    },
-    {
-      "name": "ordinary-source-pair-piecewise-scalars",
-      "source": "#include <tuple>\n#include <utility>\nint main(){std::pair<int,int> p(std::piecewise_construct,std::tuple<int>(3),std::tuple<int>(9));return p.first!=3||p.second!=9;}\n",
-      "source_sha256": "1f3ee442597c2dfbad20276335e8afee6abee408ccfead1b3902bab166a39df5",
-      "expected": "accept",
-      "original_name": "pair-piecewise-scalars"
-    },
-    {
-      "name": "ordinary-source-tuple-get",
-      "source": "#include <tuple>\nint main(){std::tuple<int,int> x(3,9);return std::get<0>(x)!=3||std::get<1>(x)!=9;}\n",
-      "source_sha256": "aaf4952cbb0585076e0e9f88b25f20a0a83d54af2f69f69f7cf26093295a7182",
-      "expected": "accept",
-      "original_name": "tuple-get"
-    },
-    {
-      "name": "ordinary-source-not-fn-function-pointer",
-      "category": "runtime",
-      "source": "#include <functional>\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || f(7) || calls != 3;\n}\n",
-      "source_sha256": "ce1ac4c7924c372992ca2c0a78575abf2961643a1324838d0558cdb8eadf71a3",
-      "expected": "accept",
-      "original_name": "not-fn-function-pointer"
-    },
-    {
-      "name": "ordinary-source-not-fn-copied-state",
-      "category": "runtime",
-      "source": "#include <functional>\nint copies, moves, calls;\nstruct P {\n  int state;\n  P(int x) : state(x) {}\n  P(const P &p) : state(p.state) { ++copies; }\n  P(P &&p) : state(p.state) { ++moves; p.state = -1; }\n  bool operator()(int x) { ++calls; state += x; return state > 5; }\n};\nint main() {\n  P original(1);\n  auto f = std::not_fn(original);\n  if (copies != 1 || moves != 0 || original.state != 1) return 1;\n  if (!f(2) || f(4) || original.state != 1 || calls != 2) return 2;\n  auto g = f;\n  if (copies != 2 || g(0) || calls != 3) return 3;\n  return 0;\n}\n",
-      "source_sha256": "8b309d87f8477420b0cae73400b5f2c80e947c2a3305c0cced1463c347a0cb13",
-      "expected": "accept",
-      "original_name": "not-fn-copied-state"
-    },
-    {
-      "name": "ordinary-source-not-fn-four-cvref-calls",
-      "category": "runtime",
-      "source": "#include <functional>\n#include <utility>\nint path;\nstruct P {\n  bool operator()(int x) & { path = path * 10 + 1; return x == 1; }\n  bool operator()(int x) const & { path = path * 10 + 2; return x == 2; }\n  bool operator()(int x) && { path = path * 10 + 3; return x == 3; }\n  bool operator()(int x) const && { path = path * 10 + 4; return x == 4; }\n};\nint main() {\n  auto a = std::not_fn(P{});\n  const auto b = std::not_fn(P{});\n  if (a(1) || b(2) || std::move(a)(3) || std::move(b)(4)) return 1;\n  return path != 1234;\n}\n",
-      "source_sha256": "4f46b9139b5d302263428a78e3e5f13cd0167845c2f8ff15590b1d01183030ad",
-      "expected": "accept",
-      "original_name": "not-fn-four-cvref-calls"
-    },
-    {
-      "name": "ordinary-source-not-fn-reference-wrapper",
-      "category": "runtime",
-      "source": "#include <functional>\nstruct P {\n  int value;\n  bool operator()(int x) { value += x; return value > 4; }\n};\nstruct C {\n  int value;\n  bool operator()(int x) const { return value == x; }\n};\nint main() {\n  P p{1}; const C c{7};\n  auto f = std::not_fn(std::ref(p));\n  auto g = std::not_fn(std::cref(c));\n  if (!f(2) || p.value != 3 || f(3) || p.value != 6) return 1;\n  auto copy = f;\n  if (copy(1) || p.value != 7 || g(7) || !g(6)) return 2;\n  return 0;\n}\n",
-      "source_sha256": "21e878504d2dece3510c3a45d3b51d7bafa7efb6e142de5ad8ce622c7265a786",
-      "expected": "accept",
-      "original_name": "not-fn-reference-wrapper"
-    },
-    {
-      "name": "ordinary-source-not-fn-custom-negation-result",
-      "category": "runtime",
-      "source": "#include <functional>\n#include <type_traits>\nint negations;\nstruct R {\n  int value;\n  int operator!() const { ++negations; return value + 7; }\n};\nR value(int x) { return R{x}; }\nint main() {\n  auto f = std::not_fn(&value);\n  static_assert(std::is_same<decltype(f(1)), int>::value, \"exact negation result\");\n  if (f(0) != 7 || f(3) != 10) return 1;\n  return negations != 2;\n}\n",
-      "source_sha256": "81ac40da570ab7c0d60b289888826480455f4900dba474110bd346c67e299bc8",
-      "expected": "accept",
-      "original_name": "not-fn-custom-negation-result"
-    },
-    {
-      "name": "ordinary-source-not-fn-reference-arguments",
-      "category": "runtime",
-      "source": "#include <functional>\nint calls;\nbool update(int &x, const int &y) { ++calls; x += y; return x != 0; }\nint main() {\n  auto f = std::not_fn(&update);\n  int x = -3, y = 3;\n  if (!f(x,y) || x != 0 || calls != 1) return 1;\n  if (f(x,y) || x != 3 || calls != 2) return 2;\n  return 0;\n}\n",
-      "source_sha256": "1d5fed7302c89abf23b882a064afce68f4c65bf7cf92118313f28b4499260dbc",
-      "expected": "accept",
-      "original_name": "not-fn-reference-arguments"
-    },
-    {
-      "name": "ordinary-source-not-fn-move-only-cleanup",
-      "category": "runtime",
-      "source": "#include <functional>\n#include <utility>\nint moves, live, destroyed;\nstruct P {\n  int value;\n  P(int x) : value(x) { ++live; }\n  P(const P &) = delete;\n  P(P &&p) : value(p.value) { p.value = -1; ++moves; ++live; }\n  ~P() { --live; ++destroyed; }\n  bool operator()(int x) { return value == x; }\n};\nint main() {\n  {\n    P source(5);\n    auto f = std::not_fn(std::move(source));\n    if (moves != 1 || live != 2 || source.value != -1 || f(5) || !f(4)) return 1;\n  }\n  return live != 0 || destroyed != 2;\n}\n",
-      "source_sha256": "eb814a56c100eaaae605686b138f92b687a7112a031d62b49446efb0dcad6bc6",
-      "expected": "accept",
-      "original_name": "not-fn-move-only-cleanup"
-    },
-    {
-      "name": "ordinary-source-not-fn-nested-adapters",
-      "category": "runtime",
-      "source": "#include <functional>\nint calls;\nint value(int x) { ++calls; return x; }\nint main() {\n  auto f = std::not_fn(std::not_fn(&value));\n  if (f(0) || !f(2) || calls != 2) return 1;\n  auto g = f;\n  if (!g(-3) || calls != 3) return 2;\n  return 0;\n}\n",
-      "source_sha256": "526ba4898dfa558ee054497bf191b9da4b3a17caf94376edb5c1c51535593b54",
-      "expected": "accept",
-      "original_name": "not-fn-nested-adapters"
-    },
-    {
-      "name": "ordinary-source-not-fn-factory-effects",
-      "category": "runtime",
-      "source": "#include <functional>\nint builds, calls, destroyed;\nstruct P {\n  int value;\n  bool operator()(int x) { ++calls; return x == value; }\n  ~P() { ++destroyed; }\n};\nP make(int &n) { ++n; ++builds; return P{n}; }\nint main() {\n  int n = 3;\n  {\n    auto f = std::not_fn(make(n));\n    if (n != 4 || builds != 1 || f(4) || !f(3) || calls != 2) return 1;\n    if (destroyed != 1) return 2;\n  }\n  return destroyed != 2;\n}\n",
-      "source_sha256": "48f290bdbb5ad43e0c0e0a3bbca4a4d8c274f6e0cce4f25e0bda928cfecebc16",
-      "expected": "accept",
-      "original_name": "not-fn-factory-effects"
-    },
-    {
-      "name": "ordinary-source-not-fn-signature-queries",
-      "category": "runtime",
-      "source": "#include <functional>\n#include <type_traits>\n#include <utility>\nbool value(int x) noexcept { return x > 0; }\nint main() {\n  auto f = std::not_fn(&value);\n  using F = decltype(f);\n  static_assert(std::is_same<decltype(f(1)), bool>::value, \"negation result\");\n  static_assert(std::is_nothrow_invocable<F &,int>::value, \"mutable lvalue\");\n  static_assert(std::is_nothrow_invocable<const F &,int>::value, \"const lvalue\");\n  static_assert(std::is_nothrow_invocable<F &&,int>::value, \"mutable rvalue\");\n  static_assert(std::is_nothrow_invocable<const F &&,int>::value, \"const rvalue\");\n  static_assert(!noexcept(std::not_fn(&value)), \"factory exception signature\");\n  if (f(1) || !f(0)) return 1;\n  return 0;\n}\n",
-      "source_sha256": "4ab77980f463d36634275a21544db2fa6aaf9d1d257d05192ff45098aa3649c1",
-      "expected": "accept",
-      "original_name": "not-fn-signature-queries"
-    },
-    {
-      "name": "ordinary-source-not-fn-not-fn-factory-redeclaration",
-      "category": "guards",
-      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F, class Enable> auto not_fn(F&&);\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
-      "source_sha256": "d4980d6869d0881646c06ea6ea8cf5155ee0c77bc51d7f2abc11ef96c60c7de6",
-      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
-      "expected": "reject",
-      "original_name": "not-fn-not-fn-factory-redeclaration"
-    },
-    {
-      "name": "ordinary-source-not-fn-not-fn-carrier-redeclaration",
-      "category": "guards",
-      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F> struct __not_fn_t;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
-      "source_sha256": "dacfeb6dc00f1224b5d0a92dccc727d528239d0be826f191fdd166fa46062a4a",
-      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
-      "expected": "reject",
-      "original_name": "not-fn-not-fn-carrier-redeclaration"
-    },
-    {
-      "name": "ordinary-source-not-fn-not-fn-forwarder-primary-redeclaration",
-      "category": "guards",
-      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class Op, class Indices, class... Bound> struct __perfect_forward_impl;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
-      "source_sha256": "ef47d33af1be1f2eb373fb832b74954b886732579ac66f3fa7e9fde7e51ef5ff",
-      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
-      "expected": "reject",
-      "original_name": "not-fn-not-fn-forwarder-primary-redeclaration"
-    },
-    {
-      "name": "ordinary-source-not-fn-not-fn-operation-redeclaration",
-      "category": "guards",
-      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\nstruct __not_fn_op;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
-      "source_sha256": "0c361602607eaf4ef1e0ac164ffa00f65fdcc8d22611e9886a00bdf21b96f708",
-      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
-      "expected": "reject",
-      "original_name": "not-fn-not-fn-operation-redeclaration"
-    },
-    {
-      "name": "ordinary-source-not-fn-not-fn-tuple-primary-redeclaration",
-      "category": "guards",
-      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class... T> class tuple;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
-      "source_sha256": "875434ee3e6fe376ff75bcb1837dd23b02284b14b4e2660ee0ff17ad7cd85212",
-      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
-      "expected": "reject",
-      "original_name": "not-fn-not-fn-tuple-primary-redeclaration"
-    },
-    {
-      "name": "ordinary-source-not-fn-not-fn-tuple-leaf-primary-redeclaration",
-      "category": "guards",
-      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<size_t I, class T, bool Empty> class __tuple_leaf;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
-      "source_sha256": "7e8f593431b392e3a8ba089d543426a3bc355db4039cf3ebd518856edbd8463b",
-      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
-      "expected": "reject",
-      "original_name": "not-fn-not-fn-tuple-leaf-primary-redeclaration"
-    },
-    {
-      "name": "ordinary-source-not-fn-not-fn-forward-redeclaration",
-      "category": "guards",
-      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class T> constexpr T&& forward(__libcpp_remove_reference_t<T>&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
-      "source_sha256": "e365699a77c6f9f464a0bd8fa83c53307da7eb9c2da2e2391644cbbb046c41f6",
-      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
-      "expected": "reject",
-      "original_name": "not-fn-not-fn-forward-redeclaration"
-    },
-    {
-      "name": "ordinary-source-not-fn-not-fn-move-redeclaration",
-      "category": "guards",
-      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class T> constexpr __libcpp_remove_reference_t<T>&& move(T&&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return std::move(f)(3) || !std::move(f)(4) || calls != 2;\n}\n",
-      "source_sha256": "c6f713bbf8e2fd75b9ea4b5d44e6f2b26992c868cc933b30d4f2091c967f3210",
-      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
-      "expected": "reject",
-      "original_name": "not-fn-not-fn-move-redeclaration"
-    },
-    {
-      "name": "ordinary-source-not-fn-not-fn-get-redeclaration",
-      "category": "guards",
-      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<size_t I, class... T> constexpr typename tuple_element<I, tuple<T...>>::type& get(tuple<T...>&) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
-      "source_sha256": "92724d22d5ee6d91147511efe4c808379777a6031e0b5e5ad4f38a7709eb831e",
-      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
-      "expected": "reject",
-      "original_name": "not-fn-not-fn-get-redeclaration"
-    },
-    {
-      "name": "ordinary-source-not-fn-not-fn-invoke-redeclaration",
-      "category": "guards",
-      "source": "#include <functional>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate<class F, class... A> invoke_result_t<F,A...> invoke(F&&,A&&...) noexcept(is_nothrow_invocable_v<F,A...>);\n_LIBCPP_END_NAMESPACE_STD\nint calls;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nint main() {\n  auto f = std::not_fn(&odd);\n  return f(3) || !f(4) || calls != 2;\n}\n",
-      "source_sha256": "963411ddb31c1a2bd86e25f6569990d93b0fa2a08604c71ca5b0ba065f30bf88",
-      "source_boundary": "Selected SDK declaration family includes an original caller-owned redeclaration; native behavior must first be verified unchanged.",
-      "expected": "reject",
-      "original_name": "not-fn-not-fn-invoke-redeclaration"
-    },
-    {
-      "name": "ordinary-source-ordinary-default-source",
-      "expected": "accept",
-      "source": "template<class T, class U=T> int ordinary_source_default(T x){return x;}\nint main(){return ordinary_source_default(3)!=3;}\n",
-      "source_sha256": "d2b7aec9ecd08dd8a677077837ca635e57212bc431ba07d75f91748c8f7e6ac9",
-      "original_name": "ordinary-default-source",
-      "sdk_dependencies_may_be_empty": true
-    },
-    {
-      "name": "ordinary-source-ordinary-failed-source",
-      "expected": "invalid",
-      "source": "template<class T> int ordinary_source_failed(T){return 0;}\nint main(){return ordinary_source_failed();}\n",
-      "source_sha256": "50fb246eb58b5b57ade4e9dcf58c6e81677cac1e4e823ec45b369c133bd9647b",
-      "original_name": "ordinary-failed-source"
-    },
-    {
-      "name": "not-fn-pointer-factory-argument-once",
-      "source": "#include <functional>\nint builds, calls, arguments;\nbool odd(int x) { ++calls; return (x & 1) != 0; }\nusing FP = bool (*)(int);\nFP choose() { ++builds; return &odd; }\nint argument(int x) { ++arguments; return x; }\nint main() {\n  auto f = std::not_fn(choose());\n  const bool first = f(argument(3));\n  const bool second = f(argument(4));\n  return first || !second || builds != 1 || calls != 2 || arguments != 2;\n}\n",
-      "source_sha256": "2663fceaf5b2f3c446be6beb918b22f52a8a92981071ec53962d3e12a029cdbf",
-      "expected": "accept"
-    },
-    {
-      "name": "not-fn-pointer-four-cvref",
-      "source": "#include <functional>\n#include <utility>\nint calls;\nbool odd(int x) noexcept { ++calls; return (x & 1) != 0; }\nint main() {\n  auto a = std::not_fn(&odd);\n  const auto b = std::not_fn(&odd);\n  const bool lvalue = a(3);\n  const bool constant_lvalue = b(4);\n  const bool rvalue = std::move(a)(5);\n  const bool constant_rvalue = std::move(b)(6);\n  return lvalue || !constant_lvalue || rvalue || !constant_rvalue || calls != 4;\n}\n",
-      "source_sha256": "898831e9711440b59c6c1b164322388777e677e6e512d1df783f78d2b144630b",
-      "expected": "accept"
-    },
-    {
-      "name": "ordinary-source-not-fn-missing-owned-negation-definition",
-      "category": "ordinary-negation-body-guard",
-      "source": "#include <functional>\n#include <type_traits>\nint negations;\nstruct R {\n  int value;\n  int operator!() const;\n};\nR value(int x) { return R{x}; }\nint main() {\n  auto f = std::not_fn(&value);\n  static_assert(std::is_same<decltype(f(1)), int>::value, \"exact negation result\");\n  if (f(0) != 7 || f(3) != 10) return 1;\n  return negations != 2;\n}\n",
-      "source_sha256": "f676049d5ec96bda5e657e74eb15c6c887121fcb279f497f2c2626f76d00d7c6",
-      "expected": "reject",
-      "original_name": "missing-owned-negation-definition",
-      "original_parent_source_sha256": "81ac40da570ab7c0d60b289888826480455f4900dba474110bd346c67e299bc8",
-      "source_edits": [
-        [
-          "  int operator!() const { ++negations; return value + 7; }\n",
-          "  int operator!() const;\n"
-        ]
-      ],
-      "source_obligation": "An SDK result signature must not supply a missing owned method definition.",
-      "actual_cpp_syntax_or_refusal_verified": false
-    },
-    {
-      "name": "ordinary-source-not-fn-unsupported-owned-negation-body",
-      "category": "ordinary-negation-body-guard",
-      "source": "#include <functional>\n#include <type_traits>\nint negations;\nstruct R {\n  int value;\n  int operator!() const { throw value; }\n};\nR value(int x) { return R{x}; }\nint main() {\n  auto f = std::not_fn(&value);\n  static_assert(std::is_same<decltype(f(1)), int>::value, \"exact negation result\");\n  if (f(0) != 7 || f(3) != 10) return 1;\n  return negations != 2;\n}\n",
-      "source_sha256": "6ecccac61b027021b4a455e4243eb152031d1b9109b4f2838e751ed8e384f355",
-      "expected": "reject",
-      "original_name": "unsupported-owned-negation-body",
-      "original_parent_source_sha256": "81ac40da570ab7c0d60b289888826480455f4900dba474110bd346c67e299bc8",
-      "source_edits": [
-        [
-          "  int operator!() const { ++negations; return value + 7; }\n",
-          "  int operator!() const { throw value; }\n"
-        ]
-      ],
-      "source_obligation": "The actual owned body must be checked even when an SDK signature and result type are valid.",
-      "actual_cpp_syntax_or_refusal_verified": false
-    },
-    {
-      "name": "ordinary-source-not-fn-nontrivial-negation-result-lifetime",
-      "category": "unsupported-result-lifetime",
-      "source": "#include <functional>\n#include <type_traits>\nint negations;\nstruct R {\n  int value;\n  int operator!() const { ++negations; return value + 7; }\n  ~R() { ++negations; }\n};\nR value(int x) { return R{x}; }\nint main() {\n  auto f = std::not_fn(&value);\n  static_assert(std::is_same<decltype(f(1)), int>::value, \"exact negation result\");\n  if (f(0) != 7 || f(3) != 10) return 1;\n  return negations != 2;\n}\n",
-      "source_sha256": "bae8dbd4107802d8fec0809f5ce892c631fffae18e7cc71016bb97204ab364f6",
-      "expected": "reject",
-      "original_name": "nontrivial-negation-result-lifetime",
-      "original_parent_source_sha256": "81ac40da570ab7c0d60b289888826480455f4900dba474110bd346c67e299bc8",
-      "source_edits": [
-        [
-          "  int operator!() const { ++negations; return value + 7; }\n",
-          "  int operator!() const { ++negations; return value + 7; }\n  ~R() { ++negations; }\n"
-        ]
-      ],
-      "source_obligation": "The trivial-result increment must not drop the actual returned object destructor or its side effects.",
-      "actual_cpp_syntax_or_refusal_verified": false
-    },
-    {
-      "name": "ordinary-source-not-fn-owned-missing-call-definition",
-      "category": "ordinary-owned-callable-body-guard",
-      "expected": "reject",
-      "source": "#include <functional>\nint copies, moves, calls;\nstruct P {\n  int state;\n  P(int x) : state(x) {}\n  P(const P &p) : state(p.state) { ++copies; }\n  P(P &&p) : state(p.state) { ++moves; p.state = -1; }\n  bool operator()(int x);\n};\nint main() {\n  P original(1);\n  auto f = std::not_fn(original);\n  if (copies != 1 || moves != 0 || original.state != 1) return 1;\n  if (!f(2) || f(4) || original.state != 1 || calls != 2) return 2;\n  auto g = f;\n  if (copies != 2 || g(0) || calls != 3) return 3;\n  return 0;\n}\n",
-      "source_sha256": "4d3c564f218e9ed1c533648488678b81684bab7cd2e081135b634b2b1a9ff021",
-      "source_edits": [
-        [
-          "  bool operator()(int x) { ++calls; state += x; return state > 5; }\n",
-          "  bool operator()(int x);\n"
-        ]
-      ],
-      "original_positive_name": "ordinary-source-not-fn-copied-state",
-      "original_positive_source_sha256": "8b309d87f8477420b0cae73400b5f2c80e947c2a3305c0cced1463c347a0cb13"
-    },
-    {
-      "name": "ordinary-source-not-fn-owned-unsupported-call-body",
-      "category": "ordinary-owned-callable-body-guard",
-      "expected": "reject",
-      "source": "#include <functional>\nint copies, moves, calls;\nstruct P {\n  int state;\n  P(int x) : state(x) {}\n  P(const P &p) : state(p.state) { ++copies; }\n  P(P &&p) : state(p.state) { ++moves; p.state = -1; }\n  bool operator()(int x) { throw state; }\n};\nint main() {\n  P original(1);\n  auto f = std::not_fn(original);\n  if (copies != 1 || moves != 0 || original.state != 1) return 1;\n  if (!f(2) || f(4) || original.state != 1 || calls != 2) return 2;\n  auto g = f;\n  if (copies != 2 || g(0) || calls != 3) return 3;\n  return 0;\n}\n",
-      "source_sha256": "bb4890ae78a407f04ebefa15941aeaf43c048eb01b808333b7c009bfc01aedfc",
-      "source_edits": [
-        [
-          "  bool operator()(int x) { ++calls; state += x; return state > 5; }\n",
-          "  bool operator()(int x) { throw state; }\n"
-        ]
-      ],
-      "original_positive_name": "ordinary-source-not-fn-copied-state",
-      "original_positive_source_sha256": "8b309d87f8477420b0cae73400b5f2c80e947c2a3305c0cced1463c347a0cb13"
-    },
-    {
-      "name": "ordinary-source-not-fn-reference-missing-call-definition",
-      "category": "ordinary-reference-callable-body-guard",
-      "expected": "reject",
-      "source": "#include <functional>\nstruct P {\n  int value;\n  bool operator()(int x);\n};\nstruct C {\n  int value;\n  bool operator()(int x) const { return value == x; }\n};\nint main() {\n  P p{1}; const C c{7};\n  auto f = std::not_fn(std::ref(p));\n  auto g = std::not_fn(std::cref(c));\n  if (!f(2) || p.value != 3 || f(3) || p.value != 6) return 1;\n  auto copy = f;\n  if (copy(1) || p.value != 7 || g(7) || !g(6)) return 2;\n  return 0;\n}\n",
-      "source_sha256": "afad4909e85a9748e9f126cd697bea0f8e15bc8d8cb67b7821a24b1133e1a089",
-      "source_edits": [
-        [
-          "  bool operator()(int x) { value += x; return value > 4; }",
-          "  bool operator()(int x);"
-        ]
-      ],
-      "original_positive_name": "ordinary-source-not-fn-reference-wrapper",
-      "original_positive_source_sha256": "21e878504d2dece3510c3a45d3b51d7bafa7efb6e142de5ad8ce622c7265a786"
-    },
-    {
-      "name": "ordinary-source-not-fn-reference-unsupported-call-body",
-      "category": "ordinary-reference-callable-body-guard",
-      "expected": "reject",
-      "source": "#include <functional>\nstruct P {\n  int value;\n  bool operator()(int x) { throw x; }\n};\nstruct C {\n  int value;\n  bool operator()(int x) const { return value == x; }\n};\nint main() {\n  P p{1}; const C c{7};\n  auto f = std::not_fn(std::ref(p));\n  auto g = std::not_fn(std::cref(c));\n  if (!f(2) || p.value != 3 || f(3) || p.value != 6) return 1;\n  auto copy = f;\n  if (copy(1) || p.value != 7 || g(7) || !g(6)) return 2;\n  return 0;\n}\n",
-      "source_sha256": "017e97bb81966bb56007a98b91f553db1f1e3d9e2be073dedf7b9dcf53c7bf1c",
-      "source_edits": [
-        [
-          "  bool operator()(int x) { value += x; return value > 4; }",
-          "  bool operator()(int x) { throw x; }"
-        ]
-      ],
-      "original_positive_name": "ordinary-source-not-fn-reference-wrapper",
-      "original_positive_source_sha256": "21e878504d2dece3510c3a45d3b51d7bafa7efb6e142de5ad8ce622c7265a786"
-    },
-    {
-      "name": "ordinary-source-not-fn-nested-unsupported-leaf-body",
-      "category": "ordinary-nested-source-guard",
-      "expected": "reject",
-      "source": "#include <functional>\nint calls;\nint value(int x) { throw x; }\nint main() {\n  auto f = std::not_fn(std::not_fn(&value));\n  if (f(0) || !f(2) || calls != 2) return 1;\n  auto g = f;\n  if (!g(-3) || calls != 3) return 2;\n  return 0;\n}\n",
-      "source_sha256": "1a229e7d1f97d0d14500bd0e709e8b86e4593e688c3585506c46125d2b64395d",
-      "source_edits": [
-        [
-          "int value(int x) { ++calls; return x; }",
-          "int value(int x) { throw x; }"
-        ]
-      ],
-      "original_positive_name": "ordinary-source-not-fn-nested-adapters",
-      "original_positive_source_sha256": "526ba4898dfa558ee054497bf191b9da4b3a17caf94376edb5c1c51535593b54",
-      "diagnostic_expectation_status": "proposed-unobserved",
-      "proposed_allowed_diagnostic_codes": [
-        "TR0201",
-        "TR0203"
-      ],
-      "actual_diagnostic_codes": null,
-      "diagnostic_must_be_observed_in_actions": true
-    },
-    {
-      "name": "ordinary-source-not-fn-nested-third-layer-scope",
-      "category": "ordinary-nested-source-guard",
-      "expected": "reject",
-      "source": "#include <functional>\nint calls;\nint value(int x) { ++calls; return x; }\nint main() {\n  auto f = std::not_fn(std::not_fn(std::not_fn(&value)));\n  if (f(0) || !f(2) || calls != 2) return 1;\n  auto g = f;\n  if (!g(-3) || calls != 3) return 2;\n  return 0;\n}\n",
-      "source_sha256": "ac42ed4aa0bf0dce2f7213e75949109e174c0536e6e40d6a2139b6db79a3c388",
-      "source_edits": [
-        [
-          "  auto f = std::not_fn(std::not_fn(&value));",
-          "  auto f = std::not_fn(std::not_fn(std::not_fn(&value)));"
-        ]
-      ],
-      "original_positive_name": "ordinary-source-not-fn-nested-adapters",
-      "original_positive_source_sha256": "526ba4898dfa558ee054497bf191b9da4b3a17caf94376edb5c1c51535593b54",
-      "diagnostic_expectation_status": "proposed-unobserved",
-      "proposed_allowed_diagnostic_codes": [
-        "TR0201",
-        "TR0203"
-      ],
-      "actual_diagnostic_codes": null,
-      "diagnostic_must_be_observed_in_actions": true
-    },
-    {
-      "name": "bind-fully-bound-value-copies",
-      "source": "#include <functional>\n#include <utility>\nint calls;\nint add(int a, int b) { ++calls; return a + b; }\nint main() {\n  auto f = std::bind(&add, 3, 4);\n  auto copy = f;\n  const auto fixed = copy;\n  if (f() != 7 || copy() != 7 || fixed() != 7 || std::move(copy)() != 7) return 1;\n  return calls != 4;\n}\n",
-      "source_sha256": "423b8da11cb05ebbcf04d72addc5d1317818a29ad0438742ef6b86097babd9d1",
+      "name": "factory-placeholder-one",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){auto f=std::bind(&identity,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "2bc72d49eff66c701b5f363a4b92e286279a74c952be41d527bab2043dafacee",
       "expected": "accept",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-captures-function-pointer-value",
-      "source": "#include <functional>\nint first(int a, int b) { return a + b; }\nint second(int, int) { return -1; }\nint main() {\n  int (*pointer)(int, int) = &first;\n  auto f = std::bind(pointer, 3, 4);\n  pointer = &second;\n  return f() != 7 || pointer(3, 4) != -1;\n}\n",
-      "source_sha256": "e4ed0f2db32931da39daedad796df2ba0ec3b55a4188719072b6934dc41e37b0",
+      "name": "factory-placeholder-parentheses",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){auto f=std::bind(&sum,(std::placeholders::_2),((std::placeholders::_1)));return 0;}\n",
+      "source_sha256": "ad78048d644d52b0a7809f527fc43701b4ae28f94380c2beb636911ef57d4bae",
       "expected": "accept",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-bound-expression-effects-once",
-      "source": "#include <functional>\nint left_builds, right_builds, calls;\nint left() { ++left_builds; return 5; }\nint right() { ++right_builds; return 7; }\nint add(int a, int b) { ++calls; return a + b; }\nint main() {\n  auto f = std::bind(&add, left(), right());\n  if (left_builds != 1 || right_builds != 1 || calls != 0) return 1;\n  auto copy = f;\n  if (f() != 12 || copy() != 12) return 2;\n  return left_builds != 1 || right_builds != 1 || calls != 2;\n}\n",
-      "source_sha256": "2ca7e15dd16efb6cdcb2e627d1a7159f0fb45b56cb5704b877a2b6023dbd6aa8",
+      "name": "factory-placeholder-repeated",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){auto f=std::bind(&sum,std::placeholders::_1,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "0b82de2fa082badfe0f03826e08fe497391cdac8e01aa02acb59b5a4d60392dc",
       "expected": "accept",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-borrowed-scalar-argument",
-      "source": "#include <functional>\nint calls;\nint add_to(int &value, int delta) { ++calls; value += delta; return value; }\nint main() {\n  int value = 7;\n  auto f = std::bind(&add_to, std::ref(value), 3);\n  auto copy = f;\n  if (f() != 10 || copy() != 13 || value != 13) return 1;\n  return calls != 2;\n}\n",
-      "source_sha256": "a1a56ec0a672eea6bd79aba1c39efadefaca69b6ba5a17290ce30992d0b40a3b",
+      "name": "factory-placeholder-mixed-reference",
+      "source": "#include <functional>\nint combine(int& n,int a,int b){return n+a+b;}\nint main(){int n=2;auto f=std::bind(&combine,std::ref(n),4,std::placeholders::_1);return n!=2;}\n",
+      "source_sha256": "a253f6b47ec769f65ec23a25ea4d8297c6e11204035e484936bcf8196deb7ff7",
       "expected": "accept",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-live-reference-result",
-      "source": "#include <functional>\n#include <type_traits>\nint &identity(int &value) { return value; }\nint main() {\n  int value = 7;\n  auto f = std::bind(&identity, std::ref(value));\n  static_assert(std::is_same<decltype(f()), int &>::value, \"reference result\");\n  f() += 3;\n  const auto copy = f;\n  copy() = 14;\n  return value != 14;\n}\n",
-      "source_sha256": "9fe7d9cdd1d857c3e243e18f56b41cc9a1588b6a87e249628af3b1573ebb60db",
+      "name": "factory-placeholder-effects",
+      "source": "#include <functional>\nusing Callback=int(*)(int,int);int selections,captures;int sum(int a,int b){return a+b;}Callback select(){++selections;return &sum;}int capture(){++captures;return 7;}\nint main(){auto f=std::bind(select(),capture(),std::placeholders::_1);return selections!=1||captures!=1;}\n",
+      "source_sha256": "f00b6810b51467cd5e1c66840e6d9c2fdfc9806741eff8f7fbc897440c737961",
       "expected": "accept",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-void-result",
-      "source": "#include <functional>\nint calls;\nvoid store(int *target, int value) { ++calls; *target = value; }\nint main() {\n  int value = 0;\n  auto f = std::bind(&store, &value, 9);\n  f();\n  if (value != 9 || calls != 1) return 1;\n  value = 2;\n  f();\n  return value != 9 || calls != 2;\n}\n",
-      "source_sha256": "cd12e9224b32d26cdff21fcd9d044031de247975ec22faa232762fa49fa41117",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-result-and-exception-queries",
-      "source": "#include <functional>\n#include <type_traits>\nint add(int a, int b) noexcept { return a + b; }\nint main() {\n  auto f = std::bind(&add, 3, 4);\n  using F = decltype(f);\n  static_assert(std::is_bind_expression<F>::value, \"bind expression\");\n  static_assert(std::is_same<decltype(f()), int>::value, \"result type\");\n  static_assert(!noexcept(f()), \"pinned SDK operator has no noexcept signature\");\n  return f() != 7;\n}\n",
-      "source_sha256": "ebc8e5056c4d6bf0f7517e0ebe1717e79912f5eaa6c7c6e32972cb378472e826",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-lvalue-captures-after-argument-effects",
-      "source": "#include <functional>\nint first(int, int) { return -1; }\nint second(int a, int b) { return 100 + 10 * a + b; }\nint &change(int (*&pointer)(int, int), int &value) {\n  pointer = &second;\n  value = 3;\n  return value;\n}\nint main() {\n  int (*pointer)(int, int) = &first;\n  int value = 1;\n  auto f = std::bind(pointer, change(pointer, value), value);\n  if (f() != 133) return 1;\n  value = 9;\n  pointer = &first;\n  return f() != 133;\n}\n",
-      "source_sha256": "36e239740481446b2397da1316fb807dd283b7c502f8f39c9d6e7fb3e2abc9f9",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-stored-state-and-rvalue-receiver",
-      "source": "#include <functional>\n#include <type_traits>\n#include <utility>\nint increment(int &value) { return ++value; }\nint main() {\n  auto f = std::bind(&increment, 4);\n  auto copy = f;\n  using F = decltype(f);\n  static_assert(!std::is_invocable<const F &>::value, \"const stored value cannot bind mutable int reference\");\n  if (f() != 5 || std::move(f)() != 6 || copy() != 5) return 1;\n  return f() != 7;\n}\n",
-      "source_sha256": "967ec76e1957b8b7d653734291d4d30a7cb24b906748e67d5ae57fff030eba15",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-prvalue",
-      "source": "#include <functional>\n#include <utility>\nint twice(int n){return n*2;}\nint main(){auto f=std::bind(&twice,21);return f(99)!=42;}\n",
-      "source_sha256": "c694df2b683623de2f5a998b47d3b9c4c5f426d972dadb09a0e48899f7fb2fc0",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-cv-lvalues",
-      "source": "#include <functional>\n#include <utility>\nint plus(int a,int b){return a+b;}\nint main(){int n=8;const int c=9;auto f=std::bind(&plus,3,4);return f(n,c)!=7||n!=8;}\n",
-      "source_sha256": "1b52d24341568b206cc7b5b4e2676915c20db99f4199ef4c16ae0cfb24a70401",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-effects-once",
-      "source": "#include <functional>\n#include <utility>\nint bump(int& n){return ++n;}\nint plus(int a,int b){return a+b;}\nint main(){int a=0,b=0;auto f=std::bind(&plus,3,4);int r=f(bump(a),bump(b));return r!=7||a!=1||b!=1;}\n",
-      "source_sha256": "1fd27d08fbe1a77ca74378f7ad65b5f475ed25483c9335816d3a02f84ac2b163",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-updates-referent",
-      "source": "#include <functional>\n#include <utility>\nint plus(int a,int b){return a+b;}\nint main(){int n=4;auto f=std::bind(&plus,std::ref(n),3);int r=f((n=9));return r!=12||n!=9;}\n",
-      "source_sha256": "3139d80b8325c1c087310c7d998bb35c30ebc246d06ef18271aec8c7feb06071",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-same-bind-reentry",
-      "source": "#include <functional>\n#include <utility>\nint bump(int& n){return ++n;}\nint main(){auto f=std::bind(&bump,4);int r=f(f());int s=f();return r!=6||s!=7;}\n",
-      "source_sha256": "24fa424dd2968431825b40690786584361b8ce974e6dae672fc16282ba54b750",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-const-receiver",
-      "source": "#include <functional>\n#include <utility>\nint plus(int a,int b){return a+b;}\nint main(){const auto f=std::bind(&plus,3,4);return f(9)!=7;}\n",
-      "source_sha256": "1bf2c714c14e58fb8eef7a734721906652f4fee3fe8dac967d520b1094d014f6",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-rvalue-receiver",
-      "source": "#include <functional>\n#include <utility>\nint bump(int& n){return ++n;}\nint main(){auto f=std::bind(&bump,4);int calls=0;int r=std::move(f)(++calls);int s=f();return r!=5||s!=6||calls!=1;}\n",
-      "source_sha256": "2e8ea562786c55a2bcf5432f4f691576fba8c88c750679b347ad43c382ebd292",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-void-target",
-      "source": "#include <functional>\n#include <utility>\nvoid add(int& n,int x){n+=x;}\nint main(){int n=1,a=0,b=0;auto f=std::bind(&add,std::ref(n),4);f(++a,++b);return n!=5||a!=1||b!=1;}\n",
-      "source_sha256": "ffc9bc259cc5cd2b85aa032762cf3ac9eeb6baa4e8410b7ef85633e76346cc37",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-reference-result",
-      "source": "#include <functional>\n#include <utility>\nint& identity(int& n){return n;}\nint main(){int n=1;auto f=std::bind(&identity,std::ref(n));int& r=f((n=11));r=12;return n!=12;}\n",
-      "source_sha256": "a473378fd9fd20d3470e598528894ec5a1c1ac9868b132f588c83ca942eb1250",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-receiver-before-unused-effects",
-      "source": "#include <functional>\n#include <utility>\nint bump(int& n){return ++n;}\nint main(){auto a=std::bind(&bump,4);auto b=std::bind(&bump,10);auto* p=&a;int r=(*p)((p=&b,0));int s=a();int t=b();return r!=5||s!=6||t!=11||p!=&b;}\n",
-      "source_sha256": "99803201c1f6becb0821d666c235e6d939a2f4951fca33bd50e54053efbfeb3e",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-rvalue-scalar",
-      "source": "#include <functional>\n#include <utility>\nint twice(int n){return n*2;}\nint main(){int n=9;auto f=std::bind(&twice,21);return f(std::move(n))!=42||n!=9;}\n",
-      "source_sha256": "0fac1197a39c14cbeb34f9672d2c7c457bb08217e43f69a01acabdccb671d762",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-call-unused-invalid-ordinary-body",
-      "source": "#include <functional>\n#include <utility>\nint forbidden(){asm(\"\");return 1;}\nint twice(int n){return n*2;}\nint main(){auto f=std::bind(&twice,21);return f(forbidden())!=42;}\n",
-      "source_sha256": "ee14f514e833d974d62c01f75a9861e535d619ea1329c5c386fbb2e45528b888",
+      "name": "factory-placeholder-standalone-value",
+      "source": "#include <functional>\nint main(){auto p=std::placeholders::_1;return 0;}\n",
+      "source_sha256": "b6ebffe058bdf177f47cc1c2e15d528366cc7a3b1c8e3b2ccae720d9c5814a00",
       "expected": "reject",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-zero-bound-value",
-      "source": "#include <functional>\nint answer(){return 37;}\nint main(){auto f=std::bind(&answer);return f()!=37;}\n",
-      "source_sha256": "de9c183a26860cf349390ff7541b895ce21e8528252421584a44eb0848b8c40b",
-      "expected": "accept",
+      "name": "factory-placeholder-standalone-address",
+      "source": "#include <functional>\nint main(){auto p=&std::placeholders::_1;return p==nullptr;}\n",
+      "source_sha256": "f966efa93d9601ce55ec77b6cdb05e9687a08365917450134b32a024e6ec916c",
+      "expected": "reject",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-zero-bound-designator",
-      "source": "#include <functional>\nint calls;int answer(){++calls;return 37;}\nint main(){auto f=std::bind(answer);return f()!=37||calls!=1;}\n",
-      "source_sha256": "d32cbec368c9d84d665f20f76731bacdb957dd38d73de5755b40626aa1dcdf75",
-      "expected": "accept",
+      "name": "factory-placeholder-third-rank",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){auto f=std::bind(&identity,std::placeholders::_3);return 0;}\n",
+      "source_sha256": "7cb2ddf6de77f68d828d28f696e76630beff69d084a0fc779b1e6bf3ba60f22e",
+      "expected": "reject",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-zero-bound-copy-cvref",
-      "source": "#include <functional>\n#include <utility>\nint calls;int answer(){++calls;return 37;}\nint main(){auto f=std::bind(&answer);auto copy=f;const auto fixed=copy;return f()!=37||copy()!=37||fixed()!=37||std::move(copy)()!=37||calls!=4;}\n",
-      "source_sha256": "eca7e15458d8206c7316e8716cec1a9b7d4c265e9915b7e288a8f80885f0fd47",
-      "expected": "accept",
+      "name": "factory-placeholder-local-alias",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){const auto p=std::placeholders::_1;auto f=std::bind(&identity,p);return 0;}\n",
+      "source_sha256": "7566d67005105115066d248da5a38f96769964fb52ed25360901c02c82e7b574",
+      "expected": "reject",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-zero-bound-factory-once",
-      "source": "#include <functional>\nusing Callback=int(*)();int selections;int first(){return 7;}int second(){return 9;}\nCallback selected=&first;Callback select(){++selections;return selected;}\nint main(){auto f=std::bind(select());selected=&second;return f()!=7||f()!=7||selections!=1;}\n",
-      "source_sha256": "42569cbc4e7d2e27ea5c82038af17ff062c84100d12848380c69be3a3a762a6d",
-      "expected": "accept",
+      "name": "factory-placeholder-comma-effect",
+      "source": "#include <functional>\nint effects;void tick(){++effects;}int identity(int n){return n;}\nint main(){auto f=std::bind(&identity,(tick(),std::placeholders::_1));return 0;}\n",
+      "source_sha256": "28c53996c7bc3d355e0a9de272adc8c98f7fcde66381002240995be0fd06e502",
+      "expected": "reject",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-zero-bound-void-target",
-      "source": "#include <functional>\nint calls;void touch(){++calls;}\nint main(){const auto f=std::bind(&touch);f();f();return calls!=2;}\n",
-      "source_sha256": "692d348f695124bb6001b732d7e9f3684a31128d06a4379df2828d75e1a1153c",
-      "expected": "accept",
+      "name": "factory-placeholder-conditional",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){int flag=1;auto f=std::bind(&identity,flag?std::placeholders::_1:std::placeholders::_1);return 0;}\n",
+      "source_sha256": "43a2e4d85fd893d3ec2527666661608f24ea85e52a4841458df0ce91d295d570",
+      "expected": "reject",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-zero-bound-reference-result",
-      "source": "#include <functional>\nint stored=5;int& access(){return stored;}\nint main(){auto f=std::bind(&access);f()=17;const auto fixed=f;return &fixed()!=&stored||stored!=17;}\n",
-      "source_sha256": "2dfd7995c72d3cdafe166bf1658c3e870184a3d3e4249c5fd668204a672a7871",
-      "expected": "accept",
+      "name": "factory-placeholder-ordinary-body-guard",
+      "source": "#include <functional>\nint forbidden(int n){asm(\"\");return n;}\nint main(){auto f=std::bind(&forbidden,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "606f517c6c7df157fa7dd33886b66273f93758df975966a53dcb7d71e179d5de",
+      "expected": "reject",
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-zero-bound-unused-effects",
-      "source": "#include <functional>\nint effects;int targets;int bump(){return ++effects;}int answer(){++targets;return 37;}\nint main(){auto f=std::bind(&answer);int value=3;const int fixed=4;return f(bump(),bump())!=37||effects!=2||targets!=1||f(value,fixed)!=37||targets!=2||value!=3;}\n",
-      "source_sha256": "579b4c3c3e8fb036b3a572ab04e41ea6d781aef3651518cffba1af0981cac451",
+      "name": "bind-placeholder-one",
+      "source": "#include <functional>\nint twice(int n){return n*2;}\nint main(){auto f=std::bind(&twice,std::placeholders::_1);return f(9)!=18;}\n",
+      "source_sha256": "a6b03c381f2203e05ac49ce16bc6b577a3618abc304fec8a6d89f804455403eb",
       "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-zero-bound-result-kinds",
-      "source": "#include <functional>\nint stored=5;int* address(){return &stored;}double half(){return 0.5;}\nint main(){auto pointer=std::bind(&address);auto real=std::bind(&half);return pointer()!=&stored||*pointer()!=5||real()!=0.5;}\n",
-      "source_sha256": "302be284785ab81a26632e0ffc8edc647ca64faf15eb09467588037700be81da",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-zero-bound-invalid-ordinary-body",
-      "source": "#include <functional>\nint forbidden(){asm(\"\" ::: \"memory\");return 7;}\nint main(){auto f=std::bind(&forbidden);return f();}\n",
-      "source_sha256": "ba029bedfb5855e2a5839ceda381ac0628b76de5116eb91f244c39a3e29d39e2",
       "expected_proposed_not_observed": true,
-      "expected": "reject"
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderOneRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-reordered",
+      "source": "#include <functional>\nint encode(int a,int b){return 10*a+b;}\nint main(){auto f=std::bind(&encode,std::placeholders::_2,std::placeholders::_1);const auto copy=f;return f(3,7)!=73||copy(4,8)!=84;}\n",
+      "source_sha256": "ad4bb7d88e15f685a4029bc6d7d148e83fa7256931f67eac773b59dc465f59a8",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderReorderedRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-repeated-once",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){int n=5;auto f=std::bind(&sum,std::placeholders::_1,std::placeholders::_1);return f(++n)!=12||n!=6;}\n",
+      "source_sha256": "26b218803e06a5aa2472ccdd8690b57523f49826b041f86159b243c3dd3ea2b8",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderRepeatedOnceRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-independent-bound-state",
+      "source": "#include <functional>\n#include <utility>\nint advance(int& n,int step){n+=step;return n;}\nint main(){auto f=std::bind(&advance,1,std::placeholders::_1);auto copy=f;return f(2)!=3||std::move(f)(3)!=6||copy(2)!=3;}\n",
+      "source_sha256": "f022800150530b34a7fcab3342f24506713e7ad2ee76c3f46a01b453bba99101",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderIndependentBoundStateRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-borrowed-state",
+      "source": "#include <functional>\nint advance(int& n,int step){n+=step;return n;}\nint main(){int n=5;auto f=std::bind(&advance,std::ref(n),std::placeholders::_1);const auto copy=f;return f(2)!=7||copy(3)!=10||f((n=20,4))!=24||n!=24;}\n",
+      "source_sha256": "7d07d17ca105796b4a2989f5fb96eb72848d44ae1d3589b678a3217823438f57",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderBorrowedStateRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-unused-effects-before-read",
+      "source": "#include <functional>\nint read(int n){return n;}\nint main(){int n=0;auto f=std::bind(&read,std::placeholders::_1);return f(++n,++n)!=2||n!=2;}\n",
+      "source_sha256": "506e0abc9fc6164a153ee625e7dadfb20873d53623fd9a5b66c626cd296ca518",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderUnusedEffectsBeforeReadRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-live-reference",
+      "source": "#include <functional>\n#include <utility>\nint& identity(int& n){return n;}\nint main(){int n=5;auto f=std::bind(&identity,std::placeholders::_1);const auto copy=f;f(n)=9;return &copy(n)!=&n||std::move(f)(n)!=9;}\n",
+      "source_sha256": "bda6e3ae690b9ff0c6749a846c160de9b0d7e1f85139d50184cb73ee0c8fc4c6",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderLiveReferenceRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-capture-and-queries",
+      "source": "#include <functional>\n#include <type_traits>\nusing Callback=int(*)(int);int selections,calls;int first(int n){++calls;return n+1;}int second(int){return -1;}Callback target=&first;Callback select(){++selections;return target;}\nint main(){auto f=std::bind(select(),std::placeholders::_2);using F=decltype(f);static_assert(!std::is_invocable<F&,int>::value,\"second call argument required\");static_assert(std::is_invocable<F&,int,int>::value,\"two call arguments\");static_assert(std::is_same<decltype(f(3,4)),int>::value,\"scalar result\");static_assert(!std::is_nothrow_invocable<F&,int,int>::value,\"pinned exception signature\");target=&second;return selections!=1||calls!=0||f(3,4)!=5||calls!=1;}\n",
+      "source_sha256": "2e4b5463256765c309dfe495afc305b5fbb3586834f4927594ac9c49a3967e19",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderCaptureAndQueriesRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-ordinary-body-guard",
+      "source": "#include <functional>\nint forbidden(int n){asm(\"\");return n;}\nint main(){auto f=std::bind(&forbidden,std::placeholders::_1);return f(3);}\n",
+      "source_sha256": "760e4f6e857044be66a72504e06c9367040ce419d161a75b6da903c6b70edb94",
+      "expected": "reject",
+      "expected_proposed_not_observed": true,
+      "diagnostic": "TR0201",
+      "ast_kind": "GCCAsmStmt"
     },
     {
       "name": "bind-bound-pack-three-values",
@@ -637,30 +211,6 @@
       "expected_proposed_not_observed": true
     },
     {
-      "name": "bind-bound-pack-copied-state",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCopiedStateRunAtBothOptimizations",
-      "source": "#include <functional>\n#include <utility>\nint advance(int a,int b,int& c){return a+b+ ++c;}\nint main(){auto f=std::bind(&advance,4,5,6);auto copy=f;return f()!=16||std::move(f)()!=17||copy()!=16||f()!=18;}\n",
-      "source_sha256": "e15b66e3e19ff701280dd00ee12f242a6b0a291a5f8b0543bdbe7cefa3a3d92c",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-bound-pack-capture-effects",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCaptureEffectsRunAtBothOptimizations",
-      "source": "#include <functional>\nint left_builds,middle_builds,right_builds,calls;\nint left(){++left_builds;return 3;}int middle(){++middle_builds;return 5;}int right(){++right_builds;return 7;}\nint sum(int a,int b,int c){++calls;return a+b+c;}\nint main(){auto f=std::bind(&sum,left(),middle(),right());int unused=0;return left_builds!=1||middle_builds!=1||right_builds!=1||calls!=0||f(++unused,++unused)!=15||unused!=2||calls!=1;}\n",
-      "source_sha256": "dc249ceecf6c93776599f74db9e1272a8abda04fcc44572f8869376529e1f9a7",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
-      "name": "bind-bound-pack-captured-pointer",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCapturedPointerRunAtBothOptimizations",
-      "source": "#include <functional>\n#include <utility>\nint first(int a,int b,int c){return a+b+c;}int second(int,int,int){return -1;}\nint main(){int(*pointer)(int,int,int)=&first;auto f=std::bind(pointer,2,3,5);pointer=&second;const auto copy=f;return f()!=10||copy()!=10||std::move(f)()!=10||pointer(2,3,5)!=-1;}\n",
-      "source_sha256": "64339a034b7b5050e0236608ce35bbd1c9e38b415f2a1877689710c6c66fa36e",
-      "expected": "accept",
-      "expected_proposed_not_observed": true
-    },
-    {
       "name": "bind-bound-pack-result-kinds",
       "formal_test_name": "TranslateTest.CoreV2BindBoundPackResultKindsRunAtBothOptimizations",
       "source": "#include <functional>\n#include <type_traits>\nvoid store(int* p,int a,int b){*p=a+b;}int& identity(int& n,int,int){return n;}\nint main(){int n=0;auto write=std::bind(&store,&n,3,4);write();auto live=std::bind(&identity,std::ref(n),1,2);using F=decltype(live);static_assert(std::is_bind_expression<F>::value,\"bind expression\");static_assert(std::is_same<decltype(live()),int&>::value,\"live reference\");static_assert(!std::is_nothrow_invocable<F&>::value,\"pinned bind exception signature\");if(n!=7)return 1;live()=14;return n!=14||&live()!=&n;}\n",
@@ -676,6 +226,13 @@
       "diagnostic": "TR0201",
       "ast_kind": "GCCAsmStmt",
       "expected_proposed_not_observed": true
+    },
+    {
+      "name": "ordinary-source-ordinary-failed-source",
+      "expected": "invalid",
+      "source": "template<class T> int ordinary_source_failed(T){return 0;}\nint main(){return ordinary_source_failed();}\n",
+      "source_sha256": "50fb246eb58b5b57ade4e9dcf58c6e81677cac1e4e823ec45b369c133bd9647b",
+      "original_name": "ordinary-failed-source"
     }
   ],
   "producer_actual_job": 122606984385,
@@ -718,19 +275,12 @@
   },
   "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
   "target_abis": [
-    "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-apple-darwin",
-    "arm64-apple-darwin",
-    "x86_64-pc-windows-msvc",
-    "aarch64-pc-windows-msvc",
-    "i686-pc-windows-msvc",
-    "i686-unknown-linux-gnu"
+    "x86_64-unknown-linux-gnu"
   ],
   "fixture_group": "bind-call-arguments-clean456",
-  "source_repair_commit": "0ed08840e0c3e3ffe74e1e14a935c3f9a4b9fa03",
-  "clean_source_basis": "0ed08840e0c3e3ffe74e1e14a935c3f9a4b9fa03",
-  "required_requests": 600,
+  "source_repair_commit": "2bd58167d4dc1323884165d487221e7fa2e551c6",
+  "clean_source_basis": null,
+  "required_requests": 28,
   "required_acceptances": 416,
   "required_sdk_guard_rejections": 80,
   "required_unimplemented_not_fn_runtime_refusals": 8,
@@ -753,7 +303,7 @@
   "all_selected_source_bytes_preserved": true,
   "private_not_fn_admission_implemented": true,
   "not_fn_lowering_implemented": true,
-  "source_trace_included": false,
+  "source_trace_included": true,
   "inverse_source_edits": {},
   "frontend_execution_timeout_seconds": 60,
   "actual_same_source_six_report_sha256": null,
@@ -784,7 +334,7 @@
   "required_reference_wrapper_layouts": 16,
   "preparation_only": false,
   "prepared_owned256_template_sha256": "97da3970cc9f7555ac534a4f559a471fdb5ce41854aa4ba6cbf19642b8c4e796",
-  "execution_binding_required": true,
+  "execution_binding_required": false,
   "required_pid_records": 600,
   "required_original272_requests": 272,
   "required_original272_acceptances": 128,
@@ -802,10 +352,10 @@
   "actual_reference272_report_sha256": "6054ea4cbfcf6b3ceee84a9ba45138c7ec64f91cb7c8d64f2a665343ef2e6c16",
   "actual_same_source_six48_report_sha256": null,
   "current_private_input_sha256": {
-    "Frontend.cpp": "af37dafc18876a46a3207f41959bae7c47874d5bca276c9972c778088e4cae4e",
+    "Frontend.cpp": "f7d50466147c6a6ad5832c9275905e3b183655f4a4b2487db55dbd06811d13e0",
     "Lowering.cpp": "a2def7fd200b58588bcc7c5a5d7cd59c56abcac20b247f349a0ad952d627152e",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "a845ffc8bbf57947abd2f2e023e605fe4cb3cfc4d845300808fb36940e16cfb8",
+    "MathSDK.cpp": "9928dfde5ae177c659a6043dbe0ceb5ba4c4c3b9874853ae1d8fe91e65f9c049",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "2ed7b142423c9e364d5efe2361095d4b5798ff271878d3c138b964f963fc8670",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -857,6 +407,7 @@
   "required_expanded_bound_pack_acceptances": 64,
   "required_expanded_bound_pack_body_guard_refusals": 8,
   "expanded_bound_pack_cases_contract_sha256": "1345a813ac0fdd6056fb11aeebdabf3b758eab26960f9610f06d8b8396539549",
-  "source_syntax_validation_pending": true,
-  "post_merge_validation": true
+  "diagnostic_only": true,
+  "reference_source_basis": "677e0355755c383783546c7562442414cd9d2e93",
+  "actual_support_verified": false
 }
