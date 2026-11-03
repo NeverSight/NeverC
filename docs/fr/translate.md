@@ -1077,3 +1077,6 @@ Les substitutions de type du transfert sont liées à la fonction instanciée ex
 
 
 Le contrat conserve75 cas et ajoute21 cas de paramètres réservés sur8 ABI :768 requêtes,3840 traces de processus et785 commandes. Les36 sources natives sont conservées, avec13 sources supplémentaires à O0/O2, soit98 exécutions. Ce sont des obligations de validation, pas des résultats réussis ; le STL complet reste inachevé.
+
+
+La recherche get qualifiée vérifie séparément les familles array/pair non sélectionnées dans leurs seuls en-têtes SDK de déclaration et définition. Un tuple bind MSVC peut conserver une base vide de paramètre réservé SDK exactement à la fin de l’objet, sans champ de valeur ni accès mémoire. Les autres contrôles de limites, identité, source, disposition et ressources restent requis. Exécution et STL complet restent à vérifier.

@@ -1077,3 +1077,6 @@ Typersetzungen beim Weiterreichen werden an die genaue instanziierte Funktion un
 
 
 Der Vertrag erhält75 Fälle und ergänzt21 Platzhalterfälle auf8 ABIs:768 Anfragen,3840 Prozessprotokolle und785 Befehle. Zu den36 nativen Quellen kommen13 hinzu, mit98 Ausführungen bei O0/O2. Dies sind Prüfanforderungen, keine bestandenen Ergebnisse; vollständige STL-Unterstützung steht aus.
+
+
+Die qualifizierte get-Suche prüft nicht ausgewählte array/pair-Deklarationsfamilien frisch über deren genaue SDK-Vorwärtsdeklarationen und Definitionen. Ein MSVC-bind-Tupel darf eine zustandslose SDK-Platzhalterbasis genau am Objektende behalten, ohne Wertfeld oder Bytezugriff zu erzeugen. Sonstige Grenzen, Identitäten, Quell-, Layout- und Ressourcenprüfungen bleiben erforderlich. Ausführung und vollständige STL-Unterstützung stehen aus.

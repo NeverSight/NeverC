@@ -17405,3 +17405,6 @@ Placeholder body forwarding now binds substituted tuple types to the exact insta
 
 
 The next regression contract preserves all75 existing cases and adds21 placeholder cases across8 ABIs:768 requests,3840 process records and785 commands. Native reference coverage preserves all36 existing sources and adds13 sources at O0/O2, requiring98 executions. These are validation obligations, not completed results; full STL support remains unfinished.
+
+
+Qualified placeholder-body get lookup now verifies unselected array and pair declaration families in fresh checks across each exact SDK forward/definition header pair. MSVC bind tuples may retain a stateless SDK placeholder empty base at the exact end of the implementation object; it has no emitted value field or byte access. Other bounds, identity, source, layout and resource checks remain required. Execution validation and complete STL support are pending.

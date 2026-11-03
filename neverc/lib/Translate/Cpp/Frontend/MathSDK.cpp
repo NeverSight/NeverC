@@ -6808,12 +6808,20 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
         return std::nullopt;
       const auto &ElementBase = *LeafSpecialization->bases_begin();
       const auto *BaseRecord = ElementBase.getType()->getAsCXXRecordDecl();
+      const uint64_t ImplementationBits = uint64_t(ImplLayout.getSize().getQuantity()) * 8;
+      // MSVC may place a stateless placeholder empty base exactly one-past
+      // the implementation object. It remains metadata, with no value field
+      // or byte access; every nonempty field keeps its original bounds.
+      const bool EmptyAtEnd = BindPlaceholderStorage &&
+          Context.getTargetInfo().getCXXABI().isMicrosoft() &&
+          functionalBindEmptyPlaceholderStorage(S, SM, (*Types)[Index], Context) &&
+          Offset == ImplementationBits;
       if (ElementBase.isVirtual() ||
           ElementBase.getAccessSpecifier() != AS_private || !BaseRecord ||
           BaseRecord->getCanonicalDecl() != Definition->getCanonicalDecl() ||
           LeafLayout.getBaseClassOffset(Definition).getQuantity() != 0 ||
           Offset % 8 ||
-          Offset + 8 > uint64_t(ImplLayout.getSize().getQuantity()) * 8)
+          (Offset + 8 > ImplementationBits && !EmptyAtEnd))
         return std::nullopt;
       // Repeated empty subobjects of the same type must retain distinct
       // addresses.
@@ -21839,9 +21847,11 @@ class BindSourceProof {
         // A qualified dependent get lookup also retains the unselected array
         // overloads. Check their complete declaration family across its exact
         // forward/definition headers without granting their bodies permission.
+        NotFnSelectedSource UnselectedGet(S, SM, Context);
         if (!family(Template) &&
             (Name != "get" || SelectedCandidate ||
-             !Check.family(Template, {"__fwd/array.h", "array"}))) return nullptr;
+             (!UnselectedGet.family(Template, {"__fwd/array.h", "array"}) &&
+              !UnselectedGet.family(Template, {"__fwd/pair.h", "__utility/pair.h"})))) return nullptr;
         Found |= SelectedCandidate;
       }
       return Found ? Use : nullptr;

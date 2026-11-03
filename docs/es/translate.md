@@ -1077,3 +1077,6 @@ Las sustituciones de tipo del reenvío se vinculan a la función instanciada exa
 
 
 El contrato conserva75 casos y añade21 casos de marcadores en8 ABI:768 solicitudes,3840 registros de procesos y785 comandos. Conserva36 fuentes nativas y añade13 a O0/O2, con98 ejecuciones exigidas. Son requisitos de validación, no resultados aprobados; el STL completo sigue pendiente.
+
+
+La búsqueda get cualificada verifica por separado las familias array/pair no seleccionadas en sus cabeceras SDK exactas de declaración y definición. Un tuple bind de MSVC puede conservar una base vacía de marcador SDK exactamente al final del objeto, sin campo de valor ni acceso a bytes. Se mantienen los demás controles de límites, identidad, fuente, disposición y recursos. Ejecución y STL completo siguen pendientes.

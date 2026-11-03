@@ -1077,3 +1077,6 @@ Le sostituzioni del tipo inoltrato sono legate alla funzione istanziata esatta e
 
 
 Il contratto conserva75 casi e aggiunge21 casi segnaposto su8 ABI:768 richieste,3840 registrazioni di processo e785 comandi. Conserva36 sorgenti native e ne aggiunge13 a O0/O2, richiedendo98 esecuzioni. Sono obblighi di verifica, non risultati superati; il supporto STL completo resta incompleto.
+
+
+La ricerca get qualificata verifica separatamente le famiglie array/pair non selezionate nei rispettivi header SDK esatti di dichiarazione e definizione. Un tuple bind MSVC può mantenere una base vuota segnaposto SDK esattamente alla fine dell’oggetto, senza campo valore né accesso ai byte. Restano gli altri controlli di limiti, identità, sorgente, disposizione e risorse. Esecuzione e STL completo restano da verificare.
