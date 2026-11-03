@@ -59,8 +59,10 @@ static void compare_transfer(struct cpu *candidate, struct cpu *oracle,
 }
 
 int main(int argc, char **argv) {
-  CHECK(argc == 4 && (!strcmp(argv[3], "32") || !strcmp(argv[3], "64")));
-  const int protected_mode = !strcmp(argv[3], "32");
+  CHECK(argc == 4 && (!strcmp(argv[3], "16") || !strcmp(argv[3], "32") ||
+                      !strcmp(argv[3], "64")));
+  const int protected_mode = strcmp(argv[3], "64") != 0;
+  const int code16 = !strcmp(argv[3], "16");
   const int kvm = open("/dev/kvm", O_RDWR | O_CLOEXEC);
   if (kvm < 0) {
     fprintf(stderr, "KVM unavailable: errno %d\n", errno);
@@ -107,6 +109,8 @@ int main(int argc, char **argv) {
   CHECK(run_size > 0);
   struct cpu candidate = create_cpu(vm, 0, run_size, cpuid, protected_mode);
   struct cpu oracle = create_cpu(vm, 1, run_size, cpuid, protected_mode);
+  if (code16)
+    candidate.initial.cs.db = oracle.initial.cs.db = 0;
   uint8_t *before = malloc(RAM_SIZE), *after = malloc(RAM_SIZE);
   CHECK(before && after);
   FILE *manifest = fopen(argv[2], "r");
@@ -130,7 +134,7 @@ int main(int argc, char **argv) {
       original[length++] = 0x0f;
       original[length++] = 0x34;
     } else {
-      if (width == 16)
+      if ((width == 16 && !code16) || (width == 32 && code16))
         original[length++] = 0x66;
       else if (width == 64)
         original[length++] = 0x48;

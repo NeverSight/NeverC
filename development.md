@@ -150,7 +150,11 @@ paths against independent original-byte KVM executions. Its default tests
 IRET/RETF operand sizes and SYSENTER, with plain/fixed/dynamic/pressure compiler
 frames, CPL0/CPL3 transitions, aligned/unaligned and canonical high frame aliases,
 flag samples and immediate cleanup. `--i386` selects the two full LLVM code32
-profiles. `--smm` tests RSM with separate normal/SMM memory spaces and SMI-created
+profiles; `--code16` selects those profiles with a 16-bit code segment and the
+same 32-bit stack ABI. Both run 16/32-bit IRET/RETF and SYSENTER. Code16 checks
+the opposite operand-size-prefix polarity and corrupts the full ESP carrier in
+its negative control. This is a full LLVM capability; NeverC's frontend target
+remains x86-64. `--smm` tests RSM with separate normal/SMM memory spaces and SMI-created
 save images, then establishes code64 execution inside SMM for the compiler
 wrapper. This is KVM-mediated SMM qualification, not bare-metal firmware evidence.
 The comparison covers all represented GPRs, PC, flags, segment/system state,
