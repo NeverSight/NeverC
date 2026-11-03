@@ -1080,3 +1080,6 @@ Le contrat conserve75 cas et ajoute21 cas de paramètres réservés sur8 ABI :76
 
 
 La recherche get qualifiée vérifie séparément les familles array/pair non sélectionnées dans leurs seuls en-têtes SDK de déclaration et définition. Un tuple bind MSVC peut conserver une base vide de paramètre réservé SDK exactement à la fin de l’objet, sans champ de valeur ni accès mémoire. Les autres contrôles de limites, identité, source, disposition et ressources restent requis. Exécution et STL complet restent à vérifier.
+
+
+La validation STL réessaie désormais les téléchargements de l’installateur LLVM lors de pannes HTTPS ou DNS temporaires, avec des limites fixes. Versions LLVM, options de compilation et budgets de tests restent inchangés. Les résultats d’exécution du dernier code et le STL complet restent à vérifier.

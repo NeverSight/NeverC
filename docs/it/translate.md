@@ -1080,3 +1080,6 @@ Il contratto conserva75 casi e aggiunge21 casi segnaposto su8 ABI:768 richieste,
 
 
 La ricerca get qualificata verifica separatamente le famiglie array/pair non selezionate nei rispettivi header SDK esatti di dichiarazione e definizione. Un tuple bind MSVC può mantenere una base vuota segnaposto SDK esattamente alla fine dell’oggetto, senza campo valore né accesso ai byte. Restano gli altri controlli di limiti, identità, sorgente, disposizione e risorse. Esecuzione e STL completo restano da verificare.
+
+
+La verifica STL riprova con limiti fissi il download dell’installatore LLVM in caso di errori temporanei HTTPS o DNS. Versioni LLVM, opzioni di compilazione e budget dei test restano invariati. I risultati del codice attuale e il supporto STL completo restano da verificare.

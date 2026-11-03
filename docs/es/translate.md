@@ -1080,3 +1080,6 @@ El contrato conserva75 casos y añade21 casos de marcadores en8 ABI:768 solicitu
 
 
 La búsqueda get cualificada verifica por separado las familias array/pair no seleccionadas en sus cabeceras SDK exactas de declaración y definición. Un tuple bind de MSVC puede conservar una base vacía de marcador SDK exactamente al final del objeto, sin campo de valor ni acceso a bytes. Se mantienen los demás controles de límites, identidad, fuente, disposición y recursos. Ejecución y STL completo siguen pendientes.
+
+
+La validación STL reintenta con límites fijos la descarga del instalador LLVM ante fallos temporales de HTTPS o DNS. Se mantienen las versiones LLVM, opciones de compilación y presupuestos de pruebas. Los resultados del código actual y el STL completo siguen pendientes.

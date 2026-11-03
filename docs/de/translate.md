@@ -1080,3 +1080,6 @@ Der Vertrag erhält75 Fälle und ergänzt21 Platzhalterfälle auf8 ABIs:768 Anfr
 
 
 Die qualifizierte get-Suche prüft nicht ausgewählte array/pair-Deklarationsfamilien frisch über deren genaue SDK-Vorwärtsdeklarationen und Definitionen. Ein MSVC-bind-Tupel darf eine zustandslose SDK-Platzhalterbasis genau am Objektende behalten, ohne Wertfeld oder Bytezugriff zu erzeugen. Sonstige Grenzen, Identitäten, Quell-, Layout- und Ressourcenprüfungen bleiben erforderlich. Ausführung und vollständige STL-Unterstützung stehen aus.
+
+
+Die STL-Prüfung wiederholt den LLVM-Installer-Download bei vorübergehenden HTTPS- oder DNS-Fehlern mit festen Grenzen. LLVM-Versionen, Compileroptionen und Testbudgets bleiben gleich. Ausführungsergebnisse des aktuellen Quelltexts und vollständige STL-Unterstützung stehen aus.
