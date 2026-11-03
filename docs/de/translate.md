@@ -1074,3 +1074,6 @@ Platzhalter-Indextypen werden an die exakt geprüfte lokale Indexdeklaration und
 
 
 Typersetzungen beim Weiterreichen werden an die genaue instanziierte Funktion und ihren lokalen Index gebunden. Nicht ausgewählte array-get-Deklarationen werden nur bei der ursprünglichen qualifizierten Namenssuche über ihre SDK-Vorwärtsdeklarationen und Definitionen geprüft. Der ausgewählte tuple-Getter und beide Funktionskörper behalten unabhängige vollständige Prüfungen. Ausführung und vollständige STL-Unterstützung stehen aus.
+
+
+Der Vertrag erhält75 Fälle und ergänzt21 Platzhalterfälle auf8 ABIs:768 Anfragen,3840 Prozessprotokolle und785 Befehle. Zu den36 nativen Quellen kommen13 hinzu, mit98 Ausführungen bei O0/O2. Dies sind Prüfanforderungen, keine bestandenen Ergebnisse; vollständige STL-Unterstützung steht aus.

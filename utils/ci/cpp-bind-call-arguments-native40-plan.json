@@ -275,16 +275,81 @@
       "name": "bind-bound-pack-result-kinds",
       "source": "#include <functional>\n#include <type_traits>\nvoid store(int* p,int a,int b){*p=a+b;}int& identity(int& n,int,int){return n;}\nint main(){int n=0;auto write=std::bind(&store,&n,3,4);write();auto live=std::bind(&identity,std::ref(n),1,2);using F=decltype(live);static_assert(std::is_bind_expression<F>::value,\"bind expression\");static_assert(std::is_same<decltype(live()),int&>::value,\"live reference\");static_assert(!std::is_nothrow_invocable<F&>::value,\"pinned bind exception signature\");if(n!=7)return 1;live()=14;return n!=14||&live()!=&n;}\n",
       "source_sha256": "b9c0397bb30478fb7af852bf2081416dd36b715bd12cac562829173f4e4e7dc6"
+    },
+    {
+      "name": "factory-placeholder-one",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){auto f=std::bind(&identity,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "2bc72d49eff66c701b5f363a4b92e286279a74c952be41d527bab2043dafacee"
+    },
+    {
+      "name": "factory-placeholder-parentheses",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){auto f=std::bind(&sum,(std::placeholders::_2),((std::placeholders::_1)));return 0;}\n",
+      "source_sha256": "ad78048d644d52b0a7809f527fc43701b4ae28f94380c2beb636911ef57d4bae"
+    },
+    {
+      "name": "factory-placeholder-repeated",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){auto f=std::bind(&sum,std::placeholders::_1,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "0b82de2fa082badfe0f03826e08fe497391cdac8e01aa02acb59b5a4d60392dc"
+    },
+    {
+      "name": "factory-placeholder-mixed-reference",
+      "source": "#include <functional>\nint combine(int& n,int a,int b){return n+a+b;}\nint main(){int n=2;auto f=std::bind(&combine,std::ref(n),4,std::placeholders::_1);return n!=2;}\n",
+      "source_sha256": "a253f6b47ec769f65ec23a25ea4d8297c6e11204035e484936bcf8196deb7ff7"
+    },
+    {
+      "name": "factory-placeholder-effects",
+      "source": "#include <functional>\nusing Callback=int(*)(int,int);int selections,captures;int sum(int a,int b){return a+b;}Callback select(){++selections;return &sum;}int capture(){++captures;return 7;}\nint main(){auto f=std::bind(select(),capture(),std::placeholders::_1);return selections!=1||captures!=1;}\n",
+      "source_sha256": "f00b6810b51467cd5e1c66840e6d9c2fdfc9806741eff8f7fbc897440c737961"
+    },
+    {
+      "name": "bind-placeholder-one",
+      "source": "#include <functional>\nint twice(int n){return n*2;}\nint main(){auto f=std::bind(&twice,std::placeholders::_1);return f(9)!=18;}\n",
+      "source_sha256": "a6b03c381f2203e05ac49ce16bc6b577a3618abc304fec8a6d89f804455403eb"
+    },
+    {
+      "name": "bind-placeholder-reordered",
+      "source": "#include <functional>\nint encode(int a,int b){return 10*a+b;}\nint main(){auto f=std::bind(&encode,std::placeholders::_2,std::placeholders::_1);const auto copy=f;return f(3,7)!=73||copy(4,8)!=84;}\n",
+      "source_sha256": "ad4bb7d88e15f685a4029bc6d7d148e83fa7256931f67eac773b59dc465f59a8"
+    },
+    {
+      "name": "bind-placeholder-repeated-once",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){int n=5;auto f=std::bind(&sum,std::placeholders::_1,std::placeholders::_1);return f(++n)!=12||n!=6;}\n",
+      "source_sha256": "26b218803e06a5aa2472ccdd8690b57523f49826b041f86159b243c3dd3ea2b8"
+    },
+    {
+      "name": "bind-placeholder-independent-bound-state",
+      "source": "#include <functional>\n#include <utility>\nint advance(int& n,int step){n+=step;return n;}\nint main(){auto f=std::bind(&advance,1,std::placeholders::_1);auto copy=f;return f(2)!=3||std::move(f)(3)!=6||copy(2)!=3;}\n",
+      "source_sha256": "f022800150530b34a7fcab3342f24506713e7ad2ee76c3f46a01b453bba99101"
+    },
+    {
+      "name": "bind-placeholder-borrowed-state",
+      "source": "#include <functional>\nint advance(int& n,int step){n+=step;return n;}\nint main(){int n=5;auto f=std::bind(&advance,std::ref(n),std::placeholders::_1);const auto copy=f;return f(2)!=7||copy(3)!=10||f((n=20,4))!=24||n!=24;}\n",
+      "source_sha256": "7d07d17ca105796b4a2989f5fb96eb72848d44ae1d3589b678a3217823438f57"
+    },
+    {
+      "name": "bind-placeholder-unused-effects-before-read",
+      "source": "#include <functional>\nint read(int n){return n;}\nint main(){int n=0;auto f=std::bind(&read,std::placeholders::_1);return f(++n,++n)!=2||n!=2;}\n",
+      "source_sha256": "506e0abc9fc6164a153ee625e7dadfb20873d53623fd9a5b66c626cd296ca518"
+    },
+    {
+      "name": "bind-placeholder-live-reference",
+      "source": "#include <functional>\n#include <utility>\nint& identity(int& n){return n;}\nint main(){int n=5;auto f=std::bind(&identity,std::placeholders::_1);const auto copy=f;f(n)=9;return &copy(n)!=&n||std::move(f)(n)!=9;}\n",
+      "source_sha256": "bda6e3ae690b9ff0c6749a846c160de9b0d7e1f85139d50184cb73ee0c8fc4c6"
+    },
+    {
+      "name": "bind-placeholder-capture-and-queries",
+      "source": "#include <functional>\n#include <type_traits>\nusing Callback=int(*)(int);int selections,calls;int first(int n){++calls;return n+1;}int second(int){return -1;}Callback target=&first;Callback select(){++selections;return target;}\nint main(){auto f=std::bind(select(),std::placeholders::_2);using F=decltype(f);static_assert(!std::is_invocable<F&,int>::value,\"second call argument required\");static_assert(std::is_invocable<F&,int,int>::value,\"two call arguments\");static_assert(std::is_same<decltype(f(3,4)),int>::value,\"scalar result\");static_assert(!std::is_nothrow_invocable<F&,int,int>::value,\"pinned exception signature\");target=&second;return selections!=1||calls!=0||f(3,4)!=5||calls!=1;}\n",
+      "source_sha256": "2e4b5463256765c309dfe495afc305b5fbb3586834f4927594ac9c49a3967e19"
     }
   ],
   "fixture_group": "bind-call-arguments-native40",
   "execution_binding_required": true,
   "source_repair_commit": "0ed08840e0c3e3ffe74e1e14a935c3f9a4b9fa03",
   "clean_source_basis": "0ed08840e0c3e3ffe74e1e14a935c3f9a4b9fa03",
-  "actual_same_source_six_report_sha256": null,
-  "actual_same_source_six_proof_sha256": null,
+  "actual_same_source_six_report_sha256": "8c6588686abd064c4bb0576e04c07eff49eeb3dc81dce36d1406023219964721",
+  "actual_same_source_six_proof_sha256": "a18a58c56db5467d84736961b0eb223cf575a409d1321ac5a081aac388da0193",
   "source_contract_sha256": "e71b11486d5ce55e759950d55163e60cb12215064b055cbaa58ce6fa6353bb8f",
-  "required_native_programs": 72,
+  "required_native_programs": 98,
   "cpp_executed_locally": false,
   "current_private_input_sha256": {
     "Frontend.cpp": "af37dafc18876a46a3207f41959bae7c47874d5bca276c9972c778088e4cae4e",
@@ -319,6 +384,6 @@
   "zero_bound_cases_contract_sha256": "e3766090a950cfd3510d80519f610a1cda0bf27cc464f1d8d8a76f6af6ea7397",
   "requires_current_source6_before_dispatch": true,
   "expanded_bound_pack_cases_contract_sha256": "1345a813ac0fdd6056fb11aeebdabf3b758eab26960f9610f06d8b8396539549",
-  "source_syntax_validation_pending": true,
+  "source_syntax_validation_pending": false,
   "post_merge_validation": true
 }

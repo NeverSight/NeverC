@@ -494,3 +494,6 @@ Placeholder index-trait substitutions now bind to the exact checked local index 
 
 
 Placeholder body forwarding now binds substituted tuple types to the exact instantiated unwrap function and its local index. Unselected array get overload declarations are checked across their exact SDK forward and definition headers only within the original qualified lookup; the selected tuple getter and both bodies still need independent complete source checks. Execution validation is pending, and full STL support remains unfinished.
+
+
+The next regression contract preserves all75 existing cases and adds21 placeholder cases across8 ABIs:768 requests,3840 process records and785 commands. Native reference coverage preserves all36 existing sources and adds13 sources at O0/O2, requiring98 executions. These are validation obligations, not completed results; full STL support remains unfinished.

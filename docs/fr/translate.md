@@ -1074,3 +1074,6 @@ Les substitutions du trait d’indice sont liées à la déclaration locale exac
 
 
 Les substitutions de type du transfert sont liées à la fonction instanciée exacte et à son indice local. Les déclarations array get non sélectionnées sont vérifiées dans leurs en-têtes SDK de déclaration et définition, uniquement dans la recherche qualifiée originale. Le getter tuple sélectionné et les deux corps gardent leurs vérifications complètes indépendantes. Exécution et STL complet restent à vérifier.
+
+
+Le contrat conserve75 cas et ajoute21 cas de paramètres réservés sur8 ABI :768 requêtes,3840 traces de processus et785 commandes. Les36 sources natives sont conservées, avec13 sources supplémentaires à O0/O2, soit98 exécutions. Ce sont des obligations de validation, pas des résultats réussis ; le STL complet reste inachevé.

@@ -676,6 +676,163 @@
       "diagnostic": "TR0201",
       "ast_kind": "GCCAsmStmt",
       "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-one",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){auto f=std::bind(&identity,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "2bc72d49eff66c701b5f363a4b92e286279a74c952be41d527bab2043dafacee",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-parentheses",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){auto f=std::bind(&sum,(std::placeholders::_2),((std::placeholders::_1)));return 0;}\n",
+      "source_sha256": "ad78048d644d52b0a7809f527fc43701b4ae28f94380c2beb636911ef57d4bae",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-repeated",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){auto f=std::bind(&sum,std::placeholders::_1,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "0b82de2fa082badfe0f03826e08fe497391cdac8e01aa02acb59b5a4d60392dc",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-mixed-reference",
+      "source": "#include <functional>\nint combine(int& n,int a,int b){return n+a+b;}\nint main(){int n=2;auto f=std::bind(&combine,std::ref(n),4,std::placeholders::_1);return n!=2;}\n",
+      "source_sha256": "a253f6b47ec769f65ec23a25ea4d8297c6e11204035e484936bcf8196deb7ff7",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-effects",
+      "source": "#include <functional>\nusing Callback=int(*)(int,int);int selections,captures;int sum(int a,int b){return a+b;}Callback select(){++selections;return &sum;}int capture(){++captures;return 7;}\nint main(){auto f=std::bind(select(),capture(),std::placeholders::_1);return selections!=1||captures!=1;}\n",
+      "source_sha256": "f00b6810b51467cd5e1c66840e6d9c2fdfc9806741eff8f7fbc897440c737961",
+      "expected": "accept",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-standalone-value",
+      "source": "#include <functional>\nint main(){auto p=std::placeholders::_1;return 0;}\n",
+      "source_sha256": "b6ebffe058bdf177f47cc1c2e15d528366cc7a3b1c8e3b2ccae720d9c5814a00",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-standalone-address",
+      "source": "#include <functional>\nint main(){auto p=&std::placeholders::_1;return p==nullptr;}\n",
+      "source_sha256": "f966efa93d9601ce55ec77b6cdb05e9687a08365917450134b32a024e6ec916c",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-third-rank",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){auto f=std::bind(&identity,std::placeholders::_3);return 0;}\n",
+      "source_sha256": "7cb2ddf6de77f68d828d28f696e76630beff69d084a0fc779b1e6bf3ba60f22e",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-local-alias",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){const auto p=std::placeholders::_1;auto f=std::bind(&identity,p);return 0;}\n",
+      "source_sha256": "7566d67005105115066d248da5a38f96769964fb52ed25360901c02c82e7b574",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-comma-effect",
+      "source": "#include <functional>\nint effects;void tick(){++effects;}int identity(int n){return n;}\nint main(){auto f=std::bind(&identity,(tick(),std::placeholders::_1));return 0;}\n",
+      "source_sha256": "28c53996c7bc3d355e0a9de272adc8c98f7fcde66381002240995be0fd06e502",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-conditional",
+      "source": "#include <functional>\nint identity(int n){return n;}\nint main(){int flag=1;auto f=std::bind(&identity,flag?std::placeholders::_1:std::placeholders::_1);return 0;}\n",
+      "source_sha256": "43a2e4d85fd893d3ec2527666661608f24ea85e52a4841458df0ce91d295d570",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "factory-placeholder-ordinary-body-guard",
+      "source": "#include <functional>\nint forbidden(int n){asm(\"\");return n;}\nint main(){auto f=std::bind(&forbidden,std::placeholders::_1);return 0;}\n",
+      "source_sha256": "606f517c6c7df157fa7dd33886b66273f93758df975966a53dcb7d71e179d5de",
+      "expected": "reject",
+      "expected_proposed_not_observed": true
+    },
+    {
+      "name": "bind-placeholder-one",
+      "source": "#include <functional>\nint twice(int n){return n*2;}\nint main(){auto f=std::bind(&twice,std::placeholders::_1);return f(9)!=18;}\n",
+      "source_sha256": "a6b03c381f2203e05ac49ce16bc6b577a3618abc304fec8a6d89f804455403eb",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderOneRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-reordered",
+      "source": "#include <functional>\nint encode(int a,int b){return 10*a+b;}\nint main(){auto f=std::bind(&encode,std::placeholders::_2,std::placeholders::_1);const auto copy=f;return f(3,7)!=73||copy(4,8)!=84;}\n",
+      "source_sha256": "ad4bb7d88e15f685a4029bc6d7d148e83fa7256931f67eac773b59dc465f59a8",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderReorderedRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-repeated-once",
+      "source": "#include <functional>\nint sum(int a,int b){return a+b;}\nint main(){int n=5;auto f=std::bind(&sum,std::placeholders::_1,std::placeholders::_1);return f(++n)!=12||n!=6;}\n",
+      "source_sha256": "26b218803e06a5aa2472ccdd8690b57523f49826b041f86159b243c3dd3ea2b8",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderRepeatedOnceRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-independent-bound-state",
+      "source": "#include <functional>\n#include <utility>\nint advance(int& n,int step){n+=step;return n;}\nint main(){auto f=std::bind(&advance,1,std::placeholders::_1);auto copy=f;return f(2)!=3||std::move(f)(3)!=6||copy(2)!=3;}\n",
+      "source_sha256": "f022800150530b34a7fcab3342f24506713e7ad2ee76c3f46a01b453bba99101",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderIndependentBoundStateRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-borrowed-state",
+      "source": "#include <functional>\nint advance(int& n,int step){n+=step;return n;}\nint main(){int n=5;auto f=std::bind(&advance,std::ref(n),std::placeholders::_1);const auto copy=f;return f(2)!=7||copy(3)!=10||f((n=20,4))!=24||n!=24;}\n",
+      "source_sha256": "7d07d17ca105796b4a2989f5fb96eb72848d44ae1d3589b678a3217823438f57",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderBorrowedStateRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-unused-effects-before-read",
+      "source": "#include <functional>\nint read(int n){return n;}\nint main(){int n=0;auto f=std::bind(&read,std::placeholders::_1);return f(++n,++n)!=2||n!=2;}\n",
+      "source_sha256": "506e0abc9fc6164a153ee625e7dadfb20873d53623fd9a5b66c626cd296ca518",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderUnusedEffectsBeforeReadRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-live-reference",
+      "source": "#include <functional>\n#include <utility>\nint& identity(int& n){return n;}\nint main(){int n=5;auto f=std::bind(&identity,std::placeholders::_1);const auto copy=f;f(n)=9;return &copy(n)!=&n||std::move(f)(n)!=9;}\n",
+      "source_sha256": "bda6e3ae690b9ff0c6749a846c160de9b0d7e1f85139d50184cb73ee0c8fc4c6",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderLiveReferenceRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-capture-and-queries",
+      "source": "#include <functional>\n#include <type_traits>\nusing Callback=int(*)(int);int selections,calls;int first(int n){++calls;return n+1;}int second(int){return -1;}Callback target=&first;Callback select(){++selections;return target;}\nint main(){auto f=std::bind(select(),std::placeholders::_2);using F=decltype(f);static_assert(!std::is_invocable<F&,int>::value,\"second call argument required\");static_assert(std::is_invocable<F&,int,int>::value,\"two call arguments\");static_assert(std::is_same<decltype(f(3,4)),int>::value,\"scalar result\");static_assert(!std::is_nothrow_invocable<F&,int,int>::value,\"pinned exception signature\");target=&second;return selections!=1||calls!=0||f(3,4)!=5||calls!=1;}\n",
+      "source_sha256": "2e4b5463256765c309dfe495afc305b5fbb3586834f4927594ac9c49a3967e19",
+      "expected": "accept",
+      "expected_proposed_not_observed": true,
+      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderCaptureAndQueriesRunAtBothOptimizations"
+    },
+    {
+      "name": "bind-placeholder-ordinary-body-guard",
+      "source": "#include <functional>\nint forbidden(int n){asm(\"\");return n;}\nint main(){auto f=std::bind(&forbidden,std::placeholders::_1);return f(3);}\n",
+      "source_sha256": "760e4f6e857044be66a72504e06c9367040ce419d161a75b6da903c6b70edb94",
+      "expected": "reject",
+      "expected_proposed_not_observed": true,
+      "diagnostic": "TR0201",
+      "ast_kind": "GCCAsmStmt"
     }
   ],
   "producer_actual_job": 122606984385,
@@ -730,8 +887,8 @@
   "fixture_group": "bind-call-arguments-clean456",
   "source_repair_commit": "0ed08840e0c3e3ffe74e1e14a935c3f9a4b9fa03",
   "clean_source_basis": "0ed08840e0c3e3ffe74e1e14a935c3f9a4b9fa03",
-  "required_requests": 600,
-  "required_acceptances": 416,
+  "required_requests": 768,
+  "required_acceptances": 520,
   "required_sdk_guard_rejections": 80,
   "required_unimplemented_not_fn_runtime_refusals": 8,
   "required_failed_substitutions": 8,
@@ -742,7 +899,7 @@
   "required_original216_sdk_guards": 80,
   "required_original216_unsupported": 0,
   "required_original216_invalid": 8,
-  "required_pid_files": 3000,
+  "required_pid_files": 3840,
   "graph_budget_observation_only": false,
   "unchanged_graph_node_limit": 200000,
   "unchanged_graph_depth_limit": 64,
@@ -756,7 +913,7 @@
   "source_trace_included": false,
   "inverse_source_edits": {},
   "frontend_execution_timeout_seconds": 60,
-  "actual_same_source_six_report_sha256": null,
+  "actual_same_source_six_report_sha256": "8c6588686abd064c4bb0576e04c07eff49eeb3dc81dce36d1406023219964721",
   "reference_full_plan_commit": "f961e1f5cc09ba6fd54a708b73e4639a6952f651",
   "reference_full_plan_path": "utils/ci/cpp-not-fn-nested-clean288-plan.json",
   "reference_full_plan_sha256": "b3dfb130b4e1a5b970262f6f8cd3cf1adc87a918214ac9573e75714f59c3ac45",
@@ -770,7 +927,7 @@
   "required_original240_requests": 240,
   "required_original240_acceptances": 128,
   "required_original240_owned_body_guards": 16,
-  "required_command_count": 617,
+  "required_command_count": 785,
   "actual_owned_four32_report_sha256": null,
   "actual_inherited240_report_sha256": null,
   "added_owned_callable_source_guards_sha256": "be222b5e55dbdd5ed6c1f5a6c77963ccd63a9543015b9f723684444f48a4b167",
@@ -785,7 +942,7 @@
   "preparation_only": false,
   "prepared_owned256_template_sha256": "97da3970cc9f7555ac534a4f559a471fdb5ce41854aa4ba6cbf19642b8c4e796",
   "execution_binding_required": true,
-  "required_pid_records": 600,
+  "required_pid_records": 768,
   "required_original272_requests": 272,
   "required_original272_acceptances": 128,
   "required_original272_expected_reject": 136,
@@ -822,7 +979,7 @@
     "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
-  "actual_same_source_six_proof_sha256": null,
+  "actual_same_source_six_proof_sha256": "a18a58c56db5467d84736961b0eb223cf575a409d1321ac5a081aac388da0193",
   "required_original288_requests": 288,
   "required_original288_acceptances": 128,
   "required_original288_expected_reject": 152,
@@ -857,6 +1014,6 @@
   "required_expanded_bound_pack_acceptances": 64,
   "required_expanded_bound_pack_body_guard_refusals": 8,
   "expanded_bound_pack_cases_contract_sha256": "1345a813ac0fdd6056fb11aeebdabf3b758eab26960f9610f06d8b8396539549",
-  "source_syntax_validation_pending": true,
+  "source_syntax_validation_pending": false,
   "post_merge_validation": true
 }

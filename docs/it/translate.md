@@ -1074,3 +1074,6 @@ Le sostituzioni del trait di indice sono legate alla dichiarazione locale esatta
 
 
 Le sostituzioni del tipo inoltrato sono legate alla funzione istanziata esatta e al suo indice locale. Le dichiarazioni array get non selezionate sono verificate nei rispettivi header SDK di dichiarazione e definizione, solo nella ricerca qualificata originale. Il getter tuple selezionato ed entrambi i corpi mantengono verifiche complete indipendenti. Esecuzione e STL completo restano da verificare.
+
+
+Il contratto conserva75 casi e aggiunge21 casi segnaposto su8 ABI:768 richieste,3840 registrazioni di processo e785 comandi. Conserva36 sorgenti native e ne aggiunge13 a O0/O2, richiedendo98 esecuzioni. Sono obblighi di verifica, non risultati superati; il supporto STL completo resta incompleto.

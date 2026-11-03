@@ -1074,3 +1074,6 @@ Las sustituciones del trait de índice se vinculan a la declaración local exact
 
 
 Las sustituciones de tipo del reenvío se vinculan a la función instanciada exacta y su índice local. Las declaraciones array get no seleccionadas se verifican en sus cabeceras SDK de declaración y definición, solo en la búsqueda cualificada original. El getter tuple seleccionado y ambos cuerpos conservan sus verificaciones completas independientes. Ejecución y STL completo siguen pendientes.
+
+
+El contrato conserva75 casos y añade21 casos de marcadores en8 ABI:768 solicitudes,3840 registros de procesos y785 comandos. Conserva36 fuentes nativas y añade13 a O0/O2, con98 ejecuciones exigidas. Son requisitos de validación, no resultados aprobados; el STL completo sigue pendiente.
