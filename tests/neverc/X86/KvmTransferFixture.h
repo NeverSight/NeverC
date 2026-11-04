@@ -60,8 +60,9 @@ static void breakpoint(struct cpu *cpu, uint64_t pc) {
   CHECK(ioctl(cpu->fd, KVM_SET_GUEST_DEBUG, &debug) == 0);
 }
 
-static struct kvm_regs run_to(struct cpu *cpu, uint64_t pc, int resume_flag) {
-  breakpoint(cpu, pc);
+static struct kvm_regs run_to_linear(struct cpu *cpu, uint64_t pc,
+                                     uint64_t linear_pc, int resume_flag) {
+  breakpoint(cpu, linear_pc);
   CHECK(ioctl(cpu->fd, KVM_RUN, 0) == 0);
   struct kvm_regs registers;
   CHECK(ioctl(cpu->fd, KVM_GET_REGS, &registers) == 0);
@@ -79,6 +80,10 @@ static struct kvm_regs run_to(struct cpu *cpu, uint64_t pc, int resume_flag) {
     registers.rflags |= 0x10000;
   }
   return registers;
+}
+
+static struct kvm_regs run_to(struct cpu *cpu, uint64_t pc, int resume_flag) {
+  return run_to_linear(cpu, pc, pc, resume_flag);
 }
 
 static struct kvm_segment segment(unsigned selector, int code) {

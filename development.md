@@ -1759,9 +1759,10 @@ with the same validation and native ordering as the VMX address APIs above.
 
 The matching native IR names are `llvm.x86.lkgs.address` and
 `llvm.x86.{lar,lsl}.mem{16,32,64}.address`. The full LLVM fork additionally
-provides `.address32` query forms for 16/32-bit results in i386 code, using an
-i32 offset and address width 16 or 32. Code16 and mismatched code modes fail
-explicitly. The system-address generator appends seven NeverC pseudos while
+provides `.address32` query forms for 16/32-bit results in protected code16
+and code32, using the 32-bit pointer/stack ABI, an i32 offset and address width
+16 or 32. Mismatched code modes still fail explicitly. The system-address
+generator appends seven NeverC pseudos while
 retaining the earlier opcode identities; the full fork also owns the i386
 address-size pseudos.
 
@@ -1774,6 +1775,26 @@ Linux C routes compare real default/GS queries against raw-byte oracles,
 including nonzero GS bases and narrow offsets with different high bits.
 LKGS CPL3 faults are compared separately; these do not qualify successful
 privileged descriptor loading.
+
+`tests/neverc/X86/verify_protected_descriptor_queries.py --llvm-bin DIR
+--mode 16 --output DIR` executes the full LLVM query APIs in KVM; use
+`--mode 32` for the protected code32 regression. Each O0/O2 image contains
+224 functions covering both queries, result/address widths, every segment
+prefix, and independent live/dead value/ZF results. The original-byte oracle
+compares represented GPRs/flags, segment/system state, active events and RAM
+at the native instruction boundary. Successful and rejected queries also
+check the compiled return, prior selection and callee-saved registers.
+Cases cover CPL0/CPL3, descriptor types/privileges/limits, nonflat CS/FS/GS,
+unaligned/cross-page/read-only/missing operands and descriptor-page faults.
+Wrong offset transport and inverted returned ZF must fail independently.
+
+The KVM breakpoint helper distinguishes CS-relative RIP from the linear debug
+address. This keeps code16 branches within their 64 KiB offset range while
+placing the image above the fixture tables. Original fault handlers retain
+their flat code segments; both restart PCs are authenticated before comparing
+the relocated fault frames. These LLVM tests do not enable a NeverC i386
+frontend, qualify real/VM86 or asynchronous events, or grant a general ABI for
+arbitrary segment caches.
 
 Generated C containing flag snapshots can use header-free `__readeflags` and
 `__writeeflags` on all three x64 object formats. NeverC's C23 parser also

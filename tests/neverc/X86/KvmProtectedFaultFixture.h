@@ -23,9 +23,13 @@ static void clear_inactive_exception_record(struct kvm_vcpu_events *events) {
   events->exception_payload = 0;
 }
 
-static struct kvm_regs run_instruction_to(struct cpu *cpu, uint64_t next,
-                                          unsigned *vector, unsigned faults) {
-  breakpoint(cpu, next);
+// CS-relative completion can have a different linear breakpoint address.
+// Admitted fault handlers still execute in the fixture's flat code segments.
+static struct kvm_regs run_instruction_to_linear(struct cpu *cpu, uint64_t next,
+                                                 uint64_t linear_next,
+                                                 unsigned *vector,
+                                                 unsigned faults) {
+  breakpoint(cpu, linear_next);
   CHECK(ioctl(cpu->fd, KVM_RUN, 0) == 0);
   struct kvm_regs result;
   CHECK(ioctl(cpu->fd, KVM_GET_REGS, &result) == 0);
@@ -50,6 +54,12 @@ static struct kvm_regs run_instruction_to(struct cpu *cpu, uint64_t next,
           cpu->run->exit_reason, result.rip, (unsigned long long)next);
   CHECK(0);
   return result;
+}
+
+static inline struct kvm_regs run_instruction_to(struct cpu *cpu, uint64_t next,
+                                                 unsigned *vector,
+                                                 unsigned faults) {
+  return run_instruction_to_linear(cpu, next, next, vector, faults);
 }
 
 #endif
