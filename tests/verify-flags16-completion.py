@@ -5,6 +5,8 @@ Execute each safe low-word image (TF clear) with all four AC/ID inputs. The
 assembly witness restores host flags before returning to C. Arithmetic flags
 are deliberately not compared across an ordinary compiler ABI. The protected
 NeverD KVM oracle separately checks them at the original instruction boundary.
+Use --bits 32 with the full LLVM/Clang fork to qualify its i386 ABI; this does
+not add an i386 frontend to NeverC. The 32-bit driver requires multilib libc.
 """
 
 import argparse
@@ -56,6 +58,58 @@ capture_flags:
   leaq 8(%rsp),%rsp
   popq %r13
   popq %r12
+  ret
+.size capture_flags,.-capture_flags
+.section .note.GNU-stack,"",@progbits
+'''
+
+REFERENCE32 = r'''
+.text
+.p2align 4
+.globl original_write
+.type original_write,@function
+original_write:
+  movw 4(%esp),%ax
+  pushw %ax
+  .byte 0x66,0x9d
+  ret
+.size original_write,.-original_write
+.globl incorrect_wide_write
+.type incorrect_wide_write,@function
+incorrect_wide_write:
+  pushl 4(%esp)
+  popfl
+  ret
+.size incorrect_wide_write,.-incorrect_wide_write
+.globl capture_flags
+.type capture_flags,@function
+capture_flags:
+  pushl %ebx
+  pushl %esi
+  pushl %edi
+  pushl %ebp
+  subl $12,%esp
+  movl 32(%esp),%esi
+  movl 36(%esp),%edi
+  pushfl
+  popl %ebx
+  movl %ebx,%eax
+  andl $-2360577,%eax
+  orl 40(%esp),%eax
+  movl %edi,(%esp)
+  pushl %eax
+  popfl
+  call *%esi
+  pushfl
+  popl %eax
+  pushl %ebx
+  popfl
+  movl $0,%edx
+  leal 12(%esp),%esp
+  popl %ebp
+  popl %edi
+  popl %esi
+  popl %ebx
   ret
 .size capture_flags,.-capture_flags
 .section .note.GNU-stack,"",@progbits
@@ -131,6 +185,7 @@ def main():
     group.add_argument("--compiler", type=Path)
     group.add_argument("--llc", type=Path)
     parser.add_argument("--clang", default="clang")
+    parser.add_argument("--bits", type=int, choices=(32, 64), default=64)
     parser.add_argument("--source", type=Path,
                         help="An unchanged emitted C translation unit, compiled with --compiler")
     parser.add_argument("--symbol", default="flags_write_test")
@@ -140,6 +195,8 @@ def main():
         parser.error("the original CPU witness requires Linux x86_64")
     if args.source and not args.compiler:
         parser.error("--source requires --compiler")
+    if args.bits == 32 and args.compiler and "neverc" in args.compiler.name:
+        parser.error("NeverC has no i386 frontend; use full LLVM or Clang for --bits 32")
     root = args.keep.resolve()
     root.mkdir(parents=True, exist_ok=True)
     commands, results = [], []
@@ -154,7 +211,9 @@ def main():
             raise RuntimeError(f"{stem}: exit {completed.returncode}: {completed.stdout}{completed.stderr}")
         return completed.stdout
 
-    (root / "reference.s").write_text(REFERENCE)
+    abi = ["-m" + str(args.bits)]
+    triple = ("i386" if args.bits == 32 else "x86_64") + "-unknown-linux-gnu"
+    (root / "reference.s").write_text(REFERENCE32 if args.bits == 32 else REFERENCE)
     (root / "driver.c").write_text(DRIVER)
     # The emitted source owns its C signature. A separate assembly tail jump
     # adapts only the machine call; do not invent a conflicting C declaration.
@@ -162,9 +221,9 @@ def main():
         ".text\n.globl tested_write\n.type tested_write,@function\n"
         "tested_write: jmp " + args.symbol + "\n"
         '.section .note.GNU-stack,"",@progbits\n')
-    run([args.clang, "-c", root / "adapter.s", "-o", root / "adapter.o"], "adapter")
-    run([args.clang, "-c", root / "reference.s", "-o", root / "reference.o"], "reference")
-    run([args.clang, "-O2", "-Dtested_write=incorrect_wide_write", root / "driver.c",
+    run([args.clang, *abi, "-c", root / "adapter.s", "-o", root / "adapter.o"], "adapter")
+    run([args.clang, *abi, "-c", root / "reference.s", "-o", root / "reference.o"], "reference")
+    run([args.clang, *abi, "-O2", "-Dtested_write=incorrect_wide_write", root / "driver.c",
          root / "reference.o", "-o", root / "negative"], "negative-build")
     run([root / "negative"], "negative", expected=1)
     if args.llc:
@@ -176,15 +235,15 @@ def main():
     for opt in ("O0", "O2"):
         obj, exe = root / (opt + ".o"), root / opt
         if args.llc:
-            command = [args.llc, "-" + opt, "-mtriple=x86_64-unknown-linux-gnu",
+            command = [args.llc, "-" + opt, "-mtriple=" + triple,
                        "-verify-machineinstrs", "-filetype=obj", source, "-o", obj]
         else:
-            command = [args.compiler, "-" + opt, "-std=gnu23", "-ffreestanding", "-fno-lto",
+            command = [args.compiler, "--target=" + triple, "-" + opt, "-std=gnu23", "-ffreestanding", "-fno-lto",
                        "-fno-pie", "-c", source, "-o", obj]
             if "neverc" in args.compiler.name:
                 command += ["-fno-builtin-mimalloc", "-mllvm", "-verify-machineinstrs"]
         run(command, opt + "-compile")
-        run([args.clang, "-O2", "-no-pie", root / "driver.c",
+        run([args.clang, *abi, "-O2", "-no-pie", root / "driver.c",
              root / "reference.o", root / "adapter.o", obj, "-o", exe], opt + "-link")
         output = run([exe], opt + "-run")
         assert output.strip() == "131072 original word-POPF comparisons", output
@@ -192,6 +251,7 @@ def main():
                         "object_sha256": hashlib.sha256(obj.read_bytes()).hexdigest(),
                         "executable_sha256": hashlib.sha256(exe.read_bytes()).hexdigest()})
     (root / "results.json").write_text(json.dumps({"results": results,
+        "bits": args.bits,
         "negative_control_rejected": True, "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "affinity": sorted(os.sched_getaffinity(0))}, indent=2) + "\n")
     print(json.dumps(results))

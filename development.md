@@ -2881,3 +2881,9 @@ DAGISel ID remapping. `X86FlagsFrontendTest.*` checks both optimization levels,
 ELF/COFF/Mach-O, native assembly, unused reads, memory ordering and malformed
 argument lists. `tests/verify-flags16-completion.py` compares compiled writes
 with original word POPF, including every safe FLAGS word and all AC/ID images.
+Its default x64 driver checks NeverC, full LLVM/Clang and unchanged emitted C;
+`--bits 32` uses a separate cdecl assembly witness for full LLVM/Clang and
+i386 emitted C. Both drivers restore the host flags before returning to C,
+preserve callee-saved registers, and require a widened-write negative control
+to fail. The i386 driver needs the host's multilib C runtime; it does not
+qualify a NeverC i386 frontend or arbitrary original machine-state execution.
