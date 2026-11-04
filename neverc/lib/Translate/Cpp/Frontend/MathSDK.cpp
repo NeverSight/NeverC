@@ -7720,6 +7720,7 @@ class UtilityTupleQueryGraph
   std::function<bool(const CallExpr *)> BindCallSource;
   std::vector<TypeLoc> BindNestedReturnLocations;
   std::function<bool(TypeLoc)> BindNestedReturnSource;
+  std::function<std::optional<UtilityTupleRecord>(const TemplateUseSource &, const CXXRecordDecl *, unsigned, const TypeAliasDecl *)> BindRetainedOwnedTupleSource;
   std::function<bool(const DeclRefExpr *)> BindVariableSource;
   std::function<bool(const CXXConstructExpr *)> BindConstructionSource;
   std::map<const MemberExpr *, const ValueDecl *> BindSourceMemberUses;
@@ -11749,6 +11750,13 @@ public:
     });
   }
 
+  bool bindFunctionalBindRetainedTupleSource(
+      std::function<std::optional<UtilityTupleRecord>(const TemplateUseSource &, const CXXRecordDecl *, unsigned, const TypeAliasDecl *)> Source) {
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Source || BindRetainedOwnedTupleSource) return false;
+    BindRetainedOwnedTupleSource = std::move(Source);
+    return true;
+  }
+
   bool withBindRetainedTupleProjectionSource(const TemplateUseSource &Use,
       unsigned Index, const TemplateArgumentLoc &Argument,
       const std::function<bool()> &Proof) {
@@ -11818,6 +11826,12 @@ public:
         Storage = bindRetainedOwnedAncestorTupleStorage(TupleRecord);
         OwnedAncestor = Storage.has_value();
       }
+      bool OwnedWitness = false;
+      if (!Storage && BindRetainedOwnedTupleSource) {
+        Storage = BindRetainedOwnedTupleSource(Use, TupleRecord,
+            unsigned(Arguments[0].getAsIntegral().getLimitedValue(64)), RootAlias);
+        OwnedWitness = Storage.has_value();
+      }
       if (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
           Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())
         return false;
@@ -11827,10 +11841,17 @@ public:
             !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default &&
             utilityScalar(Context, Value.getUnqualifiedType());
       };
-      if (!Scalar(Storage->Elements[Slot].getType()) ||
-          !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Info->getType())) return false;
+      const auto Selected = Storage->Elements[Slot].getType();
+      const auto Placeholder = OwnedWitness && Storage->Elements[Slot].EmptyBase
+          ? describeFunctionalBindPlaceholderIdentity(S, SM, Selected, Context) : std::nullopt;
+      const auto Wrapper = OwnedWitness && !Storage->Elements[Slot].EmptyBase
+          ? approvedFunctionalReferenceRecord(S, SM, Selected->getAsCXXRecordDecl(), Context) : std::nullopt;
+      const auto Nested = OwnedWitness && !Storage->Elements[Slot].EmptyBase
+          ? describeFunctionalBindStorage(S, SM, Selected->getAsCXXRecordDecl(), Context) : std::nullopt;
+      if ((!Scalar(Selected) && !Placeholder && !Wrapper && !Nested) ||
+          !Context.hasSameUnqualifiedType(Selected, Info->getType())) return false;
       for (const auto &Element : Storage->Elements) {
-        if (OwnedAncestor && Element.EmptyBase) {
+        if ((OwnedAncestor || OwnedWitness) && Element.EmptyBase) {
           const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
           if (!Placeholder || Placeholder->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
             return false;
@@ -11841,7 +11862,7 @@ public:
         const auto Wrapper = approvedFunctionalReferenceRecord(
             S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
         if (Wrapper && Scalar(Wrapper->ReferentType)) continue;
-        const auto Nested = OwnedAncestor
+        const auto Nested = (OwnedAncestor || OwnedWitness)
             ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
             : std::nullopt;
         if (!Nested || !Context.hasSameUnqualifiedType(Element.getType(), Context.getRecordType(Nested->Record)))
@@ -11950,6 +11971,12 @@ public:
         Storage = bindRetainedOwnedAncestorTupleStorage(TupleRecord);
         OwnedAncestor = Storage.has_value();
       }
+      bool OwnedWitness = false;
+      if (!Storage && BindRetainedOwnedTupleSource) {
+        Storage = BindRetainedOwnedTupleSource(Use, TupleRecord,
+            unsigned(Arguments[0].getAsIntegral().getLimitedValue(64)), RootAlias);
+        OwnedWitness = Storage.has_value();
+      }
       if (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
           Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())
         return false;
@@ -11962,7 +11989,7 @@ public:
       if (!Scalar(Storage->Elements[Slot].getType()) ||
           !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Input.getAsType())) return false;
       for (const auto &Element : Storage->Elements) {
-        if (OwnedAncestor && Element.EmptyBase) {
+        if ((OwnedAncestor || OwnedWitness) && Element.EmptyBase) {
           const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
           if (!Placeholder || Placeholder->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
             return false;
@@ -11973,7 +12000,7 @@ public:
         const auto Wrapper = approvedFunctionalReferenceRecord(
             S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
         if (Wrapper && Scalar(Wrapper->ReferentType)) continue;
-        const auto Nested = OwnedAncestor
+        const auto Nested = (OwnedAncestor || OwnedWitness)
             ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
             : std::nullopt;
         if (!Nested || !Context.hasSameUnqualifiedType(Element.getType(), Context.getRecordType(Nested->Record)))
@@ -14638,6 +14665,25 @@ public:
   }
   bool TraverseType(QualType T) {
     if (T.isNull()) return true;
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedReturnSource) {
+      for (const auto Bound : BindNestedReturnLocations) {
+        auto Location = Bound;
+        for (unsigned Depth = 0; !Location.isNull() && Depth < 64; ++Depth) {
+          const auto Alias = Location.getAs<TemplateSpecializationTypeLoc>();
+          const auto *Template = Alias ? Alias.getTypePtr()->getTemplateName().getAsTemplateDecl() : nullptr;
+          if (Alias && Alias.getTypePtr()->isTypeAlias() && Template && Template->getIdentifier() &&
+              Template->getName() == "__invoke_result_t" && family(Template)) {
+            // RAV walks the raw function return before the nested return
+            // TypeLoc. Bind only this actual alias object (or its own written
+            // wrapper), never a canonically equal scalar or unrelated type.
+            if (T == Bound.getType() || T == Location.getType())
+              return withBindSourceChild([&] { return BindNestedReturnSource(Bound); });
+            break;
+          }
+          Location = Location.getNextTypeLoc();
+        }
+      }
+    }
     if (!step() ||
         (T.isVolatileQualified() && !(Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
             !BindWeakResultSignaturePointee.isNull() && T == BindWeakResultSignaturePointee)) ||
@@ -22828,6 +22874,104 @@ class BindSourceProof {
         Check.location(Reference->getExprLoc(), {"__functional/bind.h"}) ? Reference : nullptr;
   }
 
+  std::optional<UtilityTupleRecord> retainedOwnedTupleProjectionStorage(
+      const TemplateUseSource &Use, const CXXRecordDecl *Tuple, unsigned Slot,
+      const TypeAliasDecl *Alias) {
+    if (!Tuple || !Alias || !Use.FunctionalBindConstraint ||
+        std::find(Sources.begin(), Sources.end(), &Use) == Sources.end()) return std::nullopt;
+    const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Alias->getDeclContext());
+    if (!Owner || !Owner->getIdentifier() || Owner->getName() != "tuple_element" ||
+        Owner->getTemplateArgs().size() != 2 ||
+        Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Integral ||
+        Owner->getTemplateArgs()[0].getAsIntegral().isNegative() ||
+        Owner->getTemplateArgs()[0].getAsIntegral().getLimitedValue(64) != Slot ||
+        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type ||
+        Owner->getTemplateArgs()[1].getAsType().isNull() ||
+        !Owner->getTemplateArgs()[1].getAsType()->getAsCXXRecordDecl() ||
+        Owner->getTemplateArgs()[1].getAsType()->getAsCXXRecordDecl()->getCanonicalDecl() != Tuple->getCanonicalDecl() ||
+        !Alias->getIdentifier() || Alias->getName() != "type" ||
+        !Check.location(Alias->getLocation(), {"__tuple/sfinae_helpers.h"}) ||
+        !family(Alias) || !family(Owner)) return std::nullopt;
+    auto AliasIn = [&](QualType Type) {
+      Type = Type.getNonReferenceType();
+      for (unsigned Depth = 0; !Type.isNull() && Depth < 64; ++Depth) {
+        if (const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Type.getTypePtr())) {
+          Type = Substitution->getReplacementType(); continue;
+        }
+        if (const auto *Name = dyn_cast<ElaboratedType>(Type.getTypePtr())) {
+          Type = Name->getNamedType(); continue;
+        }
+        if (const auto *Name = dyn_cast<TypedefType>(Type.getTypePtr())) return Name->getDecl() == Alias;
+        if (const auto *Name = dyn_cast<TemplateSpecializationType>(Type.getTypePtr()))
+          if (Name->isTypeAlias()) { Type = Name->getAliasedType(); continue; }
+        return false;
+      }
+      return false;
+    };
+    std::set<const CXXOperatorCallExpr *> Seen;
+    for (const auto *Selection : Selections) {
+      const auto *RootCall = Selection ? dyn_cast_or_null<CXXOperatorCallExpr>(Selection->Expression) : nullptr;
+      if (!RootCall || !S.owns(SM, RootCall->getExprLoc()) || Seen.count(RootCall)) continue;
+      const auto Root = describeFunctionalBindCallSource(S, SM, RootCall, Context);
+      if (!Root) continue;
+      Seen.insert(RootCall);
+      if (Seen.size() > 64 || !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return std::nullopt;
+      unsigned Nodes = 0;
+      std::optional<UtilityTupleRecord> Found;
+      bool Valid = true;
+      std::function<void(const FunctionalBindCallSource &, unsigned)> Visit;
+      Visit = [&](const FunctionalBindCallSource &Current, unsigned Depth) {
+        if (!Valid || Found) return;
+        if (Depth >= 64 || ++Nodes > 64) { Valid = false; return; }
+        Valid = Graph.withBindSourceChild([&] {
+          if (Current.OwnedRoot != RootCall || Current.OwnedPath.size() != Depth) return false;
+          if (Current.Storage.Arguments.Record->getCanonicalDecl() == Tuple->getCanonicalDecl() &&
+              Slot < Current.Arguments.size()) {
+            const auto &Argument = Current.Arguments[Slot];
+            const auto *Get = Argument.Get ? Argument.Get->getDirectCallee() : nullptr;
+            const auto *Unwrap = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
+            const auto *Types = Get ? Get->getTemplateSpecializationArgs() : nullptr;
+            if (!Get || !Unwrap || !Types || Types->size() != 2 ||
+                Types->get(0).getKind() != TemplateArgument::Integral ||
+                Types->get(0).getAsIntegral().isNegative() ||
+                Types->get(0).getAsIntegral().getLimitedValue(64) != Slot ||
+                !AliasIn(Get->getReturnType())) return true;
+            bool Witness = Use.Kind == TemplateSourceKind::Function && Use.Declaration == Unwrap &&
+                Use.Location == Argument.Unwrap->getExprLoc() && Use.Template == Unwrap->getPrimaryTemplate();
+            if (!Witness) {
+              for (const auto *Parent : ActiveSources) {
+                if (!Parent || Parent->Kind != TemplateSourceKind::Function || Parent->Declaration != Unwrap ||
+                    Parent->Location != Argument.Unwrap->getExprLoc() ||
+                    Parent->Template != Unwrap->getPrimaryTemplate() || !Parent->FunctionalBindConstraint ||
+                    !Parent->Sugared || !Parent->Sugared->size() ||
+                    Parent->Sugared->get(0).getKind() != TemplateArgument::Type) continue;
+                Witness |= AliasIn(Parent->Sugared->get(0).getAsType());
+              }
+            }
+            if (Witness) { Found = Current.Storage.Arguments; return true; }
+          }
+          for (unsigned I = 0; I < Current.Arguments.size(); ++I) {
+            if (!Current.Arguments[I].Nested) continue;
+            const auto &Child = *Current.Arguments[I].Nested;
+            auto Path = Current.OwnedPath;
+            Path.push_back(I);
+            if (Child.Root != RootCall || Child.Parent != Current.SourceCall || Child.Slot != I ||
+                Child.Path != Path || Child.Invocation.OwnedPath != Path || Child.Invocation.OwnedRoot != RootCall ||
+                Child.Get != Current.Arguments[I].Get || Child.Unwrap != Current.Arguments[I].Unwrap) return false;
+            Visit(Child.Invocation, Depth + 1);
+            if (!Valid) return false;
+            if (Found) break;
+          }
+          return true;
+        });
+      };
+      Visit(*Root, 0);
+      if (!Valid) return std::nullopt;
+      if (Found) return Found;
+    }
+    return std::nullopt;
+  }
+
   std::optional<FunctionalBindCallSource> retainedOwnedCallOccurrence(
       const CXXOperatorCallExpr *Wanted) {
     if (!Wanted || !ActiveUnwrapSource || !ActiveUnwrapSource->OwnedRoot ||
@@ -24188,6 +24332,10 @@ public:
     Ready = Ready && Graph.bindFunctionalBindTypeTraversalSource(
         [this](const TemplateSpecializationType *Type, const std::function<bool()> &Proof) {
           return typeTraversalSource(Type, Proof);
+        });
+    Ready = Ready && Graph.bindFunctionalBindRetainedTupleSource(
+        [this](const TemplateUseSource &Use, const CXXRecordDecl *Tuple, unsigned Slot, const TypeAliasDecl *Alias) {
+          return retainedOwnedTupleProjectionStorage(Use, Tuple, Slot, Alias);
         });
     Ready = Ready && seedPlaceholderDeclarationTypes();
   }
