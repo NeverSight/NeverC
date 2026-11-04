@@ -1388,10 +1388,12 @@ return `unsigned char` ZF and the other interfaces return `void`. All retain
 instruction-owned accesses and unknown memory effects, including dead checks.
 The same width/prefix validation as the descriptor-query APIs applies.
 
-Full LLVM supplies the corresponding `.address` and i386 `.address32` APIs,
+Full LLVM supplies the corresponding `.address` and protected `.address32` APIs,
 plus `llvm.x86.{sgdt16,sidt16,lgdt16,lidt16}.address32` for the legacy 16-bit
 descriptor-table operand size. These are distinct from a 16-bit address.
-NeverC remains x64-only. Existing pointer and register builtins are unchanged.
+The `.address32` forms accept code16 and code32 with the 32-bit stack/pointer
+ABI. NeverC's x86 frontend remains x64-only. Existing pointer and register
+builtins are unchanged.
 The instruction generator appends thirteen address-size pseudos while
 preserving every existing opcode identity.
 
@@ -1405,6 +1407,23 @@ CPL0 selector, CR0 and descriptor-table transfers on TCG; full LLVM includes
 i386 16-bit table loads/stores against independent original bytes. The
 `--address-bits 64` run covers natural long-mode addressing. Physical hardware
 qualification is separate.
+
+`tests/neverc/X86/verify_protected_descriptor_state.py --llvm-bin DIR
+--mode 16 --output DIR` executes all 17 full-LLVM address32 APIs against
+independent original bytes in KVM; `--mode 32` selects the code32 regression.
+Its 266 functions cover both address sizes, all segment prefixes, both table
+operand widths and live/dead verification results at O0/O2. CPL0/CPL3 cases
+include UMIP, CR0 input changes, null/invalid/nonpresent selectors, LTR busy
+writes, source and descriptor paging, read-only pages and alignment faults.
+The oracle compares represented GPRs/flags, segment/system state, active
+events and RAM, then checks successful compiler returns and saved registers.
+Offset-transport and returned-ZF corruption must each be rejected.
+
+Code resides in a nonflat CS with separate relative RIP and linear debug
+addresses. INVLPG's bytes, operand transport, exception behavior and retained
+effects are checked; this is not an experiment observing stale physical TLB
+entries. These tests do not supply a NeverC i386 frontend, real/VM86, arbitrary
+segment caches, asynchronous events or device memory semantics.
 
 The full fork passes 3,144 object/encoding checks; NeverC and its bitcode-to-fork
 route each pass 1,404. Explicit-address CPL0 runs pass 210 checks for full LLVM
