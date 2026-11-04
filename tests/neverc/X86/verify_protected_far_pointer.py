@@ -157,7 +157,7 @@ SECTIONS {
     report = dict(schema_version=1, tools={k: sha256(v) for k, v in tools.items()},
                   inputs={str(p.relative_to(ROOT)): sha256(p) for p in
                           [Path(__file__), ROOT / "protected_far_pointer_kvm.c",
-                           ROOT / "KvmTransferFixture.h"]},
+                           ROOT / "KvmTransferFixture.h", ROOT / "KvmProtectedFaultFixture.h"]},
                   profiles=profiles,
                   comparisons=sum(p["complete_state_pairs"] for p in profiles),
                   boundary="CPL0 protected code16/code32 with a 32-bit stack/pointer ABI; native offset/segment loads, descriptor effects and #GP/#NP/#SS/#PF frames. Original fault handlers expose their vector with OUT. ABI-compatible successful cases also return through the compiler frame. No NeverC i386 frontend, real/VM86, CPL3 #AC, MOV-SS shadows or asynchronous events.")

@@ -1,54 +1,8 @@
 // Native protected far-pointer loads, including hardware-owned selector faults.
-#include "KvmTransferFixture.h"
+#include "KvmProtectedFaultFixture.h"
 
-enum { IDT_BASE = 0x7000, FAULT_BASE = 0xa000, POINTER_BASE = 0x90000 };
-
-static uint64_t gpr(struct kvm_regs r, unsigned index) {
-  const uint64_t values[] = {r.rax, r.rcx, r.rdx, r.rbx,
-                             r.rsp, r.rbp, r.rsi, r.rdi};
-  CHECK(index < 8);
-  return values[index];
-}
-
-static void clear_inactive_exception_record(struct kvm_vcpu_events *events) {
-  // KVM_GET_VCPU_EVENTS copies the last exception's payload even after both
-  // active flags clear. Hardware-delivered and KVM-emulated faults can leave
-  // different stale records. Reject active exceptions before excluding that
-  // inactive payload; all other event state still participates in equality.
-  CHECK(!events->exception.injected && !events->exception.pending);
-  memset(&events->exception, 0, sizeof(events->exception));
-  events->exception_has_payload = 0;
-  events->exception_payload = 0;
-}
-
-static struct kvm_regs execute(struct cpu *cpu, uint64_t next,
-                               unsigned *vector) {
-  breakpoint(cpu, next);
-  CHECK(ioctl(cpu->fd, KVM_RUN, 0) == 0);
-  struct kvm_regs result;
-  CHECK(ioctl(cpu->fd, KVM_GET_REGS, &result) == 0);
-  *vector = 0;
-  if (cpu->run->exit_reason == KVM_EXIT_DEBUG && result.rip == next)
-    return result;
-  // A two-byte OUT in each original fault handler exposes the vector without
-  // modifying GPRs, flags, caches or RAM. Both sides execute this same handler.
-  if (cpu->run->exit_reason == KVM_EXIT_IO &&
-      cpu->run->io.direction == KVM_EXIT_IO_OUT && cpu->run->io.port == 0x80 &&
-      cpu->run->io.size == 1 && cpu->run->io.count == 1) {
-    const uint64_t pc = result.rip;
-    if (pc >= FAULT_BASE && pc < FAULT_BASE + 256 && (pc & 15) == 0) {
-      *vector = (pc - FAULT_BASE) / 16;
-      CHECK(*vector == 11 || *vector == 12 || *vector == 13 || *vector == 14);
-      // KVM_EXIT_IO precedes completion of the OUT. Reenter KVM and stop
-      // immediately after it before reading or replacing architectural state.
-      return run_to(cpu, pc + 2, 0);
-    }
-  }
-  fprintf(stderr, "exit %u, rip %#llx, expected %#llx or selector/page fault\n",
-          cpu->run->exit_reason, result.rip, (unsigned long long)next);
-  CHECK(0);
-  return result;
-}
+enum { POINTER_BASE = 0x90000, FAULTS = (1u << 11) | (1u << 12) |
+                                      (1u << 13) | (1u << 14) };
 
 static void put_descriptor(uint8_t *ram, unsigned selector, uint64_t value) {
   memcpy(ram + 0x5000 + selector, &value, sizeof(value));
@@ -216,7 +170,7 @@ int main(int argc, char **argv) {
           memcpy(before, ram, RAM_SIZE);
           unsigned actual_vector, expected_vector;
           struct kvm_regs actual =
-              execute(&candidate, instruction + length, &actual_vector);
+              run_instruction_to(&candidate, instruction + length, &actual_vector, FAULTS);
           CHECK(ioctl(candidate.fd, KVM_GET_SREGS, &actual_special) == 0);
           CHECK(ioctl(candidate.fd, KVM_GET_VCPU_EVENTS, &actual_events) == 0);
           memcpy(after, ram, RAM_SIZE);
@@ -224,7 +178,7 @@ int main(int argc, char **argv) {
           boundary.rip = ORACLE_PC;
           CHECK(ioctl(oracle.fd, KVM_SET_REGS, &boundary) == 0);
           struct kvm_regs expected =
-              execute(&oracle, ORACLE_PC + length, &expected_vector);
+              run_instruction_to(&oracle, ORACLE_PC + length, &expected_vector, FAULTS);
           CHECK(ioctl(oracle.fd, KVM_GET_SREGS, &expected_special) == 0);
           CHECK(ioctl(oracle.fd, KVM_GET_VCPU_EVENTS, &expected_events) == 0);
           CHECK(actual_vector == expected_vector);

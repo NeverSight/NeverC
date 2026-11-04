@@ -162,6 +162,35 @@ event state and every mapped RAM byte. XSTATE, CET, NT task returns, fault and
 asynchronous delivery, other CPU models, and successful FRED/UIRET transitions
 remain outside this native fixture's scope.
 
+## Native protected ARPL
+
+The full LLVM fork provides `llvm.x86.arpl.reg(i16, i16)` returning the
+adjusted selector and actual ZF, and `llvm.x86.arpl.mem(ptr, i16)` returning
+ZF while the native instruction owns the word read and conditional write.
+Both admit protected 16/32-bit code with the 32-bit pointer/stack ABI. They
+retain the native instruction when the result is unused. Long-mode emission
+fails explicitly; NeverC's x86-64/AArch64 frontend does not advertise ARPL.
+Code16 emission does not add an i386 frontend target to NeverC.
+
+Run `tests/neverc/X86/verify_protected_arpl.py --llvm-bin LLVM_BIN --mode 16
+--output ARTIFACTS` for the O0 and optimized O2 native KVM profiles; `--mode 32`
+checks the existing protected 32-bit path. Each profile compares 7,680 pairs
+against independently encoded original ARPL. The matrix includes every RPL
+pair, high selector bits, aliased inputs, used/unused results, CPL0/CPL3,
+arithmetic flags, aligned/unaligned/cross-page and read-only/missing operands,
+and explicit read-only, limited, null, expand-down and nonflat DS caches.
+Original #GP/#PF/#AC handlers preserve fault frames and expose the vector.
+All GPRs, flags, segment/system state, active events and RAM participate in
+the comparison; ABI-compatible successes also verify the compiler's result
+and return frame. Negative controls corrupt a declared source before intact
+ARPL and invert its returned ZF afterward. Both must fail.
+
+`KvmProtectedFaultFixture.h` shares completed-OUT fault observation and inactive
+exception-record handling with the protected far-pointer oracle. These tests
+do not qualify real/VM86 mode, asynchronous events, device memory or an entire
+i386 source dispatcher. The instruction contract follows
+[Intel SDM ARPL](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html).
+
 ## Native far-pointer segment loads
 
 `__builtin_ia32_lfs16/32/64`, `__builtin_ia32_lgs16/32/64` and
