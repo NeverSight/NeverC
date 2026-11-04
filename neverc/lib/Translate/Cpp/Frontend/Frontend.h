@@ -12,6 +12,7 @@
 #include "llvm/Support/VirtualFileSystem.h"
 #include <functional>
 #include <map>
+#include <memory>
 #include <cstddef>
 #include <optional>
 #include <set>
@@ -1798,6 +1799,7 @@ describeFunctionalBindFactorySource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+struct FunctionalBindNestedArgumentSource;
 struct FunctionalBindArgumentSource {
   const clang::CallExpr *Get, *Unwrap;
   const clang::CXXConstructExpr *WrapperCopy;
@@ -1808,6 +1810,7 @@ struct FunctionalBindArgumentSource {
   unsigned PlaceholderRank = 0;
   const clang::VarDecl *PlaceholderIndex = nullptr;
   const clang::CallExpr *PlaceholderGet = nullptr, *PlaceholderForward = nullptr;
+  std::shared_ptr<const FunctionalBindNestedArgumentSource> Nested;
 };
 struct FunctionalBindCallSource {
   FunctionalBindStorage Storage;
@@ -1819,11 +1822,32 @@ struct FunctionalBindCallSource {
   std::vector<const clang::CallExpr *> CallForwards;
   std::vector<FunctionalBindArgumentSource> Arguments;
   std::vector<const clang::CXXStaticCastExpr *> InvokeCasts;
+  const clang::CXXOperatorCallExpr *OwnedRoot = nullptr;
+  std::vector<unsigned> OwnedPath;
+};
+
+// Original AST witnesses only. Root and Path identify the enclosing owned
+// occurrence; a copied descriptor never points into a temporary parent value.
+// A nested result type or selected node supplies no completed SDK permission.
+struct FunctionalBindNestedArgumentSource {
+  const clang::CXXOperatorCallExpr *Root = nullptr, *Parent = nullptr;
+  unsigned Slot = 0;
+  std::vector<unsigned> Path;
+  const clang::CallExpr *Get = nullptr, *Unwrap = nullptr, *Expand = nullptr;
+  const clang::TypedefNameDecl *IndexAlias = nullptr;
+  const clang::CXXConstructExpr *Indices = nullptr;
+  std::vector<const clang::CallExpr *> IncomingGets, IncomingForwards;
+  clang::QualType ResultType;
+  FunctionalBindCallSource Invocation;
 };
 std::optional<FunctionalBindCallSource>
 describeFunctionalBindCallSource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+std::optional<FunctionalBindCallSource>
+describeFunctionalBindCallSourceOccurrence(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
 
 // These descriptions retain the selected library path. They provide neither
 // runtime permission nor a completed ordinary source/trait certificate.
