@@ -819,10 +819,11 @@ jobs:
     - name: Install matching host compiler and archive reader
       run: 'set -o pipefail
 
-        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)''
-        | tee "$RUNNER_TEMP/cpp-not-fn-operator-evidence/bootstrap/python.log"
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-not-fn-operator-evidence/bootstrap/python.log"
 
-        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+        python3 utils/ci/ensure-llvm-apt-host.py
+
+        curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https" -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
 
         sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-not-fn-operator-evidence/bootstrap/clang-install.log"
 
@@ -830,8 +831,7 @@ jobs:
 
         '
     - name: Build actual isolated frontend and replay unmodified project tests and SDK requests
-      run: "python3 utils/ci/check-not-fn-operator-component.py --repo \"$GITHUB_WORKSPACE\" \\\n  --output \"$RUNNER_TEMP/cpp-not-fn-operator-evidence\"\
-        \ \\\n  --build \"$RUNNER_TEMP/cpp-private-frontend-build\"\n"
+      run: "python3 utils/ci/check-not-fn-operator-component.py --repo \"$GITHUB_WORKSPACE\" \\\n  --output \"$RUNNER_TEMP/cpp-not-fn-operator-evidence\" \\\n  --build \"$RUNNER_TEMP/cpp-private-frontend-build\"\n"
     - name: Upload actual protocol evidence without compiler binaries
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -839,7 +839,7 @@ jobs:
         name: cpp-not-fn-operator-component-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-not-fn-operator-evidence
         if-no-files-found: error
-        retention-days: 14
+        retention-days: 90
     - name: Retain actual frontend binary remotely for source diagnosis
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
@@ -874,7 +874,7 @@ jobs:
 
           '
         if-no-files-found: warn
-        retention-days: 7
+        retention-days: 90
         compression-level: 1
 'on':
   workflow_dispatch:
