@@ -3102,6 +3102,12 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntCast(MulResult, ResType, IsSigned);
   }
 
+#define X86_NATIVE_BIT_TEST(Name, Type)                                        \
+  case X86::BI__builtin_ia32_##Name:                                           \
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_##Name), Ops);
+#include "neverc/Foundation/Builtin/X86NativeBitTest.def"
+#undef X86_NATIVE_BIT_TEST
+
 #define X86_NATIVE_DIVISION(Name, Type)                                        \
   case X86::BI__builtin_ia32_##Name: {                                         \
     auto *Pair = Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_##Name),    \

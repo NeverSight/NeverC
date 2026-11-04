@@ -1,0 +1,14 @@
+// Native signed-index memory bit strings. Define X86_NATIVE_BIT_TEST first.
+
+X86_NATIVE_BIT_TEST(bt_mem16, "UcvC*s")
+X86_NATIVE_BIT_TEST(bt_mem32, "UcvC*i")
+X86_NATIVE_BIT_TEST(bt_mem64, "UcvC*LLi")
+X86_NATIVE_BIT_TEST(bts_mem16, "Ucv*s")
+X86_NATIVE_BIT_TEST(bts_mem32, "Ucv*i")
+X86_NATIVE_BIT_TEST(bts_mem64, "Ucv*LLi")
+X86_NATIVE_BIT_TEST(btr_mem16, "Ucv*s")
+X86_NATIVE_BIT_TEST(btr_mem32, "Ucv*i")
+X86_NATIVE_BIT_TEST(btr_mem64, "Ucv*LLi")
+X86_NATIVE_BIT_TEST(btc_mem16, "Ucv*s")
+X86_NATIVE_BIT_TEST(btc_mem32, "Ucv*i")
+X86_NATIVE_BIT_TEST(btc_mem64, "Ucv*LLi")

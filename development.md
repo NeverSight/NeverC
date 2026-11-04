@@ -2824,3 +2824,37 @@ The matrix covers CPL0, byte/word/dword operands, signed/unsigned full dividends
 all four result-use combinations, O0 and optimized IR/O2. It does not qualify
 operand-memory faults, asynchronous events, other privilege levels or physical
 processors beyond those recorded in the qualification.
+
+## Native memory bit strings
+
+`__builtin_ia32_{bt,bts,btr,btc}_mem{16,32,64}(base, signed_index)` returns
+an `unsigned char` carry bit. The index is `short`, `int` or `long long`;
+BT accepts a `const void *`, and the updating forms accept `void *`.
+Each emits the corresponding `llvm.x86.*.memN` intrinsic and one native
+memory instruction. The full signed register index can select a word before
+or after the base; even constant indices preserve that behavior. Complete
+word/dword/qword access and faults remain native for unused return values.
+
+The Microsoft `_bittest*` and `_bittestand{set,reset,complement}*` interfaces
+now use these native LLVM calls instead of inline assembly. Their interlocked
+variants use the existing `llvm.x86.atomic.*.rm` intrinsics and retain LOCK.
+The signed index makes a fixed memory range at the base inaccurate; native
+machine metadata therefore conservatively aliases unknown memory. The new
+unlocked APIs make no concurrent atomicity claim.
+
+`X86NativeBitTest.h` owns lowering in both backends; the intrinsic synchronizer
+owns the twelve fixed signatures and their sorted IDs/DAG references.
+`NativeBitTestFrontendTests.cpp` covers ELF/COFF/Mach-O O0/O2, retained unused
+calls, native compatibility routes and single evaluation of arguments.
+`verify_native_bit_tests.py --llvm-bin LLVM_BIN --neverc NEVERC --output DIR`
+compares return carry, complete fixture RAM, signed/extreme indices, alignment,
+real memory faults and marker order with independent original instructions.
+It checks LLVM's legacy/new pass managers, NeverC, and NeverC IR through both
+LLVM paths, and rejects a control that keeps CF but erases one BTS store.
+The i386 runtime matrix uses full LLVM; NeverC's frontend remains x64-only.
+The full LLVM code16 route is checked by compiler regressions, not claimed as
+protected KVM execution of compiler-generated bit-string functions.
+
+`_BitScanForward` and `_BitScanReverse` continue to use native `cttz/ctlz`
+code generation, with their C API's zero-source output preservation. They do
+not provide a complete architectural flag-state API.

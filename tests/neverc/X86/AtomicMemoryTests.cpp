@@ -69,15 +69,20 @@ TEST(X86AtomicMemory, UnqualifiedPointersKeepByteAlignmentAndRMWEffects) {
   for (auto [I, Bits] : Cases) {
     SCOPED_TRACE(Intrinsic::getBaseName(I).str());
     SCOPED_TRACE(Bits);
+    // Full signed register indices may select words outside the base object.
+    const bool IndexedBitString = I == Intrinsic::x86_atomic_bts_rm ||
+                                  I == Intrinsic::x86_atomic_btc_rm ||
+                                  I == Intrinsic::x86_atomic_btr_rm;
     SmallVector<llvm::Type *, 1> Overloads;
     if (Intrinsic::isOverloaded(I))
       Overloads.push_back(B.getIntNTy(Bits));
     auto *Declaration = Intrinsic::getDeclaration(&M, I, Overloads);
     SmallVector<Value *, 4> Args;
     for (auto *Parameter : Declaration->getFunctionType()->params())
-      Args.push_back(Parameter->isPointerTy()
-                         ? static_cast<Value *>(F->getArg(0))
-                         : ConstantInt::get(Parameter, 3));
+      Args.push_back(
+          Parameter->isPointerTy()
+              ? static_cast<Value *>(F->getArg(0))
+              : ConstantInt::get(Parameter, IndexedBitString ? -129 : 3));
     auto *Call = B.CreateCall(Declaration, Args);
     ASSERT_FALSE(Call->getParamAlign(0));
     TargetLowering::IntrinsicInfo Info;
@@ -85,7 +90,8 @@ TEST(X86AtomicMemory, UnqualifiedPointersKeepByteAlignmentAndRMWEffects) {
     ASSERT_TRUE(Info.align);
     EXPECT_EQ(Info.align->value(), 1u);
     EXPECT_EQ(Info.memVT.getFixedSizeInBits(), Bits);
-    EXPECT_EQ(dyn_cast_if_present<const Value *>(Info.ptrVal), F->getArg(0));
+    EXPECT_EQ(dyn_cast_if_present<const Value *>(Info.ptrVal),
+              IndexedBitString ? nullptr : F->getArg(0));
     EXPECT_EQ(Info.offset, 0);
     EXPECT_EQ(Info.flags, MachineMemOperand::MOLoad |
                               MachineMemOperand::MOStore |

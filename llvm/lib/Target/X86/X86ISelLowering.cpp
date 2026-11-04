@@ -23,6 +23,7 @@
 #include "X86IntrinsicsInfo.h"
 #include "X86KVMHypercall.h"
 #include "X86MachineFunctionInfo.h"
+#include "X86NativeBitTest.h"
 #include "X86NativeDivision.h"
 #include "X86NativeFrameReturn.h"
 #include "X86RTMAbortPair.h"
@@ -2762,7 +2763,8 @@ bool X86TargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
     case Intrinsic::x86_atomic_btc_rm:
     case Intrinsic::x86_atomic_btr_rm: {
       Info.opc = ISD::INTRINSIC_W_CHAIN;
-      Info.ptrVal = I.getArgOperand(0);
+      // The signed bit index may select a word outside the base object.
+      Info.ptrVal = nullptr;
       unsigned Size = I.getArgOperand(1)->getType()->getScalarSizeInBits();
       Info.memVT = EVT::getIntegerVT(I.getType()->getContext(), Size);
       Info.align = Align(1);
@@ -28055,6 +28057,19 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
   const IntrinsicData *IntrData = getIntrinsicWithChain(IntNo);
   if (!IntrData) {
     switch (IntNo) {
+    case Intrinsic::x86_bt_mem16:
+    case Intrinsic::x86_bt_mem32:
+    case Intrinsic::x86_bt_mem64:
+    case Intrinsic::x86_bts_mem16:
+    case Intrinsic::x86_bts_mem32:
+    case Intrinsic::x86_bts_mem64:
+    case Intrinsic::x86_btr_mem16:
+    case Intrinsic::x86_btr_mem32:
+    case Intrinsic::x86_btr_mem64:
+    case Intrinsic::x86_btc_mem16:
+    case Intrinsic::x86_btc_mem32:
+    case Intrinsic::x86_btc_mem64:
+      return X86::lowerNativeBitTest(Op, Subtarget.is64Bit(), DAG);
     case Intrinsic::x86_udivrem8:
     case Intrinsic::x86_sdivrem8:
     case Intrinsic::x86_udivrem16:

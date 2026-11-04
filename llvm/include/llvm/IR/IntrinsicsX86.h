@@ -1043,6 +1043,18 @@ enum X86Intrinsics : unsigned {
     x86_bndmov_store,                                // llvm.x86.bndmov.store
     x86_bndmov_store_lock,                           // llvm.x86.bndmov.store.lock
     x86_bndstx,                                      // llvm.x86.bndstx
+    x86_bt_mem16,                                    // llvm.x86.bt.mem16
+    x86_bt_mem32,                                    // llvm.x86.bt.mem32
+    x86_bt_mem64,                                    // llvm.x86.bt.mem64
+    x86_btc_mem16,                                   // llvm.x86.btc.mem16
+    x86_btc_mem32,                                   // llvm.x86.btc.mem32
+    x86_btc_mem64,                                   // llvm.x86.btc.mem64
+    x86_btr_mem16,                                   // llvm.x86.btr.mem16
+    x86_btr_mem32,                                   // llvm.x86.btr.mem32
+    x86_btr_mem64,                                   // llvm.x86.btr.mem64
+    x86_bts_mem16,                                   // llvm.x86.bts.mem16
+    x86_bts_mem32,                                   // llvm.x86.bts.mem32
+    x86_bts_mem64,                                   // llvm.x86.bts.mem64
     x86_cast_tile_to_vector,                         // llvm.x86.cast.tile.to.vector
     x86_cast_vector_to_tile,                         // llvm.x86.cast.vector.to.tile
     x86_clac,                                        // llvm.x86.clac

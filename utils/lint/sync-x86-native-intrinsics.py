@@ -54,6 +54,11 @@ DECLARATIONS = {
     "lkgs_reg": ("Done", "I16"),
     "lkgs_mem": ("Done", "PTR"),
 }
+NATIVE_BIT_TESTS = {f"{operation}_mem{bits}" for operation in ("bt", "bts", "btr", "btc")
+                    for bits in (16, 32, 64)}
+for name in sorted(NATIVE_BIT_TESTS):
+    bits = re.search(r"(\d+)$", name).group(1)
+    DECLARATIONS[name] = ("I8", "PTR", f"I{bits}")
 NATIVE_DIVISIONS = {f"{kind}divrem{bits}" for kind in ("u", "s")
                     for bits in (8, 16, 32, 64)}
 for name in sorted(NATIVE_DIVISIONS):
@@ -399,7 +404,7 @@ def synchronize(write):
             attribute = hle_attribute
         if suffix == "rtm_abort_pair":
             attribute = rtm_abort_attribute
-        if suffix in KVM_HYPERCALLS or suffix in NATIVE_DIVISIONS or suffix == "vmgexit_sev":
+        if suffix in KVM_HYPERCALLS or suffix in NATIVE_DIVISIONS or suffix in NATIVE_BIT_TESTS or suffix == "vmgexit_sev":
             attribute = hypercall_attribute
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)

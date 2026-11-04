@@ -753,53 +753,27 @@ BuiltinBitTest BuiltinBitTest::decodeBitTestBuiltin(unsigned BuiltinID) {
 }
 
 namespace {
-char bitActionToX86BTCode(BuiltinBitTest::ActionKind A) {
-  switch (A) {
-  case BuiltinBitTest::TestOnly:
-    return '\0';
-  case BuiltinBitTest::Complement:
-    return 'c';
-  case BuiltinBitTest::Reset:
-    return 'r';
-  case BuiltinBitTest::Set:
-    return 's';
-  }
-  llvm_unreachable("invalid action");
-}
-
 llvm::Value *genX86BitTestIntrinsic(FunctionEmitter &FE, BuiltinBitTest BT,
-                                    const CallExpr *E, Value *BitBase,
-                                    Value *BitPos) {
-  char Action = bitActionToX86BTCode(BT.Action);
-  char SizeSuffix = BT.Is64Bit ? 'q' : 'l';
-
-  llvm::SmallString<64> Asm;
-  raw_svector_ostream AsmOS(Asm);
-  if (BT.Interlocking != BuiltinBitTest::Unlocked)
-    AsmOS << "lock ";
-  AsmOS << "bt";
-  if (Action)
-    AsmOS << Action;
-  AsmOS << SizeSuffix << " $2, ($1)";
-
-  std::string Constraints = "={@ccc},r,r,~{cc},~{memory}";
-  std::string_view MachineClobbers = FE.getTarget().getClobbers();
-  if (!MachineClobbers.empty()) {
-    Constraints += ',';
-    Constraints += MachineClobbers;
+                                    Value *BitBase, Value *BitPos) {
+  if (BT.Interlocking != BuiltinBitTest::Unlocked) {
+    const Intrinsic::ID ID =
+        BT.Action == BuiltinBitTest::Set     ? Intrinsic::x86_atomic_bts_rm
+        : BT.Action == BuiltinBitTest::Reset ? Intrinsic::x86_atomic_btr_rm
+                                             : Intrinsic::x86_atomic_btc_rm;
+    return FE.Builder.CreateCall(FE.ME.getIntrinsic(ID, BitPos->getType()),
+                                 {BitBase, BitPos});
   }
-  llvm::IntegerType *IntType = llvm::IntegerType::get(
-      FE.getLLVMContext(),
-      FE.getContext().getTypeSize(E->getArg(1)->getType()));
-  llvm::FunctionType *FTy =
-      llvm::FunctionType::get(FE.Int8Ty, {FE.UnqualPtrTy, IntType}, false);
-
-  llvm::InlineAsm *IA =
-      llvm::InlineAsm::get(FTy, Asm, Constraints, /*hasSideEffects=*/true);
-  return FE.Builder.CreateCall(IA, {BitBase, BitPos});
+  constexpr Intrinsic::ID IDs[][2] = {
+      {Intrinsic::x86_bt_mem32, Intrinsic::x86_bt_mem64},
+      {Intrinsic::x86_btc_mem32, Intrinsic::x86_btc_mem64},
+      {Intrinsic::x86_btr_mem32, Intrinsic::x86_btr_mem64},
+      {Intrinsic::x86_bts_mem32, Intrinsic::x86_bts_mem64}};
+  return FE.Builder.CreateCall(FE.ME.getIntrinsic(IDs[BT.Action][BT.Is64Bit]),
+                               {BitBase, BitPos});
 }
 
-llvm::AtomicOrdering getBitTestAtomicOrdering(BuiltinBitTest::InterlockingKind I) {
+llvm::AtomicOrdering
+getBitTestAtomicOrdering(BuiltinBitTest::InterlockingKind I) {
   switch (I) {
   case BuiltinBitTest::Unlocked:
     return llvm::AtomicOrdering::NotAtomic;
@@ -825,7 +799,7 @@ llvm::Value *genBitTestIntrinsic(FunctionEmitter &FE, unsigned BuiltinID,
   // X86 has special BT, BTC, BTR, and BTS instructions that handle the array
   // indexing operation internally. Use them if possible.
   if (FE.getTarget().getTriple().isX86())
-    return genX86BitTestIntrinsic(FE, BT, E, BitBase, BitPos);
+    return genX86BitTestIntrinsic(FE, BT, BitBase, BitPos);
 
   // Otherwise, use generic code to load one byte and test the bit. Use all but
   // the bottom three bits as the array index, and the bottom three bits to form

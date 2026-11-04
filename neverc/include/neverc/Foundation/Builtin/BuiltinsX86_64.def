@@ -200,6 +200,10 @@ TARGET_HEADER_BUILTIN(__svm_vmload, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__svm_vmsave, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__svm_skinit, "vi", "nrh", INTRIN_H, ALL_MS_LANGUAGES, "")
 BUILTIN(__builtin_ia32_skinit, "vUi", "nr")
+#define X86_NATIVE_BIT_TEST(Name, Type) \
+  BUILTIN(__builtin_ia32_##Name, Type, "n")
+#include "X86NativeBitTest.def"
+#undef X86_NATIVE_BIT_TEST
 // Explicit full-dividend division. Results and operands are bit patterns;
 // the native operation owns divide errors before the remainder store.
 #define X86_NATIVE_DIVISION(Name, Type) \
