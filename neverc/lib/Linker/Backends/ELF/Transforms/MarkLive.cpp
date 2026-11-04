@@ -79,27 +79,24 @@ void setPieceLiveAtomic(SectionPiece &piece) {
 #endif
 }
 
-// Symbol::used is a bitfield. Find its byte and mask once, from zeroed symbol
-// storage (the way SymbolTable::insert initializes symbols), so concurrent
-// markers can set it with an atomic OR that preserves the other bits.
+// Symbol::used is a bitfield. Find its byte and mask once per marking instance
+// from zeroed storage (the way SymbolTable::insert initializes symbols), so
+// concurrent markers can set it with an atomic OR that preserves the other
+// bits.
 struct UsedBit {
   size_t offset;
   uint8_t mask;
 };
-const UsedBit &getUsedBit() {
-  static const UsedBit bit = [] {
-    alignas(SymbolUnion) unsigned char storage[sizeof(SymbolUnion)] = {};
-    reinterpret_cast<Symbol *>(storage)->used = true;
-    for (size_t i = 0; i != sizeof(Symbol); ++i)
-      if (storage[i])
-        return UsedBit{i, storage[i]};
-    llvm_unreachable("Symbol::used has no storage");
-  }();
-  return bit;
+UsedBit getUsedBit() {
+  alignas(SymbolUnion) unsigned char storage[sizeof(SymbolUnion)] = {};
+  reinterpret_cast<Symbol *>(storage)->used = true;
+  for (size_t i = 0; i != sizeof(Symbol); ++i)
+    if (storage[i])
+      return UsedBit{i, storage[i]};
+  llvm_unreachable("Symbol::used has no storage");
 }
 
-void setUsedAtomic(Symbol &sym) {
-  const UsedBit &bit = getUsedBit();
+void setUsedAtomic(Symbol &sym, const UsedBit &bit) {
   auto *byte = reinterpret_cast<uint8_t *>(&sym) + bit.offset;
 #if defined(_MSC_VER) && !defined(__clang__)
   if (*reinterpret_cast<volatile uint8_t *>(byte) & bit.mask)
@@ -127,6 +124,7 @@ public:
   void moveToMain();
 
 private:
+  const UsedBit symbolUsedBit = getUsedBit();
   void enqueue(InputSectionBase *sec, uint64_t offset);
   void markSymbol(Symbol *sym);
   void mark();
@@ -309,7 +307,7 @@ void MarkLive<ELFT>::scanEhFrameParallel(EhInputSection &eh,
   // is registered yet while .eh_frame roots are scanned.
   auto visit = [&](const RelTy &rel, bool fromFDE) {
     Symbol &sym = eh.getFile<ELFT>()->getRelocTargetSym(rel);
-    setUsedAtomic(sym);
+    setUsedAtomic(sym, symbolUsedBit);
     if (auto *d = dyn_cast<Defined>(&sym)) {
       auto *relSec = dyn_cast_or_null<InputSectionBase>(d->section);
       if (!relSec)
@@ -564,7 +562,7 @@ void MarkLive<ELFT>::scanParallel(InputSectionBase &sec,
   SmallVectorImpl<InputSection *> &stack = task.stack;
   auto visit = [&](const auto &rel) {
     Symbol &sym = sec.getFile<ELFT>()->getRelocTargetSym(rel);
-    setUsedAtomic(sym);
+    setUsedAtomic(sym, symbolUsedBit);
     if (auto *d = dyn_cast<Defined>(&sym)) {
       if (auto *relSec = dyn_cast_or_null<InputSectionBase>(d->section)) {
         uint64_t offset = d->value;

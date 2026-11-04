@@ -1963,11 +1963,12 @@ void scanRelocations() {
 
 // ================================================================ phase 5: layout
 string_view outputName(string_view n) {
-  static const char *const prefixes[] = {
-      ".text",       ".rodata", ".data.rel.ro", ".data",
-      ".bss.rel.ro", ".bss",    ".tdata",       ".tbss",
+  constexpr const char *prefixes[] = {
+      ".text",       ".rodata",     ".data.rel.ro",   ".data",
+      ".bss.rel.ro", ".bss",        ".tdata",         ".tbss",
       ".init_array", ".fini_array", ".preinit_array", ".gcc_except_table",
-      ".ldata",      ".lrodata", ".lbss",       ".ctors", ".dtors"};
+      ".ldata",      ".lrodata",    ".lbss",          ".ctors",
+      ".dtors"};
   for (const char *p : prefixes) {
     size_t l = strlen(p);
     if (n.size() >= l && n.compare(0, l, p) == 0 &&
@@ -2003,10 +2004,9 @@ int rankOf(const OutputSection *s) {
       return 0;
     if (s->type == SHT_NOTE)
       return 1;
-    static const char *const synth[] = {".dynsym",   ".gnu.version",
-                                        ".gnu.version_d", ".gnu.version_r",
-                                        ".gnu.hash", ".dynstr",
-                                        ".rela.dyn", ".rela.plt"};
+    constexpr const char *synth[] = {
+        ".dynsym",   ".gnu.version", ".gnu.version_d", ".gnu.version_r",
+        ".gnu.hash", ".dynstr",      ".rela.dyn",      ".rela.plt"};
     for (int i = 0; i < 8; ++i)
       if (n == synth[i])
         return 2 + i;
@@ -2211,14 +2211,27 @@ bool canonicalIplt(uint32_t id) {
 }
 
 bool isLinkerDefined(string_view n) {
-  static const char *const names[] = {
-      "__ehdr_start",       "__executable_start", "_DYNAMIC",
-      "_GLOBAL_OFFSET_TABLE_", "__init_array_start", "__init_array_end",
-      "__fini_array_start", "__fini_array_end",   "__preinit_array_start",
-      "__preinit_array_end", "_end",              "end",
-      "_etext",             "etext",              "_edata",
-      "edata",              "__bss_start",        "__GNU_EH_FRAME_HDR",
-      "__rela_iplt_start",  "__rela_iplt_end",    "__dso_handle"};
+  constexpr const char *names[] = {"__ehdr_start",
+                                   "__executable_start",
+                                   "_DYNAMIC",
+                                   "_GLOBAL_OFFSET_TABLE_",
+                                   "__init_array_start",
+                                   "__init_array_end",
+                                   "__fini_array_start",
+                                   "__fini_array_end",
+                                   "__preinit_array_start",
+                                   "__preinit_array_end",
+                                   "_end",
+                                   "end",
+                                   "_etext",
+                                   "etext",
+                                   "_edata",
+                                   "edata",
+                                   "__bss_start",
+                                   "__GNU_EH_FRAME_HDR",
+                                   "__rela_iplt_start",
+                                   "__rela_iplt_end",
+                                   "__dso_handle"};
   for (const char *x : names)
     if (n == x)
       return true;

@@ -32,31 +32,28 @@ struct PerformanceCores {
   bool Known = false;
 };
 
-const PerformanceCores &performanceCores() {
-  static const PerformanceCores Cores = [] {
-    PerformanceCores P;
-    CPU_ZERO(&P.Cpus);
-    auto List = MemoryBuffer::getFile("/sys/devices/cpu_core/cpus",
-                                      /*IsText=*/true);
-    if (!List)
-      return P;
-    SmallVector<StringRef, 8> Ranges;
-    StringRef((*List)->getBuffer()).trim().split(Ranges, ',');
-    for (StringRef Range : Ranges) {
-      auto [Lo, Hi] = Range.split('-');
-      unsigned First = 0, Last = 0;
-      if (Lo.getAsInteger(10, First))
-        return P;
-      Last = First;
-      if (!Hi.empty() && Hi.getAsInteger(10, Last))
-        return P;
-      for (unsigned Cpu = First; Cpu <= Last && Cpu < CPU_SETSIZE; ++Cpu)
-        CPU_SET(Cpu, &P.Cpus);
-    }
-    P.Known = CPU_COUNT(&P.Cpus) > 0;
+PerformanceCores performanceCores() {
+  PerformanceCores P;
+  CPU_ZERO(&P.Cpus);
+  auto List = MemoryBuffer::getFile("/sys/devices/cpu_core/cpus",
+                                    /*IsText=*/true);
+  if (!List)
     return P;
-  }();
-  return Cores;
+  SmallVector<StringRef, 8> Ranges;
+  StringRef((*List)->getBuffer()).trim().split(Ranges, ',');
+  for (StringRef Range : Ranges) {
+    auto [Lo, Hi] = Range.split('-');
+    unsigned First = 0, Last = 0;
+    if (Lo.getAsInteger(10, First))
+      return P;
+    Last = First;
+    if (!Hi.empty() && Hi.getAsInteger(10, Last))
+      return P;
+    for (unsigned Cpu = First; Cpu <= Last && Cpu < CPU_SETSIZE; ++Cpu)
+      CPU_SET(Cpu, &P.Cpus);
+  }
+  P.Known = CPU_COUNT(&P.Cpus) > 0;
+  return P;
 }
 
 void setAffinity(pthread_t Thread, const std::vector<unsigned char> &Mask) {
@@ -76,8 +73,10 @@ void setAffinity(pthread_t Thread, const std::vector<unsigned char> &Mask) {
 bool linker::pinToPerformanceCores(unsigned long &Handle,
                                    std::vector<unsigned char> &SavedAffinity) {
 #if defined(__linux__)
-  const PerformanceCores &Cores = performanceCores();
-  if (!Cores.Known || std::getenv("NEVERC_LINK_NO_PIN"))
+  if (std::getenv("NEVERC_LINK_NO_PIN"))
+    return false;
+  const PerformanceCores Cores = performanceCores();
+  if (!Cores.Known)
     return false;
   cpu_set_t Current, Pinned;
   if (sched_getaffinity(0, sizeof(Current), &Current) != 0)

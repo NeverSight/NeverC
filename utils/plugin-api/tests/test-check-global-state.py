@@ -1693,6 +1693,8 @@ def main() -> int:
         "static const unsigned long Mask",
         "static const std::byte Bytes[2]",
         "static const std::uint64_t Words[2]",
+        "static const char zeros[2 * BlockSize]",
+        "static const unsigned char matrix[Rows * Cols][2]",
     ):
         expect(mod.is_read_only(declaration),
                f"builtin read-only proof rejected: {declaration}", failures)
@@ -1703,6 +1705,10 @@ def main() -> int:
         "static const char *Message",
         "static char *const Pointer",
         "static const Foo &Alias",
+        "static const char *Messages[2 * Count]",
+        "static char *const Pointers[2 * Count]",
+        "static char Mutable[sizeof(const char)]",
+        "static char MutablePointers[sizeof(const char *)]",
     ):
         expect(not mod.is_read_only(declaration),
                f"unproven read-only declaration accepted: {declaration}",
@@ -2536,6 +2542,51 @@ TLSDirectory {{
                               missing_compiler.stderr).lower(),
                "missing release compiler failure was not explained",
                failures)
+
+    # Optional Python sources are absent in OFF builds, and mandatory in ON
+    # builds. A disabled owner must not remain as an allowlisted writable symbol.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cache = root / "CMakeCache.txt"
+        marker = "neverc::plugin::(anonymous namespace)::InterpreterOnce"
+        conditional = {"binary_symbols": [{
+            "symbol": marker, "min_count": 1, "max_count": 1,
+            "file": "neverc/lib/Plugin/Python/PythonPluginLoader.cpp",
+            "cmake_option": "NEVERC_ENABLE_PYTHON_PLUGINS"}]}
+        symbols = [(marker, "B", ".bss")]
+        for value, enabled in (("ON", True), ("TRUE", True), ("1", True),
+                               ("OFF", False), ("FALSE", False), ("0", False)):
+            cache.write_text("NEVERC_ENABLE_PYTHON_PLUGINS:BOOL=" + value + "\n")
+            report = mod.Report()
+            configured = mod.configured_binary_allowlist(report, root, conditional)
+            expect(configured is not None and not report.unscannable,
+                   f"valid build option {value} rejected", failures)
+            expect(bool(mod.audit_symbols([], configured)) == enabled,
+                   f"missing owner has wrong requirement for {value}", failures)
+            expect(bool(mod.audit_symbols(symbols, configured)) != enabled,
+                   f"present owner has wrong requirement for {value}", failures)
+        expect(conditional["binary_symbols"][0]["min_count"] == 1 and
+               conditional["binary_symbols"][0]["max_count"] == 1,
+               "build selection mutated the source manifest", failures)
+        for content in ("", "NEVERC_ENABLE_PYTHON_PLUGINS:BOOL=maybe\n",
+                        "NEVERC_ENABLE_PYTHON_PLUGINS:STRING=OFF\n",
+                        "NEVERC_ENABLE_PYTHON_PLUGINS:BOOL=ON\n"
+                        "NEVERC_ENABLE_PYTHON_PLUGINS:BOOL=OFF\n"):
+            cache.write_text(content)
+            report = mod.Report()
+            expect(mod.configured_binary_allowlist(report, root, conditional)
+                   is None and bool(report.unscannable),
+                   "unknown or conflicting build condition passed", failures)
+        cache.unlink()
+        report = mod.Report()
+        expect(mod.configured_binary_allowlist(report, root, conditional) is None
+               and bool(report.unscannable),
+               "missing build cache waived a symbol requirement", failures)
+        conditional["binary_symbols"][0]["file"] = "unrelated.cpp"
+        report = mod.Report()
+        expect(mod.configured_binary_allowlist(report, root, conditional) is None
+               and bool(report.unscannable),
+               "Python option excused an unrelated owner", failures)
 
     if failures:
         for f in failures:

@@ -59,6 +59,12 @@ the table as evidence. Thread-local symbols are excluded here and left to layer
 enough between platforms that judging it here made the gate reach opposite
 verdicts on ELF and Mach-O for the same source.
 
+Python runtime owners are conditional on ``NEVERC_ENABLE_PYTHON_PLUGINS`` in
+the supplied build directory's ``CMakeCache.txt``. Enabled owners must appear
+exactly once; disabled owners must be absent. Missing or ambiguous build
+configuration fails the gate. Source declaration and digest checks apply in
+both configurations; the audit has no command-line owner exemption.
+
 Without ``--build-dir`` the checker is intentionally a conservative source-
 only preflight: it retains every lexical finding that only a linked symbol
 table can discharge, so ``--strict`` is not required to be clean in that mode.
@@ -1162,19 +1168,21 @@ def is_non_object_statement(statement: str) -> bool:
 def is_read_only(declarator: str) -> bool:
     """Report whether the declared object itself cannot be written.
 
-    This is a positive proof, not a shallow ``const`` search. ``constexpr`` is
-    language-level immutable. Otherwise only const builtin scalar/array data
-    is exempt. Pointers, references, records, templates and inferred types can
+    This is a positive proof, not a shallow ``const`` search. Only const or
+    constexpr builtin scalar/array data is exempt. Pointers, references,
+    records, templates and inferred types can
     own or expose mutable state even when the outer object is const.
     """
-    if "*" in declarator or "&" in declarator:
-        return False
-    if not re.search(r"\b(?:const|constexpr)\b", declarator):
-        return False
     tail = _ENDS_IN_IDENTIFIER.search(declarator)
     if not tail:
         return False
     type_part = declarator[:tail.start()]
+    if not re.search(r"\b(?:const|constexpr)\b", type_part):
+        return False
+    # An array bound may multiply constants (for example 2 * BlockSize).
+    # Only the declared type determines pointer/reference mutability.
+    if "*" in type_part or "&" in type_part:
+        return False
     type_part = re.sub(r"\b(?:const|constexpr|inline|static|volatile)\b", " ",
                        type_part)
     normalized = " ".join(type_part.split())
@@ -1627,6 +1635,14 @@ def validate_allowlist(report: Report, allowlist: dict) -> None:
 
     binary_markers: set[str] = set()
     for entry in allowlist.get("binary_symbols", []):
+        feature = entry.get("cmake_option")
+        if feature is not None and (
+                feature != "NEVERC_ENABLE_PYTHON_PLUGINS" or
+                entry.get("file") !=
+                "neverc/lib/Plugin/Python/PythonPluginLoader.cpp"):
+            report.unscannable.append(
+                "invalid binary-symbol build condition for "
+                f"{entry.get('symbol')!r}")
         minimum = entry.get("min_count")
         maximum = entry.get("max_count")
         artifact_optional = entry.get("artifact_optional", False)
@@ -2964,6 +2980,52 @@ def symbol_table_is_auditable(
     return external and local
 
 
+def configured_binary_allowlist(report: Report, build_dir: pathlib.Path,
+                                allowlist: dict) -> dict | None:
+    """Require enabled owners once and forbid symbols from disabled owners.
+
+    A conditional owner is selected by the actual CMake build, not an audit
+    command-line exemption. Missing, duplicate and malformed configuration
+    values fail closed. The source declaration checks remain unconditional.
+    """
+    options = set()
+    for entry in allowlist.get("binary_symbols", []):
+        if "cmake_option" not in entry:
+            continue
+        feature = entry["cmake_option"]
+        if (feature != "NEVERC_ENABLE_PYTHON_PLUGINS" or entry.get("file") !=
+                "neverc/lib/Plugin/Python/PythonPluginLoader.cpp"):
+            report.unscannable.append(
+                "invalid binary-symbol build condition for "
+                f"{entry.get('symbol')!r}")
+            return None
+        options.add(feature)
+    if not options:
+        return allowlist
+    cache = build_dir / "CMakeCache.txt"
+    try:
+        text = cache.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        report.unscannable.append(f"cannot read build conditions {cache}: {error}")
+        return None
+    enabled = {}
+    for option in sorted(options):
+        values = re.findall(r"^" + re.escape(option) +
+                            r":(?:BOOL|INTERNAL)=([^\r\n]*)$", text, re.M)
+        if len(values) != 1 or values[0].upper() not in (
+                "ON", "YES", "TRUE", "1", "OFF", "NO", "FALSE", "0", ""):
+            report.unscannable.append(
+                f"missing, duplicate or invalid build condition {option} in {cache}")
+            return None
+        enabled[option] = values[0].upper() in ("ON", "YES", "TRUE", "1")
+    result = dict(allowlist)
+    result["binary_symbols"] = [
+        dict(entry, min_count=0, max_count=0)
+        if "cmake_option" in entry and not enabled[entry["cmake_option"]]
+        else entry for entry in allowlist.get("binary_symbols", [])]
+    return result
+
+
 def scan_binary(report: Report, build_dir: pathlib.Path,
                 allowlist: dict) -> str | None:
     binary = locate_compiler(build_dir)
@@ -2986,6 +3048,10 @@ def scan_binary(report: Report, build_dir: pathlib.Path,
             f"fat Mach-O {binary} requires per-architecture static-symbol "
             "sentinels; aggregate scanning is unsafe")
         return
+    configured = configured_binary_allowlist(report, build_dir, allowlist)
+    if configured is None:
+        return
+    allowlist = configured
     if image_format == "pe":
         readobj = shutil.which("llvm-readobj")
         undname = shutil.which("llvm-undname")

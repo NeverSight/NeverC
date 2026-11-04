@@ -287,6 +287,66 @@ protected:
   }
 };
 
+TEST_F(LinkerTest, ParallelGCMatchesSerialForLargeCodeAndUnwindGraph) {
+  if (!isLinux() || !isX86_64())
+    GTEST_SKIP() << "native freestanding ELF oracle requires Linux x64";
+  // Exceed the two-worker marking threshold with independently named live
+  // sections, dead sections and unwind references to both groups.
+  constexpr unsigned Count = 5000;
+  std::string source =
+      ".section .text.start,\"ax\",@progbits\n.globl _start\n_start:\n"
+      "leaq live_refs(%rip), %rbx\ncall *(%rbx)\nmovl %eax, %ebp\ncall *" +
+      std::to_string((Count - 1) * 8) +
+      "(%rbx)\naddl %ebp, %eax\nmovl %eax, %edi\nmovl $60, %eax\nsyscall\n"
+      ".section .rodata.refs,\"a\",@progbits\nlive_refs:\n";
+  for (unsigned i = 0; i != Count; ++i)
+    source += ".quad live_fn_" + std::to_string(i) + "\n";
+  for (const char *kind : {"live", "dead"})
+    for (unsigned i = 0; i != Count; ++i) {
+      const std::string name = std::string(kind) + "_fn_" + std::to_string(i);
+      source += ".section .text." + name + ",\"ax\",@progbits\n.globl " + name +
+                "\n.type " + name + ",@function\n" + name +
+                ":\n.cfi_startproc\nmovl $" + std::to_string(i % 100) +
+                ", %eax\nret\n.cfi_endproc\n.size " + name + ", .-" + name +
+                "\n";
+    }
+  source += ".section .note.GNU-stack,\"\",@progbits\n";
+  const fs::path input = tmpFile("parallel-gc.s");
+  const fs::path object = tmpFile("parallel-gc.o");
+  writeFile(input, source);
+  auto assembled = ncc({"--target=x86_64-unknown-linux-gnu", "-c",
+                        input.string(), "-o", object.string()});
+  ASSERT_EQ(assembled.exitCode, 0) << assembled.err;
+  ScopedEnvironmentVariable fullBackend("NEVERC_ELF_FASTLINK", "0");
+  std::string serial;
+  for (unsigned workers : {1u, 2u}) {
+    const fs::path output = tmpFile("gc-" + std::to_string(workers));
+    auto linked = ncc({"--target=x86_64-unknown-linux-gnu", "-nostdlib", "-static",
+                       "-no-pie", "-Wl,--gc-sections", "-Wl,--entry=_start",
+                       "-Wl,--threads=" + std::to_string(workers),
+                       object.string(), "-o", output.string()});
+    ASSERT_EQ(linked.exitCode, 0) << linked.err;
+    const std::string bytes = readFile(output);
+    if (workers == 1)
+      serial = bytes;
+    else
+      EXPECT_EQ(bytes, serial) << "parallel marking changed the complete image";
+    auto image = llvm::object::ObjectFile::createObjectFile(
+        llvm::MemoryBufferRef(bytes, "parallel-gc"));
+    ASSERT_TRUE(bool(image)) << llvm::toString(image.takeError()).str().str();
+    unsigned live = 0, dead = 0;
+    for (const auto &symbol : (*image)->symbols()) {
+      auto name = symbol.getName();
+      ASSERT_TRUE(bool(name)) << llvm::toString(name.takeError()).str().str();
+      live += name->starts_with("live_fn_");
+      dead += name->starts_with("dead_fn_");
+    }
+    EXPECT_EQ(live, Count);
+    EXPECT_EQ(dead, 0u);
+    EXPECT_EQ(exec(output.string(), {}).exitCode, 99);
+  }
+}
+
 TEST_F(LinkerTest, EmbeddedLinkerDefault) {
   auto src = tmpFile("fallback.c");
   writeFile(src, "int main(void){return 0;}");

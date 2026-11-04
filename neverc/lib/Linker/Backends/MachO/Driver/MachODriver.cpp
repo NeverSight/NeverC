@@ -1154,7 +1154,7 @@ void createRelativeMethodLists() {
          "method lists from macOS 11; the lists stay as they are");
     return;
   }
-  static constexpr StringLiteral listPrefixes[] = {
+  constexpr StringLiteral listPrefixes[] = {
       "__OBJC_$_INSTANCE_METHODS_", "__OBJC_$_CLASS_METHODS_",
       "__OBJC_$_CATEGORY_INSTANCE_METHODS_",
       "__OBJC_$_CATEGORY_CLASS_METHODS_"};

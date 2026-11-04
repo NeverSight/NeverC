@@ -493,7 +493,7 @@
       "justification": "Constexpr StringLiteral view of the generated immutable MIR schema digest literal; the view and its pointee are read-only and contain no request state."
     }
   ],
-  "_binary_symbols_comment": "Writable *process* data symbols in the shipped `neverc` binary (build-dir/bin/neverc) whose owner is under neverc::plugin, neverc::dyncode, neverc::time_trace_detail, or linker, but which are NOT process-global mutable compilation state. Every entry is required to appear exactly once. Thread-local symbols never belong here: the binary layer skips them, because ELF names one `.tbss` object where Mach-O emits a `__thread_vars` descriptor plus a `$tlv$init` storage symbol, and judging that here made the gate pass on one host and fail on another for identical sources. Put them in `entries` instead. Eligible categories: (a) address-only LLVM legacy-pass identity tokens (`char Pass::ID`), (b) const objects whose vtable pointer forces a relocation into writable storage, (c) synchronization primitives with no compilation state, and (d) foreign-runtime descriptors that the foreign ABI requires to have static writable lifetime but that contain no NeverC compilation payload. A const interface or lookup table is NOT eligible: make it `constexpr` so it is constant-initialized into read-only storage instead of adding it here. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER appear here.",
+  "_binary_symbols_comment": "Writable *process* data symbols in the shipped `neverc` binary (build-dir/bin/neverc) whose owner is under neverc::plugin, neverc::dyncode, neverc::time_trace_detail, or linker, but which are NOT process-global mutable compilation state. Every enabled entry is required to appear exactly once. The two Python runtime owners are required only when NEVERC_ENABLE_PYTHON_PLUGINS is enabled in the build cache; disabled owners must be absent. Thread-local symbols never belong here: the binary layer skips them, because ELF names one `.tbss` object where Mach-O emits a `__thread_vars` descriptor plus a `$tlv$init` storage symbol, and judging that here made the gate pass on one host and fail on another for identical sources. Put them in `entries` instead. Eligible categories: (a) address-only LLVM legacy-pass identity tokens (`char Pass::ID`), (b) const objects whose vtable pointer forces a relocation into writable storage, (c) synchronization primitives with no compilation state, and (d) foreign-runtime descriptors that the foreign ABI requires to have static writable lifetime but that contain no NeverC compilation payload. A const interface or lookup table is NOT eligible: make it `constexpr` so it is constant-initialized into read-only storage instead of adding it here. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER appear here.",
   "binary_symbols": [
     {
       "symbol": "neverc::dyncode::(anonymous namespace)::DynCodeMIRTransformPass::ID",
@@ -618,6 +618,7 @@
     },
     {
       "symbol": "neverc::plugin::(anonymous namespace)::InterpreterOnce",
+      "cmake_option": "NEVERC_ENABLE_PYTHON_PLUGINS",
       "min_count": 1,
       "max_count": 1,
       "file": "neverc/lib/Plugin/Python/PythonPluginLoader.cpp",
@@ -630,6 +631,7 @@
     },
     {
       "symbol": "neverc::plugin::(anonymous namespace)::BridgeModule",
+      "cmake_option": "NEVERC_ENABLE_PYTHON_PLUGINS",
       "min_count": 1,
       "max_count": 1,
       "file": "neverc/lib/Plugin/Python/PythonPluginLoader.cpp",

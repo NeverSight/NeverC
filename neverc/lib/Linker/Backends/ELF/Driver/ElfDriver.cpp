@@ -2187,13 +2187,14 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
 
   // Options of targets NeverC does not link; those that only tune such
   // targets are accepted, as elsewhere, and these select their features.
-  static const std::pair<unsigned, const char *> otherTargetOptions[] = {
+  constexpr std::pair<unsigned, const char *> otherTargetOptions[] = {
       {OPT_be8, "--be8 is only supported on ARM targets"},
       {OPT_fix_cortex_a8, "--fix-cortex-a8 is only supported on ARM targets"},
       {OPT_cmse_implib, "--cmse-implib is only supported on ARM targets"},
       {OPT_in_implib, "--in-implib is only supported on ARM targets"},
       {OPT_out_implib, "--out-implib is only supported on ARM targets"},
-      {OPT_toc_optimize, "--toc-optimize is only supported on PowerPC64 targets"},
+      {OPT_toc_optimize,
+       "--toc-optimize is only supported on PowerPC64 targets"},
       {OPT_pcrel_optimize,
        "--pcrel-optimize is only supported on PowerPC64 targets"},
       {OPT_relax_gp, "--relax-gp is only supported on RISC-V targets"}};
