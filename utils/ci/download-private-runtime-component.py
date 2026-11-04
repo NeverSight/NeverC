@@ -128,9 +128,9 @@ def main():
     r = json.loads(report.read_text())
     assert r['revision'] == plan['component_commit'] and r['completed'] and r['passed'] is True and r['not_fn_private_support_complete'] is False
     assert r['all_five_bridge_units_recompiled'] and r['focused_request_contract_passed']
-    assert len(r['requests']) == 600 and all(row['expectation_satisfied'] for row in r['requests'])
-    assert sum(row['expected'] == 'accept' for row in r['requests']) == 416
-    assert sum(row['expected'] == 'reject' for row in r['requests']) == 176
+    assert len(r['requests']) == 768 and all(row['expectation_satisfied'] for row in r['requests'])
+    assert sum(row['expected'] == 'accept' for row in r['requests']) == 520
+    assert sum(row['expected'] == 'reject' for row in r['requests']) == 240
     assert sum(row['expected'] == 'invalid' for row in r['requests']) == 8
     assert len(r['exact_private_input_sha256']) == 19
     for name, identity in r['exact_private_input_sha256'].items():
