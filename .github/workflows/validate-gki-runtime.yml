@@ -254,6 +254,8 @@ jobs:
           python3 runtime/android/kernel/tools/test-profile-policy.py
           python3 runtime/android/kernel/tools/test-gki-variants.py -v
           python3 runtime/android/kernel/tools/test-file-error-pointers.py
+          python3 runtime/android/kernel/tools/test-gki-current-init.py \
+            --compiler compiler-root/install/bin/neverc -v
 
       - name: Run all SDK layout and runtime linkage gates
         env:
@@ -272,6 +274,9 @@ jobs:
             --nm llvm-nm \
             --readelf llvm-readelf \
             --profiles all
+          python3 runtime/android/kernel/tools/build-gki-current-smoke.py \
+            --compiler compiler-root/install/bin/neverc \
+            --profiles all --output-dir smoke-modules/current
 
       - name: Upload loader-contract-checked smoke modules
         if: always()
@@ -387,6 +392,12 @@ jobs:
             --module "smoke-modules/neverc-gki-smoke-$PROFILE.ko" \
             --output-dir logs/qemu \
             --timeout 180
+          for mode in auto full none; do
+            bash runtime/android/kernel/tools/run-gki-qemu-smoke.sh \
+              --image extracted-gki/dist/Image \
+              --module "smoke-modules/current/$PROFILE/$mode/current.ko" \
+              --output-dir "logs/qemu-current-$mode" --current-irq --timeout 180
+          done
 
       - name: Upload release verification and guest logs
         if: always()

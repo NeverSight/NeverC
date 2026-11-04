@@ -12,6 +12,21 @@ namespace neverc::AndroidKernelRuntimeContract {
 inline constexpr llvm::StringLiteral LocalSymbolPrefix =
     "__neverc_nvk_local.";
 
+// Only 618 needs runtime selection between SP_EL0 (KMI5) and TPIDRRO_EL0
+// (KMI6). Other families keep a non-sleeping SP_EL0 read without requiring
+// kprobe exports. Keep frontend entry instrumentation and runtime retention
+// in agreement, including when entry and current live in different TUs.
+inline bool needsCurrentInitialization(unsigned Profile) {
+  return Profile == 618;
+}
+
+// The frontend guards module entry with an optional weak hook. Loader-only
+// modules do not pull in the runtime or acquire any kernel API dependencies.
+inline constexpr llvm::StringLiteral PrepareCurrentSymbol =
+    "neverc_krt_prepare_current";
+inline constexpr llvm::StringLiteral CurrentTaskSymbol =
+    "neverc_krt_current_task";
+
 inline bool isLocalSymbol(llvm::StringRef Name) {
   return Name.starts_with(LocalSymbolPrefix);
 }

@@ -212,7 +212,16 @@ the selected data. In particular, 612/KMI7 uses the measured nested
 CPU/preemption helpers, recursion guards, and generated context-stub cleanup
 use the same selection; caller-side thread-info offsets are checked against
 the compile family.
-Initialize the runtime in module entry before using it in atomic callbacks.
+For `618` modules that use `current` (including CPU/preemption helpers), the
+compiler initializes the selected family before calling the user's entry point.
+This also covers callbacks compiled in a separate translation unit, through
+both LTO and native links. An initialization failure is returned to the loader
+before user code runs. The `current` accessor itself never initializes the
+runtime or performs sleepable work, even on its first call from an interrupt.
+Other families use `SP_EL0` without requiring initialization or kprobe exports.
+`618` modules without a `current` dependency retain an optional weak entry hook
+and do not pull in the bootstrap runtime. Explicit `NEVERC_KRT_BOOTSTRAP()`
+remains supported and is still needed before other runtime APIs that require it.
 
 Stable 703 uses `android18-7.3-stable-production.fragment`, which keeps current
 GKI options, including proxy execution, and disables lock debugging. It binds
@@ -238,6 +247,10 @@ CPU/preemption helpers, the task recursion guard, and a live context redirect
 through its generated return/cleanup path.
 Run it through `run-gki-qemu-smoke.sh --runtime-layouts`; that mode mounts
 procfs and requires the runtime success marker in addition to load/unload.
+`gki-current-smoke-module.c` and `gki-current-smoke-callback.c` form a separate
+two-translation-unit regression: without an explicit bootstrap, the first
+`current`, CPU, and preemption reads occur in a hard hrtimer interrupt. The
+callback checks the pointer against the native kernel's measured register.
 The manual `validate-gki-variants` workflow repeats complete builds and QEMU
 checks using a compiler artifact from the exact same NeverC source SHA.
 The ordinary nine-family release consumer continues to use its existing pins.

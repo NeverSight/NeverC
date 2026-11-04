@@ -114,11 +114,16 @@ def inspect_loader_contract(module, verifier):
 
 
 def validate_imports(output):
-    symbols = {
-        line.split()[-1]
-        for line in output.splitlines()
-        if line.split()
-    }
+    symbols = set()
+    for line in output.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        # An absent weak module-entry hook evaluates to NULL. It does not
+        # resolve or call a kernel API and must not pull in bootstrap code.
+        if fields == ["w", "neverc_krt_prepare_current"]:
+            continue
+        symbols.add(fields[-1])
     if symbols:
         raise RuntimeError(
             "smoke module has undefined imports: "

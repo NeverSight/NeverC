@@ -1005,6 +1005,17 @@ TEST_F(AndroidKernelRuntimeTest, PublicSdkLayouts) {
   EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
+TEST_F(AndroidKernelRuntimeTest, CurrentInitializationPrecedesUserEntry) {
+  if (isWindows())
+    GTEST_SKIP() << "current initialization test requires host Clang";
+  const fs::path Script =
+      testDir() / "../../runtime/android/kernel/tools/test-gki-current-init.py";
+  ASSERT_TRUE(fs::exists(Script)) << Script;
+  const CmdResult Result =
+      exec("python3", {Script.string(), "--compiler", neverc().string(), "-v"});
+  EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+}
+
 // `-fandroid-kernel-driver-mode` implies `-flto=full`, so a relocatable (`-r`)
 // link receives LLVM bitcode rather than native objects.  With a plugin loaded,
 // the relocatable link is routed through the plugin object-merge bridge, which

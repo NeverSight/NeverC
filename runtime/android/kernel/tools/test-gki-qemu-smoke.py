@@ -318,6 +318,10 @@ class HarnessTests(unittest.TestCase):
                 print('[    3.25][    T1] NEVERC_GKI_LOAD_PASS')
                 print('[    3.26][    T1] NEVERC_GKI_RUNTIME_LAYOUT_PASS')
                 print('[    3.27][    T1] NEVERC_GKI_UNLOAD_PASS')
+            elif scenario == 'current-irq-success':
+                print('[    3.25][    T1] NEVERC_GKI_CURRENT_IRQ_PASS')
+                print('[    3.26][    T1] NEVERC_GKI_LOAD_PASS')
+                print('[    3.27][    T1] NEVERC_GKI_UNLOAD_PASS')
             elif scenario == 'invalid-marker-text':
                 print('bootargs=NEVERC_GKI_LOAD_PASS')
                 print('[    3.25][    T1] NEVERC_GKI_LOAD_PASS_EXTRA')
@@ -346,7 +350,7 @@ class HarnessTests(unittest.TestCase):
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
         return path
 
-    def run_harness(self, scenario, timeout="2", runtime_layouts=False):
+    def run_harness(self, scenario, timeout="2", runtime_layouts=False, current_irq=False):
         output = self.root / f"output-{scenario}"
         environment = os.environ.copy()
         environment["FAKE_QEMU_SCENARIO"] = scenario
@@ -366,7 +370,8 @@ class HarnessTests(unittest.TestCase):
                 str(self.qemu),
                 "--timeout",
                 timeout,
-            ] + (["--runtime-layouts"] if runtime_layouts else []),
+            ] + (["--runtime-layouts"] if runtime_layouts else [])
+              + (["--current-irq"] if current_irq else []),
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -395,6 +400,13 @@ class HarnessTests(unittest.TestCase):
         raw_log = (self.root / "output-success-crlf/qemu.log").read_bytes()
         self.assertIn(b"NEVERC_GKI_LOAD_PASS\r\n", raw_log)
         self.assertIn(b"NEVERC_GKI_UNLOAD_PASS\r\n", raw_log)
+
+    def test_current_irq_cannot_pass_with_only_loader_markers(self):
+        result, _ = self.run_harness("success", current_irq=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing kernel current IRQ success marker", result.stdout)
+        result, _ = self.run_harness("current-irq-success", current_irq=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_success_accepts_serialized_kmsg_records_but_not_embedded_text(self):
         result, _ = self.run_harness("kernel-log-markers", runtime_layouts=True)

@@ -493,6 +493,14 @@ static void check_measured_kmi_variants(void) {
   assert(resolved != family && resolved->legacy_id == 618);
   assert(resolved->caps.current_task_register == NEVERC_KRT_CURRENT_TPIDRRO_EL0);
   assert(family->caps.current_task_register == NEVERC_KRT_CURRENT_SP_EL0);
+  id.linux_patch++;
+  assert(neverc_krt_resolve_observed_profile(family, &id) == resolved);
+  assert(neverc_krt_match_profile(family, &id) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+  id.kmi_generation = 99;
+  assert(neverc_krt_resolve_observed_profile(family, &id) == family);
+  assert(neverc_krt_match_profile(family, &id) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
   id.kmi_generation = 5;
   assert(neverc_krt_resolve_observed_profile(family, &id) == family);
   assert(neverc_krt_match_profile(family, &id) ==
