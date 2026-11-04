@@ -11923,11 +11923,13 @@ public:
           !Use.Canonical->get(I).structurallyEquals(
               Context.getCanonicalTemplateArgument(Use.Sugared->get(I)))) return false;
     const auto &Input = Use.Sugared->get(0);
-    if (Input.getKind() != TemplateArgument::Type ||
-        !utilityScalar(Context, Input.getAsType().getUnqualifiedType())) return Proof();
+    if (Input.getKind() != TemplateArgument::Type) return Proof();
+    const auto InputPlaceholder = describeFunctionalBindPlaceholderIdentity(S, SM, Input.getAsType(), Context);
+    if (!utilityScalar(Context, Input.getAsType().getUnqualifiedType()) && !InputPlaceholder) return Proof();
     bool ActualUnwrap = false;
     for (const auto &Argument : BindCallMetadata->Arguments)
-      ActualUnwrap |= !Argument.Reference && !Argument.PlaceholderRank && Argument.Unwrap &&
+      ActualUnwrap |= !Argument.Reference && !Argument.Nested && Argument.Unwrap &&
+          (InputPlaceholder ? Argument.PlaceholderRank == InputPlaceholder->Rank : !Argument.PlaceholderRank) &&
           Argument.Unwrap->getDirectCallee() == Function &&
           Argument.Unwrap->getExprLoc() == Use.Location;
     if (!ActualUnwrap || !BindCallMetadata->SourceCall ||
@@ -11986,7 +11988,11 @@ public:
             !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default &&
             utilityScalar(Context, Value.getUnqualifiedType());
       };
-      if (!Scalar(Storage->Elements[Slot].getType()) ||
+      const auto ProjectedPlaceholder = InputPlaceholder && OwnedWitness && Storage->Elements[Slot].EmptyBase
+          ? describeFunctionalBindPlaceholderIdentity(S, SM, Storage->Elements[Slot].getType(), Context)
+          : std::nullopt;
+      if ((!Scalar(Storage->Elements[Slot].getType()) &&
+           (!ProjectedPlaceholder || ProjectedPlaceholder->Rank != InputPlaceholder->Rank)) ||
           !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Input.getAsType())) return false;
       for (const auto &Element : Storage->Elements) {
         if ((OwnedAncestor || OwnedWitness) && Element.EmptyBase) {
