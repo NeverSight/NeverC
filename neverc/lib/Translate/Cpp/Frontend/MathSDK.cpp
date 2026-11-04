@@ -11923,11 +11923,13 @@ public:
           !Use.Canonical->get(I).structurallyEquals(
               Context.getCanonicalTemplateArgument(Use.Sugared->get(I)))) return false;
     const auto &Input = Use.Sugared->get(0);
-    if (Input.getKind() != TemplateArgument::Type ||
-        !utilityScalar(Context, Input.getAsType().getUnqualifiedType())) return Proof();
+    if (Input.getKind() != TemplateArgument::Type) return Proof();
+    const auto InputPlaceholder = describeFunctionalBindPlaceholderIdentity(S, SM, Input.getAsType(), Context);
+    if (!utilityScalar(Context, Input.getAsType().getUnqualifiedType()) && !InputPlaceholder) return Proof();
     bool ActualUnwrap = false;
     for (const auto &Argument : BindCallMetadata->Arguments)
-      ActualUnwrap |= !Argument.Reference && !Argument.PlaceholderRank && Argument.Unwrap &&
+      ActualUnwrap |= !Argument.Reference && !Argument.Nested && Argument.Unwrap &&
+          (InputPlaceholder ? Argument.PlaceholderRank == InputPlaceholder->Rank : !Argument.PlaceholderRank) &&
           Argument.Unwrap->getDirectCallee() == Function &&
           Argument.Unwrap->getExprLoc() == Use.Location;
     if (!ActualUnwrap || !BindCallMetadata->SourceCall ||
@@ -11986,7 +11988,11 @@ public:
             !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default &&
             utilityScalar(Context, Value.getUnqualifiedType());
       };
-      if (!Scalar(Storage->Elements[Slot].getType()) ||
+      const auto ProjectedPlaceholder = InputPlaceholder && OwnedWitness && Storage->Elements[Slot].EmptyBase
+          ? describeFunctionalBindPlaceholderIdentity(S, SM, Storage->Elements[Slot].getType(), Context)
+          : std::nullopt;
+      if ((!Scalar(Storage->Elements[Slot].getType()) &&
+           (!ProjectedPlaceholder || ProjectedPlaceholder->Rank != InputPlaceholder->Rank)) ||
           !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Input.getAsType())) return false;
       for (const auto &Element : Storage->Elements) {
         if ((OwnedAncestor || OwnedWitness) && Element.EmptyBase) {
@@ -23375,12 +23381,17 @@ class BindSourceProof {
     if (!Proof) return false;
     const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!ActiveUnwrapSource || !Function || !Function->getIdentifier() || Function->getName() != "__mu" ||
-        !Arguments || Arguments->size() != 3 || Arguments->get(0).getKind() != TemplateArgument::Type ||
-        !utilityScalar(Context, Arguments->get(0).getAsType().getUnqualifiedType())) return Proof();
+        !Arguments || Arguments->size() != 3 || Arguments->get(0).getKind() != TemplateArgument::Type)
+      return Proof();
+    const auto InputPlaceholder = describeFunctionalBindPlaceholderIdentity(
+        S, SM, Arguments->get(0).getAsType(), Context);
+    if (!utilityScalar(Context, Arguments->get(0).getAsType().getUnqualifiedType()) && !InputPlaceholder)
+      return Proof();
     bool Actual = false;
     for (const auto &Argument : ActiveUnwrapSource->Arguments)
-      Actual |= !Argument.Reference && !Argument.PlaceholderRank && Argument.Unwrap == Expression &&
-          Argument.Unwrap->getDirectCallee() == Function;
+      Actual |= !Argument.Reference && !Argument.Nested &&
+          (InputPlaceholder ? Argument.PlaceholderRank == InputPlaceholder->Rank : !Argument.PlaceholderRank) &&
+          Argument.Unwrap == Expression && Argument.Unwrap->getDirectCallee() == Function;
     if (!Actual || !Check.family(Function, {"__functional/bind.h"})) return false;
     std::vector<const TemplateUseSource *> Uses;
     for (const auto *Selection : Selections) {
