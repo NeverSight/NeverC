@@ -1889,6 +1889,7 @@ struct FunctionalBindInvokeSignatureSource {
   std::vector<const clang::CallExpr *> Declvals;
   const clang::CallExpr *SpecializedCall;
   std::vector<const clang::CallExpr *> SpecializedDeclvals;
+  std::shared_ptr<const FunctionalBindNestedArgumentSource> Nested;
 };
 std::optional<FunctionalBindInvokeSignatureSource>
 describeFunctionalBindInvokeSignatureSource(
@@ -1898,6 +1899,11 @@ describeFunctionalBindInvokeSignatureSource(
 
 
 // Declaration-only probe metadata; this cannot certify a runtime SDK body.
+std::optional<FunctionalBindInvokeSignatureSource>
+describeFunctionalBindNestedInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
+    const FunctionalBindNestedArgumentSource &Nested, const clang::ASTContext &Context);
+
 struct FunctionalBindTryCallSignatureSource {
   const clang::CXXMethodDecl *Function;
   const clang::ClassTemplateSpecializationDecl *Owner;

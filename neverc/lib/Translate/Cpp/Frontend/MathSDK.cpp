@@ -11221,10 +11221,19 @@ public:
             Argument.PlaceholderGet != Retained.PlaceholderGet ||
             Argument.PlaceholderForward != Retained.PlaceholderForward ||
             !Add(Argument.Get, BindMetadata->Arguments, I)) return false;
-        if (!Argument.PlaceholderRank) continue;
-        if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
-            Argument.PlaceholderRank > Incoming->Elements.size() ||
-            !Add(Argument.PlaceholderGet, *Incoming, Argument.PlaceholderRank - 1)) return false;
+        if (Argument.PlaceholderRank) {
+          if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
+              Argument.PlaceholderRank > Incoming->Elements.size() ||
+              !Add(Argument.PlaceholderGet, *Incoming, Argument.PlaceholderRank - 1)) return false;
+        }
+        if (Argument.Nested) {
+          if (!Retained.Nested || Argument.Nested->IncomingGets != Retained.Nested->IncomingGets ||
+              Argument.Nested->IncomingGets.size() != Actual->CallForwards.size() ||
+              (!Argument.Nested->IncomingGets.empty() &&
+               (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size()))) return false;
+          for (unsigned J = 0; J < Argument.Nested->IncomingGets.size(); ++J)
+            if (!Add(Argument.Nested->IncomingGets[J], *Incoming, J)) return false;
+        }
       }
       // These builtin identities exist only for this fresh get/storage/slot
       // description. Neither type nor statement memoization can export them.
@@ -11712,7 +11721,7 @@ public:
           Use.Sugared->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Use.Canonical->get(0).getAsType(), Info->getType()) ||
           !Context.hasSameType(Use.Sugared->get(0).getAsType(), Info->getType()) ||
-          !BindCallMetadata->SourceCall || !S.owns(SM, BindCallMetadata->SourceCall->getExprLoc()) ||
+          !BindCallMetadata->SourceCall || (!BindCallMetadata->OwnedRoot || !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc())) ||
           Root->getSpecializationKind() != TSK_ImplicitInstantiation || !family(Root) ||
           !Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType()) ||
           Object.hasQualifiers() || !TupleRecord || BindRetainedTupleProjections.size() == 64 ||
@@ -11800,7 +11809,7 @@ public:
           Argument.Unwrap->getDirectCallee() == Function &&
           Argument.Unwrap->getExprLoc() == Use.Location;
     if (!ActualUnwrap || !BindCallMetadata->SourceCall ||
-        !S.owns(SM, BindCallMetadata->SourceCall->getExprLoc())) return false;
+        (!BindCallMetadata->OwnedRoot || !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc()))) return false;
     QualType ProjectionType = Input.getAsType();
     const TypeAliasDecl *RootAlias = nullptr;
     for (unsigned Depth = 0; !ProjectionType.isNull() && Depth < 64; ++Depth) {
@@ -15028,7 +15037,7 @@ public:
       // The exact incoming forwarding constructor was closed by the owner proof.
       // Recursive traversal still consumes this real construction's written children.
       if (!Constructor || !BindConstructionSource || !BindCallMetadata->SourceCall ||
-          !S.owns(SM, BindCallMetadata->SourceCall->getExprLoc()) ||
+          (!BindCallMetadata->OwnedRoot || !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc())) ||
           BindCallMetadata->Storage.Record != BindMetadata->Record ||
           BindCallMetadata->CallForwards.size() > 2 ||
           !Constructor->getPrimaryTemplate() || Constructor->isImplicit() || Constructor->isDefaulted() ||
@@ -15048,7 +15057,7 @@ public:
       // Auxiliary source already closed these two exact selected operations.
       // Every ordinary written child still traverses after this visit.
       if (!Constructor || !BindCallMetadata->SourceCall ||
-          !S.owns(SM, BindCallMetadata->SourceCall->getExprLoc()) ||
+          (!BindCallMetadata->OwnedRoot || !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc())) ||
           BindCallMetadata->Storage.Record != BindMetadata->Record ||
           !CompletedMembers.count(Constructor) || !Constructor->isDefaultConstructor() ||
           !Constructor->isDefaulted() || !Constructor->isTrivial() ||
@@ -15066,7 +15075,7 @@ public:
         // Retain ordinary traversal of its exact get expression and casts.
         if (!Constructor || !Argument.Reference || !Argument.Get || !Argument.Unwrap ||
             !BindCallMetadata->SourceCall ||
-            !S.owns(SM, BindCallMetadata->SourceCall->getExprLoc()) ||
+            (!BindCallMetadata->OwnedRoot || !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc())) ||
             BindCallMetadata->Storage.Record != BindMetadata->Record ||
             !CompletedMembers.count(Constructor) || !Constructor->isCopyConstructor() ||
             !Constructor->isDefaulted() || !Constructor->isTrivial() ||
@@ -19235,6 +19244,237 @@ describeFunctionalBindInvokeSignatureSource(
 }
 
 
+std::optional<FunctionalBindInvokeSignatureSource>
+describeFunctionalBindNestedInvokeSignatureSource(
+    const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const FunctionalBindNestedArgumentSource &Given,
+    const ASTContext &Context) {
+  if (!Given.Root || Given.Path.empty() || Given.Path.size() >= 64 ||
+      Given.Invocation.OwnedRoot != Given.Root || Given.Invocation.OwnedPath != Given.Path ||
+      Given.Path.back() != Given.Slot || !S.owns(SM, Given.Root->getExprLoc())) return std::nullopt;
+  const auto Root = describeFunctionalBindCallSource(S, SM, Given.Root, Context);
+  if (!Root) return std::nullopt;
+  const FunctionalBindCallSource *Parent = &*Root;
+  const FunctionalBindNestedArgumentSource *SelectedChild = nullptr;
+  std::vector<unsigned> Path;
+  for (unsigned Slot : Given.Path) {
+    Path.push_back(Slot);
+    if (Slot >= Parent->Arguments.size() || !Parent->Arguments[Slot].Nested) return std::nullopt;
+    SelectedChild = Parent->Arguments[Slot].Nested.get();
+    if (SelectedChild->Root != Given.Root || SelectedChild->Parent != Parent->SourceCall ||
+        SelectedChild->Slot != Slot || SelectedChild->Path != Path ||
+        SelectedChild->Get != Parent->Arguments[Slot].Get ||
+        SelectedChild->Unwrap != Parent->Arguments[Slot].Unwrap) return std::nullopt;
+    Parent = &SelectedChild->Invocation;
+  }
+  if (!SelectedChild || SelectedChild->Parent != Given.Parent || SelectedChild->Get != Given.Get ||
+      SelectedChild->Unwrap != Given.Unwrap || SelectedChild->Expand != Given.Expand ||
+      SelectedChild->IndexAlias != Given.IndexAlias || SelectedChild->Indices != Given.Indices ||
+      SelectedChild->IncomingGets != Given.IncomingGets ||
+      SelectedChild->IncomingForwards != Given.IncomingForwards ||
+      SelectedChild->Invocation.SourceCall != Given.Invocation.SourceCall ||
+      SelectedChild->Invocation.Method != Given.Invocation.Method ||
+      !Context.hasSameType(SelectedChild->ResultType, Given.ResultType)) return std::nullopt;
+  const auto &Nested = *SelectedChild;
+  const auto *SelectedMethod = Nested.Invocation.Method;
+  if (!SelectedMethod || SelectedMethod->getNumParams() > 2 ||
+      !Context.hasSameType(SelectedMethod->getReturnType(), Nested.ResultType)) return std::nullopt;
+  std::vector<QualType> Forwarded;
+  for (const auto *Parameter : SelectedMethod->parameters()) Forwarded.push_back(Parameter->getType());
+  const auto *Template = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Primary = Template ? Template->getTemplatedDecl() : nullptr;
+  const auto *Parameters = Template ? Template->getTemplateParameters() : nullptr;
+  const auto *Callable = Parameters && Parameters->size() == 2
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+  const auto *Arguments = Parameters && Parameters->size() == 2
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+  const auto *Selected = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Target = SelectedMethod->getType()->getAs<FunctionProtoType>();
+  const auto Bound = Context.getLValueReferenceType(Nested.Invocation.Object->getType());
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!S.coreV2() || !Function || !Template || !Primary || !Callable || !Arguments ||
+      !Selected || Selected->size() != 2 || !Prototype || !Target ||
+      Forwarded.size() != Target->getNumParams() ||
+      !Function->getIdentifier() || Function->getName() != "__invoke" ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      isa<CXXMethodDecl>(Function) || Function->isVariadic() || Function->isDeleted() ||
+      Callable->isParameterPack() || Callable->hasDefaultArgument() ||
+      !Arguments->isParameterPack() || Arguments->hasDefaultArgument() ||
+      Primary->getNumParams() != 2 || Primary->isVariadic() ||
+      Function->getNumParams() != Forwarded.size() + 1 ||
+      Selected->get(0).getKind() != TemplateArgument::Type ||
+      Selected->get(1).getKind() != TemplateArgument::Pack ||
+      Selected->get(1).pack_size() != Forwarded.size() ||
+      !Context.hasSameType(Function->getReturnType(), Target->getReturnType()) ||
+      !Check.family(Function, {"__type_traits/invoke.h"}) ||
+      !Check.family(Callable, {"__type_traits/invoke.h"}) ||
+      !Check.family(Arguments, {"__type_traits/invoke.h"})) return std::nullopt;
+  const auto Input = Selected->get(0).getAsType();
+  if (Input.isNull() || Input.getNonReferenceType().isVolatileQualified() ||
+      Input.getNonReferenceType().isRestrictQualified() ||
+      !Context.hasSameType(Input, Bound))
+    return std::nullopt;
+  // Forwarding-reference deduction retains T& but deduces T from T&&.
+  // The actual collapsed parameter and expression categories remain checked.
+  auto Deduced = [](QualType Type) {
+    return !Type.isNull() && Type->isRValueReferenceType()
+        ? Type.getNonReferenceType() : Type;
+  };
+  auto Collapsed = [&](QualType Type) {
+    return Type->isReferenceType() ? Type : Context.getRValueReferenceType(Type);
+  };
+  if (!Context.hasSameType(Function->getParamDecl(0)->getType(), Collapsed(Input)))
+    return std::nullopt;
+  for (unsigned I = 0; I < Forwarded.size(); ++I) {
+    const auto &Argument = Selected->get(1).pack_elements()[I];
+    if (Argument.getKind() != TemplateArgument::Type || Forwarded[I].isNull() ||
+        !Context.hasSameType(Argument.getAsType(), Deduced(Forwarded[I])) ||
+        !Context.hasSameType(Function->getParamDecl(I + 1)->getType(), Collapsed(Forwarded[I])))
+      return std::nullopt;
+  }
+  auto PrimaryCast = [&](const Expr *Expression, unsigned I) {
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(Expression));
+    const auto *Reference = Cast
+        ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(Cast->getSubExpr())) : nullptr;
+    const auto *Parameter = Primary->getParamDecl(I);
+    const auto Type = Cast ? Cast->getTypeAsWritten() : QualType();
+    const auto *Pointee = !Type.isNull() && Type->isRValueReferenceType()
+        ? dyn_cast<TemplateTypeParmType>(Type->getPointeeType().getTypePtr()) : nullptr;
+    const auto *Expected = I ? Arguments : Callable;
+    auto Declared = Parameter->getType();
+    if (const auto *Expansion = dyn_cast<PackExpansionType>(Declared.getTypePtr()))
+      Declared = Expansion->getPattern();
+    return Cast && Reference && Reference->getDecl() == Parameter &&
+        Parameter->getDeclContext() == Primary && !Parameter->hasDefaultArg() &&
+        Parameter->isParameterPack() == bool(I) && Pointee && Pointee->getDecl() == Expected &&
+        Context.hasSameType(Type, Declared) && Cast->getTypeInfoAsWritten() &&
+        Check.location(Cast->getExprLoc(), {"__type_traits/invoke.h"}) &&
+        Check.location(Cast->getTypeInfoAsWritten()->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) &&
+        Check.location(Cast->getTypeInfoAsWritten()->getTypeLoc().getEndLoc(), {"__type_traits/invoke.h"});
+  };
+  auto PrimaryCall = [&](const Expr *Expression) {
+    const auto *Call = dyn_cast_or_null<CallExpr>(Check.stripped(Expression));
+    const auto *Pack = Call && Call->getNumArgs() == 1
+        ? dyn_cast<PackExpansionExpr>(Call->getArg(0)) : nullptr;
+    return Call && !Call->getDirectCallee() && Call->getNumArgs() == 1 && Pack &&
+        PrimaryCast(Call->getCallee(), 0) && PrimaryCast(Pack->getPattern(), 1) &&
+        Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"}) &&
+        Check.location(Pack->getEllipsisLoc(), {"__type_traits/invoke.h"});
+  };
+  const auto *PrimaryReturn = Check.returned(Primary);
+  const auto *PrimaryException = Check.exceptionSource(Primary);
+  const auto *Exception = dyn_cast_or_null<CXXNoexceptExpr>(PrimaryException);
+  if (!PrimaryCall(PrimaryReturn) || !Exception || !PrimaryCall(Exception->getOperand()))
+    return std::nullopt;
+  const auto *Return = dyn_cast<DecltypeType>(Primary->getReturnType().getTypePtr());
+  const auto *Signature = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Pack = Signature && Signature->getNumArgs() == 1
+      ? dyn_cast<PackExpansionExpr>(Signature->getArg(0)) : nullptr;
+  if (!Signature || Signature->getDirectCallee() || !Pack) return std::nullopt;
+  std::vector<const CallExpr *> Declvals;
+  auto Declval = [&](const Expr *Expression, const TemplateTypeParmDecl *Expected) {
+    const auto *Call = dyn_cast_or_null<CallExpr>(Check.stripped(Expression));
+    const auto *Lookup = Call ? dyn_cast<UnresolvedLookupExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Type = Lookup && Lookup->hasExplicitTemplateArgs() && Lookup->getNumTemplateArgs() == 1 &&
+            Lookup->template_arguments()[0].getArgument().getKind() == TemplateArgument::Type
+        ? dyn_cast<TemplateTypeParmType>(Lookup->template_arguments()[0].getArgument().getAsType().getTypePtr()) : nullptr;
+    if (!Call || Call->getNumArgs() || !Lookup || Lookup->requiresADL() ||
+        Lookup->getNumDecls() != 1 || Lookup->getName().getNameKind() != DeclarationName::Identifier ||
+        Lookup->getName().getAsIdentifierInfo()->getName() != "declval" || !Type ||
+        Type->getDecl() != Expected ||
+        !Check.family(*Lookup->decls_begin(), {"__utility/declval.h"}) ||
+        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+    Declvals.push_back(Call);
+    return true;
+  };
+  if (!Declval(Signature->getCallee(), Callable) || !Declval(Pack->getPattern(), Arguments))
+    return std::nullopt;
+  // Keep these actual expressions separate from optional instantiated bodies.
+  const auto *SpecializedReturn = dyn_cast<DecltypeType>(Function->getReturnType().getTypePtr());
+  const auto *SpecializedCall = SpecializedReturn
+      ? dyn_cast_or_null<CallExpr>(Check.stripped(SpecializedReturn->getUnderlyingExpr())) : nullptr;
+  const auto *SpecializedOperator = dyn_cast_or_null<CXXOperatorCallExpr>(SpecializedCall);
+  if (!SpecializedOperator || SpecializedOperator->getOperator() != OO_Call ||
+      SpecializedOperator->getDirectCallee() != SelectedMethod ||
+      SpecializedCall->isTypeDependent() || SpecializedCall->isValueDependent() ||
+      SpecializedCall->getNumArgs() != Forwarded.size() + 1 ||
+      !Context.hasSameType(SpecializedCall->getType(), Target->getReturnType().getNonLValueExprType(Context)) ||
+      SpecializedCall->getValueKind() != Expr::getValueKindForType(Target->getReturnType()) ||
+      !Check.location(SpecializedCall->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+  std::vector<const CallExpr *> SpecializedDeclvals;
+  auto SpecializedDeclval = [&](const Expr *Expression, QualType Expected,
+                                const CallExpr *Original) {
+    const auto *Call = dyn_cast_or_null<CallExpr>(Check.stripped(Expression));
+    const auto Description = Call
+        ? describeFunctionalBindDeclvalSource(S, SM, Call, Expected, Context) : std::nullopt;
+    const auto *Lookup = Original
+        ? dyn_cast<UnresolvedLookupExpr>(Original->getCallee()->IgnoreParenImpCasts()) : nullptr;
+    if (!Description || !Lookup || Lookup->getNumDecls() != 1 ||
+        *Lookup->decls_begin() != Description->Function->getPrimaryTemplate() ||
+        Call->getExprLoc() != Original->getExprLoc()) return false;
+    SpecializedDeclvals.push_back(Call);
+    return true;
+  };
+  const auto *SelectedReference = dyn_cast_or_null<DeclRefExpr>(Check.stripped(SpecializedCall->getCallee()));
+  if (!SelectedReference || SelectedReference->getDecl() != SelectedMethod ||
+      SelectedReference->hasExplicitTemplateArgs() ||
+      !Context.hasSameType(SelectedReference->getType(), SelectedMethod->getType()) ||
+      !Check.location(SelectedReference->getExprLoc(), {"__type_traits/invoke.h"}) ||
+      !SpecializedDeclval(SpecializedCall->getArg(0), Input, Declvals[0])) return std::nullopt;
+  for (unsigned I = 0; I < Forwarded.size(); ++I)
+    if (!SpecializedDeclval(SpecializedCall->getArg(I + 1), Deduced(Forwarded[I]), Declvals[1])) return std::nullopt;
+
+  const auto *ActualReturn = Check.returned(Function);
+  const auto *ActualException = functionalBindInvokeExceptionSource(S, SM, Context, Function);
+  auto ActualCall = [&](const Expr *Expression) {
+    const auto *Call = dyn_cast_or_null<CallExpr>(Check.stripped(Expression));
+    const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+    if (!Operation || Operation->getOperator() != OO_Call ||
+        Operation->getDirectCallee() != SelectedMethod || Call->getNumArgs() != Forwarded.size() + 1 ||
+        Call->isTypeDependent() || Call->isValueDependent() ||
+        !Context.hasSameType(Call->getType(), Target->getReturnType().getNonLValueExprType(Context)) ||
+        Call->getValueKind() != Expr::getValueKindForType(Target->getReturnType()) ||
+        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+    auto Cast = [&](const Expr *Expression, unsigned I) {
+      const auto *Written = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(Expression));
+      const auto *Use = Written
+          ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(Written->getSubExpr())) : nullptr;
+      const auto *Parameter = Function->getParamDecl(I);
+      return Written && Use && Use->getDecl() == Parameter &&
+          Parameter->getDeclContext() == Function && !Parameter->hasDefaultArg() &&
+          Parameter->getType()->isReferenceType() && Written->getCastKind() == CK_NoOp &&
+          Written->getTypeInfoAsWritten() &&
+          Context.hasSameType(Written->getTypeAsWritten(), Parameter->getType()) &&
+          Context.hasSameType(Written->getType(), Parameter->getType().getNonReferenceType()) &&
+          Context.hasSameType(Use->getType(), Parameter->getType().getNonReferenceType()) &&
+          Written->getValueKind() == Expr::getValueKindForType(Parameter->getType()) &&
+          Check.location(Written->getExprLoc(), {"__type_traits/invoke.h"}) &&
+          Check.location(Written->getTypeInfoAsWritten()->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) &&
+          Check.location(Written->getTypeInfoAsWritten()->getTypeLoc().getEndLoc(), {"__type_traits/invoke.h"});
+    };
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Call->getCallee()));
+    if (!Reference || Reference->getDecl() != SelectedMethod || Reference->hasExplicitTemplateArgs() ||
+        !Context.hasSameType(Reference->getType(), SelectedMethod->getType()) ||
+        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"}) ||
+        !Cast(Call->getArg(0), 0)) return false;
+    for (unsigned I = 0; I < Forwarded.size(); ++I)
+      if (!Cast(Call->getArg(I + 1), I + 1)) return false;
+    return true;
+  };
+  const auto *ActualNoexcept = dyn_cast_or_null<CXXNoexceptExpr>(ActualException);
+  if ((ActualReturn && !ActualCall(ActualReturn)) ||
+      (ActualException && (!ActualNoexcept || !ActualCall(ActualNoexcept->getOperand()))))
+    return std::nullopt;
+  // Keep these original optional nodes. This descriptor neither asks Sema to
+  // materialize them nor treats their absence as a runtime body certificate.
+  return FunctionalBindInvokeSignatureSource{Function, Primary, PrimaryReturn, PrimaryException,
+      ActualReturn, ActualException, Signature, std::move(Declvals),
+      SpecializedCall, std::move(SpecializedDeclvals),
+      std::make_shared<const FunctionalBindNestedArgumentSource>(Nested)};
+}
+
+
 std::optional<FunctionalBindTryCallSignatureSource>
 describeFunctionalBindTryCallSignatureSource(
     const State &S, const SourceManager &SM,
@@ -20101,6 +20341,8 @@ class BindSourceProof {
   const SourceManager &SM;
   const ASTContext &Context;
   const FunctionalBindStorage &Storage;
+  const std::map<const CXXMethodDecl *, SpecialMemberSource> &SpecialMembers;
+  const std::map<const TypeTraitExpr *, OperationTraitSource> &OperationTraits;
   NotFnSelectedSource Check;
   UtilityTupleQueryGraph Graph;
   llvm::ArrayRef<const TemplateUseSource *> Sources;
@@ -20637,6 +20879,86 @@ class BindSourceProof {
         unwrapPlaceholderIndexSource(Source, Input, Argument, IndexDeclarations);
   }
 
+  bool unwrapNestedParameterSource(const TemplateUseSource &Source,
+      const NonTypeTemplateParmDecl *Parameter, TypeSourceInfo *ActualType,
+      const FunctionalBindArgumentSource &Argument) {
+    const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    const auto *Input = Parameters && Parameters->size() == 3
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+    const auto *Incoming = Parameters && Parameters->size() == 3
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+    if (!ActiveUnwrapSource || !Argument.Nested || !Function || !Primary ||
+        Source.Kind != TemplateSourceKind::Function || Source.Declaration != Function ||
+        Source.Template != Primary || !Source.FunctionalBindConstraint ||
+        !Parameter || Parameters->getParam(2) != Parameter || Parameter->getIndex() != 2 ||
+        Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
+        !Parameter->getTypeSourceInfo() || !ActualType || !Input || Input->getIndex() ||
+        Input->isParameterPack() || Input->hasDefaultArgument() || !family(Input) ||
+        !Incoming || Incoming->getIndex() != 1 || !Incoming->isParameterPack() ||
+        Incoming->hasDefaultArgument() || !family(Incoming) ||
+        !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 3 ||
+        Source.Sugared->size() != 3 || !Check.family(Primary, {"__functional/bind.h"}) ||
+        ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+    const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, *ActiveUnwrapSource, Context);
+    const auto &Child = *Argument.Nested;
+    if (!Fresh || Child.Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Child.Slot].Nested ||
+        Fresh->Arguments[Child.Slot].Unwrap != Argument.Unwrap || Child.Root != Fresh->OwnedRoot ||
+        Child.Parent != Fresh->SourceCall ||
+        Fresh->Arguments[Child.Slot].Nested->Invocation.SourceCall != Child.Invocation.SourceCall)
+      return false;
+    for (const auto *Arguments : {Source.Canonical, Source.Sugared})
+      if (Arguments->get(0).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments->get(0).getAsType(), Child.Invocation.Object->getType()) ||
+          Arguments->get(1).getKind() != TemplateArgument::Pack ||
+          Arguments->get(1).pack_size() != Fresh->CallForwards.size() ||
+          Arguments->get(2).getKind() != TemplateArgument::Integral ||
+          !Arguments->get(2).getAsIntegral().isZero() ||
+          !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy)) return false;
+    auto Enable = [](QualType Type) -> const TemplateSpecializationType * {
+      if (Type.isNull()) return nullptr;
+      if (const auto *Elaborated = dyn_cast<ElaboratedType>(Type.getTypePtr())) Type = Elaborated->getNamedType();
+      return dyn_cast<TemplateSpecializationType>(Type.getTypePtr());
+    };
+    const auto *Original = Enable(Parameter->getTypeSourceInfo()->getType());
+    const auto *Actual = Enable(ActualType->getType());
+    const auto *Alias = Original
+        ? dyn_cast_or_null<TypeAliasTemplateDecl>(Original->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (!Original || !Actual || !Alias || !Alias->getIdentifier() || Alias->getName() != "__enable_if_t" ||
+        !Check.family(Alias, {"__type_traits/enable_if.h"}) || !Original->isTypeAlias() || !Actual->isTypeAlias() ||
+        Actual->getTemplateName().getAsTemplateDecl() != Alias || !Original->isDependentType() ||
+        Actual->isDependentType() || Original->template_arguments().size() != 2 ||
+        Actual->template_arguments().size() != 2 || !Context.hasSameType(ActualType->getType(), Context.IntTy))
+      return false;
+    for (const auto *Type : {Original, Actual}) {
+      const auto Arguments = Type->template_arguments();
+      if (Arguments[0].getKind() != TemplateArgument::Expression ||
+          Arguments[1].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return false;
+    }
+    ActiveScalarParameter = &Source;
+    auto Restore = llvm::make_scope_exit([&] {
+      ActiveScalarValues.clear(); CompletedScalarValues.clear(); ActiveScalarParameter = nullptr;
+    });
+    const auto *Written = Original->template_arguments()[0].getAsExpr();
+    const auto *Substituted = Actual->template_arguments()[0].getAsExpr();
+    // This is the positive nested-bind overload, not the scalar overload's
+    // negated is_bind_expression / zero-placeholder / non-wrapper conjunction.
+    // Close the original trait, actual owner/substitution, aliases and source
+    // trees before using its retained converted truth value.
+    if (!unwrapConstraintTraitSource(Source, Primary, Input, Written, Substituted,
+            "is_bind_expression", false) ||
+        !Graph.withBindScalarConstraintSource([&] {
+          return Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) &&
+              Graph.TraverseTypeLoc(ActualType->getTypeLoc()) &&
+              Graph.TraverseStmt(const_cast<Expr *>(Substituted));
+        })) return false;
+    Expr::EvalResult Value;
+    return Substituted->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects) &&
+        Value.Val.isInt() && Value.Val.getInt().getBoolValue() && Graph.bindSourceComplete();
+  }
+
   bool unwrapScalarParameterSource(const TemplateUseSource &Source,
       const NonTypeTemplateParmDecl *Parameter, TypeSourceInfo *ActualType) {
     const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration);
@@ -20644,6 +20966,10 @@ class BindSourceProof {
       for (const auto &Argument : ActiveUnwrapSource->Arguments)
         if (Argument.PlaceholderRank && Argument.Unwrap && Argument.Unwrap->getDirectCallee() == Function)
           return unwrapPlaceholderParameterSource(Source, Parameter, ActualType, Argument);
+    if (ActiveUnwrapSource && Function)
+      for (const auto &Argument : ActiveUnwrapSource->Arguments)
+        if (Argument.Nested && Argument.Unwrap && Argument.Unwrap->getDirectCallee() == Function)
+          return unwrapNestedParameterSource(Source, Parameter, ActualType, Argument);
     bool Scalar = false;
     if (ActiveUnwrapSource && Function)
       for (const auto &Argument : ActiveUnwrapSource->Arguments)
@@ -23273,9 +23599,11 @@ public:
       llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
       const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
       const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
-      std::function<bool(const TypedefNameDecl *)> SourceAlias = {})
-      : S(S), SM(SM), Context(Context), Storage(Storage), Check(S, SM, Context),
-        Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::BindSignature),
+      std::function<bool(const TypedefNameDecl *)> SourceAlias = {},
+      UtilityTupleQueryGraph *ParentBudget = nullptr)
+      : S(S), SM(SM), Context(Context), Storage(Storage), SpecialMembers(Members),
+        OperationTraits(Traits), Check(S, SM, Context),
+        Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::BindSignature, ParentBudget),
         Sources(Sources), Selections(Selections), OwnedInputAliasSource(std::move(SourceAlias)) {
     Ready = Graph.bindFunctionalBindMetadata(Storage,
         [this](const TemplateSpecializationType *Type) { return typeSource(Type); },
@@ -23359,6 +23687,30 @@ public:
       for (const auto &Tag : *Tags)
         if (!Graph.bindFunctionalBindSpecialMember(Tag.Construction->getConstructor(), true)) return false;
       return Graph.bindSourceComplete();
+    });
+  }
+  bool withNestedCallCompleteSource(const FunctionalBindCallSource &Parent, unsigned Slot,
+      const std::function<bool(const FunctionalBindNestedArgumentSource &)> &Complete) {
+    return Graph.withBindSourceChild([&] {
+      if (!Ready || !Complete || Parent.Storage.Record != Storage.Record) return false;
+      const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
+      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
+      const auto &Child = *Fresh->Arguments[Slot].Nested;
+      const auto *Record = Fresh->Storage.Arguments.Elements[Slot].getType()->getAsCXXRecordDecl();
+      auto Path = Fresh->OwnedPath;
+      Path.push_back(Slot);
+      if (!Record || !Fresh->Storage.Arguments.Elements[Slot].Field ||
+          Child.Root != Fresh->OwnedRoot || Child.Parent != Fresh->SourceCall || Child.Slot != Slot ||
+          Child.Path != Path || Child.Invocation.OwnedPath != Path ||
+          Child.Invocation.OwnedRoot != Fresh->OwnedRoot || Child.Get != Fresh->Arguments[Slot].Get ||
+          Child.Unwrap != Fresh->Arguments[Slot].Unwrap || !Child.Expand || !Child.IndexAlias ||
+          !Child.Indices || Child.Invocation.Storage.Record->getCanonicalDecl() != Record->getCanonicalDecl() ||
+          !Context.hasSameType(Child.ResultType, Child.Invocation.Method->getReturnType())) return false;
+      // This child's defaults, source packets, probes and bodies spend the
+      // parent's aggregate budget. A failed child poisons the owning graph.
+      BindSourceProof Dependency(S, SM, Context, Child.Invocation.Storage, Sources, Selections,
+          SpecialMembers, OperationTraits, OwnedInputAliasSource, &Graph);
+      return Dependency.callCompleteSource(Child.Invocation) && Complete(Child) && Graph.bindSourceComplete();
     });
   }
   bool callCompleteSource(const FunctionalBindCallSource &Call) {
@@ -23883,10 +24235,18 @@ public:
       for (unsigned I = 0; I < Actual->Arguments.size(); ++I) {
         const auto &Argument = Actual->Arguments[I];
         Requests.push_back({Argument.Get, &Storage.Arguments, I, Actual->Method->isConst()});
-        if (!Argument.PlaceholderRank) continue;
-        if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
-            Argument.PlaceholderRank > Incoming->Elements.size() || !Argument.PlaceholderGet) return false;
-        Requests.push_back({Argument.PlaceholderGet, &*Incoming, Argument.PlaceholderRank - 1, false});
+        if (Argument.PlaceholderRank) {
+          if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
+              Argument.PlaceholderRank > Incoming->Elements.size() || !Argument.PlaceholderGet) return false;
+          Requests.push_back({Argument.PlaceholderGet, &*Incoming, Argument.PlaceholderRank - 1, false});
+        }
+        if (Argument.Nested) {
+          if (Argument.Nested->IncomingGets.size() != Actual->CallForwards.size() ||
+              (!Argument.Nested->IncomingGets.empty() &&
+               (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size()))) return false;
+          for (unsigned J = 0; J < Argument.Nested->IncomingGets.size(); ++J)
+            Requests.push_back({Argument.Nested->IncomingGets[J], &*Incoming, J, false});
+        }
       }
       for (const auto &Request : Requests) {
         const auto &Tuple = *Request.Tuple;
@@ -24107,6 +24467,18 @@ public:
               })) return false;
         }
         if (!Graph.bindSourceComplete()) return false;
+        for (const auto &Argument : Actual->Arguments) {
+          if (!Argument.Nested) continue;
+          for (const auto *Get : Argument.Nested->IncomingGets) {
+            const auto *Function = Get ? Get->getDirectCallee() : nullptr;
+            if (!Function || (!CompletedPlaceholderGetSources.count(Get) &&
+                CompletedPlaceholderGetSources.size() == 64)) return false;
+            // Reuse the same bounded completed-source table. A nested body
+            // still needs an exact active-child identity before reading it.
+            const auto Bound = CompletedPlaceholderGetSources.emplace(Get, Function);
+            if (!Bound.second && Bound.first->second != Function) return false;
+          }
+        }
         for (const auto &Argument : Actual->Arguments) {
           if (!Argument.PlaceholderRank) continue;
           const auto *Function = Argument.PlaceholderGet ? Argument.PlaceholderGet->getDirectCallee() : nullptr;
