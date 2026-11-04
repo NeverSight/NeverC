@@ -22686,6 +22686,60 @@ class BindSourceProof {
         Check.location(Reference->getExprLoc(), {"__functional/bind.h"}) ? Reference : nullptr;
   }
 
+  std::optional<FunctionalBindCallSource> retainedOwnedCallOccurrence(
+      const CXXOperatorCallExpr *Wanted) {
+    if (!Wanted || !ActiveUnwrapSource || !ActiveUnwrapSource->OwnedRoot ||
+        !S.owns(SM, ActiveUnwrapSource->OwnedRoot->getExprLoc())) return std::nullopt;
+    // Preserve the original owned call path without requiring a nested SDK
+    // operator expression itself to have a user-source location.
+    if (S.owns(SM, Wanted->getExprLoc()))
+      return describeFunctionalBindCallSource(S, SM, Wanted, Context);
+    std::set<const CXXOperatorCallExpr *> Roots;
+    for (const auto *Selection : Selections) {
+      const auto *Root = Selection ? dyn_cast_or_null<CXXOperatorCallExpr>(Selection->Expression) : nullptr;
+      if (!Root || !S.owns(SM, Root->getExprLoc()) || Roots.count(Root)) continue;
+      const auto Fresh = describeFunctionalBindCallSource(S, SM, Root, Context);
+      if (!Fresh || Fresh->SourceCall != Root || Fresh->OwnedRoot != Root || !Fresh->OwnedPath.empty())
+        continue;
+      Roots.insert(Root);
+      if (Roots.size() > 64 || !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context))
+        return std::nullopt;
+      std::optional<FunctionalBindCallSource> Found;
+      unsigned Nodes = 0;
+      bool Valid = true;
+      std::function<void(const FunctionalBindCallSource &, unsigned)> Visit;
+      Visit = [&](const FunctionalBindCallSource &Current, unsigned Depth) {
+        if (!Valid || Found) return;
+        // The descriptor already checks its complete recursive shape. This
+        // bounded lookup additionally charges each visited child to our graph.
+        if (Depth >= 64 || ++Nodes > 64) { Valid = false; return; }
+        Valid = Graph.withBindSourceChild([&] {
+          if (Current.OwnedRoot != Root || Current.OwnedPath.size() != Depth) return false;
+          if (Current.SourceCall == Wanted) { Found = Current; return true; }
+          for (unsigned I = 0; I < Current.Arguments.size(); ++I) {
+            const auto &Argument = Current.Arguments[I];
+            if (!Argument.Nested) continue;
+            const auto &Child = *Argument.Nested;
+            auto Path = Current.OwnedPath;
+            Path.push_back(I);
+            if (Child.Root != Root || Child.Parent != Current.SourceCall || Child.Slot != I ||
+                Child.Path != Path || Child.Invocation.OwnedPath != Path ||
+                Child.Invocation.OwnedRoot != Root || Child.Unwrap != Argument.Unwrap ||
+                Child.Get != Argument.Get) return false;
+            Visit(Child.Invocation, Depth + 1);
+            if (!Valid) return false;
+            if (Found) break;
+          }
+          return true;
+        });
+      };
+      Visit(*Fresh, 0);
+      if (!Valid) return std::nullopt;
+      if (Found) return Found;
+    }
+    return std::nullopt;
+  }
+
   bool retainedPlaceholderForwardIndexReadSource(const DeclRefExpr *Reference,
       const VarDecl *Variable) {
     return Graph.withBindSourceChild([&] {
@@ -22718,12 +22772,12 @@ class BindSourceProof {
         const auto *Method = Selection ? dyn_cast_or_null<CXXMethodDecl>(Selection->Function) : nullptr;
         if (!Call || !Method || Method->getOverloadedOperator() != OO_Call ||
             Method->getParent()->getCanonicalDecl() != Storage.Record->getCanonicalDecl() ||
-            !S.owns(SM, Call->getExprLoc()) || !Seen.insert(Call).second) continue;
+            !Seen.insert(Call).second) continue;
         // Bind the real selected node/function. Sema reports its own
         // selection location, independently of the AST delimiter positions.
         if (Seen.size() > 64 ||
             !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
-        const auto Actual = describeFunctionalBindCallSource(S, SM, Call, Context);
+        const auto Actual = retainedOwnedCallOccurrence(Call);
         if (!Actual || Actual->Method != Method || Actual->Storage.Record != Storage.Record ||
             !Actual->CallArguments || !Context.hasSameType(Actual->CallArguments->getType(),
                 ActiveUnwrapSource->CallArguments->getType())) continue;
@@ -24826,9 +24880,28 @@ public:
             !family(Primary) || !family(Pattern)) return false;
         for (unsigned I = 0; I < 2; ++I) {
           const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
-          if (!Parameter || Parameter->getIndex() != I || Parameter->isParameterPack() ||
-              Parameter->hasDefaultArgument() || !family(Parameter) ||
-              Arguments->get(I).getKind() != TemplateArgument::Type) return false;
+          const bool NestedPack = Argument.Nested && I == 1;
+          if (!Parameter || Parameter->getIndex() != I || Parameter->isParameterPack() != NestedPack ||
+              Parameter->hasDefaultArgument() || !family(Parameter)) return false;
+          const auto &Selected = Arguments->get(I);
+          if (!NestedPack) {
+            if (Selected.getKind() != TemplateArgument::Type) return false;
+          } else {
+            const auto &Child = *Argument.Nested;
+            if (Selected.getKind() != TemplateArgument::Pack ||
+                Selected.pack_size() != Child.IncomingForwards.size() || Selected.pack_size() > 2 ||
+                Child.Invocation.Method->getNumParams() != Selected.pack_size()) return false;
+            unsigned J = 0;
+            for (const auto &Input : Selected.pack_elements()) {
+              const auto *Forward = Child.IncomingForwards[J]
+                  ? Child.IncomingForwards[J]->getDirectCallee() : nullptr;
+              if (Input.getKind() != TemplateArgument::Type || !Forward ||
+                  !Context.hasSameType(Input.getAsType(), Forward->getReturnType()) ||
+                  !Context.hasSameType(Input.getAsType(),
+                      Child.Invocation.Method->getParamDecl(J)->getType())) return false;
+              ++J;
+            }
+          }
         }
         if (!Argument.Reference) {
           const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(2));
@@ -24878,15 +24951,27 @@ public:
           }
           return Graph.TraverseStmt(const_cast<CompoundStmt *>(Body));
         };
-        if (!functionSource(Argument.Unwrap, Function, [&] {
-              for (const auto *Declaration : Function->redecls())
-                if (!SignatureAndBody(Declaration, Declaration == Function)) return false;
-              return Graph.withBindTemplateParameters(Primary, Parameters, [&] {
-                for (const auto *Declaration : Pattern->redecls())
-                  if (!SignatureAndBody(Declaration, Declaration == Pattern)) return false;
-                return true;
-              });
-            })) return false;
+        auto CompleteUnwrap = [&] {
+          return functionSource(Argument.Unwrap, Function, [&] {
+            for (const auto *Declaration : Function->redecls())
+              if (!SignatureAndBody(Declaration, Declaration == Function)) return false;
+            return Graph.withBindTemplateParameters(Primary, Parameters, [&] {
+              for (const auto *Declaration : Pattern->redecls())
+                if (!SignatureAndBody(Declaration, Declaration == Pattern)) return false;
+              return true;
+            });
+          });
+        };
+        if (Argument.Nested) {
+          // An SDK child receives no source permission merely from its shape.
+          // Its complete selected/original call source closes first, sharing
+          // the parent's depth/node budget and poisoning it on any failure.
+          const unsigned Slot = unsigned(&Argument - Actual->Arguments.data());
+          if (!withNestedCallCompleteSource(*Actual, Slot,
+                  [&](const FunctionalBindNestedArgumentSource &Child) {
+                    return Child.Unwrap == Argument.Unwrap && Child.Get == Argument.Get && CompleteUnwrap();
+                  })) return false;
+        } else if (!CompleteUnwrap()) return false;
         if (Argument.WrapperCopy &&
             !Graph.bindFunctionalBindSpecialMember(Argument.WrapperCopy->getConstructor())) return false;
       }
