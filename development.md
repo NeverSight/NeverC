@@ -188,10 +188,12 @@ original instruction's source segment, address-size prefix or default-stack
 fault provenance.
 
 The full LLVM fork also exposes `llvm.x86.lds16/32` and `llvm.x86.les16/32` in
-32-bit code. NeverC targets x86-64 and does not advertise those four invalid
+protected 16/32-bit code. NeverC targets x86-64 and does not advertise those four invalid
 long-mode builtins; its IR reader retains their signatures and diagnoses native
-compilation. All 64-bit result forms require long mode, and code16 is explicitly
-unsupported. These mode checks do not substitute another instruction.
+compilation. All 64-bit result forms require long mode. The full fork supports
+16/32-bit far-pointer results in protected code16 with its 32-bit stack/pointer
+ABI; NeverC retains its x64 frontend and trimmed-backend mode admission.
+These mode checks do not substitute another instruction.
 
 `FarPointerFrontendTests.cpp` checks native identity, unused effects, exact C
 types, malformed operands and both assembly dialects at O0/O2 on ELF/COFF/Mach-O.
@@ -2660,6 +2662,30 @@ through NeverC and both LLVM backend pass managers. All 13 adjacent frontend
 tests and 26 generator tests pass. The shared XSAVE fixture also passes six
 SMM compiler profiles with 18,432 complete native state pairs. These counts
 retain the instruction-boundary scope above: zero enclave instructions ran.
+
+## Protected far-pointer compiler qualification
+
+`tests/neverc/X86/verify_protected_far_pointer.py --llvm-bin LLVM_BIN
+--mode 16 --output OUTPUT` (or `--mode 32`) compares all ten LDS/LES/LSS/LFS/LGS
+word/dword intrinsics with independent original bytes in KVM. Used and unused
+results run at O0 and optimized IR/O2. The matrix covers null and non-null
+selectors, RPL/DPL/type/present checks, flat/nonflat caches, word stacks,
+unaligned/cross-page/read-only pointer images, descriptor reads and hardware
+#GP/#NP/#SS/#PF entry. Native offset publication, GPRs, flags, caches, CR2,
+active event state and RAM are compared at the instruction or fault handler.
+Only successful cases preserving the compiler ABI's segment invariants continue
+to verify result projection, stack balance and callee-saved registers.
+
+Original fault handlers identify their vector through OUT; the runner completes
+KVM's pending I/O before observing or replacing state. Inactive exception records
+are excluded only after checking that neither a pending nor injected exception
+exists. KVM retains old payload fields after delivery; this is not guest-visible
+fault state. The remaining event state and authenticated restart frames still
+compare exactly. See the [KVM API](https://www.kernel.org/doc/html/latest/virt/kvm/api.html#kvm-get-vcpu-events)
+and its [I/O completion contract](https://www.kernel.org/doc/html/latest/virt/kvm/api.html#the-kvm-run-structure).
+The oracle rejects a wrong pointer loaded before an unchanged far-load opcode.
+It does not qualify a NeverC i386 frontend, real/VM86, CPL3 alignment checking,
+MOV-SS inhibition or asynchronous events.
 
 ## Native full-dividend division
 
