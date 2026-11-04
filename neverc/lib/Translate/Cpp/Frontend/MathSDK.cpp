@@ -21941,27 +21941,35 @@ class BindSourceProof {
         {GetRead, ForwardRead, ActualGetRead, ActualForwardRead}, false};
     ActivePlaceholderBody = &Frame;
     auto Restore = llvm::make_scope_exit([&] { ActivePlaceholderBody = nullptr; });
-    return Graph.TraverseBindPlaceholderUnwrapBodySource(Argument, Declaration, [&](const DeclStmt *Statement) {
-      bool Found = false;
-      for (const auto *Use : Sources) {
-        if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
-            Use->Location != Argument.Unwrap->getExprLoc()) continue;
-        if (Use->Template != Primary || !Use->FunctionalBindConstraint) return false;
-        unsigned Matches = 0;
-        for (const auto &Entry : Use->ParameterTypes) {
-          if (Entry.Parameter != Parameter) continue;
-          if (++Matches != 1 || Entry.PackIndex || !Entry.Type ||
-              !Graph.withBindTemplateParameters(Primary, Parameters, [&] {
-                return unwrapPlaceholderParameterSource(*Use, Parameter, Entry.Type, Argument, [&] {
-                  return Graph.TraverseStmt(const_cast<DeclStmt *>(Statement));
-                });
-              })) return false;
+    // Keep the exact checked dependent get lookup in this body scope.
+    // Unselected array/pair declarations gain no family or body permission.
+    std::vector<const NamedDecl *> Declarations;
+    for (const auto *Candidate : Getter->decls()) Declarations.push_back(Candidate);
+    std::map<const UnresolvedLookupExpr *, std::vector<const NamedDecl *>> LookupUses;
+    LookupUses.emplace(Getter, std::move(Declarations));
+    return Graph.withBindSourceLookupUses(LookupUses, [&] {
+      return Graph.TraverseBindPlaceholderUnwrapBodySource(Argument, Declaration, [&](const DeclStmt *Statement) {
+        bool Found = false;
+        for (const auto *Use : Sources) {
+          if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
+              Use->Location != Argument.Unwrap->getExprLoc()) continue;
+          if (Use->Template != Primary || !Use->FunctionalBindConstraint) return false;
+          unsigned Matches = 0;
+          for (const auto &Entry : Use->ParameterTypes) {
+            if (Entry.Parameter != Parameter) continue;
+            if (++Matches != 1 || Entry.PackIndex || !Entry.Type ||
+                !Graph.withBindTemplateParameters(Primary, Parameters, [&] {
+                  return unwrapPlaceholderParameterSource(*Use, Parameter, Entry.Type, Argument, [&] {
+                    return Graph.TraverseStmt(const_cast<DeclStmt *>(Statement));
+                  });
+                })) return false;
+          }
+          if (Matches != 1) return false;
+          Found = true;
         }
-        if (Matches != 1) return false;
-        Found = true;
-      }
-      Frame.IndexComplete = Found;
-      return Found && Graph.bindSourceComplete();
+        Frame.IndexComplete = Found;
+        return Found && Graph.bindSourceComplete();
+      });
     });
   }
 
