@@ -13734,6 +13734,18 @@ bool Adapter::requireUtilityPair(const CXXRecordDecl *Record,
 
 // A bind-owned physical tuple description never grants ordinary tuple
 // constructors, SDK variable access or placeholder value operations.
+// Physical bind storage can contain exact placeholders or nested bind values.
+// Keep both within the existing owning-bind tuple certificate; this does not
+// add nested bind elements to ordinary tuple operations or constructors.
+static bool functionalBindNeedsOwnedTupleStorage(const State &S, const SourceManager &SM,
+    const FunctionalBindStorage &Storage, const ASTContext &Context) {
+  return llvm::any_of(Storage.Arguments.Elements, [&](const UtilityTupleElement &Element) {
+    if (Element.EmptyBase) return true;
+    const auto *Record = Element.Field ? Element.getType()->getAsCXXRecordDecl() : nullptr;
+    return Record && describeFunctionalBindStorage(S, SM, Record, Context).has_value();
+  });
+}
+
 static bool sameFunctionalBindTupleStorage(const FunctionalBindStorage &Left,
     const FunctionalBindStorage &Right, const ASTContext &Context) {
   if (Left.Record != Right.Record || Left.WeakResult != Right.WeakResult ||
@@ -13761,9 +13773,8 @@ bool Adapter::requireFunctionalBindTupleStorage(const FunctionalBindStorage &Sto
     reject(Location, "bind tuple layout", "The exact owning bind record and bounded layout are required.", "TR0203");
     return false;
   }
-  const bool HasPlaceholder = llvm::any_of(Storage.Arguments.Elements,
-      [](const UtilityTupleElement &Element) { return bool(Element.EmptyBase); });
-  if (!HasPlaceholder)
+  const bool HasOwnedElements = functionalBindNeedsOwnedTupleStorage(S, Sources, Storage, Context);
+  if (!HasOwnedElements)
     return !type(Storage.BoundArguments->getType(), Location, false, Depth).empty();
   const auto Actual = describeFunctionalBindNaturalLayout(S, Sources, Storage.Record, Context);
   if (!Actual || !sameFunctionalBindTupleStorage(Storage, Actual->Storage, Context)) {
@@ -13794,9 +13805,8 @@ bool Adapter::requireFunctionalBindTupleStorage(const FunctionalBindStorage &Sto
 
 std::string Adapter::functionalBindTupleStorageType(const FunctionalBindStorage &Storage,
     SourceLocation Location) {
-  const bool HasPlaceholder = llvm::any_of(Storage.Arguments.Elements,
-      [](const UtilityTupleElement &Element) { return bool(Element.EmptyBase); });
-  if (!HasPlaceholder) return type(Storage.BoundArguments->getType(), Location);
+  const bool HasOwnedElements = functionalBindNeedsOwnedTupleStorage(S, Sources, Storage, Context);
+  if (!HasOwnedElements) return type(Storage.BoundArguments->getType(), Location);
   const auto Actual = describeFunctionalBindNaturalLayout(S, Sources, Storage.Record, Context);
   const auto Found = RequiredFunctionalBindTuples.find(Storage.Arguments.Record->getCanonicalDecl());
   if (!Actual || !sameFunctionalBindTupleStorage(Storage, Actual->Storage, Context) ||
@@ -13831,9 +13841,8 @@ std::optional<UtilityTupleRecord> Adapter::verifiedFunctionalBindTupleLayout(con
 
 json::Object Adapter::zeroFunctionalBindTupleStorage(const FunctionalBindStorage &Storage,
     SourceLocation Location) {
-  const bool HasPlaceholder = llvm::any_of(Storage.Arguments.Elements,
-      [](const UtilityTupleElement &Element) { return bool(Element.EmptyBase); });
-  if (!HasPlaceholder) return zero(Storage.BoundArguments->getType(), Location);
+  const bool HasOwnedElements = functionalBindNeedsOwnedTupleStorage(S, Sources, Storage, Context);
+  if (!HasOwnedElements) return zero(Storage.BoundArguments->getType(), Location);
   const auto Tuple = verifiedFunctionalBindTupleLayout(Storage.Arguments.Record);
   const auto Verified = VerifiedBindRecords.find(Storage.Record->getCanonicalDecl());
   if (!Tuple || Verified == VerifiedBindRecords.end() ||

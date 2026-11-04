@@ -12070,10 +12070,14 @@ public:
   }
   bool bindFunctionalBindEmptyStorageTupleDefinitionSource(const CXXRecordDecl *R) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !R ||
-        !BindMetadata->Arguments.Record || !BindMetadata->Arguments.Elements.empty() ||
-        R->getCanonicalDecl() != BindMetadata->Arguments.Record->getCanonicalDecl()) return false;
-    // Storage identity and the exact explicit SDK definition prove metadata only.
-    // Its selected constructor is a separate complete source obligation below.
+        !BindMetadata->Arguments.Record) return false;
+    const bool RootStorage = BindMetadata->Arguments.Elements.empty() &&
+        R->getCanonicalDecl() == BindMetadata->Arguments.Record->getCanonicalDecl();
+    // The physical record set comes only from this freshly described bind's
+    // actual fields and bases. A nested nullary child owns its empty tuple even
+    // when the enclosing bind has stored arguments. No ordinary tuple consumer,
+    // constructor or runtime operation receives permission from this identity.
+    if (!RootStorage && !BindPhysicalRecords.count(R->getCanonicalDecl())) return false;
     return bindFunctionalBindEmptyTupleDefinitionSource(R);
   }
   bool TraverseBindEmptyStorageTupleConstructionSource(
