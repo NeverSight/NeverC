@@ -1928,6 +1928,11 @@ describeFunctionalBindTryCallSignatureSource(
 // must close independently before these shapes enter a runtime verified map.
 // The actual unselected declaration-only ellipsis candidate is a type witness.
 // Its source, sentinel definition and result comparison still close separately.
+std::optional<FunctionalBindTryCallSignatureSource>
+describeFunctionalBindNestedTryCallSignatureSource(
+    const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
+    const FunctionalBindNestedArgumentSource &Nested, const clang::ASTContext &Context);
+
 struct FunctionalBindTryCallFallbackSource {
   const clang::CXXMethodDecl *Function;
   const clang::CXXRecordDecl *Sentinel;
