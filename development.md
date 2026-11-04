@@ -2690,3 +2690,22 @@ and Microsoft overflow on ELF/COFF/Mach-O at O0/O2. Run
 NeverC and NeverC IR through both LLVM backends. The declared i386 matrix uses
 full LLVM; NeverC's frontend remains x64-only. A 32-bit libc development
 installation is required to run the native i386 signal oracle.
+
+The full LLVM fork also lowers the 8/16/32-bit pairs in protected code16,
+using its 32-bit stack ABI and mode-correct operand-size prefixes. The 64-bit
+pairs remain long-mode-only. This does not enable an i386/code16 target in
+NeverC's frontend or trimmed backend.
+
+Run `tests/neverc/X86/verify_protected_division.py --llvm-bin LLVM_BIN
+--mode 16 --output OUTPUT` (or `--mode 32`) on Linux with KVM for native
+protected-mode qualification. It checks argument transport at the instruction,
+then compares GPRs, flags, system registers/caches, event state and RAM with an
+independently encoded DIV/IDIV on another vCPU. The oracle authenticates both
+restart PCs before normalizing their intentional difference in #DE frames.
+Successful calls also verify quotient/remainder stores, callee-saved registers
+and stack balance; unused results retain division and its faults. Erased DIV
+and a wrong divisor loaded before an intact DIV are rejected controls.
+The matrix covers CPL0, byte/word/dword operands, signed/unsigned full dividends,
+all four result-use combinations, O0 and optimized IR/O2. It does not qualify
+operand-memory faults, asynchronous events, other privilege levels or physical
+processors beyond those recorded in the qualification.
