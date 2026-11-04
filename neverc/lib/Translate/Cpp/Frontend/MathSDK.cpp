@@ -20800,6 +20800,7 @@ class BindSourceProof {
   llvm::ArrayRef<const TemplateUseSource *> Sources;
   llvm::ArrayRef<const SelectedTemplateCallSource *> Selections;
   std::set<const TemplateUseSource *> ActiveSources, CompletedSources;
+  std::vector<const TemplateUseSource *> ActiveUnwrapProjectionSources;
   std::set<const CXXRecordDecl *> ActiveRecords, CompletedRecords;
   std::set<const VarDecl *> ActiveVariables, CompletedVariables;
   std::set<const FunctionDecl *> ActiveFunctions, CompletedFunctions;
@@ -23029,14 +23030,19 @@ class BindSourceProof {
             bool Witness = Use.Kind == TemplateSourceKind::Function && Use.Declaration == Unwrap &&
                 Use.Location == Argument.Unwrap->getExprLoc() && Use.Template == Unwrap->getPrimaryTemplate();
             if (!Witness) {
-              for (const auto *Parent : ActiveSources) {
-                if (!Parent || Parent->Kind != TemplateSourceKind::Function || Parent->Declaration != Unwrap ||
-                    Parent->Location != Argument.Unwrap->getExprLoc() ||
-                    Parent->Template != Unwrap->getPrimaryTemplate() || !Parent->FunctionalBindConstraint ||
-                    !Parent->Sugared || !Parent->Sugared->size() ||
-                    Parent->Sugared->get(0).getKind() != TemplateArgument::Type) continue;
-                Witness |= AliasIn(Parent->Sugared->get(0).getAsType());
-              }
+              auto ParentWitness = [&](const TemplateUseSource *Parent) {
+                return Parent && Parent->Kind == TemplateSourceKind::Function && Parent->Declaration == Unwrap &&
+                    Parent->Location == Argument.Unwrap->getExprLoc() &&
+                    Parent->Template == Unwrap->getPrimaryTemplate() && Parent->FunctionalBindConstraint &&
+                    Parent->Sugared && Parent->Sugared->size() &&
+                    Parent->Sugared->get(0).getKind() == TemplateArgument::Type &&
+                    AliasIn(Parent->Sugared->get(0).getAsType());
+              };
+              for (const auto *Parent : ActiveSources) Witness |= ParentWitness(Parent);
+              // Projection preclosure precedes source(*FunctionUse). This
+              // exact retained packet is already bound to the selected call,
+              // but must not be inserted into the source-cycle guard early.
+              for (const auto *Parent : ActiveUnwrapProjectionSources) Witness |= ParentWitness(Parent);
             }
             if (Witness) { Found = Current.Storage.Arguments; return true; }
           }
@@ -23496,6 +23502,11 @@ class BindSourceProof {
     // signatures too: Clang can reuse one scalar __mu across different binds.
     std::function<bool(unsigned)> Scope = [&](unsigned I) {
       if (I == Uses.size()) return Proof();
+      if (ActiveUnwrapProjectionSources.size() == 64 ||
+          std::find(ActiveUnwrapProjectionSources.begin(), ActiveUnwrapProjectionSources.end(), Uses[I]) !=
+              ActiveUnwrapProjectionSources.end()) return false;
+      ActiveUnwrapProjectionSources.push_back(Uses[I]);
+      auto Restore = llvm::make_scope_exit([&] { ActiveUnwrapProjectionSources.pop_back(); });
       return Graph.withBindRetainedUnwrapProjectionSource(*Uses[I], [&] { return Scope(I + 1); });
     };
     return Scope(0);
@@ -24871,21 +24882,27 @@ public:
           });
         });
       };
+      if (!AfterComplete) {
+        // Keep the original no-continuation source traversal and scope order.
+        return Graph.withBindScalarConstraintSource([&] {
+          if (Actual->Arguments.empty()) return CompleteSources();
+          return Graph.withBindTupleElementProjections(*Actual, [&] {
+            return Graph.TraverseBindTupleElementProjectionSources() && CompleteSources();
+          });
+        }) && Graph.bindSourceComplete();
+      }
       auto CompleteAndContinue = [&] {
-        if (!CompleteSources() || !Graph.bindSourceComplete()) return false;
-        // Dependent metadata still traverses this fully completed child's
-        // exact projection and scalar-constraint purposes. Those scopes must
-        // remain live until its parent continuation closes, not just its body.
-        return (!AfterComplete || AfterComplete(*Actual)) && Graph.bindSourceComplete();
-      };
-      return Graph.withBindScalarConstraintSource([&] {
-        // An empty bound pack has no element projections. Keep the original
-        // apply/operator signatures, lookups and complete bodies mandatory.
-        if (Actual->Arguments.empty()) return CompleteAndContinue();
-        return Graph.withBindTupleElementProjections(*Actual, [&] {
-          return Graph.TraverseBindTupleElementProjectionSources() && CompleteAndContinue();
+        const bool Closed = Graph.withBindScalarConstraintSource([&] {
+          if (!Actual->Arguments.empty() && !Graph.TraverseBindTupleElementProjectionSources()) return false;
+          return CompleteSources();
         });
-      }) && Graph.bindSourceComplete();
+        // Its full source closes first. Keep only the child's exact projection
+        // purpose live; a dependent query opens its own non-reentrant scalar
+        // constraint scope and must close that independently.
+        return Closed && AfterComplete(*Actual) && Graph.bindSourceComplete();
+      };
+      if (Actual->Arguments.empty()) return CompleteAndContinue();
+      return Graph.withBindTupleElementProjections(*Actual, CompleteAndContinue) && Graph.bindSourceComplete();
     });
   }
 
