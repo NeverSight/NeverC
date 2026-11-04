@@ -23085,6 +23085,7 @@ public:
   }
   bool functionalBindFactorySourceComplete(const FunctionalBindFactorySource &Factory) {
     const auto Inputs = functionalBindSourceInputs();
+    llvm::errs() << "BIND-FACTORY-PROOF-INPUTS " << bool(Inputs) << " nargs " << Factory.Storage.Arguments.Elements.size() << "\n";
     auto AliasSource = [this](const TypedefNameDecl *Alias) {
       const auto *Info = Alias ? Alias->getTypeSourceInfo() : nullptr;
       if (!Alias || !Info || !A.S.owns(A.Sources, Alias->getLocation()) ||
@@ -23133,6 +23134,7 @@ public:
   }
   bool functionalBindCallSourceComplete(const FunctionalBindCallSource &Call) {
     const auto Inputs = functionalBindSourceInputs();
+    llvm::errs() << "BIND-CALL-PROOF-INPUTS " << bool(Inputs) << " nargs " << Call.Arguments.size() << "\n";
     return Inputs && approvedFunctionalBindCallCompleteSource(A.S, A.Sources, Call, A.Context,
         Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
   }
@@ -26701,7 +26703,11 @@ public:
     return nullptr;
   }
 
-  bool retainBindRuntimeSource(const FunctionalBindStorage &Storage, SourceLocation Location) {
+  bool retainBindRuntimeSourceImpl(const FunctionalBindStorage &Storage, SourceLocation Location,
+      unsigned Depth, unsigned &Nodes, std::set<const CXXRecordDecl *> &Active) {
+    if (!Storage.Record || Depth >= 64 || ++Nodes > 200000 ||
+        !Active.insert(Storage.Record->getCanonicalDecl()).second) return false;
+    auto RestoreActive = llvm::make_scope_exit([&] { Active.erase(Storage.Record->getCanonicalDecl()); });
     const auto Layout = describeFunctionalBindNaturalLayout(A.S, A.Sources, Storage.Record, A.Context);
     const auto Destruction = describeFunctionalBindDestructionSource(
         A.S, A.Sources, Storage.Record->getDestructor(), A.Context);
@@ -26721,6 +26727,47 @@ public:
     PendingBindRecords.emplace(Record, *Layout);
     PendingBindDestructions.emplace(Record, *Destruction);
     PendingBindSourceLocations.emplace(Record, Location);
+    for (const auto &Element : Storage.Arguments.Elements) {
+      if (++Nodes > 200000) return false;
+      const auto *ChildRecord = Element.getType()->getAsCXXRecordDecl();
+      const auto Child = ChildRecord
+          ? describeFunctionalBindStorage(A.S, A.Sources, ChildRecord, A.Context) : std::nullopt;
+      if (!Child) continue;
+      // The actual stored field supplies this lifecycle owner. An SDK child
+      // call location is never substituted for the enclosing owned location.
+      if (!Element.Field || Element.EmptyBase ||
+          !retainBindRuntimeSourceImpl(*Child, Location, Depth + 1, Nodes, Active)) return false;
+    }
+    return true;
+  }
+  bool retainBindRuntimeSource(const FunctionalBindStorage &Storage, SourceLocation Location) {
+    unsigned Nodes = 0;
+    std::set<const CXXRecordDecl *> Active;
+    return retainBindRuntimeSourceImpl(Storage, Location, 0, Nodes, Active);
+  }
+  bool nestedBindCallPublicationSource(const FunctionalBindCallSource &Call,
+      const CXXOperatorCallExpr *Root, unsigned &Nodes) {
+    if (!Root || !A.S.owns(A.Sources, Root->getExprLoc()) || ++Nodes > 200000 ||
+        Call.OwnedRoot != Root || Call.OwnedPath.size() >= 64) return false;
+    const auto Fresh = describeFunctionalBindCallSourceOccurrence(A.S, A.Sources, Call, A.Context);
+    const auto *Prototype = Call.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+    const auto Record = Call.Storage.Record->getCanonicalDecl();
+    const auto Layout = PendingBindRecords.find(Record);
+    if (!Fresh || !Prototype || !ordinaryCallbackPrototype(Prototype) ||
+        !A.Context.hasSameType(operationCalleePrototype(Fresh->Target), Prototype) ||
+        Layout == PendingBindRecords.end() || !sameBindStorage(Layout->second.Storage, Fresh->Storage) ||
+        !bindDestructionSourceComplete(Record)) return false;
+    for (unsigned I = 0; I < Fresh->Arguments.size(); ++I) {
+      if (++Nodes > 200000) return false;
+      const auto &Argument = Fresh->Arguments[I];
+      if (!Argument.Nested) continue;
+      const auto &Child = *Argument.Nested;
+      auto Path = Fresh->OwnedPath;
+      Path.push_back(I);
+      if (Child.Root != Root || Child.Parent != Fresh->SourceCall || Child.Slot != I ||
+          Child.Path != Path || Child.Invocation.OwnedPath != Path ||
+          !nestedBindCallPublicationSource(Child.Invocation, Root, Nodes)) return false;
+    }
     return true;
   }
   bool bindDestructionSourceComplete(const CXXRecordDecl *Record) {
@@ -26845,9 +26892,13 @@ public:
     for (const auto &[Call, Source] : PendingBindFactories)
       if (Source.SourceCall != Call || !functionalBindFactorySourceComplete(Source) ||
           !OrdinarySource(Call)) return false;
-    for (const auto &[Call, Source] : PendingBindCalls)
-      if (Source.SourceCall != Call || !functionalBindCallSourceComplete(Source) ||
-          !OrdinarySource(Call)) return false;
+    for (const auto &[Call, Source] : PendingBindCalls) {
+      const auto *Root = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+      unsigned Nodes = 0;
+      if (!Root || Source.SourceCall != Call || Source.OwnedRoot != Root || !Source.OwnedPath.empty() ||
+          !functionalBindCallSourceComplete(Source) || !OrdinarySource(Call) ||
+          !nestedBindCallPublicationSource(Source, Root, Nodes)) return false;
+    }
     for (const auto &[Construction, Source] : PendingBindCopies)
       if (Source.Construction != Construction || !functionalBindCopySourceComplete(Source) ||
           !OrdinarySource(Construction)) return false;
