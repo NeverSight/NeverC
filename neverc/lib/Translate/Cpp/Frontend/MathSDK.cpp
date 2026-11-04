@@ -21803,7 +21803,9 @@ class BindSourceProof {
         if (!Call || !Method || Method->getOverloadedOperator() != OO_Call ||
             Method->getParent()->getCanonicalDecl() != Storage.Record->getCanonicalDecl() ||
             !S.owns(SM, Call->getExprLoc()) || !Seen.insert(Call).second) continue;
-        if (Seen.size() > 64 || Selection->Location != Call->getExprLoc() ||
+        // Sema selects operator() at its opening parenthesis; the
+        // call expression begins at the object, which is a different token.
+        if (Seen.size() > 64 || Selection->Location != Call->getOperatorLoc() ||
             !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
         const auto Actual = describeFunctionalBindCallSource(S, SM, Call, Context);
         if (!Actual || Actual->Method != Method || Actual->Storage.Record != Storage.Record ||
