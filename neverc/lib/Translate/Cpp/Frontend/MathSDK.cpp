@@ -19750,6 +19750,8 @@ class BindSourceProof {
     bool IndexComplete;
   };
   const PlaceholderBodySources *ActivePlaceholderBody = nullptr;
+  const TemplateUseSource *ActivePlaceholderForwardSource = nullptr;
+  bool ActiveRetainedPlaceholderForwardSource = false;
   std::map<const CallExpr *, const FunctionDecl *> CompletedPlaceholderGetSources;
   std::set<const CallExpr *> UnwrapScalarConstraintSources;
   const TemplateUseSource *ActiveScalarParameter = nullptr;
@@ -21768,6 +21770,74 @@ class BindSourceProof {
         Check.location(Reference->getExprLoc(), {"__functional/bind.h"}) ? Reference : nullptr;
   }
 
+  bool retainedPlaceholderForwardIndexReadSource(const DeclRefExpr *Reference,
+      const VarDecl *Variable) {
+    return Graph.withBindSourceChild([&] {
+      const auto *Frame = ActivePlaceholderBody;
+      const auto *Current = Frame ? Frame->Argument : nullptr;
+      const auto *Forward = Current && Current->PlaceholderForward
+          ? Current->PlaceholderForward->getDirectCallee() : nullptr;
+      const auto *Use = ActivePlaceholderForwardSource;
+      const auto *Function = Variable ? dyn_cast<FunctionDecl>(Variable->getDeclContext()) : nullptr;
+      const auto *CurrentFunction = Current && Current->Unwrap ? Current->Unwrap->getDirectCallee() : nullptr;
+      if (!Frame || !Frame->IndexComplete || !Current || !Current->PlaceholderRank ||
+          !ActiveUnwrapSource || !ActiveUnwrapSource->CallArguments || ActiveScalarParameter ||
+          ActiveRetainedPlaceholderForwardSource || !Reference || !Variable ||
+          !Use || !ActiveSources.count(Use) || Use->Kind != TemplateSourceKind::Function ||
+          !Use->FunctionalBindConstraint || Use->Declaration != Forward || !Forward ||
+          Use->Template != Forward->getPrimaryTemplate() ||
+          Use->Location != Current->PlaceholderForward->getExprLoc() ||
+          !Use->Sugared || Use->Sugared->size() != 1 ||
+          Use->Sugared->get(0).getKind() != TemplateArgument::Type ||
+          !Function || !CurrentFunction || Function == CurrentFunction ||
+          Function->getPrimaryTemplate() != CurrentFunction->getPrimaryTemplate() ||
+          !Check.family(Function, {"__functional/bind.h"})) return false;
+      // A builtin forward specialization can retain differently sugared
+      // arguments from mutable/const __mu instances at the same SDK location.
+      // Find the actual owned operator call that supplies this exact index
+      // and written forward argument. Canonical type equality is insufficient.
+      std::set<const CXXOperatorCallExpr *> Seen;
+      for (const auto *Selection : Selections) {
+        const auto *Call = Selection ? dyn_cast_or_null<CXXOperatorCallExpr>(Selection->Expression) : nullptr;
+        const auto *Method = Selection ? dyn_cast_or_null<CXXMethodDecl>(Selection->Function) : nullptr;
+        if (!Call || !Method || Method->getOverloadedOperator() != OO_Call ||
+            Method->getParent()->getCanonicalDecl() != Storage.Record->getCanonicalDecl() ||
+            !S.owns(SM, Call->getExprLoc()) || !Seen.insert(Call).second) continue;
+        if (Seen.size() > 64 || Selection->Location != Call->getExprLoc() ||
+            !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
+        const auto Actual = describeFunctionalBindCallSource(S, SM, Call, Context);
+        if (!Actual || Actual->Method != Method || Actual->Storage.Record != Storage.Record ||
+            !Actual->CallArguments || !Context.hasSameType(Actual->CallArguments->getType(),
+                ActiveUnwrapSource->CallArguments->getType())) continue;
+        for (const auto &Argument : Actual->Arguments) {
+          if (Argument.PlaceholderIndex != Variable) continue;
+          if (Argument.PlaceholderRank != Current->PlaceholderRank || !Argument.Unwrap ||
+              Argument.Unwrap->getDirectCallee() != Function || !Argument.PlaceholderForward ||
+              Argument.PlaceholderForward->getDirectCallee() != Forward ||
+              !Context.hasSameType(Argument.ForwardedType, Current->ForwardedType)) return false;
+          const auto *Callee = dyn_cast<DeclRefExpr>(Argument.PlaceholderForward->getCallee()->IgnoreParenImpCasts());
+          const auto *Info = Callee && Callee->hasExplicitTemplateArgs() && Callee->getNumTemplateArgs() == 1
+              ? Callee->template_arguments()[0].getTypeSourceInfo() : nullptr;
+          if (!Info || Info->getType() != Use->Sugared->get(0).getAsType() ||
+              unwrapPlaceholderForwardIndexReference(Argument) != Reference) return false;
+          const auto *Saved = ActiveUnwrapSource;
+          ActiveUnwrapSource = &*Actual;
+          ActiveRetainedPlaceholderForwardSource = true;
+          auto Restore = llvm::make_scope_exit([&] {
+            ActiveRetainedPlaceholderForwardSource = false;
+            ActiveUnwrapSource = Saved;
+          });
+          // Reuse the ordinary exact-owner proof: all retained function
+          // packets, positive/return constraints and both original/selected
+          // index declarations and initializers close freshly on this graph.
+          // No completed-variable, runtime-body or cross-call grant is added.
+          return unwrapPlaceholderGetterIndexReadSource(Reference, Variable);
+        }
+      }
+      return false;
+    });
+  }
+
   bool unwrapPlaceholderGetterIndexReadSource(const DeclRefExpr *Reference,
                                                const VarDecl *Variable) {
     if (!ActiveUnwrapSource || ActiveScalarParameter || !Reference || !Variable ||
@@ -21802,6 +21872,8 @@ class BindSourceProof {
           Owner->Unwrap->getDirectCallee() != Argument.Unwrap->getDirectCallee())) return false;
       Owner = &Argument;
     }
+    if (!Owner && ActivePlaceholderForwardSource)
+      return retainedPlaceholderForwardIndexReadSource(Reference, Variable);
     const auto *Function = Owner ? Owner->Unwrap->getDirectCallee() : nullptr;
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
@@ -22222,8 +22294,14 @@ class BindSourceProof {
             Use->Location != Call->getExprLoc()) continue;
         if (!Use->FunctionalBindConstraint || Use->Template != Primary || Use->Type || Use->Underlying ||
             Use->Written || Use->Instantiation || Use->Selection || !Use->Defaults.empty() ||
-            !Use->ParameterTypes.empty() || !same(Use->Canonical, Arguments) ||
-            !source(*Use, Parameters)) return false;
+            !Use->ParameterTypes.empty() || !same(Use->Canonical, Arguments)) return false;
+        const auto *Saved = ActivePlaceholderForwardSource;
+        if (Placeholder) {
+          if (Saved) return false;
+          ActivePlaceholderForwardSource = Use;
+        }
+        auto RestoreSource = llvm::make_scope_exit([&] { ActivePlaceholderForwardSource = Saved; });
+        if (!source(*Use, Parameters)) return false;
         Found = true;
       }
       if (!Found || !Graph.TraverseTemplateArgumentLoc(Reference->template_arguments()[0])) return false;
