@@ -2253,7 +2253,8 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-signature-native:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-signature-native' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.fixture_group == 'not-fn-signature-native' || inputs.fixture_group == 'bind-nested-native20')
+      }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -2264,39 +2265,43 @@ jobs:
       with:
         python-version: 3.12.10
     - name: Install the original native Clang20 and libc++20 reference toolchain
-      run: 'mkdir -p "$RUNNER_TEMP/cpp-not-fn-signature-native/bootstrap"
+      run: 'mkdir -p "$RUNNER_TEMP/cpp-${{ inputs.fixture_group }}/bootstrap"
 
         set -o pipefail
 
-        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+        python3 utils/ci/ensure-llvm-apt-host.py
 
-        sudo bash "$RUNNER_TEMP/llvm.sh" 20 2>&1 | tee "$RUNNER_TEMP/cpp-not-fn-signature-native/bootstrap/compiler-install.log"
+        curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https"
+        -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
 
-        sudo apt-get install -y libc++-20-dev libc++abi-20-dev 2>&1 | tee "$RUNNER_TEMP/cpp-not-fn-signature-native/bootstrap/dependencies.log"
+        sudo bash "$RUNNER_TEMP/llvm.sh" 20 2>&1 | tee "$RUNNER_TEMP/cpp-${{ inputs.fixture_group }}/bootstrap/compiler-install.log"
+
+        sudo apt-get install -y libc++-20-dev libc++abi-20-dev 2>&1 | tee "$RUNNER_TEMP/cpp-${{ inputs.fixture_group }}/bootstrap/dependencies.log"
 
         '
-    - name: Run original signature query reference at O0 and O2
-      run: python3 utils/ci/check-not-fn-signature-native.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-not-fn-signature-native"
+    - name: Run selected native reference cases at O0 and O2
+      run: "if [[ \"${{ inputs.fixture_group }}\" == \"bind-nested-native20\" ]]; then\n  python3 utils/ci/check-bind-nested-native20.py --repo \"\
+        $GITHUB_WORKSPACE\" --output \"$RUNNER_TEMP/cpp-${{ inputs.fixture_group }}\"\nelse\n  python3 utils/ci/check-not-fn-signature-native.py --repo\
+        \ \"$GITHUB_WORKSPACE\" --output \"$RUNNER_TEMP/cpp-${{ inputs.fixture_group }}\"\nfi\n"
     - name: Upload only bounded native reference text evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: cpp-not-fn-signature-native-${{ github.sha }}
-        path: '${{ runner.temp }}/cpp-not-fn-signature-native
+        name: cpp-${{ inputs.fixture_group }}-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-${{ inputs.fixture_group }}
 
-          !${{ runner.temp }}/cpp-not-fn-signature-native/**/native-O*'
+          !${{ runner.temp }}/cpp-${{ inputs.fixture_group }}/**/native-O*'
         if-no-files-found: error
         retention-days: 14
-    - name: Retain two real native programs remotely only
+    - name: Retain real native programs remotely only
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
-        name: cpp-not-fn-signature-native-binaries-remote-only-${{ github.sha }}
-        path: ${{ runner.temp }}/cpp-not-fn-signature-native/**/native-O*
+        name: cpp-${{ inputs.fixture_group }}-binaries-remote-only-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-${{ inputs.fixture_group }}/**/native-O*
         if-no-files-found: warn
         retention-days: 7
         compression-level: 0
-
   inspect-not-fn-custom-negation-eight:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-custom-negation-eight'
       }}
@@ -4125,6 +4130,7 @@ jobs:
         - not-fn-pointer-owned-default-trace
         - not-fn-pointer-default-clean216
         - not-fn-signature-native
+        - bind-nested-native20
         - not-fn-custom-negation-eight
         - not-fn-custom-negation-source-trace
         - not-fn-custom-negation-clean240

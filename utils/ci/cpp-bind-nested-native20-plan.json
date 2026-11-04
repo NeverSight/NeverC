@@ -1,0 +1,63 @@
+{
+  "fixture_group": "bind-nested-native20",
+  "preparation_only": false,
+  "reference_native_only": true,
+  "execution_binding_required": true,
+  "private_support_complete": false,
+  "reference_fixture_basis_commit": "00c6be6b5b3106b83f70a0fe5a0af6b0f73038a0",
+  "input_contract_sha256": "2f0dc5313f62535d4c9eaaa24b3c15b19911edb8a118f878e484d68e0690f442",
+  "required_native_programs": 20,
+  "required_native_exit_code": 0,
+  "cases": [
+    {
+      "name": "bind-nested-nullary",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint value() { ++inner_calls; return 6; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  auto f = std::bind(&add, std::bind(&value), 7);\n  return f() == 13 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "0f684c35625cffe3170c61f242a6139ce5cb5bcaf9c6b8b350800e119fb69e4a"
+    },
+    {
+      "name": "bind-nested-one-placeholder",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint twice(int x) { ++inner_calls; return x * 2; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  auto f = std::bind(&add, std::bind(&twice, std::placeholders::_1), 7);\n  return f(3) == 13 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "0389f38f661a69c502aac59ec5da26b1ee281ee5b8dab49dc45ca3295a21ac57"
+    },
+    {
+      "name": "bind-nested-reordered",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint subtract(int x, int y) { ++inner_calls; return x - y; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  auto f = std::bind(&add,\n    std::bind(&subtract, std::placeholders::_2, std::placeholders::_1), 4);\n  return f(3, 8) == 9 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "a0aa3f7413ffbafe0ed20d8cb991f2817699078d7cacf7cbb7eaaa4bdabc8a38"
+    },
+    {
+      "name": "bind-nested-two-shared-inputs",
+      "source": "#include <functional>\nint left_calls, right_calls, outer_calls;\nint add(int x, int y) { ++left_calls; return x + y; }\nint subtract(int x, int y) { ++right_calls; return x - y; }\nint combine(int x, int y) { ++outer_calls; return x - y; }\nint main() {\n  auto f = std::bind(&combine,\n    std::bind(&add, std::placeholders::_2, std::placeholders::_1),\n    std::bind(&subtract, std::placeholders::_1, std::placeholders::_2));\n  return f(3, 8) == 16 && left_calls == 1 && right_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "f371f7e61d76be87b77bc9bbbbc2372e5e876e69e72831aaaffebb5d3379dece"
+    },
+    {
+      "name": "bind-nested-live-reference-result",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint& select(int& value, int ignored) { ++inner_calls; return value; }\nint write(int& target, int value) { ++outer_calls; target = value; return target; }\nint main() {\n  int value = 2;\n  auto inner = std::bind(&select, std::ref(value), std::placeholders::_1);\n  auto f = std::bind(&write, inner, 5);\n  if (f(0) != 5 || value != 5) return 1;\n  value = 9;\n  return f(4) == 5 && value == 5 && inner_calls == 2 && outer_calls == 2 ? 0 : 2;\n}\n",
+      "source_sha256": "ffda91473630ffc78952c5091af7c79e4925a913a96a494072dfdc2b866317cf"
+    },
+    {
+      "name": "bind-nested-independent-captured-state",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint advance(int& stored, int delta) { ++inner_calls; stored += delta; return stored; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  auto inner = std::bind(&advance, 5, std::placeholders::_1);\n  auto f = std::bind(&add, inner, 1);\n  if (inner(2) != 7 || f(3) != 9) return 1;\n  auto g = f;\n  if (g(2) != 11 || f(1) != 10) return 2;\n  return inner(1) == 8 && inner_calls == 5 && outer_calls == 3 ? 0 : 3;\n}\n",
+      "source_sha256": "f9bdd5f8a99dd28961d63bc2e549d5072f47f5063fe54e4498c45379437b8be5"
+    },
+    {
+      "name": "bind-nested-unused-effects-before-read",
+      "source": "#include <functional>\nint effects, inner_calls, outer_calls, wrong;\nint argument(int value) { ++effects; return value; }\nint read(int x) { if (effects != 2) wrong = 1; ++inner_calls; return x; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  auto f = std::bind(&add, std::bind(&read, std::placeholders::_1), 4);\n  return f(argument(3), argument(8)) == 7 && effects == 2 && !wrong &&\n    inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "1e548663ded29eaf688c8ef74a9cd0e1d77d1889ec857bfd70eeb01e5beab757"
+    },
+    {
+      "name": "bind-nested-const-copy-and-temporary",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint add(int x, int y) { ++inner_calls; return x + y; }\nint twice(int x) { ++outer_calls; return x * 2; }\nint main() {\n  const auto f = std::bind(&twice,\n    std::bind(&add, std::placeholders::_1, 4));\n  auto g = f;\n  if (f(3) != 14 || g(5) != 18) return 1;\n  return std::bind(&twice, std::bind(&add, std::placeholders::_1, 4))(2) == 12 &&\n    inner_calls == 3 && outer_calls == 3 ? 0 : 2;\n}\n",
+      "source_sha256": "fff81fb70f6a91e4830a028e313f6325aaf6d42466930543c639e5463447c0a1"
+    },
+    {
+      "name": "bind-nested-late-reference-value-read",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint change(int& value) { ++inner_calls; value = 9; return 1; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  int value = 3;\n  auto inner = std::bind(&change, std::ref(value));\n  auto f = std::bind(&add, std::ref(value), inner);\n  return f() == 10 && value == 9 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "bbbb7dcfe856ae6dbe4754400c9d2296d6aa99994be884cd59c98cd5b5619ea2"
+    },
+    {
+      "name": "bind-nested-late-placeholder-value-read",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint change(int& value) { ++inner_calls; value = 9; return 1; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  int value = 3;\n  auto f = std::bind(&add, std::placeholders::_1,\n    std::bind(&change, std::placeholders::_1));\n  return f(value) == 10 && value == 9 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "296efb30fe0b3a5dd34896e75395c9af3ee403e1173d706f762ee2384278ac4b"
+    }
+  ]
+}
