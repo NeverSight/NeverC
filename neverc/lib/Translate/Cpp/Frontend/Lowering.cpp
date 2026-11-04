@@ -28726,6 +28726,154 @@ class FunctionLowering {
     return Result;
   }
 
+  Expression functionalBindInvocationFromBindings(
+      const FunctionalBindCallSource &Source, Expression Address,
+      const std::vector<Expression> &Incoming, SourceLocation L,
+      const FunctionalBindCallSource &Root, std::vector<unsigned> &Path) {
+    const auto Verified = A.VerifiedBindCalls.find(Root.SourceCall);
+    if (Verified == A.VerifiedBindCalls.end() || &Verified->second != &Root || Path.size() >= 64)
+      reject(L, "nested bind root", "The completed owned root must retain every nested invocation.");
+    const FunctionalBindCallSource *Cursor = &Root;
+    std::vector<unsigned> ExpectedPath;
+    for (const unsigned Slot : Path) {
+      ExpectedPath.push_back(Slot);
+      if (Slot >= Cursor->Arguments.size() || !Cursor->Arguments[Slot].Nested)
+        reject(L, "nested bind path", "The exact original argument path is required.");
+      const auto &Child = *Cursor->Arguments[Slot].Nested;
+      if (Child.Root != Root.SourceCall || Child.Parent != Cursor->SourceCall ||
+          Child.Slot != Slot || Child.Path != ExpectedPath ||
+          Child.Get != Cursor->Arguments[Slot].Get || Child.Unwrap != Cursor->Arguments[Slot].Unwrap)
+        reject(L, "nested bind owner", "The child must belong to this root, parent and stored slot.");
+      Cursor = &Child.Invocation;
+    }
+    const auto *Prototype = Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+    if (Cursor != &Source || !Source.Method || !Source.Object || !Source.SourceCall || !Prototype ||
+        Source.SourceCall->getDirectCallee() != Source.Method ||
+        Source.SourceCall->getNumArgs() != Source.Method->getNumParams() + 1 ||
+        Source.Method->getNumParams() != Incoming.size() ||
+        Prototype->getNumParams() != Source.Arguments.size() ||
+        Source.Arguments.size() != Source.Storage.Arguments.Elements.size())
+      reject(L, "bind captured invocation", "The authenticated object and exact incoming bindings are required.");
+    if (llvm::none_of(Source.Arguments, [](const auto &Argument) { return bool(Argument.Nested); })) {
+      Expression CallableField{{"kind", "member"},
+          {"type", type(Source.Storage.CallableType, L)}, {"name", "nct_bind_callable"},
+          {"args", json::Array{dereference(json::Object(Address), L)}}, {"loc", A.loc(L)}};
+      auto Callable = snapshot(std::move(CallableField), L);
+      Expression Bound{{"kind", "member"},
+          {"type", A.functionalBindTupleStorageType(Source.Storage, L)}, {"name", "nct_bind_bound"},
+          {"args", json::Array{dereference(std::move(Address), L)}}, {"loc", A.loc(L)}};
+      json::Array Arguments;
+      for (unsigned I = 0; I < Source.Arguments.size(); ++I) {
+        const auto &Element = Source.Storage.Arguments.Elements[I];
+        const auto &Selected = Source.Arguments[I];
+        if (Selected.PlaceholderRank) {
+          const auto Identity = describeFunctionalBindPlaceholderIdentity(A.S, A.Sources, Element.getType(), A.Context);
+          if (!Identity || !Element.EmptyBase || Element.Field || Selected.Reference || Selected.WrapperCopy ||
+              Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl() ||
+              Identity->Rank != Selected.PlaceholderRank || Selected.PlaceholderRank > Incoming.size() ||
+              !Selected.PlaceholderIndex || !Selected.PlaceholderGet || !Selected.PlaceholderForward ||
+              !A.Context.hasSameType(Selected.ForwardedType,
+                  Source.Method->getParamDecl(Selected.PlaceholderRank - 1)->getType()))
+            reject(L, "bind placeholder projection", "The exact completed incoming slot and forwarding type are required.");
+          Arguments.push_back(utilityInvocationArgument(json::Object(Incoming[Selected.PlaceholderRank - 1]),
+              Selected.ForwardedType, Prototype->getParamType(I), nullptr, L));
+          continue;
+        }
+        if (!Element.Field || Element.EmptyBase || Selected.PlaceholderIndex ||
+            Selected.PlaceholderGet || Selected.PlaceholderForward)
+          reject(L, "bind invocation field", "The exact original logical capture field is required.");
+        auto Place = fieldStorage(json::Object(Bound), Element.Field, L);
+        const auto Stored = Source.Object->getType().isConstQualified()
+            ? A.Context.getConstType(Element.getType()) : Element.getType();
+        auto Captured = snapshot(address(std::move(Place), Stored, L), L);
+        if (Selected.Reference) {
+          const auto &Wrapper = Selected.Reference->Wrapper;
+          if (Wrapper.Record->getCanonicalDecl() != Element.getType()->getAsCXXRecordDecl()->getCanonicalDecl())
+            reject(L, "bind invocation reference", "Only the actual selected wrapper binding may be unwrapped.");
+          Captured = functionalReferenceArgumentAddress(dereference(std::move(Captured), L), Wrapper, L);
+        }
+        // Captured now addresses the real scalar or referent described by the
+        // selected __mu result. It must never reinterpret a wrapper address as T*.
+        Arguments.push_back(utilityInvocationArgument(std::move(Captured),
+            Selected.ForwardedType, Prototype->getParamType(I), nullptr, L));
+      }
+      return emitIndirectCall(std::move(Callable), std::move(Arguments), Prototype->getReturnType(), L);
+    }
+
+    Expression Bound{{"kind", "member"},
+        {"type", A.functionalBindTupleStorageType(Source.Storage, L)}, {"name", "nct_bind_bound"},
+        {"args", json::Array{dereference(json::Object(Address), L)}}, {"loc", A.loc(L)}};
+    std::vector<Expression> Bindings;
+    Bindings.reserve(Source.Arguments.size());
+    // __apply_functor first evaluates every __mu and binds __invoke's
+    // references. Value conversion for the final callback happens afterward.
+    for (unsigned I = 0; I < Source.Arguments.size(); ++I) {
+      const auto &Element = Source.Storage.Arguments.Elements[I];
+      const auto &Selected = Source.Arguments[I];
+      if (Selected.PlaceholderRank) {
+        const auto Identity = describeFunctionalBindPlaceholderIdentity(A.S, A.Sources, Element.getType(), A.Context);
+        if (!Identity || !Element.EmptyBase || Element.Field || Selected.Reference ||
+            Selected.WrapperCopy || Selected.Nested || Identity->Rank != Selected.PlaceholderRank ||
+            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl() ||
+            Selected.PlaceholderRank > Incoming.size() || !Selected.PlaceholderIndex ||
+            !Selected.PlaceholderGet || !Selected.PlaceholderForward ||
+            !A.Context.hasSameType(Selected.ForwardedType,
+                Source.Method->getParamDecl(Selected.PlaceholderRank - 1)->getType()))
+          reject(L, "nested bind placeholder", "The completed original forwarding slot is required.");
+        Bindings.push_back(json::Object(Incoming[Selected.PlaceholderRank - 1]));
+        continue;
+      }
+      if (!Element.Field || Element.EmptyBase || Selected.PlaceholderIndex ||
+          Selected.PlaceholderGet || Selected.PlaceholderForward)
+        reject(L, "nested bind stored field", "The exact original logical capture field is required.");
+      const auto Stored = Source.Object->getType().isConstQualified()
+          ? A.Context.getConstType(Element.getType()) : Element.getType();
+      auto Captured = snapshot(address(fieldStorage(json::Object(Bound), Element.Field, L), Stored, L), L);
+      if (Selected.Nested) {
+        const auto &Child = *Selected.Nested;
+        const auto *Record = Element.getType()->getAsCXXRecordDecl();
+        const auto Forwarded = Child.ResultType.isNull() ? QualType() : Child.ResultType->isReferenceType()
+            ? Child.ResultType : A.Context.getRValueReferenceType(Child.ResultType);
+        auto ChildPath = Path;
+        ChildPath.push_back(I);
+        if (!Record || Selected.Reference || Selected.WrapperCopy || Child.ResultType.isNull() ||
+            Child.ResultType->isVoidType() || !Child.Invocation.Method || !Child.Invocation.Object ||
+            !Child.Invocation.Storage.Record || Child.Root != Root.SourceCall ||
+            Child.Parent != Source.SourceCall || Child.Slot != I || Child.Path != ChildPath ||
+            Child.Get != Selected.Get || Child.Unwrap != Selected.Unwrap || !Child.Expand || !Child.Indices ||
+            Child.Invocation.Storage.Record->getCanonicalDecl() != Record->getCanonicalDecl() ||
+            !A.VerifiedBindRecords.count(Record->getCanonicalDecl()) ||
+            !A.Context.hasSameType(Child.Invocation.Object->getType(), Stored) ||
+            !A.Context.hasSameType(Child.Invocation.Method->getReturnType(), Child.ResultType) ||
+            !A.Context.hasSameType(Selected.ForwardedType, Forwarded))
+          reject(L, "nested bind invocation", "The completed child, result and actual nested field are required.");
+        Path.push_back(I);
+        auto Restore = llvm::make_scope_exit([&] { Path.pop_back(); });
+        auto Value = functionalBindInvocationFromBindings(Child.Invocation, std::move(Captured), Incoming, L, Root, Path);
+        Bindings.push_back(snapshot(address(std::move(Value), Child.ResultType.getNonReferenceType(), L), L));
+        continue;
+      }
+      if (Selected.Reference) {
+        const auto &Wrapper = Selected.Reference->Wrapper;
+        const auto *Record = Element.getType()->getAsCXXRecordDecl();
+        if (!Record || Wrapper.Record->getCanonicalDecl() != Record->getCanonicalDecl())
+          reject(L, "nested bind reference", "The exact selected wrapper binding must be retained.");
+        Captured = functionalReferenceArgumentAddress(dereference(std::move(Captured), L), Wrapper, L);
+      }
+      Bindings.push_back(std::move(Captured));
+    }
+    // The callee and callback values are read after all nested effects.
+    Expression CallableField{{"kind", "member"},
+        {"type", type(Source.Storage.CallableType, L)}, {"name", "nct_bind_callable"},
+        {"args", json::Array{dereference(std::move(Address), L)}}, {"loc", A.loc(L)}};
+    auto Callable = snapshot(std::move(CallableField), L);
+    json::Array Arguments;
+    for (unsigned I = 0; I < Bindings.size(); ++I)
+      Arguments.push_back(utilityInvocationArgument(std::move(Bindings[I]),
+          Source.Arguments[I].ForwardedType, Prototype->getParamType(I), nullptr, L));
+    return emitIndirectCall(std::move(Callable), std::move(Arguments), Prototype->getReturnType(), L);
+  }
+
   Expression functionalBindInvocationValue(
       const CallExpr *Call, const FunctionalBindCallSource &Source) {
     const auto L = Call->getExprLoc();
@@ -28746,49 +28894,8 @@ class FunctionLowering {
     // is loaded. Repeated placeholders copy this binding, never the operand's
     // effects. Unused operands and full-expression cleanup keep the same path.
     auto Incoming = captureUtilityInvocationArguments(Call, 1, Call->getNumArgs() - 1);
-    Expression CallableField{{"kind", "member"},
-        {"type", type(Source.Storage.CallableType, L)}, {"name", "nct_bind_callable"},
-        {"args", json::Array{dereference(json::Object(Address), L)}}, {"loc", A.loc(L)}};
-    auto Callable = snapshot(std::move(CallableField), L);
-    Expression Bound{{"kind", "member"},
-        {"type", A.functionalBindTupleStorageType(Source.Storage, L)}, {"name", "nct_bind_bound"},
-        {"args", json::Array{dereference(std::move(Address), L)}}, {"loc", A.loc(L)}};
-    json::Array Arguments;
-    for (unsigned I = 0; I < Source.Arguments.size(); ++I) {
-      const auto &Element = Source.Storage.Arguments.Elements[I];
-      const auto &Selected = Source.Arguments[I];
-      if (Selected.PlaceholderRank) {
-        const auto Identity = describeFunctionalBindPlaceholderIdentity(A.S, A.Sources, Element.getType(), A.Context);
-        if (!Identity || !Element.EmptyBase || Element.Field || Selected.Reference || Selected.WrapperCopy ||
-            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl() ||
-            Identity->Rank != Selected.PlaceholderRank || Selected.PlaceholderRank > Incoming.size() ||
-            !Selected.PlaceholderIndex || !Selected.PlaceholderGet || !Selected.PlaceholderForward ||
-            !A.Context.hasSameType(Selected.ForwardedType,
-                Source.Method->getParamDecl(Selected.PlaceholderRank - 1)->getType()))
-          reject(L, "bind placeholder projection", "The exact completed incoming slot and forwarding type are required.");
-        Arguments.push_back(utilityInvocationArgument(json::Object(Incoming[Selected.PlaceholderRank - 1]),
-            Selected.ForwardedType, Prototype->getParamType(I), nullptr, L));
-        continue;
-      }
-      if (!Element.Field || Element.EmptyBase || Selected.PlaceholderIndex ||
-          Selected.PlaceholderGet || Selected.PlaceholderForward)
-        reject(L, "bind invocation field", "The exact original logical capture field is required.");
-      auto Place = fieldStorage(json::Object(Bound), Element.Field, L);
-      const auto Stored = Source.Object->getType().isConstQualified()
-          ? A.Context.getConstType(Element.getType()) : Element.getType();
-      auto Captured = snapshot(address(std::move(Place), Stored, L), L);
-      if (Selected.Reference) {
-        const auto &Wrapper = Selected.Reference->Wrapper;
-        if (Wrapper.Record->getCanonicalDecl() != Element.getType()->getAsCXXRecordDecl()->getCanonicalDecl())
-          reject(L, "bind invocation reference", "Only the actual selected wrapper binding may be unwrapped.");
-        Captured = functionalReferenceArgumentAddress(dereference(std::move(Captured), L), Wrapper, L);
-      }
-      // Captured now addresses the real scalar or referent described by the
-      // selected __mu result. It must never reinterpret a wrapper address as T*.
-      Arguments.push_back(utilityInvocationArgument(std::move(Captured),
-          Selected.ForwardedType, Prototype->getParamType(I), nullptr, L));
-    }
-    return emitIndirectCall(std::move(Callable), std::move(Arguments), Prototype->getReturnType(), L);
+    std::vector<unsigned> Path;
+    return functionalBindInvocationFromBindings(Source, std::move(Address), Incoming, L, Source, Path);
   }
 
   Expression call(const CallExpr *Call,
