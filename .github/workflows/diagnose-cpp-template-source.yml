@@ -1161,7 +1161,9 @@ jobs:
     - name: Install real GoogleTest and matching host build tools
       run: 'set -o pipefail
 
-        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+        python3 utils/ci/ensure-llvm-apt-host.py
+
+        curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https" -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
 
         sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-private-runtime-bootstrap/clang-install.log"
 
