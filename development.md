@@ -2875,11 +2875,11 @@ original-image continuations or make arithmetic flags live across other C
 operations. NeverC's frontend remains x64-only for these APIs; the full LLVM
 fork additionally supports i386/code16.
 
-`utils/lint/sync-x86-flags16.py` owns the appended machine descriptors and
+[utils/lint/sync-x86-flags16.py](utils/lint/sync-x86-flags16.py) owns the appended machine descriptors and
 printers. The shared native-intrinsic synchronizer owns signatures and
 DAGISel ID remapping. `X86FlagsFrontendTest.*` checks both optimization levels,
 ELF/COFF/Mach-O, native assembly, unused reads, memory ordering and malformed
-argument lists. `tests/verify-flags16-completion.py` compares compiled writes
+argument lists. [tests/verify-flags16-completion.py](tests/verify-flags16-completion.py) compares compiled writes
 with original word POPF, including every safe FLAGS word and all AC/ID images.
 Its default x64 driver checks NeverC, full LLVM/Clang and unchanged emitted C;
 `--bits 32` uses a separate cdecl assembly witness for full LLVM/Clang and
