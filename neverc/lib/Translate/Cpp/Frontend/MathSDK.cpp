@@ -11667,6 +11667,48 @@ public:
     auto Restore = llvm::make_scope_exit([&] { BindResultComparisonRecord = Saved; });
     return TraverseTemplateArgument(Argument) && !Failed;
   }
+  std::optional<UtilityTupleRecord> bindRetainedOwnedAncestorTupleStorage(
+      const CXXRecordDecl *Tuple) {
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
+        !Tuple || !BindCallMetadata->OwnedRoot || BindCallMetadata->OwnedPath.empty() ||
+        BindCallMetadata->OwnedPath.size() >= 64 ||
+        !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc())) return std::nullopt;
+    const auto Occurrence = describeFunctionalBindCallSourceOccurrence(S, SM, *BindCallMetadata, Context);
+    const auto Root = describeFunctionalBindCallSource(S, SM, BindCallMetadata->OwnedRoot, Context);
+    if (!Occurrence || !Root || Occurrence->Storage.Record != BindMetadata->Record ||
+        Occurrence->Method != BindCallMetadata->Method ||
+        Occurrence->SourceCall != BindCallMetadata->SourceCall) return std::nullopt;
+    std::optional<UtilityTupleRecord> Result;
+    const FunctionalBindCallSource *Current = &*Root;
+    std::vector<unsigned> Path;
+    for (unsigned Slot : Occurrence->OwnedPath) {
+      if (!withBindSourceChild([&] {
+            if (Current->OwnedRoot != Root->SourceCall || Current->OwnedPath != Path ||
+                Slot >= Current->Arguments.size() || !Current->Arguments[Slot].Nested) return false;
+            // Only real ancestor storage of this exact owned occurrence may
+            // supply an alternative retained projection. No unrelated tuple
+            // or shared SDK range joins the graph's physical record set.
+            if (Current->Storage.Arguments.Record->getCanonicalDecl() == Tuple->getCanonicalDecl()) {
+              if (Result) return false;
+              Result = Current->Storage.Arguments;
+            }
+            const auto &Child = *Current->Arguments[Slot].Nested;
+            Path.push_back(Slot);
+            if (Child.Root != Root->SourceCall || Child.Parent != Current->SourceCall ||
+                Child.Slot != Slot || Child.Path != Path || Child.Invocation.OwnedPath != Path ||
+                Child.Invocation.OwnedRoot != Root->SourceCall ||
+                Child.Get != Current->Arguments[Slot].Get || Child.Unwrap != Current->Arguments[Slot].Unwrap)
+              return false;
+            Current = &Child.Invocation;
+            return true;
+          })) return std::nullopt;
+    }
+    if (Current->SourceCall != Occurrence->SourceCall || Current->Method != Occurrence->Method ||
+        Current->Storage.Record != BindMetadata->Record || Current->OwnedPath != Occurrence->OwnedPath)
+      return std::nullopt;
+    return Result;
+  }
+
   bool withBindRetainedTupleProjectionSource(const TemplateUseSource &Use,
       unsigned Index, const TemplateArgumentLoc &Argument,
       const std::function<bool()> &Proof) {
@@ -11730,7 +11772,12 @@ public:
           Object.hasQualifiers() || !TupleRecord || BindRetainedTupleProjections.size() == 64 ||
           !cstddefOrigin(S, SM, Info->getTypeLoc().getBeginLoc(), "libcxx", "__functional/bind.h") ||
           !cstddefOrigin(S, SM, Info->getTypeLoc().getEndLoc(), "libcxx", "__functional/bind.h")) return false;
-      const auto Storage = approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
+      auto Storage = approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
+      bool OwnedAncestor = false;
+      if (!Storage) {
+        Storage = bindRetainedOwnedAncestorTupleStorage(TupleRecord);
+        OwnedAncestor = Storage.has_value();
+      }
       if (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
           Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())
         return false;
@@ -11743,11 +11790,22 @@ public:
       if (!Scalar(Storage->Elements[Slot].getType()) ||
           !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Info->getType())) return false;
       for (const auto &Element : Storage->Elements) {
+        if (OwnedAncestor && Element.EmptyBase) {
+          const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
+          if (!Placeholder || Placeholder->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
+            return false;
+          continue;
+        }
         if (!Element.Field || Element.EmptyBase) return false;
         if (Scalar(Element.getType())) continue;
         const auto Wrapper = approvedFunctionalReferenceRecord(
             S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
-        if (!Wrapper || !Scalar(Wrapper->ReferentType)) return false;
+        if (Wrapper && Scalar(Wrapper->ReferentType)) continue;
+        const auto Nested = OwnedAncestor
+            ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
+            : std::nullopt;
+        if (!Nested || !Context.hasSameUnqualifiedType(Element.getType(), Context.getRecordType(Nested->Record)))
+          return false;
       }
       const auto Projection = bindTupleElementProjectionFromType(ProjectionType, *Storage, Slot);
       if (!Projection) return false;
@@ -11846,7 +11904,12 @@ public:
           !Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType()) ||
           Object.hasQualifiers() || !TupleRecord || BindRetainedTupleProjections.size() == 64)
         return false;
-      const auto Storage = approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
+      auto Storage = approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
+      bool OwnedAncestor = false;
+      if (!Storage) {
+        Storage = bindRetainedOwnedAncestorTupleStorage(TupleRecord);
+        OwnedAncestor = Storage.has_value();
+      }
       if (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
           Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())
         return false;
@@ -11859,11 +11922,22 @@ public:
       if (!Scalar(Storage->Elements[Slot].getType()) ||
           !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Input.getAsType())) return false;
       for (const auto &Element : Storage->Elements) {
+        if (OwnedAncestor && Element.EmptyBase) {
+          const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
+          if (!Placeholder || Placeholder->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
+            return false;
+          continue;
+        }
         if (!Element.Field || Element.EmptyBase) return false;
         if (Scalar(Element.getType())) continue;
         const auto Wrapper = approvedFunctionalReferenceRecord(
             S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
-        if (!Wrapper || !Scalar(Wrapper->ReferentType)) return false;
+        if (Wrapper && Scalar(Wrapper->ReferentType)) continue;
+        const auto Nested = OwnedAncestor
+            ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
+            : std::nullopt;
+        if (!Nested || !Context.hasSameUnqualifiedType(Element.getType(), Context.getRecordType(Nested->Record)))
+          return false;
       }
       const auto Projection = bindTupleElementProjectionFromType(ProjectionType, *Storage, Slot);
       if (!Projection) return false;
@@ -24941,6 +25015,49 @@ public:
           const auto *Body = dyn_cast_or_null<CompoundStmt>(Declaration->getBody());
           if (!Body) return !RequireBody;
           if (Argument.PlaceholderRank) return unwrapPlaceholderBodySource(Argument, Declaration);
+          if (Argument.Nested) {
+            const auto &Child = *Argument.Nested;
+            const auto *Definition = Declaration->getDefinition();
+            const auto *Statement = Body->size() == 2 ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
+            const auto *Alias = Statement && Statement->isSingleDecl()
+                ? dyn_cast<TypedefDecl>(Statement->getSingleDecl()) : nullptr;
+            const auto *Return = Body->size() == 2 ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+            const auto *Expand = Return ? dyn_cast_or_null<CallExpr>(Check.core(Return->getRetValue())) : nullptr;
+            const auto *Expansion = Child.Expand ? Child.Expand->getDirectCallee() : nullptr;
+            const auto *ExpansionTemplate = Expansion ? Expansion->getPrimaryTemplate() : nullptr;
+            if (!Definition || !Alias || Alias->isImplicit() || !Alias->getIdentifier() ||
+                Alias->getName() != "__indices" || Alias->getDeclContext() != Definition ||
+                !Alias->getTypeSourceInfo() || !family(Alias) ||
+                !Expand || Expand->getNumArgs() != 3 || !ExpansionTemplate ||
+                !Check.location(Expand->getExprLoc(), {"__functional/bind.h"})) return false;
+            auto Parameter = [&](const Expr *Expression, unsigned I) {
+              const auto *Use = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Expression));
+              return Use && I < Definition->getNumParams() && Use->getDecl() == Definition->getParamDecl(I);
+            };
+            if (!Parameter(Expand->getArg(0), 0) || !Parameter(Expand->getArg(1), 1)) return false;
+            if (Declaration == Function) {
+              if (Alias != Child.IndexAlias || Expand != Child.Expand || Expand->getDirectCallee() != Expansion)
+                return false;
+            } else {
+              const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Expand->getCallee()->IgnoreParenImpCasts());
+              const auto *Indices = dyn_cast<CXXUnresolvedConstructExpr>(Check.core(Expand->getArg(2)));
+              auto IndexType = Indices && Indices->getTypeSourceInfo() ? Indices->getTypeAsWritten() : QualType();
+              if (!IndexType.isNull())
+                if (const auto *Name = dyn_cast<ElaboratedType>(IndexType.getTypePtr())) {
+                  if (Name->getQualifier()) return false;
+                  IndexType = Name->getNamedType();
+                }
+              const auto *Index = IndexType.isNull() ? nullptr : dyn_cast<TypedefType>(IndexType.getTypePtr());
+              if (Expand->getDirectCallee() || !Lookup || Lookup->requiresADL() ||
+                  Lookup->hasExplicitTemplateArgs() || Lookup->getNumDecls() != 1 ||
+                  *Lookup->decls_begin() != ExpansionTemplate ||
+                  !Indices || Indices->getNumArgs() || !Index || Index->getDecl() != Alias) return false;
+            }
+            // Shape is not a source certificate. Consume the real local alias,
+            // sizeof-pack/index source, selected helper and every ordinary
+            // child in the unchanged source graph; missing queries still fail.
+            return Graph.TraverseStmt(const_cast<CompoundStmt *>(Body));
+          }
           const auto *Return = Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
           if (!Return || !Return->getRetValue()) return false;
           if (!Argument.Reference) {
