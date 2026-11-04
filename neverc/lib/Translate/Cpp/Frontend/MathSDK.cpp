@@ -14665,6 +14665,25 @@ public:
   }
   bool TraverseType(QualType T) {
     if (T.isNull()) return true;
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedReturnSource) {
+      for (const auto Bound : BindNestedReturnLocations) {
+        auto Location = Bound;
+        for (unsigned Depth = 0; !Location.isNull() && Depth < 64; ++Depth) {
+          const auto Alias = Location.getAs<TemplateSpecializationTypeLoc>();
+          const auto *Template = Alias ? Alias.getTypePtr()->getTemplateName().getAsTemplateDecl() : nullptr;
+          if (Alias && Alias.getTypePtr()->isTypeAlias() && Template && Template->getIdentifier() &&
+              Template->getName() == "__invoke_result_t" && family(Template)) {
+            // RAV walks the raw function return before the nested return
+            // TypeLoc. Bind only this actual alias object (or its own written
+            // wrapper), never a canonically equal scalar or unrelated type.
+            if (T == Bound.getType() || T == Location.getType())
+              return withBindSourceChild([&] { return BindNestedReturnSource(Bound); });
+            break;
+          }
+          Location = Location.getNextTypeLoc();
+        }
+      }
+    }
     if (!step() ||
         (T.isVolatileQualified() && !(Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
             !BindWeakResultSignaturePointee.isNull() && T == BindWeakResultSignaturePointee)) ||
@@ -22870,8 +22889,9 @@ class BindSourceProof {
         Owner->getTemplateArgs()[1].getAsType().isNull() ||
         !Owner->getTemplateArgs()[1].getAsType()->getAsCXXRecordDecl() ||
         Owner->getTemplateArgs()[1].getAsType()->getAsCXXRecordDecl()->getCanonicalDecl() != Tuple->getCanonicalDecl() ||
-        !Check.family(Alias, {"__tuple/tuple_element.h"}) ||
-        !Check.family(Owner, {"__tuple/tuple_element.h"})) return std::nullopt;
+        !Alias->getIdentifier() || Alias->getName() != "type" ||
+        !Check.location(Alias->getLocation(), {"__tuple/sfinae_helpers.h"}) ||
+        !family(Alias) || !family(Owner)) return std::nullopt;
     auto AliasIn = [&](QualType Type) {
       Type = Type.getNonReferenceType();
       for (unsigned Depth = 0; !Type.isNull() && Depth < 64; ++Depth) {
