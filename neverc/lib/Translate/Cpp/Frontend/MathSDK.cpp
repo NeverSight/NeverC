@@ -7718,6 +7718,8 @@ class UtilityTupleQueryGraph
   std::function<bool(const TemplateSpecializationType *, const std::function<bool()> &)> BindTypeTraversalSource;
   std::function<bool(const CXXRecordDecl *)> BindRecordSource;
   std::function<bool(const CallExpr *)> BindCallSource;
+  std::vector<TypeLoc> BindNestedReturnLocations;
+  std::function<bool(TypeLoc)> BindNestedReturnSource;
   std::function<bool(const DeclRefExpr *)> BindVariableSource;
   std::function<bool(const CXXConstructExpr *)> BindConstructionSource;
   std::map<const MemberExpr *, const ValueDecl *> BindSourceMemberUses;
@@ -11709,6 +11711,44 @@ public:
     return Result;
   }
 
+  bool withBindNestedReturnSources(const FunctionalBindCallSource &Parent, unsigned Slot,
+      const FunctionalBindNestedArgumentSource &Given,
+      const std::function<bool(TypeLoc)> &Source, const std::function<bool()> &Complete) {
+    return withBindSourceChild([&] {
+      if (!Source || !Complete || BindNestedReturnSource || !BindNestedReturnLocations.empty() ||
+          !BindCallMetadata || Parent.SourceCall != BindCallMetadata->SourceCall ||
+          Parent.Storage.Record != BindMetadata->Record) return false;
+      const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
+      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
+      const auto &Child = *Fresh->Arguments[Slot].Nested;
+      if (Child.Root != Given.Root || Child.Parent != Given.Parent || Child.Slot != Given.Slot ||
+          Child.Path != Given.Path || Child.Get != Given.Get || Child.Unwrap != Given.Unwrap ||
+          Child.Expand != Given.Expand || Child.IndexAlias != Given.IndexAlias ||
+          Child.Indices != Given.Indices || Child.IncomingGets != Given.IncomingGets ||
+          Child.IncomingForwards != Given.IncomingForwards ||
+          Child.Invocation.SourceCall != Given.Invocation.SourceCall || Child.Invocation.Method != Given.Invocation.Method)
+        return false;
+      std::vector<TypeLoc> Locations;
+      for (const auto *Call : {Child.Unwrap, Child.Expand}) {
+        const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+        const auto Prototype = Function && Function->getTypeSourceInfo()
+            ? Function->getTypeSourceInfo()->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
+        const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
+        if (!Function || !family(Function) || !Return ||
+            !Context.hasSameType(Function->getReturnType(), Child.ResultType) ||
+            !Context.hasSameType(Return.getType(), Child.ResultType)) return false;
+        Locations.push_back(Return);
+      }
+      BindNestedReturnLocations = std::move(Locations);
+      BindNestedReturnSource = Source;
+      auto Restore = llvm::make_scope_exit([&] {
+        BindNestedReturnSource = {};
+        BindNestedReturnLocations.clear();
+      });
+      return Complete() && bindSourceComplete();
+    });
+  }
+
   bool withBindRetainedTupleProjectionSource(const TemplateUseSource &Use,
       unsigned Index, const TemplateArgumentLoc &Argument,
       const std::function<bool()> &Proof) {
@@ -14676,6 +14716,10 @@ public:
   }
   bool TraverseTypeLoc(TypeLoc Location) {
     if (Location.isNull()) return true;
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedReturnSource)
+      for (const auto Bound : BindNestedReturnLocations)
+        if (Bound.getOpaqueData() == Location.getOpaqueData() && Bound.getType() == Location.getType())
+          return withBindSourceChild([&] { return BindNestedReturnSource(Location); });
     if (catMetadataMode())
       if (const auto Wrapper = Location.getAs<ElaboratedTypeLoc>())
         if (const auto Named = Wrapper.getNamedTypeLoc().getAs<TemplateSpecializationTypeLoc>()) {
@@ -20666,12 +20710,15 @@ class BindSourceProof {
   std::map<const CallExpr *, const FunctionDecl *> UnwrapReferenceSources;
   std::map<const CallExpr *, const FunctionDecl *> TupleGetMemberSources;
   const FunctionalBindCallSource *ActiveCompleteCall = nullptr;
+  const FunctionalBindNestedArgumentSource *ActiveNestedObjectQuery = nullptr;
+  TypeLoc ActiveNestedReturnLocation;
   struct CompletedCallSource {
     const FunctionDecl *Function = nullptr;
     const CallExpr *HelperCall = nullptr;
     const FunctionDecl *Helper = nullptr;
     const CallExpr *PrimaryHelperCall = nullptr;
     std::vector<const CallExpr *> MetadataCalls;
+    std::map<const CallExpr *, const FunctionDecl *> NestedMetadataCalls;
   };
   std::map<const CallExpr *, CompletedCallSource> ClosedCompleteCalls;
   std::map<const CXXConstructExpr *, const CXXConstructorDecl *> ClosedCallTupleConstructors;
@@ -22624,6 +22671,26 @@ class BindSourceProof {
         !Check.family(Primary, {"__type_traits/invoke.h"}) ||
         !Check.family(Original, {"__type_traits/invoke.h"}) ||
         !Check.family(Instance, {"__type_traits/invoke.h"})) return false;
+    const bool NestedQuery = ActiveNestedObjectQuery && ActiveNestedReturnLocation &&
+        ActiveNestedObjectQuery->Invocation.SourceCall == ActiveCompleteCall->SourceCall &&
+        ActiveNestedObjectQuery->Invocation.Method == ActiveCompleteCall->Method &&
+        Use.Canonical->get(0).getKind() == TemplateArgument::Type &&
+        Context.hasSameType(Use.Canonical->get(0).getAsType(),
+            Context.getLValueReferenceType(ActiveNestedObjectQuery->Invocation.Object->getType()));
+    if (NestedQuery) {
+      for (const auto *ActualArguments : {Use.Canonical, Use.Sugared}) {
+        if (ActualArguments->get(0).getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(ActualArguments->get(0).getAsType(),
+                Context.getLValueReferenceType(ActiveNestedObjectQuery->Invocation.Object->getType())) ||
+            ActualArguments->get(1).getKind() != TemplateArgument::Pack ||
+            ActualArguments->get(1).pack_size() != ActiveCompleteCall->Method->getNumParams()) return false;
+        unsigned I = 0;
+        for (const auto &Argument : ActualArguments->get(1).pack_elements())
+          if (Argument.getKind() != TemplateArgument::Type ||
+              !Context.hasSameType(Argument.getAsType(), ActiveCompleteCall->Method->getParamDecl(I++)->getType()))
+            return false;
+      }
+    } else {
     for (const auto *ActualArguments : {Use.Canonical, Use.Sugared}) {
       if (ActualArguments->get(0).getKind() != TemplateArgument::Type ||
           (!Context.hasSameType(ActualArguments->get(0).getAsType(), Storage.CallableType) &&
@@ -22637,6 +22704,7 @@ class BindSourceProof {
       for (const auto &Argument : ActualArguments->get(1).pack_elements())
         if (Argument.getKind() != TemplateArgument::Type ||
             !Context.hasSameType(Argument.getAsType(), ActiveCompleteCall->Arguments[I++].ForwardedType)) return false;
+    }
     }
     // A use event intentionally has no declaration TSI. Its exact retained
     // arguments closed in source(Use); consume the real primary declaration
@@ -23491,7 +23559,8 @@ class BindSourceProof {
       for (const auto &[Original, Calls] : Originals)
         if (!Original || Calls.empty() || Calls.size() > 64) return false;
       if (Forwarded.empty()) {
-        if (!Storage.Arguments.Elements.empty() || Description.SpecializedDeclvals.size() != 1 ||
+        if ((Description.Nested ? Description.Nested->Invocation.Method->getNumParams() != 0
+                                : !Storage.Arguments.Elements.empty()) || Description.SpecializedDeclvals.size() != 1 ||
             !Description.Declvals[1]) return false;
         EmptyPacks[Description.Declvals[1]].insert(Description.Function);
         if (EmptyPacks.size() > 64 || EmptyPacks[Description.Declvals[1]].size() > 64) return false;
@@ -23572,7 +23641,8 @@ class BindSourceProof {
       for (const auto &[Original, Calls] : Originals)
         if (!Original || Calls.empty() || Calls.size() > 64) return false;
       if (Forwarded.empty()) {
-        if (!Storage.Arguments.Elements.empty() || Actual->Declvals.size() != 1) return false;
+        if ((Actual->Dispatcher.Nested ? Actual->Dispatcher.Nested->Invocation.Method->getNumParams() != 0
+                                       : !Storage.Arguments.Elements.empty()) || Actual->Declvals.size() != 1) return false;
         for (const auto *Original : Actual->OriginalArgumentDeclvals) {
           if (!Original) return false;
           EmptyPacks[Original].insert(Actual->Function);
@@ -23652,6 +23722,12 @@ class BindSourceProof {
     if (Found != ClosedCompleteCalls.end()) return Found->second.Function;
     for (const auto &[Root, Source] : ClosedCompleteCalls) {
       if (Call == Source.HelperCall) return Source.Helper;
+      if (const auto Found = Source.NestedMetadataCalls.find(Call); Found != Source.NestedMetadataCalls.end()) {
+        if (!ActiveNestedObjectQuery || !ActiveNestedReturnLocation ||
+            ActiveCompleteCall->SourceCall != ActiveNestedObjectQuery->Invocation.SourceCall ||
+            Found->second != ActiveNestedObjectQuery->Invocation.Method) return std::nullopt;
+        return Found->second;
+      }
       if (Call == Source.PrimaryHelperCall ||
           std::find(Source.MetadataCalls.begin(), Source.MetadataCalls.end(), Call) != Source.MetadataCalls.end())
         return static_cast<const FunctionDecl *>(nullptr);
@@ -23704,7 +23780,7 @@ class BindSourceProof {
       return !Function && Dispatcher &&
           dyn_cast_or_null<CallExpr>(Check.core(Check.returned(Dispatcher))) == Call;
     }
-    if (ActiveInvokeSignature && Call && !Function) {
+    if (ActiveInvokeSignature && Call) {
       const auto &Description = *ActiveInvokeSignature;
       const auto *PrimaryException = dyn_cast_or_null<CXXNoexceptExpr>(Description.PrimaryException);
       const auto *PrimaryNoexcept = PrimaryException
@@ -23716,7 +23792,11 @@ class BindSourceProof {
           Call == PrimaryNoexcept || Call == ActualNoexcept) {
         for (const auto *Declval : Description.SpecializedDeclvals)
           if (!CompletedDeclvalInputs.count(Declval)) return false;
-        return true; // Exact re-described metadata expressions, never an SDK runtime call.
+        return !Function || (Description.Nested && ActiveNestedObjectQuery && ActiveNestedReturnLocation &&
+            Description.Nested->Root == ActiveNestedObjectQuery->Root &&
+            Description.Nested->Path == ActiveNestedObjectQuery->Path &&
+            Function == ActiveNestedObjectQuery->Invocation.Method);
+        // Every original and selected argument still traverses below this metadata visit.
       }
     }
     if (ActiveDeclval && Call == ActiveDeclval->PrimaryHelperCall)
@@ -23729,11 +23809,17 @@ class BindSourceProof {
           ? dyn_cast<UnresolvedLookupExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
       if (Function || !Call || Call->getNumArgs() || !Lookup || Lookup->requiresADL() ||
           Lookup->getNumDecls() != 1 || EmptyPack->second.empty() ||
-          !Storage.Arguments.Elements.empty()) return false;
+          (!Storage.Arguments.Elements.empty() &&
+           !(ActiveNestedObjectQuery && ActiveNestedReturnLocation &&
+             ActiveNestedObjectQuery->Invocation.SourceCall == ActiveCompleteCall->SourceCall &&
+             ActiveNestedObjectQuery->Invocation.Method->getNumParams() == 0))) return false;
       for (const auto *Owner : EmptyPack->second) {
         const CallExpr *Concrete = nullptr;
         if (const auto *Method = dyn_cast<CXXMethodDecl>(Owner)) {
-          const auto Probe = describeFunctionalBindTryCallSignatureSource(
+          const auto NestedProbe = ActiveNestedObjectQuery && ActiveNestedReturnLocation
+              ? describeFunctionalBindNestedTryCallSignatureSource(S, SM, Method, *ActiveNestedObjectQuery, Context)
+              : std::nullopt;
+          const auto Probe = NestedProbe ? NestedProbe : describeFunctionalBindTryCallSignatureSource(
               S, SM, Method, Storage, {}, Context);
           if (!Probe || Probe->Declvals.size() != 1 ||
               std::find(Probe->OriginalArgumentDeclvals.begin(),
@@ -23741,7 +23827,10 @@ class BindSourceProof {
             return false;
           Concrete = Probe->Declvals[0];
         } else {
-          const auto Description = describeFunctionalBindInvokeSignatureSource(
+          const auto NestedDescription = ActiveNestedObjectQuery && ActiveNestedReturnLocation
+              ? describeFunctionalBindNestedInvokeSignatureSource(S, SM, Owner, *ActiveNestedObjectQuery, Context)
+              : std::nullopt;
+          const auto Description = NestedDescription ? NestedDescription : describeFunctionalBindInvokeSignatureSource(
               S, SM, Owner, Storage, {}, Context);
           if (!Description || Description->Declvals.size() != 2 ||
               Description->Declvals[1] != Call || Description->SpecializedDeclvals.size() != 1)
@@ -23932,6 +24021,151 @@ class BindSourceProof {
       return Complete();
     });
   }
+  bool nestedReturnTypeSource(const FunctionalBindNestedArgumentSource &Child, TypeLoc Location) {
+    if (!Ready || !ActiveCompleteCall || ActiveNestedObjectQuery || ActiveNestedReturnLocation ||
+        ActiveCompleteCall->SourceCall != Child.Invocation.SourceCall ||
+        ActiveCompleteCall->Method != Child.Invocation.Method ||
+        ActiveCompleteCall->Storage.Record != Storage.Record) return false;
+    const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Child.Invocation, Context);
+    if (!Fresh || Fresh->OwnedRoot != Child.Root || Fresh->OwnedPath != Child.Path ||
+        Fresh->SourceCall != Child.Invocation.SourceCall || Fresh->Method != Child.Invocation.Method)
+      return false;
+    bool ActualReturn = false;
+    for (const auto *Call : {Child.Unwrap, Child.Expand}) {
+      const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+      const auto Prototype = Function && Function->getTypeSourceInfo()
+          ? Function->getTypeSourceInfo()->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
+      const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
+      ActualReturn |= Return && Return.getOpaqueData() == Location.getOpaqueData() && Return.getType() == Location.getType();
+    }
+    if (!ActualReturn) return false;
+    ActiveNestedObjectQuery = &Child;
+    ActiveNestedReturnLocation = Location;
+    auto Restore = llvm::make_scope_exit([&] {
+      ActiveNestedReturnLocation = TypeLoc();
+      ActiveNestedObjectQuery = nullptr;
+    });
+    return Graph.withBindScalarConstraintSource([&] {
+      std::set<const CXXMethodDecl *> Seen;
+      std::vector<FunctionalBindTryCallSignatureSource> Probes;
+      for (const auto *Use : Sources) {
+        const auto *Method = Use && Use->Kind == TemplateSourceKind::Function
+            ? dyn_cast_or_null<CXXMethodDecl>(Use->Declaration) : nullptr;
+        if (!Method || !Method->getIdentifier() || Method->getName() != "__try_call" || Seen.count(Method)) continue;
+        const auto Probe = describeFunctionalBindNestedTryCallSignatureSource(S, SM, Method, Child, Context);
+        if (!Probe) continue;
+        if (Seen.size() == 64 || !tryCallSignatureSource(*Probe) || !tryCallFallbackSource(*Probe) ||
+            !Graph.bindFunctionalBindResultProbe(*Probe)) return false;
+        Seen.insert(Method);
+        Probes.push_back(*Probe);
+      }
+      if (Probes.empty() || !closeCompleteProbeSources(Probes)) return false;
+      return Graph.TraverseTypeLoc(Location) && Graph.bindSourceComplete();
+    });
+  }
+
+  bool closeCompleteCall(const CallExpr *Expression, const FunctionDecl *Function) {
+    if (!Expression) return false;
+    if (const auto Existing = completedCallFunction(Expression)) return *Existing == Function;
+    if (ClosedCompleteCalls.size() == 64) return false;
+    return ClosedCompleteCalls.emplace(Expression, CompletedCallSource{Function}).second;
+  }
+  bool closeCompleteProbeSources(llvm::ArrayRef<FunctionalBindTryCallSignatureSource> CompletedProbes) {
+    auto CloseMetadata = [&](const CallExpr *Owner, const FunctionDecl *Function,
+                             llvm::ArrayRef<const CallExpr *> Expressions,
+                             const FunctionalBindNestedArgumentSource *Nested = nullptr) {
+      const auto Found = ClosedCompleteCalls.find(Owner);
+      if (!Owner || !Function || Owner->getDirectCallee() != Function ||
+          Found == ClosedCompleteCalls.end() || Found->second.Function != Function ||
+          Found->second.HelperCall || Found->second.Helper || Found->second.PrimaryHelperCall ||
+          Expressions.size() > 64) return false;
+      std::vector<const CallExpr *> Children;
+      std::map<const CallExpr *, const FunctionDecl *> NestedChildren;
+      for (const auto *Expression : Expressions) {
+        if (!Expression) continue;
+        if (Expression == Owner) return false;
+        if (const auto *Selected = Expression->getDirectCallee()) {
+          if (!Nested || !ActiveNestedObjectQuery || !ActiveNestedReturnLocation ||
+              Nested->Root != ActiveNestedObjectQuery->Root || Nested->Path != ActiveNestedObjectQuery->Path ||
+              Selected != ActiveNestedObjectQuery->Invocation.Method) return false;
+          if (const auto Existing = completedCallFunction(Expression))
+            if (*Existing != Selected) return false;
+          NestedChildren.emplace(Expression, Selected);
+          continue;
+        }
+        if (const auto Existing = completedCallFunction(Expression))
+          if (*Existing) return false;
+        if (std::find(Children.begin(), Children.end(), Expression) == Children.end())
+          Children.push_back(Expression);
+      }
+      auto &Closed = Found->second;
+      if (!Closed.MetadataCalls.empty() || !Closed.NestedMetadataCalls.empty())
+        return Closed.MetadataCalls == Children && Closed.NestedMetadataCalls == NestedChildren;
+      // The probe/dispatcher source already closed above. Its exact original,
+      // substituted result and noexcept nodes are children of that source,
+      // not additional completed sources. Keep the same 64 owner slots and
+      // re-traverse every real written child on each metadata occurrence.
+      Closed.MetadataCalls = std::move(Children);
+      Closed.NestedMetadataCalls = std::move(NestedChildren);
+      return true;
+    };
+    for (const auto &Probe : CompletedProbes) {
+      const auto &Dispatcher = Probe.Dispatcher;
+      if (!Probe.ResultCall || !Probe.Invoke || !Probe.Function || !Dispatcher.Function ||
+          Probe.ResultCall->getDirectCallee() != Probe.Function ||
+          Probe.Invoke->getDirectCallee() != Dispatcher.Function ||
+          !closeCompleteCall(Probe.ResultCall, Probe.Function) || !closeCompleteCall(Probe.Invoke, Dispatcher.Function)) return false;
+      // These exact concrete declval calls closed their selected and original
+      // signatures above. Their ordinary written children still traverse here.
+      auto CloseDeclval = [&](const CallExpr *Expression) {
+        const auto *Selected = Expression ? Expression->getDirectCallee() : nullptr;
+        const auto Input = DeclvalInputs.find(Expression);
+        if (!Selected || !CompletedDeclvalInputs.count(Expression) || Input == DeclvalInputs.end())
+          return false;
+        const auto Source = describeFunctionalBindDeclvalSource(S, SM, Expression, Input->second, Context);
+        if (!Source || Source->Call != Expression || Source->Function != Selected || !Source->Helper ||
+            !Source->HelperCall || Source->HelperCall->getDirectCallee() != Source->Helper ||
+            !Source->PrimaryHelperCall || Source->PrimaryHelperCall->getDirectCallee()) return false;
+        // One completed declval source binds its selected call and both
+        // exact helper calls. Keep that source in one of the same 64 slots;
+        // reentry still walks every ordinary written type and child.
+        if (Source->HelperCall == Expression || Source->PrimaryHelperCall == Expression ||
+            Source->HelperCall == Source->PrimaryHelperCall || !closeCompleteCall(Expression, Selected)) return false;
+        const auto Found = ClosedCompleteCalls.find(Expression);
+        if (Found == ClosedCompleteCalls.end()) return false;
+        auto &Closed = Found->second;
+        if ((Closed.HelperCall && Closed.HelperCall != Source->HelperCall) ||
+            (Closed.Helper && Closed.Helper != Source->Helper) ||
+            (Closed.PrimaryHelperCall && Closed.PrimaryHelperCall != Source->PrimaryHelperCall)) return false;
+        if (const auto Existing = completedCallFunction(Source->HelperCall))
+          if (*Existing != Source->Helper) return false;
+        if (const auto Existing = completedCallFunction(Source->PrimaryHelperCall))
+          if (*Existing) return false;
+        Closed.HelperCall = Source->HelperCall;
+        Closed.Helper = Source->Helper;
+        Closed.PrimaryHelperCall = Source->PrimaryHelperCall;
+        return true;
+      };
+      for (const auto *Expression : Probe.Declvals)
+        if (!CloseDeclval(Expression)) return false;
+      for (const auto *Expression : Dispatcher.SpecializedDeclvals)
+        if (!CloseDeclval(Expression)) return false;
+      if (std::any_of(Probe.OriginalInvokes.begin(), Probe.OriginalInvokes.end(),
+              [](const auto *Expression) { return !Expression; }) ||
+          !CloseMetadata(Probe.ResultCall, Probe.Function, Probe.OriginalInvokes)) return false;
+      const auto *PrimaryException = dyn_cast_or_null<CXXNoexceptExpr>(Dispatcher.PrimaryException);
+      const auto *PrimaryNoexcept = PrimaryException
+          ? dyn_cast_or_null<CallExpr>(Check.stripped(PrimaryException->getOperand())) : nullptr;
+      const auto *ActualException = dyn_cast_or_null<CXXNoexceptExpr>(Dispatcher.ActualException);
+      const auto *ActualNoexcept = ActualException
+          ? dyn_cast_or_null<CallExpr>(Check.stripped(ActualException->getOperand())) : nullptr;
+      if (!Dispatcher.SignatureCall || !Dispatcher.SpecializedCall) return false;
+      const CallExpr *Expressions[] = {Dispatcher.SignatureCall, Dispatcher.SpecializedCall,
+                                        PrimaryNoexcept, ActualNoexcept};
+      if (!CloseMetadata(Probe.Invoke, Dispatcher.Function, Expressions, Dispatcher.Nested.get())) return false;
+    }
+    return true;
+  }
 public:
   BindSourceProof(const State &S, const SourceManager &SM, const ASTContext &Context,
       const FunctionalBindStorage &Storage,
@@ -24030,7 +24264,7 @@ public:
     });
   }
   bool withNestedCallCompleteSource(const FunctionalBindCallSource &Parent, unsigned Slot,
-      const std::function<bool(const FunctionalBindNestedArgumentSource &)> &Complete) {
+      const std::function<bool(const FunctionalBindNestedArgumentSource &, BindSourceProof &)> &Complete) {
     return Graph.withBindSourceChild([&] {
       if (!Ready || !Complete || Parent.Storage.Record != Storage.Record) return false;
       const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
@@ -24050,10 +24284,14 @@ public:
       // parent's aggregate budget. A failed child poisons the owning graph.
       BindSourceProof Dependency(S, SM, Context, Child.Invocation.Storage, Sources, Selections,
           SpecialMembers, OperationTraits, OwnedInputAliasSource, &Graph);
-      return Dependency.callCompleteSource(Child.Invocation) && Complete(Child) && Graph.bindSourceComplete();
+      return Dependency.callCompleteSource(Child.Invocation, [&](const FunctionalBindCallSource &Closed) {
+        return Closed.SourceCall == Child.Invocation.SourceCall && Closed.Method == Child.Invocation.Method &&
+            Complete(Child, Dependency) && Graph.bindSourceComplete();
+      });
     });
   }
-  bool callCompleteSource(const FunctionalBindCallSource &Call) {
+  bool callCompleteSource(const FunctionalBindCallSource &Call,
+      const std::function<bool(const FunctionalBindCallSource &)> &AfterComplete = {}) {
     if (!Ready || ActiveCompleteCall || ActiveUnusedVoidConversion || !ClosedCompleteCalls.empty() || !ClosedCallTupleConstructors.empty() ||
         !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
         Call.Storage.Record != Storage.Record) return false;
@@ -24094,99 +24332,14 @@ public:
         CompletedScalarValues.clear();
         ActiveCompleteCall = nullptr;
       });
-      auto Close = [&](const CallExpr *Expression, const FunctionDecl *Function) {
-        if (!Expression) return false;
-        if (const auto Existing = completedCallFunction(Expression)) return *Existing == Function;
-        if (ClosedCompleteCalls.size() == 64) return false;
-        return ClosedCompleteCalls.emplace(Expression, CompletedCallSource{Function}).second;
-      };
-      auto CloseMetadata = [&](const CallExpr *Owner, const FunctionDecl *Function,
-                               llvm::ArrayRef<const CallExpr *> Expressions) {
-        const auto Found = ClosedCompleteCalls.find(Owner);
-        if (!Owner || !Function || Owner->getDirectCallee() != Function ||
-            Found == ClosedCompleteCalls.end() || Found->second.Function != Function ||
-            Found->second.HelperCall || Found->second.Helper || Found->second.PrimaryHelperCall ||
-            Expressions.size() > 64) return false;
-        std::vector<const CallExpr *> Children;
-        for (const auto *Expression : Expressions) {
-          if (!Expression) continue;
-          if (Expression == Owner || Expression->getDirectCallee()) return false;
-          if (const auto Existing = completedCallFunction(Expression))
-            if (*Existing) return false;
-          if (std::find(Children.begin(), Children.end(), Expression) == Children.end())
-            Children.push_back(Expression);
-        }
-        auto &Closed = Found->second;
-        if (!Closed.MetadataCalls.empty()) return Closed.MetadataCalls == Children;
-        // The probe/dispatcher source already closed above. Its exact original,
-        // substituted result and noexcept nodes are children of that source,
-        // not additional completed sources. Keep the same 64 owner slots and
-        // re-traverse every real written child on each metadata occurrence.
-        Closed.MetadataCalls = std::move(Children);
-        return true;
-      };
       for (const auto &Argument : Actual->Arguments)
         if (!Argument.Get->getDirectCallee() || !Argument.Unwrap->getDirectCallee() ||
-            !Close(Argument.Get, Argument.Get->getDirectCallee()) ||
-            !Close(Argument.Unwrap, Argument.Unwrap->getDirectCallee())) return false;
+            !closeCompleteCall(Argument.Get, Argument.Get->getDirectCallee()) ||
+            !closeCompleteCall(Argument.Unwrap, Argument.Unwrap->getDirectCallee())) return false;
       if (!Actual->Invoke->getDirectCallee() ||
-          !Close(Actual->Invoke, Actual->Invoke->getDirectCallee())) return false;
+          !closeCompleteCall(Actual->Invoke, Actual->Invoke->getDirectCallee())) return false;
 
-      for (const auto &Probe : CompletedProbes) {
-        const auto &Dispatcher = Probe.Dispatcher;
-        if (!Probe.ResultCall || !Probe.Invoke || !Probe.Function || !Dispatcher.Function ||
-            Probe.ResultCall->getDirectCallee() != Probe.Function ||
-            Probe.Invoke->getDirectCallee() != Dispatcher.Function ||
-            !Close(Probe.ResultCall, Probe.Function) || !Close(Probe.Invoke, Dispatcher.Function)) return false;
-        // These exact concrete declval calls closed their selected and original
-        // signatures above. Their ordinary written children still traverse here.
-        auto CloseDeclval = [&](const CallExpr *Expression) {
-          const auto *Selected = Expression ? Expression->getDirectCallee() : nullptr;
-          const auto Input = DeclvalInputs.find(Expression);
-          if (!Selected || !CompletedDeclvalInputs.count(Expression) || Input == DeclvalInputs.end())
-            return false;
-          const auto Source = describeFunctionalBindDeclvalSource(S, SM, Expression, Input->second, Context);
-          if (!Source || Source->Call != Expression || Source->Function != Selected || !Source->Helper ||
-              !Source->HelperCall || Source->HelperCall->getDirectCallee() != Source->Helper ||
-              !Source->PrimaryHelperCall || Source->PrimaryHelperCall->getDirectCallee()) return false;
-          // One completed declval source binds its selected call and both
-          // exact helper calls. Keep that source in one of the same 64 slots;
-          // reentry still walks every ordinary written type and child.
-          if (Source->HelperCall == Expression || Source->PrimaryHelperCall == Expression ||
-              Source->HelperCall == Source->PrimaryHelperCall || !Close(Expression, Selected)) return false;
-          const auto Found = ClosedCompleteCalls.find(Expression);
-          if (Found == ClosedCompleteCalls.end()) return false;
-          auto &Closed = Found->second;
-          if ((Closed.HelperCall && Closed.HelperCall != Source->HelperCall) ||
-              (Closed.Helper && Closed.Helper != Source->Helper) ||
-              (Closed.PrimaryHelperCall && Closed.PrimaryHelperCall != Source->PrimaryHelperCall)) return false;
-          if (const auto Existing = completedCallFunction(Source->HelperCall))
-            if (*Existing != Source->Helper) return false;
-          if (const auto Existing = completedCallFunction(Source->PrimaryHelperCall))
-            if (*Existing) return false;
-          Closed.HelperCall = Source->HelperCall;
-          Closed.Helper = Source->Helper;
-          Closed.PrimaryHelperCall = Source->PrimaryHelperCall;
-          return true;
-        };
-        for (const auto *Expression : Probe.Declvals)
-          if (!CloseDeclval(Expression)) return false;
-        for (const auto *Expression : Dispatcher.SpecializedDeclvals)
-          if (!CloseDeclval(Expression)) return false;
-        if (std::any_of(Probe.OriginalInvokes.begin(), Probe.OriginalInvokes.end(),
-                [](const auto *Expression) { return !Expression; }) ||
-            !CloseMetadata(Probe.ResultCall, Probe.Function, Probe.OriginalInvokes)) return false;
-        const auto *PrimaryException = dyn_cast_or_null<CXXNoexceptExpr>(Dispatcher.PrimaryException);
-        const auto *PrimaryNoexcept = PrimaryException
-            ? dyn_cast_or_null<CallExpr>(Check.stripped(PrimaryException->getOperand())) : nullptr;
-        const auto *ActualException = dyn_cast_or_null<CXXNoexceptExpr>(Dispatcher.ActualException);
-        const auto *ActualNoexcept = ActualException
-            ? dyn_cast_or_null<CallExpr>(Check.stripped(ActualException->getOperand())) : nullptr;
-        if (!Dispatcher.SignatureCall || !Dispatcher.SpecializedCall) return false;
-        const CallExpr *Expressions[] = {Dispatcher.SignatureCall, Dispatcher.SpecializedCall,
-                                          PrimaryNoexcept, ActualNoexcept};
-        if (!CloseMetadata(Probe.Invoke, Dispatcher.Function, Expressions)) return false;
-      }
+      if (!closeCompleteProbeSources(CompletedProbes)) return false;
       // The exact probe and dispatcher sources closed above in this same graph.
       // Re-entering their written result/noexcept expressions still walks every
       // original and concrete child; these identities grant no runtime body.
@@ -24226,7 +24379,7 @@ public:
         }
         if (Chosen && Matches != 1) return false;
         if (Name == "get" && !LookupUses.emplace(Use, std::move(Declarations)).second) return false;
-        return Close(Expression, nullptr);
+        return closeCompleteCall(Expression, nullptr);
       };
       auto Parameter = [&](const Expr *Expression, const FunctionDecl *Function, unsigned Index) {
         const auto *Use = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Expression));
@@ -24409,7 +24562,7 @@ public:
                         })) return false;
                   }
                   return Apply->hasBody() && Graph.TraverseStmt(const_cast<Stmt *>(Apply->getBody()));
-                }) || !Close(Actual->Apply, Apply)) return false;
+                }) || !closeCompleteCall(Actual->Apply, Apply)) return false;
             for (const auto *Expression : OriginalApplies)
               if (!Lookup(Expression, "__apply_functor", 1, Apply)) return false;
             return functionSource(Actual->SourceCall, Actual->Method, [&] {
@@ -24427,7 +24580,7 @@ public:
           });
         });
       };
-      return Graph.withBindScalarConstraintSource([&] {
+      const bool Closed = Graph.withBindScalarConstraintSource([&] {
         // An empty bound pack has no element projections. Keep the original
         // apply/operator signatures, lookups and complete bodies mandatory.
         if (Actual->Arguments.empty()) return CompleteSources();
@@ -24435,6 +24588,7 @@ public:
           return Graph.TraverseBindTupleElementProjectionSources() && CompleteSources();
         });
       });
+      return Closed && (!AfterComplete || AfterComplete(*Actual)) && Graph.bindSourceComplete();
     });
   }
 
@@ -25085,8 +25239,11 @@ public:
           // the parent's depth/node budget and poisoning it on any failure.
           const unsigned Slot = unsigned(&Argument - Actual->Arguments.data());
           if (!withNestedCallCompleteSource(*Actual, Slot,
-                  [&](const FunctionalBindNestedArgumentSource &Child) {
-                    return Child.Unwrap == Argument.Unwrap && Child.Get == Argument.Get && CompleteUnwrap();
+                  [&](const FunctionalBindNestedArgumentSource &Child, BindSourceProof &Dependency) {
+                    if (Child.Unwrap != Argument.Unwrap || Child.Get != Argument.Get) return false;
+                    return Graph.withBindNestedReturnSources(*Actual, Slot, Child,
+                        [&](TypeLoc Location) { return Dependency.nestedReturnTypeSource(Child, Location); },
+                        CompleteUnwrap);
                   })) return false;
         } else if (!CompleteUnwrap()) return false;
         if (Argument.WrapperCopy &&
