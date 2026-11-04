@@ -21652,6 +21652,45 @@ class BindSourceProof {
       return Graph.TraverseStmt(const_cast<Expr *>(Original->getInit()));
     });
   }
+  const DeclRefExpr *placeholderIndexReference(const TemplateArgumentLoc &Location) {
+    const auto &Value = Location.getArgument();
+    const Expr *Expression = Value.getKind() == TemplateArgument::Expression
+        ? Value.getAsExpr() : Value.getKind() == TemplateArgument::Integral
+        ? Location.getSourceIntegralExpression() : nullptr;
+    bool Cached = false;
+    for (unsigned Depth = 0; Expression && Depth < 64; ++Depth) {
+      if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression)) {
+        Expression = Parentheses->getSubExpr(); continue;
+      }
+      if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression)) {
+        if (Cast->getCastKind() != CK_NoOp && Cast->getCastKind() != CK_LValueToRValue)
+          return nullptr;
+        Expression = Cast->getSubExpr(); continue;
+      }
+      if (const auto *Constant = dyn_cast<ConstantExpr>(Expression)) {
+        const auto *Written = Constant->getSubExpr();
+        // A cache supplies no source permission or index value. Recover only
+        // its original child with the same type, value kind and source range;
+        // the ordinary original/instantiated graph still walks every node.
+        if (Cached || !Written || Constant->isTypeDependent() || Constant->isValueDependent() ||
+            Written->isTypeDependent() || Written->isValueDependent() ||
+            !Context.hasSameType(Constant->getType(), Written->getType()) ||
+            Constant->getValueKind() != Written->getValueKind() ||
+            Constant->getBeginLoc() != Written->getBeginLoc() ||
+            Constant->getEndLoc() != Written->getEndLoc()) return nullptr;
+        Cached = true;
+        Expression = Written; continue;
+      }
+      const auto *Reference = dyn_cast<DeclRefExpr>(Expression);
+      return Reference && Reference->isLValue() && !Reference->getQualifier() &&
+          !Reference->hasExplicitTemplateArgs() && Reference->getType().isConstQualified() &&
+          !Reference->getType().isVolatileQualified() &&
+          Context.hasSameType(Reference->getType().getUnqualifiedType(), Context.getSizeType()) &&
+          Check.location(Reference->getExprLoc(), {"__functional/bind.h"}) ? Reference : nullptr;
+    }
+    return nullptr;
+  }
+
   const DeclRefExpr *unwrapPlaceholderForwardIndexReference(
       const FunctionalBindArgumentSource &Argument) {
     const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
@@ -21718,12 +21757,7 @@ class BindSourceProof {
         Substitution->getAssociatedDecl() != Function || Substitution->getReplacedParameter() != Incoming ||
         Substitution->getPackIndex() ||
         !Context.hasSameType(Substitution->getReplacementType(), Selected[1].getAsType())) return nullptr;
-    const auto Index = Element.getArgLoc(0);
-    const auto &Value = Index.getArgument();
-    const Expr *Expression = Value.getKind() == TemplateArgument::Expression
-        ? Value.getAsExpr() : Value.getKind() == TemplateArgument::Integral
-        ? Index.getSourceIntegralExpression() : nullptr;
-    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Check.core(Expression));
+    const auto *Reference = placeholderIndexReference(Element.getArgLoc(0));
     return Reference && Reference->getDecl() == Argument.PlaceholderIndex &&
         Check.location(Reference->getExprLoc(), {"__functional/bind.h"}) ? Reference : nullptr;
   }
@@ -21880,9 +21914,8 @@ class BindSourceProof {
     const auto Element = Location.getAs<TemplateSpecializationTypeLoc>();
     const auto *TupleElement = Element
         ? dyn_cast_or_null<ClassTemplateDecl>(Element.getTypePtr()->getTemplateName().getAsTemplateDecl()) : nullptr;
-    const auto *ForwardRead = Element && Element.getNumArgs() == 2 &&
-        Element.getArgLoc(0).getArgument().getKind() == TemplateArgument::Expression
-        ? dyn_cast<DeclRefExpr>(Element.getArgLoc(0).getArgument().getAsExpr()) : nullptr;
+    const auto *ForwardRead = Element && Element.getNumArgs() == 2
+        ? placeholderIndexReference(Element.getArgLoc(0)) : nullptr;
     const auto *IncomingType = Element && Element.getNumArgs() == 2 &&
         Element.getArgLoc(1).getArgument().getKind() == TemplateArgument::Type
         ? dyn_cast<TemplateTypeParmType>(Element.getArgLoc(1).getArgument().getAsType().getTypePtr()) : nullptr;
