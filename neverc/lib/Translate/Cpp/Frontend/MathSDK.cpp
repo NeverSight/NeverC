@@ -18809,6 +18809,12 @@ describeFunctionalBindInvokeSignatureSource(
       Input.getNonReferenceType().isRestrictQualified() ||
       !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), Storage.CallableType))
     return std::nullopt;
+  // Forwarding-reference deduction retains T& but deduces T from T&&.
+  // The actual collapsed parameter and expression categories remain checked.
+  auto Deduced = [](QualType Type) {
+    return !Type.isNull() && Type->isRValueReferenceType()
+        ? Type.getNonReferenceType() : Type;
+  };
   auto Collapsed = [&](QualType Type) {
     return Type->isReferenceType() ? Type : Context.getRValueReferenceType(Type);
   };
@@ -18817,7 +18823,7 @@ describeFunctionalBindInvokeSignatureSource(
   for (unsigned I = 0; I < Forwarded.size(); ++I) {
     const auto &Argument = Selected->get(1).pack_elements()[I];
     if (Argument.getKind() != TemplateArgument::Type || Forwarded[I].isNull() ||
-        !Context.hasSameType(Argument.getAsType(), Forwarded[I]) ||
+        !Context.hasSameType(Argument.getAsType(), Deduced(Forwarded[I])) ||
         !Context.hasSameType(Function->getParamDecl(I + 1)->getType(), Collapsed(Forwarded[I])))
       return std::nullopt;
   }
@@ -18904,7 +18910,7 @@ describeFunctionalBindInvokeSignatureSource(
   };
   if (!SpecializedDeclval(SpecializedCall->getCallee(), Input, Declvals[0])) return std::nullopt;
   for (unsigned I = 0; I < Forwarded.size(); ++I)
-    if (!SpecializedDeclval(SpecializedCall->getArg(I), Forwarded[I], Declvals[1])) return std::nullopt;
+    if (!SpecializedDeclval(SpecializedCall->getArg(I), Deduced(Forwarded[I]), Declvals[1])) return std::nullopt;
 
   const auto *ActualReturn = Check.returned(Function);
   const auto *ActualException = functionalBindInvokeExceptionSource(S, SM, Context, Function);
