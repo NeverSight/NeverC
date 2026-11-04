@@ -28685,6 +28685,33 @@ class FunctionLowering {
           reject(L, "bind wrapper capture", "The selected trivial binding copy must be retained.");
         Values[I] = functionalReferenceArgumentAddress(
             dereference(std::move(*Captured[I + 1]), L), *Wrapper, L);
+      } else if (const auto Nested = describeFunctionalBindNaturalLayout(
+                     A.S, A.Sources, Stored->getAsCXXRecordDecl(), A.Context)) {
+        const auto *Copy = TupleSource->Copies[I];
+        const auto *Selected = Copy ? Copy->getConstructor() : nullptr;
+        const auto *Record = Nested->Storage.Record->getCanonicalDecl();
+        const auto Verified = A.VerifiedBindRecords.find(Record);
+        const auto Parameter = Factory->getParamDecl(I + 1)->getType();
+        if (!Element.Field || Element.EmptyBase || !Copy || !Selected || Copy->getNumArgs() != 1 ||
+            !Selected->isCopyOrMoveConstructor() || !Selected->isImplicit() ||
+            !Selected->isDefaulted() || !Selected->isTrivial() || Selected->isDeleted() ||
+            Selected->getParent()->getCanonicalDecl() != Record ||
+            !A.Context.hasSameUnqualifiedType(Copy->getType(), Stored) ||
+            !Parameter->isReferenceType() ||
+            !A.Context.hasSameUnqualifiedType(Parameter.getNonReferenceType(), Stored) ||
+            Verified == A.VerifiedBindRecords.end() ||
+            Verified->second.Storage.Record->getCanonicalDecl() != Record ||
+            Verified->second.PaddedBase != Nested->PaddedBase ||
+            Verified->second.Storage.Callable != Nested->Storage.Callable ||
+            Verified->second.Storage.BoundArguments != Nested->Storage.BoundArguments ||
+            Verified->second.Storage.Arguments.Record != Nested->Storage.Arguments.Record)
+          reject(L, "bind nested capture", "The completed exact child and selected trivial copy are required.");
+        // Match the established completed bind-copy path: read the captured
+        // object after all factory-argument effects, and retain an independent
+        // value before writing a possibly aliased destination. No record cast
+        // or execution of an unchecked SDK constructor is introduced.
+        Values[I] = snapshot(utilityConstructorArgumentValue(
+            std::move(*Captured[I + 1]), Parameter, L), L);
       } else {
         if (TupleSource->Copies[I])
           reject(L, "bind scalar capture", "Only the exact checked scalar initializer is supported.");
