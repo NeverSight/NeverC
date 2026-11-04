@@ -21813,7 +21813,9 @@ class BindSourceProof {
                 ActiveUnwrapSource->CallArguments->getType())) continue;
         for (const auto &Argument : Actual->Arguments) {
           if (Argument.PlaceholderIndex != Variable) continue;
-          if (Argument.PlaceholderRank != Current->PlaceholderRank || !Argument.Unwrap ||
+          // Retained metadata keeps its own positive placeholder rank.
+          // Its exact owner/index constraints below prove that rank freshly.
+          if (!Argument.PlaceholderRank || !Argument.Unwrap ||
               Argument.Unwrap->getDirectCallee() != Function || !Argument.PlaceholderForward ||
               Argument.PlaceholderForward->getDirectCallee() != Forward ||
               !Context.hasSameType(Argument.ForwardedType, Current->ForwardedType)) return false;
