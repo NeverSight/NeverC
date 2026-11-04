@@ -7720,6 +7720,7 @@ class UtilityTupleQueryGraph
   std::function<bool(const CallExpr *)> BindCallSource;
   std::vector<TypeLoc> BindNestedReturnLocations;
   std::function<bool(TypeLoc)> BindNestedReturnSource;
+  const FunctionalBindNestedArgumentSource *BindNestedExpansionSource = nullptr;
   std::function<std::optional<UtilityTupleRecord>(const TemplateUseSource &, const CXXRecordDecl *, unsigned, const TypeAliasDecl *)> BindRetainedOwnedTupleSource;
   std::function<bool(const DeclRefExpr *)> BindVariableSource;
   std::function<bool(const CXXConstructExpr *)> BindConstructionSource;
@@ -11750,6 +11751,55 @@ public:
     });
   }
 
+  bool withBindNestedExpansionSource(const FunctionalBindCallSource &Parent, unsigned Slot,
+      const FunctionalBindNestedArgumentSource &Given, const std::function<bool()> &Proof) {
+    return withBindSourceChild([&] {
+      if (!Proof || BindNestedExpansionSource || !BindNestedReturnSource ||
+          !BindCallMetadata || Parent.SourceCall != BindCallMetadata->SourceCall ||
+          Parent.Storage.Record != BindMetadata->Record) return false;
+      const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
+      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
+      const auto &Child = *Fresh->Arguments[Slot].Nested;
+      if (Child.Root != Given.Root || Child.Parent != Given.Parent || Child.Slot != Given.Slot ||
+          Child.Path != Given.Path || Child.Get != Given.Get || Child.Unwrap != Given.Unwrap ||
+          Child.Expand != Given.Expand || Child.IndexAlias != Given.IndexAlias || Child.Indices != Given.Indices ||
+          Child.IncomingGets != Given.IncomingGets || Child.IncomingForwards != Given.IncomingForwards ||
+          Child.Invocation.SourceCall != Given.Invocation.SourceCall || Child.Invocation.Method != Given.Invocation.Method)
+        return false;
+      const auto *Construction = Child.Indices;
+      const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+      const auto *Record = Constructor ? dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()) : nullptr;
+      const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+      const auto *Pattern = Primary ? Primary->getTemplatedDecl()->getDefinition() : nullptr;
+      const auto *Decay = dyn_cast<ImplicitCastExpr>(Child.Invocation.SourceCall->getCallee());
+      const auto *Reference = Decay && Decay->getCastKind() == CK_FunctionToPointerDecay
+          ? dyn_cast<DeclRefExpr>(Decay->getSubExpr()) : nullptr;
+      const auto *Pointer = Decay ? Decay->getType()->getAs<PointerType>() : nullptr;
+      if (!Constructor || !Record || !Primary || !Pattern || !Record->getIdentifier() ||
+          Record->getName() != "__tuple_indices" || Record->getSpecializationKind() != TSK_ImplicitInstantiation ||
+          Record->getNumBases() || !Record->field_empty() || Pattern->getNumBases() || !Pattern->field_empty() ||
+          !family(Record) || !family(Primary) || !family(Pattern) || !family(Constructor) ||
+          !Reference || !Pointer || !Decay->isPRValue() || !Reference->isLValue() ||
+          Reference->getDecl() != Child.Invocation.Method || Reference->hasExplicitTemplateArgs() ||
+          !Context.hasSameType(Pointer->getPointeeType(), Child.Invocation.Method->getType()) ||
+          !Context.hasSameType(Reference->getType(), Child.Invocation.Method->getType()) ||
+          !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+      std::vector<const CXXRecordDecl *> Inserted;
+      for (const auto *Declaration : {static_cast<const CXXRecordDecl *>(Record), Pattern}) {
+        if (!step()) return false;
+        const auto *Canonical = Declaration->getCanonicalDecl();
+        if (BindMetadataRecords.insert(Canonical).second) Inserted.push_back(Canonical);
+      }
+      auto RestoreRecords = llvm::make_scope_exit([&] {
+        for (const auto *Declaration : Inserted) BindMetadataRecords.erase(Declaration);
+      });
+      if (!bindFunctionalBindSpecialMember(Constructor, true)) return false;
+      BindNestedExpansionSource = &Child;
+      auto RestoreChild = llvm::make_scope_exit([&] { BindNestedExpansionSource = nullptr; });
+      return Proof() && bindSourceComplete();
+    });
+  }
+
   bool bindFunctionalBindRetainedTupleSource(
       std::function<std::optional<UtilityTupleRecord>(const TemplateUseSource &, const CXXRecordDecl *, unsigned, const TypeAliasDecl *)> Source) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Source || BindRetainedOwnedTupleSource) return false;
@@ -15008,6 +15058,20 @@ public:
     return value(E->getMemberDecl());
   }
   bool TraverseCXXOperatorCallExpr(CXXOperatorCallExpr *E, DataRecursionQueue *Queue = nullptr) {
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedExpansionSource &&
+        E == BindNestedExpansionSource->Invocation.SourceCall) {
+      const auto &Child = *BindNestedExpansionSource;
+      // The live child already closed this exact method's defaults, selected
+      // source and original body. Charge its callee and walk every real input.
+      if (!step() || !VisitExpr(E) || !step() || !step() || E->getOperator() != OO_Call ||
+          E->getDirectCallee() != Child.Invocation.Method || E->getNumArgs() != Child.IncomingForwards.size() + 1 ||
+          Child.IncomingForwards.size() > 2 || !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h"))
+        return false;
+      for (unsigned I = 0; I < Child.IncomingForwards.size(); ++I)
+        if (E->getArg(I + 1)->IgnoreParenImpCasts() != Child.IncomingForwards[I]) return false;
+      for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return false;
+      return true;
+    }
     if (Mode == UtilityTupleQueryMode::NotFnSignature && notFnQueryTargetMethod()) {
       auto Found = NotFnOwnedInvokeQueries.find(E);
       if (Found == NotFnOwnedInvokeQueries.end() &&
@@ -15233,6 +15297,7 @@ public:
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindCallMetadata &&
         (E == BindCallMetadata->Indices ||
+         (BindNestedExpansionSource && E == BindNestedExpansionSource->Indices) ||
          (BindCallMetadata->CallForwards.empty() && E == BindCallMetadata->CallArguments))) {
       // Auxiliary source already closed these two exact selected operations.
       // Every ordinary written child still traverses after this visit.
@@ -19596,7 +19661,18 @@ describeFunctionalBindNestedInvokeSignatureSource(
     SpecializedDeclvals.push_back(Call);
     return true;
   };
-  const auto *SelectedReference = dyn_cast_or_null<DeclRefExpr>(Check.stripped(SpecializedCall->getCallee()));
+  auto MethodReference = [&](const Expr *Expression) -> const DeclRefExpr * {
+    const auto *Core = Check.stripped(Expression);
+    if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Core)) return Reference;
+    const auto *Decay = dyn_cast_or_null<ImplicitCastExpr>(Core);
+    const auto *Pointer = Decay ? Decay->getType()->getAs<PointerType>() : nullptr;
+    const auto *Reference = Decay ? dyn_cast<DeclRefExpr>(Decay->getSubExpr()) : nullptr;
+    if (!Decay || Decay->getCastKind() != CK_FunctionToPointerDecay || !Decay->isPRValue() ||
+        !Pointer || !Reference || !Reference->isLValue() ||
+        !Context.hasSameType(Pointer->getPointeeType(), SelectedMethod->getType())) return nullptr;
+    return Reference;
+  };
+  const auto *SelectedReference = MethodReference(SpecializedCall->getCallee());
   if (!SelectedReference || SelectedReference->getDecl() != SelectedMethod ||
       SelectedReference->hasExplicitTemplateArgs() ||
       !Context.hasSameType(SelectedReference->getType(), SelectedMethod->getType()) ||
@@ -19633,7 +19709,7 @@ describeFunctionalBindNestedInvokeSignatureSource(
           Check.location(Written->getTypeInfoAsWritten()->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) &&
           Check.location(Written->getTypeInfoAsWritten()->getTypeLoc().getEndLoc(), {"__type_traits/invoke.h"});
     };
-    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Call->getCallee()));
+    const auto *Reference = MethodReference(Call->getCallee());
     if (!Reference || Reference->getDecl() != SelectedMethod || Reference->hasExplicitTemplateArgs() ||
         !Context.hasSameType(Reference->getType(), SelectedMethod->getType()) ||
         !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"}) ||
@@ -20743,6 +20819,14 @@ class BindSourceProof {
   const FunctionalBindCallSource *ActiveRuntimeInvoke = nullptr;
   const CallExpr *ActiveRuntimeOriginalInvoke = nullptr;
   const FunctionalBindCallSource *ActiveUnwrapSource = nullptr;
+  const FunctionalBindNestedArgumentSource *ActiveNestedIncomingSource = nullptr;
+  struct NestedExpansionSources {
+    const FunctionalBindNestedArgumentSource *Child;
+    const CallExpr *OriginalCall, *OriginalGet, *OriginalForward;
+    const CallExpr *OriginalUnwrapExpand = nullptr;
+    bool HelperComplete = false;
+  };
+  NestedExpansionSources *ActiveNestedExpansionProof = nullptr;
   std::set<const VarDecl *> ActivePlaceholderIndexReads;
   struct PlaceholderBodySources {
     const FunctionalBindArgumentSource *Argument;
@@ -23526,6 +23610,36 @@ class BindSourceProof {
       const auto *Placeholder = ActivePlaceholderBody && ActivePlaceholderBody->IndexComplete &&
           ActivePlaceholderBody->Argument && ActivePlaceholderBody->Argument->PlaceholderForward == Call
           ? ActivePlaceholderBody->Argument : nullptr;
+      const FunctionalBindNestedArgumentSource *Nested = nullptr;
+      unsigned NestedIndex = 0;
+      if (ActiveNestedIncomingSource) {
+        for (unsigned I = 0; I < ActiveNestedIncomingSource->IncomingForwards.size(); ++I)
+          if (ActiveNestedIncomingSource->IncomingForwards[I] == Call) {
+            if (Nested) return false;
+            Nested = ActiveNestedIncomingSource;
+            NestedIndex = I;
+          }
+      }
+      if (Nested) {
+        const auto *Method = Nested->Invocation.Method;
+        const auto *Get = NestedIndex < Nested->IncomingGets.size()
+            ? Nested->IncomingGets[NestedIndex] : nullptr;
+        const auto Closed = CompletedPlaceholderGetSources.find(Get);
+        if (!ActiveUnwrapSource || Nested->Root != ActiveUnwrapSource->OwnedRoot ||
+            Nested->Parent != ActiveUnwrapSource->SourceCall ||
+            Nested->Slot >= ActiveUnwrapSource->Arguments.size() ||
+            !ActiveUnwrapSource->Arguments[Nested->Slot].Nested ||
+            ActiveUnwrapSource->Arguments[Nested->Slot].Nested->Path != Nested->Path ||
+            !Method || NestedIndex >= Method->getNumParams() || !Get || !Function ||
+            Call->getNumArgs() != 1 || Check.core(Call->getArg(0)) != Get ||
+            Closed == CompletedPlaceholderGetSources.end() || Closed->second != Get->getDirectCallee() ||
+            !Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(Arguments->get(0).getAsType(), Method->getParamDecl(NestedIndex)->getType()) ||
+            !Context.hasSameType(Function->getReturnType(), Method->getParamDecl(NestedIndex)->getType()) ||
+            Function->getNumParams() != 1 || !Context.hasSameType(Function->getParamDecl(0)->getType(),
+                Context.getLValueReferenceType(Method->getParamDecl(NestedIndex)->getType().getNonReferenceType())))
+          return false;
+      }
       if (Placeholder) {
         const auto Closed = CompletedPlaceholderGetSources.find(Placeholder->PlaceholderGet);
         if (!ActiveUnwrapSource || !Placeholder->PlaceholderRank || !Placeholder->PlaceholderGet ||
@@ -23538,7 +23652,7 @@ class BindSourceProof {
                 Context.getLValueReferenceType(Placeholder->ForwardedType.getNonReferenceType())) ||
             !unwrapPlaceholderForwardIndexReference(*Placeholder)) return false;
       }
-      if (!Call || (!Placeholder && (!FactoryBuiltinForwards.count(Call) || !Parameter)) || !Function || !Pattern ||
+      if (!Call || (!Placeholder && !Nested && (!FactoryBuiltinForwards.count(Call) || !Parameter)) || !Function || !Pattern ||
           !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BIforward ||
           Function->getBuiltinID() != Builtin::BIforward || !Cast || Cast->getCastKind() != CK_BuiltinFnToFnPtr ||
           !Cast->getSubExpr()->getType()->isSpecificBuiltinType(BuiltinType::BuiltinFn) ||
@@ -23553,7 +23667,7 @@ class BindSourceProof {
           !Check.family(Primary, {"__utility/forward.h"}) ||
           !Check.family(Pattern, {"__utility/forward.h"}) ||
           !Check.location(Call->getExprLoc(), {"__functional/bind.h", "tuple"}) ||
-          (!Placeholder && !utilityTupleCarrierParameter(S, SM, Context, Call, Parameter))) return false;
+          (!Placeholder && !Nested && !utilityTupleCarrierParameter(S, SM, Context, Call, Parameter))) return false;
       // The real builtin call has no selected-call callback. Its actual
       // successful Function deduction packet still has this exact location,
       // specialization, primary, arguments and all retained source children.
@@ -23892,6 +24006,24 @@ class BindSourceProof {
   bool callSource(const CallExpr *Call) {
     const auto *Function = Call ? Call->getDirectCallee() : nullptr;
     if (const auto Closed = completedCallFunction(Call)) return Function == *Closed;
+    if (ActiveNestedExpansionProof) {
+      const auto &Source = *ActiveNestedExpansionProof;
+      if (Call == Source.Child->Expand)
+        return Source.HelperComplete && Function == Source.Child->Expand->getDirectCallee();
+      if (Call == Source.OriginalUnwrapExpand) return Source.HelperComplete && !Function;
+      if (Call == Source.OriginalCall || Call == Source.OriginalGet || Call == Source.OriginalForward)
+        return !Function;
+    }
+    if (ActiveNestedIncomingSource) {
+      const auto &Child = *ActiveNestedIncomingSource;
+      for (unsigned I = 0; I < Child.IncomingGets.size(); ++I) {
+        if (Call != Child.IncomingGets[I]) continue;
+        const auto Closed = CompletedPlaceholderGetSources.find(Call);
+        return Closed != CompletedPlaceholderGetSources.end() && Function == Closed->second;
+      }
+      for (const auto *Forward : Child.IncomingForwards)
+        if (Call == Forward) return Function && CompletedBuiltinForwards.count(Call);
+    }
     if (ActivePlaceholderBody && ActivePlaceholderBody->IndexComplete && ActivePlaceholderBody->Argument) {
       const auto &Body = *ActivePlaceholderBody;
       const auto &Argument = *Body.Argument;
@@ -25143,6 +25275,170 @@ public:
       });
     });
   }
+  bool completeNestedExpansionSource(const FunctionalBindCallSource &Parent,
+      const FunctionalBindNestedArgumentSource &Child, BindSourceProof &Dependency,
+      const std::function<bool()> &CompleteUnwrap) {
+    return Graph.withBindSourceChild([&] {
+      if (!CompleteUnwrap || ActiveNestedExpansionProof || !ActiveNestedIncomingSource ||
+          ActiveNestedIncomingSource->Root != Child.Root || ActiveNestedIncomingSource->Path != Child.Path ||
+          !Dependency.ActiveCompleteCall || Dependency.ActiveCompleteCall->SourceCall != Child.Invocation.SourceCall ||
+          Dependency.ActiveCompleteCall->Method != Child.Invocation.Method ||
+          Dependency.ActiveCompleteCall->OwnedRoot != Child.Root || Dependency.ActiveCompleteCall->OwnedPath != Child.Path ||
+          !Dependency.Graph.bindSourceComplete()) return false;
+      const auto ClosedApply = Dependency.completedCallFunction(Child.Invocation.Apply);
+      if (!ClosedApply || *ClosedApply != Child.Invocation.Apply->getDirectCallee()) return false;
+      const auto *Function = Child.Expand ? Child.Expand->getDirectCallee() : nullptr;
+      const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+      const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+      const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+      const auto *Input = Parameters && Parameters->size() == 3
+          ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+      const auto *Incoming = Parameters && Parameters->size() == 3
+          ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+      const auto *Indices = Parameters && Parameters->size() == 3
+          ? dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(2)) : nullptr;
+      const auto *Decay = Child.Expand ? dyn_cast<ImplicitCastExpr>(Child.Expand->getCallee()) : nullptr;
+      const auto *Reference = Decay && Decay->getCastKind() == CK_FunctionToPointerDecay
+          ? dyn_cast<DeclRefExpr>(Decay->getSubExpr()) : nullptr;
+      const auto *Pointer = Decay ? Decay->getType()->getAs<PointerType>() : nullptr;
+      if (!Function || !Primary || !Pattern || isa<CXXMethodDecl>(Function) ||
+          Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+          Primary->getInstantiatedFromMemberTemplate() || !family(Function) || !family(Primary) || !family(Pattern) ||
+          !Input || Input->getIndex() || Input->isParameterPack() || Input->hasDefaultArgument() || !family(Input) ||
+          !Incoming || Incoming->getIndex() != 1 || !Incoming->isParameterPack() || Incoming->hasDefaultArgument() ||
+          !family(Incoming) || !Indices || Indices->getIndex() != 2 || !Indices->isParameterPack() ||
+          Indices->hasDefaultArgument() || !Context.hasSameType(Indices->getType(), Context.getSizeType()) || !family(Indices) ||
+          !Reference || !Pointer || !Decay->isPRValue() || !Reference->isLValue() ||
+          Reference->getDecl() != Function || Reference->hasExplicitTemplateArgs() ||
+          !Context.hasSameType(Pointer->getPointeeType(), Function->getType()) ||
+          !Context.hasSameType(Reference->getType(), Function->getType()) ||
+          !Check.location(Reference->getExprLoc(), {"__functional/bind.h"})) return false;
+      const auto *Definition = Pattern->getDefinition();
+      const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+      const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+      const auto *OriginalCall = Return ? dyn_cast_or_null<CallExpr>(Check.core(Return->getRetValue())) : nullptr;
+      const auto *Object = OriginalCall ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(OriginalCall->getCallee())) : nullptr;
+      const auto *Pack = OriginalCall && OriginalCall->getNumArgs() == 1
+          ? dyn_cast<PackExpansionExpr>(OriginalCall->getArg(0)) : nullptr;
+      const auto *Forward = Pack ? dyn_cast_or_null<CallExpr>(Check.core(Pack->getPattern())) : nullptr;
+      const auto *Get = Forward && Forward->getNumArgs() == 1
+          ? dyn_cast_or_null<CallExpr>(Check.core(Forward->getArg(0))) : nullptr;
+      const auto *ForwardLookup = Forward
+          ? dyn_cast<UnresolvedLookupExpr>(Forward->getCallee()->IgnoreParenImpCasts()) : nullptr;
+      const auto *GetLookup = Get ? dyn_cast<UnresolvedLookupExpr>(Get->getCallee()->IgnoreParenImpCasts()) : nullptr;
+      const auto *Argument = Get && Get->getNumArgs() == 1
+          ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(Get->getArg(0))) : nullptr;
+      auto Lookup = [&](const UnresolvedLookupExpr *Use, llvm::StringRef Name, unsigned Count) {
+        return Use && !Use->requiresADL() && Use->hasExplicitTemplateArgs() && Use->getNumTemplateArgs() == 1 &&
+            Use->getNumDecls() == Count && Use->getName().getNameKind() == DeclarationName::Identifier &&
+            Use->getName().getAsIdentifierInfo()->getName() == Name &&
+            Check.location(Use->getExprLoc(), {"__functional/bind.h"});
+      };
+      if (!Definition || Definition->getNumParams() != 3 || !OriginalCall || OriginalCall->getDirectCallee() ||
+          !OriginalCall->isTypeDependent() || !Object || Object->getDecl() != Definition->getParamDecl(0) ||
+          !Pack || Pack->getNumExpansions() || !Forward || Forward->getDirectCallee() ||
+          !Get || Get->getDirectCallee() || !Argument || Argument->getDecl() != Definition->getParamDecl(1) ||
+          !Lookup(ForwardLookup, "forward", 2) || !Lookup(GetLookup, "get", 16)) return false;
+      const auto &ForwardArgument = ForwardLookup->getTemplateArgs()[0].getArgument();
+      const auto &GetArgument = GetLookup->getTemplateArgs()[0].getArgument();
+      const auto *ForwardType = ForwardArgument.getKind() == TemplateArgument::Type
+          ? dyn_cast<TemplateTypeParmType>(ForwardArgument.getAsType().getTypePtr()) : nullptr;
+      const auto *Index = GetArgument.getKind() == TemplateArgument::Expression
+          ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(GetArgument.getAsExpr())) : nullptr;
+      if (!ForwardType || ForwardType->getDecl() != Incoming || !Index || Index->getDecl() != Indices)
+        return false;
+      for (const auto *Declaration : ForwardLookup->decls()) {
+        const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+        const auto *Original = Template ? Template->getTemplatedDecl() : nullptr;
+        if (!Original || !Original->getIdentifier() || Original->getName() != "forward" ||
+            !Check.family(Template, {"__utility/forward.h"}) || !Check.family(Original, {"__utility/forward.h"}))
+          return false;
+      }
+      std::vector<const NamedDecl *> GetDeclarations;
+      for (const auto *Declaration : GetLookup->decls()) {
+        const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+        const auto *Original = Template ? Template->getTemplatedDecl() : nullptr;
+        if (!Original || !Original->getIdentifier() || Original->getName() != "get" ||
+            !approvedStandardSDKDeclaration(S, SM, Declaration)) return false;
+        GetDeclarations.push_back(Declaration);
+      }
+      for (unsigned I = 0; I < Child.IncomingGets.size(); ++I) {
+        const auto *Getter = Child.IncomingGets[I]->getDirectCallee();
+        const auto Closed = CompletedPlaceholderGetSources.find(Child.IncomingGets[I]);
+        if (!Getter || Closed == CompletedPlaceholderGetSources.end() || Closed->second != Getter ||
+            std::find(GetDeclarations.begin(), GetDeclarations.end(), Getter->getPrimaryTemplate()) == GetDeclarations.end() ||
+            !CompletedBuiltinForwards.count(Child.IncomingForwards[I])) return false;
+      }
+      NestedExpansionSources Source{&Child, OriginalCall, Get, Forward};
+      ActiveNestedExpansionProof = &Source;
+      auto Restore = llvm::make_scope_exit([&] { ActiveNestedExpansionProof = nullptr; });
+      auto Signature = [&](const FunctionDecl *Declaration, bool RequireBody) {
+        const auto *Prototype = Declaration ? Declaration->getType()->getAs<FunctionProtoType>() : nullptr;
+        if (!Declaration || !Declaration->getIdentifier() || Declaration->getName() != "__mu_expand" ||
+            Declaration->getNumParams() != 3 || Declaration->isVariadic() || Declaration->isInvalidDecl() ||
+            Declaration->isDeleted() || !Declaration->isInlined() || !Prototype ||
+            Prototype->getExceptionSpecType() != EST_None || !Declaration->getTypeSourceInfo() ||
+            !family(Declaration) || !Graph.function(Declaration) ||
+            !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+        for (const auto *Parameter : Declaration->parameters())
+          if (Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() || !family(Parameter) ||
+              !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+        const auto *ActualBody = dyn_cast_or_null<CompoundStmt>(Declaration->getBody());
+        if (!ActualBody) return !RequireBody;
+        const auto *ActualReturn = ActualBody->size() == 1 ? dyn_cast<ReturnStmt>(ActualBody->body_front()) : nullptr;
+        const auto *Expression = ActualReturn ? dyn_cast_or_null<CallExpr>(Check.core(ActualReturn->getRetValue())) : nullptr;
+        if (!Expression || Expression != (Declaration == Function ? Child.Invocation.SourceCall : OriginalCall))
+          return false;
+        return Graph.TraverseStmt(const_cast<CompoundStmt *>(ActualBody));
+      };
+      return Graph.withBindNestedExpansionSource(Parent, Child.Slot, Child, [&] {
+        std::map<const UnresolvedLookupExpr *, std::vector<const NamedDecl *>> Lookups{{GetLookup, GetDeclarations}};
+        if (!Graph.withBindSourceLookupUses(Lookups, [&] {
+              return functionSource(Child.Expand, Function, [&] {
+                for (const auto *Declaration : Function->redecls())
+                  if (!Signature(Declaration, Declaration == Function)) return false;
+                return Graph.withBindTemplateParameters(Primary, Parameters, [&] {
+                  for (const auto *Declaration : Pattern->redecls())
+                    if (!Signature(Declaration, Declaration == Pattern)) return false;
+                  return true;
+                });
+              });
+            }) || !Graph.bindSourceComplete()) return false;
+        Source.HelperComplete = true;
+        return CompleteUnwrap() && Graph.bindSourceComplete();
+      });
+    });
+  }
+
+  bool withNestedIncomingForwardSources(const FunctionalBindCallSource &Parent,
+      const FunctionalBindNestedArgumentSource &Child, const std::function<bool()> &Proof) {
+    return Graph.withBindSourceChild([&] {
+      if (!Proof || ActiveNestedIncomingSource || !ActiveUnwrapSource ||
+          Parent.SourceCall != ActiveUnwrapSource->SourceCall || Parent.Storage.Record != Storage.Record)
+        return false;
+      const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
+      if (!Fresh || Child.Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Child.Slot].Nested)
+        return false;
+      const auto &Actual = *Fresh->Arguments[Child.Slot].Nested;
+      if (Actual.Root != Child.Root || Actual.Parent != Child.Parent || Actual.Path != Child.Path ||
+          Actual.Get != Child.Get || Actual.Unwrap != Child.Unwrap || Actual.Expand != Child.Expand ||
+          Actual.Invocation.SourceCall != Child.Invocation.SourceCall || Actual.Invocation.Method != Child.Invocation.Method ||
+          Actual.IncomingGets != Child.IncomingGets || Actual.IncomingForwards != Child.IncomingForwards ||
+          Child.IncomingGets.size() != Child.IncomingForwards.size() || Child.IncomingGets.size() > 2 ||
+          !Child.Invocation.Method || Child.Invocation.Method->getNumParams() != Child.IncomingGets.size())
+        return false;
+      for (const auto *Get : Child.IncomingGets) {
+        const auto Closed = CompletedPlaceholderGetSources.find(Get);
+        if (!Get || !Get->getDirectCallee() || Closed == CompletedPlaceholderGetSources.end() ||
+            Closed->second != Get->getDirectCallee()) return false;
+      }
+      ActiveNestedIncomingSource = &Child;
+      auto Restore = llvm::make_scope_exit([&] { ActiveNestedIncomingSource = nullptr; });
+      for (const auto *Forward : Child.IncomingForwards)
+        if (!builtinForwardSource(Forward, nullptr)) return false;
+      return Proof() && Graph.bindSourceComplete();
+    });
+  }
   bool callUnwrapSource(const FunctionalBindCallSource &Call) {
     if (!Ready || Call.Storage.Record != Storage.Record || !Call.SourceCall ||
         (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) || ActiveUnwrapSource ||
@@ -25366,9 +25662,16 @@ public:
                   *Lookup->decls_begin() != ExpansionTemplate ||
                   !Indices || Indices->getNumArgs() || !Index || Index->getDecl() != Alias) return false;
             }
-            // Shape is not a source certificate. Consume the real local alias,
-            // sizeof-pack/index source, selected helper and every ordinary
-            // child in the unchanged source graph; missing queries still fail.
+            // The independently completed helper is bound only to this
+            // freshly described child. Its real local alias, sizeof-pack and
+            // index construction still traverse in this same source graph.
+            if (!ActiveNestedExpansionProof || !ActiveNestedExpansionProof->HelperComplete ||
+                ActiveNestedExpansionProof->Child->Unwrap != Argument.Unwrap ||
+                ActiveNestedExpansionProof->OriginalUnwrapExpand) return false;
+            if (Declaration != Function) ActiveNestedExpansionProof->OriginalUnwrapExpand = Expand;
+            auto RestoreExpansion = llvm::make_scope_exit([&] {
+              ActiveNestedExpansionProof->OriginalUnwrapExpand = nullptr;
+            });
             return Graph.TraverseStmt(const_cast<CompoundStmt *>(Body));
           }
           const auto *Return = Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
@@ -25400,9 +25703,11 @@ public:
           if (!withNestedCallCompleteSource(*Actual, Slot,
                   [&](const FunctionalBindNestedArgumentSource &Child, BindSourceProof &Dependency) {
                     if (Child.Unwrap != Argument.Unwrap || Child.Get != Argument.Get) return false;
-                    return Graph.withBindNestedReturnSources(*Actual, Slot, Child,
-                        [&](TypeLoc Location) { return Dependency.nestedReturnTypeSource(Child, Location); },
-                        CompleteUnwrap);
+                    return withNestedIncomingForwardSources(*Actual, Child, [&] {
+                      return Graph.withBindNestedReturnSources(*Actual, Slot, Child,
+                          [&](TypeLoc Location) { return Dependency.nestedReturnTypeSource(Child, Location); },
+                          [&] { return completeNestedExpansionSource(*Actual, Child, Dependency, CompleteUnwrap); });
+                    });
                   })) return false;
         } else if (!CompleteUnwrap()) return false;
         if (Argument.WrapperCopy &&
