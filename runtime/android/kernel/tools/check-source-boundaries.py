@@ -19,6 +19,10 @@ TEST_ONLY_RUNTIME_FUNCTIONS = {
     # post-load patch_vermagic API was removed.
     "neverc_krt_format_vermagic_from_banner",
 }
+COMPILER_ENTRY_FUNCTIONS = {
+    # Called by the compiler's optional module-entry hook, not runtime C.
+    "neverc_krt_prepare_current",
+}
 CALLER_SIDE_PUBLIC_FUNCTIONS = {
     "nvk_cpu.h": {
         "_neverc_krt_cpu_idx_safe",
@@ -328,6 +332,7 @@ def check_function_interfaces(source_paths):
             elif (declared_internal and not declared_public
                   and not declared_test
                   and name not in TEST_ONLY_RUNTIME_FUNCTIONS
+                  and name not in COMPILER_ENTRY_FUNCTIONS
                   and not referenced_elsewhere):
                 violations.append(
                     (

@@ -1,6 +1,7 @@
 #ifndef NEVERC_FOUNDATION_BUILTINNVKKERNELNAMES_H
 #define NEVERC_FOUNDATION_BUILTINNVKKERNELNAMES_H
 
+#include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "neverc/Foundation/Builtin/BuiltinNvkKernel.h"
 
 #include "llvm/IR/Module.h"
@@ -10,10 +11,14 @@ namespace BuiltinNvkKernelNames {
 
 /// Returns true if \p M references any NVK kernel runtime symbol.
 inline bool hasNvkKernelRuntimeSymbols(const llvm::Module &M) {
-  for (const llvm::GlobalValue &GV : M.global_values())
+  for (const llvm::GlobalValue &GV : M.global_values()) {
+    if (GV.hasExternalWeakLinkage() &&
+        GV.getName() == AndroidKernelRuntimeContract::PrepareCurrentSymbol)
+      continue;
     if (GV.isDeclaration() && !GV.use_empty() &&
         BuiltinNvkKernel::hasEmbeddedSymbol(GV.getName()))
       return true;
+  }
 
   return false;
 }

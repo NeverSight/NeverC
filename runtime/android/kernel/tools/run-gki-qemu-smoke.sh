@@ -22,6 +22,7 @@ Options:
   --timeout-bin BIN  GNU timeout executable (default: timeout)
   --timeout SECONDS  boot deadline (default: 120)
   --runtime-layouts  mount procfs and require private-layout runtime checks
+  --current-irq      require the first-current-in-hardirq regression marker
   -h, --help         show this help
 EOF
 }
@@ -40,6 +41,7 @@ PYTHON=python3
 TIMEOUT_BIN=timeout
 TIMEOUT_SECONDS=120
 RUNTIME_LAYOUTS=false
+CURRENT_IRQ=false
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -52,6 +54,7 @@ while [ "$#" -gt 0 ]; do
 	--timeout-bin) [ "$#" -ge 2 ] || die "--timeout-bin needs a binary"; TIMEOUT_BIN=$2; shift 2 ;;
 	--timeout) [ "$#" -ge 2 ] || die "--timeout needs seconds"; TIMEOUT_SECONDS=$2; shift 2 ;;
 	--runtime-layouts) RUNTIME_LAYOUTS=true; shift ;;
+	--current-irq) CURRENT_IRQ=true; shift ;;
 	-h | --help) usage; exit 0 ;;
 	*) die "unknown argument: $1" ;;
 	esac
@@ -171,6 +174,9 @@ if [ "$RUNTIME_LAYOUTS" = true ] && ! LC_ALL=C awk '
     END { exit(found ? 0 : 1) }
   ' "$QEMU_LOG"; then
 	fail_with_log "missing kernel private-layout success marker"
+fi
+if [ "$CURRENT_IRQ" = true ] && ! has_exact_guest_marker NEVERC_GKI_CURRENT_IRQ_PASS; then
+	fail_with_log "missing kernel current IRQ success marker"
 fi
 
 printf '[host] PASS: smoke module loaded and unloaded; log=%s\n' "$QEMU_LOG"

@@ -1,5 +1,6 @@
 #include "neverc/Emit/NvkKernelRuntimeLinker.h"
 #include "Backend/Runtime/RuntimeLinkerUtils.h"
+#include "Core/AndroidKernelEmitter.h"
 #include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "neverc/Foundation/Builtin/BuiltinNvkKernel.h"
 #include "neverc/Foundation/Builtin/BuiltinNvkKernelNames.h"
@@ -63,6 +64,9 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   for (Function &Decl : M) {
     if (!Decl.isDeclaration() || Decl.use_empty())
       continue;
+    if (Decl.hasExternalWeakLinkage() &&
+        Decl.getName() == AndroidKernelRuntimeContract::PrepareCurrentSymbol)
+      continue;
     if (auto *F = NvkMod->getFunction(Decl.getName()))
       EnqueueFn(F);
   }
@@ -73,14 +77,28 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
       EnqueueGV(Def);
   }
 
-  while (!Worklist.empty()) {
-    GlobalValue *GV = Worklist.pop_back_val();
-    if (auto *F = dyn_cast<Function>(GV)) {
-      forEachGlobalReferencedBy(*F, ProcessRef);
-    } else if (auto *GVar = dyn_cast<GlobalVariable>(GV)) {
-      if (GVar->hasInitializer())
-        forEachGlobalInConstant(GVar->getInitializer(), ProcessRef);
+  auto DrainWorklist = [&] {
+    while (!Worklist.empty()) {
+      GlobalValue *GV = Worklist.pop_back_val();
+      if (auto *F = dyn_cast<Function>(GV)) {
+        forEachGlobalReferencedBy(*F, ProcessRef);
+      } else if (auto *GVar = dyn_cast<GlobalVariable>(GV)) {
+        if (GVar->hasInitializer())
+          forEachGlobalInConstant(GVar->getInitializer(), ProcessRef);
+      }
     }
+  };
+  DrainWorklist();
+
+  const auto Profile = Emit::AndroidKernel::getProfile(M);
+  const bool NeedsCurrent = Profile &&
+      AndroidKernelRuntimeContract::needsCurrentInitialization(*Profile) &&
+      Needed.contains(
+          NvkMod->getFunction(AndroidKernelRuntimeContract::CurrentTaskSymbol));
+  if (NeedsCurrent) {
+    EnqueueFn(NvkMod->getFunction(
+        AndroidKernelRuntimeContract::PrepareCurrentSymbol));
+    DrainWorklist();
   }
 
   for (Function &F : make_early_inc_range(*NvkMod)) {
@@ -96,6 +114,14 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
 
   tagRuntimeDefinitions(*NvkMod, NvkRuntimeMetadata);
   linkModuleOrFail(M, std::move(NvkMod), "nvk kernel runtime");
+
+  // The entry point can live in another TU. Keep this hook through frontend
+  // optimization and both native and LTO links even without a local caller.
+  Function *PrepareCurrent = NeedsCurrent
+      ? M.getFunction(AndroidKernelRuntimeContract::PrepareCurrentSymbol)
+      : nullptr;
+  if (PrepareCurrent)
+    appendToCompilerUsed(M, {PrepareCurrent});
 
   auto IsNvkFn = [](const Function &F) {
     return hasRuntimeDefinitionTag(F, NvkRuntimeMetadata);
@@ -167,6 +193,7 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
       Enqueue(&GV);
   for (GlobalAlias &GA : M.aliases())
     Enqueue(&GA);
+  Enqueue(PrepareCurrent);
 
   while (!ReachWorklist.empty()) {
     GlobalValue *GV = ReachWorklist.pop_back_val();
@@ -189,6 +216,8 @@ NvkKernelRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
   }
 
   removeFromUsedLists(M, [&](Constant *C) {
+    if (PrepareCurrent && C->stripPointerCasts() == PrepareCurrent)
+      return false;
     if (auto *F = dyn_cast<Function>(C->stripPointerCasts()))
       return IsNvkFn(*F);
     if (auto *GVar = dyn_cast<GlobalVariable>(C->stripPointerCasts()))

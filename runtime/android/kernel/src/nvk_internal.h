@@ -15,6 +15,9 @@
 #include <linux/sched.h>
 #include <nvk_interpose_advanced.h>
 
+/* Compiler-retained optional module entry hook for current/CPU/preempt users. */
+int neverc_krt_prepare_current(int kernel_profile);
+
 /* ---- ARM64 instruction constants (used by nvk_interpose.c, nvk_anti.c) ---- */
 
 #define NEVERC_KRT_A64_NOP       0xD503201FU

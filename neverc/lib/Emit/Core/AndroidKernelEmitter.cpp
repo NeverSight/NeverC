@@ -1,18 +1,22 @@
 #include "Core/AndroidKernelEmitter.h"
 #include "neverc/Foundation/AndroidKernelProfileContract.h"
 #include "neverc/Foundation/AndroidKernelRuntimeContract.h"
+#include "neverc/Foundation/Builtin/BuiltinNvkKernel.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include <cstdint>
@@ -226,6 +230,99 @@ void materializeNativeProfileContract(llvm::Module &M, uint32_t Profile,
     IsCompilerUsed |= Value == Record;
   if (!IsCompilerUsed)
     llvm::appendToCompilerUsed(M, {Record});
+}
+
+void prepareCurrentAtModuleEntry(llvm::Module &M, uint32_t Profile) {
+  if (!neverc::AndroidKernelRuntimeContract::needsCurrentInitialization(Profile))
+    return;
+  llvm::GlobalValue *Entry = M.getNamedValue("init_module");
+  auto *Init = Entry ? llvm::dyn_cast<llvm::Function>(
+                          Entry->stripPointerCastsAndAliases())
+                    : nullptr;
+  if (!Init || Init->isDeclaration())
+    return;
+  // Stage 1 has no embedded runtime. Keep its loader-only compilation path;
+  // runtime consumers already require the stage-2 compiler.
+  llvm::StringRef Embedded = neverc::BuiltinNvkKernel::getEmbeddedBitcode();
+  if (Embedded.empty())
+    return;
+  if (!Init->getReturnType()->isIntegerTy(32) || !Init->arg_empty() ||
+      Init->isVarArg())
+    llvm::report_fatal_error("Android kernel init_module must have type int(void)");
+
+  llvm::LLVMContext &Ctx = M.getContext();
+  auto *I32 = llvm::Type::getInt32Ty(Ctx);
+  auto *HookType = llvm::FunctionType::get(I32, {I32}, false);
+  llvm::FunctionCallee Hook = M.getOrInsertFunction(
+      neverc::AndroidKernelRuntimeContract::PrepareCurrentSymbol, HookType);
+  auto *HookFunction = llvm::dyn_cast<llvm::Function>(Hook.getCallee());
+  if (!HookFunction || HookFunction->getFunctionType() != HookType)
+    llvm::report_fatal_error("invalid Android kernel current initialization hook");
+  if (!HookFunction->isDeclaration())
+    llvm::report_fatal_error("reserved Android kernel current initialization hook");
+  // The hook is optional for loader-only modules. Obtain its source-generated
+  // type IDs so the guarded indirect call retains the selected KCFI contract.
+  auto Runtime = llvm::parseBitcodeFile(
+      llvm::MemoryBufferRef(Embedded, "nvk entry hook types"), Ctx);
+  if (!Runtime)
+    llvm::report_fatal_error("cannot read NVK entry hook types: " +
+                            llvm::toString(Runtime.takeError()));
+  auto *Prototype = (*Runtime)->getFunction(
+      neverc::AndroidKernelRuntimeContract::PrepareCurrentSymbol);
+  if (!Prototype || Prototype->getFunctionType() != HookType ||
+      !Prototype->getMetadata(KCFITypePairMetadata))
+    llvm::report_fatal_error("embedded NVK runtime lacks current entry hook types");
+  uint32_t Standard = 0, Normalized = 0;
+  if (!getKCFITypePair(*Prototype, Standard, Normalized))
+    llvm::report_fatal_error("missing NVK current entry hook type IDs");
+  HookFunction->setLinkage(llvm::GlobalValue::ExternalWeakLinkage);
+
+  auto *UserEntry = &Init->getEntryBlock();
+  auto *Guard = llvm::BasicBlock::Create(Ctx, "nvk.current.entry", Init, UserEntry);
+  auto *Prepare =
+      llvm::BasicBlock::Create(Ctx, "nvk.current.prepare", Init, UserEntry);
+  auto *Failure =
+      llvm::BasicBlock::Create(Ctx, "nvk.current.failure", Init, UserEntry);
+  llvm::IRBuilder<> Builder(Guard);
+  // Undefined weak addresses normally use a GOT load. GKI's module loader
+  // rejects those relocations, and a PC-relative address cannot reach NULL.
+  // Its MOVW_UABS relocations support both a kernel function and zero, without
+  // a GOT, a range-limited branch to NULL, or a dependency on a kernel export.
+  auto *Pointer = HookFunction->getType();
+  auto *AddressType = llvm::FunctionType::get(Pointer, {Pointer}, false);
+  auto *AddressAsm = llvm::InlineAsm::get(
+      AddressType,
+      "movz $0, #:abs_g3:$1\n\t"
+      "movk $0, #:abs_g2_nc:$1\n\t"
+      "movk $0, #:abs_g1_nc:$1\n\t"
+      "movk $0, #:abs_g0_nc:$1",
+      "=r,S", false);
+  llvm::Value *Address = Builder.CreateCall(AddressAsm, {HookFunction});
+  Builder.CreateCondBr(Builder.CreateIsNotNull(Address), Prepare, UserEntry);
+  Builder.SetInsertPoint(Prepare);
+  const auto Mode = *AndroidKernel::getKCFIMode(M);
+  if (Mode != AndroidKernel::KCFIMode::Disabled) {
+    auto *Call = llvm::BasicBlock::Create(Ctx, "nvk.current.call", Init, UserEntry);
+    auto *BadType =
+        llvm::BasicBlock::Create(Ctx, "nvk.current.bad_type", Init, UserEntry);
+    llvm::Value *Prefix = Builder.CreateConstGEP1_64(
+        Builder.getInt8Ty(), Address, -4);
+    llvm::Value *Type = Builder.CreateAlignedLoad(
+        I32, Prefix, llvm::Align(4), "nvk.current.type");
+    llvm::Value *Expected = Builder.getInt32(
+        Mode == AndroidKernel::KCFIMode::Classic ? Standard : Normalized);
+    Builder.CreateCondBr(Builder.CreateICmpEQ(Type, Expected), Call, BadType);
+    Builder.SetInsertPoint(BadType);
+    // -EINVAL: mismatched runtime entry ABI.
+    Builder.CreateRet(Builder.getInt32(-22));
+    Builder.SetInsertPoint(Call);
+  }
+  llvm::Value *Status = Builder.CreateCall(
+      HookType, Address, {Builder.getInt32(Profile)});
+  Builder.CreateCondBr(Builder.CreateICmpEQ(Status, Builder.getInt32(0)),
+                       UserEntry, Failure);
+  Builder.SetInsertPoint(Failure);
+  Builder.CreateRet(Status);
 }
 
 } // namespace
@@ -533,6 +630,7 @@ void AndroidKernel::emitFixups(llvm::Module &M, unsigned Arch, KCFIMode Mode) {
   M.addModuleFlag(llvm::Module::Error, ProfileModuleFlag, *Profile);
   M.addModuleFlag(llvm::Module::Error, SCSModeModuleFlag, *SCSMode);
 
+  prepareCurrentAtModuleEntry(M, *Profile);
   emitPLTSections(M);
   emitCFICheckStubs(M);
 }

@@ -78,10 +78,17 @@ class CompilerPrefixTests(unittest.TestCase):
         self.assertEqual(details, {"versions_entries": 0, "alloc_tags_size": 0})
         self.assertEqual(verifier.calls, [(Path("smoke.ko"), True)])
 
-    def test_import_contract_requires_zero_undefined_symbols(self):
+    def test_import_contract_requires_zero_kernel_dependencies(self):
         self.assertEqual(build.validate_imports(""), set())
         with self.assertRaisesRegex(RuntimeError, "undefined imports"):
             build.validate_imports(" U register_kprobe\n")
+
+    def test_only_the_absent_weak_current_entry_hook_is_optional(self):
+        self.assertEqual(build.validate_imports(" w neverc_krt_prepare_current\n"), set())
+        for symbol in (" U neverc_krt_prepare_current\n", " w register_kprobe\n"):
+            with self.subTest(symbol=symbol), self.assertRaisesRegex(
+                    RuntimeError, "undefined imports"):
+                build.validate_imports(symbol)
 
 
 if __name__ == "__main__":
