@@ -2858,3 +2858,26 @@ protected KVM execution of compiler-generated bit-string functions.
 `_BitScanForward` and `_BitScanReverse` continue to use native `cttz/ctlz`
 code generation, with their C API's zero-source output preservation. They do
 not provide a complete architectural flag-state API.
+
+## Exact-width FLAGS interfaces
+
+`__builtin_ia32_readeflags_u16()` returns `unsigned short` and
+`__builtin_ia32_writeeflags_u16(unsigned short)` writes exactly that word.
+Both lower to native `llvm.x86.flags.{read,write}.u16`, with no inline assembly.
+The word write preserves AC/ID; extending it to `__writeeflags` would change
+those upper flags. Existing `__readeflags`/`__writeeflags` retain their natural
+x64 width. Native privilege restrictions and faults still apply.
+
+`RDFLAGS16`/`WRFLAGS16` use a GR16 carrier and a two-byte push/pop pair,
+with the same frame and red-zone ownership as the qword APIs. The compiler
+continues to own its ABI and stack; flag images do not establish arbitrary
+original-image continuations or make arithmetic flags live across other C
+operations. NeverC's frontend remains x64-only for these APIs; the full LLVM
+fork additionally supports i386/code16.
+
+`utils/lint/sync-x86-flags16.py` owns the appended machine descriptors and
+printers. The shared native-intrinsic synchronizer owns signatures and
+DAGISel ID remapping. `X86FlagsFrontendTest.*` checks both optimization levels,
+ELF/COFF/Mach-O, native assembly, unused reads, memory ordering and malformed
+argument lists. `tests/verify-flags16-completion.py` compares compiled writes
+with original word POPF, including every safe FLAGS word and all AC/ID images.

@@ -6004,11 +6004,14 @@ bool X86InstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
     return true;
   }
 
+  case X86::RDFLAGS16:
   case X86::RDFLAGS64: {
+    const bool Narrow = MI.getOpcode() == X86::RDFLAGS16;
     MachineBasicBlock &MBB = *MIB->getParent();
 
-    MachineInstr *NewMI =
-        BuildMI(MBB, MI, MIB->getDebugLoc(), get(X86::PUSHF64)).getInstr();
+    MachineInstr *NewMI = BuildMI(MBB, MI, MIB->getDebugLoc(),
+                                  get(Narrow ? X86::PUSHF16 : X86::PUSHF64))
+                              .getInstr();
 
     // Permit reads of the EFLAGS and DF registers without them being defined.
     // This intrinsic exists to read external processor state in flags, such as
@@ -6021,16 +6024,20 @@ bool X86InstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
            "Unexpected register in operand! Should be DF.");
     NewMI->getOperand(3).setIsUndef();
 
-    MIB->setDesc(get(X86::POP64r));
+    MIB->setDesc(get(Narrow ? X86::POP16r : X86::POP64r));
     return true;
   }
 
+  case X86::WRFLAGS16:
   case X86::WRFLAGS64: {
+    const bool Narrow = MI.getOpcode() == X86::WRFLAGS16;
     MachineBasicBlock &MBB = *MIB->getParent();
 
-    BuildMI(MBB, MI, MIB->getDebugLoc(), get(X86::PUSH64r))
+    BuildMI(MBB, MI, MIB->getDebugLoc(),
+            get(Narrow ? X86::PUSH16r : X86::PUSH64r))
         .addReg(MI.getOperand(0).getReg());
-    BuildMI(MBB, MI, MIB->getDebugLoc(), get(X86::POPF64));
+    BuildMI(MBB, MI, MIB->getDebugLoc(),
+            get(Narrow ? X86::POPF16 : X86::POPF64));
     MI.eraseFromParent();
     return true;
   }

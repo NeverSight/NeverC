@@ -2,7 +2,9 @@
   "_comment": "Allowlist for check-global-state.py. Each `entries` item documents a thread-local declaration in the plugin/dyncode/linker trees that is NOT plugin-related process-global mutable *compilation* state. The source scan is the only layer that judges thread-local storage, so every thread_local belongs here and never in `binary_symbols`; the gate is run with --strict, which makes an undocumented one a hard failure. Only stack-scoped RAII facades and owner/depth/digest bookkeeping for process synchronization leases (no option values or compilation payload) are eligible. Complex immutable interface and lookup tables require an exact path, identifier, and normalized declaration in the dedicated header/source manifests below; writable binary storage is never excused merely for being a lookup table. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER be allowlisted.",
   "entries": [
     {
-      "files": ["neverc/lib/Plugin/Core/PluginPhaseExecutor.cpp"],
+      "files": [
+        "neverc/lib/Plugin/Core/PluginPhaseExecutor.cpp"
+      ],
       "symbol": "ActivePhases",
       "declaration": "thread_local ScopedThreadLocalStack<ActivePhaseInvocation, 4> ActivePhases",
       "definition_sha256": "acde8e960e66d8e6038ecb304ffd75e35568b17d7b62f03c1b807972da67bcdf",
@@ -12,7 +14,9 @@
       "cleared_by_test": "PluginConcurrencyTests re-entrancy suite"
     },
     {
-      "files": ["neverc/lib/Plugin/Core/PluginProcessServices.cpp"],
+      "files": [
+        "neverc/lib/Plugin/Core/PluginProcessServices.cpp"
+      ],
       "symbol": "CallbackScopes",
       "declaration": "thread_local ScopedThreadLocalStack<CallbackScope, 4> CallbackScopes",
       "definition_sha256": "b18087411db7a5dd79cd3f55a3f6d870769cda7441c2b215c0a99bb430463829",
@@ -22,7 +26,9 @@
       "cleared_by_test": "PluginConcurrencyTests"
     },
     {
-      "files": ["neverc/lib/Plugin/Core/PluginSession.cpp"],
+      "files": [
+        "neverc/lib/Plugin/Core/PluginSession.cpp"
+      ],
       "symbol": "ActivePluginCallbacks",
       "declaration": "thread_local ScopedThreadLocalStack<const PluginModule *> ActivePluginCallbacks",
       "definition_sha256": "e24a23a5c857e40659f15a253e4e0ba4d47de0d051e9b130c85b35223df15aaa",
@@ -32,7 +38,9 @@
       "cleared_by_test": "PluginConcurrencyTests"
     },
     {
-      "files": ["neverc/lib/Plugin/IO/PluginFileSystem.cpp"],
+      "files": [
+        "neverc/lib/Plugin/IO/PluginFileSystem.cpp"
+      ],
       "symbol": "ActiveRoutes",
       "declaration": "thread_local ScopedThreadLocalStack<ActiveRoute, 4> ActiveRoutes",
       "definition_sha256": "3d22f1b82b9d91065fe768b4a75584271d633560be90d965085c85456033c239",
@@ -114,7 +122,9 @@
       "cleared_by_test": "Pool original/scoped O0/O2 native diagnostic (four builds, twelve runs, nine conditions, eight rounds)"
     },
     {
-      "files": ["neverc/lib/Foundation/Core/LLVMTimeTraceRootLease.cpp"],
+      "files": [
+        "neverc/lib/Foundation/Core/LLVMTimeTraceRootLease.cpp"
+      ],
       "symbol": "ManagedLLVMTimeTraceRootState",
       "declaration": "thread_local ManagedRootThreadState ManagedLLVMTimeTraceRootState",
       "definition_sha256": "7d23b51112b37f77090da603c8f88662f8d48e78d90621a70f80f5609c7a7378",
@@ -124,7 +134,9 @@
       "cleared_by_test": "PluginLinkTimeTraceConcurrencyTest.OwnerReleaseWaitsForLastBorrowerAndBlocksNewGeneration, PluginLinkTimeTraceConcurrencyTest.StaleCrashBindingCannotInvalidateNewGeneration, PluginLinkTimeTraceConcurrencyTest.BorrowedWriteRejectsInvalidatedGeneration, PluginLinkTimeTraceConcurrencyTest.RawLeaseFatalAndNestedRecoveryBalanceGenerationExactlyOnce, PluginLinkTimeTraceConcurrencyTest.NestedBorrowerFatalInvalidatesOuterRootAndAllowsFreshRetry, PluginLinkTimeTraceConcurrencyTest.NoTraceDispatcherFatalInvalidatesManagedAmbientRoot, PluginLinkTimeTraceConcurrencyTest.NoTraceDirectCOFFFatalInvalidatesManagedAmbientRoot, PluginLinkTimeTraceConcurrencyTest.NoTraceDispatcherDoesNotContendWithOtherThreadRoot, PluginFrontendTimeTraceInteropTest.NoTraceFrontendFatalInvalidatesManagedAmbientRoot, and PluginFrontendTimeTraceInteropTest.FoundationRootLeaseBlocksFrontendAndLinkerUntilRelease"
     },
     {
-      "files": ["neverc/lib/Foundation/Core/ProcessResourceBroker.cpp"],
+      "files": [
+        "neverc/lib/Foundation/Core/ProcessResourceBroker.cpp"
+      ],
       "symbol": "ObserverDepth",
       "declaration": "thread_local unsigned ObserverDepth",
       "definition_sha256": "2a319103b56997aaccfc41f6bc2f66cc72f1f7963fb8129a48e835dc61b9eacf",
@@ -134,7 +146,9 @@
       "cleared_by_test": "ProcessResourceBrokerTest.ObserverDepthRestoresAfterNestedOrdinaryException and ProcessResourceBrokerTest.ObserverDepthRestoresAfterNestedCrashRecoveryExit"
     },
     {
-      "files": ["neverc/lib/Linker/Backends/MachO/Input/InputFiles.cpp"],
+      "files": [
+        "neverc/lib/Linker/Backends/MachO/Input/InputFiles.cpp"
+      ],
       "symbol": "ArchiveMemberParseObserver",
       "declaration": "thread_local ArchiveMemberParseObserverState ArchiveMemberParseObserver",
       "definition_sha256": "9ea2d6479aff2b40e518ed574f443a753988583a4c90199faadc1fc41a3f2b54",
@@ -144,7 +158,9 @@
       "cleared_by_test": "PluginMachOContextIsolationTest.AutomaticThreadsIncludeLateAutoLinkedAndCommandLineArchives"
     },
     {
-      "files": ["neverc/lib/Plugin/Core/PluginLLVMOptionSnapshot.cpp"],
+      "files": [
+        "neverc/lib/Plugin/Core/PluginLLVMOptionSnapshot.cpp"
+      ],
       "symbol": "GateOwnership",
       "declaration": "thread_local ThreadGateOwnership GateOwnership",
       "definition_sha256": "640dd7e41db94970fa094234798c06367c18b2bf765ac10ba1920c7e93cf5c70",
@@ -184,7 +200,7 @@
       "file": "llvm/include/llvm/IR/IntrinsicImpl.inc",
       "symbol": "TargetInfos",
       "declaration": "static constexpr IntrinsicTargetInfo TargetInfos[]",
-      "definition_sha256": "49967761e3400405702185d5b21586cc5f9d169dbfe9afc897c29a9e3314cc19",
+      "definition_sha256": "aaf2ad36d42d00b7f9205e6ba3f0aab20d29480e8297051a8d65443ceccc66f2",
       "owner": "generated LLVM intrinsic target metadata",
       "justification": "Constexpr array of StringLiteral plus size_t metadata generated as a lookup table. Its element type has no mutable subobjects and no code writes the table."
     },

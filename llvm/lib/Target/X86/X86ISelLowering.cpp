@@ -29033,23 +29033,28 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDNode *N = DAG.getMachineNode(X86::WBINVD, dl, MVT::Other, Chain);
       return SDValue(N, 0);
     }
+    case llvm::Intrinsic::x86_flags_read_u16:
     case llvm::Intrinsic::x86_flags_read_u64: {
+      const bool Narrow = IntNo == llvm::Intrinsic::x86_flags_read_u16;
       SDLoc dl(Op);
       SDValue Chain = Op.getOperand(0);
       MachineFrameInfo &MFI = DAG.getMachineFunction().getFrameInfo();
       MFI.setHasCopyImplyingStackAdjustment(true);
-      SDVTList VTs = DAG.getVTList(MVT::i64, MVT::Other);
-      SDNode *N = DAG.getMachineNode(X86::RDFLAGS64, dl, VTs, Chain);
+      SDVTList VTs = DAG.getVTList(Narrow ? MVT::i16 : MVT::i64, MVT::Other);
+      SDNode *N = DAG.getMachineNode(Narrow ? X86::RDFLAGS16 : X86::RDFLAGS64,
+                                     dl, VTs, Chain);
       return DAG.getMergeValues({SDValue(N, 0), SDValue(N, 1)}, dl);
     }
+    case llvm::Intrinsic::x86_flags_write_u16:
     case llvm::Intrinsic::x86_flags_write_u64: {
+      const bool Narrow = IntNo == llvm::Intrinsic::x86_flags_write_u16;
       SDLoc dl(Op);
       SDValue Chain = Op.getOperand(0);
       SDValue Val = Op.getOperand(2);
       MachineFrameInfo &MFI = DAG.getMachineFunction().getFrameInfo();
       MFI.setHasCopyImplyingStackAdjustment(true);
-      SDNode *N = DAG.getMachineNode(X86::WRFLAGS64, dl, MVT::Other,
-                                     {Val, Chain});
+      SDNode *N = DAG.getMachineNode(Narrow ? X86::WRFLAGS16 : X86::WRFLAGS64,
+                                     dl, MVT::Other, {Val, Chain});
       return SDValue(N, 0);
     }
     case llvm::Intrinsic::x86_invpcid: {

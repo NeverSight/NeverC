@@ -30,6 +30,8 @@ DECLARATIONS = {
     "invvpid": ("I8", "I64", "PTR"),
     "clts": ("Done",),
     "fnop": ("Done",),
+    "flags_read_u16": ("I16",),
+    "flags_write_u16": ("Done", "I16"),
     "fnstcw": ("Done", "PTR"),
     "fldcw": ("Done", "PTR"),
     "fnstsw": ("I16",),

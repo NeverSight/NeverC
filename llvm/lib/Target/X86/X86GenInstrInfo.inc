@@ -18619,7 +18619,9 @@ namespace X86 {
     ENCLU_TRANSFER_AT_CONTEXT64	= 18604,
     WRITE_SEGMENT_REG	= 18605,
     WRITE_SEGMENT_MEM	= 18606,
-    INSTRUCTION_LIST_END = 18607
+    RDFLAGS16	= 18607,
+    WRFLAGS16	= 18608,
+    INSTRUCTION_LIST_END = 18609
   };
 
 } // end namespace X86
@@ -21010,11 +21012,11 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18607];
+  MCInstrDesc Insts[18609];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5526];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[1042];
+  MCPhysReg ImplicitOps[1048];
 };
 
 } // end namespace llvm
@@ -21029,6 +21031,8 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18608,	1,	0,	0,	10,	1,	3,	X86ImpOpBase + 1044,	140,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18608 = WRFLAGS16
+    { 18607,	1,	1,	0,	10,	1,	1,	X86ImpOpBase + 1042,	140,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18607 = RDFLAGS16
     { 18606,	6,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1119,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18606 = WRITE_SEGMENT_MEM
     { 18605,	2,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	5524,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18605 = WRITE_SEGMENT_REG
     { 18604,	2,	0,	0,	8,	1,	19,	X86ImpOpBase + 1022,	180,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier), 0x0ULL },  // Inst #18604 = ENCLU_TRANSFER_AT_CONTEXT64
@@ -40959,6 +40963,8 @@ extern const X86InstrTable X86Descs = {
     /* 989 */ X86::R9, X86::R10, X86::R11, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::EFLAGS,
     /* 997 */ X86::CS, X86::SS, X86::DS, X86::ES, X86::FS, X86::GS, X86::EFLAGS, X86::CR2, X86::CR8, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::RSP, X86::RBP, X86::RSI, X86::RDI, X86::R8, X86::R9, X86::R10, X86::R11, X86::R12, X86::R13, X86::R14, X86::R15,
     /* 1022 */ X86::RSP, X86::FS, X86::GS, X86::EFLAGS, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::RSP, X86::RBP, X86::RSI, X86::RDI, X86::R8, X86::R9, X86::R10, X86::R11, X86::R12, X86::R13, X86::R14, X86::R15,
+    /* 1042 */ X86::ESP, X86::ESP,
+    /* 1044 */ X86::ESP, X86::ESP, X86::EFLAGS, X86::DF,
   }
 };
 
@@ -58658,6 +58664,8 @@ extern const char X86InstrNameData[] = {
   /* 260652 */ "ENCLU_TRANSFER_AT_CONTEXT64\0"
   /* 260680 */ "WRITE_SEGMENT_REG\0"
   /* 260698 */ "WRITE_SEGMENT_MEM\0"
+  /* 260716 */ "RDFLAGS16\0"
+  /* 260726 */ "WRFLAGS16\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -61129,10 +61137,12 @@ extern const unsigned X86InstrNameIndices[] = {
     260652U,
     260680U,
     260698U,
+    260716U,
+    260726U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18607);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18609);
 }
 
 } // end namespace llvm
@@ -61192,7 +61202,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18607);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18609);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98632,6 +98642,10 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     3891,
     /* WRITE_SEGMENT_MEM */
     3369,
+    /* RDFLAGS16 */
+    661,
+    /* WRFLAGS16 */
+    661,
   };
 
   using namespace OpTypes;
@@ -154107,9 +154121,11 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // ENCLU_TRANSFER_AT_CONTEXT64 = 18604
     CEFBS_In64BitMode, // WRITE_SEGMENT_REG = 18605
     CEFBS_In64BitMode, // WRITE_SEGMENT_MEM = 18606
+    CEFBS_In64BitMode, // RDFLAGS16 = 18607
+    CEFBS_In64BitMode, // WRFLAGS16 = 18608
   };
 
-  assert(Opcode < 18607);
+  assert(Opcode < 18609);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

@@ -3405,6 +3405,12 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writedr,
                                    {Ops[0], Ops[1]});
   }
+  case X86::BI__builtin_ia32_readeflags_u16:
+    return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_flags_read_u16,
+                                   {});
+  case X86::BI__builtin_ia32_writeeflags_u16:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_flags_write_u16,
+                                   {Ops[0]});
   case X86::BI__readeflags: {
     return Builder.CreateIntrinsic(SizeTy, llvm::Intrinsic::x86_flags_read_u64,
                                    {});
