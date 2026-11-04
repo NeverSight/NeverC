@@ -1502,8 +1502,9 @@ SS=2, DS=3, FS=4, GS=5. Writing CS is rejected. The matching LLVM interfaces
 are `i16 @llvm.x86.readseg(i32 immarg)`,
 `void @llvm.x86.readseg.mem(i32 immarg, ptr)`,
 `void @llvm.x86.writeseg(i32 immarg, i16)` and
-`void @llvm.x86.writeseg.mem(i32 immarg, ptr)`. The full fork supports 32- and
-64-bit code; NeverC's pruned backend supports x64. Code16 is rejected.
+`void @llvm.x86.writeseg.mem(i32 immarg, ptr)`. The full fork supports 16-, 32-
+and 64-bit code. Protected code16 uses the 32-bit stack/pointer ABI;
+NeverC's pruned backend supports x64 and does not expose an i386 frontend.
 
 Memory forms access exactly two bytes inside the MOV. Segment writes also own
 descriptor validation, hidden-cache installation and conditional descriptor
@@ -1539,6 +1540,25 @@ alignment checking, asynchronous events, or complete original GPR/flags restart
 state. Null selectors 1..3 are excluded because Linux normalizes them on signal
 return. The frontend/backend regressions separately check native IR, repeated
 calls, diagnostics and ELF/COFF/Mach-O object emission.
+
+[verify_protected_segment_moves.py](tests/neverc/X86/verify_protected_segment_moves.py)
+adds native protected execution through `--llvm-bin LLVM_BIN --mode 16
+--output ARTIFACTS`; `--mode 32` checks the existing 32-bit path. Each O0/O2
+profile compares 4,824 complete state pairs from 28 functions, including used
+and unused reads. The CPL0/CPL3 matrix covers all segment registers, null and
+invalid selectors, read-only/nonpresent/code/nonflat/word-stack descriptors,
+aligned/unaligned/cross-page/missing/read-only operands, and descriptor-page
+faults. Original #NP/#SS/#GP/#PF/#AC handlers expose the vector; all GPRs,
+flags, system/segment state, active events and RAM are compared. Successful
+ABI-compatible cases also return through the compiler frame. Negative controls
+corrupt the declared pointer or selector before an intact MOV and must fail.
+
+Each generated MOV is followed immediately by an explicit LFENCE. The oracle
+authenticates both opcodes and compares the same two-instruction span, ending
+MOV-SS inhibition before the debugger stop. This fixture does not observe
+events inside that window, qualify real/VM86 execution or supply a coupled
+stack-switch API. It shares completed-OUT fault handling with the protected
+ARPL and far-pointer fixtures.
 
 ### EFLAGS (pushfq / popfq)
 
