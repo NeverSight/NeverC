@@ -23094,6 +23094,7 @@ public:
   }
   bool functionalBindFactorySourceComplete(const FunctionalBindFactorySource &Factory) {
     const auto Inputs = functionalBindSourceInputs();
+    llvm::errs() << "BIND-FACTORY-PROOF-INPUTS " << bool(Inputs) << " nargs " << Factory.Storage.Arguments.Elements.size() << "\n";
     auto AliasSource = [this](const TypedefNameDecl *Alias) {
       const auto *Info = Alias ? Alias->getTypeSourceInfo() : nullptr;
       if (!Alias || !Info || !A.S.owns(A.Sources, Alias->getLocation()) ||
@@ -23142,6 +23143,7 @@ public:
   }
   bool functionalBindCallSourceComplete(const FunctionalBindCallSource &Call) {
     const auto Inputs = functionalBindSourceInputs();
+    llvm::errs() << "BIND-CALL-PROOF-INPUTS " << bool(Inputs) << " nargs " << Call.Arguments.size() << "\n";
     return Inputs && approvedFunctionalBindCallCompleteSource(A.S, A.Sources, Call, A.Context,
         Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
   }
