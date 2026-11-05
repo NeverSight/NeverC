@@ -2887,3 +2887,42 @@ i386 emitted C. Both drivers restore the host flags before returning to C,
 preserve callee-saved registers, and require a widened-write negative control
 to fail. The i386 driver needs the host's multilib C runtime; it does not
 qualify a NeverC i386 frontend or arbitrary original machine-state execution.
+
+## Legacy BOUND qualification in the full LLVM fork
+
+The full LLVM/Clang fork supports `__builtin_ia32_bound16(short, const void *)`
+and `__builtin_ia32_bound32(int, const void *)`. The `_address32` variants take
+an index, unsigned offset, constant address width (16/32), and constant segment
+prefix (0, 26h, 2Eh, 36h, 3Eh, 64h or 65h). All return void and retain native
+conditional memory accesses, faults and ordering, including unused calls.
+The native LLVM instruction descriptors read the index without writing it or
+EFLAGS. The pointer interface always uses a 32-bit DS offset, including code16;
+explicit interfaces can select address16 and a nonflat segment.
+
+BOUND has no long-mode encoding. These APIs belong to the full fork's i386 and
+code16 targets; NeverC's frontend does not gain i386 support from this change.
+Its pruned x64 machine tables must not claim these instructions are usable.
+
+`tests/neverc/X86/verify_bound.py --llvm-bin LLVM_BIN --clang FULL_CLANG
+--output OUT` executes original-byte ELF32 witnesses at O0/O2, with live,
+unused and repeated native calls. It checks inclusive signed limits, untouched
+full-width return values, nonflat FS, address16 wrap, read-only/missing pages,
+segment limits and lower-before-upper faults. A changed index with an intact
+BOUND must be rejected. Multilib libc and Linux modify_ldt are required.
+
+`verify_bound_source.py --exports NEVERD_EXPORTS --llvm-bin LLVM_BIN
+--clang CLANG --output OUT` compiles all 336 actual HighC/LLVM-to-C outputs from
+`X86BoundSource.*`, across three object-format contexts and both pipeline
+optimization settings. It executes the 72 flat-DS/nonflat-FS C cases plus twelve actual exported ELF
+objects and rejects
+an intact-BOUND control with a truncated return. Run once with stock Clang's
+assembly path and once with the full fork's builtins.
+
+`verify_protected_bound.py --llvm-bin LLVM_BIN --mode 16|32 --output OUT`
+executes the complete compiler-generated functions in KVM and compares native
+BOUND boundaries, all GPRs, flags, caches, event state, RAM and #BR/#GP/#PF/#AC
+frames with independent original bytes. ABI-compatible successful checks return
+through the compiler frame. Non-ABI DS changes stop at the instruction boundary.
+The witness rejects changed input transport and truncated returned values.
+These tests do not qualify real/VM86 mode, asynchronous delivery, device memory
+or physical MPX; the NeverD software MPX owner is tested separately.
