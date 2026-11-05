@@ -1289,6 +1289,8 @@ TEST(AndroidKernelModuleFinalizerTest,
   initializeBuiltinTargets();
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1357,6 +1359,8 @@ TEST(AndroidKernelModuleFinalizerTest,
   initializeBuiltinTargets();
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1547,6 +1551,8 @@ TEST(AndroidKernelModuleFinalizerTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1625,6 +1631,8 @@ TEST(AndroidKernelModuleFinalizerTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1709,6 +1717,8 @@ TEST(AndroidKernelModuleFinalizerTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1817,6 +1827,8 @@ TEST(AndroidKernelModuleFinalizerTest,
   ASSERT_TRUE(Scope.initialize());
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1936,6 +1948,8 @@ TEST(AndroidKernelModuleFinalizerTest,
   initializeBuiltinTargets();
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -2073,6 +2087,8 @@ TEST(AndroidKernelModuleFinalizerTest,
   initializeBuiltinTargets();
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -2205,6 +2221,8 @@ TEST(AndroidKernelModuleFinalizerTest,
   initializeBuiltinTargets();
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -2270,6 +2288,8 @@ TEST(AndroidKernelModuleFinalizerTest,
   ASSERT_TRUE(Scope.initialize());
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -2676,6 +2696,8 @@ TEST(AndroidKernelModuleFinalizerTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -2817,6 +2839,8 @@ TEST(AndroidKernelModuleFinalizerTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -2973,6 +2997,8 @@ TEST(AndroidKernelModuleFinalizerTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -3488,6 +3514,8 @@ TEST(AndroidKernelModuleFinalizerTest,
 
   const BuiltinTargetRoute *X86ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&

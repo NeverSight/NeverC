@@ -545,6 +545,34 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 }
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
+  switch (BuiltinID) {
+  case X86::BI__builtin_ia32_bound16:
+  case X86::BI__builtin_ia32_bound32:
+  case X86::BI__builtin_ia32_bound16_address32:
+  case X86::BI__builtin_ia32_bound32_address32: {
+    if (TI.getTriple().getArch() != llvm::Triple::x86) {
+      unsigned ID = getDiagnostics().getCustomDiagID(
+          DiagnosticsEngine::Error, "BOUND requires a 32-bit x86 target");
+      return bool(Diag(TheCall->getBeginLoc(), ID));
+    }
+    if (TheCall->getNumArgs() == 2)
+      return false;
+    llvm::APSInt Width, Prefix;
+    if (SemaBuiltinConstantArg(TheCall, 2, Width) ||
+        SemaBuiltinConstantArg(TheCall, 3, Prefix))
+      return true;
+    if (llvm::X86::isNativeMemoryAddressControl(false, Width.getZExtValue(),
+                                               Prefix.getZExtValue()) &&
+        !(Prefix.getZExtValue() & llvm::X86::NativeMemoryStackReference))
+      return false;
+    return bool(Diag(TheCall->getBeginLoc(),
+                     diag::err_x86_builtin_invalid_memory_address)
+                << TheCall->getArg(2)->getSourceRange()
+                << TheCall->getArg(3)->getSourceRange());
+  }
+  default:
+    break;
+  }
   if (BuiltinID == X86::BI__builtin_ia32_rtm_abort_pair)
     return SemaBuiltinConstantArgRange(TheCall, 0, 0, 255);
   if (BuiltinID == X86::BI__builtin_ia32_hle_context) {

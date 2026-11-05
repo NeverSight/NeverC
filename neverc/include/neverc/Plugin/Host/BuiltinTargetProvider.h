@@ -30,6 +30,7 @@ enum class BuiltinTargetABIKind {
   AArch64AAPCS,
   AArch64DarwinPCS,
   AArch64Win64,
+  X86_32SysV,
 };
 
 struct BuiltinTargetRoute {

@@ -121,14 +121,19 @@ enum CPUKind {
   CK_x86_64_v2,
   CK_x86_64_v3,
   CK_x86_64_v4,
+  CK_i386,
+  CK_i486,
+  CK_Pentium,
+  CK_PentiumPro,
 };
 
 /// Parse \p CPU string into a CPUKind.
-CPUKind parseArchX86(StringRef CPU);
+CPUKind parseArchX86(StringRef CPU, bool Only64Bit = false);
 CPUKind parseTuneCPU(StringRef CPU);
 
 /// Provide a list of valid CPU names.
-void fillValidCPUArchList(SmallVectorImpl<StringRef> &Values);
+void fillValidCPUArchList(SmallVectorImpl<StringRef> &Values,
+                          bool Only64Bit = false);
 /// Provide a list of valid -mtune names.
 void fillValidTuneCPUList(SmallVectorImpl<StringRef> &Values);
 

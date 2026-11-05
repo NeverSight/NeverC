@@ -295,6 +295,8 @@ TEST(PluginBuiltinObjectFormatTest,
 
   std::set<std::pair<Triple::ArchType, BuiltinObjectFormat>> Tested;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     const auto RouteKey = std::make_pair(Parsed.getArch(), Route.ObjectFormat);
     if (!Route.SupportsObject || !Tested.insert(RouteKey).second)
@@ -353,6 +355,8 @@ TEST(PluginBuiltinObjectFormatTest,
 
   std::set<std::pair<Triple::ArchType, BuiltinObjectFormat>> Tested;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     const auto RouteKey = std::make_pair(Parsed.getArch(), Route.ObjectFormat);
     if (!Route.SupportsObject || !Tested.insert(RouteKey).second)
@@ -450,6 +454,8 @@ TEST(PluginBuiltinObjectFormatTest,
 
   std::set<std::pair<Triple::ArchType, BuiltinObjectFormat>> Tested;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     if (Route.ObjectFormat == BuiltinObjectFormat::MachO)
       continue;
     Triple Parsed(Triple::normalize(Route.CanonicalTriple));
@@ -546,6 +552,8 @@ Expected<std::vector<uint8_t>> assembleSource(const BuiltinTargetRoute &Route,
 const BuiltinTargetRoute *routeFor(BuiltinObjectFormat Format,
                                    Triple::ArchType Arch) {
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject && Route.ObjectFormat == Format &&
         Parsed.getArch() == Arch)

@@ -271,6 +271,7 @@ std::string tools::getCPUName(const Driver &D, const ArgList &Args,
   case llvm::Triple::aarch64:
     return aarch64::getAArch64TargetCPU(Args, T, A);
 
+  case llvm::Triple::x86:
   case llvm::Triple::x86_64:
     return x86::getX86TargetCPU(D, Args, T);
   }
@@ -286,6 +287,7 @@ void tools::getTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   case llvm::Triple::aarch64:
     aarch64::getAArch64TargetFeatures(D, Triple, Args, Features, ForAS);
     break;
+  case llvm::Triple::x86:
   case llvm::Triple::x86_64:
     x86::getX86TargetFeatures(D, Triple, Args, Features);
     break;

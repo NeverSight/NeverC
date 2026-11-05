@@ -765,6 +765,8 @@ TEST(PluginObjectReaderTest, BuiltinLLVMReaderMapsELFCOFFAndMachO) {
 
   std::set<BuiltinObjectFormat> Seen;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     if (!Seen.insert(Route.ObjectFormat).second)
       continue;
     SCOPED_TRACE(Route.CanonicalTriple.str());
@@ -790,6 +792,8 @@ TEST(PluginObjectReaderTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -870,6 +874,8 @@ TEST(PluginObjectReaderTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -987,6 +993,8 @@ TEST(PluginObjectReaderTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1062,6 +1070,8 @@ TEST(PluginObjectReaderTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1122,6 +1132,8 @@ TEST(PluginObjectReaderTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1172,6 +1184,8 @@ TEST(PluginObjectReaderTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1240,6 +1254,8 @@ TEST(PluginObjectReaderTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1299,6 +1315,8 @@ TEST(PluginObjectReaderTest, LiteralDollarSymbolNameIsNotAnonymousProvenance) {
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&

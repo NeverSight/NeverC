@@ -412,6 +412,8 @@ TEST_F(PluginLinkInputTest, ReadsELFArchiveWithBuiltinObjectReader) {
   initializeBuiltinTargets();
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     Triple RouteTriple(Triple::normalize(Route.CanonicalTriple));
     if (Route.ObjectFormat == BuiltinObjectFormat::ELF &&
         RouteTriple.getArch() == Triple::x86_64) {

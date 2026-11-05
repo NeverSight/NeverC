@@ -166,6 +166,9 @@ createAArch64TargetCodeGenInfo(ModuleEmitter &ME, AArch64ABIKind Kind);
 std::unique_ptr<TargetCodeGenInfo>
 createWindowsAArch64TargetCodeGenInfo(ModuleEmitter &ME, AArch64ABIKind Kind);
 
+std::unique_ptr<TargetCodeGenInfo>
+createX86_32TargetCodeGenInfo(ModuleEmitter &ME);
+
 enum class X86AVXABILevel {
   None,
   AVX,

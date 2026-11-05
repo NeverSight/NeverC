@@ -58,6 +58,8 @@ std::string x86::getX86TargetCPU(const Driver &D, const ArgList &Args,
   }
 
   // Select the default CPU if none was given (or detection failed).
+  if (Triple.getArch() == llvm::Triple::x86)
+    return Triple.getArchName().str();
   assert(Triple.getArch() == llvm::Triple::x86_64 &&
          "getX86TargetCPU is only used for x86-64");
 

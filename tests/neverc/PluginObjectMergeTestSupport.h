@@ -221,6 +221,8 @@ void initializeBuiltinTargets() {
 
 const BuiltinTargetRoute *findAndroidAArch64ObjectRoute() {
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&

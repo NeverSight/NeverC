@@ -1043,6 +1043,10 @@ enum X86Intrinsics : unsigned {
     x86_bndmov_store,                                // llvm.x86.bndmov.store
     x86_bndmov_store_lock,                           // llvm.x86.bndmov.store.lock
     x86_bndstx,                                      // llvm.x86.bndstx
+    x86_bound16,                                     // llvm.x86.bound16
+    x86_bound16_address32,                           // llvm.x86.bound16.address32
+    x86_bound32,                                     // llvm.x86.bound32
+    x86_bound32_address32,                           // llvm.x86.bound32.address32
     x86_bt_mem16,                                    // llvm.x86.bt.mem16
     x86_bt_mem32,                                    // llvm.x86.bt.mem32
     x86_bt_mem64,                                    // llvm.x86.bt.mem64

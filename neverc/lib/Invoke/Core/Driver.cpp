@@ -25,6 +25,7 @@
 #include "neverc/Invoke/Tool.h"
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Invoke/Types.h"
+#include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/FrontendPluginBridge.h"
 #include "neverc/Plugin/Host/IRGenProvider.h"
 #include "neverc/Plugin/Host/LinkPluginInterfaces.h"
@@ -589,6 +590,8 @@ bool Driver::loadDefaultConfigFiles(llvm::cl::ExpansionContext &ExpCtx) {
 namespace {
 bool isTargetArchSupported(const llvm::Triple &T) {
   switch (T.getArch()) {
+  case llvm::Triple::x86:
+    return T.isOSLinux() && !T.isAndroid();
   case llvm::Triple::x86_64:
     // X32 ABI is not supported.
     if (T.isX32())
@@ -616,6 +619,9 @@ bool isTargetArchSupported(const llvm::Triple &T) {
 bool isArchLinkedInLLVM(const llvm::Triple &T,
                         llvm::StringRef &TargetNameForCMake) {
   switch (T.getArch()) {
+  case llvm::Triple::x86:
+    TargetNameForCMake = "X86 (32-bit code generation requires the full LLVM fork)";
+    return false;
   case llvm::Triple::x86_64:
     TargetNameForCMake = "X86";
     break;
@@ -691,7 +697,9 @@ llvm::Error verifyToolChainSelection(
         "unknown or unsupported toolchain target triple '%s'",
         Selection.TargetTriple.c_str());
   llvm::StringRef CMakeTargetName;
-  if (!isArchLinkedInLLVM(Target, CMakeTargetName))
+  const auto *BuiltinRoute = plugin::findBuiltinTargetRoute(Target.str());
+  if ((!BuiltinRoute || BuiltinRoute->SupportsObject) &&
+      !isArchLinkedInLLVM(Target, CMakeTargetName))
     return llvm::createStringError(
         llvm::inconvertibleErrorCode(),
         "toolchain target backend '%s' is not linked",
@@ -2091,7 +2099,11 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
     }
     ContainsError = true;
   }
-  if (!PluginInvocationTask && !ContainsError) {
+  const bool I386SourceOnly =
+      ComputedTarget.getArch() == llvm::Triple::x86 &&
+      (UArgs->hasArg(options::OPT_emit_llvm) ||
+       UArgs->hasArg(options::OPT_fsyntax_only) || UArgs->hasArg(options::OPT_E));
+  if (!PluginInvocationTask && !ContainsError && !I386SourceOnly) {
     llvm::StringRef CMakeTargetName;
     if (!isArchLinkedInLLVM(ComputedTarget, CMakeTargetName)) {
       Diag(diag::err_drv_target_backend_not_built)

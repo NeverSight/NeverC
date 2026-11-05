@@ -34,7 +34,7 @@ constexpr NevercInterfaceID objectFormatID(BuiltinObjectFormat Format) {
           : (Format == BuiltinObjectFormat::COFF ? UINT64_C(2) : UINT64_C(3))};
 }
 
-const std::array<BuiltinTargetRoute, 9> Routes = {{
+const std::array<BuiltinTargetRoute, 10> Routes = {{
     {"builtin.x86_64.macos", "x86_64-apple-macosx", "generic", targetID(1),
      abiID(1), mcSchemaID(false), objectFormatID(BuiltinObjectFormat::MachO),
      BuiltinTargetABIKind::X86_64SysV, BuiltinObjectFormat::MachO, true, true,
@@ -74,6 +74,10 @@ const std::array<BuiltinTargetRoute, 9> Routes = {{
      abiID(9), mcSchemaID(true), objectFormatID(BuiltinObjectFormat::MachO),
      BuiltinTargetABIKind::AArch64DarwinPCS, BuiltinObjectFormat::MachO, true,
      true, true, false},
+    {"builtin.i386.linux", "i386-unknown-linux-gnu", "i386", targetID(10),
+     abiID(10), mcSchemaID(false), objectFormatID(BuiltinObjectFormat::ELF),
+     BuiltinTargetABIKind::X86_32SysV, BuiltinObjectFormat::ELF, true, false,
+     false, false},
 }};
 
 } // namespace
@@ -82,6 +86,9 @@ ArrayRef<BuiltinTargetRoute> builtinTargetRoutes() { return Routes; }
 
 const BuiltinTargetRoute *findBuiltinTargetRoute(StringRef TripleText) {
   const Triple Parsed(Triple::normalize(TripleText));
+  if (Parsed.getArch() == Triple::x86)
+    return Parsed.getOS() == Triple::Linux && !Parsed.isAndroid()
+               ? &Routes[9] : nullptr;
   const bool IsX86 = Parsed.getArch() == Triple::x86_64;
   const bool IsAArch64 = Parsed.getArch() == Triple::aarch64;
   if (!IsX86 && !IsAArch64)
@@ -129,7 +136,8 @@ createBuiltinTargetKey(const BuiltinTargetRoute &Route, StringRef TripleText,
       .setCallingConvention({UINT64_C(0x4e43504243430001), Route.TargetID.Low})
       .setObjectFormat(Route.ObjectFormatID)
       .setCodeGeneration(RelocationModel, CodeModel)
-      .setExecution(ExecutionLevel, 64, NEVERC_TARGET_ENDIAN_LITTLE)
+      .setExecution(ExecutionLevel, Parsed.getArch() == Triple::x86 ? 32 : 64,
+                    NEVERC_TARGET_ENDIAN_LITTLE)
       .setSchemaDigest(std::string(64, '0'))
       .build();
 }

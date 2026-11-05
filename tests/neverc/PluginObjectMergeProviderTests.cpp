@@ -262,6 +262,8 @@ TEST(PluginObjectMergeProviderTest,
   initializeBuiltinTargets();
   const BuiltinTargetRoute *AndroidRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -1957,6 +1959,8 @@ TEST(PluginObjectMergeProviderTest,
 
   const BuiltinTargetRoute *AndroidRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&
@@ -2031,6 +2035,8 @@ TEST(PluginObjectMergeProviderTest,
 
   const BuiltinTargetRoute *ELFRoute = nullptr;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
     if (Route.SupportsObject &&
         Route.ObjectFormat == BuiltinObjectFormat::ELF &&

@@ -26,6 +26,9 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--llvm-bin", type=Path, required=True)
     p.add_argument("--clang", default="clang")
+    p.add_argument(
+        "--neverc", type=Path, help="compile exports through NeverC IR and full LLVM"
+    )
     a = p.parse_args()
     out = a.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -109,22 +112,51 @@ def main():
     (out / "bound_cases.inc").write_text("".join(header))
     aggregate = "\n".join(source + wrappers)
     (out / "exports.c").write_text(aggregate)
-    results = []
-    for level in ("O0", "O2"):
-        obj = out / (level + ".o")
+
+    def compile_source(source, obj, level, name):
+        if not a.neverc:
+            run(
+                [a.clang, "-m32", "-" + level, "-fno-pie", "-c", source, "-o", obj],
+                name,
+            )
+            return
+        ir = obj.with_suffix(".ll")
         run(
             [
-                a.clang,
-                "-m32",
+                a.neverc,
+                "--target=i386-unknown-linux-gnu",
                 "-" + level,
                 "-fno-pie",
-                "-c",
-                out / "exports.c",
+                "-S",
+                "-emit-llvm",
+                source,
+                "-o",
+                ir,
+            ],
+            name + "-frontend",
+        )
+        assert "asm " not in ir.read_text(), "NeverC must select the native builtins"
+        run(
+            [a.llvm_bin / "opt", "-passes=verify", "-disable-output", ir],
+            name + "-verify",
+        )
+        run(
+            [
+                a.llvm_bin / "llc",
+                "-" + level,
+                "-verify-machineinstrs",
+                "-filetype=obj",
+                ir,
                 "-o",
                 obj,
             ],
-            level + "-compile",
+            name + "-lower",
         )
+
+    results = []
+    for level in ("O0", "O2"):
+        obj = out / (level + ".o")
+        compile_source(out / "exports.c", obj, level, level + "-compile")
         disasm = run([a.llvm_bin / "llvm-objdump", "-d", obj], level + "-disasm")
         assert len(re.findall(r"\tbound\s", disasm)) == 336
         exe = out / level
@@ -156,18 +188,8 @@ def main():
     # The check must catch a result-width error with every BOUND still intact.
     bad = aggregate.replace("unsigned r=", "unsigned r=(unsigned short)")
     (out / "wrong-return.c").write_text(bad)
-    run(
-        [
-            a.clang,
-            "-m32",
-            "-O2",
-            "-fno-pie",
-            "-c",
-            out / "wrong-return.c",
-            "-o",
-            out / "wrong-return.o",
-        ],
-        "negative-compile",
+    compile_source(
+        out / "wrong-return.c", out / "wrong-return.o", "O2", "negative-compile"
     )
     run(
         [
@@ -193,7 +215,10 @@ def main():
         a.llvm_bin / "llvm-objdump",
         Path(objcopy),
     ]
+    if a.neverc:
+        tools += [a.neverc, a.llvm_bin / "opt", a.llvm_bin / "llc"]
     summary = dict(
+        compiler="neverc-ir-full-llvm" if a.neverc else "clang",
         profiles=results,
         compiled_sources=336,
         exported_elf_objects=len(object_inputs),

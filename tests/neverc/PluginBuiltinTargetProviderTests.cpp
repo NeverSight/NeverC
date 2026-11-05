@@ -72,7 +72,7 @@ file_magic::Impl expectedMagic(BuiltinObjectFormat Format) {
 TEST(PluginBuiltinTargetProviderTest, InventoryIsCompleteAndStable) {
   using ExpectedRoute =
       std::tuple<const char *, BuiltinTargetABIKind, BuiltinObjectFormat>;
-  const std::array<ExpectedRoute, 9> Expected = {{
+  const std::array<ExpectedRoute, 10> Expected = {{
       {"x86_64-apple-macosx", BuiltinTargetABIKind::X86_64SysV,
        BuiltinObjectFormat::MachO},
       {"aarch64-apple-macosx", BuiltinTargetABIKind::AArch64DarwinPCS,
@@ -91,6 +91,8 @@ TEST(PluginBuiltinTargetProviderTest, InventoryIsCompleteAndStable) {
        BuiltinObjectFormat::COFF},
       {"aarch64-apple-ios", BuiltinTargetABIKind::AArch64DarwinPCS,
        BuiltinObjectFormat::MachO},
+      {"i386-unknown-linux-gnu", BuiltinTargetABIKind::X86_32SysV,
+       BuiltinObjectFormat::ELF},
   }};
 
   ArrayRef<BuiltinTargetRoute> Routes = builtinTargetRoutes();
@@ -104,8 +106,8 @@ TEST(PluginBuiltinTargetProviderTest, InventoryIsCompleteAndStable) {
     EXPECT_EQ(Routes[I].ABI, ABI);
     EXPECT_EQ(Routes[I].ObjectFormat, Format);
     EXPECT_TRUE(Routes[I].SupportsSource);
-    EXPECT_TRUE(Routes[I].SupportsAssembly);
-    EXPECT_TRUE(Routes[I].SupportsObject);
+    EXPECT_EQ(Routes[I].SupportsAssembly, ABI != BuiltinTargetABIKind::X86_32SysV);
+    EXPECT_EQ(Routes[I].SupportsObject, ABI != BuiltinTargetABIKind::X86_32SysV);
     EXPECT_FALSE(Routes[I].SupportsMCDecode);
     EXPECT_TRUE(TargetIDs.emplace(Routes[I].TargetID.High,
                                   Routes[I].TargetID.Low)
@@ -143,11 +145,29 @@ TEST(PluginBuiltinTargetProviderTest,
   EXPECT_EQ(findBuiltinTargetRoute("riscv64-unknown-linux-gnu"), nullptr);
 }
 
+TEST(PluginBuiltinTargetProviderTest, I386SourceRouteOwnsItsWidthAndCapabilities) {
+  const auto *Route = findBuiltinTargetRoute("i686-linux-gnu");
+  ASSERT_NE(Route, nullptr);
+  EXPECT_EQ(Route->ABI, BuiltinTargetABIKind::X86_32SysV);
+  EXPECT_TRUE(Route->SupportsSource);
+  EXPECT_FALSE(Route->SupportsObject);
+  EXPECT_FALSE(Route->SupportsAssembly);
+  auto Key = createBuiltinTargetKey(*Route, "i686-linux-gnu", "i686",
+                                    NEVERC_TARGET_RELOCATION_STATIC);
+  ASSERT_TRUE(static_cast<bool>(Key)) << errorText(Key.takeError());
+  EXPECT_EQ(Key->view().PointerWidth, 32U);
+  EXPECT_EQ(findBuiltinTargetRoute("i386-pc-windows-msvc"), nullptr);
+  EXPECT_EQ(findBuiltinTargetRoute("i386-linux-android29"), nullptr);
+  EXPECT_EQ(findBuiltinTargetRoute("i386-apple-macosx"), nullptr);
+}
+
 TEST(PluginBuiltinTargetProviderTest,
      FrontendLLVMAndObjectWriterAgreeForEveryRoute) {
   initializeBuiltinTargets();
 
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     SCOPED_TRACE(Route.CanonicalTriple.str());
 
     CompilerInstance Compiler;

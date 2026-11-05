@@ -1006,6 +1006,7 @@ void NeverC::RenderTargetOptions(const llvm::Triple &EffectiveTriple,
     AddAArch64TargetArgs(Args, CmdArgs);
     break;
 
+  case llvm::Triple::x86:
   case llvm::Triple::x86_64:
     AddX86TargetArgs(Args, CmdArgs);
     break;

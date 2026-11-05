@@ -3053,6 +3053,20 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return genX86Select(*this, Ops[2], Res, Ops[1]);
   }
 
+  case X86::BI__builtin_ia32_bound16:
+  case X86::BI__builtin_ia32_bound32:
+  case X86::BI__builtin_ia32_bound16_address32:
+  case X86::BI__builtin_ia32_bound32_address32: {
+    Intrinsic::ID ID = Intrinsic::x86_bound16;
+    if (BuiltinID == X86::BI__builtin_ia32_bound32)
+      ID = Intrinsic::x86_bound32;
+    else if (BuiltinID == X86::BI__builtin_ia32_bound16_address32)
+      ID = Intrinsic::x86_bound16_address32;
+    else if (BuiltinID == X86::BI__builtin_ia32_bound32_address32)
+      ID = Intrinsic::x86_bound32_address32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
+
   case X86::BI__cpuid:
   case X86::BI__builtin_ia32_cpuidex:
   case X86::BI__cpuidex: {

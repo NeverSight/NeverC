@@ -4396,6 +4396,7 @@ Value *genTargetArchBuiltinExpr(FunctionEmitter *FE, unsigned BuiltinID,
   switch (Arch) {
   case llvm::Triple::aarch64:
     return FE->genAArch64BuiltinExpr(BuiltinID, E, Arch);
+  case llvm::Triple::x86:
   case llvm::Triple::x86_64:
     return FE->genX86BuiltinExpr(BuiltinID, E);
   default:

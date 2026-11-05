@@ -1165,6 +1165,8 @@ TEST(PluginObjectWriterTest,
 
   std::array<bool, 3> Tested{{false, false, false}};
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const size_t FormatIndex =
         Route.ObjectFormat == BuiltinObjectFormat::ELF    ? 0
         : Route.ObjectFormat == BuiltinObjectFormat::COFF ? 1
@@ -1254,6 +1256,8 @@ TEST(
 
   std::array<bool, 3> Tested{{false, false, false}};
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    if (!Route.SupportsObject)
+      continue;
     const size_t FormatIndex =
         Route.ObjectFormat == BuiltinObjectFormat::ELF    ? 0
         : Route.ObjectFormat == BuiltinObjectFormat::COFF ? 1

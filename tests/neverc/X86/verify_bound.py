@@ -120,6 +120,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--llvm-bin", type=Path, required=True)
     parser.add_argument("--clang", type=Path)
+    parser.add_argument(
+        "--neverc",
+        type=Path,
+        help="compile i386 source to IR, then use the full LLVM backend",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--host-clang", default="clang")
     args = parser.parse_args()
@@ -154,7 +159,9 @@ def main():
         ("input.ll", "input.c", "bound_cases.inc", "original.s"), generate()
     ):
         (out / name).write_text(text)
-    for compiler in ("llvm", "clang") if args.clang else ("llvm",):
+    compilers = ["llvm"] + (["clang"] if args.clang else [])
+    compilers += ["neverc"] if args.neverc else []
+    for compiler in compilers:
         for level in ("O0", "O2"):
             stem = compiler + "-" + level
             obj = out / (stem + ".o")
@@ -177,6 +184,44 @@ def main():
                     [
                         args.llvm_bin / "llc",
                         "-mtriple=i386-unknown-linux-gnu",
+                        "-" + level,
+                        "-verify-machineinstrs",
+                        "-filetype=obj",
+                        source,
+                        "-o",
+                        obj,
+                    ],
+                    stem + "-compile",
+                )
+            elif compiler == "neverc":
+                source = out / (stem + ".ll")
+                run(
+                    [
+                        args.neverc,
+                        "--target=i386-unknown-linux-gnu",
+                        "-" + level,
+                        "-fno-pie",
+                        "-S",
+                        "-emit-llvm",
+                        out / "input.c",
+                        "-o",
+                        source,
+                    ],
+                    stem + "-frontend",
+                )
+                assert "asm " not in source.read_text()
+                run(
+                    [
+                        args.llvm_bin / "opt",
+                        "-passes=verify",
+                        "-disable-output",
+                        source,
+                    ],
+                    stem + "-verify",
+                )
+                run(
+                    [
+                        args.llvm_bin / "llc",
                         "-" + level,
                         "-verify-machineinstrs",
                         "-filetype=obj",
@@ -280,6 +325,7 @@ def main():
             str(p.resolve()): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in [args.llvm_bin / n for n in ("llc", "opt", "llvm-objdump")]
             + ([args.clang] if args.clang else [])
+            + ([args.neverc] if args.neverc else [])
             + [Path(shutil.which(args.host_clang) or args.host_clang)]
         },
         affinity=sorted(os.sched_getaffinity(0)),

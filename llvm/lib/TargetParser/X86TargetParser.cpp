@@ -239,6 +239,12 @@ constexpr ProcInfo Processors[] = {
  // Empty processor. Include X87 and CMPXCHG8 for backwards compatibility.
   { {""}, CK_None, ~0U, FeatureX87 | FeatureCMPXCHG8B, '\0', false },
   { {"generic"}, CK_None, ~0U, FeatureX87 | FeatureCMPXCHG8B | Feature64BIT, 'A', true },
+  { {"i386"}, CK_i386, ~0U, FeatureX87, '\0', false },
+  { {"i486"}, CK_i486, ~0U, FeatureX87, '\0', false },
+  { {"i586"}, CK_Pentium, ~0U, FeatureX87 | FeatureCMPXCHG8B, '\0', false },
+  { {"pentium"}, CK_Pentium, ~0U, FeatureX87 | FeatureCMPXCHG8B, '\0', false },
+  { {"i686"}, CK_PentiumPro, ~0U, FeatureX87 | FeatureCMPXCHG8B | FeatureCMOV, '\0', false },
+  { {"pentiumpro"}, CK_PentiumPro, ~0U, FeatureX87 | FeatureCMPXCHG8B | FeatureCMOV, '\0', false },
   // Netburst microarchitecture based processors.
   { {"nocona"}, CK_Nocona, ~0U, FeaturesNocona, 'L', false },
   // Core microarchitecture based processors.
@@ -372,9 +378,10 @@ constexpr ProcInfo Processors[] = {
 
 constexpr const char *NoTuneList[] = {"x86-64-v2", "x86-64-v3", "x86-64-v4"};
 
-X86::CPUKind llvm::X86::parseArchX86(StringRef CPU) {
+X86::CPUKind llvm::X86::parseArchX86(StringRef CPU, bool Only64Bit) {
   for (const auto &P : Processors)
-    if (!P.OnlyForCPUDispatchSpecific && P.Name == CPU)
+    if (!P.OnlyForCPUDispatchSpecific && P.Name == CPU &&
+        (!Only64Bit || (P.Features & Feature64BIT).any()))
       return P.Kind;
 
   return CK_None;
@@ -386,9 +393,11 @@ X86::CPUKind llvm::X86::parseTuneCPU(StringRef CPU) {
   return parseArchX86(CPU);
 }
 
-void llvm::X86::fillValidCPUArchList(SmallVectorImpl<StringRef> &Values) {
+void llvm::X86::fillValidCPUArchList(SmallVectorImpl<StringRef> &Values,
+                                      bool Only64Bit) {
   for (const auto &P : Processors)
-    if (!P.OnlyForCPUDispatchSpecific && !P.Name.empty())
+    if (!P.OnlyForCPUDispatchSpecific && !P.Name.empty() &&
+        (!Only64Bit || (P.Features & Feature64BIT).any()))
       Values.emplace_back(P.Name);
 }
 
