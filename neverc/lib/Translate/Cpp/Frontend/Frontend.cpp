@@ -26785,6 +26785,25 @@ public:
         functionalBindDestructionSourceComplete(Found->second, Site->second);
   }
   std::optional<bool> traverseBindFactory(CallExpr *Call) {
+    const auto *MetadataFunction = Call ? Call->getDirectCallee() : nullptr;
+    const auto MetadataOrigin = MetadataFunction
+        ? A.S.sdkFile(A.Sources, MetadataFunction->getLocation()) : std::nullopt;
+    if (MetadataFunction && MetadataFunction->getIdentifier() && MetadataFunction->getName() == "bind" &&
+        A.S.owns(A.Sources, Call->getExprLoc()) && MetadataOrigin && MetadataOrigin->Root == "libcxx" &&
+        MetadataOrigin->Path == "__functional/bind.h") {
+      const auto Metadata = describeFunctionalBindOwnedFactorySource(A.S, A.Sources, Call, A.Context);
+      const auto *Copy = Metadata && Metadata->CallableCopy ? Metadata->CallableCopy->getConstructor() : nullptr;
+      llvm::errs() << "BIND-OWNED-FACTORY-METADATA complete=" << bool(Metadata)
+          << " copy=" << bool(Copy) << " move=" << bool(Copy && Copy->isMoveConstructor())
+          << " ordinary=" << bool(Copy && A.S.owns(A.Sources, Copy->getLocation())) << "\n";
+      const auto MetadataInputs = functionalBindSourceInputs();
+      std::set<const CXXMethodDecl *> OrdinaryQueries;
+      const bool SourceComplete = Metadata && MetadataInputs &&
+          approvedFunctionalBindOwnedFactorySource(A.S, A.Sources, *Metadata, A.Context,
+              MetadataInputs->Dependencies, MetadataInputs->Selections, A.SpecialMembers, A.OperationTraits, OrdinaryQueries);
+      llvm::errs() << "BIND-OWNED-FACTORY-SOURCE inputs=" << bool(MetadataInputs)
+          << " complete=" << SourceComplete << " ordinary-queries=" << OrdinaryQueries.size() << "\n";
+    }
     const auto Source = describeFunctionalBindFactorySource(A.S, A.Sources, Call, A.Context);
     if (!Source) return std::nullopt;
     return traverseTypeQuerySource(Call, [&] {
