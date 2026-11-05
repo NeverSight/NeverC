@@ -26,6 +26,8 @@ def main():
     parser.add_argument("--neverc", type=Path, required=True)
     parser.add_argument("--llvm-bin", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--machine-backend", action="store_true",
+                        help="use NeverC -c for the i386 objects")
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -62,8 +64,7 @@ def main():
         )
         triple = ("i386" if bits == 32 else "x86_64") + "-unknown-linux-gnu"
         ir, obj, exe = (out / (name + suffix) for suffix in (".ll", ".o", ".exe"))
-        run(
-            [
+        frontend = [
                 tools["neverc"],
                 "--target=" + triple,
                 "-" + opt,
@@ -82,9 +83,8 @@ def main():
                 ROOT / "i386_intrinsic_headers.c",
                 "-o",
                 ir,
-            ],
-            name + "-frontend",
-        )
+            ]
+        run(frontend, name + "-frontend")
         text = ir.read_text()
         history = re.search(r"^define[^\n]*@history\([^\n]*\).*?^}", text, re.M | re.S)
         assert history and "call void @llvm.x86.hreset(" in history[0]
@@ -105,6 +105,10 @@ def main():
             ],
             name + "-object",
         )
+        if args.machine_backend and bits == 32:
+            native = [x for x in frontend if x not in ("-S", "-emit-llvm")]
+            native[-1] = obj
+            run(native + ["-c", "-fllvm-backend=" + tools["llc"]], name + "-native")
         assembly = run([tools["llvm-objdump"], "-d", obj], name + "-assembly")
         assert re.search(r"\bhreset\b", assembly) and "%zmm" in assembly
         run(
@@ -140,6 +144,7 @@ def main():
         controls.append(compile_case(bits, "O2", True, wrong=True))
     report = dict(
         schema_version=1,
+        machine_backend=args.machine_backend,
         inputs={
             path.name: sha256(path)
             for path in (Path(__file__), ROOT / "i386_intrinsic_headers.c")

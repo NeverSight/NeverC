@@ -1207,6 +1207,10 @@ OPTION(prefix_1, "-flinker-map=", flinker_map_EQ, Joined, f_Group, INVALID,
        nullptr, LinkOption, DefaultVis, 0,
        "Write a link map to the specified file (use '-' for stdout)", "<file>",
        nullptr)
+OPTION(prefix_1, "-fllvm-backend=", fllvm_backend_EQ, Joined, f_Group, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Use the full NeverSight LLVM llc executable for i386 machine output",
+       "<path>", nullptr)
 OPTION(prefix_1, "-flto=auto", flto_EQ_auto, Flag, f_Group, flto_EQ, "full\0",
        0, DefaultVis, 0, "Enable LTO in 'full' mode", nullptr, nullptr)
 OPTION(prefix_1, "-flto=jobserver", flto_EQ_jobserver, Flag, f_Group, flto_EQ,

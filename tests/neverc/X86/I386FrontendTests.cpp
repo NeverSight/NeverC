@@ -8,6 +8,55 @@
 
 class I386FrontendTest : public X86NativeBuiltinTest {};
 
+TEST_F(I386FrontendTest, PICOptionsOwnMacrosAndModuleFlags) {
+  const auto Source = tmpFile("pic.c");
+  writeFile(Source, R"(
+#ifndef __PIC__
+#define __PIC__ 0
+#endif
+#ifndef __PIE__
+#define __PIE__ 0
+#endif
+_Static_assert(__PIC__ == EXPECT_PIC, "PIC level");
+_Static_assert(__PIE__ == EXPECT_PIE, "PIE level");
+extern int global;
+int *address(void) { return &global; }
+)");
+  struct Case {
+    std::vector<std::string> Flags;
+    unsigned PIC, PIE;
+  };
+  for (const auto &C : std::vector<Case>{{{}, 2, 2},
+                                         {{"-fno-pic"}, 0, 0},
+                                         {{"-fpic"}, 1, 0},
+                                         {{"-fPIC"}, 2, 0},
+                                         {{"-fpie"}, 1, 1},
+                                         {{"-fPIE"}, 2, 2},
+                                         {{"-fPIC", "-fno-pie"}, 0, 0},
+                                         {{"-fno-PIC", "-fpie"}, 1, 1},
+                                         {{"-fpie", "-fPIC"}, 2, 0}}) {
+    auto Args = C.Flags;
+    const auto IR = tmpFile("pic.ll");
+    Args.insert(Args.end(), {"--target=i386-unknown-linux-gnu", "-S",
+                             "-emit-llvm", "-fno-builtin-mimalloc",
+                             "-DEXPECT_PIC=" + std::to_string(C.PIC),
+                             "-DEXPECT_PIE=" + std::to_string(C.PIE),
+                             Source.string(), "-o", IR.string()});
+    const auto R = ncc(Args);
+    ASSERT_EQ(R.exitCode, 0) << R.err;
+    const auto Text = readFile(IR);
+    for (const auto &[Name, Level] :
+         {std::pair{"PIC Level", C.PIC}, std::pair{"PIE Level", C.PIE}}) {
+      const auto Found = Text.find(std::string("\"") + Name + "\"");
+      EXPECT_EQ(Found != std::string::npos, Level != 0) << Text;
+      if (Level)
+        EXPECT_NE(Text.find(std::string("\"") + Name + "\", i32 " +
+                            std::to_string(Level)),
+                  std::string::npos);
+    }
+  }
+}
+
 TEST_F(I386FrontendTest, OwnsILP32MacrosLayoutAndCallingConvention) {
   const auto Source = tmpFile("i386.c");
   writeFile(Source, R"(

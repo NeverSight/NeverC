@@ -1120,8 +1120,10 @@ void NeverC::AddX86TargetArgs(const ArgList &Args,
   if (Arg *A = Args.getLastArg(options::OPT_masm_EQ)) {
     llvm::StringRef Value = A->getValue();
     if (Value == "intel" || Value == "att") {
-      CmdArgs.push_back("-mllvm");
-      CmdArgs.push_back(Args.MakeArgString("-x86-asm-syntax=" + Value));
+      if (!Args.hasArg(options::OPT_fllvm_backend_EQ)) {
+        CmdArgs.push_back("-mllvm");
+        CmdArgs.push_back(Args.MakeArgString("-x86-asm-syntax=" + Value));
+      }
       CmdArgs.push_back(Args.MakeArgString("-inline-asm=" + Value));
     } else {
       D.Diag(diag::err_drv_unsupported_option_argument)
@@ -2862,6 +2864,13 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
 
   CmdArgs.push_back("-triple");
   CmdArgs.push_back(Args.MakeArgString(TripleStr));
+
+  Args.AddLastArg(CmdArgs, options::OPT_fllvm_backend_EQ);
+  if (Triple.getArch() == llvm::Triple::x86)
+    Args.AddLastArg(CmdArgs, options::OPT_fPIC, options::OPT_fpic,
+                    options::OPT_fPIE, options::OPT_fpie, options::OPT_fno_PIC,
+                    options::OPT_fno_pic, options::OPT_fno_PIE,
+                    options::OPT_fno_pie);
 
   Args.ClaimAllArgs(options::OPT_MJ);
   Args.ClaimAllArgs(options::OPT_gen_cdb_fragment_path);

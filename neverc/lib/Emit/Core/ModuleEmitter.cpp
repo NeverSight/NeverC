@@ -580,8 +580,18 @@ void ModuleEmitter::release() {
   if (LangOpts.EHAsynch)
     getModule().addModuleFlag(llvm::Module::Warning, "eh-asynch", 1);
 
-  if (Context.getLangOpts().PIE)
-    getModule().setPIELevel(llvm::PIELevel::Large);
+  const bool IsI386 =
+      Context.getTargetInfo().getTriple().getArch() == llvm::Triple::x86;
+  if (IsI386 && LangOpts.I386PICLevel)
+    getModule().addModuleFlag(llvm::Module::Min, "PIC Level",
+                              LangOpts.I386PICLevel);
+  if (LangOpts.PIE) {
+    if (IsI386)
+      getModule().addModuleFlag(llvm::Module::Max, "PIE Level",
+                                LangOpts.I386PICLevel);
+    else
+      getModule().setPIELevel(llvm::PIELevel::Large);
+  }
 
   if (getCodeGenOpts().CodeModel.size() > 0) {
     unsigned CM = llvm::StringSwitch<unsigned>(getCodeGenOpts().CodeModel)

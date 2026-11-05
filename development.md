@@ -3007,16 +3007,46 @@ Long-mode calls and invalid constant address controls fail during semantic
 checking. The generated intrinsic signatures and immediate attributes are
 maintained by [the intrinsic synchronizer](utils/lint/sync-x86-native-intrinsics.py).
 
-The embedded LLVM machine backend remains pruned to x86-64. Its register,
-frame, calling-convention, instruction-selection, MC and linker paths still
-need restoration before ordinary i386 `-c` or `-S` can work. These requests
-fail explicitly. Source generation currently uses `--target`, followed by the
-full LLVM fork for machine code:
+NeverC can emit i386 ELF objects and assembly directly when an explicit full
+NeverSight LLVM backend is selected. Its normal frontend and optimization
+pipeline runs first; the backend receives verified LLVM IR in a private
+workspace. No LLVM C++ objects cross the process boundary:
 
 ```sh
-neverc --target=i386-unknown-linux-gnu -O2 -S -emit-llvm input.c -o input.ll
-llc -O2 -verify-machineinstrs -filetype=obj input.ll -o input.o
+neverc --target=i386-unknown-linux-gnu -O2 -c input.c -o input.o \
+  -fllvm-backend=/path/to/neversight-llvm/bin/llc
 ```
+
+The full fork must answer `--neversight-codegen-protocol` with
+`neversight-codegen-v1 x86`. Its strict `--neversight-codegen` mode rejects
+unknown reserved `llvm.*` names instead of lowering them to external calls.
+The adapter enables machine verification and validates a complete little-endian
+ELF32 `EM_386` relocatable object before publishing it. Bitcode
+input, `-S`, AT&T/Intel assembly, optimization level, CPU/features, code model,
+section options and ordinary DWARF use the same route. The full fork also assembles complete
+Intel OFFSET expressions while retaining i386 GOTPC relocations, so PIC
+assembly can be assembled and linked again. Textual IR input remains
+unsupported by the embedded IR reader; textual IR output remains available. Source PIC/PIE flags use
+the last specified option to own i386 macros, IR module flags and relocation;
+the Linux default remains large PIE. Imported IR retains its own module flags.
+
+The embedded backend remains pruned to x86-64. Without the explicit full
+backend, i386 machine output still fails. This route disables implicit LTO;
+explicit LTO, `-mllvm`, split DWARF, integrated linking and custom target/MIR/MC
+or DynCode machine hooks are rejected. IR-only output remains available without
+an external backend. Link emitted objects with a separate i386 toolchain. This
+interface does not restore the embedded register/frame/MC/linker implementation
+or install a new production LLVM SDK.
+
+`verify_i386_machine_backend.py --neverc NEVERC --llvm-bin LLVM_BIN --output OUT`
+checks direct objects and assembly, static/PIC/PIE executable and shared-library
+relocations, TLS, sections, debug info, bitcode input, stdout, paths containing
+spaces, protocol/output failures and workspace cleanup. The ABI, intrinsic-header,
+protected far-pointer, ARPL-source and BOUND-source qualification scripts accept
+`--machine-backend` to exercise actual NeverC C-to-object compilation through
+this entry point before their independent runtime/state oracles. The far-pointer
+fixture also qualifies protected code16 with its existing 32-bit stack/pointer
+ABI; this is not a 16-bit C data model or real/VM86 execution contract.
 
 The source route covers Linux ELF. Other 32-bit platforms and register
 conventions such as fastcall/vectorcall are not enabled. There is no bundled

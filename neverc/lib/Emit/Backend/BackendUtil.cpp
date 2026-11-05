@@ -1,5 +1,6 @@
 #include "neverc/Emit/Backend/BackendUtil.h"
 #include "Backend/BackendConsumer.h"
+#include "Backend/FullLLVMBackend.h"
 #include "Backend/LinkInModulesPass.h"
 #include "Backend/ParallelCodeGenMergeInternal.h"
 #include "Backend/Runtime/MimallocRuntimeLinker.h"
@@ -1541,16 +1542,50 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   setCommandLineOpts(CodeGenOpts);
 
   bool RequiresCodeGen = actionRequiresCodeGen(Action);
+  const bool UseFullLLVM =
+      RequiresCodeGen && !CodeGenOpts.FullLLVMBackend.empty();
   const bool UseCoarseObjectProvider =
       RequiresCodeGen && Action == Backend_EmitObj &&
       findCoarseObjectEdge();
-  createTargetMachine(RequiresCodeGen && !UseCoarseObjectProvider);
+  if (UseFullLLVM) {
+    if (UseCoarseObjectProvider ||
+        (DynCodeOpts &&
+         dyncode::createDynCodeMachinePipelineHooks(*DynCodeOpts))) {
+      Diags.Report(diag::err_fe_error_backend)
+          << "full LLVM backend cannot execute custom target or DynCode "
+             "machine hooks";
+      return;
+    }
+    if (PluginTask) {
+      auto MIR = plugin::MIRPassPlan::create(*PluginTask);
+      if (!MIR) {
+        Diags.Report(diag::err_fe_error_backend) << toString(MIR.takeError());
+        return;
+      }
+      auto MC = plugin::MCEmissionPlan::create(*PluginTask);
+      if (!MC) {
+        Diags.Report(diag::err_fe_error_backend) << toString(MC.takeError());
+        return;
+      }
+      auto Snapshot = plugin::findPluginTargetSnapshot(
+          PluginTask->processServices(), PluginTask->session().handle());
+      if (!(*MIR)->empty() || !(*MC)->empty() ||
+          (Snapshot && Snapshot->selectedTarget())) {
+        Diags.Report(diag::err_fe_error_backend)
+            << "full LLVM backend cannot execute target, MIR or MC plugin "
+               "hooks";
+        return;
+      }
+    }
+  }
+  createTargetMachine(RequiresCodeGen && !UseCoarseObjectProvider &&
+                      !UseFullLLVM);
 
-  if (RequiresCodeGen && !TM && !UseCoarseObjectProvider)
+  if (RequiresCodeGen && !TM && !UseCoarseObjectProvider && !UseFullLLVM)
     return;
   if (TM)
     TheModule->setDataLayout(TM->createDataLayout());
-  if (RequiresCodeGen && !UseCoarseObjectProvider &&
+  if (RequiresCodeGen && !UseCoarseObjectProvider && !UseFullLLVM &&
       !prepareMachinePasses())
     return;
 
@@ -1577,7 +1612,7 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   // even though the enclosing frontend holds the process-global option gate
   // exclusively. Keep timed code generation on this thread.
   bool UseParallel =
-      RequiresCodeGen && !UseCoarseObjectProvider &&
+      RequiresCodeGen && !UseCoarseObjectProvider && !UseFullLLVM &&
       Action == Backend_EmitObj && !CodeGenOpts.PrepareForLTO &&
       ParallelN != 1 && !EmbedsSplitDwarf && !MCComponentProvider &&
       !MCEmissionHooks && !llvm::TimePassesIsEnabled &&
@@ -1606,6 +1641,20 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
 
   if (UseCoarseObjectProvider) {
     (void)runCoarseObjectCodeGen(*OS);
+    return;
+  }
+
+  if (UseFullLLVM) {
+    auto Output =
+        neverc::emitWithFullLLVM(*TheModule, Action, CodeGenOpts, TargetOpts);
+    if (!Output) {
+      Diags.Report(diag::err_fe_error_backend) << toString(Output.takeError());
+      return;
+    }
+    if (Action == Backend_EmitObj && PluginTask)
+      (void)runPluginObjectPipeline(*Output, *OS);
+    else
+      OS->write(Output->data(), Output->size());
     return;
   }
 

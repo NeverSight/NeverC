@@ -92,6 +92,7 @@ add_neverc_library(nevercEmit
   Debug/DebugEmitter.cpp
 
   Backend/BackendUtil.cpp
+  Backend/FullLLVMBackend.cpp
   Backend/ParallelCodeGenMerge.cpp
   Backend/LinkInModulesPass.cpp
 

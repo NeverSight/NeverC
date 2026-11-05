@@ -2,7 +2,7 @@
 """Execute NeverC i386 IR through the full LLVM fork against a Clang C ABI peer.
 
 This deliberately does not claim the embedded, 64-bit-only machine backend or
-linker can emit i386 objects. Their refusal is part of this regression.
+linker can emit i386 objects. Their refusal without an explicit full backend is part of this regression.
 """
 
 import argparse
@@ -21,6 +21,8 @@ def main():
     parser.add_argument("--llvm-bin", type=Path, required=True)
     parser.add_argument("--clang", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--machine-backend", action="store_true",
+                        help="use NeverC -c with its explicit full LLVM backend")
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -77,6 +79,9 @@ def main():
                 ],
                 f"lower-{role}-{opt}",
             )
+            if args.machine_backend:
+                run(nc + ["-" + opt, "-fllvm-backend=" + str(args.llvm_bin / "llc"),
+                          "-c", source, "-o", obj], f"native-{role}-{opt}")
             if role == "producer":
                 bitcode = out / f"neverc-{role}-{opt}.bc"
                 run(
@@ -204,7 +209,8 @@ def main():
     (out / "summary.json").write_text(
         json.dumps(
             {
-                "scope": "i386 Linux C23 frontend ABI through full LLVM, embedded machine backend unavailable",
+                "scope": "i386 Linux C23 ABI through full LLVM; embedded backend remains x64-only",
+                "machine_backend": args.machine_backend,
                 "results": results,
                 "total_checks": sum(x["checks"] for x in results),
                 "negative_controls": 2,

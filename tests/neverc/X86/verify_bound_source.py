@@ -29,7 +29,11 @@ def main():
     p.add_argument(
         "--neverc", type=Path, help="compile exports through NeverC IR and full LLVM"
     )
+    p.add_argument("--machine-backend", action="store_true",
+                   help="compile exports directly with NeverC -c")
     a = p.parse_args()
+    if a.machine_backend and not a.neverc:
+        p.error("--machine-backend requires --neverc")
     out = a.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     records = []
@@ -153,6 +157,11 @@ def main():
             name + "-lower",
         )
 
+        if a.machine_backend:
+            run([a.neverc, "--target=i386-unknown-linux-gnu", "-" + level,
+                 "-fno-pie", "-c", "-fllvm-backend=" + str(a.llvm_bin / "llc"),
+                 source, "-o", obj], name + "-native")
+
     results = []
     for level in ("O0", "O2"):
         obj = out / (level + ".o")
@@ -218,6 +227,7 @@ def main():
     if a.neverc:
         tools += [a.neverc, a.llvm_bin / "opt", a.llvm_bin / "llc"]
     summary = dict(
+        machine_backend=a.machine_backend,
         compiler="neverc-ir-full-llvm" if a.neverc else "clang",
         profiles=results,
         compiled_sources=336,

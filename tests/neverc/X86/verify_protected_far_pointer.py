@@ -62,7 +62,11 @@ def main():
     parser.add_argument("--mode", type=int, choices=(16, 32), required=True)
     parser.add_argument("--frontend", type=Path,
                         help="compile builtin C through this Clang or NeverC")
+    parser.add_argument("--machine-backend", action="store_true",
+                        help="compile C directly with the NeverC full backend")
     args = parser.parse_args()
+    if args.machine_backend and not args.frontend:
+        parser.error("--machine-backend requires --frontend NEVERC")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, TMPDIR=str(output))
@@ -132,6 +136,11 @@ SECTIONS {
              *(["-enable-new-pm"] if level == "O2" else []),
              "-verify-machineinstrs", "-filetype=obj", source, "-o", obj],
             level + "-compile")
+        if args.machine_backend:
+            run([tools["frontend"], f"--target={triple}", f"-{level}",
+                 "-fno-pic", "-fno-stack-protector", "-mno-sse", "-mno-sse2",
+                 "-mno-mmx", "-c", "-fllvm-backend=" + tools["llc"],
+                 output / "input.c", "-o", obj], level + "-native")
         run([tools["ld.lld"], "-m", "elf_i386", "-T", output / "guest.ld",
              obj, "-o", elf], level + "-link")
         run([tools["objcopy"], "-O", "binary", elf, binary], level + "-image")
@@ -190,6 +199,7 @@ SECTIONS {
     assert tool_hashes == {name: sha256(path) for name, path in tools.items()}, "compiler changed during qualification"
     report = dict(schema_version=2, tools=tool_hashes,
                   frontend=str(args.frontend.resolve()) if args.frontend else None,
+                  machine_backend=args.machine_backend,
                   inputs={str(p.relative_to(ROOT)): sha256(p) for p in
                           [Path(__file__), ROOT / "protected_far_pointer_kvm.c",
                            ROOT / "KvmTransferFixture.h", ROOT / "KvmProtectedFaultFixture.h"]},

@@ -26,7 +26,11 @@ def main():
     parser.add_argument("--llvm-bin", type=Path, required=True)
     parser.add_argument("--frontend", type=Path, required=True)
     parser.add_argument("--fallback", action="store_true")
+    parser.add_argument("--machine-backend", action="store_true",
+                        help="compile exports directly with NeverC -c")
     args = parser.parse_args()
+    if args.machine_backend and args.fallback:
+        parser.error("--machine-backend tests native builtins, not fallback assembly")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     tools = {name: shutil.which(name) for name in ("clang", "ld.lld", "objcopy")}
@@ -159,6 +163,12 @@ SECTIONS {
                 ],
                 stem + "-compile",
             )
+            if args.machine_backend:
+                run([tools["frontend"], "--target=i386-unknown-linux-gnu",
+                     "-" + level, "-fno-pic", "-fno-stack-protector", "-mno-sse",
+                     "-mno-sse2", "-mno-mmx", "-c",
+                     "-fllvm-backend=" + tools["llc"], source, "-o", obj],
+                    stem + "-native")
             run(
                 [
                     tools["ld.lld"],
@@ -252,6 +262,7 @@ SECTIONS {
     assert len(negative) == 2
     report = dict(
         schema_version=1,
+        machine_backend=args.machine_backend,
         inputs={
             path.name: hashlib.sha256(path.read_bytes()).hexdigest()
             for path in [

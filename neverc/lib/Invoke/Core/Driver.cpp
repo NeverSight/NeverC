@@ -412,6 +412,7 @@ void Driver::setLTOMode(const llvm::opt::ArgList &Args) {
       parseLTOMode(*this, Args, options::OPT_flto_EQ, options::OPT_fno_lto);
 
   if (LTOMode == LTOK_None && !Args.hasArg(options::OPT_fno_lto) &&
+      !Args.hasArg(options::OPT_fllvm_backend_EQ) &&
       !Args.hasArg(options::OPT_S) && !Args.hasArg(options::OPT_E) &&
       !Args.hasArg(options::OPT_fsyntax_only)) {
     LTOMode = LTOK_Full;
@@ -2103,7 +2104,19 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
       ComputedTarget.getArch() == llvm::Triple::x86 &&
       (UArgs->hasArg(options::OPT_emit_llvm) ||
        UArgs->hasArg(options::OPT_fsyntax_only) || UArgs->hasArg(options::OPT_E));
-  if (!PluginInvocationTask && !ContainsError && !I386SourceOnly) {
+  const bool I386FullLLVM = ComputedTarget.getArch() == llvm::Triple::x86 &&
+                            UArgs->hasArg(options::OPT_fllvm_backend_EQ);
+  if (I386FullLLVM && !I386SourceOnly &&
+      !UArgs->hasArg(options::OPT_c, options::OPT_S)) {
+    const unsigned ID = Diags.getCustomDiagID(
+        DiagnosticsEngine::Error,
+        "full LLVM backend requires -c or -S; link the resulting objects "
+        "with an i386 toolchain");
+    Diag(ID);
+    ContainsError = true;
+  }
+  if (!PluginInvocationTask && !ContainsError && !I386SourceOnly &&
+      !I386FullLLVM) {
     llvm::StringRef CMakeTargetName;
     if (!isArchLinkedInLLVM(ComputedTarget, CMakeTargetName)) {
       Diag(diag::err_drv_target_backend_not_built)
