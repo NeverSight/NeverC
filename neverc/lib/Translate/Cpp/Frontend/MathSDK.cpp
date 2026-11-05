@@ -24258,7 +24258,9 @@ class BindSourceProof {
                 Check.family(Function, {"__functional/bind.h"})) {
               const auto *Call = dyn_cast<CallExpr>(Expression);
               const auto Factory = Call
-                  ? describeFunctionalBindFactorySource(S, SM, Call, Context) : std::nullopt;
+                  ? (Storage.CallableType->isRecordType()
+                      ? describeFunctionalBindOwnedFactorySource(S, SM, Call, Context)
+                      : describeFunctionalBindFactorySource(S, SM, Call, Context)) : std::nullopt;
               if (!Factory || Factory->Factory != Function || Factory->Storage.Record != Storage.Record ||
                   !Graph.bindFunctionalBindOwnedInputAliases(*Factory, *Use, OwnedInputAliasSource)) return functionalBindDiagnosticFailure(__LINE__);
             }
