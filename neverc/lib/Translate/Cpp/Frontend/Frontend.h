@@ -2135,6 +2135,25 @@ bool approvedFunctionalBindCopySource(
     llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
+// Source graphs only. Export exact ordinary signature dependencies after
+// whole-graph success; runtime copies and cleanup need independent closure.
+bool approvedFunctionalBindOwnedCopySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCopySource &Copy, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnedQuerySources);
+bool approvedFunctionalBindOwnedDestructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindDestructionSource &Destruction, clang::SourceLocation Location,
+    const clang::ASTContext &Context, llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnedQuerySources);
+
 bool approvedFunctionalBindDestructionSource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindDestructionSource &Destruction, clang::SourceLocation Location,

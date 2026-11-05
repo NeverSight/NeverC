@@ -26785,6 +26785,33 @@ public:
         functionalBindDestructionSourceComplete(Found->second, Site->second);
   }
   std::optional<bool> traverseBindFactory(CallExpr *Call) {
+    const auto *MetadataFunction = Call ? Call->getDirectCallee() : nullptr;
+    const auto MetadataOrigin = MetadataFunction
+        ? A.S.sdkFile(A.Sources, MetadataFunction->getLocation()) : std::nullopt;
+    if (MetadataFunction && MetadataFunction->getIdentifier() && MetadataFunction->getName() == "bind" &&
+        A.S.owns(A.Sources, Call->getExprLoc()) && MetadataOrigin && MetadataOrigin->Root == "libcxx" &&
+        MetadataOrigin->Path == "__functional/bind.h") {
+      const auto Metadata = describeFunctionalBindOwnedFactorySource(A.S, A.Sources, Call, A.Context);
+      const auto *Copy = Metadata && Metadata->CallableCopy ? Metadata->CallableCopy->getConstructor() : nullptr;
+      llvm::errs() << "BIND-OWNED-FACTORY-METADATA complete=" << bool(Metadata)
+          << " copy=" << bool(Copy) << " move=" << bool(Copy && Copy->isMoveConstructor())
+          << " ordinary=" << bool(Copy && A.S.owns(A.Sources, Copy->getLocation())) << "\n";
+      const auto MetadataInputs = functionalBindSourceInputs();
+      std::set<const CXXMethodDecl *> OrdinaryQueries;
+      const bool SourceComplete = Metadata && MetadataInputs &&
+          approvedFunctionalBindOwnedFactorySource(A.S, A.Sources, *Metadata, A.Context,
+              MetadataInputs->Dependencies, MetadataInputs->Selections, A.SpecialMembers, A.OperationTraits, OrdinaryQueries);
+      llvm::errs() << "BIND-OWNED-FACTORY-SOURCE inputs=" << bool(MetadataInputs)
+          << " complete=" << SourceComplete << " ordinary-queries=" << OrdinaryQueries.size() << "\n";
+      const auto *Destructor = Metadata ? Metadata->Storage.Record->getDestructor() : nullptr;
+      const auto Destruction = Destructor ? describeFunctionalBindDestructionSource(A.S, A.Sources, Destructor, A.Context) : std::nullopt;
+      std::set<const CXXMethodDecl *> DestructionQueries;
+      const bool DestructionComplete = Destruction && MetadataInputs &&
+          approvedFunctionalBindOwnedDestructionSource(A.S, A.Sources, *Destruction, Call->getExprLoc(), A.Context,
+              MetadataInputs->Dependencies, MetadataInputs->Selections, A.SpecialMembers, A.OperationTraits, DestructionQueries);
+      llvm::errs() << "BIND-OWNED-DESTRUCTION-SOURCE description=" << bool(Destruction)
+          << " complete=" << DestructionComplete << " ordinary-queries=" << DestructionQueries.size() << "\n";
+    }
     const auto Source = describeFunctionalBindFactorySource(A.S, A.Sources, Call, A.Context);
     if (!Source) return std::nullopt;
     return traverseTypeQuerySource(Call, [&] {
@@ -30294,6 +30321,77 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   for (const auto &Directive : MemberClassDirectives)
     Check.checkExplicitMemberClassInstantiation(Directive);
   prepareBorrowedQueryLayouts(*this);
+    // Diagnostic-only walk of the exact replacement bodies in the eight
+    // frozen inputs. It describes original AST nodes and publishes no grants.
+    unsigned BindProbeNodes = 0, BindProbeRoots = 0, BindProbeCalls = 0;
+    unsigned BindProbeMaxDepth = 0;
+    std::function<bool(const Stmt *, unsigned)> BindProbeStmt;
+    BindProbeStmt = [&](const Stmt *Statement, unsigned Depth) {
+      if (!Statement) return true;
+      if (Depth > 64 || ++BindProbeNodes > 200000) return false;
+      BindProbeMaxDepth = std::max(BindProbeMaxDepth, Depth);
+      if (const auto *Construction = dyn_cast<CXXConstructExpr>(Statement)) {
+        const auto Copy = describeFunctionalBindCopySource(S, Sources, Construction, Context);
+        const auto *Callable = Copy ? Copy->Layout.Storage.CallableType->getAsCXXRecordDecl() : nullptr;
+        if (Copy && Callable && S.owns(Sources, Callable->getLocation())) {
+          const auto Inputs = Check.functionalBindSourceInputs();
+          std::set<const CXXMethodDecl *> CopyQueries;
+          const bool Complete = Inputs && approvedFunctionalBindOwnedCopySource(S, Sources, *Copy, Context,
+              Inputs->Dependencies, Inputs->Selections, SpecialMembers, OperationTraits, CopyQueries);
+          llvm::errs() << "BIND-OWNED-COPY-SOURCE complete=" << Complete
+              << " ordinary-queries=" << CopyQueries.size()
+              << " selected-copy=" << Construction->getConstructor()->isCopyConstructor() << "\n";
+        }
+      }
+      if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Statement)) {
+        const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+        const auto *Owner = Method ? Method->getParent() : nullptr;
+        const auto Origin = Method ? S.sdkFile(Sources, Method->getLocation()) : std::nullopt;
+        if (Owner && Owner->getIdentifier() && Owner->getName() == "__bind" &&
+            S.owns(Sources, Call->getExprLoc()) && Origin && Origin->Root == "libcxx" &&
+            Origin->Path == "__functional/bind.h") {
+          const auto Metadata = describeFunctionalBindOwnedCallSource(S, Sources, Call, Context);
+          const auto *Target = Metadata ? Metadata->Target : nullptr;
+          const auto *Receiver = Metadata ? Metadata->Receiver : nullptr;
+          ++BindProbeCalls;
+          llvm::errs() << "BIND-OWNED-CALL-METADATA complete=" << bool(Metadata)
+              << " ordinary=" << bool(Target && S.owns(Sources, Target->getLocation()))
+              << " const=" << bool(Target && Target->isConst())
+              << " ref=" << unsigned(Target ? Target->getRefQualifier() : RQ_None)
+              << " receiver-lvalue=" << bool(Receiver && Receiver->isLValue())
+              << " wrapper-const=" << bool(Metadata && Metadata->Selected.Method->isConst())
+              << " object-xvalue=" << bool(Metadata && Metadata->Selected.Object->isXValue())
+              << " casts=" << (Metadata ? Metadata->Selected.InvokeCasts.size() : 0) << "\n";
+        }
+      }
+      for (const auto *Child : Statement->children())
+        if (!BindProbeStmt(Child, Depth + 1)) return false;
+      return true;
+    };
+    std::function<bool(const DeclContext *, unsigned)> BindProbeDecls;
+    BindProbeDecls = [&](const DeclContext *Declarations, unsigned Depth) {
+      if (!Declarations || Depth > 64 || ++BindProbeNodes > 200000) return false;
+      for (const auto *Declaration : Declarations->decls()) {
+        if (++BindProbeNodes > 200000) return false;
+        if (!S.owns(Sources, Declaration->getLocation())) continue;
+        if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
+          if (Function->getIdentifier() && Function->getName() == "replacement" &&
+              Function->getDefinition() == Function && Function->getBody()) {
+            ++BindProbeRoots;
+            if (!BindProbeStmt(Function->getBody(), Depth + 1)) return false;
+          }
+        } else if (const auto *Namespace = dyn_cast<NamespaceDecl>(Declaration)) {
+          if (!BindProbeDecls(Namespace, Depth + 1)) return false;
+        } else if (const auto *Linkage = dyn_cast<LinkageSpecDecl>(Declaration)) {
+          if (!BindProbeDecls(Linkage, Depth + 1)) return false;
+        }
+      }
+      return true;
+    };
+    const bool BindProbeComplete = BindProbeDecls(Context.getTranslationUnitDecl(), 0) && BindProbeRoots == 1;
+    llvm::errs() << "BIND-OWNED-CALL-PREPASS complete=" << BindProbeComplete
+        << " roots=" << BindProbeRoots << " calls=" << BindProbeCalls
+        << " nodes=" << BindProbeNodes << " depth=" << BindProbeMaxDepth << "\n";
   bool Traversed = Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (Traversed && S.Diagnostics.empty())
     Traversed = Check.finishTupleConstructorQueries();
