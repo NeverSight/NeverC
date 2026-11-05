@@ -19695,7 +19695,17 @@ bool shouldRetainFunctionalBindSpecialMemberSource(
     const auto Argument = Record->getTemplateArgs()[0].getAsType();
     if (Argument.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Input = Argument.getNonReferenceType();
-    return (Input->isFunctionPointerType() || Input->isFunctionType()) &&
+    const auto *Owned = Input->getAsCXXRecordDecl();
+    // Preserve actual Sema choices without asking for a definition, layout
+    // or special member. The complete consumer graph still matches every
+    // selected operation to its exact base/field and ordinary source.
+    const bool OwnedIdentity = Owned && !Input->isDependentType() &&
+        !Input.isVolatileQualified() && !Input.isRestrictQualified() &&
+        Input.getAddressSpace() == LangAS::Default && !Owned->isInvalidDecl() &&
+        !Owned->isUnion() && !Owned->isLambda() && !Owned->hasAttrs() &&
+        !isa<ClassTemplateSpecializationDecl>(Owned) &&
+        !Owned->getDescribedClassTemplate() && S.owns(SM, Owned->getLocation());
+    return (Input->isFunctionPointerType() || Input->isFunctionType() || OwnedIdentity) &&
         (!Constructor || Constructor->isCopyOrMoveConstructor());
   }
   if (Origin->Path == "__functional/weak_result_type.h" ||
