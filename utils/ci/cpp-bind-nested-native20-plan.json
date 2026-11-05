@@ -6,7 +6,7 @@
   "private_support_complete": false,
   "reference_fixture_basis_commit": "00c6be6b5b3106b83f70a0fe5a0af6b0f73038a0",
   "input_contract_sha256": "2f0dc5313f62535d4c9eaaa24b3c15b19911edb8a118f878e484d68e0690f442",
-  "required_native_programs": 20,
+  "required_native_programs": 32,
   "required_native_exit_code": 0,
   "cases": [
     {
@@ -58,6 +58,50 @@
       "name": "bind-nested-late-placeholder-value-read",
       "source": "#include <functional>\nint inner_calls, outer_calls;\nint change(int& value) { ++inner_calls; value = 9; return 1; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  int value = 3;\n  auto f = std::bind(&add, std::placeholders::_1,\n    std::bind(&change, std::placeholders::_1));\n  return f(value) == 10 && value == 9 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
       "source_sha256": "296efb30fe0b3a5dd34896e75395c9af3ee403e1173d706f762ee2384278ac4b"
+    },
+    {
+      "name": "bind-callable-owned-const",
+      "source": "#include <functional>\nstruct Op { int offset; int operator()(int x, int y) const { return offset + x + y; } };\nextern \"C\" int replacement() {\n  auto b = std::bind(Op{3}, std::placeholders::_1, 4);\n  return b(5) == 12 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "571b37022bee7a6adad5484be6170d3233b2df9b03f9bb8ee20b34340dbd602e",
+      "private_probe_source_sha256": "4c5ee56d7357c2e7a34274dc7bc64216002ec4fd986a65ed85846e974d5d7667",
+      "native_entry_wrapper": "\nint main() { return replacement(); }\n"
+    },
+    {
+      "name": "bind-callable-independent-state",
+      "source": "#include <functional>\nstruct Counter { int value; int operator()(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  auto b = std::bind(Counter{1}, std::placeholders::_1);\n  int first = b(2);\n  auto c = b;\n  int second = b(3);\n  int copied = c(4);\n  return first == 3 && second == 6 && copied == 7 && b(0) == 6 && c(0) == 7 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "d2400f0b956c4ef264c84679e8a3d6a2f0636047ca49727c08acd09f28216c01",
+      "private_probe_source_sha256": "a83acefefcf233cb0f32f1df983484aad1536a99f2d7716f81e213c30184ec39",
+      "native_entry_wrapper": "\nint main() { return replacement(); }\n"
+    },
+    {
+      "name": "bind-callable-receiver-cvref",
+      "source": "#include <functional>\n#include <utility>\nstruct Op {\n  int value;\n  int operator()(int x) & { return value + x + 1; }\n  int operator()(int x) const & { return value + x + 10; }\n};\nextern \"C\" int replacement() {\n  auto b = std::bind(Op{2}, std::placeholders::_1);\n  const auto &c = b;\n  int left = b(3);\n  int constant = c(3);\n  int right = std::move(b)(3);\n  return left == 6 && constant == 15 && right == 6 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "877d3784fff59f092e33ed05233f9c97fa8aeabd87da46a118565831bc497cc7",
+      "private_probe_source_sha256": "8f8da0d156175598ec74ecc858c85f7abd9624335e2bde227e98fd15cf564aad",
+      "native_entry_wrapper": "\nint main() { return replacement(); }\n"
+    },
+    {
+      "name": "bind-callable-reference-target",
+      "source": "#include <functional>\nstruct Counter { int value; int operator()(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  Counter target{1};\n  auto b = std::bind(std::ref(target), std::placeholders::_1);\n  auto c = b;\n  int first = b(2);\n  int shared = c(4);\n  target.value = 10;\n  int live = b(1);\n  return first == 3 && shared == 7 && live == 11 && target.value == 11 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "394c68f214868d1520a4fe4ac505c12f184363104a4f709e0a472e6192cd9d79",
+      "private_probe_source_sha256": "cbc22ae681a634569fb74fd3656bd266aed97e304177f3571e29c64ddbf044be",
+      "native_entry_wrapper": "\nint main() { return replacement(); }\n"
+    },
+    {
+      "name": "bind-callable-standard-arithmetic",
+      "source": "#include <functional>\nextern \"C\" int replacement() {\n  auto add = std::bind(std::plus<int>{}, std::placeholders::_1, 4);\n  const auto copied = add;\n  auto subtract = std::bind(std::minus<>{}, std::placeholders::_1, 2);\n  return add(3) == 7 && copied(6) == 10 && subtract(9) == 7 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "0156e55bb58d403a0a03221189ab9a7c5fc63f2aadd512e82d1a96f09f551ece",
+      "private_probe_source_sha256": "fa6a08107fd628ffe9f75ecdcc9c4a95ff0da9654697cdea067525dcc13a47a6",
+      "native_entry_wrapper": "\nint main() { return replacement(); }\n"
+    },
+    {
+      "name": "bind-callable-member-pointer",
+      "source": "#include <functional>\nstruct Counter { int value; int add(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  Counter target{2};\n  auto b = std::bind(&Counter::add, std::ref(target), std::placeholders::_1);\n  int first = b(3);\n  int second = b(4);\n  return first == 5 && second == 9 && target.value == 9 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "805a58d770299dba5cb9ae91f441f19d6bae73259d497a5a469141446bc7d03a",
+      "private_probe_source_sha256": "07cc3ac6df8d085f2bac003a3196097b81c2deeab75263aa3701bac83475f3fe",
+      "native_entry_wrapper": "\nint main() { return replacement(); }\n"
     }
-  ]
+  ],
+  "callable_target_cases_added": 6,
+  "callable_target_source_contract_sha256": "94770f434938ecbeed6f7b983d611e8401a269780461fd6db48fa2863672f2ac"
 }
