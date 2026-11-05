@@ -12038,7 +12038,8 @@ public:
             !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default &&
             utilityScalar(Context, Value.getUnqualifiedType());
       };
-      const auto ProjectedPlaceholder = InputPlaceholder && OwnedWitness && Storage->Elements[Slot].EmptyBase
+      const auto ProjectedPlaceholder = InputPlaceholder && (OwnedAncestor || OwnedWitness) &&
+          Storage->Elements[Slot].EmptyBase
           ? describeFunctionalBindPlaceholderIdentity(S, SM, Storage->Elements[Slot].getType(), Context)
           : std::nullopt;
       if ((!Scalar(Storage->Elements[Slot].getType()) &&
@@ -21842,25 +21843,42 @@ class BindSourceProof {
       const auto ApplyCallable = Apply && Apply->getNumParams() == 4 &&
           Apply->getParamDecl(0)->getType()->isLValueReferenceType()
           ? Apply->getParamDecl(0)->getType()->getPointeeType() : QualType();
+      // A nested return query asks about the actual child bind object,
+      // rather than its stored callback. Bind that alternative to this live
+      // occurrence; all alias, conditional, default and declaration sources
+      // below still close independently before the unused operand is named.
+      const bool NestedQuery = ActiveNestedObjectQuery && ActiveNestedReturnLocation &&
+          ActiveNestedObjectQuery->Invocation.SourceCall == ActiveCompleteCall->SourceCall &&
+          ActiveNestedObjectQuery->Invocation.Method == ActiveCompleteCall->Method &&
+          Owner && Owner->getTemplateArgs().size() == 3 &&
+          Owner->getTemplateArgs()[1].getKind() == TemplateArgument::Type &&
+          Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(),
+              Context.getLValueReferenceType(ActiveNestedObjectQuery->Invocation.Object->getType()));
       if (!Result || !Result->getIdentifier() || Result->getName() != "_Result" ||
           !Result->getTypeSourceInfo() || !Owner || !Owner->getIdentifier() || Owner->getName() != "__invokable_r" ||
           Owner->getSpecializationKind() != TSK_ImplicitInstantiation || Owner->getTemplateArgs().size() != 3 ||
           Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Owner->getTemplateArgs()[0].getAsType(), Context.VoidTy) ||
           Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type || ApplyCallable.isNull() ||
-          (!Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(), Storage.CallableType) &&
+          (!NestedQuery &&
+           !Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(), Storage.CallableType) &&
            !Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(), ApplyCallable) &&
            !Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(),
                Apply->getParamDecl(0)->getType())) ||
           Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-          Owner->getTemplateArgs()[2].pack_size() != ActiveCompleteCall->Arguments.size() ||
+          Owner->getTemplateArgs()[2].pack_size() != (NestedQuery
+              ? ActiveCompleteCall->Method->getNumParams() : ActiveCompleteCall->Arguments.size()) ||
           !Context.hasSameType(Record->getTemplateArgs()[0].getAsType(), Result->getUnderlyingType()) ||
           !Check.family(Result, {"__type_traits/invoke.h"}) ||
           !Check.family(Owner, {"__type_traits/invoke.h"})) return false;
       unsigned I = 0;
-      for (const auto &Argument : Owner->getTemplateArgs()[2].pack_elements())
+      for (const auto &Argument : Owner->getTemplateArgs()[2].pack_elements()) {
+        const auto Expected = NestedQuery ? ActiveCompleteCall->Method->getParamDecl(I)->getType()
+            : ActiveCompleteCall->Arguments[I].ForwardedType;
         if (Argument.getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Argument.getAsType(), ActiveCompleteCall->Arguments[I++].ForwardedType)) return false;
+            !Context.hasSameType(Argument.getAsType(), Expected)) return false;
+        ++I;
+      }
       const TypeAliasDecl *ReturnAlias = nullptr;
       for (const auto *Declaration : Owner->decls()) {
         const auto *Member = dyn_cast<TypeAliasDecl>(Declaration);
