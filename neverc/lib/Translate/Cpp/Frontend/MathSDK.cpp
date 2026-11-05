@@ -19,6 +19,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include <deque>
+#include <cstdio>
 #include <functional>
 #include <set>
 
@@ -17283,7 +17284,7 @@ describeFunctionalBindFactorySourceImpl(
       Factory->isVariadic() || Factory->getNumParams() != Call->getNumArgs() ||
       Call->getNumArgs() != Storage->Arguments.Elements.size() + 1 ||
       !Context.hasSameType(Call->getType(), Factory->getReturnType()))
-    return std::nullopt;
+    { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Primary = Factory->getPrimaryTemplate();
   const auto *Arguments = Factory->getTemplateSpecializationArgs();
@@ -17292,7 +17293,7 @@ describeFunctionalBindFactorySourceImpl(
       Arguments->get(0).getKind() != TemplateArgument::Type ||
       Arguments->get(1).getKind() != TemplateArgument::Pack ||
       Arguments->get(1).pack_size() + 1 != Factory->getNumParams() ||
-      !Check.family(Factory, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Factory, {"__functional/bind.h"})) { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
   auto DeducedParameter = [&](unsigned Index) -> QualType {
     const auto &Argument = Index ? Arguments->get(1).pack_elements()[Index - 1]
                                  : Arguments->get(0);
@@ -17306,7 +17307,7 @@ describeFunctionalBindFactorySourceImpl(
         !Context.hasSameType(Factory->getParamDecl(Index)->getType(), Expected) ||
         !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
                                         Expected->getPointeeType()))
-      return std::nullopt;
+      { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
   }
   // The pinned bind factory has exactly its local result alias and return.
   // This description retains the alias as part of the original function body;
@@ -17323,7 +17324,7 @@ describeFunctionalBindFactorySourceImpl(
       ResultAlias->getDeclContext() != Factory || !ResultAlias->getTypeSourceInfo() ||
       !Context.hasSameType(ResultAlias->getUnderlyingType(), Factory->getReturnType()) ||
       !Check.family(ResultAlias, {"__functional/bind.h"}))
-    return std::nullopt;
+    { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
   const auto *Construction = Check.construction(Return->getRetValue());
   const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
   const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody())
@@ -17335,12 +17336,12 @@ describeFunctionalBindFactorySourceImpl(
       Constructor->getParent()->getCanonicalDecl() != Storage->Record->getCanonicalDecl() ||
       Constructor->getNumParams() != Factory->getNumParams() ||
       Construction->getNumArgs() != Factory->getNumParams() ||
-      !Check.family(Constructor, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Constructor, {"__functional/bind.h"})) { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
   std::vector<const CallExpr *> FactoryForwards;
   for (unsigned Index = 0; Index < Factory->getNumParams(); ++Index) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(Construction->getArg(Index), Factory->getParamDecl(Index),
-                          "__functional/bind.h", Forward)) return std::nullopt;
+                          "__functional/bind.h", Forward)) { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
     FactoryForwards.push_back(Forward);
   }
   const CXXConstructExpr *WeakConstruction = nullptr, *BoundConstruction = nullptr;
@@ -17355,17 +17356,17 @@ describeFunctionalBindFactorySourceImpl(
           !Construct || Construct->getNumArgs() || !Selected ||
           !Selected->isDefaultConstructor() || !Selected->isTrivial() ||
           !Check.family(Selected, {"__functional/weak_result_type.h"}))
-        return std::nullopt;
+        { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
       WeakConstruction = Construct;
     } else if (Initializer->isMemberInitializer() &&
                Initializer->getMember() == Storage->Callable) {
-      if (CallableInitializer) return std::nullopt;
+      if (CallableInitializer) { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
       CallableInitializer = Initializer->getInit();
     } else if (Initializer->isMemberInitializer() &&
                Initializer->getMember() == Storage->BoundArguments) {
-      if (BoundConstruction) return std::nullopt;
+      if (BoundConstruction) { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
       BoundConstruction = Check.construction(Initializer->getInit());
-    } else return std::nullopt;
+    } else { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
   }
   const auto *BoundConstructor = BoundConstruction
       ? BoundConstruction->getConstructor() : nullptr;
@@ -17375,7 +17376,7 @@ describeFunctionalBindFactorySourceImpl(
       BoundConstructor->getNumParams() != Storage->Arguments.Elements.size() ||
       BoundConstructor->getParent()->getCanonicalDecl() !=
           Storage->Arguments.Record->getCanonicalDecl() ||
-      !Check.family(BoundConstructor, {"tuple"})) return std::nullopt;
+      !Check.family(BoundConstructor, {"tuple"})) { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
   const CallExpr *CallableForward = nullptr;
   const Expr *ForwardedCallable = Check.stripped(CallableInitializer);
   const CXXConstructExpr *CallableCopy = nullptr;
@@ -17391,10 +17392,10 @@ describeFunctionalBindFactorySourceImpl(
         Selected->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
         !Context.hasSameType(CallableCopy->getType(), Storage->CallableType) ||
         !Check.location(CallableCopy->getExprLoc(), {"__functional/bind.h"}))
-      return std::nullopt;
+      { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
     for (const auto *Declaration : Selected->redecls())
       if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
-        return std::nullopt;
+        { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
     // Retain the exact ordinary operation. This description closes neither
     // its query/signature sources nor its runtime constructor/lifetime work.
     ForwardedCallable = CallableCopy->getArg(0);
@@ -17409,17 +17410,17 @@ describeFunctionalBindFactorySourceImpl(
         !Parameter->getPointeeType()->isFunctionType() ||
         !Context.hasSameType(Decay->getSubExpr()->getType(), Parameter->getPointeeType()) ||
         !Context.hasSameType(Decay->getType(), Storage->CallableType))
-      return std::nullopt;
+      { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
     ForwardedCallable = Decay->getSubExpr();
   }
   if (!Check.forwarding(ForwardedCallable, Constructor->getParamDecl(0),
-                        "__functional/bind.h", CallableForward)) return std::nullopt;
+                        "__functional/bind.h", CallableForward)) { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
   std::vector<const CallExpr *> BoundForwards;
   for (unsigned Index = 0; Index < Storage->Arguments.Elements.size(); ++Index) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(BoundConstruction->getArg(Index),
                           Constructor->getParamDecl(Index + 1),
-                          "__functional/bind.h", Forward)) return std::nullopt;
+                          "__functional/bind.h", Forward)) { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
     BoundForwards.push_back(Forward);
   }
   std::vector<std::optional<FunctionalBindPlaceholderOperandSource>> Placeholders(
@@ -17429,7 +17430,7 @@ describeFunctionalBindFactorySourceImpl(
     if (!Element.EmptyBase) continue;
     Placeholders[Index] = describeFunctionalBindPlaceholderOperandSource(S, SM, Call->getArg(Index + 1), Context);
     if (!Placeholders[Index] || Placeholders[Index]->Identity.Record->getCanonicalDecl() !=
-                                   Element.EmptyBase->getCanonicalDecl()) return std::nullopt;
+                                   Element.EmptyBase->getCanonicalDecl()) { if (OwnedCallableMetadata) std::fprintf(stderr, "BIND-OWNED-FACTORY-DESCRIPTION-REJECT line=%d\n", __LINE__); return std::nullopt; }
   }
   return FunctionalBindFactorySource{*Storage, Call, Factory, Construction,
       WeakConstruction, CallableInitializer, BoundConstruction,
