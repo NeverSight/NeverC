@@ -1,0 +1,81 @@
+{
+  "ast_only": true,
+  "diagnostic_only": true,
+  "private_support_verified": false,
+  "original_case_contract_sha256": "94770f434938ecbeed6f7b983d611e8401a269780461fd6db48fa2863672f2ac",
+  "cases": [
+    {
+      "name": "bind-callable-owned-const",
+      "expected": "accept",
+      "source": "#include <functional>\nstruct Op { int offset; int operator()(int x, int y) const { return offset + x + y; } };\nextern \"C\" int replacement() {\n  auto b = std::bind(Op{3}, std::placeholders::_1, 4);\n  return b(5) == 12 ? 0 : 1;\n}\n",
+      "source_sha256": "4c5ee56d7357c2e7a34274dc7bc64216002ec4fd986a65ed85846e974d5d7667",
+      "expected_native_exit": 0,
+      "expected_private_diagnostic": null
+    },
+    {
+      "name": "bind-callable-independent-state",
+      "expected": "accept",
+      "source": "#include <functional>\nstruct Counter { int value; int operator()(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  auto b = std::bind(Counter{1}, std::placeholders::_1);\n  int first = b(2);\n  auto c = b;\n  int second = b(3);\n  int copied = c(4);\n  return first == 3 && second == 6 && copied == 7 && b(0) == 6 && c(0) == 7 ? 0 : 1;\n}\n",
+      "source_sha256": "a83acefefcf233cb0f32f1df983484aad1536a99f2d7716f81e213c30184ec39",
+      "expected_native_exit": 0,
+      "expected_private_diagnostic": null
+    },
+    {
+      "name": "bind-callable-receiver-cvref",
+      "expected": "accept",
+      "source": "#include <functional>\n#include <utility>\nstruct Op {\n  int value;\n  int operator()(int x) & { return value + x + 1; }\n  int operator()(int x) const & { return value + x + 10; }\n};\nextern \"C\" int replacement() {\n  auto b = std::bind(Op{2}, std::placeholders::_1);\n  const auto &c = b;\n  int left = b(3);\n  int constant = c(3);\n  int right = std::move(b)(3);\n  return left == 6 && constant == 15 && right == 6 ? 0 : 1;\n}\n",
+      "source_sha256": "8f8da0d156175598ec74ecc858c85f7abd9624335e2bde227e98fd15cf564aad",
+      "expected_native_exit": 0,
+      "expected_private_diagnostic": null
+    },
+    {
+      "name": "bind-callable-reference-target",
+      "expected": "accept",
+      "source": "#include <functional>\nstruct Counter { int value; int operator()(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  Counter target{1};\n  auto b = std::bind(std::ref(target), std::placeholders::_1);\n  auto c = b;\n  int first = b(2);\n  int shared = c(4);\n  target.value = 10;\n  int live = b(1);\n  return first == 3 && shared == 7 && live == 11 && target.value == 11 ? 0 : 1;\n}\n",
+      "source_sha256": "cbc22ae681a634569fb74fd3656bd266aed97e304177f3571e29c64ddbf044be",
+      "expected_native_exit": 0,
+      "expected_private_diagnostic": null
+    },
+    {
+      "name": "bind-callable-standard-arithmetic",
+      "expected": "accept",
+      "source": "#include <functional>\nextern \"C\" int replacement() {\n  auto add = std::bind(std::plus<int>{}, std::placeholders::_1, 4);\n  const auto copied = add;\n  auto subtract = std::bind(std::minus<>{}, std::placeholders::_1, 2);\n  return add(3) == 7 && copied(6) == 10 && subtract(9) == 7 ? 0 : 1;\n}\n",
+      "source_sha256": "fa6a08107fd628ffe9f75ecdcc9c4a95ff0da9654697cdea067525dcc13a47a6",
+      "expected_native_exit": 0,
+      "expected_private_diagnostic": null
+    },
+    {
+      "name": "bind-callable-member-pointer",
+      "expected": "accept",
+      "source": "#include <functional>\nstruct Counter { int value; int add(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  Counter target{2};\n  auto b = std::bind(&Counter::add, std::ref(target), std::placeholders::_1);\n  int first = b(3);\n  int second = b(4);\n  return first == 5 && second == 9 && target.value == 9 ? 0 : 1;\n}\n",
+      "source_sha256": "07cc3ac6df8d085f2bac003a3196097b81c2deeab75263aa3701bac83475f3fe",
+      "expected_native_exit": 0,
+      "expected_private_diagnostic": null
+    },
+    {
+      "name": "bind-callable-ordinary-body-guard",
+      "expected": "reject",
+      "source": "#include <functional>\nstruct Op { int operator()(int x) const { asm volatile(\"\"); return x; } };\nextern \"C\" int replacement() {\n  auto b = std::bind(Op{}, std::placeholders::_1);\n  return b(0);\n}\n",
+      "source_sha256": "643ead24f3ea1ccb6177045af43ebc55390aebd002cf45599352b27c98273ad8",
+      "expected_native_exit": null,
+      "expected_private_diagnostic": "TR0201"
+    },
+    {
+      "name": "bind-callable-invalid-const-target",
+      "expected": "invalid",
+      "source": "#include <functional>\nstruct Op { int operator()(int x) { return x; } };\nextern \"C\" int replacement() {\n  const auto b = std::bind(Op{}, std::placeholders::_1);\n  return b(1);\n}\n",
+      "source_sha256": "8a565e1a34f6d680b613850501eb9ed9d1e9131883b86f698f8aa136b3c2d871",
+      "expected_native_exit": null,
+      "expected_private_diagnostic": "TR0202"
+    }
+  ],
+  "compiler": "clang20_1_8",
+  "syntax_command_seconds": 60,
+  "syntax_requests": 8,
+  "selected_witness_node_limit": 100000,
+  "ast_inventory_node_limit": 200000,
+  "witness_depth_limit": 16,
+  "full_ast_size_limit_bytes": 134217728,
+  "cpp_programs_executed": 0,
+  "private_frontend_requests": 0
+}
