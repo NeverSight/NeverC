@@ -119,8 +119,8 @@ def main():
                 assert inspected <= 200000
                 name, kind = node.get('name'), node.get('kind')
                 wanted = (kind == 'ClassTemplateSpecializationDecl' and
-                    name in ('__bind', '__weak_result_type') and node.get('completeDefinition'))
-                wanted |= kind == 'CXXRecordDecl' and name in ('Op', 'Counter') and node.get('completeDefinition')
+                    name in ('__bind', '__weak_result_type') and bool(node.get('completeDefinition')))
+                wanted |= kind == 'CXXRecordDecl' and name in ('Op', 'Counter') and bool(node.get('completeDefinition'))
                 wanted |= kind == 'FunctionDecl' and name == '__invoke' and any(
                     child.get('kind') == 'CompoundStmt' for child in node.get('inner', []))
                 if wanted:
