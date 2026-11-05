@@ -2028,6 +2028,18 @@ bool approvedFunctionalBindFactorySource(
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
     const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
 
+// Only the SDK factory graph is certified. Exported ordinary signatures,
+// constructor/copy/lifetime behavior and runtime lowering remain obligations.
+bool approvedFunctionalBindOwnedFactorySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnedQuerySources,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
+
 // Only the selected bullet-7 signature/default/declval source is certified.
 // The owned operator, runtime helper bodies and all ordinary/lifetime roots
 // remain independent obligations before any runtime registration or lowering.
