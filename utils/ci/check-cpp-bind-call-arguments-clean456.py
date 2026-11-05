@@ -164,7 +164,7 @@ def main():
 
     environment = dict(os.environ, NEVERC_CPP_PROTOCOL_EXECUTION_DIR=str(out / 'invocations'))
     environment.pop('NEVERC_CPP_PAIR_SOURCE_TRACE', None)
-    environment.pop('NEVERC_CPP_BIND_PROOF_TRACE', None)
+    environment['NEVERC_CPP_BIND_PROOF_TRACE'] = '1'
     save()
     try:
         plan = json.loads(args.plan.read_text())
