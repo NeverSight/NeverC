@@ -164,26 +164,42 @@ remain outside this native fixture's scope.
 
 ## Native protected ARPL
 
-The full LLVM fork provides `llvm.x86.arpl.reg(i16, i16)` returning the
+The LLVM fork provides `llvm.x86.arpl.reg(i16, i16)` returning the
 adjusted selector and actual ZF, and `llvm.x86.arpl.mem(ptr, i16)` returning
 ZF while the native instruction owns the word read and conditional write.
-Both admit protected 16/32-bit code with the 32-bit pointer/stack ABI. They
-retain the native instruction when the result is unused. Long-mode emission
-fails explicitly; NeverC's x86-64/AArch64 frontend does not advertise ARPL.
-Code16 emission does not add an i386 frontend target to NeverC.
+`llvm.x86.arpl.mem.address32(i32, i16, i32, i32)` additionally carries constant
+16/32-bit address width and segment prefix. Ordinary pointers use DS through a
+register class excluding BP/SP; explicit offsets wrap before segment addition.
+All forms remain ordered and survive unused results. Long mode is rejected.
+
+Clang and NeverC expose `__builtin_ia32_arpl_reg(unsigned short, unsigned short,
+unsigned char *)`, returning the adjusted word and storing ZF after the native
+operation; `__builtin_ia32_arpl_mem(void *, unsigned short)` returns ZF directly.
+`__builtin_ia32_arpl_mem_address32(unsigned, unsigned short, constant width,
+constant prefix)` returns ZF with explicit addressing. NeverC's Linux i386
+frontend emits these native calls with `-S -emit-llvm`; object generation still
+uses the full LLVM fork. This does not restore its pruned embedded i386 backend.
+Clang additionally supports code16 with the 32-bit pointer/stack ABI.
 
 Run `tests/neverc/X86/verify_protected_arpl.py --llvm-bin LLVM_BIN --mode 16
---output ARTIFACTS` for the O0 and optimized O2 native KVM profiles; `--mode 32`
-checks the existing protected 32-bit path. Each profile compares 7,680 pairs
-against independently encoded original ARPL. The matrix includes every RPL
-pair, high selector bits, aliased inputs, used/unused results, CPL0/CPL3,
-arithmetic flags, aligned/unaligned/cross-page and read-only/missing operands,
-and explicit read-only, limited, null, expand-down and nonflat DS caches.
-Original #GP/#PF/#AC handlers preserve fault frames and expose the vector.
-All GPRs, flags, segment/system state, active events and RAM participate in
-the comparison; ABI-compatible successes also verify the compiler's result
-and return frame. Negative controls corrupt a declared source before intact
-ARPL and invert its returned ZF afterward. Both must fail.
+--output ARTIFACTS` for O0 and optimized O2 KVM profiles; `--mode 32` checks
+protected code32. `--frontend PATH` compiles actual builtin C through patched
+Clang or NeverC (NeverC currently admits mode 32). Each profile compares 19,968
+pairs against independently encoded ARPL, including every RPL pair, high
+selector bits, aliased inputs, used/unused results, CPL0/CPL3, arithmetic flags,
+aligned/unaligned/cross-page and read-only/missing operands. Pointer DS and
+explicit 16/32-bit FS addresses cover read-only, limited, null, expand-down and
+nonflat segment caches. Original #GP/#PF/#AC handlers retain the original
+fault frames and vector. All GPRs, flags, system/event state and RAM participate;
+ABI-compatible successes also verify the compiled result and return frame.
+Corrupting a declared source before intact ARPL or inverting its returned ZF
+must fail independently.
+
+`verify_arpl_source.py` consumes actual NeverD `X86ArplSource` exports, compiles
+both C routes at O0/O2, and compares original state through the same KVM owner.
+It admits a patched `--frontend` or stock Clang with `--fallback`. ELF, COFF and
+MachO source exports are recompiled for SysV32; ordinary DS and nonflat FS/GS
+are exercised, with an intact-instruction returned-ZF negative control.
 
 `KvmProtectedFaultFixture.h` shares completed-OUT fault observation and inactive
 exception-record handling with the protected far-pointer oracle. These tests

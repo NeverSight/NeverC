@@ -116,3 +116,50 @@ TEST_F(I386FrontendTest, RejectsLegacyCPUInLongMode) {
   EXPECT_NE(R.exitCode, 0);
   EXPECT_NE(R.err.find("unknown target CPU"), std::string::npos) << R.err;
 }
+
+TEST_F(I386FrontendTest, EmitsNativeArplWithOrderedStatusStore) {
+  const auto Source = tmpFile("arpl.c");
+  writeFile(Source, R"(
+unsigned short reg(unsigned short a, unsigned short b, unsigned char *f) {
+  return __builtin_ia32_arpl_reg(a, b, f);
+}
+unsigned char mem(void *p, unsigned short s) {
+  return __builtin_ia32_arpl_mem(p, s);
+}
+unsigned char address(unsigned int p, unsigned short s) {
+  return __builtin_ia32_arpl_mem_address32(p, s, 16, 0x64);
+}
+)");
+  for (const char *Level : {"-O0", "-O2"}) {
+    const auto IR = tmpFile(std::string("arpl") + Level + ".ll");
+    auto R = ncc({"--target=i386-unknown-linux-gnu", Level, "-S", "-emit-llvm",
+                  Source.string(), "-o", IR.string()});
+    ASSERT_EQ(R.exitCode, 0) << R.err;
+    const auto Text = readFile(IR);
+    EXPECT_EQ(Text.find("asm "), std::string::npos);
+    EXPECT_EQ(Text.find("memory(none)"), std::string::npos);
+    EXPECT_NE(Text.find("call { i16, i8 } @llvm.x86.arpl.reg("),
+              std::string::npos);
+    EXPECT_NE(Text.find("call i8 @llvm.x86.arpl.mem("), std::string::npos);
+    EXPECT_NE(Text.find("call i8 @llvm.x86.arpl.mem.address32("),
+              std::string::npos);
+    EXPECT_NE(Text.find("store i8"), std::string::npos);
+  }
+}
+
+TEST_F(I386FrontendTest, RejectsLongModeArplAndInvalidAddressControls) {
+  for (const auto &Case : std::vector<std::pair<std::string, std::string>>{
+           {"x86_64", "__builtin_ia32_arpl_reg(x, x, (unsigned char *)0)"},
+           {"x86_64", "__builtin_ia32_arpl_mem((void *)0, x)"},
+           {"x86_64", "__builtin_ia32_arpl_mem_address32(0, x, 32, 0)"},
+           {"i386", "__builtin_ia32_arpl_mem_address32(0, x, 64, 0)"},
+           {"i386", "__builtin_ia32_arpl_mem_address32(0, x, 16, 0x66)"},
+           {"i386", "__builtin_ia32_arpl_mem_address32(0, x, x, 0)"},
+           {"i386", "__builtin_ia32_arpl_mem_address32(0, x, 16, x)"}}) {
+    const auto Source = tmpFile("bad-arpl.c");
+    writeFile(Source, "void f(int x) { " + Case.second + "; }");
+    auto R = ncc({"--target=" + Case.first + "-unknown-linux-gnu",
+                  "-fsyntax-only", Source.string()});
+    EXPECT_NE(R.exitCode, 0) << Case.second;
+  }
+}

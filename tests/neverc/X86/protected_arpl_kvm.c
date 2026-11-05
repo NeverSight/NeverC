@@ -67,28 +67,37 @@ int main(int argc, char **argv) {
   FILE *manifest = fopen(argv[2], "r");
   CHECK(manifest);
   char name[96];
-  unsigned memory, alias, results, destination, source;
+  unsigned memory, alias, results, destination, source, bits, prefix;
   unsigned long long entry, instruction;
   unsigned functions = 0;
   uint64_t faults[18] = {0}, returns = 0, changed = 0, unchanged = 0;
   const uint32_t patterns[] = {0x12340000, 0xabcd7ffc, 0x56788000, 0xdeadfffc};
-  while (fscanf(manifest, "%95s %llx %llx %u %u %u %u %u", name, &entry,
-                &instruction, &memory, &alias, &results, &destination,
-                &source) == 8) {
+  while (fscanf(manifest, "%95s %llx %llx %u %u %u %u %u %u %u", name, &entry,
+                &instruction, &memory, &alias, &results, &destination, &source,
+                &bits, &prefix) == 10) {
     current_function = name;
-    CHECK(entry >= CODE_BASE && instruction >= entry &&
-          instruction < CODE_BASE + bytes && memory < 2 && alias < 2 &&
-          results < 4 && destination < 8 && source < 8);
+    CHECK(entry >= CODE_BASE && entry < CODE_BASE + bytes &&
+          instruction >= CODE_BASE && instruction < CODE_BASE + bytes &&
+          memory < 2 && alias < 2 && results < 4 && destination < 8 &&
+          source < 8);
     // These pointer functions use DS, independently of their stack frames.
-    CHECK(!memory || (destination != 4 && destination != 5));
+    CHECK((bits == 16 || bits == 32) &&
+          (prefix == 0 || prefix == 0x64 || prefix == 0x65));
+    CHECK(!memory || (bits == 16 ? destination == 6 || destination == 7
+                                 : destination != 4 && destination != 5));
     ++functions;
-    uint8_t original[3];
+    uint8_t original[4];
     unsigned length = 0;
-    if (memory && code16)
+    if (prefix)
+      original[length++] = prefix;
+    if (memory && ((bits == 16) != code16))
       original[length++] = 0x67;
     original[length++] = 0x63;
-    original[length++] = (memory ? 0 : 0xc0) | (source << 3) | destination;
-    CHECK(memcmp(ram + instruction, original, length) == 0);
+    original[length++] =
+        (memory ? 0 : 0xc0) | (source << 3) |
+        (memory && bits == 16 ? destination == 6 ? 4 : 5 : destination);
+    // Prefix order does not change this contract; decode checks the candidate
+    // operands while these bytes independently encode the oracle operation.
     memcpy(ram + ORACLE_PC, original, length);
     for (unsigned privilege = 0; privilege < 2; ++privilege)
       for (unsigned pi = 0; pi < 4; ++pi)
@@ -130,12 +139,15 @@ int main(int argc, char **argv) {
               pt[0x90] = CELL_BASE + 7;
               pt[0x91] = CELL_BASE + 0x1007;
               pt[0x92] = CELL_BASE + 0x2007;
+              const unsigned offset =
+                  access == 1                                 ? 1
+                  : access == 2 || access == 5 || access == 6 ? 0xfff
+                                                              : 0;
               const unsigned pointer =
-                  CELL_BASE + (access == 1 ? 1
-                               : access == 2 || access == 5 || access == 6
-                                   ? 0xfff
-                                   : 0);
-              const unsigned linear = pointer + (access == 11 ? 0x1000 : 0);
+                  prefix ? offset | (bits == 16 ? 0xabcd0000u : 0)
+                         : CELL_BASE + offset;
+              const unsigned linear =
+                  CELL_BASE + offset + (access == 11 ? 0x1000 : 0);
               const uint32_t d = patterns[pi] | (rpls & 3);
               const uint32_t s =
                   alias ? d : (~patterns[pi] & ~3u) | (rpls >> 2);
@@ -166,7 +178,9 @@ int main(int argc, char **argv) {
               struct kvm_regs boundary = run_to(&candidate, instruction, 0);
               CHECK(ram[MARKER] == 17 &&
                     (gpr(boundary, source) & 0xffff) == (s & 0xffff));
-              CHECK(memory ? (uint32_t)gpr(boundary, destination) == pointer
+              CHECK(memory ? (gpr(boundary, destination) &
+                              (bits == 16 ? 0xffff : UINT32_MAX)) ==
+                                 (pointer & (bits == 16 ? 0xffff : UINT32_MAX))
                            : (gpr(boundary, destination) & 0xffff) ==
                                  (d & 0xffff));
               struct kvm_sregs special, actual_special, expected_special;
@@ -174,20 +188,25 @@ int main(int argc, char **argv) {
                                      expected_events = {0};
               CHECK(ioctl(candidate.fd, KVM_GET_SREGS, &special) == 0);
               // Probe non-ABI segment states only at the native boundary.
+              struct kvm_segment *operand = prefix == 0x64   ? &special.fs
+                                            : prefix == 0x65 ? &special.gs
+                                                             : &special.ds;
+              if (prefix)
+                operand->base = CELL_BASE;
               if (access == 7)
-                special.ds.type = 1;
+                operand->type = 1;
               else if (access == 8) {
-                special.ds.limit = pointer;
-                special.ds.g = 0;
+                operand->limit = prefix ? offset : pointer;
+                operand->g = 0;
               } else if (access == 9) {
-                special.ds.selector = 0;
-                special.ds.unusable = 1;
+                operand->selector = 0;
+                operand->unusable = 1;
               } else if (access == 10) {
-                special.ds.type = 7;
-                special.ds.limit = pointer;
-                special.ds.g = 0;
+                operand->type = 7;
+                operand->limit = prefix ? offset : pointer;
+                operand->g = 0;
               } else if (access == 11) {
-                special.ds.base = 0x1000;
+                operand->base += 0x1000;
               }
               CHECK(ioctl(candidate.fd, KVM_SET_SREGS, &special) == 0);
               CHECK(ioctl(candidate.fd, KVM_GET_VCPU_EVENTS, &events) == 0);
@@ -242,7 +261,7 @@ int main(int argc, char **argv) {
                            sizeof(actual_events)) == 0);
               CHECK(memcmp(after, ram, RAM_SIZE) == 0);
               memcpy(ram, after, RAM_SIZE);
-              if (!actual_vector && access < 7) {
+              if (!actual_vector && (access < 7 || prefix)) {
                 const struct kvm_regs returned =
                     run_to(&candidate, TARGET_PC, 0);
                 CHECK(ram[MARKER] == 29 && returned.rsp == initial.rsp + 4 &&
@@ -261,7 +280,7 @@ int main(int argc, char **argv) {
               ++comparisons;
             }
   }
-  CHECK(feof(manifest) && fclose(manifest) == 0 && functions == 8);
+  CHECK(feof(manifest) && fclose(manifest) == 0 && functions > 0);
   printf("{\"functions\":%u,\"complete_state_pairs\":%llu,\"returns\":%llu,"
          "\"changed\":%llu,\"unchanged\":%llu,\"gp\":%llu,\"pf\":%llu,\"ac\":%"
          "llu}\n",

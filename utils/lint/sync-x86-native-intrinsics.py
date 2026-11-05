@@ -21,6 +21,8 @@ SPEC.loader.exec_module(SORTER)
 ENUMS = ROOT / "llvm/include/llvm/IR/IntrinsicEnums.inc"
 # Result followed by parameters, in LLVM's fixed IIT scalar/pointer vocabulary.
 DECLARATIONS = {
+    "arpl_reg": ("STRUCT2", "I16", "I8", "I16", "I16"),
+    "arpl_mem": ("I8", "PTR", "I16"),
     "bound16": ("Done", "I16", "PTR"),
     "bound32": ("Done", "I32", "PTR"),
     "vmrun_context": ("Done", "PTR", "I32"),
@@ -150,6 +152,7 @@ FIRST_IMMEDIATE_SIGNATURES = {
                        "I64", "I64", "I64", "I64"),
 }
 ADDRESS_SIGNATURES = {
+    "arpl_mem_address32": (("I8", "I32", "I16", "I32", "I32"), (2, 3)),
     "bound16_address32": (("Done", "I16", "I32", "I32", "I32"), (2, 3)),
     "bound32_address32": (("Done", "I32", "I32", "I32", "I32"), (2, 3)),
     "lkgs_address": (("Done", "I64", "I32", "I32"), (1, 2)),

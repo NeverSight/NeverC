@@ -3053,6 +3053,13 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return genX86Select(*this, Ops[2], Res, Ops[1]);
   }
 
+  case X86::BI__builtin_ia32_arpl_reg:
+    return getValueAndStatusIntrinsicCall(Intrinsic::x86_arpl_reg);
+  case X86::BI__builtin_ia32_arpl_mem:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_arpl_mem), Ops);
+  case X86::BI__builtin_ia32_arpl_mem_address32:
+    return Builder.CreateCall(
+        ME.getIntrinsic(Intrinsic::x86_arpl_mem_address32), Ops);
   case X86::BI__builtin_ia32_bound16:
   case X86::BI__builtin_ia32_bound32:
   case X86::BI__builtin_ia32_bound16_address32:

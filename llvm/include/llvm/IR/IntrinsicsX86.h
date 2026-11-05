@@ -93,6 +93,9 @@ enum X86Intrinsics : unsigned {
     x86_aor64,                                       // llvm.x86.aor64
     x86_aor64_address,                               // llvm.x86.aor64.address
     x86_aor64_legacy_address,                        // llvm.x86.aor64.legacy.address
+    x86_arpl_mem,                                    // llvm.x86.arpl.mem
+    x86_arpl_mem_address32,                          // llvm.x86.arpl.mem.address32
+    x86_arpl_reg,                                    // llvm.x86.arpl.reg
     x86_atomic_add_cc,                               // llvm.x86.atomic.add.cc
     x86_atomic_and_cc,                               // llvm.x86.atomic.and.cc
     x86_atomic_btc,                                  // llvm.x86.atomic.btc
