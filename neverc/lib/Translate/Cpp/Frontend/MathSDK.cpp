@@ -17267,14 +17267,16 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
   return describeFunctionalBindStorageImpl(S, SM, Record, Context, 0, Nodes, Active);
 }
 
-std::optional<FunctionalBindFactorySource>
-describeFunctionalBindFactorySource(
+static std::optional<FunctionalBindFactorySource>
+describeFunctionalBindFactorySourceImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context) {
+    const ASTContext &Context, bool OwnedCallableMetadata) {
   const auto *Factory = Call ? Call->getDirectCallee() : nullptr;
   const auto Storage = describeFunctionalBindStorage(
       S, SM, Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context);
-  if (!Storage || !Storage->CallableType->isFunctionPointerType() ||
+  if (!Storage ||
+      (OwnedCallableMetadata ? !Storage->CallableType->isRecordType()
+                             : !Storage->CallableType->isFunctionPointerType()) ||
       !Factory || !Factory->getIdentifier() ||
       Factory->getName() != "bind" || !S.owns(SM, Call->getExprLoc()) ||
       !Call->isPRValue() || Call->isTypeDependent() || Call->isValueDependent() ||
@@ -17376,6 +17378,27 @@ describeFunctionalBindFactorySource(
       !Check.family(BoundConstructor, {"tuple"})) return std::nullopt;
   const CallExpr *CallableForward = nullptr;
   const Expr *ForwardedCallable = Check.stripped(CallableInitializer);
+  const CXXConstructExpr *CallableCopy = nullptr;
+  if (OwnedCallableMetadata) {
+    CallableCopy = Check.construction(CallableInitializer);
+    const auto *Selected = CallableCopy ? CallableCopy->getConstructor() : nullptr;
+    const auto *Record = Storage->CallableType->getAsCXXRecordDecl();
+    if (!CallableCopy || !Selected || !Record || CallableCopy->getNumArgs() != 1 ||
+        Selected->getNumParams() != 1 || !Selected->isCopyOrMoveConstructor() ||
+        !Selected->isImplicit() || !Selected->isDefaulted() || !Selected->isTrivial() ||
+        Selected->isDeleted() || Selected->isUserProvided() || Selected->hasAttrs() ||
+        !S.owns(SM, Selected->getLocation()) ||
+        Selected->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+        !Context.hasSameType(CallableCopy->getType(), Storage->CallableType) ||
+        !Check.location(CallableCopy->getExprLoc(), {"__functional/bind.h"}))
+      return std::nullopt;
+    for (const auto *Declaration : Selected->redecls())
+      if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
+        return std::nullopt;
+    // Retain the exact ordinary operation. This description closes neither
+    // its query/signature sources nor its runtime constructor/lifetime work.
+    ForwardedCallable = CallableCopy->getArg(0);
+  }
   if (const auto *Decay = dyn_cast_or_null<ImplicitCastExpr>(ForwardedCallable);
       Decay && Decay->getCastKind() == CK_FunctionToPointerDecay) {
     // A function designator is retained by reference until all factory
@@ -17410,7 +17433,21 @@ describeFunctionalBindFactorySource(
   }
   return FunctionalBindFactorySource{*Storage, Call, Factory, Construction,
       WeakConstruction, CallableInitializer, BoundConstruction,
-      std::move(FactoryForwards), CallableForward, std::move(BoundForwards), std::move(Placeholders)};
+      std::move(FactoryForwards), CallableForward, std::move(BoundForwards), std::move(Placeholders), CallableCopy};
+}
+
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindFactorySource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  return describeFunctionalBindFactorySourceImpl(S, SM, Call, Context, false);
+}
+
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindOwnedFactorySource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  return describeFunctionalBindFactorySourceImpl(S, SM, Call, Context, true);
 }
 
 // One owned call is the only entry point. SDK children can be described only
@@ -25560,7 +25597,7 @@ public:
         ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
     if (!Actual || !Tuple || Actual->Construction != Factory.Construction ||
         !sameFunctionalBindPlaceholderOperands(*Actual, Factory) ||
-        Actual->Factory != Factory.Factory || !Reference ||
+        Actual->Factory != Factory.Factory || Actual->CallableCopy != Factory.CallableCopy || !Reference ||
         Reference->getDecl() != Factory.Factory || Reference->hasExplicitTemplateArgs() ||
         !S.owns(SM, Reference->getExprLoc()) ||
         !Context.hasSameType(Reference->getType(), Factory.Factory->getType()) ||

@@ -1793,9 +1793,17 @@ struct FunctionalBindFactorySource {
   const clang::CallExpr *CallableForward;
   std::vector<const clang::CallExpr *> BoundForwards;
   std::vector<std::optional<FunctionalBindPlaceholderOperandSource>> Placeholders;
+  // Only an exact selected ordinary operation; never a runtime certificate.
+  const clang::CXXConstructExpr *CallableCopy = nullptr;
 };
 std::optional<FunctionalBindFactorySource>
 describeFunctionalBindFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+// Source-only owned-object description. The existing runtime factory entry
+// remains restricted to function pointers until complete source proofs close.
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindOwnedFactorySource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
