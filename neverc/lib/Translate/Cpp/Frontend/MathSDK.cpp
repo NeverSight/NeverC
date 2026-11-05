@@ -19,6 +19,8 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include <deque>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <set>
 
@@ -7678,6 +7680,32 @@ static bool sameFunctionalBindPlaceholderOperands(
   return true;
 }
 
+
+// Temporary bounded observational state, never a source/body permission.
+struct FunctionalBindDiagnosticRing {
+  unsigned Lines[128] = {}, Count = 0, Next = 0, ProjectionMismatches = 0;
+};
+static FunctionalBindDiagnosticRing FunctionalBindDiagnostic;
+static bool functionalBindDiagnosticFailure(unsigned Line) {
+  if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+    auto &Trace = FunctionalBindDiagnostic;
+    Trace.Lines[Trace.Next] = Line;
+    Trace.Next = (Trace.Next + 1) % 128;
+    if (Trace.Count < 128) ++Trace.Count;
+  }
+  return false;
+}
+static void functionalBindDiagnosticReset() {
+  FunctionalBindDiagnostic.Count = FunctionalBindDiagnostic.Next = FunctionalBindDiagnostic.ProjectionMismatches = 0;
+}
+static void functionalBindDiagnosticDump() {
+  if (!std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) return;
+  const auto &Trace = FunctionalBindDiagnostic;
+  const unsigned Begin = Trace.Count < 128 ? 0 : Trace.Next;
+  std::fprintf(stderr, "BIND-PROOF-FAILURES %u\n", Trace.Count);
+  for (unsigned I = 0; I < Trace.Count; ++I)
+    std::fprintf(stderr, "BIND-PROOF-LINE %u\n", Trace.Lines[(Begin + I) % 128]);
+}
 class UtilityTupleQueryGraph
     : public RecursiveASTVisitor<UtilityTupleQueryGraph> {
   const State &S;
@@ -7900,15 +7928,15 @@ class UtilityTupleQueryGraph
   bool bindSelectedPartialSplitTypeEnd(TypeLoc Location, SourceLocation End) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step() ||
         !BindSelectedPartialPattern || !BindSelectedPartialInstance || Location.isNull() ||
-        End != Location.getEndLoc() || !End.isMacroID()) return false;
+        End != Location.getEndLoc() || !End.isMacroID()) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Source = *BindSelectedPartialPattern;
     const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(Source.Declaration);
     const auto *Original = Partial ? Partial->getTemplateArgsAsWritten() : nullptr;
     if (!Original || Original->getNumTemplateArgs() != 2 || !Source.Written ||
-        Source.Written->getNumTemplateArgs() != 2) return false;
+        Source.Written->getNumTemplateArgs() != 2) return functionalBindDiagnosticFailure(__LINE__);
     const auto *ActualType = Source.Written->arguments()[1].getTypeSourceInfo();
     const auto *OriginalType = Original->arguments()[1].getTypeSourceInfo();
-    if (!ActualType || !OriginalType) return false;
+    if (!ActualType || !OriginalType) return functionalBindDiagnosticFailure(__LINE__);
     auto Named = [](TypeLoc Node) {
       if (Node.isNull()) return Node;
       if (const auto Wrapper = Node.getAs<ElaboratedTypeLoc>()) {
@@ -7921,7 +7949,7 @@ class UtilityTupleQueryGraph
     const auto ActualNode = Named(ActualType->getTypeLoc());
     const auto WrittenNode = Named(OriginalType->getTypeLoc());
     const auto CurrentNode = Named(Location);
-    if (ActualNode.isNull() || WrittenNode.isNull() || CurrentNode.isNull()) return false;
+    if (ActualNode.isNull() || WrittenNode.isNull() || CurrentNode.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = ActualNode.getAs<TemplateSpecializationTypeLoc>();
     const auto Written = WrittenNode.getAs<TemplateSpecializationTypeLoc>();
     const auto Current = CurrentNode.getAs<TemplateSpecializationTypeLoc>();
@@ -7944,19 +7972,19 @@ class UtilityTupleQueryGraph
         SM.getExpansionLoc(Actual.getRAngleLoc()) != SM.getExpansionLoc(End) ||
         SM.getExpansionLoc(Written.getRAngleLoc()) != SM.getExpansionLoc(End) ||
         !cstddefOrigin(S, SM, Actual.getTemplateNameLoc(), "libcxx", "__tuple/make_tuple_types.h") ||
-        !cstddefOrigin(S, SM, Written.getTemplateNameLoc(), "libcxx", "__tuple/make_tuple_types.h")) return false;
+        !cstddefOrigin(S, SM, Written.getTemplateNameLoc(), "libcxx", "__tuple/make_tuple_types.h")) return functionalBindDiagnosticFailure(__LINE__);
     bool Found = false;
     for (const auto *Role : {ActualType, OriginalType}) {
       const auto Root = Role->getTypeLoc();
       const auto Child = Named(Root);
       for (const auto Node : {Root, Child}) {
-        if (!step()) return false;
+        if (!step()) return functionalBindDiagnosticFailure(__LINE__);
         if (!Node.isNull() && Node.getType() == Location.getType() &&
             Node.getOpaqueData() == Location.getOpaqueData() &&
             Node.getSourceRange() == Location.getSourceRange()) Found = true;
       }
     }
-    if (!Found) return false;
+    if (!Found) return functionalBindDiagnosticFailure(__LINE__);
     const auto Spell = SM.getSpellingLoc(End);
     const auto Range = SM.getImmediateExpansionRange(End);
     const auto Begin = Range.getBegin();
@@ -7964,10 +7992,10 @@ class UtilityTupleQueryGraph
         !SM.isWrittenInScratchSpace(Spell) || Range.isTokenRange() ||
         !Begin.isFileID() || !Range.getEnd().isFileID() ||
         Range.getEnd() != Begin.getLocWithOffset(1) || SM.getExpansionLoc(End) != Begin ||
-        !cstddefOrigin(S, SM, Begin, "libcxx", "__tuple/make_tuple_types.h")) return false;
+        !cstddefOrigin(S, SM, Begin, "libcxx", "__tuple/make_tuple_types.h")) return functionalBindDiagnosticFailure(__LINE__);
     bool Invalid = false;
     const char *OriginalChar = SM.getCharacterData(Begin, &Invalid);
-    if (Invalid || *OriginalChar != '>') return false;
+    if (Invalid || *OriginalChar != '>') return functionalBindDiagnosticFailure(__LINE__);
     const char *Split = SM.getCharacterData(Spell, &Invalid);
     return !Invalid && *Split == '>';
   }
@@ -7979,7 +8007,13 @@ class UtilityTupleQueryGraph
     return NestedSharedBudget || (ParentBudget && ParentBudget->nestedBudgetActive());
   }
   bool nestedDepthFits(unsigned ChildDepth) const {
-    if (Failed || ChildDepth > 64 || Depth > 64 - ChildDepth) return false;
+    if (Failed || ChildDepth > 64 || Depth > 64 - ChildDepth) {
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE"))
+        std::fprintf(stderr, "BIND-BUDGET-DEPTH failed=%u depth=%u child=%u nodes=%u path=%lld\n",
+            unsigned(Failed), Depth, ChildDepth, Nodes,
+            BindCallMetadata ? static_cast<long long>(BindCallMetadata->OwnedPath.size()) : -1LL);
+      return functionalBindDiagnosticFailure(__LINE__);
+    }
     return !ParentBudget || ParentBudget->nestedDepthFits(Depth + ChildDepth);
   }
 
@@ -7988,8 +8022,13 @@ class UtilityTupleQueryGraph
         (ParentBudget && ((nestedBudgetActive() ? !ParentBudget->nestedDepthFits(Depth)
                                                : ParentBudget->Depth + Depth > 64) ||
                           !ParentBudget->step()))) {
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE"))
+        std::fprintf(stderr, "BIND-BUDGET-STEP failed=%u depth=%u nodes=%u parentdepth=%u parentnodes=%u nested=%u path=%lld\n",
+            unsigned(Failed), Depth, Nodes, ParentBudget ? ParentBudget->Depth : 0U,
+            ParentBudget ? ParentBudget->Nodes : 0U, unsigned(nestedBudgetActive()),
+            BindCallMetadata ? static_cast<long long>(BindCallMetadata->OwnedPath.size()) : -1LL);
       Failed = true;
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     }
     return true;
   }
@@ -8017,19 +8056,19 @@ class UtilityTupleQueryGraph
         !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "__utility/declval.h") ||
         !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__utility/declval.h") ||
         !cstddefOrigin(S, SM, Use->getExprLoc(), "libcxx", "__type_traits/invoke.h"))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     // Keep exact original unevaluated operands; no body/runtime permission.
     Declvals.push_back(Use);
     return true;
   }
   bool notFnInvokeParameter(const ParmVarDecl *Parameter) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation ||
-        !NotFnInvokeSignature || !Parameter || Parameter->hasDefaultArg()) return false;
+        !NotFnInvokeSignature || !Parameter || Parameter->hasDefaultArg()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Owner = dyn_cast<FunctionDecl>(Parameter->getDeclContext());
     if (Owner != NotFnInvokeSignature) {
       const auto *Primary = NotFnInvokeSignature->getPrimaryTemplate();
       if (!NotFnInvokeWrittenPattern || Owner != NotFnInvokeWrittenPattern ||
-          !Primary || Primary->getTemplatedDecl() != Owner) return false;
+          !Primary || Primary->getTemplatedDecl() != Owner) return functionalBindDiagnosticFailure(__LINE__);
     }
     bool Found = false;
     for (const auto *Actual : Owner->parameters()) Found |= Actual == Parameter;
@@ -8091,28 +8130,28 @@ class UtilityTupleQueryGraph
         !Arguments || Arguments->size() != (NotFnReferenceDependency ? 1U : 2U) || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         Arguments->get(0).pack_size() != Wrapper->getNumParams() ||
         Target->getNumArgs() != Wrapper->getNumParams() + 1 ||
-        Method->getNumParams() != Wrapper->getNumParams()) return false;
+        Method->getNumParams() != Wrapper->getNumParams()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Bound = notFnQueryBound();
-    if (Bound.isNull()) return false;
+    if (Bound.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Actual) {
       if (!Actual || Actual->size() != 2 || Actual->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Actual->get(0).getAsType(), Bound) ||
           Actual->get(1).getKind() != TemplateArgument::Pack ||
-          Actual->get(1).pack_size() != Pack.size()) return false;
+          Actual->get(1).pack_size() != Pack.size()) return functionalBindDiagnosticFailure(__LINE__);
       const auto Types = Actual->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type || Types[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Types[I].getAsType(), Pack[I].getAsType())) return false;
+            !Context.hasSameType(Types[I].getAsType(), Pack[I].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     };
     const bool HelperReturn = NotFnInvokeSignature && Expression == NotFnInvokeReturn;
     if (Forwarded) {
       if (!NotFnInvokeSignature || Expression != NotFnInvokeException ||
           NotFnInvokeSignature->getNumParams() != Target->getNumArgs() ||
-          !BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return false;
+          !BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return functionalBindDiagnosticFailure(__LINE__);
     } else if (HelperReturn) {
-      if (!BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return false;
+      if (!BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return functionalBindDiagnosticFailure(__LINE__);
     } else {
       const auto *Owner = dyn_cast_or_null<ClassTemplateSpecializationDecl>(NotFnConstraintBaseOwner);
       const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
@@ -8122,10 +8161,10 @@ class UtilityTupleQueryGraph
           !NotFnConstraintBase || NotFnConstraintBase->isVirtual() ||
           !NotFnConstraintBase->getTypeSourceInfo() || !family(Owner) ||
           !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !BoundArguments(&Owner->getTemplateArgs())) return false;
+          !BoundArguments(&Owner->getTemplateArgs())) return functionalBindDiagnosticFailure(__LINE__);
       bool Actual = false;
       for (const auto &Base : Owner->bases()) Actual |= &Base == NotFnConstraintBase;
-      if (!Actual) return false;
+      if (!Actual) return functionalBindDiagnosticFailure(__LINE__);
     }
     std::vector<const CallExpr *> Declvals;
     auto Operand = [&](const Expr *Value, QualType Input, unsigned Index) {
@@ -8154,7 +8193,7 @@ class UtilityTupleQueryGraph
           Cast->path_size() != 1 || *Cast->path_begin() != &*Inner.Record->bases_begin() ||
           !Context.hasSameType(Cast->getType(), Forwarder) ||
           !Context.hasSameType(Cast->getSubExpr()->getType(), Bound.getNonReferenceType()) ||
-          Cast->getValueKind() != Cast->getSubExpr()->getValueKind()) return false;
+          Cast->getValueKind() != Cast->getSubExpr()->getValueKind()) return functionalBindDiagnosticFailure(__LINE__);
       Receiver = Cast->getSubExpr();
     }
     if (ReferenceWrapper) {
@@ -8164,38 +8203,38 @@ class UtilityTupleQueryGraph
           Cast && Cast->getCastKind() == CK_NoOp) {
         if (!Context.hasSameType(Cast->getType(), Context.getConstType(Bound.getNonReferenceType())) ||
             !Context.hasSameType(Cast->getSubExpr()->getType(), Bound.getNonReferenceType()) ||
-            Cast->getValueKind() != Cast->getSubExpr()->getValueKind()) return false;
+            Cast->getValueKind() != Cast->getSubExpr()->getValueKind()) return functionalBindDiagnosticFailure(__LINE__);
         Receiver = Cast->getSubExpr();
       }
     }
     if (!Context.hasSameType(Receiver->getType(), Bound.getNonReferenceType()) ||
         Receiver->getValueKind() != Expr::getValueKindForType(ReceiverType) ||
-        !Operand(Receiver, Bound, 0)) return false;
+        !Operand(Receiver, Bound, 0)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Pack.size(); ++I) {
       const auto Parameter = Method->getParamDecl(I)->getType();
       if (((ReferenceWrapper || NestedWrapper) ? !Parameter->isReferenceType() : !Parameter->isScalarType()) ||
           Parameter.getNonReferenceType().isVolatileQualified() ||
           !Context.hasSameType(Target->getArg(I + 1)->getType(), Parameter.getNonLValueExprType(Context)) ||
           Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter) ||
-          !Operand(Target->getArg(I + 1), Pack[I].getAsType(), I + 1)) return false;
+          !Operand(Target->getArg(I + 1), Pack[I].getAsType(), I + 1)) return functionalBindDiagnosticFailure(__LINE__);
     }
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
     const auto Inserted = NotFnOwnedInvokeQueries.emplace(Target, Method);
-    if (!Inserted.second && Inserted.first->second != Method) return false;
+    if (!Inserted.second && Inserted.first->second != Method) return functionalBindDiagnosticFailure(__LINE__);
     if (!ReferenceWrapper && !NestedWrapper) OrdinarySources->insert(Method);
     return true;
   }
   bool notFnInvokeForwardedCall(const CallExpr *Expression) {
     if (notFnQueryTargetMethod()) return notFnOwnedInvokeQuery(Expression, true);
     if (!Expression || Expression != NotFnInvokeException || !NotFnInvokeSignature ||
-        Expression->getDirectCallee() || !NotFnInvocation) return false;
+        Expression->getDirectCallee() || !NotFnInvocation) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Prototype = NotFnCallableType->getPointeeType()->getAs<FunctionProtoType>();
     if (!Prototype || Expression->getNumArgs() != Prototype->getNumParams() ||
         NotFnInvokeSignature->getNumParams() != Expression->getNumArgs() + 1 ||
         !Context.hasSameType(Expression->getType(),
             Prototype->getReturnType().getNonLValueExprType(Context)) ||
         Expression->getValueKind() != Expr::getValueKindForType(Prototype->getReturnType()))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     auto Forward = [&](const Expr *Operand, unsigned Index) {
       const auto *Cast = Operand ? dyn_cast<CXXStaticCastExpr>(Operand->IgnoreParenImpCasts()) : nullptr;
       const auto *Reference = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
@@ -8212,13 +8251,13 @@ class UtilityTupleQueryGraph
     const auto *Callee = dyn_cast<ImplicitCastExpr>(Expression->getCallee());
     if (!Callee || Callee->getCastKind() != CK_LValueToRValue ||
         !Context.hasSameType(Callee->getType(), NotFnCallableType) ||
-        !Forward(Callee->getSubExpr(), 0)) return false;
+        !Forward(Callee->getSubExpr(), 0)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Expression->getNumArgs(); ++I)
       if (!Forward(Expression->getArg(I), I + 1) ||
           !Context.hasSameType(Expression->getArg(I)->getType(),
               Prototype->getParamType(I).getNonLValueExprType(Context)) ||
           Expression->getArg(I)->getValueKind() !=
-              Expr::getValueKindForType(Prototype->getParamType(I))) return false;
+              Expr::getValueKindForType(Prototype->getParamType(I))) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
   bool notFnIndirectSignature(const CallExpr *Expression) {
@@ -8249,13 +8288,13 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Expression->getType(),
             Prototype->getReturnType().getNonLValueExprType(Context)) ||
         Expression->getValueKind() != Expr::getValueKindForType(Prototype->getReturnType()))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     bool ActualBase = false;
     if (!HelperReturn)
       for (const auto &Base : Owner->bases()) ActualBase |= &Base == NotFnConstraintBase;
     auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
     if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return false;
+    else if (Method->getRefQualifier() != RQ_RValue) return functionalBindDiagnosticFailure(__LINE__);
     const auto Selected = Arguments->get(0).pack_elements();
     const auto *HelperArguments = HelperReturn
         ? NotFnInvokeSignature->getTemplateSpecializationArgs() : nullptr;
@@ -8264,12 +8303,12 @@ class UtilityTupleQueryGraph
         (*OwnerArguments)[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType((*OwnerArguments)[0].getAsType(), Bound) ||
         (*OwnerArguments)[1].getKind() != TemplateArgument::Pack ||
-        (*OwnerArguments)[1].pack_size() != Selected.size()) return false;
+        (*OwnerArguments)[1].pack_size() != Selected.size()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = (*OwnerArguments)[1].pack_elements();
     for (unsigned I = 0; I < Selected.size(); ++I)
       if (Selected[I].getKind() != TemplateArgument::Type ||
           Actual[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Selected[I].getAsType(), Actual[I].getAsType())) return false;
+          !Context.hasSameType(Selected[I].getAsType(), Actual[I].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
 
     std::vector<const CallExpr *> Declvals;
     auto Declval = [&](const Expr *Value, QualType Input) {
@@ -8277,13 +8316,13 @@ class UtilityTupleQueryGraph
     };
     const auto *Callee = dyn_cast<ImplicitCastExpr>(Expression->getCallee());
     if (!Callee || Callee->getCastKind() != CK_LValueToRValue ||
-        !Declval(Callee->getSubExpr(), Bound)) return false;
+        !Declval(Callee->getSubExpr(), Bound)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Selected.size(); ++I) {
       const auto Parameter = Prototype->getParamType(I);
       if (!Context.hasSameType(Expression->getArg(I)->getType(),
               Parameter.getNonLValueExprType(Context)) ||
           Expression->getArg(I)->getValueKind() != Expr::getValueKindForType(Parameter) ||
-          !Declval(Expression->getArg(I), Selected[I].getAsType())) return false;
+          !Declval(Expression->getArg(I), Selected[I].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
     }
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
     return true;
@@ -8304,7 +8343,7 @@ class UtilityTupleQueryGraph
         Constructor->isInvalidDecl() || Constructor->isVariadic() ||
         Constructor->getAccess() != AS_public ||
         !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
     return Prototype && Prototype->getExceptionSpecType() == EST_None &&
         !Prototype->getNoexceptExpr() &&
@@ -8319,7 +8358,7 @@ class UtilityTupleQueryGraph
   bool pinned(const Decl *D) {
     if (!D || !step() || D->isInvalidDecl() ||
         !approvedStandardSDKDeclaration(S, SM, D))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto Origin = S.sdkFile(SM, D->getLocation());
     return Origin && Origin->Root == "libcxx" &&
            (DefaultEqualityFamilies.count(D) ||
@@ -8372,7 +8411,7 @@ class UtilityTupleQueryGraph
       // A genuine source failure cannot be recovered by a second cache lookup.
       // Other metadata modes preserve their existing behavior.
       if ((Mode == UtilityTupleQueryMode::PairConstruction || Mode == UtilityTupleQueryMode::BindSignature || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = true;
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     }
     if (!Declarations.insert(D).second) {
       Complete = true;
@@ -8380,44 +8419,44 @@ class UtilityTupleQueryGraph
     }
     if (const auto *R = dyn_cast<CXXRecordDecl>(D)) {
       for (const auto *Redeclaration : R->redecls())
-        if (!pinned(Redeclaration)) return false;
+        if (!pinned(Redeclaration)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
         const auto *Primary = Instance->getSpecializedTemplate();
-        if (!family(Primary)) return false;
+        if (!family(Primary)) return functionalBindDiagnosticFailure(__LINE__);
         if (const auto *Partial = Instance->getSpecializedTemplateOrPartial()
                 .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
-          if (!family(Partial)) return false;
+          if (!family(Partial)) return functionalBindDiagnosticFailure(__LINE__);
         if (const auto *Pattern = Instance->getTemplateInstantiationPattern())
-          if (!family(Pattern)) return false;
+          if (!family(Pattern)) return functionalBindDiagnosticFailure(__LINE__);
       }
     } else if (const auto *F = dyn_cast<FunctionDecl>(D)) {
       for (const auto *Redeclaration : F->redecls())
-        if (!pinned(Redeclaration)) return false;
+        if (!pinned(Redeclaration)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Primary = F->getPrimaryTemplate())
-        if (!family(Primary)) return false;
+        if (!family(Primary)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Pattern = F->getTemplateInstantiationPattern())
-        if (!family(Pattern)) return false;
+        if (!family(Pattern)) return functionalBindDiagnosticFailure(__LINE__);
     } else if (const auto *T = dyn_cast<RedeclarableTemplateDecl>(D)) {
       for (const auto *Redeclaration : T->redecls())
         if (!pinned(Redeclaration) || !pinned(Redeclaration->getTemplatedDecl()))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
     } else if (const auto *V = dyn_cast<VarDecl>(D)) {
       for (const auto *Redeclaration : V->redecls())
-        if (!pinned(Redeclaration)) return false;
+        if (!pinned(Redeclaration)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Pattern = V->getInstantiatedFromStaticDataMember())
-        if (!family(Pattern)) return false;
+        if (!family(Pattern)) return functionalBindDiagnosticFailure(__LINE__);
     }
     Complete = true;
     return true;
   }
   bool ownedPairInputRecord(const CXXRecordDecl *Record) const {
-    if (!Record || !S.owns(SM, Record->getLocation())) return false;
+    if (!Record || !S.owns(SM, Record->getLocation())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     return !Primary || S.owns(SM, Primary->getLocation());
   }
   bool pairSourceTypeSpelling(QualType Type) {
-    if (!PairInputTypes.count(Type.getCanonicalType().getTypePtr())) return false;
+    if (!PairInputTypes.count(Type.getCanonicalType().getTypePtr())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Raw = Type.getTypePtr();
     const auto *Alias = dyn_cast<TypedefType>(Raw);
     const auto *Instance = dyn_cast<TemplateSpecializationType>(Raw);
@@ -8445,10 +8484,10 @@ class UtilityTupleQueryGraph
       }
     }
     if (!Declaration || !S.owns(SM, Declaration->getLocation()) ||
-        approvedStandardSDKDeclaration(S, SM, Declaration)) return false;
+        approvedStandardSDKDeclaration(S, SM, Declaration)) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto *Record = Type->getAsCXXRecordDecl();
         Record && S.owns(SM, Record->getLocation()) && !ownedPairInputRecord(Record))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     // This is a source dependency, never an SDK certificate. The exact alias
     // TypeLoc or retained template use must finish in the ordinary checker.
     PairSourceTypeSpellings.insert(Raw);
@@ -8460,9 +8499,9 @@ class UtilityTupleQueryGraph
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back();
       Pending.pop_back();
-      if (!Declaration || !step()) return false;
+      if (!Declaration || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!PairInputFamilies.insert(Declaration).second) continue;
-      if (!approvedStandardSDKDeclaration(S, SM, Declaration)) return false;
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *R = dyn_cast<CXXRecordDecl>(Declaration)) {
         for (const auto *Redeclaration : R->redecls()) Pending.push_back(Redeclaration);
         if (const auto *Described = R->getDescribedClassTemplate())
@@ -8502,14 +8541,14 @@ class UtilityTupleQueryGraph
     }
   public:
     explicit PairStorageUseSource(UtilityTupleQueryGraph &Graph) : Graph(Graph) {}
-    bool shouldWalkTypesOfTypeLocs() const { return false; }
+    bool shouldWalkTypesOfTypeLocs() const { return functionalBindDiagnosticFailure(__LINE__); }
     bool check(const TypeSourceInfo *Info) {
-      if (!Info || !Graph.step()) return false;
+      if (!Info || !Graph.step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Seen.insert(Info).second) return true;
       return TraverseTypeLoc(Info->getTypeLoc());
     }
     bool TraverseTypeLoc(TypeLoc TL) {
-      if (!TL) return false;
+      if (!TL) return functionalBindDiagnosticFailure(__LINE__);
       ++Graph.Depth;
       auto Restore = llvm::make_scope_exit([&] { --Graph.Depth; });
       return Graph.step() && location(TL.getBeginLoc()) && location(TL.getEndLoc()) &&
@@ -8527,7 +8566,7 @@ class UtilityTupleQueryGraph
             !Graph.Context.hasSameType(TL.getType(), Storage->getElementType()) ||
             !approvedStandardSDKDeclaration(Graph.S, Graph.SM, Alias) ||
             !cstddefOrigin(Graph.S, Graph.SM, Alias->getLocation(), "libcxx", "array") ||
-            !Alias->getTypeSourceInfo()) return false;
+            !Alias->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
         // The exact zero-array field use binds this member alias. Its actual
         // original TSI below still proves every __empty/conditional token.
         Graph.PairInputFamilies.insert(Alias);
@@ -8538,7 +8577,7 @@ class UtilityTupleQueryGraph
             cstddefOrigin(Graph.S, Graph.SM, Owner->getLocation(), "libcxx", "optional")) {
           if (!approvedStandardSDKDeclaration(Graph.S, Graph.SM, Alias) ||
               !cstddefOrigin(Graph.S, Graph.SM, Alias->getLocation(), "libcxx", "optional") ||
-              !Alias->getTypeSourceInfo()) return false;
+              !Alias->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
           Graph.PairInputFamilies.insert(Alias);
         }
       }
@@ -8555,21 +8594,21 @@ class UtilityTupleQueryGraph
                                 : "__functional/binary_function.h";
         if (!Actual || !Graph.PairBorrowedStorageRecords.count(Actual->getCanonicalDecl()) ||
             Actual->getName() != (Unary ? "__unary_function_keep_layout_base"
-                                       : "__binary_function_keep_layout_base")) return false;
+                                       : "__binary_function_keep_layout_base")) return functionalBindDiagnosticFailure(__LINE__);
         std::vector<const Decl *> Pending{Alias};
         std::set<const Decl *> Family;
         while (!Pending.empty()) {
           const auto *D = Pending.back();
           Pending.pop_back();
-          if (!D || !Graph.step()) return false;
+          if (!D || !Graph.step()) return functionalBindDiagnosticFailure(__LINE__);
           if (!Family.insert(D).second) continue;
           if (!approvedStandardSDKDeclaration(Graph.S, Graph.SM, D) ||
-              !cstddefOrigin(Graph.S, Graph.SM, D->getLocation(), "libcxx", Path)) return false;
+              !cstddefOrigin(Graph.S, Graph.SM, D->getLocation(), "libcxx", Path)) return functionalBindDiagnosticFailure(__LINE__);
           if (const auto *T = dyn_cast<TypeAliasTemplateDecl>(D)) {
             for (const auto *R : T->redecls()) Pending.push_back(R);
             Pending.push_back(T->getTemplatedDecl());
             for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-          } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return false;
+          } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return functionalBindDiagnosticFailure(__LINE__);
         }
         // Only this actual base use supplies the independent alias family.
         Graph.PairInputFamilies.insert(Family.begin(), Family.end());
@@ -8580,9 +8619,9 @@ class UtilityTupleQueryGraph
            Alias->getName() == "__optional_sfinae_assign_base_t")) {
         const auto *Actual = TL.getType()->getAsCXXRecordDecl();
         if (!Actual || !Graph.PairOptionalStorageRecords.count(Actual->getCanonicalDecl()) ||
-            !Graph.bindPairOptionalAlias(Alias)) return false;
+            !Graph.bindPairOptionalAlias(Alias)) return functionalBindDiagnosticFailure(__LINE__);
       }
-      if (!Template || !Graph.family(Template)) return false;
+      if (!Template || !Graph.family(Template)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Template))
         return Graph.family(Alias->getTemplatedDecl()) &&
                check(Alias->getTemplatedDecl()->getTypeSourceInfo());
@@ -8595,7 +8634,7 @@ class UtilityTupleQueryGraph
       ++Graph.Depth;
       if (Graph.step()) return true;
       --Graph.Depth;
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     }
     bool dataTraverseStmtPost(Stmt *) { --Graph.Depth; return true; }
   };
@@ -8604,15 +8643,15 @@ class UtilityTupleQueryGraph
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *D = Pending.back(); Pending.pop_back();
-      if (!D || !step()) return false;
+      if (!D || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(D).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, D) ||
-          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "optional")) return false;
+          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "optional")) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *T = dyn_cast<TypeAliasTemplateDecl>(D)) {
         for (const auto *R : T->redecls()) Pending.push_back(R);
         Pending.push_back(T->getTemplatedDecl());
         for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return false;
+      } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return functionalBindDiagnosticFailure(__LINE__);
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
     return true;
@@ -8620,15 +8659,15 @@ class UtilityTupleQueryGraph
   bool bindPairOptionalStorage(const CXXRecordDecl *Record, unsigned Nesting = 0) {
     if (!Record || Nesting > 64 || !step() || Record->isInvalidDecl() ||
         Record->isUnion() || Record->isDynamicClass() || Record->getNumVBases() ||
-        !approvedStandardSDKDeclaration(S, SM, Record) || !bindPairInputFamily(Record)) return false;
+        !approvedStandardSDKDeclaration(S, SM, Record) || !bindPairInputFamily(Record)) return functionalBindDiagnosticFailure(__LINE__);
     if (!PairOptionalStorageRecords.insert(Record->getCanonicalDecl()).second) return true;
     for (const auto &Base : Record->bases()) {
       const auto *Child = Base.getType()->getAsCXXRecordDecl();
-      if (Base.isVirtual() || !Child || !bindPairOptionalStorage(Child, Nesting + 1)) return false;
+      if (Base.isVirtual() || !Child || !bindPairOptionalStorage(Child, Nesting + 1)) return functionalBindDiagnosticFailure(__LINE__);
       PairStorageUseSource Source(*this);
       if (!Base.getTypeSourceInfo() ||
           !Context.hasSameType(Base.getTypeSourceInfo()->getType(), Base.getType()) ||
-          !Source.check(Base.getTypeSourceInfo())) return false;
+          !Source.check(Base.getTypeSourceInfo())) return functionalBindDiagnosticFailure(__LINE__);
     }
     return true;
   }
@@ -8639,9 +8678,9 @@ class UtilityTupleQueryGraph
         Definition->isUnion() || Definition->isDynamicClass() || Definition->getNumVBases() ||
         !Definition->isStandardLayout() || !Definition->hasTrivialCopyConstructor() ||
         !Definition->hasTrivialDestructor() ||
-        !approvedStandardSDKDeclaration(S, SM, Definition)) return false;
+        !approvedStandardSDKDeclaration(S, SM, Definition)) return functionalBindDiagnosticFailure(__LINE__);
     if (Wrapper) {
-      if (!approvedFunctionalReferenceRecord(S, SM, Definition, Context)) return false;
+      if (!approvedFunctionalReferenceRecord(S, SM, Definition, Context)) return functionalBindDiagnosticFailure(__LINE__);
     } else {
       const auto Origin = S.sdkFile(SM, Definition->getLocation());
       if (!Origin || Origin->Root != "libcxx" || !Definition->isEmpty() ||
@@ -8659,16 +8698,16 @@ class UtilityTupleQueryGraph
              Definition->getName() == "__binary_function_keep_layout_base" &&
              !Definition->getNumBases()) ||
             (Origin->Path == "__utility/empty.h" && Definition->getName() == "__empty" &&
-             !Definition->getNumBases()))) return false;
+             !Definition->getNumBases()))) return functionalBindDiagnosticFailure(__LINE__);
     }
-    if (!bindPairInputFamily(Definition)) return false;
+    if (!bindPairInputFamily(Definition)) return functionalBindDiagnosticFailure(__LINE__);
     if (Wrapper) {
       const auto Description = approvedFunctionalReferenceRecord(S, SM, Definition, Context);
       const TypedefNameDecl *Alias = nullptr;
       for (const auto *Declaration : Definition->decls())
         if (const auto *Named = dyn_cast<TypedefNameDecl>(Declaration);
             Named && Named->getIdentifier() && Named->getName() == "type") {
-          if (Alias) return false;
+          if (Alias) return functionalBindDiagnosticFailure(__LINE__);
           Alias = Named;
         }
       const auto *Info = Alias ? Alias->getTypeSourceInfo() : nullptr;
@@ -8681,7 +8720,7 @@ class UtilityTupleQueryGraph
           !Context.hasSameType(Info->getType(), Alias->getUnderlyingType()) ||
           !approvedStandardSDKDeclaration(S, SM, Alias) ||
           !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/reference_wrapper.h") ||
-          !Source.check(Info)) return false;
+          !Source.check(Info)) return functionalBindDiagnosticFailure(__LINE__);
       // Only this bound wrapper's actual referent alias supplies metadata.
       // Its original type spelling closes before any later alias/cache use.
       PairInputFamilies.insert(Alias);
@@ -8692,12 +8731,12 @@ class UtilityTupleQueryGraph
       if (Base.isVirtual() || !Base.getTypeSourceInfo() ||
           !Context.hasSameType(Base.getTypeSourceInfo()->getType(), Base.getType()) ||
           !bindPairBorrowedStorage(Base.getType()->getAsCXXRecordDecl(), false, Nesting + 1) ||
-          !Source.check(Base.getTypeSourceInfo()) || Failed) return false;
+          !Source.check(Base.getTypeSourceInfo()) || Failed) return functionalBindDiagnosticFailure(__LINE__);
     }
     return true;
   }
   bool bindPairInput(QualType Type, unsigned Nesting = 0) {
-    if (Type.isNull() || Nesting > 64 || !step()) return false;
+    if (Type.isNull() || Nesting > 64 || !step()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Canonical = Type.getCanonicalType().getTypePtr();
     if (!PairInputTypes.insert(Canonical).second) return true;
     if (Canonical->isPointerType() || Canonical->isReferenceType())
@@ -8706,21 +8745,21 @@ class UtilityTupleQueryGraph
         Array && (isa<ConstantArrayType>(Array) || isa<IncompleteArrayType>(Array)))
       return bindPairInput(Array->getElementType(), Nesting + 1);
     if (const auto *Function = Canonical->getAs<FunctionProtoType>()) {
-      if (!bindPairInput(Function->getReturnType(), Nesting + 1)) return false;
+      if (!bindPairInput(Function->getReturnType(), Nesting + 1)) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto Parameter : Function->param_types())
-        if (!bindPairInput(Parameter, Nesting + 1)) return false;
+        if (!bindPairInput(Parameter, Nesting + 1)) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     }
     const auto *Record = Canonical->getAsCXXRecordDecl();
     if (!Record) return true;
     PairInputRecords.insert(Record->getCanonicalDecl());
-    if (!bindPairInputFamily(Record)) return false;
+    if (!bindPairInputFamily(Record)) return functionalBindDiagnosticFailure(__LINE__);
     if (approvedFunctionalReferenceRecord(S, SM, Record, Context) &&
-        !bindPairBorrowedStorage(Record, true)) return false;
+        !bindPairBorrowedStorage(Record, true)) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto Optional = approvedUtilityOptionalRecord(S, SM, Record, Context)) {
       const auto *Union = dyn_cast<CXXRecordDecl>(Optional->Value->getDeclContext());
       if (!Union || !Union->isUnion() || !Union->hasTrivialDestructor() ||
-          !bindPairOptionalStorage(Record) || !bindPairInputFamily(Union)) return false;
+          !bindPairOptionalStorage(Record) || !bindPairInputFamily(Union)) return functionalBindDiagnosticFailure(__LINE__);
       PairOptionalStorageRecords.insert(Union->getCanonicalDecl());
       PairOptionalStorageUnions.insert(Union->getCanonicalDecl());
       // Actual storage field spellings are independent source uses. Layout
@@ -8729,10 +8768,10 @@ class UtilityTupleQueryGraph
       for (const auto *Field : Union->fields()) {
         const auto *Written = Field->getTypeSourceInfo();
         if (!Written || !Context.hasSameType(Written->getType(), Field->getType()) ||
-            !Source.check(Written)) return false;
+            !Source.check(Written)) return functionalBindDiagnosticFailure(__LINE__);
       }
       if (!Optional->Engaged->getTypeSourceInfo() ||
-          !Source.check(Optional->Engaged->getTypeSourceInfo())) return false;
+          !Source.check(Optional->Engaged->getTypeSourceInfo())) return functionalBindDiagnosticFailure(__LINE__);
     }
     if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context);
         Array && !Array->Size) {
@@ -8742,23 +8781,23 @@ class UtilityTupleQueryGraph
       if (!Storage || !Written ||
           !Context.hasSameType(Written->getType(), Array->Elements->getType()) ||
           !bindPairBorrowedStorage(Storage->getElementType()->getAsCXXRecordDecl(), false) ||
-          !Source.check(Written) || Failed) return false;
+          !Source.check(Written) || Failed) return functionalBindDiagnosticFailure(__LINE__);
     }
     // Follow type arguments only; no source declaration/body becomes SDK code.
     const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(Record);
     if (!Specialization) return true;
     auto Argument = [&](auto &&Self, const TemplateArgument &Value,
                         unsigned Depth) -> bool {
-      if (Depth > 64 || !step()) return false;
+      if (Depth > 64 || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (Value.getKind() == TemplateArgument::Type)
         return bindPairInput(Value.getAsType(), Depth + 1);
       if (Value.getKind() == TemplateArgument::Pack)
         for (const auto &Element : Value.pack_elements())
-          if (!Self(Self, Element, Depth + 1)) return false;
+          if (!Self(Self, Element, Depth + 1)) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     };
     for (const auto &Value : Specialization->getTemplateArgs().asArray())
-      if (!Argument(Argument, Value, Nesting + 1)) return false;
+      if (!Argument(Argument, Value, Nesting + 1)) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
   bool bindPairReferenceFactory(const Expr *Argument) {
@@ -8776,17 +8815,17 @@ class UtilityTupleQueryGraph
                             NotFnReferenceStorage->Reference.ReferentType);
     if (!Function || !Primary ||
         (!PairInputRecords.count(Factory->Result.Record->getCanonicalDecl()) && !NotFnInput))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const Decl *> Pending{Function, Primary};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(Current).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Current) ||
           !cstddefOrigin(S, SM, Current->getLocation(), "libcxx",
-                         "__functional/reference_wrapper.h")) return false;
+                         "__functional/reference_wrapper.h")) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *F = dyn_cast<FunctionDecl>(Current)) {
         for (const auto *D : F->redecls()) Pending.push_back(D);
         if (const auto *Pattern = F->getTemplateInstantiationPattern()) Pending.push_back(Pattern);
@@ -8795,7 +8834,7 @@ class UtilityTupleQueryGraph
         for (const auto *D : T->redecls()) Pending.push_back(D);
         Pending.push_back(T->getTemplatedDecl());
         for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TemplateTypeParmDecl, NonTypeTemplateParmDecl>(Current)) return false;
+      } else if (!isa<TemplateTypeParmDecl, NonTypeTemplateParmDecl>(Current)) return functionalBindDiagnosticFailure(__LINE__);
     }
     // Only metadata substitutions of this exact admitted caller factory join
     // the graph. The caller still checks its actual call and referent source.
@@ -8830,26 +8869,26 @@ class UtilityTupleQueryGraph
           !Context.hasSameType(Arguments->get(0).getAsType(),
               Parameter->isLValueReferenceType() ? Parameter : Parameter->getPointeeType()) ||
           !Context.hasSameType(Function->getReturnType(), Parameter) ||
-          !Context.hasSameType(Call->getType(), Parameter->getPointeeType())) return false;
+          !Context.hasSameType(Call->getType(), Parameter->getPointeeType())) return functionalBindDiagnosticFailure(__LINE__);
       const bool LValue = Parameter->isLValueReferenceType() || Call->getType()->isFunctionType();
-      if (Call->isLValue() != LValue || Call->isXValue() == LValue) return false;
+      if (Call->isLValue() != LValue || Call->isXValue() == LValue) return functionalBindDiagnosticFailure(__LINE__);
       Operation = UtilityOperation::Forward;
     } else {
       Operation = approvedUtilityOperation(S, SM, Call, Context);
-      if (!S.owns(SM, Call->getExprLoc())) return false;
+      if (!S.owns(SM, Call->getExprLoc())) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto Path = Operation == UtilityOperation::Move ? "__utility/move.h"
         : Operation == UtilityOperation::Forward ? "__utility/forward.h" : "";
     if (!*Path ||
-        !PairInputTypes.count(Call->getType().getCanonicalType().getTypePtr())) return false;
+        !PairInputTypes.count(Call->getType().getCanonicalType().getTypePtr())) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const Decl *> Pending{Function, Primary};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(Current).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Current) ||
-          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", Path)) return false;
+          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", Path)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *F = dyn_cast<FunctionDecl>(Current)) {
         for (const auto *D : F->redecls()) Pending.push_back(D);
         if (const auto *Pattern = F->getTemplateInstantiationPattern()) Pending.push_back(Pattern);
@@ -8858,7 +8897,7 @@ class UtilityTupleQueryGraph
         for (const auto *D : T->redecls()) Pending.push_back(D);
         Pending.push_back(T->getTemplatedDecl());
         for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TemplateTypeParmDecl>(Current)) return false;
+      } else if (!isa<TemplateTypeParmDecl>(Current)) return functionalBindDiagnosticFailure(__LINE__);
     }
     // These actual caller adapters supply metadata substitution provenance.
     // Ordinary completion still authenticates their calls and original operands.
@@ -8867,7 +8906,7 @@ class UtilityTupleQueryGraph
   }
   bool pairOwner(const CXXRecordDecl *Record) {
     if (Mode != UtilityTupleQueryMode::PairConstruction || !PairConstructor ||
-        !Record) return false;
+        !Record) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(
         PairConstructor->getParent());
     const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
@@ -8881,15 +8920,15 @@ class UtilityTupleQueryGraph
   bool pairHelperOwner(const CXXRecordDecl *Record) {
     if (!Record || !Record->getIdentifier() || Record->getName() != "_CheckArgs" ||
         !pairOwner(dyn_cast<CXXRecordDecl>(Record->getDeclContext())) ||
-        !family(Record)) return false;
+        !family(Record)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Definition = Record->getDefinition();
     if (!Definition || !family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumBases() ||
-        !Definition->field_empty()) return false;
+        !Definition->field_empty()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Origin = Definition->getInstantiatedFromMemberClass();
     if (Origin && (!family(Origin) || !Origin->getIdentifier() ||
         Origin->getName() != "_CheckArgs" ||
-        !pairOwner(dyn_cast<CXXRecordDecl>(Origin->getDeclContext())))) return false;
+        !pairOwner(dyn_cast<CXXRecordDecl>(Origin->getDeclContext())))) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
   bool pairHelper(const FunctionDecl *Function) {
@@ -8897,40 +8936,40 @@ class UtilityTupleQueryGraph
     if (!Method || !pairHelperOwner(Method->getParent()) || !family(Method) ||
         !Method->isStatic() || !Method->isConstexpr() || Method->isVariadic() ||
         Method->getNumParams() || !Method->getReturnType()->isBooleanType() ||
-        Method->getAccess() != AS_public || !Method->getIdentifier()) return false;
+        Method->getAccess() != AS_public || !Method->getIdentifier()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Name = Method->getName();
     if (Name != "__is_pair_constructible" && Name != "__is_implicit" &&
-        Name != "__enable_default" && Name != "__enable_implicit_default") return false;
+        Name != "__enable_default" && Name != "__enable_implicit_default") return functionalBindDiagnosticFailure(__LINE__);
     const auto *Primary = Method->getPrimaryTemplate();
     const auto *Arguments = Method->getTemplateSpecializationArgs();
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     if (!Primary || !Arguments || !Parameters || !family(Primary) ||
         Primary->getDeclContext() != Method->getDeclContext() ||
-        Arguments->size() != Parameters->size()) return false;
+        Arguments->size() != Parameters->size()) return functionalBindDiagnosticFailure(__LINE__);
     const bool Default = Name == "__enable_default" ||
                          Name == "__enable_implicit_default";
-    if (Parameters->size() != (Default ? 1u : 2u)) return false;
+    if (Parameters->size() != (Default ? 1u : 2u)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Parameters->size(); ++I) {
-      if (!family(Parameters->getParam(I))) return false;
+      if (!family(Parameters->getParam(I))) return functionalBindDiagnosticFailure(__LINE__);
       if (Default) {
         const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(I));
         if (!Parameter || !Parameter->isParameterPack() || Parameter->hasDefaultArgument() ||
             !Context.hasSameType(Parameter->getType(),
                 Context.getLValueReferenceType(Context.IntTy)) ||
             Arguments->get(I).getKind() != TemplateArgument::Pack ||
-            Arguments->get(I).pack_size()) return false;
+            Arguments->get(I).pack_size()) return functionalBindDiagnosticFailure(__LINE__);
       } else {
         const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
         if (!Parameter || Parameter->isParameterPack() || Parameter->hasDefaultArgument() ||
             Arguments->get(I).getKind() != TemplateArgument::Type ||
-            !TraverseTemplateArgument(Arguments->get(I))) return false;
+            !TraverseTemplateArgument(Arguments->get(I))) return functionalBindDiagnosticFailure(__LINE__);
       }
     }
     if (const auto *Original = Primary->getInstantiatedFromMemberTemplate())
       if (!family(Original) || !pairHelperOwner(
-              dyn_cast<CXXRecordDecl>(Original->getDeclContext()))) return false;
+              dyn_cast<CXXRecordDecl>(Original->getDeclContext()))) return functionalBindDiagnosticFailure(__LINE__);
     if (CompletedPairHelpers.count(Function)) return true;
-    if (!ActivePairHelpers.insert(Function).second) return false;
+    if (!ActivePairHelpers.insert(Function).second) return functionalBindDiagnosticFailure(__LINE__);
     auto Restore = llvm::make_scope_exit([&] { ActivePairHelpers.erase(Function); });
     const auto *Definition = Function->getDefinition();
     const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
@@ -8953,46 +8992,46 @@ class UtilityTupleQueryGraph
     if (!PairInputRecords.count(Owner->Record->getCanonicalDecl()) || !PairOwnerUse ||
         PairOwnerUse->Method != Method || PairOwnerUse->Query != PairTraitQuery ||
         PairOwnerUse->Root != PairTraitConstruction || !PairTraitQuery ||
-        !PairTraitConstruction || !PairConstructor) return false;
+        !PairTraitConstruction || !PairConstructor) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Use = *PairOwnerUse;
     const auto Found = OperationTraits.find(Use.Query);
     if (Found == OperationTraits.end() || !Found->second.Attempted ||
-        !Found->second.Complete || !Found->second.Root) return false;
+        !Found->second.Complete || !Found->second.Root) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Original = Found->second.Root->IgnoreParenImpCasts();
     const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Original);
     if (Temporary) Original = Temporary->getSubExpr()->IgnoreParenImpCasts();
-    if (Original != Use.Root) return false;
+    if (Original != Use.Root) return functionalBindDiagnosticFailure(__LINE__);
     if (Use.Parent) {
       const auto Source = SpecialMembers.find(Use.Parent->getCanonicalDecl());
       if (!Use.Subobject || Use.Temporary || !ActiveMembers.count(Use.Parent) ||
           Source == SpecialMembers.end() || !Source->second.Complete ||
           Source->second.Owner != Use.Parent || Use.Subobject->Method != Method)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       bool Actual = false;
       for (const auto &Selection : Source->second.Selections)
         Actual |= &Selection == Use.Subobject;
-      if (!Actual) return false;
+      if (!Actual) return functionalBindDiagnosticFailure(__LINE__);
     } else if (Use.Subobject) {
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     } else if (isa<CXXConstructorDecl>(Method)) {
-      if (Use.Temporary || Use.Root->getConstructor() != Method) return false;
+      if (Use.Temporary || Use.Root->getConstructor() != Method) return functionalBindDiagnosticFailure(__LINE__);
     } else {
       if (!Use.Temporary || Use.Temporary != Temporary ||
           !Use.Temporary->getTemporary() ||
-          Use.Temporary->getTemporary()->getDestructor() != Method) return false;
+          Use.Temporary->getTemporary()->getDestructor() != Method) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
     const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
     if (!Primary || !(Constructor ? Constructor->isMoveConstructor()
-                                 : isa<CXXDestructorDecl>(Method))) return false;
+                                 : isa<CXXDestructorDecl>(Method))) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(Current).second) continue;
       const auto *Record = Current->getParent();
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Current);
@@ -9016,13 +9055,13 @@ class UtilityTupleQueryGraph
            (!Pattern || Record->getCanonicalDecl() != Pattern->getCanonicalDecl())) ||
           (Constructor ? !Copy || !Copy->isMoveConstructor() || Copy->getNumParams() != 1 ||
                              Copy->getParamDecl(0)->hasDefaultArg()
-                       : !isa<CXXDestructorDecl>(Current) || Current->getNumParams())) return false;
+                       : !isa<CXXDestructorDecl>(Current) || Current->getNumParams())) return functionalBindDiagnosticFailure(__LINE__);
       if (Copy && !Context.hasSameType(Copy->getParamDecl(0)->getType(),
-              Context.getRValueReferenceType(Context.getRecordType(Record)))) return false;
+              Context.getRValueReferenceType(Context.getRecordType(Record)))) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(D));
       if (const auto *Source = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Source);
-        if (!Member) return false;
+        if (!Member) return functionalBindDiagnosticFailure(__LINE__);
         Pending.push_back(Member);
       }
     }
@@ -9037,11 +9076,11 @@ class UtilityTupleQueryGraph
     const bool Owner = Mode == UtilityTupleQueryMode::PairConstruction && PairOwnerUse &&
         PairOwnerUse->Method == Method &&
         utilityUniquePtrRecord(S, SM, R, Context, false, false).has_value();
-    if ((!String && !Owner) || !family(Method)) return false;
+    if ((!String && !Owner) || !family(Method)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     if (!Prototype || Prototype->getNoexceptExpr() || Method->isDeleted() ||
         Method->isInvalidDecl() || Method->isVariadic() || Method->getPrimaryTemplate())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     if (Destructor)
       return !Method->getNumParams() && !Method->isVirtual() &&
              R->getDestructor() && R->getDestructor()->getCanonicalDecl() ==
@@ -9049,7 +9088,7 @@ class UtilityTupleQueryGraph
     if (!Constructor || !Constructor->isCopyOrMoveConstructor() ||
         (Owner && !Constructor->isMoveConstructor()) ||
         Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto Parameter = Method->getParamDecl(0)->getType();
     const auto Type = Context.getRecordType(R);
     const auto Expected = Constructor->isMoveConstructor()
@@ -9071,20 +9110,20 @@ class UtilityTupleQueryGraph
     if (!Method->isImplicit() || !Method->isDefaulted() || !Method->isTrivial() ||
         !(Constructor ? (Constructor->isCopyOrMoveConstructor() ||
                          (PairDefault && Constructor->isDefaultConstructor())) : isa<CXXDestructorDecl>(Method)))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto Origin = S.sdkFile(SM, Record->getLocation());
     if (!Origin || Origin->Root != "libcxx" ||
         (Origin->Path != "__functional/reference_wrapper.h" &&
          Origin->Path != "__functional/weak_result_type.h" &&
          Origin->Path != "__functional/unary_function.h" &&
          Origin->Path != "__functional/binary_function.h" &&
-         Origin->Path != "__utility/empty.h")) return false;
+         Origin->Path != "__utility/empty.h")) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(Current).second) continue;
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Current);
       const auto *Owner = Current->getParent();
@@ -9099,11 +9138,11 @@ class UtilityTupleQueryGraph
                          Copy->isMoveConstructor() != Constructor->isMoveConstructor() ||
                          !(Copy->isCopyOrMoveConstructor() ||
                            (PairDefault && Copy->isDefaultConstructor()))
-                       : !isa<CXXDestructorDecl>(Current))) return false;
+                       : !isa<CXXDestructorDecl>(Current))) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(D));
       if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
-        if (!Member) return false;
+        if (!Member) return functionalBindDiagnosticFailure(__LINE__);
         Pending.push_back(Member);
       }
     }
@@ -9115,19 +9154,19 @@ class UtilityTupleQueryGraph
         Nesting > 64 || !step() || !Constructor->isDefaultConstructor() ||
         Constructor->getNumParams() || Constructor->isDeleted() || Constructor->isInvalidDecl() ||
         Constructor->isVariadic() || Constructor->getPrimaryTemplate() ||
-        !PairOptionalStorageRecords.count(Constructor->getParent()->getCanonicalDecl())) return false;
+        !PairOptionalStorageRecords.count(Constructor->getParent()->getCanonicalDecl())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Record = Constructor->getParent()->getDefinition();
     const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
     const auto Origin = S.sdkFile(SM, Record->getLocation());
     if (!Primary || !Pattern || !Origin || Origin->Root != "libcxx" ||
-        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return false;
+        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const CXXConstructorDecl *> Pending{Constructor};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(Current).second) continue;
       const auto *Owner = Current->getParent();
       if (!Current->isDefaultConstructor() || Current->getNumParams() ||
@@ -9136,28 +9175,28 @@ class UtilityTupleQueryGraph
           !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", Origin->Path) ||
           (Owner->getCanonicalDecl() != Record->getCanonicalDecl() &&
            Owner->getCanonicalDecl() != Pattern->getCanonicalDecl() &&
-           Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl())) return false;
+           Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl())) return functionalBindDiagnosticFailure(__LINE__);
       const auto Explicit = Current->getExplicitSpecifier();
       if (Explicit.isInvalid() || Explicit.getKind() == ExplicitSpecKind::Unresolved ||
-          Explicit.getExpr() || Explicit.isExplicit()) return false;
+          Explicit.getExpr() || Explicit.isExplicit()) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXConstructorDecl>(D));
       if (const auto *D = Current->getTemplateInstantiationPattern())
         Pending.push_back(cast<CXXConstructorDecl>(D));
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
-    if (!family(Constructor) || !family(Record)) return false;
+    if (!family(Constructor) || !family(Record)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
     if (!Prototype || Prototype->getNoexceptExpr() ||
-        Prototype->getExceptionSpecType() != EST_BasicNoexcept) return false;
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
     if (!Body || !Body->body_empty() ||
-        !S.sdkFile(SM, Body->getBeginLoc()) || !S.sdkFile(SM, Body->getEndLoc())) return false;
+        !S.sdkFile(SM, Body->getBeginLoc()) || !S.sdkFile(SM, Body->getEndLoc())) return functionalBindDiagnosticFailure(__LINE__);
     if (Record->getName() == "__optional_destruct_base") {
       // This selected constructor activates only the null union member and
       // false engagement flag. No element default constructor is evaluated.
       const CXXCtorInitializer *Null = nullptr, *Engaged = nullptr;
       for (const auto *Init : Constructor->inits()) {
-        if (!step() || !Init->isAnyMemberInitializer() || !Init->getAnyMember()) return false;
+        if (!step() || !Init->isAnyMemberInitializer() || !Init->getAnyMember()) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Field = Init->getAnyMember();
         if (Init->isIndirectMemberInitializer()) {
           const auto *Indirect = Init->getIndirectMember();
@@ -9173,15 +9212,15 @@ class UtilityTupleQueryGraph
               !approvedStandardSDKDeclaration(S, SM, Indirect) ||
               !approvedStandardSDKDeclaration(S, SM, Anonymous) ||
               !cstddefOrigin(S, SM, Indirect->getLocation(), "libcxx", "optional") ||
-              !cstddefOrigin(S, SM, Anonymous->getLocation(), "libcxx", "optional")) return false;
-        } else if (Field->getDeclContext() != Record) return false;
+              !cstddefOrigin(S, SM, Anonymous->getLocation(), "libcxx", "optional")) return functionalBindDiagnosticFailure(__LINE__);
+        } else if (Field->getDeclContext() != Record) return functionalBindDiagnosticFailure(__LINE__);
         if (!approvedStandardSDKDeclaration(S, SM, Field) ||
-            !cstddefOrigin(S, SM, Field->getLocation(), "libcxx", "optional")) return false;
+            !cstddefOrigin(S, SM, Field->getLocation(), "libcxx", "optional")) return functionalBindDiagnosticFailure(__LINE__);
         if (Field->getName() == "__null_state_" && Field->getType()->isCharType() && !Null)
           Null = Init;
         else if (Field->getName() == "__engaged_" && Field->getType()->isBooleanType() && !Engaged)
           Engaged = Init;
-        else return false;
+        else return functionalBindDiagnosticFailure(__LINE__);
       }
       const auto *Zero = Null ? dyn_cast<ImplicitValueInitExpr>(Null->getInit()) : nullptr;
       const auto *False = Engaged ? dyn_cast<CXXBoolLiteralExpr>(Engaged->getInit()) : nullptr;
@@ -9195,9 +9234,9 @@ class UtilityTupleQueryGraph
       const auto *Child = Base.getType()->getAsCXXRecordDecl();
       if (!Child || Base.isVirtual() ||
           !PairOptionalStorageRecords.count(Child->getCanonicalDecl()) ||
-          !Expected.insert(Child->getCanonicalDecl()).second) return false;
+          !Expected.insert(Child->getCanonicalDecl()).second) return functionalBindDiagnosticFailure(__LINE__);
     }
-    if (!Record->field_empty()) return false;
+    if (!Record->field_empty()) return functionalBindDiagnosticFailure(__LINE__);
     if (Expected.empty())
       return Constructor->isImplicit() && Constructor->isDefaulted() && Constructor->isTrivial() &&
           Constructor->init_begin() == Constructor->init_end();
@@ -9211,7 +9250,7 @@ class UtilityTupleQueryGraph
           !Context.hasSameUnqualifiedType(Call->getType(), Context.getRecordType(Base)) ||
           !S.sdkFile(SM, Call->getBeginLoc()) || !S.sdkFile(SM, Call->getEndLoc()) ||
           !Expected.erase(Base->getCanonicalDecl()) ||
-          !pairOptionalDefault(Child, Nesting + 1)) return false;
+          !pairOptionalDefault(Child, Nesting + 1)) return functionalBindDiagnosticFailure(__LINE__);
     }
     return Expected.empty();
   }
@@ -9229,12 +9268,12 @@ class UtilityTupleQueryGraph
         !(Method->isImplicit() || Method->isDefaulted()) || !Method->isDefaulted() ||
         !Method->isTrivial() || !Record->hasTrivialDestructor() ||
         !Origin || Origin->Root != "libcxx" ||
-        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return false;
+        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(Current).second) continue;
       const auto *Owner = Current->getParent();
       const auto *CurrentCopy = dyn_cast<CXXConstructorDecl>(Current);
@@ -9250,7 +9289,7 @@ class UtilityTupleQueryGraph
            (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()) &&
            (!Primary || Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl()) &&
            (!SelectedPattern || Current->getCanonicalDecl() != SelectedPattern->getCanonicalDecl())))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(D));
       if (const auto *D = Current->getTemplateInstantiationPattern()) Pending.push_back(cast<CXXMethodDecl>(D));
     }
@@ -9268,17 +9307,17 @@ class UtilityTupleQueryGraph
     const bool SelectedDefault = PairDefault && Default && Default->isDefaultConstructor();
     if (!Primary || !Method->isImplicit() || !Method->isDefaulted() ||
         (!Method->isTrivial() && !SelectedDefault) ||
-        !utilityPairValue(S, SM, Context, Context.getRecordType(Array->Record))) return false;
+        !utilityPairValue(S, SM, Context, Context.getRecordType(Array->Record))) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
     if (!(Constructor ? (Constructor->isCopyOrMoveConstructor() ||
                          (PairDefault && Constructor->isDefaultConstructor()))
-                      : isa<CXXDestructorDecl>(Method))) return false;
+                      : isa<CXXDestructorDecl>(Method))) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(Current).second) continue;
       const auto *Owner = Current->getParent();
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Current);
@@ -9292,12 +9331,12 @@ class UtilityTupleQueryGraph
                          Copy->isDefaultConstructor() != Constructor->isDefaultConstructor() ||
                          !(Copy->isCopyOrMoveConstructor() ||
                            (PairDefault && Copy->isDefaultConstructor()))
-                       : !isa<CXXDestructorDecl>(Current))) return false;
+                       : !isa<CXXDestructorDecl>(Current))) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : Current->redecls())
         Pending.push_back(cast<CXXMethodDecl>(Declaration));
       if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
-        if (!Member) return false;
+        if (!Member) return functionalBindDiagnosticFailure(__LINE__);
         Pending.push_back(Member);
       }
     }
@@ -9311,23 +9350,23 @@ class UtilityTupleQueryGraph
                      bool PairDefault = false) {
     if (!Method || Nesting > 64 || !step() || Method->isInvalidDecl() ||
         Method->isDeleted() || Method->isVariadic() || Method->isVirtual() ||
-        Method->getPrimaryTemplate()) return false;
+        Method->getPrimaryTemplate()) return functionalBindDiagnosticFailure(__LINE__);
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnOwnedCallableRecord &&
         Method->getParent()->getCanonicalDecl() == NotFnOwnedCallableRecord) {
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Method);
       const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
       if (!NotFnOwnedQuerySources || Method->hasAttrs() || !S.owns(SM, Method->getLocation()) ||
-          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return false;
+          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : Method->redecls()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Declaration);
         if (!Member || !S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() ||
-            Member->getParent()->getCanonicalDecl() != NotFnOwnedCallableRecord) return false;
+            Member->getParent()->getCanonicalDecl() != NotFnOwnedCallableRecord) return functionalBindDiagnosticFailure(__LINE__);
       }
       if (Copy && (Copy->getNumParams() != 1 ||
           !Copy->getParamDecl(0)->getType()->isReferenceType() ||
           !Context.hasSameUnqualifiedType(Copy->getParamDecl(0)->getType().getNonReferenceType(),
-                                        NotFnCallableType))) return false;
-      if (Destructor && Destructor->getNumParams()) return false;
+                                        NotFnCallableType))) return functionalBindDiagnosticFailure(__LINE__);
+      if (Destructor && Destructor->getNumParams()) return functionalBindDiagnosticFailure(__LINE__);
       // A real retained query selected this ordinary operation. Export that
       // exact signature dependency; it supplies no SDK or runtime body grant.
       NotFnOwnedQuerySources->insert(Method);
@@ -9336,7 +9375,7 @@ class UtilityTupleQueryGraph
     // Clang checks anonymous optional variants in the enclosing member's
     // deletion graph; it never selects an anonymous-union copy operation.
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
-        PairOptionalStorageUnions.count(Method->getParent()->getCanonicalDecl())) return false;
+        PairOptionalStorageUnions.count(Method->getParent()->getCanonicalDecl())) return functionalBindDiagnosticFailure(__LINE__);
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
         PairInputRecords.count(Method->getParent()->getCanonicalDecl()) &&
         ownedPairInputRecord(Method->getParent())) {
@@ -9346,7 +9385,7 @@ class UtilityTupleQueryGraph
           !Method->isDefaulted() || !Method->isTrivial() ||
           !(Copy ? (Copy->isCopyOrMoveConstructor() ||
                     (PairDefault && Copy->isDefaultConstructor())) : isa<CXXDestructorDecl>(Method)))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       // This exact retained child is an ordinary source dependency, never an
       // SDK family member. The caller must close its declaration, layout,
       // exception and selected subobject sources after whole-graph success.
@@ -9361,12 +9400,12 @@ class UtilityTupleQueryGraph
     }
     // Bind this use before consulting the method cache; another retained
     // query or subobject selection must independently authenticate its purpose.
-    if (!bindPairOwnerMember(Method)) { Failed = true; return false; }
+    if (!bindPairOwnerMember(Method)) { Failed = true; return functionalBindDiagnosticFailure(__LINE__); }
     if (!bindPairBorrowedMember(Method, PairDefault) ||
         !bindPairArrayMember(Method, PairDefault) ||
-        !bindPairOptionalMember(Method) || !family(Method)) return false;
+        !bindPairOptionalMember(Method) || !family(Method)) return functionalBindDiagnosticFailure(__LINE__);
     if (CompletedMembers.count(Method)) return true;
-    if (!ActiveMembers.insert(Method).second) return false;
+    if (!ActiveMembers.insert(Method).second) return functionalBindDiagnosticFailure(__LINE__);
     auto Restore = llvm::make_scope_exit([&] { ActiveMembers.erase(Method); });
     if (selectedLeaf(Method)) {
       CompletedMembers.insert(Method);
@@ -9413,26 +9452,26 @@ class UtilityTupleQueryGraph
           (Mode == UtilityTupleQueryMode::PairConstruction && Method->isTrivial() &&
            (Destructor || (Constructor && Constructor->isCopyOrMoveConstructor())) &&
            PairOptionalStorageRecords.count(Record->getCanonicalDecl())) ||
-          approvedUtilityStringViewRecord(S, SM, Record, Context))) return false;
+          approvedUtilityStringViewRecord(S, SM, Record, Context))) return functionalBindDiagnosticFailure(__LINE__);
     if (Constructor && PairDefault && Constructor->isDefaultConstructor()) {
-      if (Constructor->getNumParams()) return false;
+      if (Constructor->getNumParams()) return functionalBindDiagnosticFailure(__LINE__);
     } else if (Constructor) {
       const auto Type = Context.getRecordType(Record);
       if (Constructor->getNumParams() != 1 ||
           !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
               Constructor->isMoveConstructor() ? Context.getRValueReferenceType(Type)
-                  : Context.getLValueReferenceType(Type.withConst()))) return false;
-    } else if (Destructor->getNumParams()) return false;
+                  : Context.getLValueReferenceType(Type.withConst()))) return functionalBindDiagnosticFailure(__LINE__);
+    } else if (Destructor->getNumParams()) return functionalBindDiagnosticFailure(__LINE__);
     // Bind each semantic choice to its actual base/field. A layout or a
     // defaulted flag alone cannot authenticate a selected child operation.
     std::set<std::pair<const void *, bool>> Expected;
     for (const auto &Base : Record->bases()) {
-      if (Base.isVirtual()) return false;
+      if (Base.isVirtual()) return functionalBindDiagnosticFailure(__LINE__);
       Expected.emplace(&Base, false);
       if (Constructor) Expected.emplace(&Base, true);
     }
     auto FieldDependency = [&](const FieldDecl *Field) {
-      if (!Field || !step() || Field->isInvalidDecl() || Field->isBitField()) return false;
+      if (!Field || !step() || Field->isInvalidDecl() || Field->isBitField()) return functionalBindDiagnosticFailure(__LINE__);
       if (Context.getBaseElementType(Field->getType())->isRecordType()) {
         Expected.emplace(Field, false);
         if (Constructor) Expected.emplace(Field, true);
@@ -9447,44 +9486,44 @@ class UtilityTupleQueryGraph
           PairOptionalStorageUnions.count(Union->getCanonicalDecl())) {
         // Match Sema's actual anonymous-variant deletion walk: selections are
         // owned by this enclosing method and name the exact variant field.
-        if (!FieldDependency(Field)) return false;
+        if (!FieldDependency(Field)) return functionalBindDiagnosticFailure(__LINE__);
         Expected.erase({Field, false}); Expected.erase({Field, true});
         for (const auto *Variant : Union->fields())
-          if (!FieldDependency(Variant)) return false;
-      } else if (!FieldDependency(Field)) return false;
+          if (!FieldDependency(Variant)) return functionalBindDiagnosticFailure(__LINE__);
+      } else if (!FieldDependency(Field)) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto Found = SpecialMembers.find(Method->getCanonicalDecl());
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
         PairOptionalStorageRecords.count(Record->getCanonicalDecl()) &&
         (Found == SpecialMembers.end() || !Found->second.Complete ||
-         Found->second.Owner != Method)) return false;
+         Found->second.Owner != Method)) return functionalBindDiagnosticFailure(__LINE__);
     if (Found == SpecialMembers.end()) {
-      if (!Method->isTrivial() || !Expected.empty()) return false;
+      if (!Method->isTrivial() || !Expected.empty()) return functionalBindDiagnosticFailure(__LINE__);
     } else {
       const auto &Source = Found->second;
-      if (!Source.Complete || Source.Owner != Method) return false;
+      if (!Source.Complete || Source.Owner != Method) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Selection : Source.Selections) {
         const auto *Child = Selection.Method;
         const void *Object = Selection.Base ? static_cast<const void *>(Selection.Base)
                                             : Selection.Field;
         if (!Child || bool(Selection.Base) == bool(Selection.Field) ||
-            !Expected.erase({Object, Selection.ConstructorDestruction})) return false;
+            !Expected.erase({Object, Selection.ConstructorDestruction})) return functionalBindDiagnosticFailure(__LINE__);
         const auto Type = Selection.Base ? Selection.Base->getType() : Selection.Field->getType();
         const auto *Subrecord = Context.getBaseElementType(Type)->getAsCXXRecordDecl();
         if (!Subrecord || Subrecord->getCanonicalDecl() !=
-                              Child->getParent()->getCanonicalDecl()) return false;
+                              Child->getParent()->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
         if (Selection.ConstructorDestruction) {
           const auto *Dtor = dyn_cast<CXXDestructorDecl>(Child);
           if (!Constructor || !Dtor || !Subrecord->getDestructor() ||
               Subrecord->getDestructor()->getCanonicalDecl() != Dtor->getCanonicalDecl())
-            return false;
+            return functionalBindDiagnosticFailure(__LINE__);
         } else if (Constructor) {
           const auto *Copy = dyn_cast<CXXConstructorDecl>(Child);
           if (!Copy ||
               (Constructor->isDefaultConstructor()
                    ? !PairDefault || !Copy->isDefaultConstructor()
-                   : !Copy->isCopyOrMoveConstructor())) return false;
-        } else if (!isa<CXXDestructorDecl>(Child)) return false;
+                   : !Copy->isCopyOrMoveConstructor())) return functionalBindDiagnosticFailure(__LINE__);
+        } else if (!isa<CXXDestructorDecl>(Child)) return functionalBindDiagnosticFailure(__LINE__);
         const auto SavedOwnerUse = PairOwnerUse;
         if (Mode == UtilityTupleQueryMode::PairConstruction &&
             utilityUniquePtrRecord(S, SM, Subrecord, Context, false, false))
@@ -9492,9 +9531,9 @@ class UtilityTupleQueryGraph
                                            Method, &Selection, nullptr};
         auto RestoreOwnerUse = llvm::make_scope_exit([&] { PairOwnerUse = SavedOwnerUse; });
         if (!specialMember(Child, Nesting + 1,
-                           PairDefault && Constructor && Constructor->isDefaultConstructor())) return false;
+                           PairDefault && Constructor && Constructor->isDefaultConstructor())) return functionalBindDiagnosticFailure(__LINE__);
       }
-      if (!Expected.empty()) return false;
+      if (!Expected.empty()) return functionalBindDiagnosticFailure(__LINE__);
     }
     switch (Prototype->getExceptionSpecType()) {
     case EST_None: case EST_BasicNoexcept: break;
@@ -9506,10 +9545,10 @@ class UtilityTupleQueryGraph
           Literal->getEndLoc().isInvalid() &&
           Context.hasSameType(Literal->getType(), Context.BoolTy))
         GeneratedExceptionLiterals.insert(Literal);
-      if (!E || !TraverseStmt(const_cast<Expr *>(E))) return false;
+      if (!E || !TraverseStmt(const_cast<Expr *>(E))) return functionalBindDiagnosticFailure(__LINE__);
       break;
     }
-    default: return false;
+    default: return functionalBindDiagnosticFailure(__LINE__);
     }
     CompletedMembers.insert(Method);
     return true;
@@ -9519,7 +9558,7 @@ class UtilityTupleQueryGraph
       return utilityCatCarrier(S, SM, Context, T, LayoutProof, Nesting);
     if (T.isNull() || Nesting > 64 || T.isVolatileQualified() ||
         T.isRestrictQualified() || T.getAddressSpace() != LangAS::Default)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     if (T->isReferenceType())
       return carrier(T->getPointeeType(), Nesting + 1);
     // Only the callable independently certified in this not_fn storage may
@@ -9555,32 +9594,32 @@ class UtilityTupleQueryGraph
       return true;
     const auto Tuple = utilityTupleStorageRecord(S, SM, R, Context, Nesting);
     if (!Tuple)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &E : Tuple->Elements)
-      if (!carrier(E.getType(), Nesting + 1)) return false;
+      if (!carrier(E.getType(), Nesting + 1)) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
   bool defaultEqualityFamily(const NamedDecl *Candidate) {
-    if (Mode != UtilityTupleQueryMode::CatSignature || !Candidate) return false;
+    if (Mode != UtilityTupleQueryMode::CatSignature || !Candidate) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const Decl *> Pending{Candidate};
     std::set<const Decl *> Seen;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back();
       Pending.pop_back();
-      if (!Declaration || !step() || Declaration->isInvalidDecl()) return false;
+      if (!Declaration || !step() || Declaration->isInvalidDecl()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Seen.insert(Declaration).second) continue;
       if (Seen.size() > 64 || !approvedStandardSDKDeclaration(S, SM, Declaration))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
       const auto *Function = Template ? Template->getTemplatedDecl()
           : dyn_cast<FunctionDecl>(Declaration);
       if (!Function || isa<CXXMethodDecl>(Function) ||
-          Function->getOverloadedOperator() != OO_EqualEqual) return false;
+          Function->getOverloadedOperator() != OO_EqualEqual) return functionalBindDiagnosticFailure(__LINE__);
       const auto Origin = S.sdkFile(SM, Declaration->getLocation());
       const bool IteratorCandidate = Origin && Origin->Root == "libcxx" &&
           (Origin->Path == "__iterator/reverse_iterator.h" ||
            Origin->Path == "__iterator/wrap_iter.h");
-      if (!pinned(Declaration) && !IteratorCandidate) return false;
+      if (!pinned(Declaration) && !IteratorCandidate) return functionalBindDiagnosticFailure(__LINE__);
       if (Template) {
         for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
         Pending.push_back(Function);
@@ -9602,19 +9641,19 @@ class UtilityTupleQueryGraph
         Use->isDependentType() || !Use->isTypeAlias() || !family(Alias) ||
         Alias->getName() != "__make_indices_imp" ||
         !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__utility/integer_sequence.h"))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto *Declaration = Alias->getTemplatedDecl();
     const auto *Parameters = Alias->getTemplateParameters();
     if (!Declaration || !family(Declaration) || !Declaration->getTypeSourceInfo() ||
         Parameters->size() != 2 || Use->template_arguments().size() != 2)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto *Ep = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Sp = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1));
     for (const auto *Parameter : {Ep, Sp})
       if (!Parameter || Parameter->hasDefaultArgument() || Parameter->isParameterPack() ||
           !family(Parameter) || !Context.hasSameType(Parameter->getType(), Context.getSizeType()) ||
           !Parameter->getTypeSourceInfo() ||
-          !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+          !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     // Inspect the original alias DSL, without admitting the location-less
     // compiler builtin as a general declaration or template name.
     const auto *Original = dyn_cast<DependentTemplateSpecializationType>(
@@ -9637,7 +9676,7 @@ class UtilityTupleQueryGraph
         !Builtin || !Builtin->isImplicit() || !Builtin->getLocation().isInvalid() ||
         !Builtin->getDeclContext()->isTranslationUnit() ||
         Builtin->getBuiltinTemplateKind() != BTK__make_integer_seq ||
-        SequenceUse->template_arguments().size() != 3) return false;
+        SequenceUse->template_arguments().size() != 3) return functionalBindDiagnosticFailure(__LINE__);
     const auto &SequenceArguments = SequenceUse->template_arguments();
     const auto *Sequence = SequenceArguments[0].getKind() == TemplateArgument::Template
         ? dyn_cast_or_null<ClassTemplateDecl>(SequenceArguments[0].getAsTemplate().getAsTemplateDecl()) : nullptr;
@@ -9652,14 +9691,14 @@ class UtilityTupleQueryGraph
         : TemplateSpecializationTypeLoc();
     if (!OriginalLoc || OriginalLoc.getTypePtr() != Original || !SequenceLoc ||
         SequenceLoc.getTypePtr() != SequenceUse || SequenceLoc.getNumArgs() != 3)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto L : {Location.getBeginLoc(), Location.getEndLoc(),
                          OriginalLoc.getTemplateNameLoc(), SequenceLoc.getTemplateNameLoc(),
                          SequenceLoc.getArgLoc(0).getTemplateNameLoc(),
                          Difference ? Difference->getOperatorLoc() : SourceLocation(),
                          Left ? Left->getLocation() : SourceLocation(),
                          Right ? Right->getLocation() : SourceLocation()})
-      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return false;
+      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return functionalBindDiagnosticFailure(__LINE__);
     if (!Sequence || Sequence->getName() != "__integer_sequence" || !family(Sequence) ||
         !cstddefOrigin(S, SM, Sequence->getLocation(), "libcxx", "__utility/integer_sequence.h") ||
         SequenceArguments[1].getKind() != TemplateArgument::Type ||
@@ -9667,12 +9706,12 @@ class UtilityTupleQueryGraph
         !TraverseType(SequenceArguments[1].getAsType()) ||
         !Difference || Difference->getOpcode() != BO_Sub ||
         !Left || Left->getDecl() != Ep || !Right || Right->getDecl() != Sp ||
-        !Context.hasSameType(Difference->getType(), Context.getSizeType())) return false;
+        !Context.hasSameType(Difference->getType(), Context.getSizeType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *SizeSource = SequenceLoc.getArgLoc(1).getTypeSourceInfo();
     const auto *OriginalOffset = dyn_cast<DeclRefExpr>(Original->template_arguments()[0].getAsExpr());
     if (!SizeSource || !TraverseTypeLoc(SizeSource->getTypeLoc()) ||
         !cstddefOrigin(S, SM, OriginalOffset->getLocation(), "libcxx", "__utility/integer_sequence.h"))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto *SequenceParameters = Sequence->getTemplateParameters();
     const auto *IndexType = SequenceParameters->size() == 2
         ? dyn_cast<TemplateTypeParmDecl>(SequenceParameters->getParam(0)) : nullptr;
@@ -9682,15 +9721,15 @@ class UtilityTupleQueryGraph
     if (!IndexType || IndexType->hasDefaultArgument() || IndexType->isParameterPack() ||
         !Values || !Values->isParameterPack() || Values->hasDefaultArgument() ||
         !ValueType || ValueType->getDecl() != IndexType ||
-        !family(IndexType) || !family(Values)) return false;
+        !family(IndexType) || !family(Values)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *SequenceDefinition = Sequence->getTemplatedDecl()->getDefinition();
     if (!SequenceDefinition || !family(SequenceDefinition) ||
-        !SequenceDefinition->field_empty() || SequenceDefinition->getNumBases()) return false;
+        !SequenceDefinition->field_empty() || SequenceDefinition->getNumBases()) return functionalBindDiagnosticFailure(__LINE__);
     const TypeAliasTemplateDecl *ToIndices = nullptr;
     for (const auto *Member : SequenceDefinition->decls())
       if (const auto *Template = dyn_cast<TypeAliasTemplateDecl>(Member);
           Template && Template->getName() == "__to_tuple_indices") {
-        if (ToIndices) return false;
+        if (ToIndices) return functionalBindDiagnosticFailure(__LINE__);
         ToIndices = Template;
       }
     const auto *ToParameters = ToIndices ? ToIndices->getTemplateParameters() : nullptr;
@@ -9719,7 +9758,7 @@ class UtilityTupleQueryGraph
           cstddefOrigin(S, SM, Indices->getLocation(), "libcxx", "__utility/integer_sequence.h")) ||
         !Addition || Addition->getOpcode() != BO_Add || !ValueReference ||
         ValueReference->getDecl() != Values || !OffsetReference ||
-        OffsetReference->getDecl() != Offset || !ToDeclaration->getTypeSourceInfo()) return false;
+        OffsetReference->getDecl() != Offset || !ToDeclaration->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
     auto IndicesLoc = ToDeclaration->getTypeSourceInfo()->getTypeLoc();
     for (unsigned I = 0; I <= 8 && IndicesLoc &&
          !IndicesLoc.getAs<TemplateSpecializationTypeLoc>(); ++I)
@@ -9727,12 +9766,12 @@ class UtilityTupleQueryGraph
     const auto IndexTemplateLoc = IndicesLoc.getAs<TemplateSpecializationTypeLoc>();
     if (!IndexTemplateLoc || IndexTemplateLoc.getTypePtr() != IndicesUse ||
         !cstddefOrigin(S, SM, IndexTemplateLoc.getTemplateNameLoc(), "libcxx", "__utility/integer_sequence.h"))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto L : {ToDeclaration->getTypeSourceInfo()->getTypeLoc().getBeginLoc(),
                          ToDeclaration->getTypeSourceInfo()->getTypeLoc().getEndLoc(),
                          Addition->getOperatorLoc(), ValueReference->getLocation(),
                          OffsetReference->getLocation()})
-      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return false;
+      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return functionalBindDiagnosticFailure(__LINE__);
     const auto *IndexParameters = Indices->getTemplateParameters();
     const auto *IndexPack = IndexParameters->size() == 1
         ? dyn_cast<NonTypeTemplateParmDecl>(IndexParameters->getParam(0)) : nullptr;
@@ -9745,7 +9784,7 @@ class UtilityTupleQueryGraph
         !cstddefOrigin(S, SM, IndexDefinition->getLocation(), "libcxx", "__tuple/tuple_indices.h") ||
         !IndexDefinition->field_empty() ||
         IndexDefinition->getNumBases() || IndexDefinition->isUnion() ||
-        IndexDefinition->isDynamicClass()) return false;
+        IndexDefinition->isDynamicClass()) return functionalBindDiagnosticFailure(__LINE__);
     uint64_t End = 0, Start = 0;
     auto Concrete = [&](const TemplateArgument &Argument, uint64_t &Value) {
       const llvm::APSInt *Integer = nullptr;
@@ -9756,15 +9795,15 @@ class UtilityTupleQueryGraph
       } else if (Argument.getKind() == TemplateArgument::Expression) {
         const auto *Expression = dyn_cast<ConstantExpr>(Argument.getAsExpr());
         if (!Expression || Expression->getResultStorageKind() == ConstantResultStorageKind::None ||
-            Expression->getAPValueResult().getKind() != APValue::Int) return false;
+            Expression->getAPValueResult().getKind() != APValue::Int) return functionalBindDiagnosticFailure(__LINE__);
         Stored = Expression->getResultAsAPSInt(); Integer = &Stored; Type = Expression->getType();
       }
       if (!Integer || !Context.hasSameType(Type, Context.getSizeType()) ||
-          Integer->isNegative() || Integer->getLimitedValue(65537) > 65536) return false;
+          Integer->isNegative() || Integer->getLimitedValue(65537) > 65536) return functionalBindDiagnosticFailure(__LINE__);
       Value = Integer->getZExtValue(); return true;
     };
     if (!Concrete(Use->template_arguments()[0], End) ||
-        !Concrete(Use->template_arguments()[1], Start) || Start > End) return false;
+        !Concrete(Use->template_arguments()[1], Start) || Start > End) return functionalBindDiagnosticFailure(__LINE__);
     const auto *ActualTo = Use->getAliasedType()->getAs<TemplateSpecializationType>();
     const auto *ActualAlias = ActualTo ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         ActualTo->getTemplateName().getAsTemplateDecl()) : nullptr;
@@ -9782,13 +9821,13 @@ class UtilityTupleQueryGraph
         (Result->getSpecializationKind() != TSK_ImplicitInstantiation &&
          Result->getSpecializationKind() != TSK_Undeclared) ||
         !Result->getSpecializedTemplateOrPartial().is<ClassTemplateDecl *>() ||
-        Result->getSpecializedTemplate()->getCanonicalDecl() != Indices->getCanonicalDecl()) return false;
+        Result->getSpecializedTemplate()->getCanonicalDecl() != Indices->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
     // The final empty metadata specialization may remain lazy. Its actual
     // family, original primary definition and every index are authenticated;
     // this query neither asks Sema for a definition nor consumes a layout.
     if (const auto *Definition = Result->getDefinition())
       if (!family(Definition) || !Definition->field_empty() || Definition->getNumBases() ||
-          Definition->isUnion() || Definition->isDynamicClass()) return false;
+          Definition->isUnion() || Definition->isDynamicClass()) return functionalBindDiagnosticFailure(__LINE__);
     const auto &ActualArguments = ActualSequence->getTemplateArgs();
     const auto &ResultArguments = Result->getTemplateArgs();
     if (ActualArguments.size() != 2 || ActualArguments[0].getKind() != TemplateArgument::Type ||
@@ -9796,12 +9835,12 @@ class UtilityTupleQueryGraph
         ActualArguments[1].getKind() != TemplateArgument::Pack ||
         ActualArguments[1].pack_size() != End - Start || ResultArguments.size() != 1 ||
         ResultArguments[0].getKind() != TemplateArgument::Pack ||
-        ResultArguments[0].pack_size() != End - Start) return false;
+        ResultArguments[0].pack_size() != End - Start) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < End - Start; ++I) {
       uint64_t Generated = 0, Index = 0;
       if (!step() || !Concrete(ActualArguments[1].pack_elements()[I], Generated) ||
           !Concrete(ResultArguments[0].pack_elements()[I], Index) ||
-          Generated != I || Index != Start + I) return false;
+          Generated != I || Index != Start + I) return functionalBindDiagnosticFailure(__LINE__);
     }
     return true;
   }
@@ -9814,16 +9853,16 @@ class UtilityTupleQueryGraph
         Partial->getName() != "__make_tuple_types_flat" ||
         !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx", "__tuple/make_tuple_types.h") ||
         Actual->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplatePartialSpecializationDecl *>() != Partial)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto *Output = Pattern->getTemplatedDecl()->getUnderlyingType()->getAs<TemplateSpecializationType>();
     if (!Output || Output->template_arguments().size() != 1 ||
-        Output->template_arguments()[0].getKind() != TemplateArgument::Type) return false;
+        Output->template_arguments()[0].getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Expansion = dyn_cast<PackExpansionType>(Output->template_arguments()[0].getAsType().getTypePtr());
     const auto *Copy = Expansion ? Expansion->getPattern()->getAs<TemplateSpecializationType>() : nullptr;
     const auto *CopyAlias = Copy ? dyn_cast_or_null<TypeAliasTemplateDecl>(Copy->getTemplateName().getAsTemplateDecl()) : nullptr;
     if (!CopyAlias || CopyAlias->getName() != "__copy_cvref_t" || !family(CopyAlias) ||
         Copy->template_arguments().size() != 2 ||
-        Copy->template_arguments()[1].getKind() != TemplateArgument::Type) return false;
+        Copy->template_arguments()[1].getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Projection = Copy->template_arguments()[1].getAsType()->getAs<TemplateSpecializationType>();
     const auto *Builtin = Projection ? dyn_cast_or_null<BuiltinTemplateDecl>(Projection->getTemplateName().getAsTemplateDecl()) : nullptr;
     if (!Builtin) {
@@ -9849,8 +9888,8 @@ class UtilityTupleQueryGraph
           !IgnoredIndex || IgnoredIndex->isParameterPack() || IgnoredIndex->hasDefaultArgument() ||
           !family(IgnoredIndex) || !Context.hasSameType(IgnoredIndex->getType(), Context.getSizeType()) ||
           !ValueType || ValueType->getDecl() != Value || !Reference || Reference->getDecl() != Index ||
-          !cstddefOrigin(S, SM, ValueAlias->getLocation(), "libcxx", "__tuple/make_tuple_types.h")) return false;
-      if (ArrayValueProjections.size() >= 64 && !ArrayValueProjections.count(Projection)) return false;
+          !cstddefOrigin(S, SM, ValueAlias->getLocation(), "libcxx", "__tuple/make_tuple_types.h")) return functionalBindDiagnosticFailure(__LINE__);
+      if (ArrayValueProjections.size() >= 64 && !ArrayValueProjections.count(Projection)) return functionalBindDiagnosticFailure(__LINE__);
       ArrayValueProjections.insert(Projection);
       return true;
     }
@@ -9871,29 +9910,29 @@ class UtilityTupleQueryGraph
         !Index || !Index->isParameterPack() || !family(Index) ||
         !Context.hasSameType(Index->getType(), Context.getSizeType()) ||
         !Reference || Reference->getDecl() != Index ||
-        !ParameterType || ParameterType->getDecl() != Types) return false;
+        !ParameterType || ParameterType->getDecl() != Types) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Existing : PackProjections)
       if (Existing.Original == Projection && Existing.Owner == Actual) return true;
-    if (PackProjections.size() >= 64) return false;
+    if (PackProjections.size() >= 64) return functionalBindDiagnosticFailure(__LINE__);
     PackProjections.push_back({Projection, Builtin, Actual, Index, Types});
     return true;
   }
   bool retainDefinitionParameters(const TypeAliasTemplateDecl *Alias) {
     auto Keep = [&](const TemplateParameterList *Parameters) {
-      if (!Parameters) return false;
+      if (!Parameters) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : *Parameters)
         if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration)) {
           if (!step() || !family(Parameter) || !Parameter->getTypeSourceInfo() ||
-              !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+              !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
           const auto Inserted = CatDefinitionParameters.emplace(Parameter, Parameters);
-          if (!Inserted.second && Inserted.first->second != Parameters) return false;
+          if (!Inserted.second && Inserted.first->second != Parameters) return functionalBindDiagnosticFailure(__LINE__);
         }
       return true;
     };
-    if (!Alias || !family(Alias) || !Keep(Alias->getTemplateParameters())) return false;
+    if (!Alias || !family(Alias) || !Keep(Alias->getTemplateParameters())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Owner = dyn_cast<CXXRecordDecl>(Alias->getDeclContext());
     if (!Owner) return true;
-    if (!family(Owner)) return false;
+    if (!family(Owner)) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(Owner))
       return Keep(Partial->getTemplateParameters());
     if (const auto *Primary = Owner->getDescribedClassTemplate())
@@ -9930,16 +9969,16 @@ class UtilityTupleQueryGraph
   }
   bool bindTupleElementPackElement(const TemplateSpecializationType *Use) {
     const auto *Source = bindTupleElementProjectionFor(Use);
-    if (!Source || !step()) return false;
+    if (!Source || !step()) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Projection = *Source;
-    if (Use->getTemplateName().getAsTemplateDecl() != Projection.Builtin) return false;
+    if (Use->getTemplateName().getAsTemplateDecl() != Projection.Builtin) return functionalBindDiagnosticFailure(__LINE__);
     const auto Arguments = Use->template_arguments();
     if (Use == Projection.Original) {
       if (!Use->isDependentType() || Arguments.size() != 2 ||
           Projection.OriginalLoc.getTypePtr() != Use || Projection.OriginalLoc.getNumArgs() != 2)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < 2; ++I)
-        if (!TraverseTemplateArgumentLoc(Projection.OriginalLoc.getArgLoc(I))) return false;
+        if (!TraverseTemplateArgumentLoc(Projection.OriginalLoc.getArgLoc(I))) return functionalBindDiagnosticFailure(__LINE__);
       return !Failed;
     }
     const auto Count = Projection.Elements.size();
@@ -9954,16 +9993,16 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Constant->getType(), Context.getSizeType()) ||
         Constant->getResultAsAPSInt().isNegative() ||
         Constant->getResultAsAPSInt().getLimitedValue(Count) != Projection.Slot ||
-        !TraverseStmt(const_cast<ConstantExpr *>(Constant))) return false;
+        !TraverseStmt(const_cast<ConstantExpr *>(Constant))) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Count; ++I) {
-      if (!step() || Arguments[I + 1].getKind() != TemplateArgument::Type) return false;
+      if (!step() || Arguments[I + 1].getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
       const auto Type = Arguments[I + 1].getAsType();
       const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Type.getTypePtr());
       if (!Substitution || Substitution->getAssociatedDecl() != Projection.Owner ||
           Substitution->getReplacedParameter() != Projection.Types || !Substitution->getPackIndex() ||
           *Substitution->getPackIndex() != Count - 1 - I ||
           !Context.hasSameType(Type, Projection.Elements[I]) ||
-          !TraverseType(Type)) return false;
+          !TraverseType(Type)) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto Result = Use->getAliasedType();
     const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Result.getTypePtr());
@@ -9975,19 +10014,19 @@ class UtilityTupleQueryGraph
   }
   std::optional<BindTupleElementProjection> bindTupleElementProjectionFromType(
       QualType Current, const UtilityTupleRecord &Storage, unsigned Slot) {
-    if (!BindMetadata || Slot >= Storage.Elements.size() || !step()) return std::nullopt;
+    if (!BindMetadata || Slot >= Storage.Elements.size() || !step()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const UtilityTupleLikeSource Tuple{Storage.Elements, nullptr, QualType(), 0};
     std::vector<const TypeAliasDecl *> Aliases;
     const TemplateSpecializationType *Actual = nullptr;
     for (unsigned Depth = 0; Depth < 64; ++Depth) {
-      if (!step() || Current.isNull()) return std::nullopt;
+      if (!step() || Current.isNull()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Current.getTypePtr())) {
         Current = Elaborated->getNamedType();
         continue;
       }
       if (const auto *Typedef = dyn_cast<TypedefType>(Current.getTypePtr())) {
         const auto *Alias = dyn_cast<TypeAliasDecl>(Typedef->getDecl());
-        if (!Alias || Aliases.size() == 2 || !family(Alias) || !Alias->getTypeSourceInfo()) return std::nullopt;
+        if (!Alias || Aliases.size() == 2 || !family(Alias) || !Alias->getTypeSourceInfo()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
         Aliases.push_back(Alias);
         Current = Alias->getUnderlyingType();
         continue;
@@ -9995,7 +10034,7 @@ class UtilityTupleQueryGraph
       Actual = dyn_cast<TemplateSpecializationType>(Current.getTypePtr());
       break;
     }
-    if (Aliases.size() != 2 || !Actual) return std::nullopt;
+    if (Aliases.size() != 2 || !Actual) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Root = dyn_cast<ClassTemplateSpecializationDecl>(Aliases[0]->getDeclContext());
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Aliases[1]->getDeclContext());
     const auto Object = Context.getRecordType(Storage.Record);
@@ -10004,7 +10043,7 @@ class UtilityTupleQueryGraph
         !Owner->getIdentifier() || Owner->getName() != "tuple_element" ||
         Owner->getSpecializationKind() != TSK_ImplicitInstantiation || Owner->getTemplateArgs().size() != 2 ||
         !family(Owner) || !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__tuple/tuple_element.h"))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto &OwnerArguments = Owner->getTemplateArgs();
     const auto *Types = OwnerArguments[1].getKind() == TemplateArgument::Type
         ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(OwnerArguments[1].getAsType()->getAsCXXRecordDecl()) : nullptr;
@@ -10015,11 +10054,11 @@ class UtilityTupleQueryGraph
         !Types || !Types->getIdentifier() || Types->getName() != "__tuple_types" || !family(Types) ||
         !cstddefOrigin(S, SM, Types->getLocation(), "libcxx", "__tuple/tuple_types.h") ||
         Types->getTemplateArgs().size() != 1 || Types->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
-        Types->getTemplateArgs()[0].pack_size() != Tuple.size()) return std::nullopt;
+        Types->getTemplateArgs()[0].pack_size() != Tuple.size()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     unsigned I = 0;
     for (const auto &Type : Types->getTemplateArgs()[0].pack_elements())
       if (!step() || Type.getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Type.getAsType(), Tuple.elementType(I++))) return std::nullopt;
+          !Context.hasSameType(Type.getAsType(), Tuple.elementType(I++))) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Partial = Owner->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplatePartialSpecializationDecl *>();
     const auto *Parameters = Partial ? Partial->getTemplateParameters() : nullptr;
     const auto *Index = Parameters && Parameters->size() == 2
@@ -10029,17 +10068,17 @@ class UtilityTupleQueryGraph
     if (!Partial || !family(Partial) || !Index || Index->getIndex() || Index->isParameterPack() ||
         Index->hasDefaultArgument() || !Index->getTypeSourceInfo() || !family(Index) ||
         !Context.hasSameType(Index->getType(), Context.getSizeType()) || !Pack || !Pack->isParameterPack() ||
-        Pack->getIndex() != 1 || Pack->hasDefaultArgument() || !family(Pack)) return std::nullopt;
+        Pack->getIndex() != 1 || Pack->hasDefaultArgument() || !family(Pack)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const TypeAliasDecl *OriginalAlias = nullptr;
     for (const auto *Declaration : Partial->decls()) {
-      if (!step()) return std::nullopt;
+      if (!step()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto *Alias = dyn_cast<TypeAliasDecl>(Declaration);
       if (!Alias || !Alias->getIdentifier() || Alias->getName() != "type") continue;
-      if (OriginalAlias || !family(Alias) || !Alias->getTypeSourceInfo()) return std::nullopt;
+      if (OriginalAlias || !family(Alias) || !Alias->getTypeSourceInfo()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       OriginalAlias = Alias;
     }
     if (!OriginalAlias || OriginalAlias->getDeclContext() != Partial ||
-        OriginalAlias->getLocation() != Aliases[1]->getLocation()) return std::nullopt;
+        OriginalAlias->getLocation() != Aliases[1]->getLocation()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     auto OriginalLocation = OriginalAlias->getTypeSourceInfo()->getTypeLoc();
     if (const auto Elaborated = OriginalLocation.getAs<ElaboratedTypeLoc>())
       OriginalLocation = Elaborated.getNamedTypeLoc();
@@ -10051,7 +10090,7 @@ class UtilityTupleQueryGraph
         !Builtin->getDeclContext()->isTranslationUnit() || Builtin->getBuiltinTemplateKind() != BTK__type_pack_element ||
         Actual->getTemplateName().getAsTemplateDecl() != Builtin ||
         !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "__tuple/tuple_element.h"))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto Written = Original->template_arguments();
     const auto *Reference = Written.size() == 2 && Written[0].getKind() == TemplateArgument::Expression
         ? dyn_cast<DeclRefExpr>(Written[0].getAsExpr()) : nullptr;
@@ -10059,7 +10098,7 @@ class UtilityTupleQueryGraph
         ? dyn_cast<PackExpansionType>(Written[1].getAsType().getTypePtr()) : nullptr;
     const auto *Parameter = Expansion ? dyn_cast<TemplateTypeParmType>(Expansion->getPattern().getTypePtr()) : nullptr;
     if (!Reference || Reference->getDecl() != Index || !Parameter || Parameter->getDecl() != Pack)
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     std::vector<QualType> Elements;
     for (const auto &Element : Storage.Elements) Elements.push_back(Element.getType());
     return BindTupleElementProjection{Aliases[1], OriginalAlias, Owner, Partial, Actual, Original,
@@ -10067,7 +10106,7 @@ class UtilityTupleQueryGraph
   }
   std::optional<BindTupleElementProjection> bindTupleElementProjection(
       const CallExpr *Get, const UtilityTupleRecord &Storage, unsigned Slot) {
-    if (!BindMetadata || !Storage.Record || Slot >= Storage.Elements.size() || !step()) return std::nullopt;
+    if (!BindMetadata || !Storage.Record || Slot >= Storage.Elements.size() || !step()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Function = Get ? Get->getDirectCallee() : nullptr;
     const auto *Definition = Function ? Function->getDefinition() : nullptr;
     const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
@@ -10081,11 +10120,11 @@ class UtilityTupleQueryGraph
         Local->getDeclContext() != Definition || !Local->getIdentifier() || Local->getName() != "type" ||
         !Local->getTypeSourceInfo() || !family(Local) ||
         !approvedUtilityTupleLikeGet(S, SM, Get, Function->getParamDecl(0)->getType(), Tuple, Slot, Context))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     return bindTupleElementProjectionFromType(Local->getUnderlyingType(), Storage, Slot);
   }
   bool catPackElement(const TemplateSpecializationType *Use) {
-    if (!catMetadataMode() || !Use || !step()) return false;
+    if (!catMetadataMode() || !Use || !step()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Builtin = dyn_cast_or_null<BuiltinTemplateDecl>(Use->getTemplateName().getAsTemplateDecl());
     for (const auto &Projection : PackProjections) {
       if (Builtin != Projection.Builtin) continue;
@@ -10103,50 +10142,50 @@ class UtilityTupleQueryGraph
       const auto Number = Index->getResultAsAPSInt();
       const auto &OwnerArguments = Projection.Owner->getTemplateArgs();
       if (OwnerArguments.size() != 2 || OwnerArguments[0].getKind() != TemplateArgument::Type ||
-          Number.isNegative()) return false;
+          Number.isNegative()) return functionalBindDiagnosticFailure(__LINE__);
       const auto Storage = approvedUtilityTupleCatQueryLayout(S, SM, OwnerArguments[0].getAsType(), Context);
       if (!Storage || Storage->ArrayElements || Arguments.size() != Storage->size() + 1 ||
-          Number.getLimitedValue(Storage->size()) >= Storage->size()) return false;
+          Number.getLimitedValue(Storage->size()) >= Storage->size()) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < Storage->size(); ++I) {
-        if (!step() || Arguments[I+1].getKind() != TemplateArgument::Type) return false;
+        if (!step() || Arguments[I+1].getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
         const auto Type = Arguments[I+1].getAsType();
         const auto *Element = dyn_cast<SubstTemplateTypeParmType>(Type.getTypePtr());
         if (!Element || Element->getAssociatedDecl() != Projection.Owner ||
             Element->getReplacedParameter() != Projection.Types || !Element->getPackIndex() ||
             *Element->getPackIndex() != Storage->size() - 1 - I ||
-            !Context.hasSameType(Type, Storage->elementType(I)) || !TraverseType(Type)) return false;
+            !Context.hasSameType(Type, Storage->elementType(I)) || !TraverseType(Type)) return functionalBindDiagnosticFailure(__LINE__);
       }
       return Context.hasSameType(Use->getAliasedType(), Storage->elementType(Number.getZExtValue()));
     }
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   }
   bool bindCatInputs(const FunctionDecl *Function) {
     if (Mode != UtilityTupleQueryMode::CatSignature) return true;
     if (!Function || !Function->getIdentifier() || Function->getName() != "tuple_cat" ||
         !family(Function) || !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "tuple") ||
-        Function->getNumParams() > 64) return false;
+        Function->getNumParams() > 64) return functionalBindDiagnosticFailure(__LINE__);
     if (CatInputFunction) return CatInputFunction == Function;
     CatInputFunction = Function;
     auto Bind = [&](auto &&Self, QualType Type, unsigned Nesting) -> bool {
-      if (!step() || Nesting > 64 || Type.isNull()) return false;
+      if (!step() || Nesting > 64 || Type.isNull()) return functionalBindDiagnosticFailure(__LINE__);
       if (Type->isReferenceType()) return Self(Self, Type->getPointeeType(), Nesting + 1);
-      if (!carrier(Type, Nesting)) return false;
+      if (!carrier(Type, Nesting)) return functionalBindDiagnosticFailure(__LINE__);
       if (utilityScalar(Context, Type) || Type->isVoidType()) return true;
       const auto *Record = Type->getAsCXXRecordDecl();
       if (const auto Storage = approvedUtilityTupleCatQueryLayout(S, SM, Type, Context)) {
         if (Storage->ArrayElements)
           return Self(Self, Storage->ArrayElementType, Nesting + 1);
         for (unsigned I = 0; I < Storage->size(); ++I)
-          if (!Self(Self, Storage->elementType(I), Nesting + 1)) return false;
+          if (!Self(Self, Storage->elementType(I), Nesting + 1)) return functionalBindDiagnosticFailure(__LINE__);
         return true;
       }
       if (const auto Owner = utilityUniquePtrRecord(S, SM, Record, Context, false, false)) {
         const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record);
-        if (!Instance || Instance->getTemplateArgs().size() != 2) return false;
+        if (!Instance || Instance->getTemplateArgs().size() != 2) return functionalBindDiagnosticFailure(__LINE__);
         CatInputOwners.insert(Instance->getCanonicalDecl());
         for (unsigned I = 0; I < 2; ++I) {
           const auto &Argument = Instance->getTemplateArgs().get(I);
-          if (Argument.getKind() != TemplateArgument::Type) return false;
+          if (Argument.getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
           const auto Input = Argument.getAsType();
           const auto *InputRecord = Context.getBaseElementType(Input)->getAsCXXRecordDecl();
           // External atoms belong to these exact owner input slots. Caller
@@ -10164,7 +10203,7 @@ class UtilityTupleQueryGraph
     };
     for (const auto *Parameter : Function->parameters())
       if (!Parameter->getType()->isReferenceType() ||
-          !Bind(Bind, Parameter->getType(), 0)) return false;
+          !Bind(Bind, Parameter->getType(), 0)) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
   bool ownerSource(const CXXRecordDecl *Record) {
@@ -10180,12 +10219,12 @@ class UtilityTupleQueryGraph
                    PairInputRecords.count(Instance->getCanonicalDecl()));
     if (!Instance || !Bound || !family(Instance) ||
         !Parameters || Parameters->size() != 2 || Instance->getTemplateArgs().size() != 2)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto *Tp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
     const auto *Dp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
     if (!Tp || !Dp || Tp->hasDefaultArgument() || !Dp->hasDefaultArgument() ||
         Tp->isParameterPack() || Dp->isParameterPack() || !family(Tp) || !family(Dp))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto &Default = Dp->getDefaultArgument();
     const auto *Info = Default.getArgument().getKind() == TemplateArgument::Type
         ? Default.getTypeSourceInfo() : nullptr;
@@ -10200,12 +10239,12 @@ class UtilityTupleQueryGraph
         Deletion->getName() != "default_delete" ||
         !approvedStandardSDKDeclaration(S, SM, Deletion) ||
         !cstddefOrigin(S, SM, Deletion->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
-        !Argument || Argument->getDecl() != Tp) return false;
+        !Argument || Argument->getDecl() != Tp) return functionalBindDiagnosticFailure(__LINE__);
     // A custom actual deleter still depends on this exact written SDK default.
     // Bind only its declaration family before traversing the original TSI.
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
-        !bindPairInputFamily(Deletion->getTemplatedDecl())) return false;
-    if (!family(Deletion) || !TraverseTypeLoc(Info->getTypeLoc())) return false;
+        !bindPairInputFamily(Deletion->getTemplatedDecl())) return functionalBindDiagnosticFailure(__LINE__);
+    if (!family(Deletion) || !TraverseTypeLoc(Info->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Actual = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Deleter.Record);
     const bool DefaultFamily = Actual &&
         Actual->getSpecializedTemplate()->getCanonicalDecl() == Deletion->getCanonicalDecl();
@@ -10215,23 +10254,23 @@ class UtilityTupleQueryGraph
           Actual->getTemplateArgs().size() != 1 ||
           Actual->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Actual->getTemplateArgs()[0].getAsType(),
-                              Instance->getTemplateArgs()[0].getAsType())) return false;
+                              Instance->getTemplateArgs()[0].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
     }
     for (const auto &Input : Instance->getTemplateArgs().asArray())
-      if (!TraverseTemplateArgument(Input)) return false;
+      if (!TraverseTemplateArgument(Input)) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
   bool fullSliceDefaults(const ClassTemplateSpecializationDecl *Instance) {
     if (!Instance || Context.getExternalSource() ||
         Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
-        !Instance->getDefinition() || !family(Instance)) return false;
+        !Instance->getDefinition() || !family(Instance)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Primary = Instance->getSpecializedTemplate();
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     const auto &Arguments = Instance->getTemplateArgs();
     if (!Parameters || Parameters->size() != 4 || Arguments.size() != 4 ||
         Arguments[0].getKind() != TemplateArgument::Type ||
         !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__tuple/make_tuple_types.h"))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto *Tp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
     const auto *Ep = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1));
     const auto *Sp = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(2));
@@ -10248,11 +10287,11 @@ class UtilityTupleQueryGraph
         !Same->getTypeSourceInfo() ||
         !TraverseTypeLoc(Ep->getTypeSourceInfo()->getTypeLoc()) ||
         !TraverseTypeLoc(Sp->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseTypeLoc(Same->getTypeSourceInfo()->getTypeLoc())) return false;
+        !TraverseTypeLoc(Same->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     const auto Object = Arguments[0].getAsType();
     if (Object->isReferenceType() || Object.hasLocalQualifiers() ||
         (!catMetadataMode() &&
-         !approvedUtilityTupleMetadata(S, SM, Object->getAsCXXRecordDecl()))) return false;
+         !approvedUtilityTupleMetadata(S, SM, Object->getAsCXXRecordDecl()))) return functionalBindDiagnosticFailure(__LINE__);
     const auto NotFnSlice = NotFnTupleTagSlices.find(Instance->getCanonicalDecl());
     const auto BindSlice = BindTupleTagSlices.find(Instance->getCanonicalDecl());
     std::optional<UtilityTupleLikeSource> Tuple;
@@ -10263,19 +10302,19 @@ class UtilityTupleQueryGraph
       if (!catMetadataMode() || !NotFnTupleTagStorage ||
           !Context.hasSameType(Object, Context.getRecordType(NotFnTupleTagStorage->Tuple)) ||
           !Context.hasSameType(NotFnTupleTagStorage->Callable.getType(),
-                               NotFnTupleTagStorage->CallableType)) return false;
+                               NotFnTupleTagStorage->CallableType)) return functionalBindDiagnosticFailure(__LINE__);
       Tuple = UtilityTupleLikeSource{{NotFnTupleTagStorage->Callable}, nullptr, {}, 0};
     } else if (Mode == UtilityTupleQueryMode::BindSignature &&
                BindSlice != BindTupleTagSlices.end()) {
       if (!BindMetadata || !BindTupleTagStorage || !Context.hasSameType(Object,
-              Context.getRecordType(BindTupleTagStorage->Record))) return false;
+              Context.getRecordType(BindTupleTagStorage->Record))) return functionalBindDiagnosticFailure(__LINE__);
       Tuple = UtilityTupleLikeSource{BindTupleTagStorage->Elements, nullptr, {}, 0};
     } else {
       Tuple = catMetadataMode()
           ? approvedUtilityTupleCatQueryLayout(S, SM, Object, Context)
           : approvedUtilityTupleLikeSource(S, SM, Object, Context, true, true);
     }
-    if (!Tuple) return false;
+    if (!Tuple) return functionalBindDiagnosticFailure(__LINE__);
     const auto Integral = [&](unsigned I, QualType T, uint64_t N) {
       const auto &Argument = Arguments[I];
       return Argument.getKind() == TemplateArgument::Integral &&
@@ -10289,7 +10328,7 @@ class UtilityTupleQueryGraph
     if (Start > End || End > Tuple->size() ||
         !Integral(1, Context.getSizeType(), End) ||
         !Integral(2, Context.getSizeType(), Start) ||
-        !Integral(3, Context.BoolTy, End == Tuple->size())) return false;
+        !Integral(3, Context.BoolTy, End == Tuple->size())) return functionalBindDiagnosticFailure(__LINE__);
     const auto Default = [](const NonTypeTemplateParmDecl *P) -> const Expr * {
       const auto &A = P->getDefaultArgument().getArgument();
       return A.getKind() == TemplateArgument::Expression ? A.getAsExpr() : nullptr;
@@ -10356,23 +10395,23 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Zero->getType(), Context.IntTy) ||
         !(Equality ? Equality->getOpcode() == BO_EQ : DependentEquality) ||
         !Left || Left->getDecl() != Ep || !OtherSize ||
-        Size->getCanonicalDecl() != OtherSize->getCanonicalDecl()) return false;
+        Size->getCanonicalDecl() != OtherSize->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
     // The retained dependent lookup must close every original candidate.
     // Ep and the already instantiated tuple_size value both have size_t;
     // no candidate body, overload resolution or new evaluation is requested.
     if (DependentEquality)
       for (const auto *Candidate : Lookup->decls())
-        if (!defaultEqualityFamily(Candidate)) return false;
+        if (!defaultEqualityFamily(Candidate)) return functionalBindDiagnosticFailure(__LINE__);
     {
       // This is the original definition's exact parameter, not an
       // instantiated metadata object's value member.
       const auto Inserted = DefinitionParameters.emplace(Ep, Primary);
-      if (!Inserted.second && Inserted.first->second != Primary) return false;
+      if (!Inserted.second && Inserted.first->second != Primary) return functionalBindDiagnosticFailure(__LINE__);
       auto Restore = llvm::make_scope_exit([&] {
         if (Inserted.second) DefinitionParameters.erase(Ep);
       });
       if (!TraverseStmt(const_cast<Expr *>(Default(Sp))) ||
-          !TraverseStmt(const_cast<Expr *>(Default(Same)))) return false;
+          !TraverseStmt(const_cast<Expr *>(Default(Same)))) return functionalBindDiagnosticFailure(__LINE__);
     }
     // The only lookup permitted here reads the specialization already used
     // by Sema's defaults. External AST loading was excluded above.
@@ -10381,16 +10420,16 @@ class UtilityTupleQueryGraph
     const auto *Witness = const_cast<ClassTemplateDecl *>(Size)->findSpecialization(
         llvm::ArrayRef<TemplateArgument>(SizeArgument), InsertPosition);
     if (!Witness || !approvedUtilityTupleLikeSizeTrait(S, SM, Witness, Object, *Tuple, Context) ||
-        !record(Witness)) return false;
+        !record(Witness)) return functionalBindDiagnosticFailure(__LINE__);
     bool HasValue = false;
     for (const auto &Base : Witness->getDefinition()->bases()) {
       const auto *Owner = Base.getType()->getAsCXXRecordDecl();
       const auto *Definition = Owner ? Owner->getDefinition() : nullptr;
-      if (!Definition) return false;
+      if (!Definition) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : Definition->decls()) {
         const auto *Value = dyn_cast<VarDecl>(Declaration);
         if (!Value || Value->getName() != "value") continue;
-        if (HasValue || !value(Value)) return false;
+        if (HasValue || !value(Value)) return functionalBindDiagnosticFailure(__LINE__);
         HasValue = true;
       }
     }
@@ -10403,12 +10442,12 @@ class UtilityTupleQueryGraph
     if (!R || !Primary || !family(R) || !family(Primary) ||
         !R->getIdentifier() || R->getName() != "integral_constant" ||
         !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
-                       "__type_traits/integral_constant.h")) return std::nullopt;
+                       "__type_traits/integral_constant.h")) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto &A = R->getTemplateArgs();
     if (A.size() != 2 || A[0].getKind() != TemplateArgument::Type ||
         A[1].getKind() != TemplateArgument::Integral ||
         !Context.hasSameType(A[0].getAsType(), Context.BoolTy) ||
-        !Context.hasSameType(A[1].getIntegralType(), Context.BoolTy)) return std::nullopt;
+        !Context.hasSameType(A[1].getIntegralType(), Context.BoolTy)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     return !A[1].getAsIntegral().isZero();
   }
   bool pairImplicitDefaultSource(const ClassTemplateSpecializationDecl *Instance,
@@ -10419,17 +10458,17 @@ class UtilityTupleQueryGraph
     const bool Fallback = !SelectedPartial;
     const auto *Partial = Candidate ? Candidate : SelectedPartial;
     if (Fallback && !Candidate) {
-      if (!Primary || !family(Primary)) return false;
+      if (!Primary || !family(Primary)) return functionalBindDiagnosticFailure(__LINE__);
       llvm::SmallVector<ClassTemplatePartialSpecializationDecl *, 2> Partials;
       Primary->getPartialSpecializations(Partials);
-      if (Partials.size() != 2) return false;
+      if (Partials.size() != 2) return functionalBindDiagnosticFailure(__LINE__);
       std::set<bool> Values;
       for (const auto *Original : Partials) {
         if (!step() || Original->getTemplateArgs().size() != 3 ||
-            Original->getTemplateArgs()[2].getKind() != TemplateArgument::Type) return false;
+            Original->getTemplateArgs()[2].getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
         const auto Value = pairBooleanConstant(Original->getTemplateArgs()[2].getAsType());
         if (!Value || !Values.insert(*Value).second ||
-            !pairImplicitDefaultSource(Instance, Original)) return false;
+            !pairImplicitDefaultSource(Instance, Original)) return functionalBindDiagnosticFailure(__LINE__);
       }
       return Values.size() == 2 && !Failed;
     }
@@ -10443,14 +10482,14 @@ class UtilityTupleQueryGraph
         Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
         Partial->getSpecializedTemplate()->getCanonicalDecl() != Primary->getCanonicalDecl() ||
         Partial->getTemplateParameters()->size() != 1)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto &Arguments = Instance->getTemplateArgs();
     if (Arguments.size() != 3 || Arguments[0].getKind() != TemplateArgument::Type ||
         Arguments[1].getKind() != TemplateArgument::Type ||
         Arguments[2].getKind() != TemplateArgument::Type ||
         !Arguments[1].getAsType()->isVoidType() ||
         !PairInputTypes.count(Arguments[0].getAsType().getCanonicalType().getTypePtr()))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto Target = Arguments[0].getAsType();
     const auto *First = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
     const auto *Second = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
@@ -10459,7 +10498,7 @@ class UtilityTupleQueryGraph
         Partial->getTemplateParameters()->getParam(0));
     for (const auto *Parameter : {First, Second, Third, Element})
       if (!Parameter || !family(Parameter) || Parameter->isParameterPack() ||
-          Parameter->getDepth() || Parameter->getIndex() > 2) return false;
+          Parameter->getDepth() || Parameter->getIndex() > 2) return functionalBindDiagnosticFailure(__LINE__);
     if (First->getIndex() || First->hasDefaultArgument() || Second->getIndex() != 1 ||
         Third->getIndex() != 2 || Element->getIndex() || Element->hasDefaultArgument() ||
         !Second->hasDefaultArgument() || !Third->hasDefaultArgument() ||
@@ -10468,7 +10507,7 @@ class UtilityTupleQueryGraph
         !Second->getDefaultArgument().getTypeSourceInfo() || !Third->getDefaultArgument().getTypeSourceInfo() ||
         !Second->getDefaultArgument().getArgument().getAsType()->isVoidType() ||
         !TraverseTypeLoc(Second->getDefaultArgument().getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseTypeLoc(Third->getDefaultArgument().getTypeSourceInfo()->getTypeLoc())) return false;
+        !TraverseTypeLoc(Third->getDefaultArgument().getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     // The original third default must name the real default-construction trait
     // for this primary's own first parameter. Its folded result alone is not
     // evidence for the source which selected this partial specialization.
@@ -10485,27 +10524,27 @@ class UtilityTupleQueryGraph
         Use->template_arguments().size() != 1 ||
         Use->template_arguments()[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Use->template_arguments()[0].getAsType(),
-                            QualType(First->getTypeForDecl(), 0))) return false;
+                            QualType(First->getTypeForDecl(), 0))) return functionalBindDiagnosticFailure(__LINE__);
     const ClassTemplateSpecializationDecl *DefaultInstance = nullptr;
     for (const auto *Candidate : DefaultTrait->specializations()) {
-      if (!step()) return false;
+      if (!step()) return functionalBindDiagnosticFailure(__LINE__);
       const auto &A = Candidate->getTemplateArgs();
       if (A.size() != 1 || A[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(A[0].getAsType(), Target)) continue;
       if ((DefaultInstance && DefaultInstance->getCanonicalDecl() != Candidate->getCanonicalDecl()) ||
           !record(Candidate) || Candidate->getNumBases() != 1 ||
           !Context.hasSameType(Candidate->bases_begin()->getType(), Arguments[2].getAsType()))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       DefaultInstance = Candidate;
     }
-    if (!DefaultInstance) return false;
+    if (!DefaultInstance) return functionalBindDiagnosticFailure(__LINE__);
     const auto *PrimaryDefinition = Primary->getTemplatedDecl()->getDefinition();
     if (!PrimaryDefinition || !family(PrimaryDefinition) ||
         PrimaryDefinition->getNumBases() != 1 || !PrimaryDefinition->field_empty() ||
         !PrimaryDefinition->bases_begin()->getTypeSourceInfo() ||
-        !TraverseTypeLoc(PrimaryDefinition->bases_begin()->getTypeSourceInfo()->getTypeLoc())) return false;
+        !TraverseTypeLoc(PrimaryDefinition->bases_begin()->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     const auto PrimaryValue = pairBooleanConstant(PrimaryDefinition->bases_begin()->getType());
-    if (!PrimaryValue || *PrimaryValue) return false;
+    if (!PrimaryValue || *PrimaryValue) return functionalBindDiagnosticFailure(__LINE__);
     if (Fallback) {
       // Failed copy-list candidates have no successful selected helper call.
       // Bind their independent source proof to this exact retained direct
@@ -10531,19 +10570,19 @@ class UtilityTupleQueryGraph
           !Constructor->isDefaultConstructor() || !TargetRecord ||
           !ownedPairInputRecord(TargetRecord) ||
           Constructor->getParent()->getCanonicalDecl() != TargetRecord->getCanonicalDecl() ||
-          !Context.hasSameType(Root->getType(), Target)) return false;
+          !Context.hasSameType(Root->getType(), Target)) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto PartialBase = Partial->getTemplateArgs()[2].getAsType();
     for (const auto *Definition : {Instance->getDefinition(), Partial->getDefinition()}) {
       if (!Definition || !family(Definition) || Definition->isUnion() ||
           Definition->isDynamicClass() || Definition->getNumBases() != 1 ||
-          !Definition->field_empty()) return false;
+          !Definition->field_empty()) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Base = *Definition->bases_begin();
       if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public ||
           !Context.hasSameType(Base.getType(), Definition == Instance->getDefinition()
               ? (Fallback ? PrimaryDefinition->bases_begin()->getType() : Arguments[2].getAsType())
               : PartialBase) || !Base.getTypeSourceInfo() ||
-          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto PartialArguments = Written->arguments();
     if (PartialArguments[0].getArgument().getKind() != TemplateArgument::Type ||
@@ -10553,7 +10592,7 @@ class UtilityTupleQueryGraph
                             QualType(Element->getTypeForDecl(), 0)) ||
         !Context.hasSameType(PartialArguments[2].getArgument().getAsType(), PartialBase) ||
         (!Fallback && !Context.hasSameType(PartialBase, Arguments[2].getAsType())))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto *Decltype = dyn_cast<DecltypeType>(
         PartialArguments[1].getArgument().getAsType().getTypePtr());
     const auto *Call = Decltype ? dyn_cast<CallExpr>(Decltype->getUnderlyingExpr()) : nullptr;
@@ -10565,32 +10604,32 @@ class UtilityTupleQueryGraph
     if (!Call || !Lookup || !List || List->getNumInits() || Lookup->requiresADL() ||
         !Namespace || !Namespace->isStdNamespace() || CallQualifier->getPrefix() ||
         !Lookup->hasExplicitTemplateArgs() || Lookup->getNumTemplateArgs() != 1 ||
-        Lookup->decls_begin() == Lookup->decls_end()) return false;
+        Lookup->decls_begin() == Lookup->decls_end()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto Location : {Call->getBeginLoc(), Lookup->getNameLoc(),
                                List->getLBraceLoc(), List->getRBraceLoc(), Call->getEndLoc()})
       if (!cstddefOrigin(S, SM, Location, "libcxx",
-                         "__type_traits/is_implicitly_default_constructible.h")) return false;
+                         "__type_traits/is_implicitly_default_constructible.h")) return functionalBindDiagnosticFailure(__LINE__);
     const auto &HelperArgument = Lookup->template_arguments()[0].getArgument();
     if (HelperArgument.getKind() != TemplateArgument::Type ||
         !Context.hasSameType(HelperArgument.getAsType(), Context.getLValueReferenceType(
-            QualType(Element->getTypeForDecl(), 0).withConst()))) return false;
+            QualType(Element->getTypeForDecl(), 0).withConst()))) return functionalBindDiagnosticFailure(__LINE__);
     const FunctionTemplateDecl *Helper = nullptr;
     for (const auto *Declaration : Lookup->decls()) {
-      if (!step()) return false;
+      if (!step()) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Candidate = dyn_cast<FunctionTemplateDecl>(Declaration);
       if (!Candidate || !family(Candidate) ||
           Candidate->getName() != "__test_implicit_default_constructible" ||
           Candidate->getDeclContext() != Primary->getDeclContext() ||
-          (Helper && Helper->getCanonicalDecl() != Candidate->getCanonicalDecl())) return false;
+          (Helper && Helper->getCanonicalDecl() != Candidate->getCanonicalDecl())) return functionalBindDiagnosticFailure(__LINE__);
       Helper = Candidate;
     }
     if (!Helper || !Helper->getIdentifier() || Helper->getTemplateParameters()->size() != 1)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Declaration : Helper->getDeclContext()->lookup(Helper->getDeclName())) {
-      if (!step()) return false;
+      if (!step()) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Candidate = dyn_cast<FunctionTemplateDecl>(Declaration);
       if (!Candidate || Candidate->getCanonicalDecl() != Helper->getCanonicalDecl() ||
-          !family(Candidate)) return false;
+          !family(Candidate)) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto *HelperParameter = dyn_cast<TemplateTypeParmDecl>(
         Helper->getTemplateParameters()->getParam(0));
@@ -10605,11 +10644,11 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Pattern->getParamDecl(0)->getType(),
                             QualType(HelperParameter->getTypeForDecl(), 0)) ||
         !Pattern->getTypeSourceInfo() ||
-        !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return false;
+        !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     const auto Expected = Context.getLValueReferenceType(Target.withConst());
     const FunctionDecl *Selected = nullptr;
     for (const auto *Candidate : Helper->specializations()) {
-      if (!step()) return false;
+      if (!step()) return functionalBindDiagnosticFailure(__LINE__);
       const auto *A = Candidate->getTemplateSpecializationArgs();
       if (!A || A->size() != 1 || A->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(A->get(0).getAsType(), Expected)) continue;
@@ -10621,18 +10660,18 @@ class UtilityTupleQueryGraph
           Candidate->getType()->castAs<FunctionProtoType>()->getExceptionSpecType() != EST_None ||
           Candidate->getParamDecl(0)->hasDefaultArg() ||
           !Context.hasSameType(Candidate->getParamDecl(0)->getType(), Expected) ||
-          !function(Candidate)) return false;
+          !function(Candidate)) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : Candidate->redecls())
         if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       Selected = Candidate;
     }
     // On a primary fallback, a specialization may have been discarded by
     // failed deduction. Existing exact candidates must nevertheless close all
     // source/redeclaration checks above; absence grants no selected identity.
-    if ((!Fallback && !Selected) || !TraverseStmt(const_cast<CallExpr *>(Call))) return false;
+    if ((!Fallback && !Selected) || !TraverseStmt(const_cast<CallExpr *>(Call))) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Argument : PartialArguments)
-      if (!TraverseTemplateArgumentLoc(Argument)) return false;
+      if (!TraverseTemplateArgumentLoc(Argument)) return functionalBindDiagnosticFailure(__LINE__);
     return !Failed;
   }
 
@@ -10642,7 +10681,7 @@ class UtilityTupleQueryGraph
         !PairTraitConstruction || !Alias || !Alias->getIdentifier() ||
         Alias->getName() != "size_type" || !Owner ||
         !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "string_view"))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Constructor = PairTraitConstruction->getConstructor();
     const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
         Constructor ? Constructor->getParent() : nullptr);
@@ -10650,7 +10689,7 @@ class UtilityTupleQueryGraph
     const auto *Pattern = Primary ? Primary->getTemplatedDecl()->getDefinition() : nullptr;
     if (!Instance || !Instance->getIdentifier() || Instance->getName() != "basic_string_view" ||
         !Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl())
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     // This is only the original alias in the selected retained pointer/count
     // signature. Its dependent primary is an owner identity, not a layout or
     // a runtime operation. Every other primary still follows record().
@@ -10698,9 +10737,9 @@ class UtilityTupleQueryGraph
     return Complete;
   }
   bool bindRetainedTupleMetadataRecord(const CXXRecordDecl *Record) const {
-    if (!Record) return false;
+    if (!Record) return functionalBindDiagnosticFailure(__LINE__);
     auto Identity = [&](const CXXRecordDecl *Candidate) {
-      if (!Candidate) return false;
+      if (!Candidate) return functionalBindDiagnosticFailure(__LINE__);
       if (Record->getCanonicalDecl() == Candidate->getCanonicalDecl()) return true;
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Candidate);
       const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
@@ -10711,10 +10750,10 @@ class UtilityTupleQueryGraph
       for (const auto &Element : Source.Storage.Elements)
         if (Identity(Element.getType()->getAsCXXRecordDecl())) return true;
     }
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   }
   bool record(const CXXRecordDecl *R) {
-    if (!R || Failed) return false;
+    if (!R || Failed) return functionalBindDiagnosticFailure(__LINE__);
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindFactoryLeafComparisonRecord &&
         R->getCanonicalDecl() == BindFactoryLeafComparisonRecord)
       return family(R); // Only the exact type-comparison operand; no storage or member permission.
@@ -10746,7 +10785,7 @@ class UtilityTupleQueryGraph
         bindRetainedTupleMetadataRecord(R)) {
       if (!family(R) || (!R->isDependentContext() && (!BindRecordSource || !BindRecordSource(R)))) {
         Failed = true;
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       }
       // Source-only identity: do not add physical records or completed members.
       return true;
@@ -10755,13 +10794,13 @@ class UtilityTupleQueryGraph
         BindMetadataRecords.count(R->getCanonicalDecl())) {
       if (!R->isDependentContext() && (!BindRecordSource || !BindRecordSource(R))) {
         Failed = true;
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       }
       return family(R); // Identity is separate from its actual selected partial source.
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindRecordSource &&
         !R->isDependentContext()) {
-      if (!BindRecordSource(R)) { Failed = true; return false; }
+      if (!BindRecordSource(R)) { Failed = true; return functionalBindDiagnosticFailure(__LINE__); }
     }
     if (NotFnNestedStorage && NotFnNestedRecords.count(R->getCanonicalDecl()))
       return family(R); // Exact descriptor metadata only; selected operations still close independently.
@@ -10784,7 +10823,7 @@ class UtilityTupleQueryGraph
            !Context.hasSameType(NotFnConstructorQuery->getArg(0)->getType(), Context.getRecordType(R)) ||
            !Context.hasSameType(NotFnConstructorRoot->getType(), Context.getRecordType(R)) ||
            NotFnConstructorRoot->getConstructor()->getParent()->getCanonicalDecl() != R->getCanonicalDecl()))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto &Storage = NotFnFactoryDefaults->Selected.Storage;
       const auto Owned = NotFnNestedStorage
           ? std::optional<FunctionalNotFnStorage>(NotFnNestedStorage->Outer)
@@ -10802,7 +10841,7 @@ class UtilityTupleQueryGraph
           !Context.hasSameType(Instance->getTemplateArgs()[0].pack_elements()[0].getAsType(), Storage.CallableType) ||
           Definition->getNumBases() || std::distance(Definition->field_begin(), Definition->field_end()) != 1 ||
           *Definition->field_begin() != Storage.TupleBase)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       // A storage identity supplies metadata here, never a runtime operation
       // or an ordinary constructor, destructor or callback body certificate.
       return TraverseType(Storage.CallableType);
@@ -10822,12 +10861,12 @@ class UtilityTupleQueryGraph
       if (CompletedPairImplicitDefaults.count(Key)) return true;
       if (!ActivePairImplicitDefaults.insert(Key).second) {
         Failed = true;
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       }
       auto Restore = llvm::make_scope_exit([&] { ActivePairImplicitDefaults.erase(Key); });
       if (!family(R) || !pairImplicitDefaultSource(PairTrait)) {
         Failed = true;
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       }
       CompletedPairImplicitDefaults.insert(Key);
       return true;
@@ -10859,13 +10898,13 @@ class UtilityTupleQueryGraph
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairOwner(R)) {
       if (!Records.insert(R).second) return true;
       const auto *Definition = R->getDefinition();
-      if (!Definition || Definition->getNumBases() || !family(Definition)) return false;
+      if (!Definition || Definition->getNumBases() || !family(Definition)) return functionalBindDiagnosticFailure(__LINE__);
       unsigned Fields = 0;
       for (const auto *Field : Definition->fields()) {
         if (++Fields > 2 || !family(Field) || Field->isBitField() ||
             Field->isMutable() || Field->hasAttrs() || Field->getAccess() != AS_public ||
             Field->getName() != (Fields == 1 ? "first" : "second") ||
-            !TraverseType(Field->getType())) return false;
+            !TraverseType(Field->getType())) return functionalBindDiagnosticFailure(__LINE__);
       }
       return Fields == 2;
     }
@@ -10902,7 +10941,7 @@ class UtilityTupleQueryGraph
       if (!Instance || !Definition || !family(R) || !family(Definition) ||
           Instance->getTemplateArgs().size() != 1 ||
           Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
-          Instance->getTemplateArgs()[0].pack_size() != 1) return false;
+          Instance->getTemplateArgs()[0].pack_size() != 1) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Element = Instance->getTemplateArgs()[0].pack_elements()[0];
       return Element.getKind() == TemplateArgument::Type &&
           Context.hasSameType(Element.getAsType(), NotFnTupleTagStorage->CallableType) &&
@@ -10916,7 +10955,7 @@ class UtilityTupleQueryGraph
       const auto *Definition = R->getDefinition();
       if (Definition && NotFnTupleLeafEmptyBase) {
         if (!NotFnOwnedCallableRecord || NotFnTupleLeafValue || !family(R) || !family(Definition) ||
-            !Definition->field_empty() || Definition->getNumBases() != 1) return false;
+            !Definition->field_empty() || Definition->getNumBases() != 1) return functionalBindDiagnosticFailure(__LINE__);
         const auto &Base = *Definition->bases_begin();
         const auto *Owner = Base.getType()->getAsCXXRecordDecl();
         return Owner && !Base.isVirtual() && Base.getAccessSpecifier() == AS_private &&
@@ -10927,12 +10966,12 @@ class UtilityTupleQueryGraph
           Definition->getNumBases() || Definition->isUnion() || Definition->isDynamicClass() ||
           std::distance(Definition->field_begin(), Definition->field_end()) != 1 ||
           *Definition->field_begin() != NotFnTupleLeafValue || !family(NotFnTupleLeafValue) ||
-          !Context.hasSameType(NotFnTupleLeafValue->getType(), NotFnCallableType)) return false;
+          !Context.hasSameType(NotFnTupleLeafValue->getType(), NotFnCallableType)) return functionalBindDiagnosticFailure(__LINE__);
       return TraverseType(NotFnTupleLeafValue->getType());
     }
     if (carrier(Context.getRecordType(R))) {
       if (Mode != UtilityTupleQueryMode::CatSignature) return true;
-      if (!family(R)) return false;
+      if (!family(R)) return functionalBindDiagnosticFailure(__LINE__);
       // The layout descriptor is structural evidence only. Close each actual
       // tuple-like element in the SDK signature graph as well.
       if (const auto Storage = approvedUtilityTupleCatQueryLayout(
@@ -10941,7 +10980,7 @@ class UtilityTupleQueryGraph
         if (Storage->ArrayElements)
           return TraverseType(Storage->ArrayElementType);
         for (unsigned I = 0; I < Storage->size(); ++I)
-          if (!TraverseType(Storage->elementType(I))) return false;
+          if (!TraverseType(Storage->elementType(I))) return functionalBindDiagnosticFailure(__LINE__);
         return true;
       }
       if (approvedMemoryTemplateMetadata(S, SM, R) == MemoryTemplateMetadata::UniquePtr)
@@ -10976,19 +11015,19 @@ class UtilityTupleQueryGraph
       if (!Complete) Failed = true;
       return Complete;
     }
-    if (!family(R)) return false;
+    if (!family(R)) return functionalBindDiagnosticFailure(__LINE__);
     if (!Records.insert(R).second) return true;
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
     if (Instance && Instance->getIdentifier() && Instance->getName() == "__make_tuple_types" &&
-        !fullSliceDefaults(Instance)) return false;
-    if (!Instance) return false;
+        !fullSliceDefaults(Instance)) return functionalBindDiagnosticFailure(__LINE__);
+    if (!Instance) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Argument : Instance->getTemplateArgs().asArray())
-      if (!TraverseTemplateArgument(Argument)) return false;
+      if (!TraverseTemplateArgument(Argument)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Definition = R->getDefinition();
     if (!Definition) return true; // Unconsumed metadata remains lazy.
     if (!family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumVBases())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Base : Definition->bases()) {
       const auto *SavedOwner = NotFnConstraintBaseOwner;
       const auto *SavedBase = NotFnConstraintBase;
@@ -11009,14 +11048,14 @@ class UtilityTupleQueryGraph
         BindConstraintBase = SavedBindBase;
       });
       if (Base.isVirtual() || !Base.getTypeSourceInfo() ||
-          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     }
     // Only referenced value/alias members are consumed below. Never walk
     // metadata's unselected constructors or manufacture a definition.
     return Definition->field_empty();
   }
   bool value(const ValueDecl *D, const DeclRefExpr *Reference = nullptr) {
-    if (!family(D) || !TraverseType(D->getType())) return false;
+    if (!family(D) || !TraverseType(D->getType())) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(D)) {
       if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata)
         if (const auto Found = BindDefinitionParameters.find(Parameter);
@@ -11048,7 +11087,7 @@ class UtilityTupleQueryGraph
       }
     }
     if (const auto *R = dyn_cast<CXXRecordDecl>(D->getDeclContext()))
-      if (!record(R)) return false;
+      if (!record(R)) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto *V = dyn_cast<VarDecl>(D)) {
       if (!V->isStaticDataMember()) {
         // Only the bound not_fn proof can consume this exact retained use
@@ -11089,11 +11128,11 @@ public:
       std::function<bool(const DeclRefExpr *)> VariableSource,
       std::function<bool(const CXXConstructExpr *)> ConstructionSource) {
     if (Mode != UtilityTupleQueryMode::BindSignature || BindMetadata || !step() ||
-        !TypeSource || !RecordSource || !CallSource || !VariableSource || !ConstructionSource) return false;
+        !TypeSource || !RecordSource || !CallSource || !VariableSource || !ConstructionSource) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindStorage(S, SM, Storage.Record, Context);
     if (!Actual || Actual->Record != Storage.Record || Actual->Callable != Storage.Callable ||
         Actual->BoundArguments != Storage.BoundArguments ||
-        !Context.hasSameType(Actual->CallableType, Storage.CallableType)) return false;
+        !Context.hasSameType(Actual->CallableType, Storage.CallableType)) return functionalBindDiagnosticFailure(__LINE__);
     BindMetadata = *Actual;
     BindTypeSource = std::move(TypeSource);
     BindRecordSource = std::move(RecordSource);
@@ -11108,33 +11147,33 @@ public:
       if (Element.EmptyBase) {
         const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
         if (Element.Field || !Identity ||
-            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return false;
+            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
         // The freshly described bind tuple owns this exact empty subobject.
         // Its actual implementation/leaf bases are walked below as usual;
         // no ordinary tuple consumer gains placeholder or member permission.
         Records.push_back(Element.EmptyBase);
         continue;
       }
-      if (!Element.Field) return false;
+      if (!Element.Field) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Leaf = dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext());
-      if (!Leaf) return false;
+      if (!Leaf) return functionalBindDiagnosticFailure(__LINE__);
       Records.push_back(Leaf);
       if (const auto *Wrapper = Element.getType()->getAsCXXRecordDecl()) {
         if (!approvedFunctionalReferenceRecord(S, SM, Wrapper, Context) &&
-            !describeFunctionalBindStorage(S, SM, Wrapper, Context)) return false;
+            !describeFunctionalBindStorage(S, SM, Wrapper, Context)) return functionalBindDiagnosticFailure(__LINE__);
         Records.push_back(Wrapper);
       }
     }
     for (std::size_t I = 0; I < Records.size(); ++I) {
       const auto *Record = Records[I];
-      if (!Record || !step() || Records.size() > 64) return false;
+      if (!Record || !step() || Records.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
       if (!BindPhysicalRecords.insert(Record->getCanonicalDecl()).second) continue;
       const auto *Definition = Record->getDefinition();
       if (!Definition || Definition->isDependentContext() || Definition->isUnion() ||
-          Definition->isDynamicClass() || Definition->getNumVBases()) return false;
+          Definition->isDynamicClass() || Definition->getNumVBases()) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Base : Definition->bases()) {
         const auto *Child = Base.getType()->getAsCXXRecordDecl();
-        if (Base.isVirtual() || !Child) return false;
+        if (Base.isVirtual() || !Child) return functionalBindDiagnosticFailure(__LINE__);
         Records.push_back(Child);
       }
       for (const auto *Field : Definition->fields())
@@ -11142,7 +11181,7 @@ public:
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record)) {
         const auto *Primary = Instance->getSpecializedTemplate();
-        if (!Primary) return false;
+        if (!Primary) return functionalBindDiagnosticFailure(__LINE__);
         BindMetadataRecords.insert(Primary->getTemplatedDecl()->getCanonicalDecl());
       }
     }
@@ -11153,7 +11192,7 @@ public:
       const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || Failed || !step() ||
         Factory.Storage.Record != BindMetadata->Record || !Factory.SourceCall ||
-        !S.owns(SM, Factory.SourceCall->getExprLoc())) return false;
+        !S.owns(SM, Factory.SourceCall->getExprLoc())) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindFactorySource(S, SM, Factory.SourceCall, Context);
     if (!Actual || Actual->Factory != Factory.Factory || Actual->Storage.Record != BindMetadata->Record ||
         !sameFunctionalBindPlaceholderOperands(*Actual, Factory) ||
@@ -11163,11 +11202,11 @@ public:
         Use.Canonical->get(0).getKind() != TemplateArgument::Type ||
         Use.Sugared->get(0).getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Use.Canonical->get(0).getAsType(), Use.Sugared->get(0).getAsType()))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     auto Input = Use.Sugared->get(0).getAsType().getNonReferenceType();
     auto Pending = BindOwnedInputAliases;
     for (unsigned I = 0; ; ++I) {
-      if (I >= 64 || !step() || Input.isNull()) return false;
+      if (I >= 64 || !step() || Input.isNull()) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Input.getTypePtr())) {
         Input = Elaborated->getNamedType();
         continue;
@@ -11183,13 +11222,13 @@ public:
           approvedStandardSDKDeclaration(S, SM, Alias) ||
           (Named && Named->getDescribedAliasTemplate()) ||
           !Alias->getUnderlyingType()->isFunctionPointerType() ||
-          !Context.hasSameType(Alias->getUnderlyingType(), BindMetadata->CallableType)) return false;
+          !Context.hasSameType(Alias->getUnderlyingType(), BindMetadata->CallableType)) return functionalBindDiagnosticFailure(__LINE__);
       const auto Found = Pending.find(Alias);
       if (Found != Pending.end()) {
-        if (Found->second != Info) return false;
+        if (Found->second != Info) return functionalBindDiagnosticFailure(__LINE__);
       } else {
         if (!SourceAlias || !SourceAlias(Alias) || !Pending.emplace(Alias, Info).second ||
-            Pending.size() > 64) return false;
+            Pending.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
       }
       Input = Alias->getUnderlyingType();
     }
@@ -11202,20 +11241,20 @@ public:
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           !BindTupleElementProjections.empty() || BindTupleElementProjectionRoots || !Proof || !Call.SourceCall ||
           (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) || Call.Storage.Record != BindMetadata->Record)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
       if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
           Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
           Actual->Storage.Record != BindMetadata->Record || Actual->Arguments.empty() ||
           Actual->Arguments.size() != BindMetadata->Arguments.Elements.size())
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       if (Actual->CallArguments != Call.CallArguments || Actual->CallForwards != Call.CallForwards ||
-          Actual->Arguments.size() != Call.Arguments.size()) return false;
+          Actual->Arguments.size() != Call.Arguments.size()) return functionalBindDiagnosticFailure(__LINE__);
       std::vector<BindTupleElementProjection> Projections;
       std::vector<const ClassTemplatePartialSpecializationDecl *> Partials;
       auto Add = [&](const CallExpr *Get, const UtilityTupleRecord &Tuple, unsigned Slot) {
         const auto Projection = bindTupleElementProjection(Get, Tuple, Slot);
-        if (!Projection) return false;
+        if (!Projection) return functionalBindDiagnosticFailure(__LINE__);
         Projections.push_back(*Projection);
         if (std::find(Partials.begin(), Partials.end(), Projection->Partial) == Partials.end())
           Partials.push_back(Projection->Partial);
@@ -11230,19 +11269,19 @@ public:
             Argument.PlaceholderIndex != Retained.PlaceholderIndex ||
             Argument.PlaceholderGet != Retained.PlaceholderGet ||
             Argument.PlaceholderForward != Retained.PlaceholderForward ||
-            !Add(Argument.Get, BindMetadata->Arguments, I)) return false;
+            !Add(Argument.Get, BindMetadata->Arguments, I)) return functionalBindDiagnosticFailure(__LINE__);
         if (Argument.PlaceholderRank) {
           if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
               Argument.PlaceholderRank > Incoming->Elements.size() ||
-              !Add(Argument.PlaceholderGet, *Incoming, Argument.PlaceholderRank - 1)) return false;
+              !Add(Argument.PlaceholderGet, *Incoming, Argument.PlaceholderRank - 1)) return functionalBindDiagnosticFailure(__LINE__);
         }
         if (Argument.Nested) {
           if (!Retained.Nested || Argument.Nested->IncomingGets != Retained.Nested->IncomingGets ||
               Argument.Nested->IncomingGets.size() != Actual->CallForwards.size() ||
               (!Argument.Nested->IncomingGets.empty() &&
-               (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size()))) return false;
+               (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size()))) return functionalBindDiagnosticFailure(__LINE__);
           for (unsigned J = 0; J < Argument.Nested->IncomingGets.size(); ++J)
-            if (!Add(Argument.Nested->IncomingGets[J], *Incoming, J)) return false;
+            if (!Add(Argument.Nested->IncomingGets[J], *Incoming, J)) return functionalBindDiagnosticFailure(__LINE__);
         }
       }
       // These builtin identities exist only for this fresh get/storage/slot
@@ -11276,22 +11315,22 @@ public:
   }
   bool TraverseBindTupleElementProjectionSource(const BindTupleElementProjection &Projection) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindRecordSource ||
-        Projection.Elements.empty() || Projection.Slot >= Projection.Elements.size()) return false;
-    if (!BindRecordSource(Projection.Owner)) return false;
+        Projection.Elements.empty() || Projection.Slot >= Projection.Elements.size()) return functionalBindDiagnosticFailure(__LINE__);
+    if (!BindRecordSource(Projection.Owner)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Alias : {Projection.OriginalAlias, Projection.Alias})
       if (!Alias || !Alias->getTypeSourceInfo() || !family(Alias) ||
-          !TraverseTypeLoc(Alias->getTypeSourceInfo()->getTypeLoc())) return false;
+          !TraverseTypeLoc(Alias->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Record : {static_cast<const CXXRecordDecl *>(Projection.Partial),
                                 static_cast<const CXXRecordDecl *>(Projection.Owner)}) {
       const auto *Definition = Record->getDefinition();
-      if (!Definition || !family(Definition)) return false;
+      if (!Definition || !family(Definition)) return functionalBindDiagnosticFailure(__LINE__);
       unsigned Assertions = 0;
       for (const auto *Declaration : Definition->decls()) {
-        if (!step()) return false;
+        if (!step()) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Assertion = dyn_cast<StaticAssertDecl>(Declaration);
         if (!Assertion) continue;
         const Expr *Expression = Assertion->getAssertExpr();
-        if (!Expression || Assertion->isFailed() || !family(Assertion) || ++Assertions != 1) return false;
+        if (!Expression || Assertion->isFailed() || !family(Assertion) || ++Assertions != 1) return functionalBindDiagnosticFailure(__LINE__);
         Expression = Expression->IgnoreParenImpCasts();
         if (const auto *Constant = dyn_cast<ConstantExpr>(Expression))
           Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
@@ -11299,20 +11338,20 @@ public:
         const auto *Size = Comparison
             ? dyn_cast<SizeOfPackExpr>(Comparison->getRHS()->IgnoreParenImpCasts()) : nullptr;
         if (!Comparison || Comparison->getOpcode() != BO_LT || !Size || Size->getPack() != Projection.Types)
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         // IgnoreParenImpCasts also removes SubstNonTypeTemplateParmExpr.
         // Preserve that real Sema node for the owner/parameter checks below.
         const Expr *Index = Comparison->getLHS()->IgnoreParens();
         if (Record == Projection.Partial) {
           const auto *Reference = dyn_cast<DeclRefExpr>(Index);
-          if (!Reference || Reference->getDecl() != Projection.Index || !Size->isValueDependent()) return false;
+          if (!Reference || Reference->getDecl() != Projection.Index || !Size->isValueDependent()) return functionalBindDiagnosticFailure(__LINE__);
         } else {
           const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(Index);
           if (!Substitution || Substitution->getAssociatedDecl() != Projection.Owner ||
               Substitution->getParameter() != Projection.Index || Size->isValueDependent() ||
-              Size->getPackLength() != Projection.Elements.size()) return false;
+              Size->getPackLength() != Projection.Elements.size()) return functionalBindDiagnosticFailure(__LINE__);
         }
-        if (!TraverseStmt(const_cast<Expr *>(Assertion->getAssertExpr()))) return false;
+        if (!TraverseStmt(const_cast<Expr *>(Assertion->getAssertExpr()))) return functionalBindDiagnosticFailure(__LINE__);
         if (Record != Projection.Partial) {
           // The actual original source graph closes before conversion
           // is folded to bind its concrete owner slot.
@@ -11320,10 +11359,10 @@ public:
           if (!Index->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects) || !Value.Val.isInt() ||
               Value.Val.getInt().isNegative() ||
               Value.Val.getInt().getLimitedValue(Projection.Elements.size()) != Projection.Slot)
-            return false;
+            return functionalBindDiagnosticFailure(__LINE__);
         }
       }
-      if (Assertions != 1) return false;
+      if (Assertions != 1) return functionalBindDiagnosticFailure(__LINE__);
     }
     return !Failed;
   }
@@ -11332,9 +11371,9 @@ public:
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           BindTupleElementProjections.empty() ||
           BindTupleElementProjections.size() != BindTupleElementProjectionRoots ||
-          !BindRecordSource) return false;
+          !BindRecordSource) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Projection : BindTupleElementProjections)
-        if (!TraverseBindTupleElementProjectionSource(Projection)) return false;
+        if (!TraverseBindTupleElementProjectionSource(Projection)) return functionalBindDiagnosticFailure(__LINE__);
       return !Failed;
     });
   }
@@ -11343,11 +11382,11 @@ public:
       const std::function<bool()> &Proof) {
     return withBindSourceChild([&] {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-          BindSourceMemberUsesActive || !BindSourceMemberUses.empty() || Uses.size() > 64 || !Proof) return false;
+          BindSourceMemberUsesActive || !BindSourceMemberUses.empty() || Uses.size() > 64 || !Proof) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &[Use, Declaration] : Uses)
         if (!step() || !Use || !Declaration || Use->getMemberDecl() != Declaration ||
             !family(Declaration) || !isa_and_nonnull<CXXRecordDecl>(Declaration->getDeclContext()) ||
-            !(isa<FieldDecl>(Declaration) || isa<CXXMethodDecl>(Declaration))) return false;
+            !(isa<FieldDecl>(Declaration) || isa<CXXMethodDecl>(Declaration))) return functionalBindDiagnosticFailure(__LINE__);
       // A scoped member witness cannot escape through statement memoization.
       // Keep the previous cache isolated and discard this scope's statements.
       std::set<const Stmt *> SavedExpressions;
@@ -11365,7 +11404,7 @@ public:
   }
   bool bindFunctionalBindNestedTraitTypeSource(std::function<std::optional<bool>(QualType)> Source) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-        BindNestedTraitTypeSource || !Source || !step()) return false;
+        BindNestedTraitTypeSource || !Source || !step()) return functionalBindDiagnosticFailure(__LINE__);
     BindNestedTraitTypeSource = std::move(Source);
     return true;
   }
@@ -11373,14 +11412,14 @@ public:
   bool bindFunctionalBindTypeTraversalSource(
       std::function<bool(const TemplateSpecializationType *, const std::function<bool()> &)> Source) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-        BindTypeTraversalSource || !Source || !step()) return false;
+        BindTypeTraversalSource || !Source || !step()) return functionalBindDiagnosticFailure(__LINE__);
     BindTypeTraversalSource = std::move(Source);
     return true;
   }
 
   bool withBindFactoryLeafComparisonSource(const TemplateUseSource &Source,
       const CXXConstructorDecl *Constructor, const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return functionalBindDiagnosticFailure(__LINE__);
     const auto *AliasType = Source.Kind == TemplateSourceKind::Type
         ? dyn_cast_or_null<TemplateSpecializationType>(Source.Type) : nullptr;
     const auto *Owned = Constructor
@@ -11413,6 +11452,16 @@ public:
       const auto End = ConstraintLocation ? SM.getSpellingLoc(ConstraintLocation.getEndLoc()) : SourceLocation();
       const auto Location = SM.getSpellingLoc(Source.Location);
       const auto *Definition = Compared->getDefinition();
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+        const auto OwnedName = Context.getRecordType(Owned).getAsString();
+        const auto ComparedName = Context.getRecordType(Compared).getAsString();
+        std::fprintf(stderr, "BIND-FACTORY-LEAF-COMPARISON physical=%u primary=%u method=%u constraint=%u begin=%u location=%u end=%u definition=%u owned=%.*s compared=%.*s\n",
+            unsigned(BindPhysicalRecords.count(Owned->getCanonicalDecl())),
+            unsigned(Compared->getSpecializedTemplate() == Primary), unsigned(bool(Method)), unsigned(bool(Constraint)),
+            Begin.getRawEncoding(), Location.getRawEncoding(), End.getRawEncoding(), unsigned(bool(Definition)),
+            int(std::min<std::size_t>(OwnedName.size(), 512)), OwnedName.c_str(),
+            int(std::min<std::size_t>(ComparedName.size(), 512)), ComparedName.c_str());
+      }
       if (BindFactoryLeafComparisonRecord || !Primary ||
           !BindPhysicalRecords.count(Owned->getCanonicalDecl()) ||
           Constructor->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
@@ -11435,11 +11484,11 @@ public:
           Compared->getTemplateArgs().size() != 3 || !Definition || Definition->isUnion() ||
           Definition->isDynamicClass() || Definition->getNumBases() ||
           std::distance(Definition->field_begin(), Definition->field_end()) != 1 ||
-          !family(Compared) || !family(Definition) || !family(Primary)) return false;
+          !family(Compared) || !family(Definition) || !family(Primary)) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Field = *Definition->field_begin();
       if (!Field->getIdentifier() || Field->getName() != "__value_" || Field->isBitField() ||
           Field->hasInClassInitializer() || !Field->getTypeSourceInfo() || !family(Field) ||
-          !Context.hasSameType(Field->getType(), Scalar)) return false;
+          !Context.hasSameType(Field->getType(), Scalar)) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Arguments = Compared->getTemplateArgs();
       if (Arguments[0].getKind() != TemplateArgument::Integral || Arguments[0].getAsIntegral().isNegative() ||
           Arguments[0].getAsIntegral().getLimitedValue(8) >= 8 ||
@@ -11448,18 +11497,18 @@ public:
           !Context.hasSameType(Arguments[1].getAsType(), Scalar) ||
           Arguments[2].getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(Arguments[2].getIntegralType(), Context.BoolTy) ||
-          !Arguments[2].getAsIntegral().isZero()) return false;
+          !Arguments[2].getAsIntegral().isZero()) return functionalBindDiagnosticFailure(__LINE__);
       if (Source.Template != Alias || Source.Declaration || Source.Instantiation || Source.Selection ||
           !Source.FunctionalBindConstraint || !Source.Written || Source.Written->getNumTemplateArgs() != 2 ||
           !Source.Underlying || !Source.Defaults.empty() || !Source.ParameterTypes.empty() ||
           !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 2 || Source.Sugared->size() != 2 ||
           !family(Alias) || !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/is_same.h"))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Values : {Source.Canonical, Source.Sugared})
         if (Values->get(0).getKind() != TemplateArgument::Type ||
             Values->get(1).getKind() != TemplateArgument::Type ||
             !Context.hasSameType(Values->get(0).getAsType(), Scalar) ||
-            Values->get(1).getAsType()->getAsCXXRecordDecl() != Compared) return false;
+            Values->get(1).getAsType()->getAsCXXRecordDecl() != Compared) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Expansion = dyn_cast<ElaboratedType>(AliasType->getAliasedType().getTypePtr());
       const auto *Constant = Expansion ? dyn_cast<TemplateSpecializationType>(Expansion->getNamedType().getTypePtr()) : nullptr;
       const auto *ConstantAlias = Constant
@@ -11467,7 +11516,7 @@ public:
       if (!ConstantAlias || !ConstantAlias->getIdentifier() || ConstantAlias->getName() != "_BoolConstant" ||
           !family(ConstantAlias) || Constant->template_arguments().size() != 1 ||
           Constant->template_arguments()[0].getKind() != TemplateArgument::Expression ||
-          !cstddefOrigin(S, SM, ConstantAlias->getLocation(), "libcxx", "__type_traits/integral_constant.h")) return false;
+          !cstddefOrigin(S, SM, ConstantAlias->getLocation(), "libcxx", "__type_traits/integral_constant.h")) return functionalBindDiagnosticFailure(__LINE__);
       const Expr *Expression = Constant->template_arguments()[0].getAsExpr();
       if (const auto *Value = dyn_cast<ConstantExpr>(Expression)) Expression = Value->getSubExpr();
       const auto *Negation = dyn_cast<UnaryOperator>(Expression->IgnoreParenImpCasts());
@@ -11476,7 +11525,7 @@ public:
       const auto *Parameters = Alias->getTemplateParameters();
       if (!Query || Query->getTrait() != BTT_IsSame || Query->getNumArgs() != 2 ||
           Query->isTypeDependent() || Query->isValueDependent() || Parameters->size() != 2 ||
-          !cstddefOrigin(S, SM, Query->getExprLoc(), "libcxx", "__type_traits/is_same.h")) return false;
+          !cstddefOrigin(S, SM, Query->getExprLoc(), "libcxx", "__type_traits/is_same.h")) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < 2; ++I) {
         const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
         const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Query->getArg(I)->getType().getTypePtr());
@@ -11484,7 +11533,7 @@ public:
             Parameter->hasDefaultArgument() || !family(Parameter) || !Substitution ||
             Substitution->getAssociatedDecl() != Alias || Substitution->getReplacedParameter() != Parameter ||
             !Context.hasSameType(Substitution->getReplacementType(), AliasType->template_arguments()[I].getAsType()))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
       }
       // This exact comparison names a pinned SDK type. It neither owns that
       // leaf's storage nor registers a constructor, member, body or operation.
@@ -11513,11 +11562,11 @@ public:
           Found->second->getParent() != Owner || Owner->getTemplateArgs().size() != 3 ||
           Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Owner->getTemplateArgs()[0].getAsType(), Context.VoidTy) ||
-          !family(Result) || !family(Owner)) return false;
+          !family(Result) || !family(Owner)) return functionalBindDiagnosticFailure(__LINE__);
       const auto Completed = BindCompletedResultAliasSources.find(Result);
       if (BindUnusedResultOperand || Completed == BindCompletedResultAliasSources.end() ||
           Completed->second.first != Found->second ||
-          Completed->second.second != Result->getTypeSourceInfo()) return false;
+          Completed->second.second != Result->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
       BindUnusedResultOperand = Result;
       auto RestoreOperand = llvm::make_scope_exit([&] { BindUnusedResultOperand = nullptr; });
       // Source-only unused operands cannot escape in type or statement caches.
@@ -11559,7 +11608,7 @@ public:
           Variable->getDeclContext() != Definition || !family(Definition) || !family(Variable) ||
           !cstddefOrigin(S, SM, Body->getLBracLoc(), "libcxx", "__functional/bind.h") ||
           !cstddefOrigin(S, SM, Body->getRBracLoc(), "libcxx", "__functional/bind.h") ||
-          !cstddefOrigin(S, SM, Return->getReturnLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, Return->getReturnLoc(), "libcxx", "__functional/bind.h")) return functionalBindDiagnosticFailure(__LINE__);
       // Both actual children remain source obligations. The declaration must
       // traverse under its own positive/index constraint proof; that proof's
       // temporary scalar scope must end before the ordinary return is walked.
@@ -11570,7 +11619,7 @@ public:
   bool withBindScalarConstraintSource(const std::function<bool()> &Proof) {
     return withBindSourceChild([&] {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-          BindScalarConstraintSource || !BindScalarConditionals.empty() || !Proof) return false;
+          BindScalarConstraintSource || !BindScalarConditionals.empty() || !Proof) return functionalBindDiagnosticFailure(__LINE__);
       std::set<const Type *> SavedTypes;
       std::set<const Stmt *> SavedExpressions;
       SavedTypes.swap(Types);
@@ -11588,7 +11637,7 @@ public:
   }
   bool withBindScalarConditionalSource(const TemplateUseSource &Source,
                                       const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Use = Source.Kind == TemplateSourceKind::Type
         ? dyn_cast_or_null<TemplateSpecializationType>(Source.Type) : nullptr;
     const auto *Alias = Use ? dyn_cast_or_null<TypeAliasTemplateDecl>(
@@ -11605,7 +11654,7 @@ public:
       auto Written = BindConstraintBase && BindConstraintBase->getTypeSourceInfo()
           ? BindConstraintBase->getTypeSourceInfo()->getTypeLoc() : TypeLoc();
       if (const auto Name = Written.getAs<ElaboratedTypeLoc>()) {
-        if (Name.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Name.getQualifierLoc()) return false;
+        if (Name.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Name.getQualifierLoc()) return functionalBindDiagnosticFailure(__LINE__);
         Written = Name.getNamedTypeLoc();
       }
       const auto BaseUse = Written.getAs<TemplateSpecializationTypeLoc>();
@@ -11626,7 +11675,7 @@ public:
           !BaseUse || BaseUse.getTypePtr() != Use ||
           !family(Owner) || !family(OwnerPrimary) || !family(OwnerParameter) || !family(Alias) ||
           !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__functional/bind.h") ||
-          !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/conditional.h")) return false;
+          !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/conditional.h")) return functionalBindDiagnosticFailure(__LINE__);
       const bool Choice = Source.Canonical->get(0).getAsIntegral().getBoolValue();
       const auto ActualName = Source.Underlying->getTypeLoc().getAs<ElaboratedTypeLoc>();
       const auto Select = ActualName
@@ -11649,12 +11698,12 @@ public:
           Qualifier.getTypePtr()->getTemplateName().getAsTemplateDecl() != SelectorPrimary ||
           SelectAlias->getDeclContext() != Selector || !family(Selector) || !family(SelectAlias) ||
           !cstddefOrigin(S, SM, Selector->getLocation(), "libcxx", "__type_traits/conditional.h") ||
-          !Context.hasSameType(Use->getAliasedType(), Source.Canonical->get(Choice ? 1 : 2).getAsType())) return false;
+          !Context.hasSameType(Use->getAliasedType(), Source.Canonical->get(Choice ? 1 : 2).getAsType())) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < 2; ++I)
         if (Select.getArgLoc(I).getArgument().getKind() != TemplateArgument::Type ||
             !Select.getArgLoc(I).getTypeSourceInfo() ||
             !Context.hasSameType(Select.getArgLoc(I).getArgument().getAsType(),
-                                 Source.Canonical->get(I + 1).getAsType())) return false;
+                                 Source.Canonical->get(I + 1).getAsType())) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Unselected = Source.Canonical->get(Choice ? 2 : 1).getAsType()->getAsCXXRecordDecl();
       const auto *Self = Unselected && Unselected->getCanonicalDecl() == Owner->getCanonicalDecl()
           ? Owner : nullptr;
@@ -11675,18 +11724,18 @@ public:
   }
   bool bindScalarConditionalSelector(const ClassTemplateSpecializationDecl *Instance) const {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindScalarConstraintSource || !Instance)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Frame : BindScalarConditionals)
       if (Frame.Selector == Instance) return true;
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   }
   std::optional<bool> bindScalarConditionalUnselectedSelf(const CXXRecordDecl *Record) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindScalarConstraintSource || !Record)
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     for (const auto &Frame : BindScalarConditionals)
       if (Frame.UnselectedSelf && Record->getCanonicalDecl() == Frame.UnselectedSelf->getCanonicalDecl())
         return family(Record); // A name only. Its active owner still closes the real selected base.
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
 
   bool withBindSourceLookupUses(
@@ -11695,7 +11744,7 @@ public:
     return withBindSourceChild([&] {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           BindSourceLookupUsesActive || !BindSourceLookupUses.empty() ||
-          Uses.size() > 64 || !Proof) return false;
+          Uses.size() > 64 || !Proof) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &[Use, Declarations] : Uses) {
         const auto Origin = Use ? S.sdkFile(SM, Use->getExprLoc()) : std::nullopt;
         if (!step() || !Use || !Origin || Origin->Root != "libcxx" ||
@@ -11703,14 +11752,14 @@ public:
             !Use->hasExplicitTemplateArgs() || Use->getNumTemplateArgs() != 1 ||
             Use->getName().getNameKind() != DeclarationName::Identifier ||
             Use->getName().getAsIdentifierInfo()->getName() != "get" ||
-            Declarations.size() != 16 || Use->getNumDecls() != Declarations.size()) return false;
+            Declarations.size() != 16 || Use->getNumDecls() != Declarations.size()) return functionalBindDiagnosticFailure(__LINE__);
         unsigned I = 0;
         for (const auto *Declaration : Use->decls()) {
           const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
           const auto *Function = Template ? Template->getTemplatedDecl() : nullptr;
           if (!step() || Declaration != Declarations[I++] || !Function ||
               !Function->getIdentifier() || Function->getName() != "get" ||
-              !approvedStandardSDKDeclaration(S, SM, Declaration)) return false;
+              !approvedStandardSDKDeclaration(S, SM, Declaration)) return functionalBindDiagnosticFailure(__LINE__);
         }
       }
       std::set<const Type *> SavedTypes;
@@ -11736,10 +11785,10 @@ public:
     const auto Found = BindSourceLookupUses.find(Use);
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !BindSourceLookupUsesActive || Found == BindSourceLookupUses.end() ||
-        Use->getNumDecls() != Found->second.size()) return false;
+        Use->getNumDecls() != Found->second.size()) return functionalBindDiagnosticFailure(__LINE__);
     unsigned I = 0;
     for (const auto *Declaration : Use->decls())
-      if (!step() || Declaration != Found->second[I++]) return false;
+      if (!step() || Declaration != Found->second[I++]) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
 
@@ -11747,15 +11796,15 @@ public:
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || Failed || !step() ||
         !Probe.Function || !Probe.Owner || !Probe.Result ||
         Probe.Function->getParent() != Probe.Owner || Probe.Result->getDeclContext() != Probe.Owner ||
-        !family(Probe.Function) || !family(Probe.Owner) || !family(Probe.Result)) return false;
+        !family(Probe.Function) || !family(Probe.Owner) || !family(Probe.Result)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Written = Probe.Result->getTypeSourceInfo();
     if (!Written || !Context.hasSameType(Written->getType(), Probe.Result->getUnderlyingType()) ||
-        !TraverseTypeLoc(Written->getTypeLoc()) || !bindSourceComplete()) return false;
+        !TraverseTypeLoc(Written->getTypeLoc()) || !bindSourceComplete()) return functionalBindDiagnosticFailure(__LINE__);
     // Publish only after this graph closes the exact original written source.
     const auto Expected = std::make_pair(Probe.Function, Written);
     const auto Found = BindCompletedResultAliasSources.find(Probe.Result);
     if (Found != BindCompletedResultAliasSources.end()) return Found->second == Expected;
-    if (BindCompletedResultAliasSources.size() >= 64) return false;
+    if (BindCompletedResultAliasSources.size() >= 64) return functionalBindDiagnosticFailure(__LINE__);
     return BindCompletedResultAliasSources.emplace(Probe.Result, Expected).second;
   }
   bool bindFunctionalBindResultProbe(const FunctionalBindTryCallSignatureSource &Probe) {
@@ -11765,10 +11814,10 @@ public:
           Probe.Result->getDeclContext() != Probe.Owner ||
           Probe.Owner->getTemplateArgs().size() != 3 ||
           Probe.Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-          BindResultProbes.size() > 64) return false;
+          BindResultProbes.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
       std::vector<QualType> Forwarded;
       for (const auto &Argument : Probe.Owner->getTemplateArgs()[2].pack_elements()) {
-        if (!step() || Argument.getKind() != TemplateArgument::Type) return false;
+        if (!step() || Argument.getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
         Forwarded.push_back(Argument.getAsType());
       }
       const auto Actual = Probe.Dispatcher.Nested
@@ -11782,14 +11831,14 @@ public:
           Actual->Ancestors != Probe.Ancestors || Actual->Declvals != Probe.Declvals ||
           Actual->OriginalInvokes != Probe.OriginalInvokes ||
           Actual->OriginalCallableDeclvals != Probe.OriginalCallableDeclvals ||
-          Actual->OriginalArgumentDeclvals != Probe.OriginalArgumentDeclvals) return false;
+          Actual->OriginalArgumentDeclvals != Probe.OriginalArgumentDeclvals) return functionalBindDiagnosticFailure(__LINE__);
       const auto Completed = BindCompletedResultAliasSources.find(Probe.Result);
       if (Completed == BindCompletedResultAliasSources.end() ||
           Completed->second.first != Probe.Function ||
-          Completed->second.second != Probe.Result->getTypeSourceInfo()) return false;
+          Completed->second.second != Probe.Result->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
       const auto Bound = BindResultProbes.find(Probe.Result);
       if (Bound != BindResultProbes.end()) return Bound->second == Probe.Function;
-      if (BindResultProbes.size() >= 64) return false;
+      if (BindResultProbes.size() >= 64) return functionalBindDiagnosticFailure(__LINE__);
       return BindResultProbes.emplace(Probe.Result, Probe.Function).second;
     });
   }
@@ -11802,7 +11851,7 @@ public:
     if (!Sentinel || Index != 1) return TraverseTemplateArgument(Argument);
     const auto Arguments = Type->template_arguments();
     if (Arguments.size() != 2 || Argument.getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Argument.getAsType(), Arguments[1].getAsType())) return false;
+        !Context.hasSameType(Argument.getAsType(), Arguments[1].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Saved = BindResultComparisonRecord;
     BindResultComparisonRecord = Sentinel;
     auto Restore = llvm::make_scope_exit([&] { BindResultComparisonRecord = Saved; });
@@ -11813,24 +11862,24 @@ public:
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !Tuple || !BindCallMetadata->OwnedRoot || BindCallMetadata->OwnedPath.empty() ||
         BindCallMetadata->OwnedPath.size() >= 64 ||
-        !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc())) return std::nullopt;
+        !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto Occurrence = describeFunctionalBindCallSourceOccurrence(S, SM, *BindCallMetadata, Context);
     const auto Root = describeFunctionalBindCallSource(S, SM, BindCallMetadata->OwnedRoot, Context);
     if (!Occurrence || !Root || Occurrence->Storage.Record != BindMetadata->Record ||
         Occurrence->Method != BindCallMetadata->Method ||
-        Occurrence->SourceCall != BindCallMetadata->SourceCall) return std::nullopt;
+        Occurrence->SourceCall != BindCallMetadata->SourceCall) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     std::optional<UtilityTupleRecord> Result;
     const FunctionalBindCallSource *Current = &*Root;
     std::vector<unsigned> Path;
     for (unsigned Slot : Occurrence->OwnedPath) {
       if (!withBindSourceChild([&] {
             if (Current->OwnedRoot != Root->SourceCall || Current->OwnedPath != Path ||
-                Slot >= Current->Arguments.size() || !Current->Arguments[Slot].Nested) return false;
+                Slot >= Current->Arguments.size() || !Current->Arguments[Slot].Nested) return functionalBindDiagnosticFailure(__LINE__);
             // Only real ancestor storage of this exact owned occurrence may
             // supply an alternative retained projection. No unrelated tuple
             // or shared SDK range joins the graph's physical record set.
             if (Current->Storage.Arguments.Record->getCanonicalDecl() == Tuple->getCanonicalDecl()) {
-              if (Result) return false;
+              if (Result) return functionalBindDiagnosticFailure(__LINE__);
               Result = Current->Storage.Arguments;
             }
             const auto &Child = *Current->Arguments[Slot].Nested;
@@ -11839,14 +11888,14 @@ public:
                 Child.Slot != Slot || Child.Path != Path || Child.Invocation.OwnedPath != Path ||
                 Child.Invocation.OwnedRoot != Root->SourceCall ||
                 Child.Get != Current->Arguments[Slot].Get || Child.Unwrap != Current->Arguments[Slot].Unwrap)
-              return false;
+              return functionalBindDiagnosticFailure(__LINE__);
             Current = &Child.Invocation;
             return true;
-          })) return std::nullopt;
+          })) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     }
     if (Current->SourceCall != Occurrence->SourceCall || Current->Method != Occurrence->Method ||
         Current->Storage.Record != BindMetadata->Record || Current->OwnedPath != Occurrence->OwnedPath)
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     return Result;
   }
 
@@ -11856,9 +11905,9 @@ public:
     return withBindSourceChild([&] {
       if (!Source || !Complete || BindNestedReturnSource || !BindNestedReturnLocations.empty() ||
           !BindCallMetadata || Parent.SourceCall != BindCallMetadata->SourceCall ||
-          Parent.Storage.Record != BindMetadata->Record) return false;
+          Parent.Storage.Record != BindMetadata->Record) return functionalBindDiagnosticFailure(__LINE__);
       const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
-      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
+      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Child = *Fresh->Arguments[Slot].Nested;
       if (Child.Root != Given.Root || Child.Parent != Given.Parent || Child.Slot != Given.Slot ||
           Child.Path != Given.Path || Child.Get != Given.Get || Child.Unwrap != Given.Unwrap ||
@@ -11866,7 +11915,7 @@ public:
           Child.Indices != Given.Indices || Child.IncomingGets != Given.IncomingGets ||
           Child.IncomingForwards != Given.IncomingForwards ||
           Child.Invocation.SourceCall != Given.Invocation.SourceCall || Child.Invocation.Method != Given.Invocation.Method)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       std::vector<TypeLoc> Locations;
       for (const auto *Call : {Child.Unwrap, Child.Expand}) {
         const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -11875,10 +11924,11 @@ public:
         const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
         if (!Function || !family(Function) || !Return ||
             !Context.hasSameType(Function->getReturnType(), Child.ResultType) ||
-            !Context.hasSameType(Return.getType(), Child.ResultType)) return false;
+            !Context.hasSameType(Return.getType(), Child.ResultType)) return functionalBindDiagnosticFailure(__LINE__);
         Locations.push_back(Return);
       }
       BindNestedReturnLocations = std::move(Locations);
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) std::fprintf(stderr, "BIND-RETURN-SCOPE-ENTER path=%zu slot=%u locations=%zu\n", Parent.OwnedPath.size(), Slot, BindNestedReturnLocations.size());
       BindNestedReturnSource = Source;
       auto Restore = llvm::make_scope_exit([&] {
         BindNestedReturnSource = {};
@@ -11894,16 +11944,16 @@ public:
     return withBindSourceChild([&] {
       if (!Proof || !ResultSource || BindNestedCallResultSource || BindNestedExpansionSource || !BindNestedReturnSource ||
           !BindCallMetadata || Parent.SourceCall != BindCallMetadata->SourceCall ||
-          Parent.Storage.Record != BindMetadata->Record) return false;
+          Parent.Storage.Record != BindMetadata->Record) return functionalBindDiagnosticFailure(__LINE__);
       const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
-      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
+      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Child = *Fresh->Arguments[Slot].Nested;
       if (Child.Root != Given.Root || Child.Parent != Given.Parent || Child.Slot != Given.Slot ||
           Child.Path != Given.Path || Child.Get != Given.Get || Child.Unwrap != Given.Unwrap ||
           Child.Expand != Given.Expand || Child.IndexAlias != Given.IndexAlias || Child.Indices != Given.Indices ||
           Child.IncomingGets != Given.IncomingGets || Child.IncomingForwards != Given.IncomingForwards ||
           Child.Invocation.SourceCall != Given.Invocation.SourceCall || Child.Invocation.Method != Given.Invocation.Method)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto *Construction = Child.Indices;
       const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
       const auto *Record = Constructor ? dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()) : nullptr;
@@ -11921,17 +11971,17 @@ public:
           Reference->getDecl() != Child.Invocation.Method || Reference->hasExplicitTemplateArgs() ||
           !Context.hasSameType(Pointer->getPointeeType(), Child.Invocation.Method->getType()) ||
           !Context.hasSameType(Reference->getType(), Child.Invocation.Method->getType()) ||
-          !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__functional/bind.h")) return functionalBindDiagnosticFailure(__LINE__);
       std::vector<const CXXRecordDecl *> Inserted;
       for (const auto *Declaration : {static_cast<const CXXRecordDecl *>(Record), Pattern}) {
-        if (!step()) return false;
+        if (!step()) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Canonical = Declaration->getCanonicalDecl();
         if (BindMetadataRecords.insert(Canonical).second) Inserted.push_back(Canonical);
       }
       auto RestoreRecords = llvm::make_scope_exit([&] {
         for (const auto *Declaration : Inserted) BindMetadataRecords.erase(Declaration);
       });
-      if (!bindFunctionalBindSpecialMember(Constructor, true)) return false;
+      if (!bindFunctionalBindSpecialMember(Constructor, true)) return functionalBindDiagnosticFailure(__LINE__);
       BindNestedExpansionSource = &Child;
       BindNestedCallResultSource = ResultSource;
       auto RestoreChild = llvm::make_scope_exit([&] {
@@ -11944,7 +11994,7 @@ public:
 
   bool bindFunctionalBindRetainedTupleSource(
       std::function<std::optional<UtilityTupleRecord>(const TemplateUseSource &, const CXXRecordDecl *, unsigned, const TypeAliasDecl *)> Source) {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Source || BindRetainedOwnedTupleSource) return false;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Source || BindRetainedOwnedTupleSource) return functionalBindDiagnosticFailure(__LINE__);
     BindRetainedOwnedTupleSource = std::move(Source);
     return true;
   }
@@ -11952,7 +12002,7 @@ public:
   bool withBindRetainedTupleProjectionSource(const TemplateUseSource &Use,
       unsigned Index, const TemplateArgumentLoc &Argument,
       const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return functionalBindDiagnosticFailure(__LINE__);
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !BindScalarConstraintSource || BindTupleElementProjections.empty() ||
         !Use.Template || !Use.Template->getIdentifier() ||
@@ -11985,7 +12035,7 @@ public:
     const auto &Arguments = Root->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Integral ||
         Arguments[0].getAsIntegral().isNegative() || Arguments[1].getKind() != TemplateArgument::Type)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto Object = Arguments[1].getAsType();
     const auto *TupleRecord = Object.isNull() ? nullptr : Object->getAsCXXRecordDecl();
     if (TupleRecord && TupleRecord->getCanonicalDecl() == BindMetadata->Arguments.Record->getCanonicalDecl())
@@ -12011,7 +12061,7 @@ public:
           !Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType()) ||
           Object.hasQualifiers() || !TupleRecord || BindRetainedTupleProjections.size() == 64 ||
           !cstddefOrigin(S, SM, Info->getTypeLoc().getBeginLoc(), "libcxx", "__functional/bind.h") ||
-          !cstddefOrigin(S, SM, Info->getTypeLoc().getEndLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, Info->getTypeLoc().getEndLoc(), "libcxx", "__functional/bind.h")) return functionalBindDiagnosticFailure(__LINE__);
       auto Storage = approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
       bool OwnedAncestor = false;
       if (!Storage) {
@@ -12024,9 +12074,21 @@ public:
             unsigned(Arguments[0].getAsIntegral().getLimitedValue(64)), RootAlias);
         OwnedWitness = Storage.has_value();
       }
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE") &&
+          (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
+           Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())) {
+        const auto TupleName = Context.getRecordType(TupleRecord).getAsString();
+        const auto BoundName = Context.getRecordType(BindMetadata->Arguments.Record).getAsString();
+        std::fprintf(stderr, "BIND-ALT-TUPLE slot=%llu count=%lld ancestor=%u owned=%u physical=%u tuple=%.*s bound=%.*s\n",
+            static_cast<unsigned long long>(Arguments[0].getAsIntegral().getLimitedValue(64)),
+            Storage ? static_cast<long long>(Storage->Elements.size()) : -1LL, unsigned(OwnedAncestor), unsigned(OwnedWitness),
+            unsigned(BindPhysicalRecords.count(TupleRecord->getCanonicalDecl())),
+            int(std::min<std::size_t>(TupleName.size(), 2048)), TupleName.c_str(),
+            int(std::min<std::size_t>(BoundName.size(), 2048)), BoundName.c_str());
+      }
       if (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
           Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto Slot = unsigned(Arguments[0].getAsIntegral().getZExtValue());
       auto Scalar = [&](QualType Value) {
         return !Value.isNull() && !Value->isReferenceType() && !Value.isVolatileQualified() &&
@@ -12041,15 +12103,15 @@ public:
       const auto Nested = OwnedWitness && !Storage->Elements[Slot].EmptyBase
           ? describeFunctionalBindStorage(S, SM, Selected->getAsCXXRecordDecl(), Context) : std::nullopt;
       if ((!Scalar(Selected) && !Placeholder && !Wrapper && !Nested) ||
-          !Context.hasSameUnqualifiedType(Selected, Info->getType())) return false;
+          !Context.hasSameUnqualifiedType(Selected, Info->getType())) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Element : Storage->Elements) {
         if ((OwnedAncestor || OwnedWitness) && Element.EmptyBase) {
           const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
           if (!Placeholder || Placeholder->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
-            return false;
+            return functionalBindDiagnosticFailure(__LINE__);
           continue;
         }
-        if (!Element.Field || Element.EmptyBase) return false;
+        if (!Element.Field || Element.EmptyBase) return functionalBindDiagnosticFailure(__LINE__);
         if (Scalar(Element.getType())) continue;
         const auto Wrapper = approvedFunctionalReferenceRecord(
             S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
@@ -12058,16 +12120,16 @@ public:
             ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
             : std::nullopt;
         if (!Nested || !Context.hasSameUnqualifiedType(Element.getType(), Context.getRecordType(Nested->Record)))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
       }
       const auto Projection = bindTupleElementProjectionFromType(ProjectionType, *Storage, Slot);
-      if (!Projection) return false;
+      if (!Projection) return functionalBindDiagnosticFailure(__LINE__);
       bool BoundParameters = false;
       for (const auto &Current : BindTupleElementProjections)
         BoundParameters |= Projection->Partial == Current.Partial && Projection->Builtin == Current.Builtin &&
             Projection->Index == Current.Index && Projection->Types == Current.Types &&
             Projection->Original == Current.Original;
-      if (!BoundParameters) return false;
+      if (!BoundParameters) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Active : BindRetainedTupleProjections)
         if (Active.Projection.Actual == Projection->Actual && Active.Projection.Owner == Projection->Owner &&
             Active.Projection.Slot == Slot &&
@@ -12087,14 +12149,14 @@ public:
       });
       // Close the retained alias/partial/assertion against its own tuple.
       // The original written operand still traverses with all ordinary checks.
-      if (!TraverseBindTupleElementProjectionSource(Active.Projection)) return false;
+      if (!TraverseBindTupleElementProjectionSource(Active.Projection)) return functionalBindDiagnosticFailure(__LINE__);
       Active.Complete = true;
       return Proof() && !Failed;
     });
   }
   bool withBindRetainedUnwrapProjectionSource(const TemplateUseSource &Use,
       const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return functionalBindDiagnosticFailure(__LINE__);
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         BindTupleElementProjections.empty() || Use.Kind != TemplateSourceKind::Function ||
         !Use.Template || !Use.Template->getIdentifier() || Use.Template->getName() != "__mu")
@@ -12109,11 +12171,11 @@ public:
         !Selected || Selected->size() != 3 || !Use.Canonical || !Use.Sugared ||
         Use.Canonical->size() != 3 || Use.Sugared->size() != 3 ||
         !cstddefOrigin(S, SM, Use.Location, "libcxx", "__functional/bind.h") ||
-        !family(Function) || !family(Primary)) return false;
+        !family(Function) || !family(Primary)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < 3; ++I)
       if (!Use.Canonical->get(I).structurallyEquals(Selected->get(I)) ||
           !Use.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Use.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Use.Sugared->get(I)))) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Input = Use.Sugared->get(0);
     if (Input.getKind() != TemplateArgument::Type) return Proof();
     const auto InputPlaceholder = describeFunctionalBindPlaceholderIdentity(S, SM, Input.getAsType(), Context);
@@ -12125,7 +12187,25 @@ public:
           Argument.Unwrap->getDirectCallee() == Function &&
           Argument.Unwrap->getExprLoc() == Use.Location;
     if (!ActualUnwrap || !BindCallMetadata->SourceCall ||
-        (!BindCallMetadata->OwnedRoot || !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc()))) return false;
+        (!BindCallMetadata->OwnedRoot || !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc()))) {
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+        const auto Name = Input.getAsType().getAsString();
+        std::fprintf(stderr, "BIND-UNWRAP-OCCURRENCE actual=%u source=%u root=%u own=%u path=%zu rank=%u input=%.*s\n",
+            unsigned(ActualUnwrap), unsigned(bool(BindCallMetadata->SourceCall)),
+            unsigned(bool(BindCallMetadata->OwnedRoot)),
+            unsigned(BindCallMetadata->OwnedRoot && S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc())),
+            BindCallMetadata->OwnedPath.size(), InputPlaceholder ? InputPlaceholder->Rank : 0U,
+            int(std::min<std::size_t>(Name.size(), 1024)), Name.c_str());
+        for (unsigned I = 0; I < BindCallMetadata->Arguments.size(); ++I) {
+          const auto &A = BindCallMetadata->Arguments[I];
+          std::fprintf(stderr, "BIND-UNWRAP-CANDIDATE index=%u reference=%u nested=%u unwrap=%u rank=%u callee=%u location=%u\n",
+              I, unsigned(bool(A.Reference)), unsigned(bool(A.Nested)), unsigned(bool(A.Unwrap)),
+              A.PlaceholderRank, unsigned(A.Unwrap && A.Unwrap->getDirectCallee() == Function),
+              unsigned(A.Unwrap && A.Unwrap->getExprLoc() == Use.Location));
+        }
+      }
+      return functionalBindDiagnosticFailure(__LINE__);
+    }
     QualType ProjectionType = Input.getAsType();
     const TypeAliasDecl *RootAlias = nullptr;
     for (unsigned Depth = 0; !ProjectionType.isNull() && Depth < 64; ++Depth) {
@@ -12146,7 +12226,7 @@ public:
     const auto &Arguments = Root->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Integral ||
         Arguments[0].getAsIntegral().isNegative() || Arguments[1].getKind() != TemplateArgument::Type)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto Object = Arguments[1].getAsType();
     const auto *TupleRecord = Object.isNull() ? nullptr : Object->getAsCXXRecordDecl();
     if (TupleRecord && TupleRecord->getCanonicalDecl() == BindMetadata->Arguments.Record->getCanonicalDecl())
@@ -12158,7 +12238,7 @@ public:
           !Context.hasSameType(Info->getType(), Input.getAsType()) ||
           !Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType()) ||
           Object.hasQualifiers() || !TupleRecord || BindRetainedTupleProjections.size() == 64)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       auto Storage = approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
       bool OwnedAncestor = false;
       if (!Storage) {
@@ -12171,9 +12251,21 @@ public:
             unsigned(Arguments[0].getAsIntegral().getLimitedValue(64)), RootAlias);
         OwnedWitness = Storage.has_value();
       }
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE") &&
+          (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
+           Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())) {
+        const auto TupleName = Context.getRecordType(TupleRecord).getAsString();
+        const auto BoundName = Context.getRecordType(BindMetadata->Arguments.Record).getAsString();
+        std::fprintf(stderr, "BIND-ALT-TUPLE slot=%llu count=%lld ancestor=%u owned=%u physical=%u tuple=%.*s bound=%.*s\n",
+            static_cast<unsigned long long>(Arguments[0].getAsIntegral().getLimitedValue(64)),
+            Storage ? static_cast<long long>(Storage->Elements.size()) : -1LL, unsigned(OwnedAncestor), unsigned(OwnedWitness),
+            unsigned(BindPhysicalRecords.count(TupleRecord->getCanonicalDecl())),
+            int(std::min<std::size_t>(TupleName.size(), 2048)), TupleName.c_str(),
+            int(std::min<std::size_t>(BoundName.size(), 2048)), BoundName.c_str());
+      }
       if (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
           Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto Slot = unsigned(Arguments[0].getAsIntegral().getZExtValue());
       auto Scalar = [&](QualType Value) {
         return !Value.isNull() && !Value->isReferenceType() && !Value.isVolatileQualified() &&
@@ -12184,17 +12276,33 @@ public:
           Storage->Elements[Slot].EmptyBase
           ? describeFunctionalBindPlaceholderIdentity(S, SM, Storage->Elements[Slot].getType(), Context)
           : std::nullopt;
-      if ((!Scalar(Storage->Elements[Slot].getType()) &&
-           (!ProjectedPlaceholder || ProjectedPlaceholder->Rank != InputPlaceholder->Rank)) ||
-          !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Input.getAsType())) return false;
+      const bool InvalidRetainedProjectionIdentity =
+          ((!Scalar(Storage->Elements[Slot].getType()) &&
+            (!ProjectedPlaceholder || ProjectedPlaceholder->Rank != InputPlaceholder->Rank)) ||
+           !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Input.getAsType()));
+      if (InvalidRetainedProjectionIdentity) {
+        if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+          const auto Stored = Storage->Elements[Slot].getType().getAsString();
+          const auto Deduced = Input.getAsType().getAsString();
+          std::fprintf(stderr, "BIND-UNWRAP-PROJECTION-IDENTITY slot=%u owned=%u ancestor=%u empty=%u inputph=%u projectedph=%u same=%u stored=%.*s input=%.*s\n",
+              Slot, unsigned(OwnedWitness), unsigned(OwnedAncestor),
+              unsigned(bool(Storage->Elements[Slot].EmptyBase)),
+              InputPlaceholder ? InputPlaceholder->Rank : 0U,
+              ProjectedPlaceholder ? ProjectedPlaceholder->Rank : 0U,
+              unsigned(Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Input.getAsType())),
+              int(std::min<std::size_t>(Stored.size(), 512)), Stored.c_str(),
+              int(std::min<std::size_t>(Deduced.size(), 512)), Deduced.c_str());
+        }
+        return functionalBindDiagnosticFailure(__LINE__);
+      }
       for (const auto &Element : Storage->Elements) {
         if ((OwnedAncestor || OwnedWitness) && Element.EmptyBase) {
           const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
           if (!Placeholder || Placeholder->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
-            return false;
+            return functionalBindDiagnosticFailure(__LINE__);
           continue;
         }
-        if (!Element.Field || Element.EmptyBase) return false;
+        if (!Element.Field || Element.EmptyBase) return functionalBindDiagnosticFailure(__LINE__);
         if (Scalar(Element.getType())) continue;
         const auto Wrapper = approvedFunctionalReferenceRecord(
             S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
@@ -12203,16 +12311,16 @@ public:
             ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
             : std::nullopt;
         if (!Nested || !Context.hasSameUnqualifiedType(Element.getType(), Context.getRecordType(Nested->Record)))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
       }
       const auto Projection = bindTupleElementProjectionFromType(ProjectionType, *Storage, Slot);
-      if (!Projection) return false;
+      if (!Projection) return functionalBindDiagnosticFailure(__LINE__);
       bool BoundParameters = false;
       for (const auto &Current : BindTupleElementProjections)
         BoundParameters |= Projection->Partial == Current.Partial && Projection->Builtin == Current.Builtin &&
             Projection->Index == Current.Index && Projection->Types == Current.Types &&
             Projection->Original == Current.Original;
-      if (!BoundParameters) return false;
+      if (!BoundParameters) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Active : BindRetainedTupleProjections)
         if (Active.Projection.Actual == Projection->Actual && Active.Projection.Owner == Projection->Owner &&
             Active.Projection.Slot == Slot &&
@@ -12232,7 +12340,7 @@ public:
         Types.clear(); Types.swap(SavedTypes);
         Expressions.clear(); Expressions.swap(SavedExpressions);
       });
-      if (!TraverseBindTupleElementProjectionSource(Active.Projection)) return false;
+      if (!TraverseBindTupleElementProjectionSource(Active.Projection)) return functionalBindDiagnosticFailure(__LINE__);
       Active.Complete = true;
       return Proof() && !Failed;
     });
@@ -12240,7 +12348,7 @@ public:
 
   bool withBindRetainedTupleProjectionSources(const TemplateUseSource &Use,
       const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return functionalBindDiagnosticFailure(__LINE__);
     if (!Use.Written || Use.Written->getNumTemplateArgs() != 1) return Proof();
     return withBindRetainedTupleProjectionSource(Use, 0, Use.Written->arguments()[0], Proof);
   }
@@ -12248,7 +12356,7 @@ public:
       unsigned Index, const TemplateArgument &Argument) {
     const auto *Type = Use.Kind == TemplateSourceKind::Type
         ? dyn_cast_or_null<TemplateSpecializationType>(Use.Type) : nullptr;
-    if (Type && Use.Template != Type->getTemplateName().getAsTemplateDecl()) return false;
+    if (Type && Use.Template != Type->getTemplateName().getAsTemplateDecl()) return functionalBindDiagnosticFailure(__LINE__);
     return TraverseBindResultArgument(Type, Index, Argument);
   }
   bool TraverseBindResultSourceWrittenArgument(const TemplateUseSource &Use,
@@ -12263,22 +12371,22 @@ public:
         !Argument.getTypeSourceInfo() ||
         Use.Written->arguments()[1].getTypeSourceInfo() != Argument.getTypeSourceInfo() ||
         !Context.hasSameType(Argument.getArgument().getAsType(),
-                            Type->template_arguments()[1].getAsType())) return false;
+                            Type->template_arguments()[1].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Saved = BindResultComparisonRecord;
     BindResultComparisonRecord = Sentinel;
     auto Restore = llvm::make_scope_exit([&] { BindResultComparisonRecord = Saved; });
     return TraverseTemplateArgumentLoc(Argument) && !Failed;
   }
   bool TraverseBindInvokeSignature(const FunctionalBindInvokeSignatureSource &Description) {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step()) return false;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Function = Description.Function;
     const auto *Primary = Description.Primary;
     const auto *Selected = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!Function || !Primary || !Selected || Selected->size() != 2 ||
-        Selected->get(1).getKind() != TemplateArgument::Pack) return false;
+        Selected->get(1).getKind() != TemplateArgument::Pack) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Selected->get(1).pack_elements()) {
-      if (!step() || Argument.getKind() != TemplateArgument::Type) return false;
+      if (!step() || Argument.getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
       Forwarded.push_back(Argument.getAsType());
     }
     const auto Actual = Description.Nested
@@ -12296,41 +12404,41 @@ public:
         Actual->Declvals != Description.Declvals ||
         Actual->SpecializedDeclvals != Description.SpecializedDeclvals ||
         !family(Function) || !family(Primary) || !Function->getTypeSourceInfo() ||
-        !Primary->getTypeSourceInfo()) return false;
+        !Primary->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Pattern = Primary->getType()->getAs<FunctionProtoType>();
     const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
     if (!Pattern || !Prototype || Pattern->getExceptionSpecType() != EST_DependentNoexcept ||
-        Pattern->getNoexceptExpr() != Description.PrimaryException) return false;
+        Pattern->getNoexceptExpr() != Description.PrimaryException) return functionalBindDiagnosticFailure(__LINE__);
     if (Prototype->getExceptionSpecType() == EST_Uninstantiated) {
       const auto *Origin = Prototype->getExceptionSpecTemplate();
       const auto *Owner = Prototype->getExceptionSpecDecl();
       if (!Origin || !Owner || Origin->getCanonicalDecl() != Primary->getCanonicalDecl() ||
           Owner->getCanonicalDecl() != Function->getCanonicalDecl() ||
-          Description.ActualException) return false;
+          Description.ActualException) return functionalBindDiagnosticFailure(__LINE__);
     } else {
       if (Prototype->getExceptionSpecType() != EST_NoexceptTrue &&
-          Prototype->getExceptionSpecType() != EST_NoexceptFalse) return false;
-      if (!Prototype->getNoexceptExpr()) return false;
-      if (!Description.ActualException) return false;
+          Prototype->getExceptionSpecType() != EST_NoexceptFalse) return functionalBindDiagnosticFailure(__LINE__);
+      if (!Prototype->getNoexceptExpr()) return functionalBindDiagnosticFailure(__LINE__);
+      if (!Description.ActualException) return functionalBindDiagnosticFailure(__LINE__);
     }
     for (const auto *Declaration : {Primary, Function}) {
       for (const auto *Parameter : Declaration->parameters())
         if (!step() || !family(Parameter) || Parameter->hasDefaultArg() ||
             !Parameter->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
-      if (!TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
+      if (!TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     }
     // The primary exception is always an independent original source root.
     // An uninstantiated concrete exception supplies no runtime body certificate.
     if (!TraverseStmt(const_cast<Expr *>(Pattern->getNoexceptExpr())) ||
         (Prototype->getNoexceptExpr() &&
-         !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr())))) return false;
+         !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr())))) return functionalBindDiagnosticFailure(__LINE__);
     return !Failed;
   }
   bool bindFunctionalBindCallPhysicalMetadata(const FunctionalBindCallSource &Call) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !Call.SourceCall || Call.SourceCall != BindCallMetadata->SourceCall ||
-        Call.Storage.Record != BindMetadata->Record) return false;
+        Call.Storage.Record != BindMetadata->Record) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Storage.Record != BindMetadata->Record ||
         Actual->Method != Call.Method || Actual->Method != BindCallMetadata->Method ||
@@ -12338,29 +12446,29 @@ public:
         Actual->CallArguments != BindCallMetadata->CallArguments ||
         Actual->CallForwards != Call.CallForwards ||
         Actual->CallForwards != BindCallMetadata->CallForwards ||
-        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return false;
+        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return functionalBindDiagnosticFailure(__LINE__);
     const auto Input = approvedUtilityReferenceTupleRecord(
         S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
     const auto Construction = describeFunctionalBindCallTupleConstructionSource(S, SM, *Actual, Context);
     if (!Input || !Construction || Construction->Tuple != Actual->CallArguments ||
         Input->Elements.size() != Actual->CallForwards.size() ||
-        Construction->Leaves.size() != Input->Elements.size()) return false;
+        Construction->Leaves.size() != Input->Elements.size()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Element : Input->Elements)
       if (!Element.Field || Element.EmptyBase || !Element.getType()->isReferenceType() ||
-          !Element.getType().getNonReferenceType()->isScalarType()) return false;
+          !Element.getType().getNonReferenceType()->isScalarType()) return functionalBindDiagnosticFailure(__LINE__);
     // Only the exact independently described incoming reference tuple owns these
     // physical type identities. Selected operations close in separate source proofs.
     std::vector<const CXXRecordDecl *> Records{Input->Record};
     for (std::size_t I = 0; I < Records.size(); ++I) {
       const auto *Record = Records[I];
-      if (!Record || !step() || Records.size() > 64) return false;
+      if (!Record || !step() || Records.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
       if (!BindCallPhysicalRecords.insert(Record->getCanonicalDecl()).second) continue;
       const auto *Definition = Record->getDefinition();
       if (!Definition || Definition->isDependentContext() || Definition->isUnion() ||
-          Definition->isDynamicClass() || Definition->getNumVBases()) return false;
+          Definition->isDynamicClass() || Definition->getNumVBases()) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Base : Definition->bases()) {
         const auto *Child = Base.getType()->getAsCXXRecordDecl();
-        if (Base.isVirtual() || !Child) return false;
+        if (Base.isVirtual() || !Child) return functionalBindDiagnosticFailure(__LINE__);
         Records.push_back(Child);
       }
       for (const auto *Field : Definition->fields())
@@ -12368,7 +12476,7 @@ public:
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record)) {
         const auto *Primary = Instance->getSpecializedTemplate();
-        if (!Primary) return false;
+        if (!Primary) return functionalBindDiagnosticFailure(__LINE__);
         BindMetadataRecords.insert(Primary->getTemplatedDecl()->getCanonicalDecl());
       }
     }
@@ -12376,22 +12484,22 @@ public:
   }
   bool TraverseBindCallPhysicalStorageSource() {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
-        BindCallMetadata->CallForwards.empty() || BindCallPhysicalRecords.empty() || !step()) return false;
+        BindCallMetadata->CallForwards.empty() || BindCallPhysicalRecords.empty() || !step()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Record : BindCallPhysicalRecords) {
       const auto *Definition = Record->getDefinition();
-      if (!Definition || !family(Definition)) return false;
+      if (!Definition || !family(Definition)) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Base : Definition->bases())
         if (!Base.getTypeSourceInfo() || Base.isVirtual() ||
-            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Field : Definition->fields())
         if (!family(Field) || Field->isBitField() || Field->isMutable() ||
             !Field->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     }
     return !Failed;
   }
   bool bindFunctionalBindEmptyTupleDefinitionSource(const CXXRecordDecl *R) {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !R || !step()) return false;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !R || !step()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
     const auto *Definition = R->getDefinition();
     const auto *Written = Instance ? Instance->getTemplateArgsAsWritten() : nullptr;
@@ -12405,25 +12513,25 @@ public:
         Instance->getTemplateArgs().size() != 1 ||
         Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
         Instance->getTemplateArgs()[0].pack_size() || !Written || Written->getNumTemplateArgs())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto Site : {Instance->getLocation(), Definition->getBeginLoc(), Definition->getEndLoc(),
                             Written->getLAngleLoc(), Written->getRAngleLoc()})
-      if (!cstddefOrigin(S, SM, Site, "libcxx", "tuple")) return false;
+      if (!cstddefOrigin(S, SM, Site, "libcxx", "tuple")) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Declaration : Instance->redecls())
       if (!step() || !family(Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "tuple")) return false;
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "tuple")) return functionalBindDiagnosticFailure(__LINE__);
     return !Failed;
   }
   bool bindFunctionalBindEmptyStorageTupleDefinitionSource(const CXXRecordDecl *R) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !R ||
-        !BindMetadata->Arguments.Record) return false;
+        !BindMetadata->Arguments.Record) return functionalBindDiagnosticFailure(__LINE__);
     const bool RootStorage = BindMetadata->Arguments.Elements.empty() &&
         R->getCanonicalDecl() == BindMetadata->Arguments.Record->getCanonicalDecl();
     // The physical record set comes only from this freshly described bind's
     // actual fields and bases. A nested nullary child owns its empty tuple even
     // when the enclosing bind has stored arguments. No ordinary tuple consumer,
     // constructor or runtime operation receives permission from this identity.
-    if (!RootStorage && !BindPhysicalRecords.count(R->getCanonicalDecl())) return false;
+    if (!RootStorage && !BindPhysicalRecords.count(R->getCanonicalDecl())) return functionalBindDiagnosticFailure(__LINE__);
     return bindFunctionalBindEmptyTupleDefinitionSource(R);
   }
   bool TraverseBindEmptyStorageTupleConstructionSource(
@@ -12433,7 +12541,7 @@ public:
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           Factory.Storage.Record != BindMetadata->Record || !Factory.SourceCall ||
           !S.owns(SM, Factory.SourceCall->getExprLoc()) ||
-          !BindMetadata->Arguments.Elements.empty()) return false;
+          !BindMetadata->Arguments.Elements.empty()) return functionalBindDiagnosticFailure(__LINE__);
       const auto Actual = describeFunctionalBindFactorySource(S, SM, Factory.SourceCall, Context);
       const auto Fresh = Actual
           ? describeFunctionalBindTupleConstructionSource(S, SM, *Actual, Context) : std::nullopt;
@@ -12446,7 +12554,7 @@ public:
           !Tuple.Leaves.empty() || !Tuple.Copies.empty() || !Tuple.Initializers.empty() ||
           !Tuple.Forwards.empty() || !Tuple.Assertions.empty() ||
           !bindFunctionalBindEmptyStorageTupleDefinitionSource(BindMetadata->Arguments.Record))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto *Construction = Tuple.Tuple;
       const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
       const auto *Prototype = Constructor ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
@@ -12466,7 +12574,7 @@ public:
           !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
           Prototype->getNoexceptExpr() || Member == SpecialMembers.end() ||
           !Member->second.Complete || Member->second.Owner != Constructor ||
-          !Member->second.Selections.empty()) return false;
+          !Member->second.Selections.empty()) return functionalBindDiagnosticFailure(__LINE__);
       // Reuse the established empty-call-tuple lifecycle and written-signature
       // protocols, bound here to this exact stored default construction.
       return bindFunctionalBindSpecialMember(Constructor, true) &&
@@ -12475,7 +12583,7 @@ public:
   }
   bool bindFunctionalBindEmptyCallTupleSource(const CXXRecordDecl *R) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
-        !R || !BindCallMetadata->CallArguments || !BindCallMetadata->CallForwards.empty()) return false;
+        !R || !BindCallMetadata->CallArguments || !BindCallMetadata->CallForwards.empty()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Expected = BindCallMetadata->CallArguments->getType()->getAsCXXRecordDecl();
     return Expected && R->getCanonicalDecl() == Expected->getCanonicalDecl() &&
         bindFunctionalBindEmptyTupleDefinitionSource(R);
@@ -12483,22 +12591,22 @@ public:
   bool bindFunctionalBindCallAuxiliaryMetadata(const FunctionalBindCallSource &Call) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !step() || !Call.SourceCall || Call.Storage.Record != BindMetadata->Record ||
-        (BindCallMetadata && BindCallMetadata->SourceCall != Call.SourceCall)) return false;
+        (BindCallMetadata && BindCallMetadata->SourceCall != Call.SourceCall)) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Indices != Call.Indices ||
         Actual->CallArguments != Call.CallArguments ||
         Actual->CallForwards != Call.CallForwards ||
-        Actual->Storage.Record != BindMetadata->Record) return false;
+        Actual->Storage.Record != BindMetadata->Record) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Empty = Actual->CallArguments->getType()->getAsCXXRecordDecl();
     const auto *Indices = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
         Actual->Indices->getType()->getAsCXXRecordDecl());
-    if (!Empty || !Indices || !Indices->getSpecializedTemplate()) return false;
+    if (!Empty || !Indices || !Indices->getSpecializedTemplate()) return functionalBindDiagnosticFailure(__LINE__);
     BindCallMetadata = *Actual;
     if (Actual->CallForwards.empty()) {
-      if (!bindFunctionalBindEmptyCallTupleSource(Empty)) return false;
-    } else if (!bindFunctionalBindCallPhysicalMetadata(*Actual)) return false;
+      if (!bindFunctionalBindEmptyCallTupleSource(Empty)) return functionalBindDiagnosticFailure(__LINE__);
+    } else if (!bindFunctionalBindCallPhysicalMetadata(*Actual)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Record : {Empty, static_cast<const CXXRecordDecl *>(Indices)}) {
-      if (!step() || !family(Record)) return false;
+      if (!step() || !family(Record)) return functionalBindDiagnosticFailure(__LINE__);
       BindMetadataRecords.insert(Record->getCanonicalDecl());
     }
     BindMetadataRecords.insert(Indices->getSpecializedTemplate()->getTemplatedDecl()->getCanonicalDecl());
@@ -12506,11 +12614,11 @@ public:
   }
   bool TraverseBindCallAuxiliarySource(const FunctionalBindCallSource &Call) {
     return withBindSourceChild([&] {
-      if (!bindFunctionalBindCallAuxiliaryMetadata(Call)) return false;
+      if (!bindFunctionalBindCallAuxiliaryMetadata(Call)) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Actual = *BindCallMetadata;
       const auto *Empty = Actual.CallArguments->getConstructor();
       const auto *Indices = Actual.Indices->getConstructor();
-      if (!Empty || !Indices) return false;
+      if (!Empty || !Indices) return functionalBindDiagnosticFailure(__LINE__);
       if (Actual.CallForwards.empty()) {
         const auto *Prototype = Empty ? Empty->getType()->getAs<FunctionProtoType>() : nullptr;
         const auto Member = Empty ? SpecialMembers.find(Empty->getCanonicalDecl()) : SpecialMembers.end();
@@ -12520,19 +12628,19 @@ public:
             !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
             Prototype->getNoexceptExpr() || Member == SpecialMembers.end() ||
             !Member->second.Complete || Member->second.Owner != Empty ||
-            !Member->second.Selections.empty()) return false;
+            !Member->second.Selections.empty()) return functionalBindDiagnosticFailure(__LINE__);
       }
       const auto *Definition = BindMetadata->Record->getDefinition();
       const TypedefDecl *IndexAlias = nullptr;
-      if (!Definition || !family(Definition)) return false;
+      if (!Definition || !family(Definition)) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : Definition->decls()) {
-        if (!step()) return false;
+        if (!step()) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Alias = dyn_cast<TypedefDecl>(Declaration);
         if (!Alias || !Alias->getIdentifier() || Alias->getName() != "__indices") continue;
         if (IndexAlias || Alias->getDeclContext() != Definition ||
             Alias->getAccess() != AS_private || !family(Alias) || !Alias->getTypeSourceInfo() ||
             !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/bind.h") ||
-            !Context.hasSameType(Alias->getUnderlyingType(), Actual.Indices->getType())) return false;
+            !Context.hasSameType(Alias->getUnderlyingType(), Actual.Indices->getType())) return functionalBindDiagnosticFailure(__LINE__);
         IndexAlias = Alias;
       }
       // This written SDK root is mandatory even when the actual construction
@@ -12543,20 +12651,20 @@ public:
           (Actual.CallForwards.empty() &&
            (!bindFunctionalBindSpecialMember(Empty, true) ||
             !TraverseBindConstructorSignature(Empty))) ||
-          !bindFunctionalBindSpecialMember(Indices, true)) return false;
+          !bindFunctionalBindSpecialMember(Indices, true)) return functionalBindDiagnosticFailure(__LINE__);
       return !Failed;
     });
   }
   bool withBindPartialPatternSource(const ClassTemplateSpecializationDecl *Instance,
       const TemplateUseSource &Source, const std::function<bool()> &Proof) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Instance || !Proof ||
-        Failed || !step()) return false;
+        Failed || !step()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Partial = Instance->getSpecializedTemplateOrPartial()
         .dyn_cast<ClassTemplatePartialSpecializationDecl *>();
     const auto *Primary = Instance->getSpecializedTemplate();
     if (!Partial || !Primary || Source.Kind != TemplateSourceKind::PartialPattern ||
         Source.Declaration != Partial || Source.Template != Primary ||
-        Source.Selection != &Instance->getTemplateInstantiationArgs()) return false;
+        Source.Selection != &Instance->getTemplateInstantiationArgs()) return functionalBindDiagnosticFailure(__LINE__);
     if (!Primary->getIdentifier() || Primary->getName() != "__make_tuple_types_flat")
       return Proof() && !Failed;
     const auto &Arguments = Instance->getTemplateArgs();
@@ -12576,16 +12684,16 @@ public:
         !Source.Written->arguments()[1].getTypeSourceInfo() ||
         !Original->arguments()[1].getTypeSourceInfo() ||
         !Context.hasSameType(Source.Written->arguments()[1].getArgument().getAsType(), Arguments[1].getAsType()))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < 2; ++I)
       if (!Source.Canonical->get(I).structurallyEquals(Arguments[I]) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Indices = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Arguments[1].getAsType()->getAsCXXRecordDecl());
     if (!Indices || !Indices->getIdentifier() || Indices->getName() != "__tuple_indices" ||
         !family(Indices) || Indices->getSpecializationKind() != TSK_ImplicitInstantiation ||
         Indices->getTemplateArgs().size() != 1 || Indices->getTemplateArgs()[0].getKind() != TemplateArgument::Pack)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     // Only the actual empty-index slice observed in the authenticated packet
     // needs this split-token role. Other slices retain ordinary location rules.
     if (Indices->getTemplateArgs()[0].pack_size()) return Proof() && !Failed;
@@ -12606,7 +12714,7 @@ public:
         Instance->getSpecializationKind() != TSK_Undeclared || Instance->getDefinition() ||
         Source.Kind != TemplateSourceKind::Type || !SourceType || !Source.Written ||
         Source.Declaration || Source.Instantiation || Source.Selection ||
-        !Source.FunctionalBindConstraint || !Source.Defaults.empty()) return false;
+        !Source.FunctionalBindConstraint || !Source.Defaults.empty()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Primary = Instance->getSpecializedTemplate();
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     const auto *Parameter = Parameters && Parameters->size() == 1
@@ -12629,15 +12737,15 @@ public:
         OwnerParameter->hasDefaultArgument() || !OwnerParameter->getTypeSourceInfo() ||
         !Context.hasSameType(OwnerParameter->getType(), Context.BoolTy) ||
         !BindConstraintBase || &*Owner->bases_begin() != BindConstraintBase ||
-        BindConstraintBase->isVirtual() || !BindConstraintBase->getTypeSourceInfo()) return false;
+        BindConstraintBase->isVirtual() || !BindConstraintBase->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
     const Decl *Declarations[] = {Instance, Primary, Parameter, Owner, OwnerPrimary, OwnerParameter};
     for (const auto *Declaration : Declarations)
       if (!family(Declaration) || !cstddefOrigin(S, SM, Declaration->getLocation(),
-              "libcxx", "__type_traits/conjunction.h")) return false;
+              "libcxx", "__type_traits/conjunction.h")) return functionalBindDiagnosticFailure(__LINE__);
     auto Location = BindConstraintBase->getTypeSourceInfo()->getTypeLoc();
     if (const auto Elaborated = Location.getAs<ElaboratedTypeLoc>()) {
       if (Elaborated.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None ||
-          Elaborated.getQualifierLoc()) return false;
+          Elaborated.getQualifierLoc()) return functionalBindDiagnosticFailure(__LINE__);
       Location = Elaborated.getNamedTypeLoc();
     }
     const auto Comparison = Location.getAs<TemplateSpecializationTypeLoc>();
@@ -12648,10 +12756,10 @@ public:
         !Alias || !Alias->getIdentifier() || Alias->getName() != "_IsSame" || !family(Alias) ||
         !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/is_same.h") ||
         !cstddefOrigin(S, SM, Comparison.getTemplateNameLoc(), "libcxx", "__type_traits/conjunction.h") ||
-        !cstddefOrigin(S, SM, Source.Location, "libcxx", "__type_traits/conjunction.h")) return false;
+        !cstddefOrigin(S, SM, Source.Location, "libcxx", "__type_traits/conjunction.h")) return functionalBindDiagnosticFailure(__LINE__);
     const auto &OwnerArguments = Owner->getTemplateArgs();
     if (OwnerArguments.size() != 1 || OwnerArguments[0].getKind() != TemplateArgument::Pack ||
-        OwnerArguments[0].pack_size() > 64) return false;
+        OwnerArguments[0].pack_size() > 64) return functionalBindDiagnosticFailure(__LINE__);
     const auto OwnerPack = OwnerArguments[0].pack_elements();
     bool Matches = false;
     for (unsigned I = 0; I < 2; ++I) {
@@ -12664,7 +12772,7 @@ public:
           Record->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
           Record->getTemplateArgs()[0].pack_size() != OwnerPack.size() ||
           !cstddefOrigin(S, SM, Info->getTypeLoc().getBeginLoc(), "libcxx", "__type_traits/conjunction.h") ||
-          !cstddefOrigin(S, SM, Info->getTypeLoc().getEndLoc(), "libcxx", "__type_traits/conjunction.h")) return false;
+          !cstddefOrigin(S, SM, Info->getTypeLoc().getEndLoc(), "libcxx", "__type_traits/conjunction.h")) return functionalBindDiagnosticFailure(__LINE__);
       const auto Pack = Record->getTemplateArgs()[0].pack_elements();
       for (unsigned J = 0; J < Pack.size(); ++J)
         if (OwnerPack[J].getKind() != TemplateArgument::Integral ||
@@ -12672,7 +12780,7 @@ public:
             Pack[J].getKind() != TemplateArgument::Integral ||
             !Context.hasSameType(Pack[J].getIntegralType(), Context.BoolTy) ||
             (I ? Pack[J].getAsIntegral().isZero()
-               : !Pack[J].structurallyEquals(OwnerPack[J]))) return false;
+               : !Pack[J].structurallyEquals(OwnerPack[J]))) return functionalBindDiagnosticFailure(__LINE__);
       Matches |= SourceType == Type && Record->getCanonicalDecl() == Instance->getCanonicalDecl();
     }
     // Match only a real __all base comparison operand. Record identity
@@ -12700,14 +12808,14 @@ public:
           !cstddefOrigin(S, SM, Sentinel->getLocation(), "libcxx", "__functional/weak_result_type.h") ||
           !cstddefOrigin(S, SM, Original->getLocation(), "libcxx", "__functional/weak_result_type.h") ||
           Definition->isUnion() || Definition->isDynamicClass() || Definition->getNumBases() ||
-          std::distance(Definition->field_begin(), Definition->field_end()) != 2) return false;
+          std::distance(Definition->field_begin(), Definition->field_end()) != 2) return functionalBindDiagnosticFailure(__LINE__);
       unsigned Fields = 0;
       for (const auto *Field : Definition->fields()) {
         if (!Field->getIdentifier() || Field->getName() != (Fields++ ? "__lxx" : "__lx") ||
             Field->getAccess() != AS_public || Field->isBitField() || Field->isMutable() ||
             Field->hasAttrs() || Field->hasInClassInitializer() || !Field->getTypeSourceInfo() ||
             !Context.hasSameType(Field->getType(), Context.CharTy) || !family(Field) ||
-            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       }
       BindWeakResultSentinel = Sentinel->getCanonicalDecl();
       BindWeakResultOriginalSentinel = Original->getCanonicalDecl();
@@ -12742,14 +12850,14 @@ public:
           Result->template_arguments().size() != Parameters->size() || !family(Template) || !family(Method) ||
           !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "__functional/weak_result_type.h") ||
           !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx",
-              Binary ? "__functional/binary_function.h" : "__functional/unary_function.h")) return false;
+              Binary ? "__functional/binary_function.h" : "__functional/unary_function.h")) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < Parameters->size(); ++I) {
         const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
         const auto &Argument = Result->template_arguments()[I];
         const auto *Use = Argument.getKind() == TemplateArgument::Type
             ? dyn_cast<TemplateTypeParmType>(Argument.getAsType().getTypePtr()) : nullptr;
         if (!Type || Type->getIndex() != I || Type->isParameterPack() || Type->hasDefaultArgument() ||
-            !Use || Use->getDecl() != Type || !family(Type)) return false;
+            !Use || Use->getDecl() != Type || !family(Type)) return functionalBindDiagnosticFailure(__LINE__);
       }
       BindWeakResultSignaturePointee = Pointee;
       auto Restore = llvm::make_scope_exit([&] { BindWeakResultSignaturePointee = QualType(); });
@@ -12777,10 +12885,10 @@ public:
           Result->getCanonicalDecl() != Sentinel->getCanonicalDecl() ||
           WrittenResult->getCanonicalDecl() != Sentinel->getCanonicalDecl() ||
           !family(Function) || !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !bindDeletedResultSentinelDefinition(Sentinel)) return false;
+          !bindDeletedResultSentinelDefinition(Sentinel)) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                               Prototype->getEllipsisLoc()})
-        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
       // This complete signature is static, declaration-only, parameterless
       // except for ellipsis, and has no exception expression. The sentinel
       // can occur only as its actual return type, never as storage or a value.
@@ -12805,15 +12913,15 @@ public:
           Pack->hasDefaultArgument() || !Pattern->getIdentifier() ||
           Pattern->getName() != "__and_helper" || isa<CXXMethodDecl>(Pattern) ||
           Pattern->hasBody() || !Info || !Location || !family(Template) || !family(Pack) ||
-          !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/conjunction.h")) return false;
+          !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/conjunction.h")) return functionalBindDiagnosticFailure(__LINE__);
       if (Pattern->isVariadic())
         return !Pattern->getNumParams() && function(Pattern) && TraverseTypeLoc(Info->getTypeLoc());
       if (Pattern->getNumParams() != 1 || Pattern->getParamDecl(0)->hasDefaultArg() ||
-          !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return false;
+          !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
       auto Return = Location.getReturnLoc();
       if (const auto Elaborated = Return.getAs<ElaboratedTypeLoc>()) {
         if (Elaborated.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None ||
-            Elaborated.getQualifierLoc()) return false;
+            Elaborated.getQualifierLoc()) return functionalBindDiagnosticFailure(__LINE__);
         Return = Elaborated.getNamedTypeLoc();
       }
       const auto AliasLoc = Return.getAs<TemplateSpecializationTypeLoc>();
@@ -12832,10 +12940,10 @@ public:
           !Expansion->getPattern()->isDependentType() || AliasLoc.getNumArgs() != 1 ||
           !Declaration->getTemplatedDecl()->getTypeSourceInfo() ||
           !Context.hasSameType(Location.getReturnLoc().getType(), Pattern->getReturnType()) ||
-          !family(Declaration) || !family(AliasPack)) return false;
+          !family(Declaration) || !family(AliasPack)) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto Site : {AliasLoc.getTemplateNameLoc(), AliasLoc.getLAngleLoc(), AliasLoc.getRAngleLoc(),
                               Declaration->getLocation(), Declaration->getTemplatedDecl()->getLocation()})
-        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/conjunction.h")) return false;
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/conjunction.h")) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Saved = BindOriginalConjunctionAlias;
       BindOriginalConjunctionAlias = Alias;
       auto Restore = llvm::make_scope_exit([&] { BindOriginalConjunctionAlias = Saved; });
@@ -12859,7 +12967,7 @@ public:
         !Parameter->isParameterPack() || Parameter->getIndex() || Parameter->hasDefaultArgument() ||
         !Parameter->getTypeSourceInfo() || Parameter->getType()->isDependentType() ||
         !Context.hasSameType(Parameter->getType(), Context.BoolTy) ||
-        !Context.hasSameType(Parameter->getTypeSourceInfo()->getType(), Context.BoolTy)) return false;
+        !Context.hasSameType(Parameter->getTypeSourceInfo()->getType(), Context.BoolTy)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Type = dyn_cast_or_null<TemplateSpecializationType>(Source.Type);
     const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(Source.Template);
     const auto *Instance = Type
@@ -12870,22 +12978,22 @@ public:
         Instance->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Template ||
         Template->getTemplateParameters()->size() != 1 ||
         Template->getTemplateParameters()->getParam(0) != Parameter ||
-        Instance->getTemplateArgs().size() != 1) return false;
+        Instance->getTemplateArgs().size() != 1) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Arguments : {Source.Canonical, Source.Sugared, &Instance->getTemplateArgs()})
-      if (Arguments->get(0).getKind() != TemplateArgument::Pack || Arguments->get(0).pack_size()) return false;
+      if (Arguments->get(0).getKind() != TemplateArgument::Pack || Arguments->get(0).pack_size()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Declaration : {static_cast<const Decl *>(Template), static_cast<const Decl *>(Parameter),
                                     static_cast<const Decl *>(Instance)})
       if (!family(Declaration) || !cstddefOrigin(S, SM, Declaration->getLocation(),
-              "libcxx", "__type_traits/conjunction.h")) return false;
+              "libcxx", "__type_traits/conjunction.h")) return functionalBindDiagnosticFailure(__LINE__);
     if (Template->getName() == "__all") {
       const auto *Definition = Instance->getDefinition();
       if (Instance->getSpecializationKind() != TSK_ImplicitInstantiation || !Definition ||
           !family(Definition) || Definition->isUnion() || Definition->isDynamicClass() ||
           Definition->getNumBases() != 1 || Definition->getNumVBases() || !Definition->field_empty() ||
-          !cstddefOrigin(S, SM, Source.Location, "libcxx", "tuple")) return false;
+          !cstddefOrigin(S, SM, Source.Location, "libcxx", "tuple")) return functionalBindDiagnosticFailure(__LINE__);
     } else if (Template->getName() == "__all_dummy") {
-      if (!bindFunctionalBindConjunctionOperand(Instance, Source)) return false;
-    } else return false;
+      if (!bindFunctionalBindConjunctionOperand(Instance, Source)) return functionalBindDiagnosticFailure(__LINE__);
+    } else return functionalBindDiagnosticFailure(__LINE__);
     // An actually empty fixed-bool pack has no substituted element TSI.
     // Consume the genuine original primary bool TSI, without synthesizing
     // an element or a Sema parameter_types marker. The caller still closes
@@ -12902,40 +13010,40 @@ public:
         !Parameter->isParameterPack() || Parameter->getIndex() || Parameter->hasDefaultArgument() ||
         !Parameter->getTypeSourceInfo() || Parameter->getType()->isDependentType() ||
         !Context.hasSameType(Parameter->getType(), Context.getSizeType()) ||
-        !Context.hasSameType(Parameter->getTypeSourceInfo()->getType(), Parameter->getType())) return false;
+        !Context.hasSameType(Parameter->getTypeSourceInfo()->getType(), Parameter->getType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Type = dyn_cast<TemplateSpecializationType>(Source.Type);
     const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(Source.Template);
     const auto *Instance = Type
         ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(Type->getAsCXXRecordDecl()) : nullptr;
-    if (!Type) return false;
-    if (!Template) return false;
-    if (!Instance) return false;
-    if (!Template->getIdentifier()) return false;
-    if (Template->getName() != "__tuple_indices") return false;
-    if (!family(Template)) return false;
-    if (!family(Parameter)) return false;
-    if (Template->getTemplateParameters()->size() != 1) return false;
-    if (Template->getTemplateParameters()->getParam(0) != Parameter) return false;
+    if (!Type) return functionalBindDiagnosticFailure(__LINE__);
+    if (!Template) return functionalBindDiagnosticFailure(__LINE__);
+    if (!Instance) return functionalBindDiagnosticFailure(__LINE__);
+    if (!Template->getIdentifier()) return functionalBindDiagnosticFailure(__LINE__);
+    if (Template->getName() != "__tuple_indices") return functionalBindDiagnosticFailure(__LINE__);
+    if (!family(Template)) return functionalBindDiagnosticFailure(__LINE__);
+    if (!family(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
+    if (Template->getTemplateParameters()->size() != 1) return functionalBindDiagnosticFailure(__LINE__);
+    if (Template->getTemplateParameters()->getParam(0) != Parameter) return functionalBindDiagnosticFailure(__LINE__);
     // This exact primary parameter list already proves ownership above.
     // Clang can attach the retained parameter to its semantic declaration
     // context after creation; that context is not its template membership.
-    if (Type->getTemplateName().getAsTemplateDecl() != Template) return false;
-    if (Instance->getSpecializedTemplate() != Template) return false;
-    if (Instance->getSpecializationKind() != TSK_ImplicitInstantiation) return false;
-    if (!BindMetadataRecords.count(Instance->getCanonicalDecl())) return false;
-    if (Instance->getTemplateArgs().size() != 1) return false;
-    if (Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack) return false;
-    if (Instance->getTemplateArgs()[0].pack_size()) return false;
+    if (Type->getTemplateName().getAsTemplateDecl() != Template) return functionalBindDiagnosticFailure(__LINE__);
+    if (Instance->getSpecializedTemplate() != Template) return functionalBindDiagnosticFailure(__LINE__);
+    if (Instance->getSpecializationKind() != TSK_ImplicitInstantiation) return functionalBindDiagnosticFailure(__LINE__);
+    if (!BindMetadataRecords.count(Instance->getCanonicalDecl())) return functionalBindDiagnosticFailure(__LINE__);
+    if (Instance->getTemplateArgs().size() != 1) return functionalBindDiagnosticFailure(__LINE__);
+    if (Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack) return functionalBindDiagnosticFailure(__LINE__);
+    if (Instance->getTemplateArgs()[0].pack_size()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Arguments : {Source.Canonical, Source.Sugared}) {
       const auto &Slot = Arguments->get(0);
       if (Slot.getKind() != TemplateArgument::Pack || Slot.pack_size() ||
           !Context.getCanonicalTemplateArgument(Slot).structurallyEquals(
-              Instance->getTemplateArgs()[0])) return false;
+              Instance->getTemplateArgs()[0])) return functionalBindDiagnosticFailure(__LINE__);
     }
     for (const auto Site : {Parameter->getLocation(),
                             Parameter->getTypeSourceInfo()->getTypeLoc().getBeginLoc(),
                             Parameter->getTypeSourceInfo()->getTypeLoc().getEndLoc()})
-      if (!cstddefOrigin(S, SM, Site, "libcxx", "__tuple/tuple_indices.h")) return false;
+      if (!cstddefOrigin(S, SM, Site, "libcxx", "__tuple/tuple_indices.h")) return functionalBindDiagnosticFailure(__LINE__);
     // This actual empty SDK pack has no element whose type could have been
     // substituted. Its fixed nondependent size_t declaration remains a full
     // original source obligation; no replacement TSI or marker is invented.
@@ -12945,7 +13053,7 @@ public:
                                   const TypeSourceInfo *Underlying) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !Use || !Use->isTypeAlias() || !Underlying || !step() ||
-        !Context.hasSameType(Underlying->getType(), Use->getAliasedType())) return false;
+        !Context.hasSameType(Underlying->getType(), Use->getAliasedType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Alias = dyn_cast_or_null<TypeAliasTemplateDecl>(
         Use->getTemplateName().getAsTemplateDecl());
     if (!Alias || Alias->getName() != "__make_indices_imp")
@@ -12953,7 +13061,7 @@ public:
     // This DSL authenticates the original alias, both original parameter
     // spellings, the builtin declaration, and every generated sequence/index.
     // The separately retained substituted TSI still has its own obligations.
-    if (!catIndexAlias(Use, Alias)) return false;
+    if (!catIndexAlias(Use, Alias)) return functionalBindDiagnosticFailure(__LINE__);
     const auto OriginalLoc = Alias->getTemplatedDecl()->getTypeSourceInfo()
         ->getTypeLoc().getAs<DependentTemplateSpecializationTypeLoc>();
     const auto OriginalSequence = OriginalLoc
@@ -12966,24 +13074,24 @@ public:
     const auto ActualSequence = ActualElaborated
         ? ActualElaborated.getQualifierLoc().getTypeLoc().getAs<TemplateSpecializationTypeLoc>()
         : TemplateSpecializationTypeLoc();
-    if (!OriginalLoc || !OriginalSequence) return false;
-    if (!ActualElaborated || !ActualLoc || !ActualSequence) return false;
-    if (ActualLoc.getNumArgs() != 1 || ActualSequence.getNumArgs() != 3) return false;
+    if (!OriginalLoc || !OriginalSequence) return functionalBindDiagnosticFailure(__LINE__);
+    if (!ActualElaborated || !ActualLoc || !ActualSequence) return functionalBindDiagnosticFailure(__LINE__);
+    if (ActualLoc.getNumArgs() != 1 || ActualSequence.getNumArgs() != 3) return functionalBindDiagnosticFailure(__LINE__);
     const auto *ActualAlias = dyn_cast_or_null<TypeAliasTemplateDecl>(
         ActualLoc.getTypePtr()->getTemplateName().getAsTemplateDecl());
     const auto *ExpectedTo = Use->getAliasedType()->getAs<TemplateSpecializationType>();
     if (!ActualAlias || !ActualLoc.getTypePtr()->isTypeAlias() || !ExpectedTo ||
         ActualAlias != ExpectedTo->getTemplateName().getAsTemplateDecl() ||
         ActualAlias->getIdentifier() != OriginalLoc.getTypePtr()->getIdentifier() ||
-        !family(ActualAlias)) return false;
-    if (ActualLoc.getTemplateNameLoc() != OriginalLoc.getTemplateNameLoc()) return false;
-    if (ActualSequence.getTemplateNameLoc() != OriginalSequence.getTemplateNameLoc()) return false;
+        !family(ActualAlias)) return functionalBindDiagnosticFailure(__LINE__);
+    if (ActualLoc.getTemplateNameLoc() != OriginalLoc.getTemplateNameLoc()) return functionalBindDiagnosticFailure(__LINE__);
+    if (ActualSequence.getTemplateNameLoc() != OriginalSequence.getTemplateNameLoc()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Builtin = dyn_cast_or_null<BuiltinTemplateDecl>(
         ActualSequence.getTypePtr()->getTemplateName().getAsTemplateDecl());
     if (!Builtin || Builtin != OriginalSequence.getTypePtr()->getTemplateName().getAsTemplateDecl() ||
         Builtin->getBuiltinTemplateKind() != BTK__make_integer_seq ||
         !Builtin->isImplicit() || Builtin->getLocation().isValid() ||
-        !Builtin->getDeclContext()->isTranslationUnit()) return false;
+        !Builtin->getDeclContext()->isTranslationUnit()) return functionalBindDiagnosticFailure(__LINE__);
     const auto ActualArguments = ActualSequence.getTypePtr()->template_arguments();
     const auto OriginalArguments = OriginalSequence.getTypePtr()->template_arguments();
     const auto *Parameters = Alias->getTemplateParameters();
@@ -13008,7 +13116,7 @@ public:
         !Difference || !OriginalDifference || Difference->getOpcode() != BO_Sub ||
         Difference->getOperatorLoc() != OriginalDifference->getOperatorLoc() ||
         !Context.hasSameType(Difference->getType(), Context.getSizeType()) ||
-        Offset.getKind() != TemplateArgument::Expression) return false;
+        Offset.getKind() != TemplateArgument::Expression) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto Site : {Underlying->getTypeLoc().getBeginLoc(),
                             Underlying->getTypeLoc().getEndLoc(),
                             ActualElaborated.getElaboratedKeywordLoc(),
@@ -13016,7 +13124,7 @@ public:
                             ActualSequence.getArgLoc(0).getTemplateNameLoc(),
                             Difference->getOperatorLoc()})
       if (!step() || !cstddefOrigin(S, SM, Site, "libcxx", "__utility/integer_sequence.h"))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
     auto Bound = [&](const Expr *Expression, const NonTypeTemplateParmDecl *Parameter,
                      unsigned Slot) {
       // IgnoreParenImpCasts also removes SubstNonTypeTemplateParmExpr itself.
@@ -13026,12 +13134,12 @@ public:
       if (const auto *Cache = dyn_cast_or_null<ConstantExpr>(Core))
         Core = Cache->getSubExpr();
       const auto *Substitution = dyn_cast_or_null<SubstNonTypeTemplateParmExpr>(Core);
-      if (!Substitution) return false;
-      if (Substitution->getParameter() != Parameter) return false;
-      if (!family(Substitution->getAssociatedDecl())) return false;
-      if (!family(Parameter)) return false;
-      if (!Context.hasSameType(Expression->getType(), Context.getSizeType())) return false;
-      if (!TraverseStmt(const_cast<Expr *>(Expression))) return false;
+      if (!Substitution) return functionalBindDiagnosticFailure(__LINE__);
+      if (Substitution->getParameter() != Parameter) return functionalBindDiagnosticFailure(__LINE__);
+      if (!family(Substitution->getAssociatedDecl())) return functionalBindDiagnosticFailure(__LINE__);
+      if (!family(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
+      if (!Context.hasSameType(Expression->getType(), Context.getSizeType())) return functionalBindDiagnosticFailure(__LINE__);
+      if (!TraverseStmt(const_cast<Expr *>(Expression))) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Argument = Use->template_arguments()[Slot];
       llvm::APSInt Expected;
       if (Argument.getKind() == TemplateArgument::Integral) {
@@ -13039,9 +13147,9 @@ public:
       } else if (Argument.getKind() == TemplateArgument::Expression) {
         const auto *Constant = dyn_cast<ConstantExpr>(Argument.getAsExpr());
         if (!Constant || Constant->getResultStorageKind() == ConstantResultStorageKind::None ||
-            Constant->getAPValueResult().getKind() != APValue::Int) return false;
+            Constant->getAPValueResult().getKind() != APValue::Int) return functionalBindDiagnosticFailure(__LINE__);
         Expected = Constant->getResultAsAPSInt();
-      } else return false;
+      } else return functionalBindDiagnosticFailure(__LINE__);
       // The original graph and exact substituted parameter identity were
       // checked first. This fold only binds the retained converted value.
       Expr::EvalResult Value;
@@ -13050,12 +13158,12 @@ public:
     };
     if (!Bound(Difference->getLHS(), Ep, 0) ||
         !Bound(Difference->getRHS(), Sp, 1) ||
-        !Bound(Offset.getAsExpr(), Sp, 1)) return false;
+        !Bound(Offset.getAsExpr(), Sp, 1)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Size = ActualSequence.getArgLoc(1).getTypeSourceInfo();
     if (!Size || !Context.hasSameType(Size->getType(), Context.getSizeType()) ||
         !TraverseTypeLoc(Size->getTypeLoc()) ||
         !TraverseTemplateName(ActualArguments[0].getAsTemplate()) ||
-        !TraverseStmt(const_cast<Expr *>(DifferenceSource))) return false;
+        !TraverseStmt(const_cast<Expr *>(DifferenceSource))) return functionalBindDiagnosticFailure(__LINE__);
     return !Failed;
   }
   bool bindFunctionalBindTupleTagGraph(const UtilityTupleRecord &InputTuple,
@@ -13067,12 +13175,12 @@ public:
         !Tuple.Tuple || !Tuple.Implementation || Tags.size() != 4 ||
         Tuple.Implementation->getNumArgs() != Count + 4 ||
         !Context.hasSameType(Tuple.Tuple->getType(), Context.getRecordType(InputTuple.Record)))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     BindTupleTagStorage = InputTuple;
     const auto *Constructor = Tuple.Tuple->getConstructor();
     const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
     const auto *TupleRecord = dyn_cast<ClassTemplateSpecializationDecl>(InputTuple.Record);
-    if (!Primary || !TupleRecord || !family(Primary)) return false;
+    if (!Primary || !TupleRecord || !family(Primary)) return functionalBindDiagnosticFailure(__LINE__);
     const bool ReferenceCopy = BindCallMetadata &&
         Tuple.Tuple == BindCallMetadata->CallArguments &&
         Primary->getTemplateParameters()->size() == 2 &&
@@ -13082,30 +13190,30 @@ public:
         Primary->getTemplateParameters()->size() == 2 &&
         isa<TemplateTemplateParmDecl>(Primary->getTemplateParameters()->getParam(0));
     if (PlaceholderCopy) {
-      if (Constructor->getNumParams() != Count) return false;
+      if (Constructor->getNumParams() != Count) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < Count; ++I) {
         const auto &Element = InputTuple.Elements[I];
         if (Element.Field || !Element.EmptyBase ||
             !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context) ||
             !Context.hasSameType(Constructor->getParamDecl(I)->getType(),
                 Context.getLValueReferenceType(Context.getConstType(Element.getType()))) ||
-            !family(Constructor->getParamDecl(I))) return false;
+            !family(Constructor->getParamDecl(I))) return functionalBindDiagnosticFailure(__LINE__);
       }
     }
     if (ReferenceCopy) {
-      if (Constructor->getNumParams() != Count) return false;
+      if (Constructor->getNumParams() != Count) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < Count; ++I)
         if (!InputTuple.Elements[I].getType()->isLValueReferenceType() ||
             !Context.hasSameType(Constructor->getParamDecl(I)->getType(),
                                  InputTuple.Elements[I].getType()) ||
-            !family(Constructor->getParamDecl(I))) return false;
+            !family(Constructor->getParamDecl(I))) return functionalBindDiagnosticFailure(__LINE__);
     }
     const bool CopyInputs = ReferenceCopy || PlaceholderCopy;
     std::set<const NamedDecl *> InputPacks, StoredPacks;
     std::set<const FunctionTemplateDecl *> Templates;
     for (const auto *Current = Primary; Current;) {
       if (!step() || !Templates.insert(Current).second || !family(Current) ||
-          !Current->getTemplateParameters()->size()) return false;
+          !Current->getTemplateParameters()->size()) return functionalBindDiagnosticFailure(__LINE__);
       if (CopyInputs) {
         const auto *Parameters = Current->getTemplateParameters();
         const auto *Alias = dyn_cast<TemplateTemplateParmDecl>(Parameters->getParam(0));
@@ -13121,19 +13229,19 @@ public:
             !Value->hasDefaultArgument() || !Pack || !Pack->isParameterPack() ||
             Pack->getIndex() || Pack->hasDefaultArgument() ||
             Pack->getDepth() != Alias->getDepth() + 1 ||
-            !family(Alias) || !family(Value) || !family(Pack)) return false;
+            !family(Alias) || !family(Value) || !family(Pack)) return functionalBindDiagnosticFailure(__LINE__);
       } else {
         const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-        if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+        if (!Pack || !Pack->isParameterPack() || !family(Pack)) return functionalBindDiagnosticFailure(__LINE__);
         InputPacks.insert(Pack);
       }
       Current = Current->getInstantiatedFromMemberTemplate();
     }
     for (const auto *Current : TupleRecord->getSpecializedTemplate()->redecls()) {
       if (!step() || !family(Current) || Current->getTemplateParameters()->size() != 1)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return functionalBindDiagnosticFailure(__LINE__);
       StoredPacks.insert(Pack);
     }
     if (CopyInputs) InputPacks = StoredPacks;
@@ -13152,10 +13260,10 @@ public:
           !Record->field_empty() || Record->getNumBases() || Record->isUnion() ||
           Record->isDynamicClass() || !Record->hasTrivialDestructor() ||
           !family(Selected) || !family(Record) ||
-          !Context.hasSameType(Written->getType(), Construction->getType())) return false;
+          !Context.hasSameType(Written->getType(), Construction->getType())) return functionalBindDiagnosticFailure(__LINE__);
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record);
-      if (!Instance) return false;
+      if (!Instance) return functionalBindDiagnosticFailure(__LINE__);
       BindMetadataRecords.insert(Instance->getSpecializedTemplate()->getTemplatedDecl()->getCanonicalDecl());
       WrittenTags.push_back(Written);
       if (!(I % 2)) continue;
@@ -13173,7 +13281,7 @@ public:
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Location.getArgLoc(0).getArgument().getAsType(),
                                Context.getRecordType(InputTuple.Record)) ||
-          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return false;
+          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned J = 1; J < Slots; ++J) {
         const auto Argument = Location.getArgLoc(J);
         const auto Kind = Argument.getArgument().getKind();
@@ -13185,23 +13293,23 @@ public:
             Core = Constant->getSubExpr()->IgnoreParenImpCasts();
           const auto *Zero = dyn_cast_or_null<IntegerLiteral>(Core);
           if (J != 1 || !Zero || !Zero->getValue().isZero() ||
-              !cstddefOrigin(S, SM, Zero->getExprLoc(), "libcxx", "tuple")) return false;
+              !cstddefOrigin(S, SM, Zero->getExprLoc(), "libcxx", "tuple")) return functionalBindDiagnosticFailure(__LINE__);
           continue;
         }
         const auto *Pack = Expression ? dyn_cast<SizeOfPackExpr>(Expression->IgnoreParenImpCasts()) : nullptr;
         const auto &Expected = I == 1 || J == 2 ? InputPacks : StoredPacks;
         if (!Pack || Pack->isValueDependent() || Pack->getPackLength() != Count ||
             !Expected.count(Pack->getPack()) || !family(Pack->getPack()) ||
-            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return false;
+            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return functionalBindDiagnosticFailure(__LINE__);
       }
       if (!BindTupleTagSlices.emplace(Slice->getCanonicalDecl(),
               BindTupleTagSlice{Use, I == 1 || CopyInputs ? 0U : unsigned(Count),
-                                CopyInputs && I == 3 ? 0U : unsigned(Count)}).second) return false;
+                                CopyInputs && I == 3 ? 0U : unsigned(Count)}).second) return functionalBindDiagnosticFailure(__LINE__);
     }
     // Bind both exact slices before traversing their actual original TypeLocs.
     // The retained Sema packets still close defaults and selected partials.
     for (const auto *Written : WrittenTags)
-      if (!TraverseTypeLoc(Written->getTypeLoc())) return false;
+      if (!TraverseTypeLoc(Written->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     return !Failed;
   }
 
@@ -13211,9 +13319,9 @@ public:
         !BindTupleTagSlices.empty() || Factory.Storage.Record != BindMetadata->Record ||
         Factory.BoundConstruction != Tuple.Tuple || !Tuple.Implementation ||
         Tuple.Implementation->getNumArgs() != BindMetadata->Arguments.Elements.size() + 4)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto Tags = describeFunctionalBindTupleTagSources(S, SM, Factory, Context);
-    if (!Tags || Tags->size() != 4) return false;
+    if (!Tags || Tags->size() != 4) return functionalBindDiagnosticFailure(__LINE__);
     return bindFunctionalBindTupleTagGraph(BindMetadata->Arguments, Tuple, *Tags);
   }
 
@@ -13221,7 +13329,7 @@ public:
       const FunctionalBindTupleConstructionSource &Tuple) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !Call.SourceCall || Call.SourceCall != BindCallMetadata->SourceCall ||
-        Call.Storage.Record != BindMetadata->Record) return false;
+        Call.Storage.Record != BindMetadata->Record) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Storage.Record != BindMetadata->Record ||
         Actual->Method != Call.Method || Actual->Method != BindCallMetadata->Method ||
@@ -13229,7 +13337,7 @@ public:
         Actual->CallArguments != BindCallMetadata->CallArguments ||
         Actual->CallForwards != Call.CallForwards ||
         Actual->CallForwards != BindCallMetadata->CallForwards ||
-        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return false;
+        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return functionalBindDiagnosticFailure(__LINE__);
     const auto Input = approvedUtilityReferenceTupleRecord(
         S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
     const auto Construction = describeFunctionalBindCallTupleConstructionSource(S, SM, *Actual, Context);
@@ -13238,17 +13346,17 @@ public:
         Construction->Tuple != Tuple.Tuple || Construction->Implementation != Tuple.Implementation ||
         Construction->Leaves != Tuple.Leaves || Construction->Copies != Tuple.Copies ||
         Construction->Initializers != Tuple.Initializers || Construction->Forwards != Tuple.Forwards ||
-        Construction->Assertions != Tuple.Assertions) return false;
+        Construction->Assertions != Tuple.Assertions) return functionalBindDiagnosticFailure(__LINE__);
     return bindFunctionalBindTupleTagGraph(*Input, Tuple, *Tags);
   }
   bool bindFunctionalBindSpecialMember(const CXXMethodDecl *Method, bool Default = false) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Method ||
         Method->getParent()->isDependentContext() ||
         !BindMetadataRecords.count(Method->getParent()->getCanonicalDecl()) ||
-        !Method->isTrivial()) return false;
+        !Method->isTrivial()) return functionalBindDiagnosticFailure(__LINE__);
     if (Default) {
       const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
-      if (!Constructor || !Constructor->isDefaultConstructor()) return false;
+      if (!Constructor || !Constructor->isDefaultConstructor()) return functionalBindDiagnosticFailure(__LINE__);
     }
     const bool Complete = specialMember(Method, 0, Default) && !Failed;
     if (!Complete) Failed = true;
@@ -13256,24 +13364,24 @@ public:
   }
 
   bool bindFunctionalBindStorageSource() {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step()) return false;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Record : BindPhysicalRecords) {
       const auto *Definition = Record->getDefinition();
-      if (!Definition || !family(Definition)) return false;
+      if (!Definition || !family(Definition)) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Base : Definition->bases())
         if (!Base.getTypeSourceInfo() || Base.isVirtual() ||
-            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Field : Definition->fields())
         if (!family(Field) || Field->isBitField() || Field->isMutable() ||
             !Field->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     }
     return !Failed;
   }
   bool withBindSourceChild(const std::function<bool()> &Proof) {
     NestedSharedBudget = true;
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Proof ||
-        Failed || Depth >= 64 || !step()) { Failed = true; return false; }
+        Failed || Depth >= 64 || !step()) { Failed = true; return functionalBindDiagnosticFailure(__LINE__); }
     ++Depth;
     auto Restore = llvm::make_scope_exit([&] { --Depth; });
     const bool Complete = Proof();
@@ -13287,24 +13395,24 @@ public:
       const TemplateParameterList *Parameters, const std::function<bool()> &Proof) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !Template || !Parameters || !Proof || Failed || !step() ||
-        Parameters->size() > 64 || !family(Template)) return false;
+        Parameters->size() > 64 || !family(Template)) return functionalBindDiagnosticFailure(__LINE__);
     const TemplateParameterList *Declared = nullptr;
     if (const auto *Primary = dyn_cast<TemplateDecl>(Template))
       Declared = Primary->getTemplateParameters();
     else if (const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(Template))
       Declared = Partial->getTemplateParameters();
-    if (Declared != Parameters) return false;
+    if (Declared != Parameters) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const NonTypeTemplateParmDecl *> Inserted;
     auto Restore = llvm::make_scope_exit([&] {
       for (const auto *Parameter : Inserted) BindDefinitionParameters.erase(Parameter);
     });
     for (const auto *Declaration : *Parameters) {
-      if (!step() || !family(Declaration)) return false;
+      if (!step() || !family(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration);
       if (!Parameter) continue;
       const auto Bound = BindDefinitionParameters.find(Parameter);
       if (Bound != BindDefinitionParameters.end()) {
-        if (Bound->second != Parameters) return false;
+        if (Bound->second != Parameters) return functionalBindDiagnosticFailure(__LINE__);
       } else {
         BindDefinitionParameters.emplace(Parameter, Parameters);
         Inserted.push_back(Parameter);
@@ -13315,13 +13423,13 @@ public:
   bool TraverseBindConstructorSignature(const CXXConstructorDecl *Constructor) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Constructor ||
         !BindMetadataRecords.count(Constructor->getParent()->getCanonicalDecl()) ||
-        !Constructor->getTypeSourceInfo() || !family(Constructor)) return false;
+        !Constructor->getTypeSourceInfo() || !family(Constructor)) return functionalBindDiagnosticFailure(__LINE__);
     const auto Location = Constructor->getTypeSourceInfo()->getTypeLoc();
     const auto Function = Location.getAs<FunctionProtoTypeLoc>();
-    if (Function.isNull()) return false;
+    if (Function.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Return = Function.getReturnLoc();
     if (!Return.getAs<BuiltinTypeLoc>() || !Return.getType()->isVoidType() ||
-        Return.getBeginLoc().isValid() || Return.getEndLoc().isValid()) return false;
+        Return.getBeginLoc().isValid() || Return.getEndLoc().isValid()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Saved = BindConstructorReturn;
     BindConstructorReturn = Return;
     auto Restore = llvm::make_scope_exit([&] { BindConstructorReturn = Saved; });
@@ -13334,7 +13442,7 @@ public:
   bool withNotFnChildProof(const std::function<bool()> &Proof) {
     NestedSharedBudget = true;
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !Proof || Failed ||
-        Depth >= 64 || !step()) { Failed = true; return false; }
+        Depth >= 64 || !step()) { Failed = true; return functionalBindDiagnosticFailure(__LINE__); }
     ++Depth;
     auto Restore = llvm::make_scope_exit([&] { --Depth; });
     const bool Complete = Proof();
@@ -13343,21 +13451,21 @@ public:
   }
   bool bindNotFnNestedStorage(const FunctionalNotFnNestedStorage &Storage) {
     if ((Mode != UtilityTupleQueryMode::NotFnSignature && Mode != UtilityTupleQueryMode::CatSignature) ||
-        NotFnOwnedCallableRecord || NotFnReferenceStorage || NotFnNestedStorage || !step()) return false;
+        NotFnOwnedCallableRecord || NotFnReferenceStorage || NotFnNestedStorage || !step()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalNotFnNestedStorage(S, SM, Storage.Outer.Record, Context);
     if (!Actual || Actual->Outer.Record != Storage.Outer.Record ||
         Actual->Inner.Record != Storage.Inner.Record ||
-        !Context.hasSameType(Actual->Inner.CallableType, Storage.Inner.CallableType)) return false;
+        !Context.hasSameType(Actual->Inner.CallableType, Storage.Inner.CallableType)) return functionalBindDiagnosticFailure(__LINE__);
     NotFnNestedStorage = *Actual;
     for (const auto *Layer : {Actual->Outer.Record, Actual->Outer.Forwarder, Actual->Outer.Tuple,
                              Actual->Outer.TupleImplementation, Actual->Outer.TupleLeaf,
                              Actual->Inner.Record, Actual->Inner.Forwarder, Actual->Inner.Tuple,
                              Actual->Inner.TupleImplementation, Actual->Inner.TupleLeaf}) {
-      if (!step()) return false;
+      if (!step()) return functionalBindDiagnosticFailure(__LINE__);
       NotFnNestedRecords.insert(Layer->getCanonicalDecl());
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Layer);
       const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
-      if (!Primary) return false;
+      if (!Primary) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *R : Layer->redecls()) NotFnNestedFamilies.insert(R);
       for (const auto *T : Primary->redecls()) {
         NotFnNestedFamilies.insert(T);NotFnNestedFamilies.insert(T->getTemplatedDecl());
@@ -13368,11 +13476,11 @@ public:
   }
   bool bindNotFnNestedInner(const FunctionalNotFnNestedCallSource &Source) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnNestedInner || NotFnNestedStorage ||
-        NotFnReferenceStorage || NotFnOwnedCallableRecord) return false;
+        NotFnReferenceStorage || NotFnOwnedCallableRecord) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalNotFnNestedCallSource(S, SM, Source.OuterRuntime.SourceCall, Context);
     if (!Actual || Actual->InnerRuntime.SourceCall != Source.InnerRuntime.SourceCall ||
         Actual->InnerRuntime.Method != Source.InnerRuntime.Method ||
-        Actual->OuterRuntime.TargetCall != Actual->InnerRuntime.SourceCall) return false;
+        Actual->OuterRuntime.TargetCall != Actual->InnerRuntime.SourceCall) return functionalBindDiagnosticFailure(__LINE__);
     NotFnNestedInner = *Actual;
     return true;
   }
@@ -13387,7 +13495,7 @@ public:
       const auto Actual = describeFunctionalNotFnNestedCallSource(
           S, SM, NotFnNestedInner->OuterRuntime.SourceCall, Context);
       if (!Actual || Actual->InnerRuntime.SourceCall != Call ||
-          Actual->InnerRuntime.Method != NotFnNestedInner->InnerRuntime.Method) return std::nullopt;
+          Actual->InnerRuntime.Method != NotFnNestedInner->InnerRuntime.Method) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       if (SourceMode == FunctionalNotFnSourceMode::Runtime) return Actual->InnerRuntime;
       if (SourceMode == FunctionalNotFnSourceMode::Signature) return Actual->InnerSignature;
       return Actual->InnerException;
@@ -13395,17 +13503,17 @@ public:
     return describeFunctionalNotFnCallSource(S, SM, Call, Context, SourceMode);
   }
   bool bindNotFnNestedCall(const FunctionalNotFnNestedCallSource &Source, bool InnerClosed) {
-    if (!InnerClosed || !NotFnNestedStorage || NotFnNestedInner || NotFnNestedCall) return false;
+    if (!InnerClosed || !NotFnNestedStorage || NotFnNestedInner || NotFnNestedCall) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalNotFnNestedCallSource(S, SM, Source.OuterRuntime.SourceCall, Context);
     if (!Actual || Actual->Storage.Outer.Record != NotFnNestedStorage->Outer.Record ||
         Actual->InnerRuntime.Method != Source.InnerRuntime.Method ||
-        Actual->InnerRuntime.SourceCall != Source.InnerRuntime.SourceCall) return false;
+        Actual->InnerRuntime.SourceCall != Source.InnerRuntime.SourceCall) return functionalBindDiagnosticFailure(__LINE__);
     NotFnNestedCall = *Actual;NotFnNestedChildClosed = true;
     return true;
   }
   bool notFnNestedSpecialMember(const CXXMethodDecl *Method) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnNestedStorage || !Method ||
-        !NotFnNestedRecords.count(Method->getParent()->getCanonicalDecl())) return false;
+        !NotFnNestedRecords.count(Method->getParent()->getCanonicalDecl())) return functionalBindDiagnosticFailure(__LINE__);
     const bool Complete = specialMember(Method) && !Failed;
     if (!Complete) Failed = true;
     return Complete;
@@ -13415,13 +13523,13 @@ public:
       llvm::ArrayRef<FunctionalNotFnTupleTagSource> Tags, bool Owned = false, bool Reference = false, bool Nested = false) {
     if (Mode != UtilityTupleQueryMode::CatSignature || !NotFnTupleTagSlices.empty() ||
         NotFnTupleTagStorage || Tags.size() != 4 ||
-        Factory.SelectedConstructions.size() != 4) return false;
-    if ((Owned && Reference) || (Nested && (Owned || Reference))) return false;
+        Factory.SelectedConstructions.size() != 4) return functionalBindDiagnosticFailure(__LINE__);
+    if ((Owned && Reference) || (Nested && (Owned || Reference))) return functionalBindDiagnosticFailure(__LINE__);
     const auto Borrowed = Reference
         ? describeFunctionalNotFnReferenceStorage(S, SM, Factory.Storage.Record, Context) : std::nullopt;
     const auto NestedStorage = Nested
         ? describeFunctionalNotFnNestedStorage(S, SM, Factory.Storage.Record, Context) : std::nullopt;
-    if (Nested && (!NestedStorage || !bindNotFnNestedStorage(*NestedStorage))) return false;
+    if (Nested && (!NestedStorage || !bindNotFnNestedStorage(*NestedStorage))) return functionalBindDiagnosticFailure(__LINE__);
     const auto Pointer = NestedStorage
         ? std::optional<FunctionalNotFnStorage>(NestedStorage->Outer) : Reference
         ? (Borrowed ? std::optional<FunctionalNotFnStorage>(Borrowed->Storage) : std::nullopt)
@@ -13436,29 +13544,29 @@ public:
         !Arguments || Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         Arguments->get(0).pack_size() != 1 || Construction->getNumArgs() != 1 ||
         Constructor->getParent()->getCanonicalDecl() != Pointer->Tuple->getCanonicalDecl() ||
-        !family(Constructor)) return false;
+        !family(Constructor)) return functionalBindDiagnosticFailure(__LINE__);
     std::set<const NamedDecl *> InputPacks, StoredPacks;
     std::set<const FunctionTemplateDecl *> Seen;
     for (const auto *Current = Primary; Current;) {
       if (!step() || !Seen.insert(Current).second || !family(Current) ||
-          !Current->getTemplateParameters()->size()) return false;
+          !Current->getTemplateParameters()->size()) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return functionalBindDiagnosticFailure(__LINE__);
       InputPacks.insert(Pack);
       Current = Current->getInstantiatedFromMemberTemplate();
     }
     for (const auto *Template : TupleInstance->getSpecializedTemplate()->redecls()) {
       if (!step() || !family(Template) || Template->getTemplateParameters()->size() != 1)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Template->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return functionalBindDiagnosticFailure(__LINE__);
       StoredPacks.insert(Pack);
     }
     for (unsigned I : {1U, 3U}) {
       const auto &Tag = Tags[I];
       if (!Tag.Written || !Tag.Construction ||
           Tag.Construction->getConstructor()->getParent()->getCanonicalDecl() !=
-              Tag.Record->getCanonicalDecl()) return false;
+              Tag.Record->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
       const auto Written = Tag.Written->getTypeLoc().getAs<ElaboratedTypeLoc>();
       const auto Qualifier = Written.isNull() ? NestedNameSpecifierLoc() : Written.getQualifierLoc();
       const auto Location = Qualifier ? Qualifier.getTypeLoc().getAs<TemplateSpecializationTypeLoc>()
@@ -13473,7 +13581,7 @@ public:
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Location.getArgLoc(0).getArgument().getAsType(),
                                Context.getRecordType(Pointer->Tuple)) ||
-          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return false;
+          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned J = 1; J != Count; ++J) {
         const auto Argument = Location.getArgLoc(J);
         const auto Kind = Argument.getArgument().getKind();
@@ -13483,17 +13591,17 @@ public:
         const auto &Expected = I == 1 || J == 2 ? InputPacks : StoredPacks;
         if (!Pack || Pack->isValueDependent() || Pack->getPackLength() != 1 ||
             !Expected.count(Pack->getPack()) || !family(Pack->getPack()) ||
-            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return false;
+            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return functionalBindDiagnosticFailure(__LINE__);
       }
       // Both actual ranges end at this independently described one-element
       // storage. The fourth tag's explicit start is one, so its slice is empty.
       if (!NotFnTupleTagSlices.emplace(Instance->getCanonicalDecl(),
-              std::make_pair(Use, I == 1 ? 0U : 1U)).second) return false;
+              std::make_pair(Use, I == 1 ? 0U : 1U)).second) return functionalBindDiagnosticFailure(__LINE__);
     }
     NotFnTupleTagStorage = *Pointer;
     if (Borrowed) {
       NotFnReferenceStorage = *Borrowed;
-      if (!bindPairBorrowedStorage(Borrowed->Reference.Record, true)) return false;
+      if (!bindPairBorrowedStorage(Borrowed->Reference.Record, true)) return functionalBindDiagnosticFailure(__LINE__);
     }
     return true;
   }
@@ -13508,11 +13616,11 @@ public:
         Factory.Use.Canonical->get(0).getKind() != TemplateArgument::Type ||
         Factory.Use.Sugared->get(0).getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Factory.Use.Canonical->get(0).getAsType(),
-                             Factory.Use.Sugared->get(0).getAsType())) return false;
+                             Factory.Use.Sugared->get(0).getAsType())) return functionalBindDiagnosticFailure(__LINE__);
     auto Input = Factory.Use.Sugared->get(0).getAsType().getNonReferenceType();
     std::map<const TypedefNameDecl *, const TypeSourceInfo *> Pending;
     for (unsigned I = 0; ; ++I) {
-      if (I >= 64 || !step() || Input.isNull()) return false;
+      if (I >= 64 || !step() || Input.isNull()) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Input.getTypePtr())) {
         Input = Elaborated->getNamedType();
         continue;
@@ -13530,10 +13638,10 @@ public:
           (!Alias->getUnderlyingType()->isFunctionPointerType() && !NotFnOwnedCallableRecord &&
            !NotFnReferenceStorage && !NotFnNestedStorage) ||
           !Context.hasSameType(Alias->getUnderlyingType(), NotFnCallableType) ||
-          !Pending.emplace(Alias, Info).second) return false;
+          !Pending.emplace(Alias, Info).second) return functionalBindDiagnosticFailure(__LINE__);
       // Complete the actual alias TSI, callback signature and owned spelling
       // before exposing this one raw typedef identity to the metadata graph.
-      if (!SourceAlias || !SourceAlias(Alias)) return false;
+      if (!SourceAlias || !SourceAlias(Alias)) return functionalBindDiagnosticFailure(__LINE__);
       Input = Alias->getUnderlyingType();
     }
     NotFnOwnedInputAliases = std::move(Pending);
@@ -13541,10 +13649,10 @@ public:
   }
   bool bindNotFnReferenceInputFactory(const FunctionalNotFnFactoryTemplateSource &Factory) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnReferenceStorage ||
-        NotFnFactoryDefaults != &Factory) return false;
+        NotFnFactoryDefaults != &Factory) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Call = dyn_cast_or_null<CallExpr>(Factory.Selection.Expression);
     if (!Call || Call->getDirectCallee() != Factory.Selected.Factory ||
-        Call->getNumArgs() != 1 || !S.owns(SM, Call->getExprLoc())) return false;
+        Call->getNumArgs() != 1 || !S.owns(SM, Call->getExprLoc())) return functionalBindDiagnosticFailure(__LINE__);
     // Bind only the admitted ref/cref factory used by this exact outer call.
     // Its ordinary argument and actual runtime call still close separately.
     return bindPairReferenceFactory(Call->getArg(0));
@@ -13552,13 +13660,13 @@ public:
   bool bindNotFnOperation(const FunctionalNotFnStorage &Storage,
       std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr, bool Reference = false, bool Nested = false) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnOperationRecord)
-      return false;
-    if ((OwnedQuerySources && Reference) || (Nested && (OwnedQuerySources || Reference))) return false;
+      return functionalBindDiagnosticFailure(__LINE__);
+    if ((OwnedQuerySources && Reference) || (Nested && (OwnedQuerySources || Reference))) return functionalBindDiagnosticFailure(__LINE__);
     const auto Borrowed = Reference
         ? describeFunctionalNotFnReferenceStorage(S, SM, Storage.Record, Context) : std::nullopt;
     const auto NestedStorage = Nested
         ? describeFunctionalNotFnNestedStorage(S, SM, Storage.Record, Context) : std::nullopt;
-    if (Nested && (!NestedStorage || !bindNotFnNestedStorage(*NestedStorage))) return false;
+    if (Nested && (!NestedStorage || !bindNotFnNestedStorage(*NestedStorage))) return functionalBindDiagnosticFailure(__LINE__);
     const auto Pointer = NestedStorage
         ? std::optional<FunctionalNotFnStorage>(NestedStorage->Outer) : Reference
         ? (Borrowed ? std::optional<FunctionalNotFnStorage>(Borrowed->Storage) : std::nullopt)
@@ -13566,28 +13674,28 @@ public:
         : approvedFunctionalNotFnPointerStorage(S, SM, Storage.Record, Context);
     if (!Pointer || Pointer->Operation != Storage.Operation ||
         !Context.hasSameType(Pointer->CallableType, Storage.CallableType) || !Pointer->TupleLeaf)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     if (Pointer->Callable.EmptyBase) {
       const auto *Leaf = Pointer->TupleLeaf->getDefinition();
       if (!OwnedQuerySources || !Leaf || !Leaf->field_empty() || Leaf->getNumBases() != 1 ||
           Pointer->Callable.Field || !Pointer->Callable.EmptyBase->isEmpty() ||
           Leaf->bases_begin()->getType()->getAsCXXRecordDecl()->getCanonicalDecl() !=
-              Pointer->Callable.EmptyBase->getCanonicalDecl()) return false;
+              Pointer->Callable.EmptyBase->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
       NotFnTupleLeafEmptyBase = Pointer->Callable.EmptyBase->getCanonicalDecl();
     } else if (!Pointer->Callable.Field || Pointer->Callable.Field->getParent()->getCanonicalDecl() !=
-                   Pointer->TupleLeaf->getCanonicalDecl()) return false;
+                   Pointer->TupleLeaf->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
     NotFnOperationRecord = Pointer->Operation->getCanonicalDecl();
     NotFnTupleLeafRecord = Pointer->TupleLeaf->getCanonicalDecl();
     NotFnTupleLeafValue = Pointer->Callable.Field;
     NotFnCallableType = Pointer->CallableType;
     if (Borrowed) {
       NotFnReferenceStorage = *Borrowed;
-      if (!bindPairBorrowedStorage(Borrowed->Reference.Record, true)) return false;
+      if (!bindPairBorrowedStorage(Borrowed->Reference.Record, true)) return functionalBindDiagnosticFailure(__LINE__);
       PairStorageUseSource Written(*this);
       const auto *PointerSource = Borrowed->Reference.Pointer->getTypeSourceInfo();
       if (!PointerSource ||
           !Context.hasSameType(PointerSource->getType(), Borrowed->Reference.PointerType) ||
-          !Written.check(PointerSource)) return false;
+          !Written.check(PointerSource)) return functionalBindDiagnosticFailure(__LINE__);
     } else if (OwnedQuerySources) {
       NotFnOwnedCallableRecord = Pointer->CallableType->getAsCXXRecordDecl()->getCanonicalDecl();
       NotFnOwnedQuerySources = OwnedQuerySources;
@@ -13598,29 +13706,29 @@ public:
   }
   bool notFnReferenceSpecialMember(const CXXMethodDecl *Method) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnReferenceStorage || !Method)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto &Storage = NotFnReferenceStorage->Storage;
     const auto *Owner = Method->getParent()->getCanonicalDecl();
     if (Owner != Storage.Record->getCanonicalDecl() && Owner != Storage.Forwarder->getCanonicalDecl() &&
         Owner != Storage.Tuple->getCanonicalDecl() && Owner != Storage.TupleImplementation->getCanonicalDecl() &&
         Owner != Storage.TupleLeaf->getCanonicalDecl() &&
-        Owner != NotFnReferenceStorage->Reference.Record->getCanonicalDecl()) return false;
+        Owner != NotFnReferenceStorage->Reference.Record->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
     return specialMember(Method) && !Failed;
   }
   bool bindNotFnReferenceInvokeFamily(const CXXMethodDecl *Method) {
     if (!NotFnReferenceStorage || !Method || !Method->getPrimaryTemplate() ||
         Method->getParent()->getCanonicalDecl() != NotFnReferenceStorage->Reference.Record->getCanonicalDecl())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
     const auto *Class = Owner ? Owner->getSpecializedTemplate() : nullptr;
-    if (!Class || Class->getTemplateParameters()->size() != 1) return false;
+    if (!Class || Class->getTemplateParameters()->size() != 1) return functionalBindDiagnosticFailure(__LINE__);
     const auto *TypeParameter = dyn_cast<TemplateTypeParmDecl>(Class->getTemplateParameters()->getParam(0));
     const auto *Pattern = Class->getTemplatedDecl();
     const TypedefNameDecl *Alias = nullptr;
     for (const auto *D : Pattern->decls())
       if (const auto *Candidate = dyn_cast<TypedefNameDecl>(D);
           Candidate && Candidate->getIdentifier() && Candidate->getName() == "type") {
-        if (Alias) return false;
+        if (Alias) return functionalBindDiagnosticFailure(__LINE__);
         Alias = Candidate;
       }
     const auto *Spelling = Alias ? Alias->getTypeSourceInfo() : nullptr;
@@ -13635,22 +13743,22 @@ public:
         ParameterType->isParameterPack() != TypeParameter->isParameterPack() ||
         Alias->getDeclContext() != Pattern ||
         !approvedStandardSDKDeclaration(S, SM, Alias) ||
-        !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+        !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return functionalBindDiagnosticFailure(__LINE__);
     PairInputFamilies.insert(Alias);
     PairStorageUseSource AliasSource(*this);
-    if (!AliasSource.check(Spelling)) return false;
+    if (!AliasSource.check(Spelling)) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const Decl *> Pending{Method};
     std::set<const Decl *> Bound;
     while (!Pending.empty()) {
       const auto *D = Pending.back(); Pending.pop_back();
       if (!D || !step() || !approvedStandardSDKDeclaration(S, SM, D) ||
-          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return functionalBindDiagnosticFailure(__LINE__);
       if (!Bound.insert(D).second) continue;
       if (const auto *Function = dyn_cast<CXXMethodDecl>(D)) {
         if (Function->getOverloadedOperator() != OO_Call || !Function->isConst() ||
             Function->isStatic() || Function->isVolatile() || Function->isVariadic() ||
             (Function->getParent()->getCanonicalDecl() != Owner->getCanonicalDecl() &&
-             Function->getParent()->getCanonicalDecl() != Class->getTemplatedDecl()->getCanonicalDecl())) return false;
+             Function->getParent()->getCanonicalDecl() != Class->getTemplatedDecl()->getCanonicalDecl())) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
         for (const auto *Parameter : Function->parameters()) Pending.push_back(Parameter);
         if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
@@ -13660,7 +13768,7 @@ public:
         Pending.push_back(Template->getTemplatedDecl());
         for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
         if (const auto *Pattern = Template->getInstantiatedFromMemberTemplate()) Pending.push_back(Pattern);
-      } else if (!isa<ParmVarDecl, TemplateTypeParmDecl>(D)) return false;
+      } else if (!isa<ParmVarDecl, TemplateTypeParmDecl>(D)) return functionalBindDiagnosticFailure(__LINE__);
     }
     PairInputFamilies.insert(Bound.begin(), Bound.end());
     return family(Method);
@@ -13677,7 +13785,7 @@ public:
   bool withNotFnReferenceDependency(std::function<bool()> Proof) {
     if (!NotFnReferenceCall || NotFnReferenceDependency || !Proof || Depth || Failed ||
         NotFnInvokeSignature || NotFnInvokeWrittenPattern || !NotFnInvokeUses.empty() ||
-        !CompletedNotFnInvokeSignatures.empty() || !NotFnTryResultUses.empty()) return false;
+        !CompletedNotFnInvokeSignatures.empty() || !NotFnTryResultUses.empty()) return functionalBindDiagnosticFailure(__LINE__);
     NotFnReferenceDependency = true;
     auto Restore = llvm::make_scope_exit([&] {
       NotFnReferenceDependency = false;
@@ -13711,18 +13819,18 @@ public:
         !Proof || !Call.Method || !Call.SourceCall ||
         !Call.InvokeCall || !NotFnOperationRecord ||
         Call.Storage.Operation->getCanonicalDecl() != NotFnOperationRecord ||
-        !Context.hasSameType(Call.Storage.CallableType, NotFnCallableType)) return false;
+        !Context.hasSameType(Call.Storage.CallableType, NotFnCallableType)) return functionalBindDiagnosticFailure(__LINE__);
     if (NotFnNestedStorage &&
         (!NotFnNestedCall || !NotFnNestedChildClosed ||
          NotFnNestedCall->OuterRuntime.SourceCall != Call.SourceCall ||
          NotFnNestedCall->OuterRuntime.Method != Call.Method ||
-         NotFnNestedCall->OuterRuntime.TargetCall != Call.TargetCall)) return false;
+         NotFnNestedCall->OuterRuntime.TargetCall != Call.TargetCall)) return functionalBindDiagnosticFailure(__LINE__);
     if (NotFnOwnedCallableRecord) {
       const auto Owned = describeFunctionalNotFnOwnedCallSource(S, SM, Call.SourceCall, Context);
       if (!Owned || !NotFnOwnedQuerySources || Owned->Selected.TargetCall != Call.TargetCall ||
           Owned->Selected.Method != Call.Method ||
           Owned->CallableMethod->getParent()->getCanonicalDecl() != NotFnOwnedCallableRecord)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       NotFnOwnedInvokeMethod = Owned->CallableMethod;
     }
     if (NotFnReferenceStorage) {
@@ -13730,10 +13838,10 @@ public:
       if (!ReferenceQuerySources || !Reference || Reference->Selected.TargetCall != Call.TargetCall ||
           Reference->Selected.Method != Call.Method ||
           Reference->Reference.Wrapper.Record != NotFnReferenceStorage->Reference.Record ||
-          !bindNotFnReferenceInvokeFamily(dyn_cast<CXXMethodDecl>(Call.TargetCall->getDirectCallee()))) return false;
+          !bindNotFnReferenceInvokeFamily(dyn_cast<CXXMethodDecl>(Call.TargetCall->getDirectCallee()))) return functionalBindDiagnosticFailure(__LINE__);
       NotFnReferenceCall = *Reference;
       NotFnReferenceQuerySources = ReferenceQuerySources;
-    } else if (ReferenceQuerySources) return false;
+    } else if (ReferenceQuerySources) return functionalBindDiagnosticFailure(__LINE__);
     NotFnInvocation = &Call;
     auto Restore = llvm::make_scope_exit([&] {
       NotFnInvocation = nullptr;
@@ -13773,16 +13881,16 @@ public:
         Roots.size() != 3 || Forwards.size() != 3 * Operation->getNumParams() ||
         !NotFnInvocation->OperationCall || NotFnInvocation->OperationCall->getDirectCallee() != Operation ||
         NotFnInvocation->InvokeCall->getDirectCallee() != Function || !family(Function) || !family(Operation))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Root : Roots)
       if (!Root || Root->getDirectCallee() != Function ||
-          !NotFnPublicInvokeUses.insert(Root).second) return false;
-    if (!NotFnPublicInvokeUses.count(NotFnInvocation->InvokeCall)) return false;
+          !NotFnPublicInvokeUses.insert(Root).second) return functionalBindDiagnosticFailure(__LINE__);
+    if (!NotFnPublicInvokeUses.count(NotFnInvocation->InvokeCall)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Forward : Forwards)
-      if (!Forward || !NotFnPublicForwards.insert(Forward).second) return false;
+      if (!Forward || !NotFnPublicForwards.insert(Forward).second) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Parameter : Operation->parameters()) {
       if (!Parameter || Parameter->getDeclContext() != Operation ||
-          !NotFnPublicParameters.insert(Parameter).second) return false;
+          !NotFnPublicParameters.insert(Parameter).second) return functionalBindDiagnosticFailure(__LINE__);
     }
     // Only the three original result/noexcept/body expressions of this exact
     // operation can refer to the owned negation. No SDK family or user body
@@ -13791,11 +13899,11 @@ public:
                            FunctionalNotFnSourceMode::Exception, FunctionalNotFnSourceMode::Runtime}) {
       const auto Source = describeNotFnInvocation(NotFnInvocation->SourceCall, Mode);
       if (!Source || Source->OperationCall->getDirectCallee() != Operation ||
-          !NotFnPublicInvokeUses.count(Source->InvokeCall)) return false;
+          !NotFnPublicInvokeUses.count(Source->InvokeCall)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Negation = dyn_cast<CXXOperatorCallExpr>(Source->Negation)) {
         const auto *Method = approvedFunctionalNotFnPointerNegation(S, SM, *Source, Context);
         if (!Method || Method != approvedFunctionalNotFnPointerNegation(S, SM, *NotFnInvocation, Context) ||
-            !NotFnNegationUses.emplace(Negation, Source->InvokeCall).second) return false;
+            !NotFnNegationUses.emplace(Negation, Source->InvokeCall).second) return functionalBindDiagnosticFailure(__LINE__);
         if (Mode != FunctionalNotFnSourceMode::Runtime) {
           const auto *Receiver = dyn_cast<ImplicitCastExpr>(Negation->getArg(0)->IgnoreParens());
           const auto *Temporary = Receiver
@@ -13804,16 +13912,16 @@ public:
               ? dyn_cast<CXXBindTemporaryExpr>(Temporary->getSubExpr()->IgnoreParens()) : nullptr;
           // approvedFunctionalNotFnPointerNegation already bound this exact
           // query node, invoke child, original SDK range and trivial result.
-          if (Binding && !NotFnQueryBindings.emplace(Binding, Source->InvokeCall).second) return false;
+          if (Binding && !NotFnQueryBindings.emplace(Binding, Source->InvokeCall).second) return functionalBindDiagnosticFailure(__LINE__);
         }
-      } else if (NotFnCallbackResultRecord) return false;
+      } else if (NotFnCallbackResultRecord) return functionalBindDiagnosticFailure(__LINE__);
     }
     NotFnPublicInvoke = Function;
     NotFnPublicOperation = Operation;
     return true;
   }
   bool withNotFnOperationQuery(const DeclRefExpr *Reference, std::function<bool()> Proof) {
-    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation || !Proof) return false;
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation || !Proof) return functionalBindDiagnosticFailure(__LINE__);
     if (!Reference) return Proof();
     const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
     const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
@@ -13829,17 +13937,17 @@ public:
         !NotFnInvocation->OperationCall ||
         Operation != NotFnInvocation->OperationCall->getDirectCallee() ||
         Operation->getParent()->getCanonicalDecl() != NotFnInvocation->Storage.Operation->getCanonicalDecl() ||
-        !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__type_traits/invoke.h")) return false;
+        !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Arguments = Variable->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[0].getAsType(), Context.getRecordType(Operation->getParent())) ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
-        Arguments[1].pack_size() != Operation->getNumParams()) return false;
+        Arguments[1].pack_size() != Operation->getNumParams()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = Arguments[1].pack_elements();
     const auto Expected = Selected->get(0).pack_elements();
     for (unsigned I = 0; I < Actual.size(); ++I)
       if (Actual[I].getKind() != TemplateArgument::Type || Expected[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) return false;
+          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
     // The caller independently authenticated this real initializer, selected
     // SDK primary and original written-void alias. This scope grants only the
     // corresponding unevaluated operation query, never a runtime body.
@@ -13854,20 +13962,20 @@ public:
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !Method || !Arguments ||
         NotFnInvokeSignature || NotFnInvokeWrittenPattern || !NotFnInvokeUses.empty() ||
         !CompletedNotFnInvokeSignatures.empty() || Arguments->size() != (NotFnReferenceDependency ? 1U : 2U) ||
-        Arguments->get(0).getKind() != TemplateArgument::Pack) return false;
+        Arguments->get(0).getKind() != TemplateArgument::Pack) return functionalBindDiagnosticFailure(__LINE__);
     auto Bound = notFnQueryBound();
-    if (Bound.isNull()) return false;
+    if (Bound.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Types) {
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) return false;
+          Types->get(1).pack_size() != Pack.size()) return functionalBindDiagnosticFailure(__LINE__);
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return false;
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     };
     std::set<const FunctionDecl *> Functions;
@@ -13897,22 +14005,22 @@ public:
           !family(F) || !family(Primary) || !family(First) || !family(Rest) ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return false;
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(
                 F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return functionalBindDiagnosticFailure(__LINE__);
       // _Fp is the deduction result; the actual parameter is _Fp&&.
       // Reference collapsing preserves lvalues and forwards rvalues with the
       // original const qualification. Do not change the template argument.
       const auto ForwardedCallable = Bound->isReferenceType() ? Bound : Context.getRValueReferenceType(Bound);
-      if (!Context.hasSameType(F->getParamDecl(0)->getType(), ForwardedCallable)) return false;
+      if (!Context.hasSameType(F->getParamDecl(0)->getType(), ForwardedCallable)) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
         if (Forwarded->isObjectType() || Forwarded->isFunctionType())
           Forwarded = Context.getRValueReferenceType(Forwarded);
-        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return false;
+        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return functionalBindDiagnosticFailure(__LINE__);
       }
       bool Selected = false;
       for (const auto *Selection : Selections) {
@@ -13924,22 +14032,22 @@ public:
             !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context) ||
             E->getNumArgs() != F->getNumParams() || E->isTypeDependent() || E->isValueDependent() ||
             !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return false;
+            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return functionalBindDiagnosticFailure(__LINE__);
         std::vector<const CallExpr *> Declvals;
-        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return false;
+        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return functionalBindDiagnosticFailure(__LINE__);
         for (unsigned I = 0; I < Pack.size(); ++I)
-          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return false;
+          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return functionalBindDiagnosticFailure(__LINE__);
         NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
         Uses.insert(E);
         Selected = true;
       }
-      if (!Selected) return false;
+      if (!Selected) return functionalBindDiagnosticFailure(__LINE__);
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty()) return false;
+    if (Functions.size() != 1 || Uses.empty()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *F = *Functions.begin();
     if (NotFnReferenceCall && F != (NotFnReferenceDependency
-        ? NotFnReferenceCall->ReferentDispatcher : NotFnReferenceCall->Dispatcher)) return false;
+        ? NotFnReferenceCall->ReferentDispatcher : NotFnReferenceCall->Dispatcher)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Pattern = F->getPrimaryTemplate()->getTemplatedDecl();
     const auto *Info = F->getTypeSourceInfo();
     const auto Location = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
@@ -13951,7 +14059,7 @@ public:
     const auto *ReturnCall = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
     const auto *ExceptionCall = Exception ? dyn_cast<CallExpr>(Exception->getOperand()->IgnoreParens()) : nullptr;
     if (!Info || !Pattern || !Pattern->getTypeSourceInfo() || !ReturnCall || !ExceptionCall ||
-        (!notFnQueryTargetMethod() && (ReturnCall->getDirectCallee() || ExceptionCall->getDirectCallee()))) return false;
+        (!notFnQueryTargetMethod() && (ReturnCall->getDirectCallee() || ExceptionCall->getDirectCallee()))) return functionalBindDiagnosticFailure(__LINE__);
     // Close this selected dependency at the original graph's root, retaining
     // the same cumulative node budget. No runtime helper/body is certified.
     auto Restore = llvm::make_scope_exit([&] {
@@ -13962,7 +14070,7 @@ public:
     NotFnInvokeReturn = ReturnCall;
     NotFnInvokeException = ExceptionCall;
     if (!notFnIndirectSignature(ReturnCall) || !notFnInvokeForwardedCall(ExceptionCall))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     {
       // The selected instance's written type preserves primary-template
       // parameter references. Bind only that exact primary while walking
@@ -13970,18 +14078,18 @@ public:
       // independent primary signature below retain their own full proofs.
       NotFnInvokeWrittenPattern = Pattern;
       auto RestoreWritten = llvm::make_scope_exit([&] { NotFnInvokeWrittenPattern = nullptr; });
-      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return false;
+      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     }
-    if (!function(F)) return false;
+    if (!function(F)) return functionalBindDiagnosticFailure(__LINE__);
     NotFnInvokeSignature = Pattern;
     NotFnInvokeReturn = NotFnInvokeException = nullptr;
     const auto *PatternPrototype = Pattern->getType()->getAs<FunctionProtoType>();
     if (!PatternPrototype || PatternPrototype->getExceptionSpecType() != EST_DependentNoexcept ||
         !PatternPrototype->getNoexceptExpr() || !family(Pattern) ||
         !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return false;
+        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Parameter : Pattern->parameters())
-      if (!notFnInvokeParameter(Parameter)) return false;
+      if (!notFnInvokeParameter(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
     CompletedNotFnInvokeSignatures.insert(F);
     NotFnInvokeUses = std::move(Uses);
     return !Failed;
@@ -13995,19 +14103,19 @@ public:
         !Operation || !Arguments || NotFnInvokeSignature || NotFnInvokeWrittenPattern ||
         NotFnOperationInvokeSignatureActive || Arguments->size() != 1 ||
         Arguments->get(0).getKind() != TemplateArgument::Pack ||
-        Arguments->get(0).pack_size() != Operation->getNumParams()) return false;
+        Arguments->get(0).pack_size() != Operation->getNumParams()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Bound = Context.getRecordType(Operation->getParent());
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Types) {
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) return false;
+          Types->get(1).pack_size() != Pack.size()) return functionalBindDiagnosticFailure(__LINE__);
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return false;
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     };
     if (NotFnOperationInvokeFunction)
@@ -14040,18 +14148,18 @@ public:
           !family(F) || !family(Primary) || !family(First) || !family(Rest) ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return false;
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(
                 F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
-      if (!Context.hasSameType(F->getParamDecl(0)->getType(), Context.getRValueReferenceType(Bound))) return false;
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return functionalBindDiagnosticFailure(__LINE__);
+      if (!Context.hasSameType(F->getParamDecl(0)->getType(), Context.getRValueReferenceType(Bound))) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
         if (Forwarded->isObjectType() || Forwarded->isFunctionType())
           Forwarded = Context.getRValueReferenceType(Forwarded);
-        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return false;
+        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return functionalBindDiagnosticFailure(__LINE__);
       }
       bool Selected = false;
       for (const auto *Selection : Selections) {
@@ -14063,19 +14171,19 @@ public:
             !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context) ||
             E->getNumArgs() != F->getNumParams() || E->isTypeDependent() || E->isValueDependent() ||
             !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return false;
+            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return functionalBindDiagnosticFailure(__LINE__);
         std::vector<const CallExpr *> Declvals;
-        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return false;
+        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return functionalBindDiagnosticFailure(__LINE__);
         for (unsigned I = 0; I < Pack.size(); ++I)
-          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return false;
+          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return functionalBindDiagnosticFailure(__LINE__);
         NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
         Uses.insert(E);
         Selected = true;
       }
-      if (!Selected) return false;
+      if (!Selected) return functionalBindDiagnosticFailure(__LINE__);
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty()) return false;
+    if (Functions.size() != 1 || Uses.empty()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *F = *Functions.begin();
     const auto *Pattern = F->getPrimaryTemplate()->getTemplatedDecl();
     const auto *Info = F->getTypeSourceInfo();
@@ -14096,7 +14204,7 @@ public:
           Cached->getBeginLoc() != Written->getBeginLoc() || Cached->getEndLoc() != Written->getEndLoc() ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Cached->getBeginLoc(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Cached->getEndLoc(), "libcxx", "__type_traits/invoke.h")) return false;
+          !cstddefOrigin(S, SM, Cached->getEndLoc(), "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
       ExceptionSource = Written;
     }
     const auto *Exception = ExceptionSource
@@ -14105,7 +14213,7 @@ public:
     const auto *ExceptionCall = Exception ? dyn_cast<CallExpr>(Exception->getOperand()->IgnoreParens()) : nullptr;
     if (!Info || !Pattern || !Pattern->getTypeSourceInfo() || !ReturnCall || !ExceptionCall ||
         !isa<CXXOperatorCallExpr>(ReturnCall) || !isa<CXXOperatorCallExpr>(ExceptionCall) ||
-        ReturnCall->getDirectCallee() != Operation || ExceptionCall->getDirectCallee() != Operation) return false;
+        ReturnCall->getDirectCallee() != Operation || ExceptionCall->getDirectCallee() != Operation) return functionalBindDiagnosticFailure(__LINE__);
     // Close this selected dependency at the original graph's root, retaining
     // the same cumulative node budget. No runtime helper/body is certified.
     auto Restore = llvm::make_scope_exit([&] {
@@ -14118,7 +14226,7 @@ public:
     NotFnInvokeReturn = ReturnCall;
     NotFnInvokeException = ExceptionCall;
     if (!notFnOperationQueryCall(ReturnCall) || !notFnOperationInvokeForwardedCall(ExceptionCall))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     {
       // The selected instance's written type preserves primary-template
       // parameter references. Bind only that exact primary while walking
@@ -14126,18 +14234,18 @@ public:
       // independent primary signature below retain their own full proofs.
       NotFnInvokeWrittenPattern = Pattern;
       auto RestoreWritten = llvm::make_scope_exit([&] { NotFnInvokeWrittenPattern = nullptr; });
-      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return false;
+      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     }
-    if (!function(F)) return false;
+    if (!function(F)) return functionalBindDiagnosticFailure(__LINE__);
     NotFnInvokeSignature = Pattern;
     NotFnInvokeReturn = NotFnInvokeException = nullptr;
     const auto *PatternPrototype = Pattern->getType()->getAs<FunctionProtoType>();
     if (!PatternPrototype || PatternPrototype->getExceptionSpecType() != EST_DependentNoexcept ||
         !PatternPrototype->getNoexceptExpr() || !family(Pattern) ||
         !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return false;
+        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Parameter : Pattern->parameters())
-      if (!notFnInvokeParameter(Parameter)) return false;
+      if (!notFnInvokeParameter(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
     // These exact declaration-only calls are published only after both the
     // selected and primary written signatures have passed this same graph.
     // Runtime bodies, forwarding, negation and lifetime remain separate.
@@ -14152,15 +14260,15 @@ public:
         isa<ClassTemplateSpecializationDecl>(R) || R->getDescribedClassTemplate() ||
         !family(R) || !family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumBases() || !Definition->field_empty() ||
-        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
+        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return functionalBindDiagnosticFailure(__LINE__);
     const auto Self = Context.getRecordType(Definition);
     const auto ConstantReference = Context.getLValueReferenceType(Self.withConst());
     unsigned Injected = 0, Default = 0, Copy = 0, Assign = 0, Destroy = 0;
     for (const auto *Declaration : Definition->decls()) {
-      if (!step()) return false;
+      if (!step()) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Name = dyn_cast<CXXRecordDecl>(Declaration)) {
         if (++Injected != 1 || !Name->isImplicit() || !Name->isInjectedClassName() ||
-            Name->getDeclContext() != Definition || !family(Name)) return false;
+            Name->getDeclContext() != Definition || !family(Name)) return functionalBindDiagnosticFailure(__LINE__);
         continue;
       }
       const auto *Member = dyn_cast<CXXMethodDecl>(Declaration);
@@ -14169,20 +14277,20 @@ public:
           Member->isVariadic() || Member->getAccess() != AS_public || Member->isConst() ||
           Member->isVolatile() || Member->getRefQualifier() != RQ_None ||
           Member->getDescribedFunctionTemplate() || !Member->getTypeSourceInfo() ||
-          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
+          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Parameter : Member->parameters())
         if (!family(Parameter) || Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() ||
-            !Context.hasSameType(Parameter->getType(), ConstantReference)) return false;
+            !Context.hasSameType(Parameter->getType(), ConstantReference)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Member)) {
         if (Constructor->isDefaultConstructor() && !Constructor->getNumParams()) ++Default;
         else if (Constructor->isCopyConstructor() && Constructor->getNumParams() == 1) ++Copy;
-        else return false;
+        else return functionalBindDiagnosticFailure(__LINE__);
       } else if (isa<CXXDestructorDecl>(Member)) {
-        if (Member->getNumParams()) return false;
+        if (Member->getNumParams()) return functionalBindDiagnosticFailure(__LINE__);
         ++Destroy;
       } else {
         if (!Member->isCopyAssignmentOperator() || Member->getNumParams() != 1 ||
-            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return false;
+            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return functionalBindDiagnosticFailure(__LINE__);
         ++Assign;
       }
     }
@@ -14259,15 +14367,15 @@ public:
         isa<ClassTemplateSpecializationDecl>(R) || R->getDescribedClassTemplate() ||
         !family(R) || !family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumBases() || !Definition->field_empty() ||
-        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
+        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return functionalBindDiagnosticFailure(__LINE__);
     const auto Self = Context.getRecordType(Definition);
     const auto ConstantReference = Context.getLValueReferenceType(Self.withConst());
     unsigned Injected = 0, Default = 0, Copy = 0, Assign = 0, Destroy = 0;
     for (const auto *Declaration : Definition->decls()) {
-      if (!step()) return false;
+      if (!step()) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Name = dyn_cast<CXXRecordDecl>(Declaration)) {
         if (++Injected != 1 || !Name->isImplicit() || !Name->isInjectedClassName() ||
-            Name->getDeclContext() != Definition || !family(Name)) return false;
+            Name->getDeclContext() != Definition || !family(Name)) return functionalBindDiagnosticFailure(__LINE__);
         continue;
       }
       const auto *Member = dyn_cast<CXXMethodDecl>(Declaration);
@@ -14276,20 +14384,20 @@ public:
           Member->isVariadic() || Member->getAccess() != AS_public || Member->isConst() ||
           Member->isVolatile() || Member->getRefQualifier() != RQ_None ||
           Member->getDescribedFunctionTemplate() || !Member->getTypeSourceInfo() ||
-          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
+          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Parameter : Member->parameters())
         if (!family(Parameter) || Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() ||
-            !Context.hasSameType(Parameter->getType(), ConstantReference)) return false;
+            !Context.hasSameType(Parameter->getType(), ConstantReference)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Member)) {
         if (Constructor->isDefaultConstructor() && !Constructor->getNumParams()) ++Default;
         else if (Constructor->isCopyConstructor() && Constructor->getNumParams() == 1) ++Copy;
-        else return false;
+        else return functionalBindDiagnosticFailure(__LINE__);
       } else if (isa<CXXDestructorDecl>(Member)) {
-        if (Member->getNumParams()) return false;
+        if (Member->getNumParams()) return functionalBindDiagnosticFailure(__LINE__);
         ++Destroy;
       } else {
         if (!Member->isCopyAssignmentOperator() || Member->getNumParams() != 1 ||
-            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return false;
+            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return functionalBindDiagnosticFailure(__LINE__);
         ++Assign;
       }
     }
@@ -14364,16 +14472,16 @@ public:
         Arguments->size() != (NotFnReferenceDependency ? 1U : 2U) || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         CompletedNotFnInvokeSignatures.size() != 1 || NotFnInvokeUses.empty() ||
         (OperationDependency ? !NotFnOperationTryResultUses.empty()
-                             : !NotFnTryResultUses.empty())) return false;
+                             : !NotFnTryResultUses.empty())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Operation = OperationDependency ? NotFnPublicOperation : nullptr;
     const auto *OperationArguments = Operation ? Operation->getTemplateSpecializationArgs() : nullptr;
     if (OperationDependency && (Depth != 0 || Failed || NotFnOperationQuery ||
         !Operation || !OperationArguments || OperationArguments->size() != 1 ||
         OperationArguments->get(0).getKind() != TemplateArgument::Pack ||
         OperationArguments->get(0).pack_size() != Operation->getNumParams() ||
-        !NotFnOperationInvokeFunction || NotFnOperationInvokeUses.empty())) return false;
+        !NotFnOperationInvokeFunction || NotFnOperationInvokeUses.empty())) return functionalBindDiagnosticFailure(__LINE__);
     auto Bound = notFnQueryBound();
-    if (Bound.isNull()) return false;
+    if (Bound.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     if (OperationDependency) Bound = Context.getRecordType(Operation->getParent());
     const auto Pack = OperationDependency ? OperationArguments->get(0).pack_elements()
                                           : Arguments->get(0).pack_elements();
@@ -14381,18 +14489,18 @@ public:
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) return false;
+          Types->get(1).pack_size() != Pack.size()) return functionalBindDiagnosticFailure(__LINE__);
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return false;
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     };
     std::set<const FunctionDecl *> Functions;
     std::map<const CallExpr *, const FunctionDecl *> Uses;
     for (const auto *Source : Sources) {
-      if (!step()) return false;
+      if (!step()) return functionalBindDiagnosticFailure(__LINE__);
       const auto *F = Source ? dyn_cast_or_null<CXXMethodDecl>(Source->Declaration) : nullptr;
       if (!F || !F->getIdentifier() || F->getName() != "__try_call" ||
           !BoundArguments(F->getTemplateSpecializationArgs()) || F->isVariadic() ||
@@ -14422,24 +14530,24 @@ public:
           !Source->Canonical || !Source->Sugared || !BoundArguments(Source->Canonical) ||
           !BoundArguments(Source->Sugared) || !family(F) || !family(Owner) || !family(OwnerPrimary) ||
           !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return false;
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
       const auto OwnerPack = Owner->getTemplateArgs()[2].pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (OwnerPack[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(OwnerPack[I].getAsType(), Pack[I].getAsType())) return false;
+            !Context.hasSameType(OwnerPack[I].getAsType(), Pack[I].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Definition = Owner->getDefinition();
       if (!Definition || Definition->isUnion() || Definition->isDynamicClass() ||
-          Definition->getNumBases() || !Definition->field_empty() || !family(Definition)) return false;
+          Definition->getNumBases() || !Definition->field_empty() || !family(Definition)) return functionalBindDiagnosticFailure(__LINE__);
       const TypeAliasDecl *Result = nullptr;
       for (const auto *Declaration : Definition->decls()) {
-        if (!step()) return false;
+        if (!step()) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Alias = dyn_cast<TypeAliasDecl>(Declaration);
         if (!Alias || !Alias->getIdentifier() || Alias->getName() != "_Result") continue;
-        if (Result || !family(Alias) || !Alias->getTypeSourceInfo()) return false;
+        if (Result || !family(Alias) || !Alias->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
         Result = Alias;
       }
       const auto *ResultType = Result ? dyn_cast<DecltypeType>(Result->getUnderlyingType().getTypePtr()) : nullptr;
@@ -14453,22 +14561,22 @@ public:
           E->isTypeDependent() || E->isValueDependent() ||
           Reference->getExprLoc() != Source->Location ||
           !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-          E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return false;
+          E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return functionalBindDiagnosticFailure(__LINE__);
       bool Selected = false;
       for (const auto *Selection : Selections) {
-        if (!step()) return false;
+        if (!step()) return functionalBindDiagnosticFailure(__LINE__);
         if (Selection && Selection->Function == F && Selection->Expression == E &&
             Selection->Location == Source->Location && Selection->FunctionalNotFnConstraint &&
             matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
       }
-      if (!Selected) return false;
+      if (!Selected) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Return = dyn_cast<DecltypeType>(F->getReturnType().getTypePtr());
       const auto *Invoke = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
       if (!Invoke || (OperationDependency
           ? (!NotFnOperationInvokeUses.count(Invoke) ||
              Invoke->getDirectCallee() != NotFnOperationInvokeFunction)
           : (!NotFnInvokeUses.count(Invoke) ||
-             !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())))) return false;
+             !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())))) return functionalBindDiagnosticFailure(__LINE__);
       // This declaration-only probe is used solely by the actual _Result
       // decltype. Close every real signature and member-template ancestor;
       // no runtime body is supplied or approved. The original class arguments
@@ -14476,7 +14584,7 @@ public:
       for (const auto *Template = Primary; Template;
            Template = Template->getInstantiatedFromMemberTemplate()) {
         if (!step() || !family(Template) ||
-            !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/invoke.h")) return false;
+            !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Parameters = Template->getTemplateParameters();
         const auto *First = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
         const auto *Rest = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
@@ -14487,13 +14595,13 @@ public:
             (Pattern->getParent() != Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
             !Pattern->isStatic() || Pattern->getNumParams() != 1 || Pattern->isVariadic() ||
             Pattern->hasBody() || Pattern->getParamDecl(0)->hasDefaultArg() ||
-            !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return false;
+            !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Declaration : Pattern->redecls()) {
           const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
           if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() || !Prototype ||
               Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
               !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
-              !function(Declaration)) return false;
+              !function(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
         }
       }
       for (const auto *Declaration : F->redecls()) {
@@ -14501,12 +14609,12 @@ public:
         if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() || !Prototype ||
             Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
             !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
-            !function(Declaration)) return false;
+            !function(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
       }
       const CXXMethodDecl *Fallback = nullptr;
       const CXXRecordDecl *Sentinel = nullptr;
       for (const auto *Witness : Sources) {
-        if (!step()) return false;
+        if (!step()) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Candidate = Witness ? dyn_cast_or_null<CXXMethodDecl>(Witness->Declaration) : nullptr;
         if (!Candidate || Candidate->getParent() != Owner || Candidate->getDeclName() != F->getDeclName() ||
             !Candidate->isVariadic() || Candidate->getNumParams() ||
@@ -14522,11 +14630,11 @@ public:
             Witness->Instantiation || Witness->Origin || Witness->WrittenStorageClass || Witness->Selection ||
             !BoundArguments(Witness->Canonical) || !BoundArguments(Witness->Sugared) ||
             !family(Candidate) || !notFnResultSentinelDefinition(R) ||
-            !cstddefOrigin(S, SM, Witness->Location, "libcxx", "__type_traits/invoke.h")) return false;
+            !cstddefOrigin(S, SM, Witness->Location, "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
         for (unsigned I = 0; I < Witness->Canonical->size(); ++I)
           if (!Witness->Canonical->get(I).structurallyEquals(Candidate->getTemplateSpecializationArgs()->get(I)) ||
               !Witness->Canonical->get(I).structurallyEquals(
-                  Context.getCanonicalTemplateArgument(Witness->Sugared->get(I)))) return false;
+                  Context.getCanonicalTemplateArgument(Witness->Sugared->get(I)))) return functionalBindDiagnosticFailure(__LINE__);
         // The unselected ellipsis candidate supplies a type identity only.
         // Its actual packet and every original member-template declaration
         // must close; no call selection or runtime body is invented for it.
@@ -14540,7 +14648,7 @@ public:
               !Rest->isParameterPack() || First->getIndex() != 0 || Rest->getIndex() != 1 ||
               First->hasDefaultArgument() || Rest->hasDefaultArgument() || !family(First) || !family(Rest) ||
               !Pattern || (Pattern->getParent() != Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
-              !Pattern->isStatic() || !Pattern->isVariadic() || Pattern->getNumParams() || Pattern->hasBody()) return false;
+              !Pattern->isStatic() || !Pattern->isVariadic() || Pattern->getNumParams() || Pattern->hasBody()) return functionalBindDiagnosticFailure(__LINE__);
           for (const auto *Declaration : Pattern->redecls()) {
             const auto *Info = Declaration->getTypeSourceInfo();
             const auto Location = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
@@ -14549,10 +14657,10 @@ public:
                 !Prototype->isVariadic() || Prototype->getNumParams() ||
                 Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
                 !Context.hasSameType(Info->getType(), Declaration->getType()) ||
-                Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return false;
+                Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return functionalBindDiagnosticFailure(__LINE__);
             for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                                     Prototype->getEllipsisLoc()})
-              if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+              if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
           }
         }
         const auto *Info = Candidate->getTypeSourceInfo();
@@ -14561,20 +14669,20 @@ public:
         if (!Location || !Prototype || !Prototype->isVariadic() || Prototype->getNumParams() ||
             Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
             !Context.hasSameType(Info->getType(), Candidate->getType()) ||
-            Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return false;
+            Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                                 Prototype->getEllipsisLoc()})
-          if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+          if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
         Fallback = Candidate;
         Sentinel = R->getCanonicalDecl();
       }
-      if (!Fallback || !Sentinel) return false;
+      if (!Fallback || !Sentinel) return functionalBindDiagnosticFailure(__LINE__);
       const auto Inserted = NotFnResultSentinels.emplace(Result, Sentinel);
-      if (!Inserted.second && Inserted.first->second != Sentinel) return false;
+      if (!Inserted.second && Inserted.first->second != Sentinel) return functionalBindDiagnosticFailure(__LINE__);
       Uses.emplace(E, F);
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty() || Failed) return false;
+    if (Functions.size() != 1 || Uses.empty() || Failed) return functionalBindDiagnosticFailure(__LINE__);
     // The operation dependency has a distinct selected identity and use set.
     // Reuse all original packet, primary, signature and sentinel obligations;
     // a helper name or a matching result type supplies no permission.
@@ -14596,11 +14704,11 @@ public:
         Storage.Tuple != NotFnFactoryDefaults->Selected.Storage.Tuple ||
         !Context.hasSameType(Storage.CallableType, NotFnCallableType) ||
         !Context.hasSameType(Query->getArg(0)->getType(), Context.getRecordType(Storage.Tuple)))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto Input = Query->getArg(1)->getType();
     if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage && !NotFnNestedStorage)) {
       if (!Input->isRValueReferenceType() ||
-          !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) return false;
+          !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) return functionalBindDiagnosticFailure(__LINE__);
     } else {
       // The forwarder is reached through the outer inherited initializer;
       // it is not a CXXConstructExpr in SelectedConstructions.
@@ -14610,10 +14718,10 @@ public:
           Forwarder->getParent()->getCanonicalDecl() != Storage.Forwarder->getCanonicalDecl() ||
           Forwarder->getNumParams() != 1 ||
           !Context.hasSameType(Input, Forwarder->getParamDecl(0)->getType()) ||
-          !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), Storage.CallableType)) return false;
+          !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), Storage.CallableType)) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto Found = OperationTraits.find(Query);
-    if (Found == OperationTraits.end()) return false;
+    if (Found == OperationTraits.end()) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Source = Found->second;
     const auto *QueryRoot = Source.Root ? Source.Root->IgnoreParenImpCasts() : nullptr;
     if (const auto *Binding = dyn_cast_or_null<CXXBindTemporaryExpr>(QueryRoot)) {
@@ -14622,7 +14730,7 @@ public:
       if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage && !NotFnNestedStorage) || !Destructor ||
           Destructor->getParent()->getCanonicalDecl() != Storage.Tuple->getCanonicalDecl() ||
           !Context.hasSameType(Binding->getType(), Context.getRecordType(Storage.Tuple)))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       // Keep the complete original root for VisitTypeTraitExpr. Its binding
       // and selected destructor still traverse the actual subobject graph.
       QueryRoot = Binding->getSubExpr()->IgnoreParenImpCasts();
@@ -14631,7 +14739,7 @@ public:
     if (!Source.Attempted || !Source.Complete || !Root || Source.Operands.size() != 1 ||
         Source.Destructor || Source.DestructionPrototype || Source.DestructionLookupAttempted ||
         Source.DestructionExceptionAttempted ||
-        !Context.hasSameType(Root->getType(), Query->getArg(0)->getType())) return false;
+        !Context.hasSameType(Root->getType(), Query->getArg(0)->getType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Constructor = Root->getConstructor();
     bool Selected = false;
     for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions)
@@ -14639,7 +14747,7 @@ public:
           Constructor->getParent()->getCanonicalDecl() == Storage.Tuple->getCanonicalDecl())
         Selected = true;
     if (!Selected || Constructor->getNumParams() != 1 ||
-        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Input)) return false;
+        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Input)) return functionalBindDiagnosticFailure(__LINE__);
     // This is the actual retained query for an already described runtime
     // construction, not a copy/move special member or a generic SDK grant.
     // The callback still authenticates the original variable packet before
@@ -14655,7 +14763,7 @@ public:
   }
   bool withNotFnConstructorDefaultType(const CXXConstructorDecl *Constructor,
       const TemplateTypeParmDecl *Parameter, std::function<bool()> Proof) {
-    if (!Constructor || !Parameter || !Parameter->hasDefaultArgument() || !Proof) return false;
+    if (!Constructor || !Parameter || !Parameter->hasDefaultArgument() || !Proof) return functionalBindDiagnosticFailure(__LINE__);
     const auto Default = Parameter->getDefaultArgument().getArgument().getAsType();
     if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage && !NotFnNestedStorage) || !NotFnFactoryDefaults ||
         Constructor->getParent()->getCanonicalDecl() !=
@@ -14668,7 +14776,7 @@ public:
         !Inherited || Inherited->getConstructor() != Constructor || !Parameters ||
         Parameters->size() != 2 || Parameters->getParam(1) != Parameter ||
         Parameter->getIndex() != 1 || Parameter->isParameterPack() || Default.isNull())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     // Bind this exact default while its primary, written or converted
     // source graph is checked. Each graph still closes independently.
     NotFnConstructorDefaultParameter = Parameter;
@@ -14684,7 +14792,7 @@ public:
   bool TraverseNotFnConstructorParameterTypes(const TemplateUseSource &Source,
       const NonTypeParameterSource &Type) {
     const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Type.Parameter);
-    if (!Parameter || !Parameter->getTypeSourceInfo() || !Type.Type) return false;
+    if (!Parameter || !Parameter->getTypeSourceInfo() || !Type.Type) return functionalBindDiagnosticFailure(__LINE__);
     auto TraverseSources = [&] {
       return TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) &&
              TraverseTypeLoc(Type.Type->getTypeLoc()) && !Failed;
@@ -14709,7 +14817,7 @@ public:
         !Source.Canonical || Source.Canonical->size() != 2 || !Arguments || Arguments->size() != 2 ||
         !Context.hasSameType(Type.Type->getType(), Context.IntTy) ||
         !family(Constructor) || !family(Primary) || !family(Parameter) || !family(Pack))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     bool Selected = false;
     for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions)
       Selected |= Construction && Construction->getConstructor() == Constructor;
@@ -14718,14 +14826,14 @@ public:
         Arguments->get(0).pack_elements()[0].getKind() != TemplateArgument::Type ||
         Arguments->get(1).getKind() != TemplateArgument::Integral ||
         !Arguments->get(1).getAsIntegral().isZero() ||
-        !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.IntTy)) return false;
+        !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I != 2; ++I)
-      if (!Source.Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
+      if (!Source.Canonical->get(I).structurallyEquals(Arguments->get(I))) return functionalBindDiagnosticFailure(__LINE__);
     const auto Input = Arguments->get(0).pack_elements()[0].getAsType();
     if (Input.isNull() ||
         !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), NotFnCallableType) ||
         !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
-            Input->isReferenceType() ? Input : Context.getRValueReferenceType(Input))) return false;
+            Input->isReferenceType() ? Input : Context.getRValueReferenceType(Input))) return functionalBindDiagnosticFailure(__LINE__);
     // The enclosing factory already matched this retained selected occurrence.
     // Keep both source graphs; this slot grants only the storage owner identity.
     NotFnConstructorTypeParameter = Parameter;
@@ -14738,7 +14846,7 @@ public:
         NotFnConstructorReturn || !Constructor || !Written ||
         Written != Constructor->getTypeSourceInfo() || !family(Constructor) ||
         !Constructor->getPrimaryTemplate() || !Constructor->getReturnType()->isVoidType())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     bool Selected = false;
     for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions) {
       const auto *Actual = Construction ? Construction->getConstructor() : nullptr;
@@ -14750,7 +14858,7 @@ public:
     const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
     if (!Selected || !Prototype || !Return ||
         !Return.getAs<BuiltinTypeLoc>() || !Return.getType()->isVoidType())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     // Clang's actual selected constructor carries a void return TypeLoc, but
     // constructors have no written return token. Bind only that precise slot;
     // all parameters, defaults, noexcept and other locations keep their proof.
@@ -14765,13 +14873,13 @@ public:
   }
   bool bindNotFnConstraintVariables(std::function<bool(const DeclRefExpr *)> Source) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature ||
-        NotFnConstraintVariableSource || !Source) return false;
+        NotFnConstraintVariableSource || !Source) return functionalBindDiagnosticFailure(__LINE__);
     NotFnConstraintVariableSource = std::move(Source);
     return true;
   }
   bool bindNotFnFactoryDefaults(const FunctionalNotFnFactoryTemplateSource &Factory) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnFactoryDefaults)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     NotFnFactoryDefaults = &Factory;
     return true;
   }
@@ -14779,10 +14887,10 @@ public:
     if (const auto *Sentinel = bindResultSentinelAlias(T)) {
       (void)Sentinel;
       if (!WalkUpFromTemplateSpecializationType(T) ||
-          !TraverseTemplateName(T->getTemplateName())) return false;
+          !TraverseTemplateName(T->getTemplateName())) return functionalBindDiagnosticFailure(__LINE__);
       const auto Arguments = T->template_arguments();
       for (unsigned I = 0; I < Arguments.size(); ++I)
-        if (!TraverseBindResultArgument(T, I, Arguments[I])) return false;
+        if (!TraverseBindResultArgument(T, I, Arguments[I])) return functionalBindDiagnosticFailure(__LINE__);
       return !Failed;
     }
     if (isa_and_nonnull<BuiltinTemplateDecl>(T->getTemplateName().getAsTemplateDecl())) {
@@ -14806,18 +14914,18 @@ public:
     if (const auto *Sentinel = notFnResultSentinelAlias(Location.getTypePtr())) {
       if (Location.getNumArgs() != 2 ||
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
-          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return false;
+          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
       const auto *First = Location.getArgLoc(0).getTypeSourceInfo();
       const auto *Second = Location.getArgLoc(1).getTypeSourceInfo();
       const auto *Record = Second ? Second->getType()->getAsCXXRecordDecl() : nullptr;
       if (!First || !Second || !Record ||
           First->getType() != Location.getTypePtr()->template_arguments()[0].getAsType() ||
           Second->getType() != Location.getTypePtr()->template_arguments()[1].getAsType() ||
-          Record->getCanonicalDecl() != Sentinel) return false;
+          Record->getCanonicalDecl() != Sentinel) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto Site : {Location.getTemplateNameLoc(), Location.getLAngleLoc(), Location.getRAngleLoc(),
                               First->getTypeLoc().getBeginLoc(), First->getTypeLoc().getEndLoc(),
                               Second->getTypeLoc().getBeginLoc(), Second->getTypeLoc().getEndLoc()})
-        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
       NotFnResultWrittenArgument = Second;
       NotFnResultWrittenSentinel = Sentinel;
     }
@@ -14830,18 +14938,18 @@ public:
     if (const auto *Sentinel = bindResultSentinelAlias(Location.getTypePtr())) {
       if (Location.getNumArgs() != 2 ||
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
-          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return false;
+          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
       const auto *First = Location.getArgLoc(0).getTypeSourceInfo();
       const auto *Second = Location.getArgLoc(1).getTypeSourceInfo();
       const auto *Record = Second ? Second->getType()->getAsCXXRecordDecl() : nullptr;
       if (!First || !Second || !Record ||
           First->getType() != Location.getTypePtr()->template_arguments()[0].getAsType() ||
           Second->getType() != Location.getTypePtr()->template_arguments()[1].getAsType() ||
-          Record->getCanonicalDecl() != Sentinel) return false;
+          Record->getCanonicalDecl() != Sentinel) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto Site : {Location.getTemplateNameLoc(), Location.getLAngleLoc(), Location.getRAngleLoc(),
                               First->getTypeLoc().getBeginLoc(), First->getTypeLoc().getEndLoc(),
                               Second->getTypeLoc().getBeginLoc(), Second->getTypeLoc().getEndLoc()})
-        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return functionalBindDiagnosticFailure(__LINE__);
       BindResultWrittenArgument = Second;
       BindResultWrittenSentinel = Sentinel;
     }
@@ -14883,11 +14991,26 @@ public:
         }
       }
     }
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
+        std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+      unsigned AggregateDepth = Depth;
+      const UtilityTupleQueryGraph *Ancestor = ParentBudget;
+      for (unsigned I = 0; Ancestor && I < 64; ++I, Ancestor = Ancestor->ParentBudget)
+        AggregateDepth += Ancestor->Depth;
+      static thread_local unsigned NearLimitTypes = 0;
+      if (AggregateDepth >= 48 && NearLimitTypes++ < 64) {
+        const auto Name = T.getAsString();
+        std::fprintf(stderr, "BIND-BUDGET-TYPE depth=%u aggregate=%u nodes=%u path=%lld type=%.*s\n",
+            Depth, AggregateDepth, Nodes,
+            BindCallMetadata ? static_cast<long long>(BindCallMetadata->OwnedPath.size()) : -1LL,
+            int(std::min<std::size_t>(Name.size(), 1024)), Name.c_str());
+      }
+    }
     if (!step() ||
         (T.isVolatileQualified() && !(Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
             !BindWeakResultSignaturePointee.isNull() && T == BindWeakResultSignaturePointee)) ||
         T.isRestrictQualified() || T.getAddressSpace() != LangAS::Default)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedTraitTypeSource)
       if (const auto Complete = BindNestedTraitTypeSource(T)) {
         if (!*Complete) Failed = true;
@@ -14903,7 +15026,7 @@ public:
              (Record->getCanonicalDecl() != BindWeakResultSentinel &&
               Record->getCanonicalDecl() != BindWeakResultOriginalSentinel))) {
           Failed = true;
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         }
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairSourceTypeSpelling(T))
       return true;
@@ -14915,11 +15038,11 @@ public:
         if (Bound != CatOwnerAtoms.end()) {
           for (const auto &[Owner, Slot] : Bound->second) {
             if (!CatInputOwners.count(Owner->getCanonicalDecl()) ||
-                Slot >= Owner->getTemplateArgs().size()) return false;
+                Slot >= Owner->getTemplateArgs().size()) return functionalBindDiagnosticFailure(__LINE__);
             const auto &Argument = Owner->getTemplateArgs()[Slot];
             const auto *Input = Argument.getKind() == TemplateArgument::Type
                 ? Context.getBaseElementType(Argument.getAsType())->getAsCXXRecordDecl() : nullptr;
-            if (!Input || Input->getCanonicalDecl() != Record->getCanonicalDecl()) return false;
+            if (!Input || Input->getCanonicalDecl() != Record->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
           }
           return true;
         }
@@ -14935,13 +15058,13 @@ public:
             !(BindFallbackSignature && BindFallbackSentinel &&
               Record->getCanonicalDecl() == BindFallbackSentinel)) {
           Failed = true;
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata)
       if (const auto *Projection = dyn_cast<TemplateSpecializationType>(T.getTypePtr()))
         if (BindTupleElementProjectionAtoms.count(Projection) && !bindTupleElementProjectionType(Projection)) {
           Failed = true;
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         }
     if (!Types.insert(T.getTypePtr()).second) return true;
     ++Depth;
@@ -14952,7 +15075,7 @@ public:
   }
   bool TraverseStmt(Stmt *E) {
     if (!E) return true;
-    if (!step()) return false;
+    if (!step()) return functionalBindDiagnosticFailure(__LINE__);
     if (!Expressions.insert(E).second) return true;
     // RAV's dataTraverseStmtPre/Post already own this statement's depth.
     // Preserve existing accounting for the other query modes.
@@ -14980,12 +15103,12 @@ public:
             // Repair only this authenticated original projection wrapper.
             // The real builtin/alias name token must remain SDK source.
             if (!cstddefOrigin(S, SM, Named.getTemplateNameLoc(), "libcxx",
-                               "__tuple/make_tuple_types.h")) return false;
+                               "__tuple/make_tuple_types.h")) return functionalBindDiagnosticFailure(__LINE__);
             for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
-              if (L.isInvalid()) return false;
+              if (L.isInvalid()) return functionalBindDiagnosticFailure(__LINE__);
               const auto Origin = S.sdkFile(SM, L);
               if ((!Origin || Origin->Root != "libcxx") &&
-                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) return false;
+                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) return functionalBindDiagnosticFailure(__LINE__);
             }
             return TraverseTemplateSpecializationTypeLoc(Named);
           }
@@ -15010,7 +15133,7 @@ public:
           !bindSelectedPartialSplitTypeEnd(Location, L) &&
           !(Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults &&
             functionalNotFnFactorySplitTypeEnd(
-                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return false;
+                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return functionalBindDiagnosticFailure(__LINE__);
     }
     return TraverseType(Location.getType()) &&
            RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location);
@@ -15054,22 +15177,33 @@ public:
     ++Depth;
     if (step()) return true;
     --Depth;
-    return false; // RAV skips this subtree; Failed still rejects the whole proof.
+    return functionalBindDiagnosticFailure(__LINE__); // RAV skips this subtree; Failed still rejects the whole proof.
   }
   bool dataTraverseStmtPost(Stmt *) { --Depth; return true; }
   bool VisitExpr(Expr *E) {
-    if (!step()) return false;
+    if (!step()) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E))
       return Operands.count(Opaque) && !Opaque->getSourceExpr();
     const auto Origin = S.sdkFile(SM, E->getExprLoc());
     if (!(GeneratedExceptionLiterals.count(E) ||
           (Mode == UtilityTupleQueryMode::PairConstruction &&
            GeneratedPairScalarInitializers.count(E)) ||
-          (Origin && Origin->Root == "libcxx"))) return false;
+          (Origin && Origin->Root == "libcxx"))) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Query = dyn_cast<CXXOperatorCallExpr>(E);
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedExpansionSource &&
         Query == BindNestedExpansionSource->Invocation.SourceCall) {
       const auto *Method = BindNestedExpansionSource->Invocation.Method;
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+        const auto Actual = Query->getType().getAsString();
+        const auto Returned = Method ? Method->getReturnType().getAsString() : std::string("<missing>");
+        std::fprintf(stderr, "BIND-NESTED-CALL-RESULT method=%u direct=%u type=%u kind=%u callback=%u path=%zu actual=%.*s returned=%.*s\n",
+            unsigned(bool(Method)), unsigned(Method && Query->getDirectCallee() == Method),
+            unsigned(Method && Query->getType() == Method->getReturnType().getNonReferenceType()),
+            unsigned(Method && Query->getValueKind() == Expr::getValueKindForType(Method->getReturnType())),
+            unsigned(bool(BindNestedCallResultSource)), BindNestedExpansionSource->Path.size(),
+            int(std::min<std::size_t>(Actual.size(), 1024)), Actual.c_str(),
+            int(std::min<std::size_t>(Returned.size(), 1024)), Returned.c_str());
+      }
       // The selected call keeps its sugared return type. Reprove that exact
       // type in the live child that owns its defaults and invocation source;
       // a canonical scalar result supplies no permission to the parent.
@@ -15120,11 +15254,11 @@ public:
             TraverseType(Declaration->getUnderlyingType());
       }
     }
-    if (!family(Declaration)) return false;
+    if (!family(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext())) {
       if (const auto ViewAlias = pairViewCountSizeAlias(Declaration, Owner)) {
-        if (!*ViewAlias) return false;
-      } else if (!record(Owner)) return false;
+        if (!*ViewAlias) return functionalBindDiagnosticFailure(__LINE__);
+      } else if (!record(Owner)) return functionalBindDiagnosticFailure(__LINE__);
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         BindUnusedResultOperand && Declaration == BindUnusedResultOperand) {
@@ -15148,12 +15282,22 @@ public:
   }
   bool VisitTemplateSpecializationType(TemplateSpecializationType *T) {
     const auto *Template = T->getTemplateName().getAsTemplateDecl();
-    if (!Template || !family(Template)) return false;
+    if (!Template || !family(Template)) return functionalBindDiagnosticFailure(__LINE__);
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         T != BindOriginalConjunctionAlias &&
         !T->isDependentType() && (!BindTypeSource || !BindTypeSource(T))) {
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+        const auto Name = QualType(T, 0).getAsString();
+        const auto Owner = BindMetadata->Record->getQualifiedNameAsString();
+        std::fprintf(stderr, "BIND-TYPE-SOURCE scalar=%u projections=%zu retained=%zu expansion=%u returnsource=%u alias=%u owner=%.*s type=%.*s\n",
+            unsigned(BindScalarConstraintSource), BindTupleElementProjections.size(),
+            BindRetainedTupleProjections.size(), unsigned(bool(BindNestedExpansionSource)),
+            unsigned(bool(BindNestedReturnSource)), unsigned(T->isTypeAlias()),
+            int(std::min<std::size_t>(Owner.size(), 512)), Owner.c_str(),
+            int(std::min<std::size_t>(Name.size(), 512)), Name.c_str());
+      }
       Failed = true;
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     }
     if (T->isTypeAlias()) {
       const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Template);
@@ -15164,7 +15308,7 @@ public:
       if (catMetadataMode() && Alias &&
           Alias->getName() == "__make_indices_imp") return catIndexAlias(T, Alias);
       if (!Declaration || !Declaration->getTypeSourceInfo() ||
-          !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+          !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       return TraverseType(T->getAliasedType());
     }
     if (Template->getName() == "__make_tuple_types" && !T->isDependentType()) {
@@ -15178,7 +15322,7 @@ public:
       const bool BindTag = Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
           Bind != BindTupleTagSlices.end() && Bind->second.Source == T;
       if (!NotFnTag && !BindTag && (T->template_arguments().size() != 1 ||
-          T->template_arguments()[0].getKind() != TemplateArgument::Type)) return false;
+          T->template_arguments()[0].getKind() != TemplateArgument::Type)) return functionalBindDiagnosticFailure(__LINE__);
     }
     return T->isDependentType() || record(T->getAsCXXRecordDecl());
   }
@@ -15192,10 +15336,10 @@ public:
         return BindVariableSource(E);
     }
     if (const auto *F = dyn_cast<FunctionDecl>(D)) {
-      if (!family(F) || !TraverseType(F->getType())) return false;
+      if (!family(F) || !TraverseType(F->getType())) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Arguments = F->getTemplateSpecializationArgs())
         for (const auto &A : Arguments->asArray())
-          if (!TraverseTemplateArgument(A)) return false;
+          if (!TraverseTemplateArgument(A)) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     }
     if (const auto *Parameter = dyn_cast<ParmVarDecl>(D)) {
@@ -15225,10 +15369,10 @@ public:
       if (!step() || !VisitExpr(E) || !step() || !step() || E->getOperator() != OO_Call ||
           E->getDirectCallee() != Child.Invocation.Method || E->getNumArgs() != Child.IncomingForwards.size() + 1 ||
           Child.IncomingForwards.size() > 2 || !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h"))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < Child.IncomingForwards.size(); ++I)
-        if (E->getArg(I + 1)->IgnoreParenImpCasts() != Child.IncomingForwards[I]) return false;
-      for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return false;
+        if (E->getArg(I + 1)->IgnoreParenImpCasts() != Child.IncomingForwards[I]) return functionalBindDiagnosticFailure(__LINE__);
+      for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     }
     if (Mode == UtilityTupleQueryMode::NotFnSignature && notFnQueryTargetMethod()) {
@@ -15242,8 +15386,8 @@ public:
         // Charge the skipped callee nodes without traversing an owned method
         // as though it were an SDK declaration family.
         if (Found->second != notFnQueryTargetMethod() || !step() || !VisitExpr(E) || !step() || !step() ||
-            E->getNumArgs() != notFnQueryTargetMethod()->getNumParams() + 1) return false;
-        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return false;
+            E->getNumArgs() != notFnQueryTargetMethod()->getNumParams() + 1) return functionalBindDiagnosticFailure(__LINE__);
+        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return functionalBindDiagnosticFailure(__LINE__);
         return true;
       }
     }
@@ -15255,13 +15399,13 @@ public:
     // bound above. Traverse the real receiver and nested invoke; the ordinary
     // source checker independently finishes the selected method signature/body.
     if (!step() || !VisitExpr(E) || !step() || !step() ||
-        E->getNumArgs() != 1 || !Found->second) return false;
+        E->getNumArgs() != 1 || !Found->second) return functionalBindDiagnosticFailure(__LINE__);
     return TraverseStmt(E->getArg(0));
   }
   bool VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindSourceLookupUses.count(E))
       return bindSourceLookupUse(E);
-    for (const auto *D : E->decls()) if (!family(D)) return false;
+    for (const auto *D : E->decls()) if (!family(D)) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
   bool VisitSubstNonTypeTemplateParmExpr(SubstNonTypeTemplateParmExpr *E) {
@@ -15280,7 +15424,7 @@ public:
     if (!step() || !Source.Attempted || !Source.Complete || !Source.Root ||
         Source.Operands.size() != 1 || !Operand || Operand->getSourceExpr() ||
         Source.Operands[0] != Operand || !Operands.count(Operand) || Access->ObjectIsArrow ||
-        !PairInputRecords.count(Access->Wrapper.Record->getCanonicalDecl())) return false;
+        !PairInputRecords.count(Access->Wrapper.Record->getCanonicalDecl())) return functionalBindDiagnosticFailure(__LINE__);
     // Only this actual SDK conversion family joins metadata. The SDK access
     // descriptor proves its pointer dereference; the pending ordinary query
     // must still finish the selected call and original exception source.
@@ -15288,7 +15432,7 @@ public:
     std::set<const CXXMethodDecl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(Current).second) continue;
       const auto *Prototype = Current->getType()->getAs<FunctionProtoType>();
       if (!isa<CXXConversionDecl>(Current) || !Current->isConst() || Current->isStatic() ||
@@ -15296,17 +15440,17 @@ public:
           Current->getNumParams() || Current->getPrimaryTemplate() ||
           !Prototype || !Prototype->isNothrow() || Prototype->getNoexceptExpr() ||
           !approvedStandardSDKDeclaration(S, SM, Current) ||
-          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Redeclaration : Current->redecls())
         Pending.push_back(cast<CXXMethodDecl>(Redeclaration));
       if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
-        if (!Member) return false;
+        if (!Member) return functionalBindDiagnosticFailure(__LINE__);
         Pending.push_back(Member);
       }
       if (const auto *Definition = Current->getDefinition()) {
         if (!approvedStandardSDKDeclaration(S, SM, Definition) ||
-            !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+            !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return functionalBindDiagnosticFailure(__LINE__);
       }
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
@@ -15331,13 +15475,13 @@ public:
         Types->get(0).pack_size() != Operation->getNumParams() ||
         Call->getNumArgs() != Operation->getNumParams() + 1 ||
         !Context.hasSameType(Call->getType(), Operation->getReturnType().getNonLValueExprType(Context)) ||
-        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return false;
+        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto Object = Context.getRecordType(Operation->getParent());
     const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
     if (!Receiver || Receiver->getCastKind() != CK_NoOp || !Receiver->isXValue() ||
-        !Context.hasSameType(Receiver->getType(), Context.getConstType(Object))) return false;
+        !Context.hasSameType(Receiver->getType(), Context.getConstType(Object))) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const CallExpr *> Declvals;
-    if (!notFnSignatureDeclval(Receiver->getSubExpr(), Object, Declvals)) return false;
+    if (!notFnSignatureDeclval(Receiver->getSubExpr(), Object, Declvals)) return functionalBindDiagnosticFailure(__LINE__);
     const auto Inputs = Types->get(0).pack_elements();
     for (unsigned I = 0; I < Operation->getNumParams(); ++I) {
       const auto Parameter = Operation->getParamDecl(I)->getType();
@@ -15345,9 +15489,9 @@ public:
       if (Inputs[I].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Operand->getType(), Parameter.getNonLValueExprType(Context)) ||
           Operand->getValueKind() != Expr::getValueKindForType(Parameter) ||
-          !notFnSignatureDeclval(Operand, Inputs[I].getAsType(), Declvals)) return false;
+          !notFnSignatureDeclval(Operand, Inputs[I].getAsType(), Declvals)) return functionalBindDiagnosticFailure(__LINE__);
     }
-    if (!family(Operation)) return false;
+    if (!family(Operation)) return functionalBindDiagnosticFailure(__LINE__);
     // Exact original SDK declval nodes, owned by this proven metadata query.
     // Their bodies and all user/runtime calls retain their original rules.
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
@@ -15367,7 +15511,7 @@ public:
         Call->getNumArgs() != Operation->getNumParams() + 1 ||
         NotFnInvokeSignature->getNumParams() != Call->getNumArgs() ||
         !Context.hasSameType(Call->getType(), Operation->getReturnType().getNonLValueExprType(Context)) ||
-        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return false;
+        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return functionalBindDiagnosticFailure(__LINE__);
     auto Forward = [&](const Expr *Operand, unsigned Index) {
       const auto *Cast = Operand ? dyn_cast<CXXStaticCastExpr>(Operand->IgnoreParens()) : nullptr;
       const auto *Use = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
@@ -15385,12 +15529,12 @@ public:
     const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
     if (!Receiver || Receiver->getCastKind() != CK_NoOp || !Receiver->isXValue() ||
         !Context.hasSameType(Receiver->getType(), Context.getConstType(Object)) ||
-        !Forward(Receiver->getSubExpr(), 0)) return false;
+        !Forward(Receiver->getSubExpr(), 0)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Operation->getNumParams(); ++I) {
       const auto Parameter = Operation->getParamDecl(I)->getType();
       if (!Forward(Call->getArg(I + 1), I + 1) ||
           !Context.hasSameType(Call->getArg(I + 1)->getType(), Parameter.getNonLValueExprType(Context)) ||
-          Call->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter)) return false;
+          Call->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
     }
     return family(Operation);
   }
@@ -15451,7 +15595,7 @@ public:
           E->getConstructionKind() != CXXConstructionKind::Complete ||
           !BindMetadataRecords.count(Constructor->getParent()->getCanonicalDecl()) ||
           !Context.hasSameUnqualifiedType(E->getType(), Context.getRecordType(Constructor->getParent())) ||
-          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return functionalBindDiagnosticFailure(__LINE__);
       return BindConstructionSource(E) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindCallMetadata &&
@@ -15469,7 +15613,7 @@ public:
           !E->isPRValue() || E->getConstructionKind() != CXXConstructionKind::Complete ||
           !BindMetadataRecords.count(Constructor->getParent()->getCanonicalDecl()) ||
           !Context.hasSameUnqualifiedType(E->getType(), Context.getRecordType(Constructor->getParent())) ||
-          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return functionalBindDiagnosticFailure(__LINE__);
       return specialMember(Constructor, 0, true) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindCallMetadata) {
@@ -15491,7 +15635,7 @@ public:
             Constructor->getParent()->getCanonicalDecl() !=
                 Argument.Reference->Wrapper.Record->getCanonicalDecl() ||
             !Context.hasSameUnqualifiedType(E->getType(), Context.getRecordType(Constructor->getParent())) ||
-            !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+            !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return functionalBindDiagnosticFailure(__LINE__);
         return specialMember(Constructor) && !Failed;
       }
     }
@@ -15509,7 +15653,7 @@ public:
           !Context.hasSameType(Operand->getType(),
               Query->getArg(1)->getType().getNonLValueExprType(Context)) ||
           Operand->getValueKind() != Expr::getValueKindForType(Query->getArg(1)->getType()))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       return function(Constructor) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
@@ -15553,19 +15697,19 @@ public:
       if (!PairFunctions || !PairSelections || !step() ||
           PairConstructionAncestors.size() >= 64 ||
           std::find(PairConstructionAncestors.begin(), PairConstructionAncestors.end(), E) !=
-              PairConstructionAncestors.end()) return false;
+              PairConstructionAncestors.end()) return functionalBindDiagnosticFailure(__LINE__);
       const auto Selected = PairSelections->find(E);
-      if (Selected == PairSelections->end() || Selected->second.empty()) return false;
+      if (Selected == PairSelections->end() || Selected->second.empty()) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Selection : Selected->second) {
         if (!Selection || Selection->Expression != E || Selection->Function != Constructor ||
             Selection->Location != PairTraitQuery->getExprLoc() ||
             !approvedUtilityPairTraitSelectionLocation(S, SM, Selection->Location, Constructor))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         const auto Sources = PairFunctions->find({Constructor, Selection->Location.getRawEncoding()});
-        if (Sources == PairFunctions->end() || Sources->second.empty()) return false;
+        if (Sources == PairFunctions->end() || Sources->second.empty()) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Source : Sources->second)
           if (!Source || Source->Declaration != Constructor || Source->Written ||
-              Source->Location != Selection->Location) return false;
+              Source->Location != Selection->Location) return functionalBindDiagnosticFailure(__LINE__);
       }
       const auto [Entry, Inserted] = PendingPairConstructions.emplace(E, PairTraitQuery);
       if (!Inserted) return Entry->second == PairTraitQuery && !Failed;
@@ -15616,7 +15760,7 @@ public:
           Prototype->getNoexceptExpr() ||
           approvedUtilityStringViewConstruction(S, SM, E, Context) !=
               UtilityStringViewConstruction::PointerAndSize)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I != 2; ++I) {
         const auto *Operand = dyn_cast<OpaqueValueExpr>(E->getArg(I)->IgnoreParenImpCasts());
         auto Input = PairTraitQuery->getArg(I + 1)->getType();
@@ -15626,7 +15770,7 @@ public:
             Constructor->getParamDecl(I)->hasDefaultArg() ||
             !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
             Operand->getValueKind() != Expr::getValueKindForType(Input))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
       }
       return function(Constructor) && !Failed;
     }
@@ -15655,7 +15799,7 @@ public:
           Constructor->getParamDecl(0)->hasDefaultArg() ||
           Constructor->getParamDecl(1)->hasDefaultArg() ||
           !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       return function(Constructor) && !Failed;
     }
     const auto SavedOwnerUse = PairOwnerUse;
@@ -15669,9 +15813,9 @@ public:
         E->getNumArgs() != Constructor->getNumParams() ||
         !Context.hasSameUnqualifiedType(E->getType(),
             Context.getRecordType(Constructor->getParent())) ||
-        !specialMember(Constructor)) return false;
+        !specialMember(Constructor)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Argument : E->arguments())
-      if (isa<CXXDefaultArgExpr>(Argument)) return false;
+      if (isa<CXXDefaultArgExpr>(Argument)) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
   bool VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
@@ -15686,7 +15830,7 @@ public:
           Context.hasSameType(E->getType(), Bound->second->getType()) &&
           Result && Result->getCanonicalDecl() == NotFnCallbackResultRecord;
     }
-    if (Operands.empty() || !E->getTemporary()) return false;
+    if (Operands.empty() || !E->getTemporary()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Destructor = E->getTemporary()->getDestructor();
     const auto SavedOwnerUse = PairOwnerUse;
     if (Mode == UtilityTupleQueryMode::PairConstruction && PairTraitConstruction &&
@@ -15697,26 +15841,26 @@ public:
     auto RestoreOwnerUse = llvm::make_scope_exit([&] { PairOwnerUse = SavedOwnerUse; });
     return specialMember(Destructor);
   }
-  bool VisitCXXDefaultArgExpr(CXXDefaultArgExpr *) { return false; }
-  bool VisitCXXDefaultInitExpr(CXXDefaultInitExpr *) { return false; }
-  bool VisitCXXNewExpr(CXXNewExpr *) { return false; }
-  bool VisitCXXDeleteExpr(CXXDeleteExpr *) { return false; }
-  bool VisitLambdaExpr(LambdaExpr *) { return false; }
+  bool VisitCXXDefaultArgExpr(CXXDefaultArgExpr *) { return functionalBindDiagnosticFailure(__LINE__); }
+  bool VisitCXXDefaultInitExpr(CXXDefaultInitExpr *) { return functionalBindDiagnosticFailure(__LINE__); }
+  bool VisitCXXNewExpr(CXXNewExpr *) { return functionalBindDiagnosticFailure(__LINE__); }
+  bool VisitCXXDeleteExpr(CXXDeleteExpr *) { return functionalBindDiagnosticFailure(__LINE__); }
+  bool VisitLambdaExpr(LambdaExpr *) { return functionalBindDiagnosticFailure(__LINE__); }
   bool pairDefaultFunctionFamily(const CXXConstructorDecl *Constructor,
                                   llvm::StringRef Path, bool OwnerPointer = false) {
     const auto *Record = Constructor ? Constructor->getParent() : nullptr;
     const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
-    if (!Record || !Primary) return false;
+    if (!Record || !Primary) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const Decl *> Pending{Constructor};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back(); Pending.pop_back();
-      if (!Declaration || !step()) return false;
+      if (!Declaration || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(Declaration).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path)) return false;
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Member = dyn_cast<CXXConstructorDecl>(Declaration)) {
         const auto *Owner = Member->getParent();
         if ((OwnerPointer ? Member->isDefaultConstructor() || Member->getNumParams() != 1 ||
@@ -15725,7 +15869,7 @@ public:
             Member->isDeleted() || Member->isVariadic() ||
             (Owner->getCanonicalDecl() != Record->getCanonicalDecl() &&
              Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl() &&
-             (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()))) return false;
+             (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()))) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Redeclaration : Member->redecls()) Pending.push_back(Redeclaration);
         if (OwnerPointer) Pending.push_back(Member->getParamDecl(0));
         if (const auto *Template = Member->getPrimaryTemplate()) Pending.push_back(Template);
@@ -15738,8 +15882,8 @@ public:
       } else if (const auto *Parameter = dyn_cast<ParmVarDecl>(Declaration)) {
         const auto *Owner = dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext());
         if (!OwnerPointer || !Owner || Owner->getNumParams() != 1 ||
-            Owner->getParamDecl(0) != Parameter || Parameter->hasDefaultArg()) return false;
-      } else if (!isa<NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return false;
+            Owner->getParamDecl(0) != Parameter || Parameter->hasDefaultArg()) return functionalBindDiagnosticFailure(__LINE__);
+      } else if (!isa<NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
     }
     // One exact retained element query supplies these signature identities.
     // A pointer constructor still closes its actual defaults and parameter source;
@@ -15756,7 +15900,7 @@ public:
         !Context.hasSameType(Arguments->get(0).getIntegralType(), Context.BoolTy) ||
         !Arguments->get(0).getAsIntegral().getBoolValue() ||
         Arguments->get(1).getKind() != TemplateArgument::Type ||
-        !Arguments->get(1).getAsType()->isVoidType()) return false;
+        !Arguments->get(1).getAsType()->isVoidType()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Dummy = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Default = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
     const auto *Info = Default && Default->hasDefaultArgument()
@@ -15773,37 +15917,37 @@ public:
         Alias->getName() != "_EnableIfDeleterDefaultConstructible" ||
         Alias->getDeclContext() != Primary->getDeclContext() ||
         Use->template_arguments().size() != 1 ||
-        Use->template_arguments()[0].getKind() != TemplateArgument::Expression) return false;
+        Use->template_arguments()[0].getKind() != TemplateArgument::Expression) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Reference = dyn_cast<DeclRefExpr>(Use->template_arguments()[0].getAsExpr()->IgnoreParenImpCasts());
     const auto *True = dyn_cast<CXXBoolLiteralExpr>(Dummy->getDefaultArgument().getArgument().getAsExpr());
     if (!Reference || Reference->getDecl() != Dummy || !True || !True->getValue() ||
         True->getBeginLoc().isMacroID() || True->getEndLoc().isMacroID() ||
-        !cstddefOrigin(S, SM, True->getExprLoc(), "libcxx", "__memory/unique_ptr.h")) return false;
+        !cstddefOrigin(S, SM, True->getExprLoc(), "libcxx", "__memory/unique_ptr.h")) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const Decl *> Pending{Alias};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back(); Pending.pop_back();
-      if (!Declaration || !step()) return false;
+      if (!Declaration || !step()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Family.insert(Declaration).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h")) return false;
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h")) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Template = dyn_cast<TypeAliasTemplateDecl>(Declaration)) {
-        if (Template->getTemplateParameters()->size() != 2) return false;
+        if (Template->getTemplateParameters()->size() != 2) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
         if (const auto *Original = Template->getInstantiatedFromMemberTemplate()) Pending.push_back(Original);
         Pending.push_back(Template->getTemplatedDecl());
         for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TypeAliasDecl, NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return false;
+      } else if (!isa<TypeAliasDecl, NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()->getDefinition());
     const TypedefNameDecl *Deleter = nullptr;
     if (!Owner || Owner->getTemplateArgs().size() != 2 ||
-        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type) return false;
+        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Declaration : Owner->decls())
       if (const auto *Named = dyn_cast<TypedefNameDecl>(Declaration);
           Named && Named->getIdentifier() && Named->getName() == "deleter_type") {
-        if (Deleter) return false;
+        if (Deleter) return functionalBindDiagnosticFailure(__LINE__);
         Deleter = Named;
       }
     const auto *DeleterInfo = Deleter ? Deleter->getTypeSourceInfo() : nullptr;
@@ -15811,15 +15955,15 @@ public:
         !Context.hasSameType(Deleter->getUnderlyingType(), Owner->getTemplateArgs()[1].getAsType()) ||
         !Context.hasSameType(DeleterInfo->getType(), Deleter->getUnderlyingType()) ||
         !approvedStandardSDKDeclaration(S, SM, Deleter) ||
-        !cstddefOrigin(S, SM, Deleter->getLocation(), "libcxx", "__memory/unique_ptr.h")) return false;
+        !cstddefOrigin(S, SM, Deleter->getLocation(), "libcxx", "__memory/unique_ptr.h")) return functionalBindDiagnosticFailure(__LINE__);
     // This actual owner default uses its own deleter alias. Authenticate the
     // declaration, substitution and original spelling before its first use.
     PairInputFamilies.insert(Deleter);
     PairStorageUseSource Source(*this);
-    if (!Source.check(DeleterInfo)) return false;
+    if (!Source.check(DeleterInfo)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Parameter : *Alias->getTemplateParameters())
       if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
-          Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) return false;
+          Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) return functionalBindDiagnosticFailure(__LINE__);
     return Source.check(Alias->getTemplatedDecl()->getTypeSourceInfo()) && Source.check(Info) && !Failed;
   }
   bool pairOwnerPointerAlias(const CXXConstructorDecl *Constructor) {
@@ -15829,12 +15973,12 @@ public:
     if (!Record || !PairDefaultOwnerSignature ||
         PairDefaultOwnerSignature->getConstructor() != Constructor ||
         Constructor->getNumParams() != 1 || Record->getTemplateArgs().size() != 2)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const TypedefNameDecl *Pointer = nullptr;
     for (const auto *Declaration : Record->decls())
       if (const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
           Alias && Alias->getIdentifier() && Alias->getName() == "pointer") {
-        if (Pointer) return false;
+        if (Pointer) return functionalBindDiagnosticFailure(__LINE__);
         Pointer = Alias;
       }
     auto Use = [](QualType Type) {
@@ -15862,28 +16006,28 @@ public:
         !cstddefOrigin(S, SM, Pointer->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
         !Alias || Alias->getName() != "__pointer" || !Original || !Original->isTypeAlias() ||
         !Detected || Detected->getName() != "__detected_or_t" || !family(Detected) ||
-        !Member || Member->getName() != "__pointer_member") return false;
+        !Member || Member->getName() != "__pointer_member") return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I != 2; ++I)
       if (Written->template_arguments()[I].getKind() != TemplateArgument::Type ||
           Record->getTemplateArgs()[I].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Written->template_arguments()[I].getAsType(),
-                               Record->getTemplateArgs()[I].getAsType())) return false;
+                               Record->getTemplateArgs()[I].getAsType())) return functionalBindDiagnosticFailure(__LINE__);
     std::set<const Decl *> Family{Pointer};
     for (const auto *Template : {Alias, Member}) {
       if (Template->getDeclContext() != Alias->getDeclContext() ||
-          Template->getTemplateParameters()->size() != (Template == Alias ? 2U : 1U)) return false;
+          Template->getTemplateParameters()->size() != (Template == Alias ? 2U : 1U)) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Redeclaration : Template->redecls()) {
         for (const auto *D : {static_cast<const Decl *>(Redeclaration),
                               static_cast<const Decl *>(Redeclaration->getTemplatedDecl())}) {
           if (!approvedStandardSDKDeclaration(S, SM, D) ||
-              !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/allocator_traits.h")) return false;
+              !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/allocator_traits.h")) return functionalBindDiagnosticFailure(__LINE__);
           Family.insert(D);
         }
         for (const auto *Parameter : *Redeclaration->getTemplateParameters()) {
           const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
           if (!Type || Type->isParameterPack() || Type->hasDefaultArgument() ||
               !approvedStandardSDKDeclaration(S, SM, Type) ||
-              !cstddefOrigin(S, SM, Type->getLocation(), "libcxx", "__memory/allocator_traits.h")) return false;
+              !cstddefOrigin(S, SM, Type->getLocation(), "libcxx", "__memory/allocator_traits.h")) return functionalBindDiagnosticFailure(__LINE__);
           Family.insert(Type);
         }
       }
@@ -15903,10 +16047,10 @@ public:
     if (!Parameters || Parameters->size() != 2 || Parameters->getParam(1) != Parameter ||
         !Parameter->hasDefaultArgument() ||
         Written.getArgument().getKind() != TemplateArgument::Type ||
-        Converted.getArgument().getKind() != TemplateArgument::Type) return false;
+        Converted.getArgument().getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Original = Parameter->getDefaultArgument().getTypeSourceInfo();
     const auto *Dummy = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
-    if (!Original || !Dummy || !Written.getTypeSourceInfo() || !Converted.getTypeSourceInfo()) return false;
+    if (!Original || !Dummy || !Written.getTypeSourceInfo() || !Converted.getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
     auto Use = [](QualType Type) {
       const auto *Value = Type.getTypePtr();
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Value)) Value = Elaborated->getNamedType().getTypePtr();
@@ -15915,7 +16059,7 @@ public:
     const auto *Pattern = Use(Original->getType());
     const auto *Alias = Pattern ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         Pattern->getTemplateName().getAsTemplateDecl()) : nullptr;
-    if (!Alias || !Pattern->isTypeAlias()) return false;
+    if (!Alias || !Pattern->isTypeAlias()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Info : {Written.getTypeSourceInfo(), Converted.getTypeSourceInfo()}) {
       const auto *Actual = Use(Info->getType());
       const auto *ActualAlias = Actual ? dyn_cast_or_null<TypeAliasTemplateDecl>(
@@ -15923,14 +16067,14 @@ public:
       if (!Actual || !Actual->isTypeAlias() || !ActualAlias ||
           ActualAlias->getCanonicalDecl() != Alias->getCanonicalDecl() ||
           Actual->template_arguments().size() != 1 ||
-          Actual->template_arguments()[0].getKind() != TemplateArgument::Expression) return false;
+          Actual->template_arguments()[0].getKind() != TemplateArgument::Expression) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Value = Actual->template_arguments()[0].getAsExpr();
       if (const auto *Constant = dyn_cast<ConstantExpr>(Value)) Value = Constant->getSubExpr();
       const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(Value);
       const auto *True = Substitution ? dyn_cast<CXXBoolLiteralExpr>(
           Substitution->getReplacement()->IgnoreParenImpCasts()) : nullptr;
       if (!Substitution || Substitution->getParameter() != Dummy ||
-          !True || !True->getValue() || !Context.hasSameType(True->getType(), Context.BoolTy)) return false;
+          !True || !True->getValue() || !Context.hasSameType(True->getType(), Context.BoolTy)) return functionalBindDiagnosticFailure(__LINE__);
     }
     PairStorageUseSource Spelling(*this);
     // Sema retains the substituted written/default type here. Its exact
@@ -15955,7 +16099,7 @@ public:
         !Constructor->isDefaulted() || Constructor->getPrimaryTemplate() ||
         !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
         !Definition || !Body || !Body->body_empty() || Definition->getNumCtorInitializers() != 1 ||
-        !pairDefaultFunctionFamily(Constructor, "__memory/allocator.h")) return false;
+        !pairDefaultFunctionFamily(Constructor, "__memory/allocator.h")) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Initializer = *Definition->init_begin();
     const auto *Child = Initializer->isBaseInitializer()
         ? dyn_cast_or_null<CXXConstructExpr>(Initializer->getInit()) : nullptr;
@@ -15972,7 +16116,7 @@ public:
         !Context.hasSameType(Allocator->Record->bases_begin()->getType(), Child->getType()) ||
         !Context.hasSameType(QualType(Initializer->getBaseClass(), 0), Child->getType()) ||
         !pairDefaultFunctionFamily(Selected, "__memory/allocator.h") ||
-        !bindPairInput(Child->getType())) return false;
+        !bindPairInput(Child->getType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Info = Allocator->Record->bases_begin()->getTypeSourceInfo();
     return Info && TraverseTypeLoc(Info->getTypeLoc()) && !Failed;
   }
@@ -15980,7 +16124,7 @@ public:
       const TypeTraitExpr *Query, const OperationTraitSource &Source,
       bool OwnerPointer = false) {
     if (Mode != UtilityTupleQueryMode::PairConstruction || !PairConstructor ||
-        Query->getNumArgs() != (OwnerPointer ? 2U : 1U)) return std::nullopt;
+        Query->getNumArgs() != (OwnerPointer ? 2U : 1U)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Original = Source.Root->IgnoreParenImpCasts();
     const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Original);
     const auto *Root = Temporary ? Temporary->getSubExpr()->IgnoreParenImpCasts() : Original;
@@ -15988,7 +16132,7 @@ public:
     const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
     const auto Target = Query->getArg(0)->getType();
     const auto *Record = Target->getAsCXXRecordDecl();
-    if (!Record || !PairInputRecords.count(Record->getCanonicalDecl())) return std::nullopt;
+    if (!Record || !PairInputRecords.count(Record->getCanonicalDecl())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const bool String = approvedUtilityStringRecord(S, SM, Record, Context).has_value();
     const auto Owner = utilityUniquePtrRecord(S, SM, Record, Context, false, false);
     const bool Allocator = PairDefaultStringSignature &&
@@ -16002,8 +16146,8 @@ public:
     // special-member source path instead of entering the pointer-only query.
     if (OwnerPointer && (!Owner || !Constructor || Constructor->getNumParams() != 1 ||
         !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Owner->PointerType)))
-      return std::nullopt;
-    if (!String && !Owner && !Allocator && !Deleter) return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
+    if (!String && !Owner && !Allocator && !Deleter) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     if (!Construction || !Constructor || !Construction->isPRValue() ||
         Construction->getConstructionKind() != CXXConstructionKind::Complete ||
         Construction->getNumArgs() != (OwnerPointer ? 1U : 0U) ||
@@ -16011,7 +16155,7 @@ public:
         Constructor->isDefaultConstructor() == OwnerPointer ||
         Source.Operands.size() != Construction->getNumArgs() ||
         !Context.hasSameType(Construction->getType(), Target) ||
-        Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) return false;
+        Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
     if (OwnerPointer) {
       // Bind the original opaque argument and selected pointer conversion. The
       // ordinary runtime construction and cleanup retain their separate checks.
@@ -16029,7 +16173,7 @@ public:
           !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Owner->PointerType) ||
           Constructor->getParamDecl(0)->hasDefaultArg() ||
           approvedUtilityUniquePtrConstruction(S, SM, Construction, Context) !=
-              UtilityUniquePtrConstruction::Pointer) return false;
+              UtilityUniquePtrConstruction::Pointer) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto *SavedQuery = PairTraitQuery;
     const auto *SavedConstruction = PairTraitConstruction;
@@ -16052,18 +16196,18 @@ public:
       if (!PairFunctions || !PairSelections ||
           !pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h", OwnerPointer) ||
           !pairDefaultOwnerAlias(Constructor) ||
-          (OwnerPointer && !pairOwnerPointerAlias(Constructor))) return false;
+          (OwnerPointer && !pairOwnerPointerAlias(Constructor))) return functionalBindDiagnosticFailure(__LINE__);
       const auto Events = PairSelections->find(Construction);
-      if (Events == PairSelections->end() || Events->second.empty()) return false;
+      if (Events == PairSelections->end() || Events->second.empty()) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Event : Events->second) {
         if (!Event || Event->Expression != Construction || Event->Function != Constructor ||
             Event->Location != Query->getExprLoc() ||
-            !approvedUtilityPairTraitSelectionLocation(S, SM, Event->Location, Constructor)) return false;
+            !approvedUtilityPairTraitSelectionLocation(S, SM, Event->Location, Constructor)) return functionalBindDiagnosticFailure(__LINE__);
         const auto Uses = PairFunctions->find({Constructor, Event->Location.getRawEncoding()});
-        if (Uses == PairFunctions->end() || Uses->second.empty()) return false;
+        if (Uses == PairFunctions->end() || Uses->second.empty()) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Use : Uses->second)
           if (!Use || Use->Location != Event->Location || Use->Written ||
-              !templateSource(*Use, Constructor, true) || Failed) return false;
+              !templateSource(*Use, Constructor, true) || Failed) return functionalBindDiagnosticFailure(__LINE__);
       }
       Complete = true;
     } else if (Allocator) {
@@ -16075,14 +16219,14 @@ public:
           Prototype->getExceptionSpecType() == EST_BasicNoexcept && !Prototype->getNoexceptExpr() &&
           pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h");
     }
-    if (!Complete || Failed) return false;
+    if (!Complete || Failed) return functionalBindDiagnosticFailure(__LINE__);
     if (Temporary) {
       const auto *Destructor = Temporary->getTemporary() ? Temporary->getTemporary()->getDestructor() : nullptr;
       if (!Destructor || !Record->getDestructor() ||
-          Record->getDestructor()->getCanonicalDecl() != Destructor->getCanonicalDecl()) return false;
+          Record->getDestructor()->getCanonicalDecl() != Destructor->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
       if (Owner) PairOwnerUse = PairOwnerMemberUse{Destructor, Query, Construction, nullptr, nullptr, Temporary};
-      if (!specialMember(Destructor) || Failed) return false;
-    } else if (!OwnerPointer && !Record->hasTrivialDestructor()) return false;
+      if (!specialMember(Destructor) || Failed) return functionalBindDiagnosticFailure(__LINE__);
+    } else if (!OwnerPointer && !Record->hasTrivialDestructor()) return functionalBindDiagnosticFailure(__LINE__);
     // Pointer constructibility retains a constructor-only root with no cleanup;
     // the original OperationTraitSource must have no destructor/lookup request.
     // Actual runtime destruction is still authenticated at its owning boundary.
@@ -16095,12 +16239,12 @@ public:
       return RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeTraitExpr(E, Queue);
     // Match Clang20's preorder walker, preserving both complete original TSIs.
     // Each operand owns its scope; the first result type cannot use __nat.
-    if (!WalkUpFromTypeTraitExpr(E)) return false;
+    if (!WalkUpFromTypeTraitExpr(E)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < E->getNumArgs(); ++I) {
       const auto *Saved = BindResultComparisonRecord;
       BindResultComparisonRecord = I == 1 ? Sentinel : nullptr;
       auto Restore = llvm::make_scope_exit([&] { BindResultComparisonRecord = Saved; });
-      if (!TraverseTypeLoc(E->getArg(I)->getTypeLoc())) return false;
+      if (!TraverseTypeLoc(E->getArg(I)->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     }
     return !Failed;
   }
@@ -16113,7 +16257,7 @@ public:
       const auto *SavedBind = BindResultComparisonRecord;
       BindResultComparisonRecord = I == 1 ? BindSentinel : nullptr;
       auto RestoreBind = llvm::make_scope_exit([&] { BindResultComparisonRecord = SavedBind; });
-      if (!TraverseType(E->getArg(I)->getType())) return false;
+      if (!TraverseType(E->getArg(I)->getType())) return functionalBindDiagnosticFailure(__LINE__);
     }
     const bool Construction = E->getTrait() == TT_IsConstructible ||
         E->getTrait() == TT_IsNothrowConstructible;
@@ -16121,9 +16265,9 @@ public:
         E->getTrait() == BTT_IsConvertibleTo;
     if (!Construction && !Conversion) return true;
     if (E->isTypeDependent() || E->isValueDependent() || E->isInstantiationDependent())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto Found = OperationTraits.find(E);
-    if (Found == OperationTraits.end()) return false;
+    if (Found == OperationTraits.end()) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Source = Found->second;
     if (Mode == UtilityTupleQueryMode::PairConstruction) {
       bool BoundRecord = false;
@@ -16146,7 +16290,7 @@ public:
     if (!Source.Attempted || !Source.Complete || !Source.Root ||
         Source.Operands.size() != Count || Source.Destructor ||
         Source.DestructionPrototype || Source.DestructionLookupAttempted ||
-        Source.DestructionExceptionAttempted) return false;
+        Source.DestructionExceptionAttempted) return functionalBindDiagnosticFailure(__LINE__);
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && !Count)
       if (const auto Default = pairSelectedDefaultQuery(E, Source)) return *Default;
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && Count == 1)
@@ -16159,7 +16303,7 @@ public:
           !Context.hasSameType(Source.Root->getType(), Target) ||
           !Source.Root->isPRValue() || Source.Root->isTypeDependent() ||
           Source.Root->isValueDependent() || Source.Root->isInstantiationDependent())
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       // Sema's exact retained zero-operand scalar root has no written token.
       // Authenticate this source-free node locally; no caller expression,
       // selected body, owner operation or runtime permission is registered.
@@ -16185,31 +16329,31 @@ public:
         T = Context.getRValueReferenceType(T);
       if (!Operand || Operand->getSourceExpr() ||
           !Context.hasSameType(Operand->getType(), T.getNonLValueExprType(Context)) ||
-          Operand->getValueKind() != Expr::getValueKindForType(T)) return false;
+          Operand->getValueKind() != Expr::getValueKindForType(T)) return functionalBindDiagnosticFailure(__LINE__);
       Operands.insert(Operand);
     }
     return TraverseStmt(const_cast<Expr *>(Source.Root));
   }
   bool function(const FunctionDecl *F) {
-    if (!family(F) || !bindCatInputs(F)) return false;
+    if (!family(F) || !bindCatInputs(F)) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto *Method = dyn_cast<CXXMethodDecl>(F))
       if (Method->isImplicit() || Method->isDefaulted()) return specialMember(Method);
     for (const auto *Parameter : F->parameters())
-      if (!family(Parameter) || !TraverseType(Parameter->getType())) return false;
+      if (!family(Parameter) || !TraverseType(Parameter->getType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Prototype = F->getType()->getAs<FunctionProtoType>();
-    if (!Prototype) return false;
+    if (!Prototype) return functionalBindDiagnosticFailure(__LINE__);
     switch (Prototype->getExceptionSpecType()) {
     case EST_None: case EST_BasicNoexcept: break;
     case EST_NoexceptTrue: case EST_NoexceptFalse:
       if (!Prototype->getNoexceptExpr() ||
-          !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) return false;
+          !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) return functionalBindDiagnosticFailure(__LINE__);
       break;
-    default: return false;
+    default: return functionalBindDiagnosticFailure(__LINE__);
     }
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(F)) {
       const auto Explicit = Constructor->getExplicitSpecifier();
       if (Explicit.isInvalid() || Explicit.getKind() == ExplicitSpecKind::Unresolved)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto *Pattern = dyn_cast_or_null<CXXConstructorDecl>(
           Constructor->getTemplateInstantiationPattern());
       const auto *Primary = Constructor->getPrimaryTemplate();
@@ -16218,8 +16362,8 @@ public:
       if (!Explicit.getExpr() &&
           ((Pattern && Pattern->getExplicitSpecifier().getExpr()) ||
            (PrimaryConstructor && PrimaryConstructor->getExplicitSpecifier().getExpr())))
-        return false;
-      if (!TraverseStmt(const_cast<Expr *>(Explicit.getExpr()))) return false;
+        return functionalBindDiagnosticFailure(__LINE__);
+      if (!TraverseStmt(const_cast<Expr *>(Explicit.getExpr()))) return functionalBindDiagnosticFailure(__LINE__);
     }
     return !Failed;
   }
@@ -16229,7 +16373,7 @@ public:
     if (OwnerDefault &&
         (Mode != UtilityTupleQueryMode::PairConstruction || !PairDefaultOwnerSignature ||
          PairDefaultOwnerSignature->getConstructor() != Constructor ||
-         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) return false;
+         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Primary = Constructor->getPrimaryTemplate();
     if (!Primary || Source.Kind != TemplateSourceKind::Function ||
         Source.Type || Source.Underlying || Source.Selection || Source.Instantiation ||
@@ -16239,16 +16383,16 @@ public:
         Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
         Source.Canonical->size() != Source.Sugared->size() ||
         Source.Canonical->size() != Primary->getTemplateParameters()->size())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto *Selected = Constructor->getTemplateSpecializationArgs();
-    if (!Selected || Selected->size() != Source.Canonical->size()) return false;
+    if (!Selected || Selected->size() != Source.Canonical->size()) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Selected->size(); ++I)
       if (!Selected->get(I).structurallyEquals(Source.Canonical->get(I)) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Arguments : {Source.Canonical, Source.Sugared})
       for (const auto &Argument : Arguments->asArray())
-        if (!TraverseTemplateArgument(Argument)) return false;
+        if (!TraverseTemplateArgument(Argument)) return functionalBindDiagnosticFailure(__LINE__);
     std::set<unsigned> Defaults, Parameters;
     const auto *Owners = Primary->getTemplateParameters();
     for (const auto &Default : Source.Defaults) {
@@ -16263,8 +16407,8 @@ public:
             !Defaults.insert(1).second || !Original || !Written ||
             Converted.getKind() != TemplateArgument::Type ||
             Source.Canonical->get(1).getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) return false;
-        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) return false;
+            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) return functionalBindDiagnosticFailure(__LINE__);
+        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) return functionalBindDiagnosticFailure(__LINE__);
         continue;
       }
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Default.Parameter);
@@ -16278,7 +16422,7 @@ public:
           Default.Written.getArgument().getAsExpr() !=
               Parameter->getDefaultArgument().getArgument().getAsExpr() ||
           !TraverseTemplateArgument(Default.Written.getArgument()) ||
-          !TraverseTemplateArgument(Default.Converted.getArgument())) return false;
+          !TraverseTemplateArgument(Default.Converted.getArgument())) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
       const auto *Converted = Default.Converted.getArgument().getKind() == TemplateArgument::Expression
           ? dyn_cast<ConstantExpr>(Default.Converted.getArgument().getAsExpr()) : nullptr;
@@ -16286,7 +16430,7 @@ public:
           !Context.hasSameType(Converted->getType(), Canonical.getIntegralType()) ||
           Converted->getResultAsAPSInt() != Canonical.getAsIntegral() ||
           Converted->getSubExpr()->IgnoreParens() != Default.Written.getArgument().getAsExpr())
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
     }
     for (const auto &ParameterType : Source.ParameterTypes) {
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(ParameterType.Parameter);
@@ -16295,17 +16439,17 @@ public:
           Owners->getParam(Parameter->getIndex()) != Parameter ||
           ParameterType.PackIndex != 0 || !ParameterType.Type ||
           !Parameters.insert(Parameter->getIndex()).second ||
-          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) return false;
+          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
       if (Canonical.getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(ParameterType.Type->getType(), Canonical.getIntegralType()))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
     }
     for (unsigned I = 0; I < Owners->size(); ++I) {
       const auto *Declaration = Owners->getParam(I);
       if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration)) {
         if (!Parameters.count(I) ||
-            (Parameter->hasDefaultArgument() && !Defaults.count(I))) return false;
+            (Parameter->hasDefaultArgument() && !Defaults.count(I))) return functionalBindDiagnosticFailure(__LINE__);
       } else if (const auto *Parameter = dyn_cast<TemplateTemplateParmDecl>(Declaration)) {
         const auto &Argument = Source.Canonical->get(I);
         if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
@@ -16313,10 +16457,10 @@ public:
             Parameter->getDefaultArgument().getArgument().getKind() != TemplateArgument::Template ||
             !Context.hasSameTemplateName(Argument.getAsTemplate(),
                 Parameter->getDefaultArgument().getArgument().getAsTemplate()) ||
-            !TraverseTemplateName(Argument.getAsTemplate())) return false;
+            !TraverseTemplateName(Argument.getAsTemplate())) return functionalBindDiagnosticFailure(__LINE__);
       } else if (const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Declaration)) {
-        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) return false;
-      } else return false;
+        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) return functionalBindDiagnosticFailure(__LINE__);
+      } else return functionalBindDiagnosticFailure(__LINE__);
     }
     return function(Constructor);
   }
@@ -16338,37 +16482,37 @@ public:
                  : !S.owns(SM, Source.Location)) ||
         !approvedUtilityPairMetadata(S, SM, Constructor->getParent()) ||
         !Context.hasSameUnqualifiedType(Construction->getType(),
-            Context.getRecordType(Constructor->getParent()))) return false;
+            Context.getRecordType(Constructor->getParent()))) return functionalBindDiagnosticFailure(__LINE__);
     // A piecewise use binds its exact public/private constructor descriptor.
     // This still grants signature source only; runtime admission requires the
     // separate outer-source, child-operation, lifetime and deferred checks.
     if (!approvedUtilityPairConstruction(S, SM, Construction, Context) &&
         (Factory || !approvedUtilityPairPiecewiseConstruction(
                          S, SM, Construction, Context)))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     PairConstructor = Constructor;
     PairFunctions = &Functions;
     PairSelections = &Selections;
     for (const auto *Field : Constructor->getParent()->fields())
-      if (!bindPairInput(Field->getType())) return false;
+      if (!bindPairInput(Field->getType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto Arguments = Factory ? Factory->arguments() : Construction->arguments();
     for (const auto *Argument : Arguments)
-      if (!bindPairInput(Argument->getType())) return false;
+      if (!bindPairInput(Argument->getType())) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Argument : Arguments)
-      if (!bindPairReferenceFactory(Argument)) return false;
+      if (!bindPairReferenceFactory(Argument)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Argument : Arguments)
-      if (!bindPairCallerValueAdapter(Argument)) return false;
+      if (!bindPairCallerValueAdapter(Argument)) return functionalBindDiagnosticFailure(__LINE__);
     if (Factory) {
       // Only this authenticated factory's substitutions join this fresh graph.
       // The caller's actual template use and arguments still complete ordinarily.
       std::vector<const Decl *> Pending{Factory->getDirectCallee()};
       while (!Pending.empty()) {
         const auto *Declaration = Pending.back(); Pending.pop_back();
-        if (!Declaration || !step()) return false;
+        if (!Declaration || !step()) return functionalBindDiagnosticFailure(__LINE__);
         if (!PairInputFamilies.insert(Declaration).second) continue;
         if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
             !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__utility/pair.h"))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
           for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
           if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
@@ -16377,7 +16521,7 @@ public:
           for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
           Pending.push_back(Template->getTemplatedDecl());
           for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
-        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return false;
+        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
       }
       // These are the exact two SDK forwarding uses already authenticated by
       // the public factory descriptor. Bind their substitutions, not their bodies.
@@ -16385,9 +16529,9 @@ public:
         if (!bindPairInput(Construction->getArg(I)->getType()) ||
             !bindPairCallerValueAdapter(Construction->getArg(I),
                                        Factory->getDirectCallee()->getParamDecl(I)))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
     }
-    if (!templateSource(Source, Constructor) || Failed) return false;
+    if (!templateSource(Source, Constructor) || Failed) return functionalBindDiagnosticFailure(__LINE__);
     for (std::size_t I = 0; I < PairConstructionSources.size(); ++I) {
       // Copy the item: its source can append more work to this same vector.
       const auto Work = PairConstructionSources[I];
@@ -16395,21 +16539,21 @@ public:
       if (!step() || Work.Ancestors.empty() || Work.Ancestors.size() > 64 ||
           Work.Ancestors.back() != Work.Construction || !Selected ||
           !PairInputRecords.count(Selected->getParent()->getCanonicalDecl()) ||
-          PendingPairConstructions[Work.Construction] != Work.Query) return false;
+          PendingPairConstructions[Work.Construction] != Work.Query) return functionalBindDiagnosticFailure(__LINE__);
       PairConstructor = Selected;
       PairConstructionAncestors = Work.Ancestors;
       for (const auto *Field : Selected->getParent()->fields())
-        if (!bindPairInput(Field->getType())) return false;
+        if (!bindPairInput(Field->getType())) return functionalBindDiagnosticFailure(__LINE__);
       const auto Events = PairSelections->find(Work.Construction);
-      if (Events == PairSelections->end() || Events->second.empty()) return false;
+      if (Events == PairSelections->end() || Events->second.empty()) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Event : Events->second) {
         if (!Event || Event->Expression != Work.Construction || Event->Function != Selected ||
-            Event->Location != Work.Query->getExprLoc()) return false;
+            Event->Location != Work.Query->getExprLoc()) return functionalBindDiagnosticFailure(__LINE__);
         const auto Sources = PairFunctions->find({Selected, Event->Location.getRawEncoding()});
-        if (Sources == PairFunctions->end() || Sources->second.empty()) return false;
+        if (Sources == PairFunctions->end() || Sources->second.empty()) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Use : Sources->second)
           if (!Use || Use->Location != Event->Location || Use->Written ||
-              !templateSource(*Use, Selected) || Failed) return false;
+              !templateSource(*Use, Selected) || Failed) return functionalBindDiagnosticFailure(__LINE__);
       }
     }
     Queries.assign(PairSourceQueries.begin(), PairSourceQueries.end());
@@ -16418,7 +16562,7 @@ public:
     return true;
   }
   bool catTemplateSource(const FunctionDecl *Function, const TemplateUseSource &Source) {
-    if (!bindCatInputs(Function)) return false;
+    if (!bindCatInputs(Function)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!Primary || !Arguments || Source.Kind != TemplateSourceKind::Function ||
@@ -16428,7 +16572,7 @@ public:
         !Source.Defaults.empty() || !Source.ParameterTypes.empty() ||
         !Source.Canonical || !Source.Sugared || Arguments->size() != 2 ||
         Source.Canonical->size() != 2 || Source.Sugared->size() != 2 ||
-        Primary->getTemplateParameters()->size() != 2) return false;
+        Primary->getTemplateParameters()->size() != 2) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < 2; ++I) {
       const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(
           Primary->getTemplateParameters()->getParam(I));
@@ -16436,9 +16580,9 @@ public:
           Parameter->isParameterPack() != (I == 1) ||
           !Arguments->get(I).structurallyEquals(Source.Canonical->get(I)) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return functionalBindDiagnosticFailure(__LINE__);
       if (!TraverseTemplateArgument(Source.Canonical->get(I)) ||
-          !TraverseTemplateArgument(Source.Sugared->get(I))) return false;
+          !TraverseTemplateArgument(Source.Sugared->get(I))) return functionalBindDiagnosticFailure(__LINE__);
     }
     return function(Function) && TraverseType(Function->getReturnType()) && !Failed;
   }
@@ -16454,7 +16598,7 @@ bool approvedUtilityTupleConstructionSignature(
       Construction->isTypeDependent() || Construction->isValueDependent() ||
       Construction->isInstantiationDependent() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
-      !S.owns(SM, Construction->getExprLoc())) return false;
+      !S.owns(SM, Construction->getExprLoc())) return functionalBindDiagnosticFailure(__LINE__);
   const auto *Constructor = Construction->getConstructor();
   UtilityTupleQueryGraph Graph(S, SM, Context, Members, Traits);
   if (!Constructor || Constructor->isInvalidDecl() || Constructor->isDeleted() ||
@@ -16464,46 +16608,46 @@ bool approvedUtilityTupleConstructionSignature(
       !Graph.admittedCarrier(Construction->getType()) ||
       !Context.hasSameUnqualifiedType(Construction->getType(),
                                       Context.getRecordType(Constructor->getParent())) ||
-      !Graph.function(Constructor)) return false;
+      !Graph.function(Constructor)) return functionalBindDiagnosticFailure(__LINE__);
   const bool Copy = Constructor->isCopyOrMoveConstructor();
   if (Copy ? (!Constructor->isDefaulted() || Constructor->getPrimaryTemplate() ||
               Construction->getNumArgs() != 1)
-           : !Constructor->getPrimaryTemplate()) return false;
+           : !Constructor->getPrimaryTemplate()) return functionalBindDiagnosticFailure(__LINE__);
   if (Copy && !Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
-                                              Construction->getType())) return false;
+                                              Construction->getType())) return functionalBindDiagnosticFailure(__LINE__);
   if (!Copy) {
     const auto Tuple = utilityTupleStorageRecord(
         S, SM, Construction->getType()->getAsCXXRecordDecl(), Context, 0);
     if (!Tuple || Construction->getNumArgs() != Tuple->Elements.size() ||
-        Constructor->isDefaultConstructor()) return false;
+        Constructor->isDefaultConstructor()) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
       if (!Context.hasSameUnqualifiedType(Construction->getArg(I)->getType(),
-              Tuple->Elements[I].getType().getNonReferenceType())) return false;
+              Tuple->Elements[I].getType().getNonReferenceType())) return functionalBindDiagnosticFailure(__LINE__);
   }
   for (unsigned I = 0; I < Construction->getNumArgs(); ++I) {
     const auto Parameter = Constructor->getParamDecl(I)->getType();
     const Expr *Argument = Construction->getArg(I);
     unsigned ArgumentNodes = 0;
     auto NoUserConversion = [&](auto &&Self, const Stmt *Node, unsigned Depth) -> bool {
-      if (!Node || Depth > 64 || ++ArgumentNodes > 200000) return false;
+      if (!Node || Depth > 64 || ++ArgumentNodes > 200000) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Cast = dyn_cast<CastExpr>(Node))
-        if (Cast->getCastKind() == CK_UserDefinedConversion) return false;
+        if (Cast->getCastKind() == CK_UserDefinedConversion) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *Call = dyn_cast<CallExpr>(Node))
-        if (isa_and_nonnull<CXXConversionDecl>(Call->getDirectCallee())) return false;
+        if (isa_and_nonnull<CXXConversionDecl>(Call->getDirectCallee())) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Child : Node->children())
-        if (Child && !Self(Self, Child, Depth + 1)) return false;
+        if (Child && !Self(Self, Child, Depth + 1)) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     };
-    if (!NoUserConversion(NoUserConversion, Argument, 0)) return false;
+    if (!NoUserConversion(NoUserConversion, Argument, 0)) return functionalBindDiagnosticFailure(__LINE__);
     unsigned Depth = 0;
     for (;;) {
-      if (++Depth > 64) return false;
+      if (++Depth > 64) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *P = dyn_cast<ParenExpr>(Argument)) { Argument = P->getSubExpr(); continue; }
       if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument)) {
         if (Cast->getCastKind() != CK_NoOp ||
             !Context.hasSameUnqualifiedType(Cast->getType(), Cast->getSubExpr()->getType()) ||
             !Cast->getType().isAtLeastAsQualifiedAs(Cast->getSubExpr()->getType(), Context))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         Argument = Cast->getSubExpr(); continue;
       }
       break;
@@ -16514,9 +16658,9 @@ bool approvedUtilityTupleConstructionSignature(
         !Graph.admittedCarrier(Argument->getType()) ||
         (Parameter->isRValueReferenceType() && Argument->isLValue()) ||
         (Parameter->isLValueReferenceType() &&
-         !Parameter->getPointeeType().isConstQualified() && !Argument->isLValue())) return false;
+         !Parameter->getPointeeType().isConstQualified() && !Argument->isLValue())) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto *Call = dyn_cast<CallExpr>(Argument))
-      if (isa_and_nonnull<CXXConversionDecl>(Call->getDirectCallee())) return false;
+      if (isa_and_nonnull<CXXConversionDecl>(Call->getDirectCallee())) return functionalBindDiagnosticFailure(__LINE__);
   }
   return true;
 }
@@ -16539,7 +16683,7 @@ bool approvedUtilityPairTraitSelectionLocation(
   if (!Origin || Origin->Root != "libcxx" || !Constructor || !Primary ||
       Constructor->isInvalidDecl() || Constructor->isDeleted() ||
       !approvedStandardSDKDeclaration(S, SM, Constructor) ||
-      !approvedStandardSDKDeclaration(S, SM, Primary)) return false;
+      !approvedStandardSDKDeclaration(S, SM, Primary)) return functionalBindDiagnosticFailure(__LINE__);
   const bool Query = Origin->Path == "__type_traits/is_constructible.h" ||
       Origin->Path == "__type_traits/is_nothrow_constructible.h" ||
       Origin->Path == "__type_traits/is_convertible.h";
@@ -16580,7 +16724,7 @@ bool approvedUtilityPairReferenceQueryCall(
       !Origin || Origin->Root != "libcxx" ||
       (Origin->Path != "__type_traits/is_constructible.h" &&
        Origin->Path != "__type_traits/is_nothrow_constructible.h" &&
-       Origin->Path != "__type_traits/is_convertible.h")) return false;
+       Origin->Path != "__type_traits/is_convertible.h")) return functionalBindDiagnosticFailure(__LINE__);
   const bool Construction = Query->getTrait() == TT_IsConstructible ||
       Query->getTrait() == TT_IsNothrowConstructible;
   const bool Conversion = Query->getTrait() == BTT_IsConvertible ||
@@ -16592,7 +16736,7 @@ bool approvedUtilityPairReferenceQueryCall(
       Source.Root->IgnoreParenImpCasts() != Member || Source.Operands.size() != 1 ||
       Source.Destructor || Source.DestructionPrototype || Source.DestructionLookupAttempted ||
       Source.DestructionExceptionAttempted || !Operand || Operand->getSourceExpr() ||
-      Source.Operands[0] != Operand || Access->ObjectIsArrow) return false;
+      Source.Operands[0] != Operand || Access->ObjectIsArrow) return functionalBindDiagnosticFailure(__LINE__);
   const auto Target = Query->getArg(Construction ? 0 : 1)->getType();
   auto Input = Query->getArg(Construction ? 1 : 0)->getType();
   if (Input->isObjectType() || Input->isFunctionType()) Input = Context.getRValueReferenceType(Input);
@@ -16600,12 +16744,12 @@ bool approvedUtilityPairReferenceQueryCall(
       !Context.hasSameUnqualifiedType(Target->getPointeeType(), Access->Wrapper.ReferentType) ||
       !Target->getPointeeType().isAtLeastAsQualifiedAs(Access->Wrapper.ReferentType, Context) ||
       !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
-      Operand->getValueKind() != Expr::getValueKindForType(Input)) return false;
+      Operand->getValueKind() != Expr::getValueKindForType(Input)) return functionalBindDiagnosticFailure(__LINE__);
   std::vector<const CXXMethodDecl *> Pending{Method};
   std::set<const CXXMethodDecl *> Family;
   while (!Pending.empty()) {
     const auto *Current = Pending.back(); Pending.pop_back();
-    if (!Current || Family.size() >= 64) return false;
+    if (!Current || Family.size() >= 64) return functionalBindDiagnosticFailure(__LINE__);
     if (!Family.insert(Current).second) continue;
     const auto *Prototype = Current->getType()->getAs<FunctionProtoType>();
     if (!isa<CXXConversionDecl>(Current) || Current->isInvalidDecl() || Current->isDeleted() ||
@@ -16613,16 +16757,16 @@ bool approvedUtilityPairReferenceQueryCall(
         Current->getNumParams() || Current->getPrimaryTemplate() || !Prototype ||
         Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
         !approvedStandardSDKDeclaration(S, SM, Current) ||
-        !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+        !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Redeclaration : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(Redeclaration));
     if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
       const auto *Selected = dyn_cast<CXXMethodDecl>(Pattern);
-      if (!Selected) return false;
+      if (!Selected) return functionalBindDiagnosticFailure(__LINE__);
       Pending.push_back(Selected);
     }
     if (const auto *Definition = Current->getDefinition())
       if (!approvedStandardSDKDeclaration(S, SM, Definition) ||
-          !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+          !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return functionalBindDiagnosticFailure(__LINE__);
   }
   return true;
 }
@@ -16665,7 +16809,7 @@ public:
       : S(S), SM(SM), Context(Context) {}
 
   bool location(SourceLocation L, llvm::ArrayRef<llvm::StringRef> Paths) const {
-    if (L.isInvalid()) return false;
+    if (L.isInvalid()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Spell = S.sdkFile(SM, SM.getSpellingLoc(L));
     const auto Expansion = S.sdkFile(SM, SM.getExpansionLoc(L));
     return Spell && Expansion && Spell->Root == "libcxx" &&
@@ -16680,7 +16824,7 @@ public:
   // for each independently retained default role.
   bool factoryDefaultSource(const TypeSourceInfo *Info,
                             const TypeSourceInfo *Primary) {
-    if (!Info || !Primary) return false;
+    if (!Info || !Primary) return functionalBindDiagnosticFailure(__LINE__);
     auto Specialization = [](const TypeSourceInfo *Source) {
       auto Written = Source->getTypeLoc();
       // The actual unqualified alias spelling has an implicit elaborated
@@ -16709,10 +16853,10 @@ public:
         Root.getRAngleLoc() != Original.getRAngleLoc() ||
         Root.getEndLoc() != Root.getRAngleLoc() ||
         !family(Alias, {"__type_traits/enable_if.h"}) ||
-        !location(Root.getBeginLoc(), {"__functional/not_fn.h"})) return false;
+        !location(Root.getBeginLoc(), {"__functional/not_fn.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const auto End = Root.getRAngleLoc();
     if (location(End, {"__functional/not_fn.h"})) return true;
-    if (!End.isMacroID()) return false;
+    if (!End.isMacroID()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Spell = SM.getSpellingLoc(End);
     const auto Range = SM.getImmediateExpansionRange(End);
     const auto Begin = Range.getBegin();
@@ -16721,10 +16865,10 @@ public:
         !Begin.isFileID() || !Range.getEnd().isFileID() ||
         Range.getEnd() != Begin.getLocWithOffset(1) ||
         SM.getExpansionLoc(End) != Begin ||
-        !location(Begin, {"__functional/not_fn.h"})) return false;
+        !location(Begin, {"__functional/not_fn.h"})) return functionalBindDiagnosticFailure(__LINE__);
     bool Invalid = false;
     const char *Written = SM.getCharacterData(Begin, &Invalid);
-    if (Invalid || *Written != '>') return false;
+    if (Invalid || *Written != '>') return functionalBindDiagnosticFailure(__LINE__);
     const char *Split = SM.getCharacterData(Spell, &Invalid);
     return !Invalid && *Split == '>';
   }
@@ -16733,9 +16877,9 @@ public:
     while (!Work.empty()) {
       const auto *D = Work.back(); Work.pop_back();
       if (!D || D->isInvalidDecl() || !location(D->getLocation(), Paths) ||
-          !approvedStandardSDKDeclaration(S, SM, D)) return false;
+          !approvedStandardSDKDeclaration(S, SM, D)) return functionalBindDiagnosticFailure(__LINE__);
       if (!Families.insert(D).second) continue;
-      if (Families.size() > 512) return false;
+      if (Families.size() > 512) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto *R = dyn_cast<CXXRecordDecl>(D)) {
         for (const auto *Redeclaration : R->redecls()) Work.push_back(Redeclaration);
         if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
@@ -16789,12 +16933,12 @@ public:
         !I->getSpecializedTemplateOrPartial().is<ClassTemplateDecl *>() ||
         !Definition || Definition->getNumBases() || !Definition->field_empty() ||
         !family(I, {"__utility/integer_sequence.h"}) ||
-        !family(Definition, {"__utility/integer_sequence.h"})) return false;
+        !family(Definition, {"__utility/integer_sequence.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Args = I->getTemplateArgs();
     if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Args[0].getAsType(), Context.getSizeType()) ||
         Args[1].getKind() != TemplateArgument::Pack || Args[1].pack_size() != 1)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto &Index = Args[1].pack_elements()[0];
     return Index.getKind() == TemplateArgument::Integral &&
            Index.getAsIntegral().isZero() &&
@@ -16913,7 +17057,7 @@ public:
         !Context.hasSameType(F->getReturnType(), Parameter->getType()) ||
         !Context.hasSameType(Args->get(0).getAsType(),
             Parameter->getType()->isLValueReferenceType() ? Parameter->getType()
-                : Parameter->getType()->getPointeeType())) return false;
+                : Parameter->getType()->getPointeeType())) return functionalBindDiagnosticFailure(__LINE__);
     Result = Call;
     return true;
   }
@@ -16924,11 +17068,11 @@ std::optional<FunctionalBindPlaceholderIdentity>
 describeFunctionalBindPlaceholderIdentity(
     const State &S, const SourceManager &SM, QualType Type,
     const ASTContext &Context) {
-  if (!S.coreV2() || Type.isNull()) return std::nullopt;
+  if (!S.coreV2() || Type.isNull()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   Type = Type.getNonReferenceType();
   if (Type.isVolatileQualified() || Type.isRestrictQualified() ||
       Type.getAddressSpace() != LangAS::Default || Type->isDependentType())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
       Type->getAsCXXRecordDecl());
   const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
@@ -16942,44 +17086,44 @@ describeFunctionalBindPlaceholderIdentity(
       (Record->getSpecializationKind() != TSK_Undeclared &&
        Record->getSpecializationKind() != TSK_ImplicitInstantiation) ||
       Record->getSpecializedTemplateOrPartial()
-          .is<ClassTemplatePartialSpecializationDecl *>()) return std::nullopt;
+          .is<ClassTemplatePartialSpecializationDecl *>()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const DeclContext *Parent = Namespace->getParent();
   unsigned NamespaceDepth = 0;
   while (const auto *Inline = dyn_cast_or_null<NamespaceDecl>(Parent)) {
     if (Inline->isStdNamespace()) break;
     if (++NamespaceDepth > 64 || !Inline->isInline() || Inline->isAnonymousNamespace())
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Parent = Inline->getParent();
   }
   const auto *Standard = dyn_cast_or_null<NamespaceDecl>(Parent);
-  if (!Standard || !Standard->isStdNamespace()) return std::nullopt;
+  if (!Standard || !Standard->isStdNamespace()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   auto Origin = [&](const Decl *Declaration) {
     const auto File = Declaration ? S.sdkFile(SM, Declaration->getLocation()) : std::nullopt;
     return File && File->Root == "libcxx" && File->Path == "__functional/bind.h" &&
         !S.owns(SM, Declaration->getLocation()) &&
         approvedStandardSDKDeclaration(S, SM, Declaration);
   };
-  if (!Origin(Namespace)) return std::nullopt;
+  if (!Origin(Namespace)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Parameters = Primary->getTemplateParameters();
   const auto *Parameter = Parameters && Parameters->size() == 1
       ? dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0)) : nullptr;
   if (!Parameter || Parameter->getDepth() || Parameter->getIndex() ||
       Parameter->isParameterPack() || Parameter->hasDefaultArgument() ||
       !Parameter->getTypeSourceInfo() || !Context.hasSameType(Parameter->getType(), Context.IntTy) ||
-      !Origin(Parameter) || Record->getTemplateArgs().size() != 1) return std::nullopt;
+      !Origin(Parameter) || Record->getTemplateArgs().size() != 1) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &Argument = Record->getTemplateArgs()[0];
   if (Argument.getKind() != TemplateArgument::Integral ||
       !Context.hasSameType(Argument.getIntegralType(), Context.IntTy) ||
-      Argument.getAsIntegral().isNegative()) return std::nullopt;
+      Argument.getAsIntegral().isNegative()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Rank = Argument.getAsIntegral().getLimitedValue(3);
-  if (Rank != 1 && Rank != 2) return std::nullopt;
+  if (Rank != 1 && Rank != 2) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   unsigned Declarations = 0;
   for (const auto *Declaration : Primary->redecls())
     if (++Declarations > 64 || !Origin(Declaration) || !Origin(Declaration->getTemplatedDecl()))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   Declarations = 0;
   for (const auto *Declaration : Record->redecls())
-    if (++Declarations > 64 || !Origin(Declaration)) return std::nullopt;
+    if (++Declarations > 64 || !Origin(Declaration)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // Only retain these actual SDK identities. No record completion or layout
   // query is allowed here because Sema may still be selecting an overload.
   return FunctionalBindPlaceholderIdentity{Record, Primary, Parameter, unsigned(Rank)};
@@ -16990,7 +17134,7 @@ describeFunctionalBindPlaceholderOperandSource(
     const State &S, const SourceManager &SM, const Expr *Operand,
     const ASTContext &Context) {
   if (!Operand || !S.owns(SM, Operand->getExprLoc()) || !Operand->isLValue() ||
-      Operand->isTypeDependent() || Operand->isValueDependent()) return std::nullopt;
+      Operand->isTypeDependent() || Operand->isValueDependent()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const Expr *Core = Operand;
   for (unsigned Depth = 0; Core && Depth < 64; ++Depth) {
     if (const auto *Parentheses = dyn_cast<ParenExpr>(Core)) {
@@ -16998,7 +17142,7 @@ describeFunctionalBindPlaceholderOperandSource(
     }
     if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Core)) {
       if (Cast->getCastKind() != CK_NoOp ||
-          !Context.hasSameType(Cast->getType(), Cast->getSubExpr()->getType())) return std::nullopt;
+          !Context.hasSameType(Cast->getType(), Cast->getSubExpr()->getType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       Core = Cast->getSubExpr(); continue;
     }
     break;
@@ -17017,9 +17161,9 @@ describeFunctionalBindPlaceholderOperandSource(
       !Variable->getType().isConstQualified() || Variable->getType().isVolatileQualified() ||
       Variable->getType().isRestrictQualified() || Variable->getType().getAddressSpace() != LangAS::Default ||
       !Context.hasSameUnqualifiedType(Variable->getType(), Context.getRecordType(Identity->Record)))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const VarDecl *Initializer = nullptr;
-  if (Variable->getAnyInitializer(Initializer)) return std::nullopt;
+  if (Variable->getAnyInitializer(Initializer)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   unsigned Declarations = 0;
   for (const auto *Declaration : Variable->redecls()) {
     const auto File = S.sdkFile(SM, Declaration->getLocation());
@@ -17031,7 +17175,7 @@ describeFunctionalBindPlaceholderOperandSource(
         Declaration->getStorageClass() != SC_Extern || !Declaration->hasGlobalStorage() ||
         Declaration->getTLSKind() != VarDecl::TLS_None || Declaration->isConstexpr() || Declaration->hasInit() ||
         !Declaration->getTypeSourceInfo() ||
-        !Context.hasSameType(Declaration->getType(), Variable->getType())) return std::nullopt;
+        !Context.hasSameType(Declaration->getType(), Variable->getType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   // The fixed SDK declares these empty objects extern const. Do not evaluate
   // them or manufacture an initializer/definition; later capture lowering
@@ -17045,7 +17189,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
                               const ASTContext &Context, unsigned Depth,
                               unsigned &Nodes, std::set<const CXXRecordDecl *> &Active) {
   if (!S.coreV2() || !Record || Depth >= 64 || ++Nodes > 200000 ||
-      !Active.insert(Record->getCanonicalDecl()).second) return std::nullopt;
+      !Active.insert(Record->getCanonicalDecl()).second) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   auto Restore = llvm::make_scope_exit([&] { Active.erase(Record->getCanonicalDecl()); });
   // Reuse only the declaration-family locator. Its mode-specific not_fn
   // expression, default and exception routines do not prove any bind source.
@@ -17054,11 +17198,11 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
                                        {"__functional/bind.h"});
   if (!Instance || Instance->getNumBases() != 1 ||
       std::distance(Instance->field_begin(), Instance->field_end()) != 2 ||
-      !Instance->hasTrivialDestructor()) return std::nullopt;
+      !Instance->hasTrivialDestructor()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &TemplateArguments = Instance->getTemplateArgs();
   if (TemplateArguments.size() != 2 ||
       TemplateArguments[0].getKind() != TemplateArgument::Type ||
-      TemplateArguments[1].getKind() != TemplateArgument::Pack) return std::nullopt;
+      TemplateArguments[1].getKind() != TemplateArgument::Pack) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
 
   auto DecayedValue = [&](QualType Type) -> QualType {
     if (Type.isNull()) return {};
@@ -17072,7 +17216,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
   auto ScalarValue = [&](QualType Type) {
     if (Type.isNull() || Type->isReferenceType() || Type.isVolatileQualified() ||
         Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default ||
-        Type->isDependentType() || Type->isIncompleteType()) return false;
+        Type->isDependentType() || Type->isIncompleteType()) return functionalBindDiagnosticFailure(__LINE__);
     Type = Type.getUnqualifiedType();
     return supportedFunctionalScalar(Type, Context) ||
            utilityObjectPointer(Context, Type);
@@ -17088,25 +17232,25 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
            Check.family(Value, {"__functional/bind.h"});
   };
   if (!StorageField(Callable, "__f_") ||
-      !StorageField(Bound, "__bound_args_")) return std::nullopt;
+      !StorageField(Bound, "__bound_args_")) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto CallableType = Callable->getType();
   const auto OriginalCallable = DecayedValue(TemplateArguments[0].getAsType());
   if (CallableType.isNull() || CallableType.hasQualifiers() ||
       CallableType->isDependentType() || !CallableType->isFunctionPointerType() ||
       OriginalCallable.isNull() ||
-      !Context.hasSameType(CallableType, OriginalCallable)) return std::nullopt;
+      !Context.hasSameType(CallableType, OriginalCallable)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Prototype = CallableType->getPointeeType()->getAs<FunctionProtoType>();
   if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
       Prototype->getNumParams() != TemplateArguments[1].pack_size())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Result = Prototype->getReturnType();
   if (!Result->isVoidType() &&
       !ScalarValue(Result->isReferenceType() ? Result->getPointeeType() : Result))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (const auto Parameter : Prototype->param_types())
     if (!ScalarValue(Parameter->isReferenceType()
                          ? Parameter->getPointeeType() : Parameter))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
 
   const auto &Base = *Instance->bases_begin();
   const auto *Weak = Check.record(Base.getType(), "__weak_result_type",
@@ -17116,7 +17260,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
       Weak->getTemplateArgs().size() != 1 ||
       Weak->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Weak->getTemplateArgs()[0].getAsType(), CallableType))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // A noexcept callback can select the generic weak-result chain. Its
   // selected partial/default/base sources are independent later obligations.
   // tuple<> is an explicit SDK specialization; the generic implicit-record
@@ -17129,20 +17273,20 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
   auto Arguments = Tuple ? approvedUtilityTupleRecordImpl(
       S, SM, Tuple, Context, Depth, false, false, nullptr, true) : std::nullopt;
   if (!Arguments || Arguments->Elements.size() != TemplateArguments[1].pack_size())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   unsigned Index = 0;
   for (const auto &Argument : TemplateArguments[1].pack_elements()) {
-    if (++Nodes > 200000 || Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+    if (++Nodes > 200000 || Argument.getKind() != TemplateArgument::Type) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto Value = DecayedValue(Argument.getAsType());
     if (Value.isNull() ||
         !Context.hasSameType(Value, Arguments->Elements[Index++].getType()))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     if (ScalarValue(Value)) continue;
     if (functionalBindEmptyPlaceholderStorage(S, SM, Value, Context)) {
       const auto &Element = Arguments->Elements[Index - 1];
       if (Element.Field || !Element.EmptyBase ||
           Element.EmptyBase->getCanonicalDecl() != Value->getAsCXXRecordDecl()->getCanonicalDecl())
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       continue;
     }
     const auto Reference = approvedFunctionalReferenceRecord(
@@ -17151,7 +17295,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
     const auto *Nested = Value->getAsCXXRecordDecl();
     if (!Nested || !functionalBindInertObjectSourceIdentity(S, SM, Value, Context) ||
         !describeFunctionalBindStorageImpl(S, SM, Nested, Context, Depth + 1, Nodes, Active))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
 
   // Retain the real ABI offsets rather than copying reference_wrapper's
@@ -17165,7 +17309,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
       BoundOffset % 8 ||
       CallableOffset + Context.getTypeSize(CallableType) > BoundOffset ||
       BoundOffset + Context.getTypeSize(Bound->getType()) > Size * 8)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalBindStorage{Instance, Weak, Callable, Bound, CallableType,
       std::move(*Arguments), CallableOffset, BoundOffset, Size,
       uint64_t(Layout.getAlignment().getQuantity())};
@@ -17194,7 +17338,7 @@ describeFunctionalBindFactorySource(
       Factory->isVariadic() || Factory->getNumParams() != Call->getNumArgs() ||
       Call->getNumArgs() != Storage->Arguments.Elements.size() + 1 ||
       !Context.hasSameType(Call->getType(), Factory->getReturnType()))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Primary = Factory->getPrimaryTemplate();
   const auto *Arguments = Factory->getTemplateSpecializationArgs();
@@ -17203,7 +17347,7 @@ describeFunctionalBindFactorySource(
       Arguments->get(0).getKind() != TemplateArgument::Type ||
       Arguments->get(1).getKind() != TemplateArgument::Pack ||
       Arguments->get(1).pack_size() + 1 != Factory->getNumParams() ||
-      !Check.family(Factory, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Factory, {"__functional/bind.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   auto DeducedParameter = [&](unsigned Index) -> QualType {
     const auto &Argument = Index ? Arguments->get(1).pack_elements()[Index - 1]
                                  : Arguments->get(0);
@@ -17217,7 +17361,7 @@ describeFunctionalBindFactorySource(
         !Context.hasSameType(Factory->getParamDecl(Index)->getType(), Expected) ||
         !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
                                         Expected->getPointeeType()))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   // The pinned bind factory has exactly its local result alias and return.
   // This description retains the alias as part of the original function body;
@@ -17234,7 +17378,7 @@ describeFunctionalBindFactorySource(
       ResultAlias->getDeclContext() != Factory || !ResultAlias->getTypeSourceInfo() ||
       !Context.hasSameType(ResultAlias->getUnderlyingType(), Factory->getReturnType()) ||
       !Check.family(ResultAlias, {"__functional/bind.h"}))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Construction = Check.construction(Return->getRetValue());
   const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
   const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody())
@@ -17246,12 +17390,12 @@ describeFunctionalBindFactorySource(
       Constructor->getParent()->getCanonicalDecl() != Storage->Record->getCanonicalDecl() ||
       Constructor->getNumParams() != Factory->getNumParams() ||
       Construction->getNumArgs() != Factory->getNumParams() ||
-      !Check.family(Constructor, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Constructor, {"__functional/bind.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> FactoryForwards;
   for (unsigned Index = 0; Index < Factory->getNumParams(); ++Index) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(Construction->getArg(Index), Factory->getParamDecl(Index),
-                          "__functional/bind.h", Forward)) return std::nullopt;
+                          "__functional/bind.h", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     FactoryForwards.push_back(Forward);
   }
   const CXXConstructExpr *WeakConstruction = nullptr, *BoundConstruction = nullptr;
@@ -17266,17 +17410,17 @@ describeFunctionalBindFactorySource(
           !Construct || Construct->getNumArgs() || !Selected ||
           !Selected->isDefaultConstructor() || !Selected->isTrivial() ||
           !Check.family(Selected, {"__functional/weak_result_type.h"}))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       WeakConstruction = Construct;
     } else if (Initializer->isMemberInitializer() &&
                Initializer->getMember() == Storage->Callable) {
-      if (CallableInitializer) return std::nullopt;
+      if (CallableInitializer) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       CallableInitializer = Initializer->getInit();
     } else if (Initializer->isMemberInitializer() &&
                Initializer->getMember() == Storage->BoundArguments) {
-      if (BoundConstruction) return std::nullopt;
+      if (BoundConstruction) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       BoundConstruction = Check.construction(Initializer->getInit());
-    } else return std::nullopt;
+    } else return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   const auto *BoundConstructor = BoundConstruction
       ? BoundConstruction->getConstructor() : nullptr;
@@ -17286,7 +17430,7 @@ describeFunctionalBindFactorySource(
       BoundConstructor->getNumParams() != Storage->Arguments.Elements.size() ||
       BoundConstructor->getParent()->getCanonicalDecl() !=
           Storage->Arguments.Record->getCanonicalDecl() ||
-      !Check.family(BoundConstructor, {"tuple"})) return std::nullopt;
+      !Check.family(BoundConstructor, {"tuple"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const CallExpr *CallableForward = nullptr;
   const Expr *ForwardedCallable = Check.stripped(CallableInitializer);
   if (const auto *Decay = dyn_cast_or_null<ImplicitCastExpr>(ForwardedCallable);
@@ -17299,17 +17443,17 @@ describeFunctionalBindFactorySource(
         !Parameter->getPointeeType()->isFunctionType() ||
         !Context.hasSameType(Decay->getSubExpr()->getType(), Parameter->getPointeeType()) ||
         !Context.hasSameType(Decay->getType(), Storage->CallableType))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     ForwardedCallable = Decay->getSubExpr();
   }
   if (!Check.forwarding(ForwardedCallable, Constructor->getParamDecl(0),
-                        "__functional/bind.h", CallableForward)) return std::nullopt;
+                        "__functional/bind.h", CallableForward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> BoundForwards;
   for (unsigned Index = 0; Index < Storage->Arguments.Elements.size(); ++Index) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(BoundConstruction->getArg(Index),
                           Constructor->getParamDecl(Index + 1),
-                          "__functional/bind.h", Forward)) return std::nullopt;
+                          "__functional/bind.h", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     BoundForwards.push_back(Forward);
   }
   std::vector<std::optional<FunctionalBindPlaceholderOperandSource>> Placeholders(
@@ -17319,7 +17463,7 @@ describeFunctionalBindFactorySource(
     if (!Element.EmptyBase) continue;
     Placeholders[Index] = describeFunctionalBindPlaceholderOperandSource(S, SM, Call->getArg(Index + 1), Context);
     if (!Placeholders[Index] || Placeholders[Index]->Identity.Record->getCanonicalDecl() !=
-                                   Element.EmptyBase->getCanonicalDecl()) return std::nullopt;
+                                   Element.EmptyBase->getCanonicalDecl()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   return FunctionalBindFactorySource{*Storage, Call, Factory, Construction,
       WeakConstruction, CallableInitializer, BoundConstruction,
@@ -17342,18 +17486,18 @@ describeFunctionalBindCallSourceImpl(
     const ASTContext &Context, FunctionalBindCallDescriptionWalk &Walk,
     const CXXOperatorCallExpr *Parent = nullptr, const CallExpr *Expansion = nullptr) {
   if (!Walk.Root || !S.owns(SM, Walk.Root->getExprLoc()) || !Walk.step() || !Call ||
-      !Walk.Active.insert(Call).second) return std::nullopt;
+      !Walk.Active.insert(Call).second) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   auto RestoreActive = llvm::make_scope_exit([&] { Walk.Active.erase(Call); });
   NotFnSelectedSource Entry(S, SM, Context);
   if (Walk.Path.empty()) {
-    if (Call != Walk.Root || Parent || Expansion) return std::nullopt;
+    if (Call != Walk.Root || Parent || Expansion) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   } else {
     const auto *Selected = Expansion ? Expansion->getDirectCallee() : nullptr;
     if (!Parent || !Walk.Active.count(Parent) || !Walk.Active.count(Walk.Root) ||
         !Selected || !Selected->getIdentifier() || Selected->getName() != "__mu_expand" ||
         !Entry.family(Selected, {"__functional/bind.h"}) ||
         !Entry.location(Call->getExprLoc(), {"__functional/bind.h"}) ||
-        Entry.core(Entry.returned(Selected)) != Call) return std::nullopt;
+        Entry.core(Entry.returned(Selected)) != Call) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee())
@@ -17363,7 +17507,7 @@ describeFunctionalBindCallSourceImpl(
       Method->getNumParams() > 2 || Method->isStatic() ||
       Method->isVariadic() || Method->isDeleted() || Method->isVolatile() ||
       Method->getRefQualifier() != RQ_None || Method->getAccess() != AS_public ||
-      !Walk.step()) return std::nullopt;
+      !Walk.step()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Object = Check.stripped(Call->getArg(0));
   const auto Storage = describeFunctionalBindStorage(
@@ -17379,13 +17523,13 @@ describeFunctionalBindCallSourceImpl(
       Method->isConst() != Object->getType().isConstQualified() ||
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()) ||
-      !Check.family(Method, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Method, {"__functional/bind.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<QualType> CallTypes;
   unsigned CallIndex = 0;
   for (const auto &Argument : MethodArguments->get(0).pack_elements()) {
-    if (Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+    if (Argument.getKind() != TemplateArgument::Type) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto Input = Argument.getAsType();
-    if (Input.isNull()) return std::nullopt;
+    if (Input.isNull()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto Value = Input.getNonReferenceType();
     const auto Forwarded = Input->isLValueReferenceType()
         ? Input : Context.getRValueReferenceType(Value);
@@ -17395,7 +17539,7 @@ describeFunctionalBindCallSourceImpl(
         !utilityScalar(Context, Value.getUnqualifiedType()) ||
         !Context.hasSameType(Method->getParamDecl(CallIndex)->getType(), Forwarded) ||
         !Context.hasSameType(Operand->getType(), Value) ||
-        Operand->isLValue() != Forwarded->isLValueReferenceType()) return std::nullopt;
+        Operand->isLValue() != Forwarded->isLValueReferenceType()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     CallTypes.push_back(Forwarded);
     ++CallIndex;
   }
@@ -17406,7 +17550,7 @@ describeFunctionalBindCallSourceImpl(
       ApplyFunction->getNumParams() != 4 || !ApplyFunction->getPrimaryTemplate() ||
       ApplyFunction->isVariadic() ||
       !Check.location(Apply->getExprLoc(), {"__functional/bind.h"}) ||
-      !Check.family(ApplyFunction, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(ApplyFunction, {"__functional/bind.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   auto MemberSlot = [&](const Expr *Expression, const FieldDecl *Field,
                         const ParmVarDecl *Parameter) {
     const auto *Member = dyn_cast_or_null<MemberExpr>(Check.stripped(Expression));
@@ -17421,7 +17565,7 @@ describeFunctionalBindCallSourceImpl(
   };
   if (!MemberSlot(Apply->getArg(0), Storage->Callable, ApplyFunction->getParamDecl(0)) ||
       !MemberSlot(Apply->getArg(1), Storage->BoundArguments, ApplyFunction->getParamDecl(1)))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Indices = Check.construction(Check.core(Apply->getArg(2)));
   const auto *IndexRecord = Indices ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
       Indices->getType()->getAsCXXRecordDecl()) : nullptr;
@@ -17433,17 +17577,17 @@ describeFunctionalBindCallSourceImpl(
       IndexPattern->getNumBases() || !IndexPattern->field_empty() ||
       !Check.family(IndexRecord, {"__tuple/tuple_indices.h", "__utility/integer_sequence.h"}) ||
       !Context.hasSameType(Indices->getType(), ApplyFunction->getParamDecl(2)->getType()))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &IndexArguments = IndexRecord->getTemplateArgs();
   if (IndexArguments.size() != 1 || IndexArguments[0].getKind() != TemplateArgument::Pack ||
-      IndexArguments[0].pack_size() != Storage->Arguments.Elements.size()) return std::nullopt;
+      IndexArguments[0].pack_size() != Storage->Arguments.Elements.size()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   unsigned Index = 0;
   for (const auto &Argument : IndexArguments[0].pack_elements()) {
     if (Argument.getKind() != TemplateArgument::Integral ||
         Argument.getAsIntegral().isNegative() ||
         Argument.getAsIntegral().getLimitedValue(65) != Index++ ||
         !Context.hasSameType(Argument.getIntegralType(), Context.getSizeType()))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   const auto *CallArguments = Check.construction(Check.core(Apply->getArg(3)));
   const auto *CallConstructor = CallArguments ? CallArguments->getConstructor() : nullptr;
@@ -17457,14 +17601,14 @@ describeFunctionalBindCallSourceImpl(
       CallStorage->Elements.size() != CallTypes.size() ||
       !Check.family(CallConstructor, {"tuple"}) ||
       !Context.hasSameType(ApplyFunction->getParamDecl(3)->getType(),
-                           Context.getRValueReferenceType(CallArguments->getType()))) return std::nullopt;
+                           Context.getRValueReferenceType(CallArguments->getType()))) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> CallForwards;
   for (unsigned I = 0; I < CallTypes.size(); ++I) {
     const CallExpr *Forward = nullptr;
     if (!Context.hasSameType(CallStorage->Elements[I].getType(), CallTypes[I]) ||
         !Context.hasSameType(CallConstructor->getParamDecl(I)->getType(), CallTypes[I]) ||
         !Check.forwarding(CallArguments->getArg(I), Method->getParamDecl(I),
-                          "__functional/bind.h", Forward)) return std::nullopt;
+                          "__functional/bind.h", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     CallForwards.push_back(Forward);
   }
   const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(ApplyFunction)));
@@ -17474,14 +17618,14 @@ describeFunctionalBindCallSourceImpl(
       Invoke->getNumArgs() != Storage->Arguments.Elements.size() + 1 ||
       InvokeFunction->getNumParams() != Invoke->getNumArgs() ||
       !Check.location(Invoke->getExprLoc(), {"__functional/bind.h"}) ||
-      !Check.family(InvokeFunction, {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.family(InvokeFunction, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   auto ParameterReference = [&](const Expr *Expression, const ParmVarDecl *Parameter) {
     const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Expression));
     return Reference && Reference->getDecl() == Parameter &&
         Context.hasSameType(Reference->getType(), Parameter->getType().getNonReferenceType());
   };
   if (!ParameterReference(Invoke->getArg(0), ApplyFunction->getParamDecl(0)))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<FunctionalBindArgumentSource> Arguments;
   for (unsigned I = 0; I < Storage->Arguments.Elements.size(); ++I) {
     const auto Stored = Storage->Arguments.Elements[I].getType();
@@ -17493,7 +17637,7 @@ describeFunctionalBindCallSourceImpl(
         !Check.location(Unwrap->getExprLoc(), {"__functional/bind.h"}) ||
         !Check.family(UnwrapFunction, {"__functional/bind.h"}) ||
         !ParameterReference(Unwrap->getArg(1), ApplyFunction->getParamDecl(3)))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto Wrapper = approvedFunctionalReferenceRecord(
         S, SM, Stored->getAsCXXRecordDecl(), Context);
     const auto *Copy = Wrapper ? Check.construction(Check.core(Unwrap->getArg(0))) : nullptr;
@@ -17512,12 +17656,12 @@ describeFunctionalBindCallSourceImpl(
         GetArguments->get(1).pack_size() != Storage->Arguments.Elements.size() ||
         !Context.hasSameType(GetFunction->getReturnType(), Context.getLValueReferenceType(Bound)) ||
         !ParameterReference(Get->getArg(0), ApplyFunction->getParamDecl(1)) ||
-        !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return std::nullopt;
+        !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     unsigned ArgumentIndex = 0;
     for (const auto &Argument : GetArguments->get(1).pack_elements()) {
       if (Argument.getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Argument.getAsType(),
-              Storage->Arguments.Elements[ArgumentIndex++].getType())) return std::nullopt;
+              Storage->Arguments.Elements[ArgumentIndex++].getType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     }
     std::optional<FunctionalReferenceAccessCall> Access;
     std::shared_ptr<const FunctionalBindNestedArgumentSource> Nested;
@@ -17536,7 +17680,7 @@ describeFunctionalBindCallSourceImpl(
           Access->Wrapper.Record->getCanonicalDecl() != Wrapper->Record->getCanonicalDecl() ||
           !ParameterReference(Access->Object, UnwrapFunction->getParamDecl(0)) ||
           !Context.hasSameType(UnwrapFunction->getParamDecl(0)->getType(), Stored))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       Forwarded = Context.getLValueReferenceType(Wrapper->ReferentType);
     } else if (const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Stored, Context)) {
       if (Copy || !Placeholder->Rank || Placeholder->Rank > CallTypes.size() ||
@@ -17544,7 +17688,7 @@ describeFunctionalBindCallSourceImpl(
                                Context.getLValueReferenceType(Bound)) ||
           !Context.hasSameType(UnwrapFunction->getParamDecl(1)->getType(),
                                Context.getLValueReferenceType(CallArguments->getType())))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto *Body = dyn_cast_or_null<CompoundStmt>(UnwrapFunction->getBody());
       const auto *Declaration = Body && Body->size() == 2
           ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
@@ -17606,11 +17750,11 @@ describeFunctionalBindCallSourceImpl(
           !GetterReference->hasExplicitTemplateArgs() || GetterReference->getNumTemplateArgs() != 1 ||
           PlaceholderGet->getValueKind() != VK_LValue ||
           PlaceholderForward->getValueKind() != Expr::getValueKindForType(Forwarded))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       unsigned Input = 0;
       for (const auto &Argument : GetterArguments->get(1).pack_elements())
         if (Argument.getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Argument.getAsType(), CallTypes[Input++])) return std::nullopt;
+            !Context.hasSameType(Argument.getAsType(), CallTypes[Input++])) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto &WrittenIndex = GetterReference->template_arguments()[0];
       const auto &WrittenArgument = WrittenIndex.getArgument();
       const Expr *IndexSource = WrittenArgument.getKind() == TemplateArgument::Expression
@@ -17619,7 +17763,7 @@ describeFunctionalBindCallSourceImpl(
       const auto *IndexReference = IndexSource
           ? dyn_cast_or_null<DeclRefExpr>(Check.core(IndexSource)) : nullptr;
       if (!IndexReference || IndexReference->getDecl() != PlaceholderIndex ||
-          !Check.location(IndexReference->getExprLoc(), {"__functional/bind.h"})) return std::nullopt;
+          !Check.location(IndexReference->getExprLoc(), {"__functional/bind.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       PlaceholderRank = Rank;
     } else if (functionalBindInertObjectSourceIdentity(S, SM, Stored, Context)) {
       const auto *UnwrapArguments = UnwrapFunction->getTemplateSpecializationArgs();
@@ -17668,7 +17812,7 @@ describeFunctionalBindCallSourceImpl(
           !Context.hasSameType(Expansion->getParamDecl(1)->getType(),
                                UnwrapFunction->getParamDecl(1)->getType()) ||
           !Context.hasSameType(Expansion->getReturnType(), UnwrapFunction->getReturnType()))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto *ExpansionIndices = Check.construction(Check.core(Expand->getArg(2)));
       const auto *ExpansionRecord = ExpansionIndices
           ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(ExpansionIndices->getType()->getAsCXXRecordDecl())
@@ -17682,30 +17826,30 @@ describeFunctionalBindCallSourceImpl(
           !Check.family(ExpansionRecord, {"__tuple/tuple_indices.h", "__utility/integer_sequence.h"}) ||
           !Context.hasSameType(ExpansionIndices->getType(), Alias->getUnderlyingType()) ||
           !Context.hasSameType(ExpansionIndices->getType(), Expansion->getParamDecl(2)->getType()))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       for (unsigned J = 0; J < CallTypes.size(); ++J) {
-        if (!Walk.step()) return std::nullopt;
+        if (!Walk.step()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
         for (const auto *Pack : {&UnwrapArguments->get(1), &ExpansionArguments->get(1)}) {
           const auto &Argument = Pack->pack_elements()[J];
           if (Argument.getKind() != TemplateArgument::Type ||
-              !Context.hasSameType(Argument.getAsType(), CallTypes[J])) return std::nullopt;
+              !Context.hasSameType(Argument.getAsType(), CallTypes[J])) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
         }
         for (const auto *Pack : {&ExpansionArguments->get(2), &ExpansionRecord->getTemplateArgs()[0]}) {
           const auto &Argument = Pack->pack_elements()[J];
           if (Argument.getKind() != TemplateArgument::Integral || Argument.getAsIntegral().isNegative() ||
               Argument.getAsIntegral().getLimitedValue(3) != J ||
               !Context.hasSameType(Argument.getIntegralType(), Context.getSizeType()))
-            return std::nullopt;
+            return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
         }
       }
       const auto *ChildCall = dyn_cast_or_null<CXXOperatorCallExpr>(Check.core(Check.returned(Expansion)));
       if (!ChildCall || ChildCall->getOperator() != OO_Call ||
           ChildCall->getNumArgs() != CallTypes.size() + 1 ||
           !ParameterReference(ChildCall->getArg(0), Expansion->getParamDecl(0)) ||
-          !Check.location(ChildCall->getExprLoc(), {"__functional/bind.h"})) return std::nullopt;
+          !Check.location(ChildCall->getExprLoc(), {"__functional/bind.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       std::vector<const CallExpr *> IncomingGets, IncomingForwards;
       for (unsigned J = 0; J < CallTypes.size(); ++J) {
-        if (!Walk.step()) return std::nullopt;
+        if (!Walk.step()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
         const auto *ForwardCall = dyn_cast_or_null<CallExpr>(Check.core(ChildCall->getArg(J + 1)));
         const auto *Forward = ForwardCall ? ForwardCall->getDirectCallee() : nullptr;
         const auto *ForwardArguments = Forward ? Forward->getTemplateSpecializationArgs() : nullptr;
@@ -17748,11 +17892,11 @@ describeFunctionalBindCallSourceImpl(
             IncomingGet->getNumArgs() != 1 ||
             !ParameterReference(IncomingGet->getArg(0), Expansion->getParamDecl(1)) ||
             IncomingGet->getValueKind() != VK_LValue ||
-            ForwardCall->getValueKind() != Expr::getValueKindForType(CallTypes[J])) return std::nullopt;
+            ForwardCall->getValueKind() != Expr::getValueKindForType(CallTypes[J])) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
         for (unsigned K = 0; K < CallTypes.size(); ++K) {
           const auto &Argument = GetterArguments->get(1).pack_elements()[K];
           if (Argument.getKind() != TemplateArgument::Type ||
-              !Context.hasSameType(Argument.getAsType(), CallTypes[K])) return std::nullopt;
+              !Context.hasSameType(Argument.getAsType(), CallTypes[K])) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
         }
         IncomingGets.push_back(IncomingGet);
         IncomingForwards.push_back(ForwardCall);
@@ -17761,14 +17905,14 @@ describeFunctionalBindCallSourceImpl(
       const auto Value = Result.getNonReferenceType();
       if (Result.isNull() || Value->isVoidType() || Value.isVolatileQualified() ||
           Value.isRestrictQualified() || Value.getAddressSpace() != LangAS::Default ||
-          !utilityScalar(Context, Value.getUnqualifiedType())) return std::nullopt;
+          !utilityScalar(Context, Value.getUnqualifiedType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       Walk.Path.push_back(I);
       auto RestorePath = llvm::make_scope_exit([&] { Walk.Path.pop_back(); });
       auto Child = describeFunctionalBindCallSourceImpl(S, SM, ChildCall, Context, Walk, Operator, Expand);
       const auto *StoredRecord = Stored->getAsCXXRecordDecl();
       if (!Child || !StoredRecord || Child->Storage.Record->getCanonicalDecl() != StoredRecord->getCanonicalDecl() ||
           !Context.hasSameType(Child->Object->getType(), Bound) ||
-          !Context.hasSameType(Child->Method->getReturnType(), Result)) return std::nullopt;
+          !Context.hasSameType(Child->Method->getReturnType(), Result)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       Forwarded = Result->isReferenceType() ? Result : Context.getRValueReferenceType(Result);
       Nested = std::make_shared<const FunctionalBindNestedArgumentSource>(FunctionalBindNestedArgumentSource{
           Walk.Root, Operator, I, Walk.Path, Get, Unwrap, Expand, Alias, ExpansionIndices,
@@ -17778,11 +17922,11 @@ describeFunctionalBindCallSourceImpl(
       if (Copy || !ParameterReference(Check.returned(UnwrapFunction),
                                      UnwrapFunction->getParamDecl(0)) ||
           !Context.hasSameType(UnwrapFunction->getParamDecl(0)->getType(), Forwarded))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     }
     if ((!Nested && !Context.hasSameType(UnwrapFunction->getReturnType(), Forwarded)) ||
         !Context.hasSameType(InvokeFunction->getParamDecl(I + 1)->getType(), Forwarded))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Arguments.push_back(FunctionalBindArgumentSource{Get, Unwrap, Copy, Access, Forwarded,
         PlaceholderRank, PlaceholderIndex, PlaceholderGet, PlaceholderForward, std::move(Nested)});
   }
@@ -17790,7 +17934,7 @@ describeFunctionalBindCallSourceImpl(
   if (!Target || Target->getDirectCallee() || Target->getNumArgs() != Arguments.size() ||
       !Context.hasSameUnqualifiedType(Target->getCallee()->getType(), Storage->CallableType) ||
       !Context.hasSameType(Target->getType(), Method->getReturnType().getNonReferenceType()) ||
-      Target->getValueKind() != Expr::getValueKindForType(Method->getReturnType())) return std::nullopt;
+      Target->getValueKind() != Expr::getValueKindForType(Method->getReturnType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // The selected bullet-7 __invoke body forwards with explicit reference
   // casts, not calls to std::forward. Retain each original cast and its written
   // TypeSourceInfo for the independently completed source graph.
@@ -17810,13 +17954,13 @@ describeFunctionalBindCallSourceImpl(
         !Check.location(Cast->getTypeInfoAsWritten()->getTypeLoc().getBeginLoc(),
                         {"__type_traits/invoke.h"}) ||
         !Check.location(Cast->getTypeInfoAsWritten()->getTypeLoc().getEndLoc(),
-                        {"__type_traits/invoke.h"})) return false;
+                        {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
     Casts.push_back(Cast);
     return true;
   };
-  if (!InvokeCast(Target->getCallee(), InvokeFunction->getParamDecl(0))) return std::nullopt;
+  if (!InvokeCast(Target->getCallee(), InvokeFunction->getParamDecl(0))) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < Arguments.size(); ++I)
-    if (!InvokeCast(Target->getArg(I), InvokeFunction->getParamDecl(I + 1))) return std::nullopt;
+    if (!InvokeCast(Target->getArg(I), InvokeFunction->getParamDecl(I + 1))) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalBindCallSource{*Storage, Operator, Method, Object, Apply, Invoke,
       Target, Indices, CallArguments, std::move(CallForwards),
       std::move(Arguments), std::move(Casts), Walk.Root, Walk.Path};
@@ -17827,7 +17971,7 @@ describeFunctionalBindCallSource(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Root = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
-  if (!Root || !S.owns(SM, Root->getExprLoc())) return std::nullopt;
+  if (!Root || !S.owns(SM, Root->getExprLoc())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   FunctionalBindCallDescriptionWalk Walk{Root};
   return describeFunctionalBindCallSourceImpl(S, SM, Call, Context, Walk);
 }
@@ -17839,21 +17983,21 @@ describeFunctionalBindCallSourceOccurrence(
     const State &S, const SourceManager &SM,
     const FunctionalBindCallSource &Call, const ASTContext &Context) {
   if (!Call.OwnedRoot || !Call.SourceCall || Call.OwnedPath.size() >= 64 ||
-      !S.owns(SM, Call.OwnedRoot->getExprLoc())) return std::nullopt;
+      !S.owns(SM, Call.OwnedRoot->getExprLoc())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Root = describeFunctionalBindCallSource(S, SM, Call.OwnedRoot, Context);
-  if (!Root || Root->OwnedRoot != Call.OwnedRoot || !Root->OwnedPath.empty()) return std::nullopt;
+  if (!Root || Root->OwnedRoot != Call.OwnedRoot || !Root->OwnedPath.empty()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const FunctionalBindCallSource *Current = &*Root;
   std::vector<unsigned> Path;
   for (unsigned Slot : Call.OwnedPath) {
     Path.push_back(Slot);
     if (Slot >= Current->Arguments.size() || !Current->Arguments[Slot].Nested)
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto &Child = *Current->Arguments[Slot].Nested;
     if (Child.Root != Call.OwnedRoot || Child.Parent != Current->SourceCall ||
         Child.Slot != Slot || Child.Path != Path || Child.Get != Current->Arguments[Slot].Get ||
         Child.Unwrap != Current->Arguments[Slot].Unwrap ||
         Child.Invocation.OwnedRoot != Call.OwnedRoot || Child.Invocation.OwnedPath != Path)
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Current = &Child.Invocation;
   }
   if (Current->SourceCall != Call.SourceCall || Current->Method != Call.Method ||
@@ -17861,7 +18005,7 @@ describeFunctionalBindCallSourceOccurrence(
       Current->Target != Call.Target || Current->Indices != Call.Indices ||
       Current->CallArguments != Call.CallArguments || Current->CallForwards != Call.CallForwards ||
       Current->InvokeCasts != Call.InvokeCasts || Current->Storage.Record != Call.Storage.Record ||
-      Current->Arguments.size() != Call.Arguments.size()) return std::nullopt;
+      Current->Arguments.size() != Call.Arguments.size()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < Current->Arguments.size(); ++I) {
     const auto &Actual = Current->Arguments[I], &Given = Call.Arguments[I];
     if (Actual.Get != Given.Get || Actual.Unwrap != Given.Unwrap ||
@@ -17870,10 +18014,10 @@ describeFunctionalBindCallSourceOccurrence(
         Actual.PlaceholderForward != Given.PlaceholderForward ||
         !Context.hasSameType(Actual.ForwardedType, Given.ForwardedType) ||
         bool(Actual.Reference) != bool(Given.Reference) || bool(Actual.Nested) != bool(Given.Nested))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     if (Actual.Reference && (Actual.Reference->Wrapper.Record != Given.Reference->Wrapper.Record ||
         Actual.Reference->Object != Given.Reference->Object ||
-        Actual.Reference->ObjectIsArrow != Given.Reference->ObjectIsArrow)) return std::nullopt;
+        Actual.Reference->ObjectIsArrow != Given.Reference->ObjectIsArrow)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     if (!Actual.Nested) continue;
     const auto &A = *Actual.Nested, &G = *Given.Nested;
     if (A.Root != G.Root || A.Parent != G.Parent || A.Slot != G.Slot || A.Path != G.Path ||
@@ -17882,7 +18026,7 @@ describeFunctionalBindCallSourceOccurrence(
         A.IncomingForwards != G.IncomingForwards || !Context.hasSameType(A.ResultType, G.ResultType) ||
         A.Invocation.SourceCall != G.Invocation.SourceCall || A.Invocation.Method != G.Invocation.Method ||
         A.Invocation.Object != G.Invocation.Object || A.Invocation.OwnedRoot != G.Invocation.OwnedRoot ||
-        A.Invocation.OwnedPath != G.Invocation.OwnedPath) return std::nullopt;
+        A.Invocation.OwnedPath != G.Invocation.OwnedPath) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   return *Current;
 }
@@ -17891,34 +18035,34 @@ std::optional<FunctionalNotFnStorage>
 describeFunctionalNotFnStorage(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record,
                               const ASTContext &Context) {
-  if (!S.coreV2() || !Record) return std::nullopt;
+  if (!S.coreV2() || !Record) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Outer = Check.record(Context.getRecordType(Record), "__not_fn_t",
                                   {"__functional/not_fn.h"});
   if (!Outer || !Outer->isStandardLayout() || !Outer->field_empty() ||
       Outer->getNumBases() != 1 || Outer->getTemplateArgs().size() != 1 ||
       Outer->getTemplateArgs()[0].getKind() != TemplateArgument::Type)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Callable = Outer->getTemplateArgs()[0].getAsType();
   if (Callable.isNull() || Callable.hasQualifiers() || Callable->isReferenceType() ||
-      Callable->isIncompleteType() || Callable->isDependentType()) return std::nullopt;
+      Callable->isIncompleteType() || Callable->isDependentType()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &OuterBase = *Outer->bases_begin();
   const auto *Forwarder = Check.record(OuterBase.getType(), "__perfect_forward_impl",
                                       {"__functional/perfect_forward.h"});
   if (!Forwarder || OuterBase.isVirtual() || OuterBase.getAccessSpecifier() != AS_public ||
       Forwarder->getNumBases() || !Forwarder->isStandardLayout() ||
       std::distance(Forwarder->field_begin(), Forwarder->field_end()) != 1)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &FArgs = Forwarder->getTemplateArgs();
   if (FArgs.size() != 3 || FArgs[0].getKind() != TemplateArgument::Type ||
       FArgs[1].getKind() != TemplateArgument::Type || !Check.oneTypePack(FArgs[2], Callable) ||
-      !Check.zeroIndices(FArgs[1].getAsType()->getAsCXXRecordDecl())) return std::nullopt;
+      !Check.zeroIndices(FArgs[1].getAsType()->getAsCXXRecordDecl())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Operation = FArgs[0].getAsType()->getAsCXXRecordDecl();
   Operation = Operation ? Operation->getDefinition() : nullptr;
   if (!Operation || !Operation->getIdentifier() || Operation->getName() != "__not_fn_op" ||
       !Operation->isEmpty() || Operation->getNumBases() || !Operation->field_empty() ||
       !Operation->hasTrivialDefaultConstructor() || !Operation->hasTrivialDestructor() ||
-      !Check.family(Operation, {"__functional/not_fn.h"})) return std::nullopt;
+      !Check.family(Operation, {"__functional/not_fn.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Bound = *Forwarder->field_begin();
   const auto *Tuple = Check.record(Bound->getType(), "tuple", {"tuple", "__fwd/tuple.h"});
   if (!Bound->getIdentifier() || Bound->getName() != "__bound_args_" ||
@@ -17927,7 +18071,7 @@ describeFunctionalNotFnStorage(const State &S, const SourceManager &SM,
       !Tuple || Tuple->getNumBases() ||
       Tuple->getTemplateArgs().size() != 1 || !Check.oneTypePack(Tuple->getTemplateArgs()[0], Callable) ||
       std::distance(Tuple->field_begin(), Tuple->field_end()) != 1)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *TupleBase = *Tuple->field_begin();
   const auto *Impl = Check.record(TupleBase->getType(), "__tuple_impl", {"tuple"});
   if (!TupleBase->getIdentifier() || TupleBase->getName() != "__base_" ||
@@ -17935,56 +18079,56 @@ describeFunctionalNotFnStorage(const State &S, const SourceManager &SM,
       TupleBase->isMutable() || TupleBase->hasAttrs() || !Check.family(TupleBase, {"tuple"}) || !Impl ||
       !Impl->field_empty() || Impl->getNumBases() != 1 ||
       Impl->getTemplateArgs().size() != 2 || Impl->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
-      !Check.oneTypePack(Impl->getTemplateArgs()[1], Callable)) return std::nullopt;
+      !Check.oneTypePack(Impl->getTemplateArgs()[1], Callable)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *TupleIndices = Check.record(Impl->getTemplateArgs()[0].getAsType(),
       "__tuple_indices", {"__tuple/tuple_indices.h", "__utility/integer_sequence.h"});
   if (!TupleIndices || TupleIndices->getNumBases() || !TupleIndices->field_empty() ||
       TupleIndices->getTemplateArgs().size() != 1 ||
       TupleIndices->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
-      TupleIndices->getTemplateArgs()[0].pack_size() != 1) return std::nullopt;
+      TupleIndices->getTemplateArgs()[0].pack_size() != 1) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &TupleIndex = TupleIndices->getTemplateArgs()[0].pack_elements()[0];
   if (TupleIndex.getKind() != TemplateArgument::Integral || !TupleIndex.getAsIntegral().isZero() ||
-      !Context.hasSameType(TupleIndex.getIntegralType(), Context.getSizeType())) return std::nullopt;
+      !Context.hasSameType(TupleIndex.getIntegralType(), Context.getSizeType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &LeafBase = *Impl->bases_begin();
   const auto *Leaf = Check.record(LeafBase.getType(), "__tuple_leaf", {"tuple"});
   if (!Leaf || LeafBase.isVirtual() || LeafBase.getAccessSpecifier() != AS_public)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &LArgs = Leaf->getTemplateArgs();
   if (LArgs.size() != 3 || LArgs[0].getKind() != TemplateArgument::Integral ||
       !LArgs[0].getAsIntegral().isZero() || LArgs[1].getKind() != TemplateArgument::Type ||
       !Context.hasSameType(LArgs[1].getAsType(), Callable) ||
       LArgs[2].getKind() != TemplateArgument::Integral ||
-      !LArgs[2].getIntegralType()->isBooleanType()) return std::nullopt;
+      !LArgs[2].getIntegralType()->isBooleanType()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &OL = Context.getASTRecordLayout(Outer);
   const auto &FL = Context.getASTRecordLayout(Forwarder);
   const auto &TL = Context.getASTRecordLayout(Tuple);
   const auto &IL = Context.getASTRecordLayout(Impl);
   const auto &LL = Context.getASTRecordLayout(Leaf);
   if (OL.getBaseClassOffset(Forwarder).getQuantity() || FL.getFieldOffset(0) ||
-      TL.getFieldOffset(0) || IL.getBaseClassOffset(Leaf).getQuantity()) return std::nullopt;
+      TL.getFieldOffset(0) || IL.getBaseClassOffset(Leaf).getQuantity()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (const auto *Layout : {&OL, &FL, &TL, &IL, &LL})
     if (Layout->getSize() != Context.getTypeSizeInChars(Callable) ||
-        Layout->getAlignment() != Context.getTypeAlignInChars(Callable)) return std::nullopt;
+        Layout->getAlignment() != Context.getTypeAlignInChars(Callable)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   if (!LArgs[2].getAsIntegral().isZero()) {
     const auto *C = Callable->getAsCXXRecordDecl();
     C = C ? C->getDefinition() : nullptr;
     if (!C || !C->isEmpty() || Leaf->getNumBases() != 1 || !Leaf->field_empty())
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto &Base = *Leaf->bases_begin();
     const auto *B = Base.getType()->getAsCXXRecordDecl();
     if (Base.isVirtual() || Base.getAccessSpecifier() != AS_private || !B ||
         B->getCanonicalDecl() != C->getCanonicalDecl() || LL.getBaseClassOffset(C).getQuantity())
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     return FunctionalNotFnStorage{Outer, Forwarder, Operation, Bound, Tuple, TupleBase,
         Impl, Leaf, UtilityTupleElement(C, Callable, 0), Callable};
   }
   if (Leaf->getNumBases() || std::distance(Leaf->field_begin(), Leaf->field_end()) != 1)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Value = *Leaf->field_begin();
   if (!Value->getIdentifier() || Value->getName() != "__value_" ||
       Value->getAccess() != AS_private || Value->isBitField() || Value->isMutable() ||
       Value->hasAttrs() || !Context.hasSameType(Value->getType(), Callable) ||
-      LL.getFieldOffset(0) || !Check.family(Value, {"tuple"})) return std::nullopt;
+      LL.getFieldOffset(0) || !Check.family(Value, {"tuple"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalNotFnStorage{Outer, Forwarder, Operation, Bound, Tuple, TupleBase,
       Impl, Leaf, UtilityTupleElement(Value, 0), Callable};
 }
@@ -18001,16 +18145,16 @@ static bool functionalNotFnReferenceIdentity(
       Instance->isUnion() || Instance->isDependentContext() ||
       (Instance->getSpecializationKind() != TSK_Undeclared &&
        Instance->getSpecializationKind() != TSK_ImplicitInstantiation) ||
-      !Instance->getSpecializedTemplateOrPartial().is<ClassTemplateDecl *>()) return false;
+      !Instance->getSpecializedTemplateOrPartial().is<ClassTemplateDecl *>()) return functionalBindDiagnosticFailure(__LINE__);
   llvm::SmallVector<ClassTemplatePartialSpecializationDecl *, 1> Partials;
   Primary->getPartialSpecializations(Partials);
   NotFnSelectedSource Check(S, SM, Context);
   if (!Partials.empty() ||
       !Check.family(Instance, {"__functional/reference_wrapper.h", "__fwd/functional.h"}))
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   const auto &Arguments = Instance->getTemplateArgs();
   if (Arguments.size() != 1 || Arguments[0].getKind() != TemplateArgument::Type)
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   const auto Referent = Arguments[0].getAsType();
   const auto *Ordinary = Referent.isNull() ? nullptr : Referent->getAsCXXRecordDecl();
   return Ordinary && !Referent->isDependentType() && !Referent->isInstantiationDependentType() &&
@@ -18028,19 +18172,19 @@ describeFunctionalNotFnReferenceStorage(
   const auto Storage = describeFunctionalNotFnStorage(S, SM, Record, Context);
   const auto *Callable = Storage ? Storage->CallableType->getAsCXXRecordDecl() : nullptr;
   if (!Storage || !functionalNotFnReferenceIdentity(S, SM, Callable, Context))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Reference = approvedFunctionalReferenceRecord(S, SM, Callable, Context);
   const auto *Referent = Reference ? Reference->ReferentType->getAsCXXRecordDecl() : nullptr;
   const auto *Definition = Referent ? Referent->getDefinition() : nullptr;
   if (!Reference || !Definition || !S.owns(SM, Definition->getLocation()) ||
       Definition->hasAttrs() || Definition->isInvalidDecl() || Definition->isDynamicClass() ||
       !Context.hasSameType(Context.getRecordType(Reference->Record), Storage->CallableType) ||
-      Storage->Callable.EmptyBase || !Storage->Callable.Field) return std::nullopt;
+      Storage->Callable.EmptyBase || !Storage->Callable.Field) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (const auto *Declaration : Referent->redecls())
-    if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return std::nullopt;
+    if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (const auto *Layer : {Storage->Record, Storage->Forwarder, Storage->Tuple,
                            Storage->TupleImplementation, Storage->TupleLeaf, Reference->Record})
-    if (!Layer->hasTrivialCopyConstructor() || !Layer->hasTrivialDestructor()) return std::nullopt;
+    if (!Layer->hasTrivialCopyConstructor() || !Layer->hasTrivialDestructor()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // The generic five-layer descriptor checks actual AST size/alignment and all
   // offsets. The reference descriptor preserves its ABI-dependent padded base;
   // no assumption that this wrapper occupies exactly one pointer is introduced.
@@ -18058,7 +18202,7 @@ static bool functionalNotFnPointerAdapterIdentity(
       Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
       Instance->getTemplateArgs().size() != 1 ||
       Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Type)
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   const auto Callable = Instance->getTemplateArgs()[0].getAsType();
   const auto *Prototype = !Callable.isNull() && Callable->isFunctionPointerType()
       ? Callable->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
@@ -18076,7 +18220,7 @@ describeFunctionalNotFnNestedStorage(
   const auto *Callable = Outer ? Outer->CallableType->getAsCXXRecordDecl() : nullptr;
   if (!Outer || !functionalNotFnPointerAdapterIdentity(S, SM, Callable, Context) ||
       Outer->Callable.EmptyBase || !Outer->Callable.Field)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Inner = approvedFunctionalNotFnPointerStorage(S, SM, Callable, Context);
   const auto *Prototype = Inner && Inner->CallableType->isFunctionPointerType()
       ? Inner->CallableType->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
@@ -18084,13 +18228,13 @@ describeFunctionalNotFnNestedStorage(
       !Context.hasSameType(Outer->CallableType, Context.getRecordType(Inner->Record)) ||
       Inner->Callable.EmptyBase || !Inner->Callable.Field ||
       Inner->Record->getCanonicalDecl() == Outer->Record->getCanonicalDecl())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (const auto *Layer : {Outer->Record, Outer->Forwarder, Outer->Tuple,
                            Outer->TupleImplementation, Outer->TupleLeaf,
                            Inner->Record, Inner->Forwarder, Inner->Tuple,
                            Inner->TupleImplementation, Inner->TupleLeaf})
     if (!Layer->hasTrivialCopyConstructor() || !Layer->hasTrivialMoveConstructor() ||
-        !Layer->hasTrivialDestructor()) return std::nullopt;
+        !Layer->hasTrivialDestructor()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // Each original five-layer descriptor retains all actual target ABI offsets,
   // sizes and alignments. No flattening or pointer-size approximation is used.
   return FunctionalNotFnNestedStorage{*Outer, *Inner};
@@ -18109,15 +18253,15 @@ describeFunctionalNotFnOwnedStorage(
       Definition->isUnion() || Definition->isLambda() || Definition->isDynamicClass() ||
       Definition->getNumBases() || !Definition->isStandardLayout() ||
       !Context.hasSameType(Context.getRecordType(Definition), Storage->CallableType))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (const auto *Declaration : Callable->redecls())
-    if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return std::nullopt;
+    if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   unsigned Fields = 0;
   for (const auto *Field : Definition->fields())
     if (++Fields > 64 || !S.owns(SM, Field->getLocation()) || Field->hasAttrs() ||
         Field->getAccess() != AS_public || Field->isBitField() || Field->isMutable() ||
         Field->hasInClassInitializer() || Field->getType().hasQualifiers() ||
-        !Field->getType()->isArithmeticType()) return std::nullopt;
+        !Field->getType()->isArithmeticType()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // No trivial-copy/destruction assumption: the selected owned operations and
   // scope/full-expression cleanups have to be checked and executed separately.
   return Storage;
@@ -18133,7 +18277,7 @@ describeFunctionalNotFnFactorySource(
   if (!Storage || !F || !F->getIdentifier() || F->getName() != "not_fn" ||
       !S.owns(SM, Call->getExprLoc()) || Call->getNumArgs() != 1 ||
       F->getNumParams() != 1 || F->isVariadic() || !Call->isPRValue() ||
-      !Context.hasSameType(Call->getType(), F->getReturnType())) return std::nullopt;
+      !Context.hasSameType(Call->getType(), F->getReturnType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Primary = F->getPrimaryTemplate();
   const auto *Args = F->getTemplateSpecializationArgs();
@@ -18141,48 +18285,48 @@ describeFunctionalNotFnFactorySource(
       Args->get(0).getKind() != TemplateArgument::Type ||
       Args->get(1).getKind() != TemplateArgument::Type || !Args->get(1).getAsType()->isVoidType() ||
       Primary->getTemplateParameters()->size() != 2 ||
-      !Check.family(F, {"__functional/not_fn.h"})) return std::nullopt;
+      !Check.family(F, {"__functional/not_fn.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Parameter = F->getParamDecl(0);
   const auto Input = Args->get(0).getAsType();
   const auto Expected = Input->isReferenceType() ? Input : Context.getRValueReferenceType(Input);
   if (!Context.hasSameType(Parameter->getType(), Expected) ||
       !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Expected->getPointeeType()))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Construct = Check.construction(Check.returned(F));
   const auto *Constructor = Construct ? Construct->getConstructor() : nullptr;
   if (!Construct || !Constructor || !Constructor->isInheritingConstructor() ||
       Constructor->isDeleted() || Constructor->getNumParams() != 1 || Construct->getNumArgs() != 1 ||
       Constructor->getParent()->getCanonicalDecl() != Storage->Record->getCanonicalDecl() ||
-      !Check.family(Constructor, {"__functional/not_fn.h"})) return std::nullopt;
+      !Check.family(Constructor, {"__functional/not_fn.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const CallExpr *Forward = nullptr;
   if (!Check.forwarding(Construct->getArg(0), Parameter, "__functional/not_fn.h", Forward))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Inherited = Constructor->getInheritedConstructor();
   const auto *BaseConstructor = Inherited ? Inherited.getConstructor() : nullptr;
   if (!BaseConstructor || !Check.family(Inherited.getShadowDecl(), {"__functional/not_fn.h"}) ||
       BaseConstructor->getParent()->getCanonicalDecl() != Storage->Forwarder->getCanonicalDecl() ||
       !Check.family(BaseConstructor, {"__functional/perfect_forward.h"}) ||
       Constructor->getNumCtorInitializers() != 1 || BaseConstructor->getNumCtorInitializers() != 1 ||
-      BaseConstructor->getNumParams() != 1) return std::nullopt;
+      BaseConstructor->getNumParams() != 1) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *BaseInit = *Constructor->init_begin();
   const auto *InheritedInit = dyn_cast<CXXInheritedCtorInitExpr>(BaseInit->getInit());
   if (!BaseInit->isBaseInitializer() || BaseInit->isBaseVirtual() || !InheritedInit ||
       InheritedInit->getConstructor() != BaseConstructor || InheritedInit->constructsVBase() ||
-      InheritedInit->inheritedFromVBase()) return std::nullopt;
+      InheritedInit->inheritedFromVBase()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *BoundInit = *BaseConstructor->init_begin();
   const auto *TupleConstruction = Check.construction(BoundInit->getInit());
   if (!BoundInit->isMemberInitializer() || BoundInit->getMember() != Storage->BoundArguments ||
       !TupleConstruction || TupleConstruction->getNumArgs() != 1 ||
       TupleConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->Tuple->getCanonicalDecl())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CXXConstructExpr *> Constructions{Construct, TupleConstruction};
   std::vector<const CallExpr *> Forwards{Forward};
   if (!Check.forwarding(TupleConstruction->getArg(0), BaseConstructor->getParamDecl(0),
-                        "__functional/perfect_forward.h", Forward)) return std::nullopt;
+                        "__functional/perfect_forward.h", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   Forwards.push_back(Forward);
   const auto *TupleConstructor = TupleConstruction->getConstructor();
   if (!Check.family(TupleConstructor, {"tuple"}) || TupleConstructor->getNumCtorInitializers() != 1 ||
-      TupleConstructor->getNumParams() != 1) return std::nullopt;
+      TupleConstructor->getNumParams() != 1) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *TupleInit = *TupleConstructor->init_begin();
   const auto *ImplConstruction = Check.construction(TupleInit->getInit());
   if (!TupleInit->isMemberInitializer() || TupleInit->getMember() != Storage->TupleBase ||
@@ -18190,34 +18334,34 @@ describeFunctionalNotFnFactorySource(
       ImplConstruction->getConstructor()->getParent()->getCanonicalDecl() !=
           Storage->TupleImplementation->getCanonicalDecl() ||
       !Check.forwarding(ImplConstruction->getArg(4), TupleConstructor->getParamDecl(0), "tuple", Forward))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   Constructions.push_back(ImplConstruction); Forwards.push_back(Forward);
   const auto *ImplConstructor = ImplConstruction->getConstructor();
   if (!Check.family(ImplConstructor, {"tuple"}) || ImplConstructor->getNumCtorInitializers() != 1 ||
-      ImplConstructor->getNumParams() != 5) return std::nullopt;
+      ImplConstructor->getNumParams() != 5) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *ImplInit = *ImplConstructor->init_begin();
   const auto *LeafConstruction = Check.construction(ImplInit->getInit());
   if (!ImplInit->isBaseInitializer() || ImplInit->isBaseVirtual() || !LeafConstruction ||
       LeafConstruction->getNumArgs() != 1 ||
       LeafConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->TupleLeaf->getCanonicalDecl() ||
       !Check.forwarding(LeafConstruction->getArg(0), ImplConstructor->getParamDecl(4), "tuple", Forward))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   Constructions.push_back(LeafConstruction); Forwards.push_back(Forward);
   const auto *LeafConstructor = LeafConstruction->getConstructor();
   if (!Check.family(LeafConstructor, {"tuple"}) || LeafConstructor->getNumCtorInitializers() != 1 ||
-      LeafConstructor->getNumParams() != 1) return std::nullopt;
+      LeafConstructor->getNumParams() != 1) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *ValueInit = *LeafConstructor->init_begin();
   if (Storage->Callable.Field ? (!ValueInit->isMemberInitializer() ||
                                  ValueInit->getMember() != Storage->Callable.Field)
-                              : !ValueInit->isBaseInitializer()) return std::nullopt;
+                              : !ValueInit->isBaseInitializer()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *CallableConstruction = Check.construction(ValueInit->getInit());
   const Expr *Forwarded = CallableConstruction && CallableConstruction->getNumArgs() == 1
       ? CallableConstruction->getArg(0) : ValueInit->getInit();
   if (!Check.forwarding(Forwarded, LeafConstructor->getParamDecl(0), "tuple", Forward))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   Forwards.push_back(Forward);
   if (CallableConstruction && !Context.hasSameUnqualifiedType(
-          CallableConstruction->getType(), Storage->CallableType)) return std::nullopt;
+          CallableConstruction->getType(), Storage->CallableType)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalNotFnFactorySource{*Storage, F, Construct, InheritedInit,
       std::move(Constructions), std::move(Forwards), ValueInit->getInit(), CallableConstruction};
 }
@@ -18231,7 +18375,7 @@ static bool functionalNotFnCopyProjection(
     const ASTContext &Context) {
   if (!Expression || !Parameter || bool(Field) == bool(Base) ||
       !Expression->isGLValue() || Expression->isXValue() != Move)
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   auto StripNoOp = [&](const Expr *E) -> const Expr * {
     for (unsigned Depth = 0; E && Depth != 8; ++Depth) {
       E = E->IgnoreParens();
@@ -18255,7 +18399,7 @@ static bool functionalNotFnCopyProjection(
   if (Field) {
     const auto *Member = dyn_cast_or_null<MemberExpr>(Expression);
     if (!Member || Member->isArrow() || Member->getMemberDecl() != Field)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     Object = Member->getBase();
   } else {
     const auto *Cast = dyn_cast_or_null<CastExpr>(Expression);
@@ -18263,7 +18407,7 @@ static bool functionalNotFnCopyProjection(
                   Cast->getCastKind() != CK_UncheckedDerivedToBase) ||
         Cast->path_size() != 1 || *Cast->path_begin() != Base ||
         !Context.hasSameUnqualifiedType(Cast->getType(), Base->getType()))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     Object = Cast->getSubExpr();
   }
   Object = StripNoOp(Object);
@@ -18281,7 +18425,7 @@ describeFunctionalNotFnCopySource(
       Constructor ? Constructor->getParent() : nullptr, Context);
   if (!Storage || !Constructor || !Constructor->isCopyOrMoveConstructor() ||
       Constructor->isDeleted() || Construction->getNumArgs() != 1)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   FunctionalNotFnCopySource Result{*Storage, Construction, {}};
   Result.Move = Constructor->isMoveConstructor();
   const CXXRecordDecl *Records[] = {Storage->Record, Storage->Forwarder,
@@ -18299,10 +18443,10 @@ describeFunctionalNotFnCopySource(
         Current->getNumArgs() != 1 || !Selected->getParamDecl(0)->getType()->isReferenceType() ||
         !Context.hasSameUnqualifiedType(
             Selected->getParamDecl(0)->getType().getNonReferenceType(), Context.getRecordType(Records[I])))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     for (const auto *Declaration : Selected->redecls())
       if (!Check.family(Declaration, {"__functional/not_fn.h", "__functional/perfect_forward.h", "tuple"}))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Result.SDKConstructions.push_back(Current);
     // Sema may leave a trivial defaulted body lazy. Its structural source
     // cannot supply any user-provided operation or missing body permission.
@@ -18313,17 +18457,17 @@ describeFunctionalNotFnCopySource(
     const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition());
     const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
     if (!Definition || !Body || !Body->body_empty() || Definition->getNumCtorInitializers() != 1)
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Initializer = *Definition->init_begin();
     const auto Expected = I == 4 ? Storage->CallableType : Context.getRecordType(Records[I + 1]);
     const CXXBaseSpecifier *Base = nullptr;
     if (Fields[I]) {
       if (!Initializer->isMemberInitializer() || Initializer->getMember() != Fields[I])
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     } else {
       if (Records[I]->getNumBases() != 1 || !Initializer->isBaseInitializer() ||
           !Context.hasSameUnqualifiedType(QualType(Initializer->getBaseClass(), 0), Expected))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       Base = &*Records[I]->bases_begin();
     }
     const auto *Child = Check.construction(Initializer->getInit());
@@ -18335,11 +18479,11 @@ describeFunctionalNotFnCopySource(
         !Context.hasSameUnqualifiedType(ChildConstructor->getParamDecl(0)->getType().getNonReferenceType(), Expected) ||
         !functionalNotFnCopyProjection(Child->getArg(0), Definition->getParamDecl(0),
             Definition->isMoveConstructor(), Fields[I], Base, Context))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     for (unsigned J = 1; J < Child->getNumArgs(); ++J) {
       const auto *Default = dyn_cast<CXXDefaultArgExpr>(Child->getArg(J));
       if (!Default || Default->getParam() != ChildConstructor->getParamDecl(J))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     }
     if (I == 4) {
       Result.CallableConstruction = Child;
@@ -18348,7 +18492,7 @@ describeFunctionalNotFnCopySource(
     }
     Current = Child;
   }
-  return std::nullopt;
+  return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
 }
 
 std::optional<FunctionalNotFnNestedFactorySource>
@@ -18366,7 +18510,7 @@ describeFunctionalNotFnNestedFactorySource(
       Copy->Storage.Record != Storage->Inner.Record ||
       !Context.hasSameType(Copy->Storage.CallableType, Storage->Inner.CallableType) ||
       !Context.hasSameType(Outer->CallableConstruction->getType(), Storage->Outer.CallableType))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // The actual selected inner copy/move remains a separate lifecycle graph.
   // Triviality and this descriptor cannot manufacture missing Sema events.
   return FunctionalNotFnNestedFactorySource{*Outer, *Copy};
@@ -18378,7 +18522,7 @@ describeFunctionalNotFnDestructionSource(
     const CXXDestructorDecl *Destructor, const ASTContext &Context) {
   const auto Storage = describeFunctionalNotFnStorage(S, SM,
       Destructor ? Destructor->getParent() : nullptr, Context);
-  if (!Storage || !Destructor) return std::nullopt;
+  if (!Storage || !Destructor) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   FunctionalNotFnDestructionSource Result{*Storage, Destructor, {}};
   const CXXRecordDecl *Records[] = {Storage->Record, Storage->Forwarder,
       Storage->Tuple, Storage->TupleImplementation, Storage->TupleLeaf};
@@ -18386,26 +18530,26 @@ describeFunctionalNotFnDestructionSource(
   for (const auto *Record : Records) {
     const auto *Selected = Record->getDestructor();
     if (!Selected) {
-      if (!Record->hasTrivialDestructor()) return std::nullopt;
+      if (!Record->hasTrivialDestructor()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       continue;
     }
     if (!Selected->isDefaulted() || Selected->isUserProvided() || Selected->isDeleted() ||
         Selected->isVirtual() || Selected->isVariadic() || Selected->getNumParams() ||
         Selected->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     for (const auto *Declaration : Selected->redecls())
       if (!Check.family(Declaration, {"__functional/not_fn.h", "__functional/perfect_forward.h", "tuple"}))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     if (const auto *Body = Selected->getBody(); Body &&
         (!isa<CompoundStmt>(Body) || !cast<CompoundStmt>(Body)->body_empty()))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Result.SDKDestructors.push_back(Selected);
   }
   const auto *Callable = Storage->CallableType->getAsCXXRecordDecl();
   Result.CallableDestructor = Callable ? Callable->getDestructor() : nullptr;
   Result.TrivialCallableDestruction = !Callable || Callable->hasTrivialDestructor();
   if (Callable && !Result.CallableDestructor && !Result.TrivialCallableDestruction)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return Result;
 }
 
@@ -18420,7 +18564,7 @@ describeFunctionalNotFnCallSource(
       Method->isStatic() || Method->isVariadic() || Method->isDeleted() ||
       Method->getAccess() != AS_public || Method->isVolatile() ||
       Method->getRefQualifier() == RQ_None || !S.owns(SM, Call->getExprLoc()))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
   // Implicit inherited calls use UncheckedDerivedToBase in the real Clang
@@ -18429,7 +18573,7 @@ describeFunctionalNotFnCallSource(
   if (!Receiver || (Receiver->getCastKind() != CK_DerivedToBase &&
                     Receiver->getCastKind() != CK_UncheckedDerivedToBase) ||
       Receiver->path_size() != 1)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Object = Receiver->getSubExpr()->IgnoreParens();
   const auto Storage = describeFunctionalNotFnStorage(S, SM,
       Object->getType()->getAsCXXRecordDecl(), Context);
@@ -18439,9 +18583,9 @@ describeFunctionalNotFnCallSource(
       !Check.family(Method, {"__functional/perfect_forward.h"}) ||
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const bool RValue = Method->getRefQualifier() == RQ_RValue;
-  if (Object->isLValue() == RValue) return std::nullopt;
+  if (Object->isLValue() == RValue) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(
       Check.core(Check.resultSource(Method, Mode)));
   const auto *OperationMethod = Operation
@@ -18452,11 +18596,11 @@ describeFunctionalNotFnCallSource(
       OperationMethod->getNumParams() != Call->getNumArgs() ||
       !OperationMethod->isConst() || OperationMethod->isVolatile() ||
       OperationMethod->isStatic() || OperationMethod->isVariadic() ||
-      !Check.family(OperationMethod, {"__functional/not_fn.h"})) return std::nullopt;
+      !Check.family(OperationMethod, {"__functional/not_fn.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *OpConstruction = Check.construction(Check.core(Operation->getArg(0)));
   if (!OpConstruction || OpConstruction->getNumArgs() ||
       OpConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->Operation->getCanonicalDecl())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Get = dyn_cast_or_null<CallExpr>(Check.core(Operation->getArg(1)));
   const auto *GetFunction = Get ? Get->getDirectCallee() : nullptr;
   const auto *GetArguments = GetFunction ? GetFunction->getTemplateSpecializationArgs() : nullptr;
@@ -18466,7 +18610,7 @@ describeFunctionalNotFnCallSource(
       !GetArguments->get(0).getAsIntegral().isZero() ||
       !Check.oneTypePack(GetArguments->get(1), Storage->CallableType) ||
       !Check.location(Get->getExprLoc(), {"__functional/perfect_forward.h"}) ||
-      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return std::nullopt;
+      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const Expr *Bound = Check.stripped(Get->getArg(0));
   const CallExpr *Move = nullptr;
   if (RValue) {
@@ -18475,7 +18619,7 @@ describeFunctionalNotFnCallSource(
     if (!MoveFunction || !MoveFunction->getIdentifier() || MoveFunction->getName() != "move" ||
         Move->getNumArgs() != 1 || !Move->isXValue() ||
         !Check.family(MoveFunction, {"__utility/move.h"}) ||
-        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) return std::nullopt;
+        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Bound = Check.stripped(Move->getArg(0));
   }
   const auto *Member = dyn_cast_or_null<MemberExpr>(Bound);
@@ -18487,33 +18631,33 @@ describeFunctionalNotFnCallSource(
       !This || !Context.hasSameType(This->getType(), Method->getThisType()) ||
       !Context.hasSameType(GetFunction->getReturnType(), ExpectedGet) ||
       !Context.hasSameType(OperationMethod->getParamDecl(0)->getType(), ExpectedGet))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> Forwards;
   const CallExpr *Forward = nullptr;
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     if (!Check.forwarding(Operation->getArg(I + 2), Method->getParamDecl(I),
-                          "__functional/perfect_forward.h", Forward)) return std::nullopt;
+                          "__functional/perfect_forward.h", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Forwards.push_back(Forward);
   }
   const auto *Negation = Check.core(Check.resultSource(OperationMethod, Mode));
   const Expr *InvokeExpression = nullptr;
   if (const auto *Unary = dyn_cast_or_null<UnaryOperator>(Negation)) {
-    if (Unary->getOpcode() != UO_LNot) return std::nullopt;
+    if (Unary->getOpcode() != UO_LNot) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     InvokeExpression = Unary->getSubExpr();
   } else if (const auto *NegateCall = dyn_cast_or_null<CXXOperatorCallExpr>(Negation)) {
     if (NegateCall->getOperator() != OO_Exclaim || NegateCall->getNumArgs() != 1)
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     InvokeExpression = NegateCall->getArg(0);
-  } else return std::nullopt;
+  } else return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(InvokeExpression));
   const auto *InvokeFunction = Invoke ? Invoke->getDirectCallee() : nullptr;
   if (!InvokeFunction || !InvokeFunction->getIdentifier() || InvokeFunction->getName() != "invoke" ||
       Invoke->getNumArgs() != OperationMethod->getNumParams() ||
       !Check.location(Invoke->getExprLoc(), {"__functional/not_fn.h"}) ||
-      !Check.family(InvokeFunction, {"__functional/invoke.h"})) return std::nullopt;
+      !Check.family(InvokeFunction, {"__functional/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < OperationMethod->getNumParams(); ++I) {
     if (!Check.forwarding(Invoke->getArg(I), OperationMethod->getParamDecl(I),
-                          "__functional/not_fn.h", Forward)) return std::nullopt;
+                          "__functional/not_fn.h", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Forwards.push_back(Forward);
   }
   // A signature-only description never materializes or relies on an invoke
@@ -18525,9 +18669,9 @@ describeFunctionalNotFnCallSource(
     const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
     if (!DispatchFunction || !DispatchFunction->getIdentifier() || DispatchFunction->getName() != "__invoke" ||
         !Check.location(Dispatch->getExprLoc(), {"__functional/invoke.h"}) ||
-        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(DispatchFunction)));
-    if (!Target) return std::nullopt;
+    if (!Target) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   return FunctionalNotFnCallSource{Operator, *Storage, Method, Object, Receiver, Get, Move, Operation,
       Negation, Invoke, Dispatch, Target, std::move(Forwards), Mode};
@@ -18573,7 +18717,7 @@ static bool functionalNotFnNestedInnerBinding(
       Dispatcher->getNumParams() != Target->getNumArgs() ||
       Invoke->getNumParams() != Target->getNumArgs() ||
       Actual->DispatchCall->getNumArgs() != Target->getNumArgs() ||
-      Method->getNumParams() + 1 != Target->getNumArgs()) return false;
+      Method->getNumParams() + 1 != Target->getNumArgs()) return functionalBindDiagnosticFailure(__LINE__);
   for (unsigned I = 0; I < Invoke->getNumParams(); ++I) {
     const auto *Parameter = Invoke->getParamDecl(I);
     const CallExpr *Forward = nullptr;
@@ -18581,14 +18725,14 @@ static bool functionalNotFnNestedInnerBinding(
         Dispatcher->getParamDecl(I)->hasDefaultArg() ||
         !Context.hasSameType(Parameter->getType(), Dispatcher->getParamDecl(I)->getType()) ||
         !Check.forwarding(Actual->DispatchCall->getArg(I), Parameter,
-                          "__functional/invoke.h", Forward)) return false;
+                          "__functional/invoke.h", Forward)) return functionalBindDiagnosticFailure(__LINE__);
   }
   const auto *Receiver = dyn_cast<ImplicitCastExpr>(Target->getArg(0)->IgnoreParens());
   if (!Receiver || Receiver->getCastKind() != CK_UncheckedDerivedToBase ||
       Receiver->path_size() != 1 ||
       *Receiver->path_begin() != &*Storage->Inner.Record->bases_begin() ||
       !Context.hasSameUnqualifiedType(Receiver->getType(), Context.getRecordType(Storage->Inner.Forwarder)))
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   auto ParameterCast = [&](const Expr *Expression, unsigned Index) {
     const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Expression ? Expression->IgnoreParens() : nullptr);
     const auto *Use = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
@@ -18612,7 +18756,7 @@ static bool functionalNotFnNestedInnerBinding(
       Bound->isRValueReferenceType() != (Actual->Method->getRefQualifier() == RQ_RValue) ||
       Method->isConst() != Actual->Method->isConst() ||
       Method->getRefQualifier() != Actual->Method->getRefQualifier() ||
-      !ParameterCast(Receiver->getSubExpr(), 0)) return false;
+      !ParameterCast(Receiver->getSubExpr(), 0)) return functionalBindDiagnosticFailure(__LINE__);
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     const auto Parameter = Method->getParamDecl(I)->getType();
     if (!Parameter->isReferenceType() ||
@@ -18621,7 +18765,7 @@ static bool functionalNotFnNestedInnerBinding(
         Parameter.getNonReferenceType().isRestrictQualified() ||
         !Context.hasSameType(Parameter, Dispatcher->getParamDecl(I + 1)->getType()) ||
         !Context.hasSameType(Parameter, Actual->Method->getParamDecl(I)->getType()) ||
-        !ParameterCast(Target->getArg(I + 1), I + 1)) return false;
+        !ParameterCast(Target->getArg(I + 1), I + 1)) return functionalBindDiagnosticFailure(__LINE__);
   }
   return true;
 }
@@ -18638,7 +18782,7 @@ describeFunctionalNotFnNestedInnerCallSource(
       Method->isStatic() || Method->isVariadic() || Method->isDeleted() ||
       Method->getAccess() != AS_public || Method->isVolatile() ||
       Method->getRefQualifier() == RQ_None || !functionalNotFnNestedInnerBinding(S, SM, Outer, Call, Context))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
   // Implicit inherited calls use UncheckedDerivedToBase in the real Clang
@@ -18647,7 +18791,7 @@ describeFunctionalNotFnNestedInnerCallSource(
   if (!Receiver || (Receiver->getCastKind() != CK_DerivedToBase &&
                     Receiver->getCastKind() != CK_UncheckedDerivedToBase) ||
       Receiver->path_size() != 1)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Object = Receiver->getSubExpr()->IgnoreParens();
   const auto Storage = describeFunctionalNotFnStorage(S, SM,
       Object->getType()->getAsCXXRecordDecl(), Context);
@@ -18657,9 +18801,9 @@ describeFunctionalNotFnNestedInnerCallSource(
       !Check.family(Method, {"__functional/perfect_forward.h"}) ||
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const bool RValue = Method->getRefQualifier() == RQ_RValue;
-  if (Object->isLValue() == RValue) return std::nullopt;
+  if (Object->isLValue() == RValue) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(
       Check.core(Check.resultSource(Method, Mode)));
   const auto *OperationMethod = Operation
@@ -18670,11 +18814,11 @@ describeFunctionalNotFnNestedInnerCallSource(
       OperationMethod->getNumParams() != Call->getNumArgs() ||
       !OperationMethod->isConst() || OperationMethod->isVolatile() ||
       OperationMethod->isStatic() || OperationMethod->isVariadic() ||
-      !Check.family(OperationMethod, {"__functional/not_fn.h"})) return std::nullopt;
+      !Check.family(OperationMethod, {"__functional/not_fn.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *OpConstruction = Check.construction(Check.core(Operation->getArg(0)));
   if (!OpConstruction || OpConstruction->getNumArgs() ||
       OpConstruction->getConstructor()->getParent()->getCanonicalDecl() != Storage->Operation->getCanonicalDecl())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Get = dyn_cast_or_null<CallExpr>(Check.core(Operation->getArg(1)));
   const auto *GetFunction = Get ? Get->getDirectCallee() : nullptr;
   const auto *GetArguments = GetFunction ? GetFunction->getTemplateSpecializationArgs() : nullptr;
@@ -18684,7 +18828,7 @@ describeFunctionalNotFnNestedInnerCallSource(
       !GetArguments->get(0).getAsIntegral().isZero() ||
       !Check.oneTypePack(GetArguments->get(1), Storage->CallableType) ||
       !Check.location(Get->getExprLoc(), {"__functional/perfect_forward.h"}) ||
-      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return std::nullopt;
+      !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const Expr *Bound = Check.stripped(Get->getArg(0));
   const CallExpr *Move = nullptr;
   if (RValue) {
@@ -18693,7 +18837,7 @@ describeFunctionalNotFnNestedInnerCallSource(
     if (!MoveFunction || !MoveFunction->getIdentifier() || MoveFunction->getName() != "move" ||
         Move->getNumArgs() != 1 || !Move->isXValue() ||
         !Check.family(MoveFunction, {"__utility/move.h"}) ||
-        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) return std::nullopt;
+        !Check.location(Move->getExprLoc(), {"__functional/perfect_forward.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Bound = Check.stripped(Move->getArg(0));
   }
   const auto *Member = dyn_cast_or_null<MemberExpr>(Bound);
@@ -18705,18 +18849,18 @@ describeFunctionalNotFnNestedInnerCallSource(
       !This || !Context.hasSameType(This->getType(), Method->getThisType()) ||
       !Context.hasSameType(GetFunction->getReturnType(), ExpectedGet) ||
       !Context.hasSameType(OperationMethod->getParamDecl(0)->getType(), ExpectedGet))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> Forwards;
   const CallExpr *Forward = nullptr;
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     if (!Check.forwarding(Operation->getArg(I + 2), Method->getParamDecl(I),
-                          "__functional/perfect_forward.h", Forward)) return std::nullopt;
+                          "__functional/perfect_forward.h", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Forwards.push_back(Forward);
   }
   const auto *Negation = Check.core(Check.resultSource(OperationMethod, Mode));
   const Expr *InvokeExpression = nullptr;
   if (const auto *Unary = dyn_cast_or_null<UnaryOperator>(Negation)) {
-    if (Unary->getOpcode() != UO_LNot) return std::nullopt;
+    if (Unary->getOpcode() != UO_LNot) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     InvokeExpression = Unary->getSubExpr();
     // Arithmetic leaf results have a contextual conversion before logical
     // negation. Locate the exact SDK invoke below that built-in conversion;
@@ -18729,23 +18873,23 @@ describeFunctionalNotFnNestedInnerCallSource(
             (Boolean->getCastKind() == CK_FloatingToBoolean && Value->getType()->isRealFloatingType())) ||
           !Check.location(Boolean->getExprLoc(), {"__functional/not_fn.h"}) ||
           !Check.location(Value->getExprLoc(), {"__functional/not_fn.h"}))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       InvokeExpression = Value;
     }
   } else if (const auto *NegateCall = dyn_cast_or_null<CXXOperatorCallExpr>(Negation)) {
     if (NegateCall->getOperator() != OO_Exclaim || NegateCall->getNumArgs() != 1)
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     InvokeExpression = NegateCall->getArg(0);
-  } else return std::nullopt;
+  } else return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(InvokeExpression));
   const auto *InvokeFunction = Invoke ? Invoke->getDirectCallee() : nullptr;
   if (!InvokeFunction || !InvokeFunction->getIdentifier() || InvokeFunction->getName() != "invoke" ||
       Invoke->getNumArgs() != OperationMethod->getNumParams() ||
       !Check.location(Invoke->getExprLoc(), {"__functional/not_fn.h"}) ||
-      !Check.family(InvokeFunction, {"__functional/invoke.h"})) return std::nullopt;
+      !Check.family(InvokeFunction, {"__functional/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < OperationMethod->getNumParams(); ++I) {
     if (!Check.forwarding(Invoke->getArg(I), OperationMethod->getParamDecl(I),
-                          "__functional/not_fn.h", Forward)) return std::nullopt;
+                          "__functional/not_fn.h", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Forwards.push_back(Forward);
   }
   // A signature-only description never materializes or relies on an invoke
@@ -18757,9 +18901,9 @@ describeFunctionalNotFnNestedInnerCallSource(
     const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
     if (!DispatchFunction || !DispatchFunction->getIdentifier() || DispatchFunction->getName() != "__invoke" ||
         !Check.location(Dispatch->getExprLoc(), {"__functional/invoke.h"}) ||
-        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.family(DispatchFunction, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(DispatchFunction)));
-    if (!Target) return std::nullopt;
+    if (!Target) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   return FunctionalNotFnCallSource{Operator, *Storage, Method, Object, Receiver, Get, Move, Operation,
       Negation, Invoke, Dispatch, Target, std::move(Forwards), Mode};
@@ -18775,7 +18919,7 @@ describeFunctionalNotFnNestedCallSource(
   const auto OuterException = describeFunctionalNotFnCallSource(S, SM, Call, Context, FunctionalNotFnSourceMode::Exception);
   const auto Storage = OuterRuntime
       ? describeFunctionalNotFnNestedStorage(S, SM, OuterRuntime->Storage.Record, Context) : std::nullopt;
-  if (!OuterRuntime || !OuterSignature || !OuterException || !Storage) return std::nullopt;
+  if (!OuterRuntime || !OuterSignature || !OuterException || !Storage) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *InnerCall = OuterRuntime->TargetCall;
   const auto InnerRuntime = describeFunctionalNotFnNestedInnerCallSource(
       S, SM, InnerCall, Context, FunctionalNotFnSourceMode::Runtime, *OuterRuntime);
@@ -18787,7 +18931,7 @@ describeFunctionalNotFnNestedCallSource(
       InnerRuntime->Storage.Record != Storage->Inner.Record ||
       OuterRuntime->Method == InnerRuntime->Method || !InnerRuntime->TargetCall ||
       InnerRuntime->TargetCall->getDirectCallee() || isa<CXXOperatorCallExpr>(InnerRuntime->TargetCall))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   auto Layer = [&](const FunctionalNotFnCallSource &Runtime,
                    const FunctionalNotFnCallSource &Signature,
                    const FunctionalNotFnCallSource &Exception) {
@@ -18798,7 +18942,7 @@ describeFunctionalNotFnNestedCallSource(
           !Source->InvokeCall || !Runtime.InvokeCall ||
           Source->InvokeCall->getDirectCallee() != Runtime.InvokeCall->getDirectCallee() ||
           !Negation || Negation->getOpcode() != UO_LNot || !Negation->getType()->isBooleanType() ||
-          !Source->Method->getReturnType()->isBooleanType()) return false;
+          !Source->Method->getReturnType()->isBooleanType()) return functionalBindDiagnosticFailure(__LINE__);
     }
     return true;
   };
@@ -18810,7 +18954,7 @@ describeFunctionalNotFnNestedCallSource(
       !Leaf->getReturnType()->isArithmeticType() || !OuterPrototype || !InnerPrototype ||
       OuterPrototype->isNothrow() != InnerPrototype->isNothrow() ||
       InnerPrototype->isNothrow() != Leaf->isNothrow() ||
-      InnerRuntime->Method->getNumParams() != Leaf->getNumParams()) return std::nullopt;
+      InnerRuntime->Method->getNumParams() != Leaf->getNumParams()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalNotFnNestedCallSource{*Storage, *OuterRuntime, *OuterSignature, *OuterException,
       *InnerRuntime, *InnerSignature, *InnerException, OuterRuntime->DispatchCall->getDirectCallee()};
 }
@@ -18829,7 +18973,7 @@ static std::optional<QualType> functionalNotFnNestedQueryResultSource(
   if (!Actual || Actual->InnerRuntime.Method != Source.InnerRuntime.Method ||
       Actual->InnerRuntime.SourceCall != Source.InnerRuntime.SourceCall ||
       Actual->OuterRuntime.Method != Source.OuterRuntime.Method || !Query)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &Inner = Actual->InnerSignature;
   const auto *Method = Inner.Method;
   const auto *Operation = Inner.OperationCall
@@ -18857,7 +19001,7 @@ static std::optional<QualType> functionalNotFnNestedQueryResultSource(
       Negation->getOpcode() != UO_LNot || Negation->getType().hasQualifiers() ||
       !Negation->getType()->isBooleanType() || Negation->isTypeDependent() ||
       Negation->isValueDependent() || Negation->isInstantiationDependent())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return OperationResult->getUnderlyingType();
 }
 
@@ -18871,7 +19015,7 @@ describeFunctionalNotFnOwnedCallSource(
       ? describeFunctionalNotFnOwnedStorage(S, SM, Source->Storage.Record, Context)
       : std::nullopt;
   if (!Source || !Storage || !Source->InvokeCall || !Source->DispatchCall || !Source->TargetCall)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Invoke = Source->InvokeCall->getDirectCallee();
   const auto *Dispatcher = Source->DispatchCall->getDirectCallee();
   const auto *Target = dyn_cast<CXXOperatorCallExpr>(Source->TargetCall);
@@ -18906,10 +19050,10 @@ describeFunctionalNotFnOwnedCallSource(
       Check.core(Negation->getSubExpr()) != Source->InvokeCall ||
       Invoke->getNumParams() != Call->getNumArgs() || Dispatcher->getNumParams() != Call->getNumArgs() ||
       Source->DispatchCall->getNumArgs() != Call->getNumArgs() || Target->getNumArgs() != Call->getNumArgs() ||
-      Method->getNumParams() + 1 != Call->getNumArgs()) return std::nullopt;
+      Method->getNumParams() + 1 != Call->getNumArgs()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (const auto *Declaration : Method->redecls())
     if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() || !Declaration->getTypeSourceInfo())
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < Invoke->getNumParams(); ++I) {
     const CallExpr *Forward = nullptr;
     const auto Input = Invoke->getParamDecl(I)->getType();
@@ -18917,7 +19061,7 @@ describeFunctionalNotFnOwnedCallSource(
         Dispatcher->getParamDecl(I)->hasDefaultArg() ||
         !Context.hasSameType(Input, Dispatcher->getParamDecl(I)->getType()) ||
         !Check.forwarding(Source->DispatchCall->getArg(I), Invoke->getParamDecl(I),
-                          "__functional/invoke.h", Forward)) return std::nullopt;
+                          "__functional/invoke.h", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   auto ParameterCast = [&](const Expr *Argument, unsigned Index) {
     const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Argument ? Argument->IgnoreParenImpCasts() : nullptr);
@@ -18934,14 +19078,14 @@ describeFunctionalNotFnOwnedCallSource(
   const auto Expected = Source->Method->isConst() ? Context.getConstType(Storage->CallableType) : Storage->CallableType;
   if (!Context.hasSameType(Receiver.getNonReferenceType(), Expected) ||
       Receiver->isRValueReferenceType() != (Source->Method->getRefQualifier() == RQ_RValue) ||
-      !ParameterCast(Target->getArg(0), 0)) return std::nullopt;
+      !ParameterCast(Target->getArg(0), 0)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     const auto Parameter = Method->getParamDecl(I)->getType();
     if (!Parameter->isScalarType() || Parameter.isVolatileQualified() || Parameter.isRestrictQualified() ||
         !Context.hasSameUnqualifiedType(Parameter, Dispatcher->getParamDecl(I + 1)->getType().getNonReferenceType()) ||
         !ParameterCast(Target->getArg(I + 1), I + 1) ||
         !Context.hasSameType(Target->getArg(I + 1)->getType(), Parameter.getNonLValueExprType(Context)) ||
-        Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter)) return std::nullopt;
+        Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   return FunctionalNotFnOwnedCallSource{*Source, Method, Dispatcher};
 }
@@ -18962,7 +19106,7 @@ describeFunctionalNotFnFactoryTemplateSource(
       Use.Instantiation || Use.Origin || Use.WrittenStorageClass || Use.DefaultsOverflow ||
       !Use.Canonical || !Use.Sugared || Use.Canonical->size() != 2 ||
       Use.Sugared->size() != 2 || Use.Defaults.size() != 1 ||
-      !Use.ParameterTypes.empty()) return std::nullopt;
+      !Use.ParameterTypes.empty()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Arguments = Function->getTemplateSpecializationArgs();
   const auto *Parameters = Primary->getTemplateParameters();
   const auto *Input = Parameters && Parameters->size() == 2
@@ -18976,7 +19120,7 @@ describeFunctionalNotFnFactoryTemplateSource(
       Input->getIndex() != 0 || Default->getIndex() != 1 ||
       !Check.family(Primary, {"__functional/not_fn.h"}) ||
       !Check.family(Input, {"__functional/not_fn.h"}) ||
-      !Check.family(Default, {"__functional/not_fn.h"})) return std::nullopt;
+      !Check.family(Default, {"__functional/not_fn.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I != 2; ++I) {
     const auto &Canonical = Use.Canonical->get(I);
     const auto &Sugared = Use.Sugared->get(I);
@@ -18986,7 +19130,7 @@ describeFunctionalNotFnFactoryTemplateSource(
         Canonical.isInstantiationDependent() || Sugared.isInstantiationDependent() ||
         !Arguments->get(I).structurallyEquals(Canonical) ||
         !Canonical.structurallyEquals(Context.getCanonicalTemplateArgument(Sugared)))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   const auto &DefaultUse = Use.Defaults.front();
   if (DefaultUse.Parameter != Default ||
@@ -18996,13 +19140,13 @@ describeFunctionalNotFnFactoryTemplateSource(
       !Context.hasSameType(DefaultUse.Written.getArgument().getAsType(),
                            Use.Sugared->get(1).getAsType()) ||
       !Context.hasSameType(DefaultUse.Converted.getArgument().getAsType(),
-                           Use.Canonical->get(1).getAsType())) return std::nullopt;
+                           Use.Canonical->get(1).getAsType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *PrimaryDefault = Default->getDefaultArgument().getTypeSourceInfo();
   const auto *Substituted = DefaultUse.Written.getTypeSourceInfo();
   const auto *Converted = DefaultUse.Converted.getTypeSourceInfo();
-  if (!PrimaryDefault || !Substituted || !Converted) return std::nullopt;
+  if (!PrimaryDefault || !Substituted || !Converted) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (const auto *Info : {PrimaryDefault, Substituted, Converted})
-    if (!Check.factoryDefaultSource(Info, PrimaryDefault)) return std::nullopt;
+    if (!Check.factoryDefaultSource(Info, PrimaryDefault)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // Sema records Written after SubstDefaultTemplateArgumentIfAvailable, before
   // CheckTemplateArgument adds conversions. It is not the primary's dependent
   // default. Keep all three original AST roots for separate source traversal.
@@ -19025,7 +19169,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
       TupleConstructor->isDeleted() || TupleConstructor->getAccess() != AS_public ||
       !Context.hasSameUnqualifiedType(Tuple->getType(), Context.getRecordType(Arguments.Record)) ||
       TupleConstructor->getParent()->getCanonicalDecl() != Arguments.Record->getCanonicalDecl())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   if (!Count) {
     const auto Empty = approvedUtilityTupleRecord(S, SM, Arguments.Record, Context);
@@ -19039,7 +19183,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
         TupleConstructor->getNumCtorInitializers() || !TupleConstructor->getTypeSourceInfo() ||
         !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
         Prototype->getNoexceptExpr() || !Check.family(TupleConstructor, {"tuple"}))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     // tuple<> has no __base_, implementation, tags or leaves. This description
     // grants no constructor/body permission; the owner closes its real source.
     return FunctionalBindTupleConstructionSource{Tuple, nullptr, {}, {}, {}, {}, {}};
@@ -19047,14 +19191,14 @@ describeFunctionalBindTupleConstructionSourceImpl(
   std::vector<const StaticAssertDecl *> Assertions;
   auto MetadataOnlyBody = [&](const CXXConstructorDecl *Constructor) {
     const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody()) : nullptr;
-    if (!Body) return false;
+    if (!Body) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Statement : Body->body()) {
       const auto *Declarations = dyn_cast<DeclStmt>(Statement);
-      if (!Declarations) return false;
+      if (!Declarations) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : Declarations->decls()) {
         const auto *Assertion = dyn_cast<StaticAssertDecl>(Declaration);
         if (!Assertion || Assertion->isFailed() || !Assertion->getAssertExpr() ||
-            !Check.family(Assertion, {"tuple"})) return false;
+            !Check.family(Assertion, {"tuple"})) return functionalBindDiagnosticFailure(__LINE__);
         // Retain the original assertion source as a later query obligation.
         // A folded success is not a type/default/body certificate.
         Assertions.push_back(Assertion);
@@ -19064,7 +19208,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
   };
   if (Arguments.Record->getNumBases() ||
       std::distance(Arguments.Record->field_begin(), Arguments.Record->field_end()) != 1)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *BaseField = *Arguments.Record->field_begin();
   const auto *ImplementationRecord = BaseField->getType()->getAsCXXRecordDecl();
   if (Arguments.Record->getNumBases() ||
@@ -19072,7 +19216,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
                     Arguments.Record->field_end()) != 1 ||
       BaseField->getName() != "__base_" || !ImplementationRecord ||
       !Check.family(BaseField, {"tuple"}) || !MetadataOnlyBody(TupleConstructor) ||
-      TupleConstructor->getNumCtorInitializers() != 1) return std::nullopt;
+      TupleConstructor->getNumCtorInitializers() != 1) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *BaseInitializer = *TupleConstructor->init_begin();
   const auto *Implementation = Check.construction(BaseInitializer->getInit());
   const auto *ImplementationConstructor = Implementation ? Implementation->getConstructor() : nullptr;
@@ -19083,7 +19227,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
       ImplementationConstructor->getParent()->getCanonicalDecl() !=
           ImplementationRecord->getCanonicalDecl() ||
       !Check.family(ImplementationConstructor, {"tuple"}) ||
-      !MetadataOnlyBody(ImplementationConstructor)) return std::nullopt;
+      !MetadataOnlyBody(ImplementationConstructor)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < 4; ++I) {
     const auto *Tag = Check.construction(Implementation->getArg(I));
     const auto *Selected = Tag ? Tag->getConstructor() : nullptr;
@@ -19101,23 +19245,23 @@ describeFunctionalBindTupleConstructionSourceImpl(
                                  "__utility/integer_sequence.h"}) ||
         !Check.family(Record, {"__tuple/tuple_indices.h", "__tuple/tuple_types.h",
                                "__utility/integer_sequence.h"}))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto &TagArguments = Instance->getTemplateArgs();
     const unsigned Expected = I < 2 ? Count : 0;
     if (TagArguments.size() != 1 || TagArguments[0].getKind() != TemplateArgument::Pack ||
-        TagArguments[0].pack_size() != Expected) return std::nullopt;
+        TagArguments[0].pack_size() != Expected) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     unsigned Index = 0;
     for (const auto &Argument : TagArguments[0].pack_elements()) {
       if (I % 2) {
         if (Argument.getKind() != TemplateArgument::Type ||
             !Context.hasSameType(Argument.getAsType(),
                                 Arguments.Elements[Index].getType()))
-          return std::nullopt;
+          return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       } else if (Argument.getKind() != TemplateArgument::Integral ||
                  Argument.getAsIntegral().isNegative() ||
                  Argument.getAsIntegral().getLimitedValue(65) != Index ||
                  !Context.hasSameType(Argument.getIntegralType(), Context.getSizeType()))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       ++Index;
     }
   }
@@ -19145,7 +19289,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
           Direct->getQualifier() || Direct->hasExplicitTemplateArgs() ||
           !Context.hasSameType(Direct->getType(), Type.getNonReferenceType()) ||
           !Check.family(Parameter, {"tuple"}) || !Check.family(Destination, {"tuple"}) ||
-          !Check.location(Direct->getExprLoc(), {"tuple"})) return std::nullopt;
+          !Check.location(Direct->getExprLoc(), {"tuple"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       continue;
     }
     if (CallReferenceInputs && Direct) {
@@ -19160,18 +19304,18 @@ describeFunctionalBindTupleConstructionSourceImpl(
           Direct->getQualifier() || Direct->hasExplicitTemplateArgs() ||
           !Context.hasSameType(Direct->getType(), Type.getNonReferenceType()) ||
           !Check.family(Parameter, {"tuple"}) || !Check.family(Destination, {"tuple"}) ||
-          !Check.location(Direct->getExprLoc(), {"tuple"})) return std::nullopt;
+          !Check.location(Direct->getExprLoc(), {"tuple"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       continue;
     }
     const CallExpr *Forward = nullptr;
-    if (!Check.forwarding(Argument, Parameter, "tuple", Forward)) return std::nullopt;
+    if (!Check.forwarding(Argument, Parameter, "tuple", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Forwards.push_back(Forward);
   }
   std::vector<const CXXConstructExpr *> Leaves, Copies;
   std::vector<const Expr *> Initializers;
   unsigned Index = 0;
   for (const auto *Initializer : ImplementationConstructor->inits()) {
-    if (Index >= Count) return std::nullopt;
+    if (Index >= Count) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto &Element = Arguments.Elements[Index];
     const bool EmptyPlaceholder = Element.EmptyBase && !CallReferenceInputs &&
         functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context);
@@ -19185,7 +19329,7 @@ describeFunctionalBindTupleConstructionSourceImpl(
           Leaf->getSpecializationKind() != TSK_ImplicitInstantiation ||
           Leaf->getTemplateArgs().size() != 3 || !Leaf->field_empty() ||
           Leaf->getNumBases() != 1 || !Leaf->isEmpty() ||
-          !Check.family(Leaf, {"tuple"})) return std::nullopt;
+          !Check.family(Leaf, {"tuple"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto &Parameters = Leaf->getTemplateArgs();
       if (Parameters[0].getKind() != TemplateArgument::Integral ||
           Parameters[0].getAsIntegral().isNegative() ||
@@ -19195,12 +19339,12 @@ describeFunctionalBindTupleConstructionSourceImpl(
           !Context.hasSameType(Parameters[1].getAsType(), Element.getType()) ||
           Parameters[2].getKind() != TemplateArgument::Integral ||
           !Parameters[2].getIntegralType()->isBooleanType() ||
-          !Parameters[2].getAsIntegral().getBoolValue()) return std::nullopt;
+          !Parameters[2].getAsIntegral().getBoolValue()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto &StorageBase = *Leaf->bases_begin();
       const auto *StorageRecord = StorageBase.getType()->getAsCXXRecordDecl();
       if (StorageBase.isVirtual() || StorageBase.getAccessSpecifier() != AS_private ||
           !StorageRecord || StorageRecord->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     }
     const auto *Leaf = Check.construction(Initializer->getInit());
     const auto *LeafConstructor = Leaf ? Leaf->getConstructor() : nullptr;
@@ -19211,19 +19355,19 @@ describeFunctionalBindTupleConstructionSourceImpl(
         LeafConstructor->getNumParams() != 1 || LeafConstructor->getNumCtorInitializers() != 1 ||
         LeafConstructor->getParent()->getCanonicalDecl() != LeafRecord->getCanonicalDecl() ||
         !Check.family(LeafConstructor, {"tuple"}) || !MetadataOnlyBody(LeafConstructor))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(Leaf->getArg(0), ImplementationConstructor->getParamDecl(Index + 4),
-                          "tuple", Forward)) return std::nullopt;
+                          "tuple", Forward)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Forwards.push_back(Forward);
     const auto *Value = *LeafConstructor->init_begin();
     if (EmptyPlaceholder) {
       const auto *StorageBase = Value->isBaseInitializer()
           ? Value->getBaseClass()->getAsCXXRecordDecl() : nullptr;
       if (!StorageBase || Value->isBaseVirtual() ||
-          StorageBase->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return std::nullopt;
+          StorageBase->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     } else if (!Value->isMemberInitializer() || Value->getMember() != Element.Field)
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Copy = Check.construction(Value->getInit());
     const auto Wrapper = approvedFunctionalReferenceRecord(
         S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
@@ -19238,21 +19382,21 @@ describeFunctionalBindTupleConstructionSourceImpl(
                         !SelectedCopy->isCopyOrMoveConstructor() || !SelectedCopy->isTrivial() ||
                         SelectedCopy->isDeleted() || SelectedCopy->getParent()->getCanonicalDecl() !=
                             CopiedRecord->getCanonicalDecl())
-                     : bool(Copy)) return std::nullopt;
+                     : bool(Copy)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     if (EmptyPlaceholder && (!SelectedCopy->isImplicit() || !SelectedCopy->isDefaulted() ||
-                            !Check.family(SelectedCopy, {"__functional/bind.h"}))) return std::nullopt;
+                            !Check.family(SelectedCopy, {"__functional/bind.h"}))) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     if (Nested && (!SelectedCopy->isImplicit() || !SelectedCopy->isDefaulted() ||
-                   !Check.family(SelectedCopy, {"__functional/bind.h"}))) return std::nullopt;
+                   !Check.family(SelectedCopy, {"__functional/bind.h"}))) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Forwarded = Copy ? Copy->getArg(0) : Value->getInit();
     if (!Check.forwarding(Forwarded, LeafConstructor->getParamDecl(0), "tuple", Forward))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Forwards.push_back(Forward);
     Leaves.push_back(Leaf);
     Copies.push_back(Copy);
     Initializers.push_back(Value->getInit());
     ++Index;
   }
-  if (Index != Count) return std::nullopt;
+  if (Index != Count) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalBindTupleConstructionSource{Tuple, Implementation, std::move(Leaves),
       std::move(Copies), std::move(Initializers), std::move(Forwards), std::move(Assertions)};
 }
@@ -19268,7 +19412,7 @@ describeFunctionalBindTupleConstructionSource(
       Actual->BoundConstruction != Factory.BoundConstruction ||
       Actual->Storage.Record != Factory.Storage.Record ||
       Actual->Storage.Arguments.Record != Factory.Storage.Arguments.Record)
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &Storage = Actual->Storage;
   return describeFunctionalBindTupleConstructionSourceImpl(
       S, SM, Storage.Arguments, Actual->BoundConstruction, Context);
@@ -19282,10 +19426,10 @@ describeFunctionalBindCallTupleConstructionSource(
   if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
       Actual->CallArguments != Call.CallArguments || Actual->CallForwards != Call.CallForwards ||
       Actual->Storage.Record != Call.Storage.Record || Actual->CallForwards.empty() ||
-      Actual->CallForwards.size() > 2) return std::nullopt;
+      Actual->CallForwards.size() > 2) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Arguments = approvedUtilityReferenceTupleRecord(
       S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
-  if (!Arguments || Arguments->Elements.size() != Actual->CallForwards.size()) return std::nullopt;
+  if (!Arguments || Arguments->Elements.size() != Actual->CallForwards.size()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return describeFunctionalBindTupleConstructionSourceImpl(
       S, SM, *Arguments, Actual->CallArguments, Context, true);
 }
@@ -19295,7 +19439,7 @@ describeFunctionalBindNaturalLayout(
     const State &S, const SourceManager &SM,
     const CXXRecordDecl *Record, const ASTContext &Context) {
   const auto Storage = describeFunctionalBindStorage(S, SM, Record, Context);
-  if (!Storage) return std::nullopt;
+  if (!Storage) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const uint64_t CallableBits = Context.getTypeSize(Storage->CallableType);
   const uint64_t CallableAlign = Context.getTypeAlign(Storage->CallableType);
   const uint64_t BoundBits = Context.getTypeSize(Storage->BoundArguments->getType());
@@ -19306,7 +19450,7 @@ describeFunctionalBindNaturalLayout(
   if (!CallableBits || !CallableAlign || !BoundBits || !BoundAlign ||
       (Padded && (Storage->CallableOffsetBits != SizeBits ||
                   SizeBits != CallableBits || SizeAlign != CallableAlign)))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   auto Rounded = [](uint64_t Value, uint64_t Alignment) {
     return (Value + Alignment - 1) / Alignment * Alignment;
   };
@@ -19317,7 +19461,7 @@ describeFunctionalBindNaturalLayout(
   if (Storage->BoundOffsetBits != Rounded(Storage->CallableOffsetBits + CallableBits, BoundAlign) ||
       Storage->AlignmentBytes * 8 != Alignment ||
       Storage->SizeBytes * 8 != Rounded(Storage->BoundOffsetBits + BoundBits, Alignment))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalBindNaturalLayout{*Storage, Padded};
 }
 
@@ -19327,7 +19471,7 @@ describeFunctionalBindTupleTagSourcesImpl(
     const FunctionalBindTupleConstructionSource &Tuple, unsigned Count,
     const ASTContext &Context) {
   if (!Count || !Tuple.Implementation ||
-      Tuple.Implementation->getNumArgs() != Count + 4) return std::nullopt;
+      Tuple.Implementation->getNumArgs() != Count + 4) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   std::vector<FunctionalBindTupleTagSource> Tags;
   for (unsigned I = 0; I < 4; ++I) {
@@ -19349,7 +19493,7 @@ describeFunctionalBindTupleTagSourcesImpl(
         !Check.location(Construction->getExprLoc(), {"tuple"}) ||
         !Check.location(Written->getTypeLoc().getBeginLoc(), {"tuple"}) ||
         !Check.location(Written->getTypeLoc().getEndLoc(), {"tuple"}) ||
-        !Context.hasSameType(Written->getType(), Construction->getType())) return std::nullopt;
+        !Context.hasSameType(Written->getType(), Construction->getType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Tags.push_back({Construction, Record, Written});
   }
   return Tags;
@@ -19360,7 +19504,7 @@ describeFunctionalBindTupleTagSources(
     const State &S, const SourceManager &SM,
     const FunctionalBindFactorySource &Factory, const ASTContext &Context) {
   const auto Tuple = describeFunctionalBindTupleConstructionSource(S, SM, Factory, Context);
-  if (!Tuple) return std::nullopt;
+  if (!Tuple) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return describeFunctionalBindTupleTagSourcesImpl(
       S, SM, *Tuple, Factory.Storage.Arguments.Elements.size(), Context);
 }
@@ -19371,7 +19515,7 @@ describeFunctionalBindCallTupleTagSources(
     const FunctionalBindCallSource &Call, const ASTContext &Context) {
   const auto Tuple = describeFunctionalBindCallTupleConstructionSource(S, SM, Call, Context);
   if (!Tuple || !Call.Method || Call.CallForwards.size() != Call.Method->getNumParams())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return describeFunctionalBindTupleTagSourcesImpl(
       S, SM, *Tuple, Call.CallForwards.size(), Context);
 }
@@ -19381,11 +19525,11 @@ bool shouldRetainFunctionalBindSpecialMemberSource(
   if (!S.coreV2() || !Method || S.owns(SM, Method->getLocation()) ||
       !(Method->isImplicit() || Method->isDefaulted()) || Method->getPrimaryTemplate() ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
-      !approvedStandardSDKDeclaration(S, SM, Method->getParent())) return false;
+      !approvedStandardSDKDeclaration(S, SM, Method->getParent())) return functionalBindDiagnosticFailure(__LINE__);
   const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
   if (!(isa<CXXDestructorDecl>(Method) ||
         (Constructor && (Constructor->isCopyOrMoveConstructor() || Constructor->isDefaultConstructor()))))
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   const auto Origin = S.sdkFile(SM, Method->getLocation());
   const auto *Record = dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
   if (Origin && Origin->Root == "libcxx" && Origin->Path == "tuple" && Record &&
@@ -19397,7 +19541,7 @@ bool shouldRetainFunctionalBindSpecialMemberSource(
       Constructor->isDefaultConstructor() && !Constructor->getNumParams() &&
       Method->isDefaulted()) return true; // Inert selected-source collection only.
   if (!Origin || Origin->Root != "libcxx" || !Record || !Record->getIdentifier() ||
-      Record->getSpecializationKind() != TSK_ImplicitInstantiation) return false;
+      Record->getSpecializationKind() != TSK_ImplicitInstantiation) return functionalBindDiagnosticFailure(__LINE__);
   // No definition, layout, triviality, or special-member computation may be
   // requested during Sema's producer callback. Later proofs bind exact roots.
   if (Origin->Path == "__functional/bind.h" && Record->getName() == "__ph") {
@@ -19412,7 +19556,7 @@ bool shouldRetainFunctionalBindSpecialMemberSource(
       Record->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
       Record->getTemplateArgs()[1].getKind() == TemplateArgument::Pack) {
     const auto Argument = Record->getTemplateArgs()[0].getAsType();
-    if (Argument.isNull()) return false;
+    if (Argument.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Input = Argument.getNonReferenceType();
     return (Input->isFunctionPointerType() || Input->isFunctionType()) &&
         (!Constructor || Constructor->isCopyOrMoveConstructor());
@@ -19496,12 +19640,12 @@ describeFunctionalBindInvokeSignatureSource(
       !Context.hasSameType(Function->getReturnType(), Target->getReturnType()) ||
       !Check.family(Function, {"__type_traits/invoke.h"}) ||
       !Check.family(Callable, {"__type_traits/invoke.h"}) ||
-      !Check.family(Arguments, {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.family(Arguments, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Input = Selected->get(0).getAsType();
   if (Input.isNull() || Input.getNonReferenceType().isVolatileQualified() ||
       Input.getNonReferenceType().isRestrictQualified() ||
       !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), Storage.CallableType))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // Forwarding-reference deduction retains T& but deduces T from T&&.
   // The actual collapsed parameter and expression categories remain checked.
   auto Deduced = [](QualType Type) {
@@ -19512,13 +19656,24 @@ describeFunctionalBindInvokeSignatureSource(
     return Type->isReferenceType() ? Type : Context.getRValueReferenceType(Type);
   };
   if (!Context.hasSameType(Function->getParamDecl(0)->getType(), Collapsed(Input)))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < Forwarded.size(); ++I) {
     const auto &Argument = Selected->get(1).pack_elements()[I];
-    if (Argument.getKind() != TemplateArgument::Type || Forwarded[I].isNull() ||
+    const bool InvalidForwardedSource = Argument.getKind() != TemplateArgument::Type || Forwarded[I].isNull() ||
         !Context.hasSameType(Argument.getAsType(), Deduced(Forwarded[I])) ||
-        !Context.hasSameType(Function->getParamDecl(I + 1)->getType(), Collapsed(Forwarded[I])))
-      return std::nullopt;
+        !Context.hasSameType(Function->getParamDecl(I + 1)->getType(), Collapsed(Forwarded[I]));
+    if (InvalidForwardedSource) {
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+        const auto SelectedName = Argument.getKind() == TemplateArgument::Type ? Argument.getAsType().getAsString() : std::string("<non-type>");
+        const auto ForwardedName = Forwarded[I].isNull() ? std::string("<null>") : Forwarded[I].getAsString();
+        const auto ParameterName = Function->getParamDecl(I + 1)->getType().getAsString();
+        std::fprintf(stderr, "BIND-INVOKE-FORWARDED index=%u selected=%.*s forwarded=%.*s parameter=%.*s\n", I,
+            int(std::min<std::size_t>(SelectedName.size(), 1024)), SelectedName.c_str(),
+            int(std::min<std::size_t>(ForwardedName.size(), 1024)), ForwardedName.c_str(),
+            int(std::min<std::size_t>(ParameterName.size(), 1024)), ParameterName.c_str());
+      }
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
+    }
   }
   auto PrimaryCast = [&](const Expr *Expression, unsigned I) {
     const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(Expression));
@@ -19553,12 +19708,12 @@ describeFunctionalBindInvokeSignatureSource(
   const auto *PrimaryException = Check.exceptionSource(Primary);
   const auto *Exception = dyn_cast_or_null<CXXNoexceptExpr>(PrimaryException);
   if (!PrimaryCall(PrimaryReturn) || !Exception || !PrimaryCall(Exception->getOperand()))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Return = dyn_cast<DecltypeType>(Primary->getReturnType().getTypePtr());
   const auto *Signature = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParenImpCasts()) : nullptr;
   const auto *Pack = Signature && Signature->getNumArgs() == 1
       ? dyn_cast<PackExpansionExpr>(Signature->getArg(0)) : nullptr;
-  if (!Signature || Signature->getDirectCallee() || !Pack) return std::nullopt;
+  if (!Signature || Signature->getDirectCallee() || !Pack) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> Declvals;
   auto Declval = [&](const Expr *Expression, const TemplateTypeParmDecl *Expected) {
     const auto *Call = dyn_cast_or_null<CallExpr>(Check.stripped(Expression));
@@ -19571,12 +19726,12 @@ describeFunctionalBindInvokeSignatureSource(
         Lookup->getName().getAsIdentifierInfo()->getName() != "declval" || !Type ||
         Type->getDecl() != Expected ||
         !Check.family(*Lookup->decls_begin(), {"__utility/declval.h"}) ||
-        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
     Declvals.push_back(Call);
     return true;
   };
   if (!Declval(Signature->getCallee(), Callable) || !Declval(Pack->getPattern(), Arguments))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // Keep these actual expressions separate from optional instantiated bodies.
   const auto *SpecializedReturn = dyn_cast<DecltypeType>(Function->getReturnType().getTypePtr());
   const auto *SpecializedCall = SpecializedReturn
@@ -19586,7 +19741,7 @@ describeFunctionalBindInvokeSignatureSource(
       SpecializedCall->getNumArgs() != Forwarded.size() ||
       !Context.hasSameType(SpecializedCall->getType(), Target->getReturnType().getNonLValueExprType(Context)) ||
       SpecializedCall->getValueKind() != Expr::getValueKindForType(Target->getReturnType()) ||
-      !Check.location(SpecializedCall->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.location(SpecializedCall->getExprLoc(), {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> SpecializedDeclvals;
   auto SpecializedDeclval = [&](const Expr *Expression, QualType Expected,
                                 const CallExpr *Original) {
@@ -19597,13 +19752,13 @@ describeFunctionalBindInvokeSignatureSource(
         ? dyn_cast<UnresolvedLookupExpr>(Original->getCallee()->IgnoreParenImpCasts()) : nullptr;
     if (!Description || !Lookup || Lookup->getNumDecls() != 1 ||
         *Lookup->decls_begin() != Description->Function->getPrimaryTemplate() ||
-        Call->getExprLoc() != Original->getExprLoc()) return false;
+        Call->getExprLoc() != Original->getExprLoc()) return functionalBindDiagnosticFailure(__LINE__);
     SpecializedDeclvals.push_back(Call);
     return true;
   };
-  if (!SpecializedDeclval(SpecializedCall->getCallee(), Input, Declvals[0])) return std::nullopt;
+  if (!SpecializedDeclval(SpecializedCall->getCallee(), Input, Declvals[0])) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < Forwarded.size(); ++I)
-    if (!SpecializedDeclval(SpecializedCall->getArg(I), Deduced(Forwarded[I]), Declvals[1])) return std::nullopt;
+    if (!SpecializedDeclval(SpecializedCall->getArg(I), Deduced(Forwarded[I]), Declvals[1])) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
 
   const auto *ActualReturn = Check.returned(Function);
   const auto *ActualException = functionalBindInvokeExceptionSource(S, SM, Context, Function);
@@ -19613,7 +19768,7 @@ describeFunctionalBindInvokeSignatureSource(
         Call->isTypeDependent() || Call->isValueDependent() ||
         !Context.hasSameType(Call->getType(), Target->getReturnType().getNonLValueExprType(Context)) ||
         Call->getValueKind() != Expr::getValueKindForType(Target->getReturnType()) ||
-        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
     auto Cast = [&](const Expr *Expression, unsigned I) {
       const auto *Written = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(Expression));
       const auto *Use = Written
@@ -19631,15 +19786,15 @@ describeFunctionalBindInvokeSignatureSource(
           Check.location(Written->getTypeInfoAsWritten()->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) &&
           Check.location(Written->getTypeInfoAsWritten()->getTypeLoc().getEndLoc(), {"__type_traits/invoke.h"});
     };
-    if (!Cast(Call->getCallee(), 0)) return false;
+    if (!Cast(Call->getCallee(), 0)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Forwarded.size(); ++I)
-      if (!Cast(Call->getArg(I), I + 1)) return false;
+      if (!Cast(Call->getArg(I), I + 1)) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   };
   const auto *ActualNoexcept = dyn_cast_or_null<CXXNoexceptExpr>(ActualException);
   if ((ActualReturn && !ActualCall(ActualReturn)) ||
       (ActualException && (!ActualNoexcept || !ActualCall(ActualNoexcept->getOperand()))))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // Keep these original optional nodes. This descriptor neither asks Sema to
   // materialize them nor treats their absence as a runtime body certificate.
   return FunctionalBindInvokeSignatureSource{Function, Primary, PrimaryReturn, PrimaryException,
@@ -19655,20 +19810,20 @@ describeFunctionalBindNestedInvokeSignatureSource(
     const ASTContext &Context) {
   if (!Given.Root || Given.Path.empty() || Given.Path.size() >= 64 ||
       Given.Invocation.OwnedRoot != Given.Root || Given.Invocation.OwnedPath != Given.Path ||
-      Given.Path.back() != Given.Slot || !S.owns(SM, Given.Root->getExprLoc())) return std::nullopt;
+      Given.Path.back() != Given.Slot || !S.owns(SM, Given.Root->getExprLoc())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Root = describeFunctionalBindCallSource(S, SM, Given.Root, Context);
-  if (!Root) return std::nullopt;
+  if (!Root) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const FunctionalBindCallSource *Parent = &*Root;
   const FunctionalBindNestedArgumentSource *SelectedChild = nullptr;
   std::vector<unsigned> Path;
   for (unsigned Slot : Given.Path) {
     Path.push_back(Slot);
-    if (Slot >= Parent->Arguments.size() || !Parent->Arguments[Slot].Nested) return std::nullopt;
+    if (Slot >= Parent->Arguments.size() || !Parent->Arguments[Slot].Nested) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     SelectedChild = Parent->Arguments[Slot].Nested.get();
     if (SelectedChild->Root != Given.Root || SelectedChild->Parent != Parent->SourceCall ||
         SelectedChild->Slot != Slot || SelectedChild->Path != Path ||
         SelectedChild->Get != Parent->Arguments[Slot].Get ||
-        SelectedChild->Unwrap != Parent->Arguments[Slot].Unwrap) return std::nullopt;
+        SelectedChild->Unwrap != Parent->Arguments[Slot].Unwrap) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Parent = &SelectedChild->Invocation;
   }
   if (!SelectedChild || SelectedChild->Parent != Given.Parent || SelectedChild->Get != Given.Get ||
@@ -19678,11 +19833,11 @@ describeFunctionalBindNestedInvokeSignatureSource(
       SelectedChild->IncomingForwards != Given.IncomingForwards ||
       SelectedChild->Invocation.SourceCall != Given.Invocation.SourceCall ||
       SelectedChild->Invocation.Method != Given.Invocation.Method ||
-      !Context.hasSameType(SelectedChild->ResultType, Given.ResultType)) return std::nullopt;
+      !Context.hasSameType(SelectedChild->ResultType, Given.ResultType)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &Nested = *SelectedChild;
   const auto *SelectedMethod = Nested.Invocation.Method;
   if (!SelectedMethod || SelectedMethod->getNumParams() > 2 ||
-      !Context.hasSameType(SelectedMethod->getReturnType(), Nested.ResultType)) return std::nullopt;
+      !Context.hasSameType(SelectedMethod->getReturnType(), Nested.ResultType)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<QualType> Forwarded;
   for (const auto *Parameter : SelectedMethod->parameters()) Forwarded.push_back(Parameter->getType());
   const auto *Template = Function ? Function->getPrimaryTemplate() : nullptr;
@@ -19713,12 +19868,12 @@ describeFunctionalBindNestedInvokeSignatureSource(
       !Context.hasSameType(Function->getReturnType(), Target->getReturnType()) ||
       !Check.family(Function, {"__type_traits/invoke.h"}) ||
       !Check.family(Callable, {"__type_traits/invoke.h"}) ||
-      !Check.family(Arguments, {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.family(Arguments, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Input = Selected->get(0).getAsType();
   if (Input.isNull() || Input.getNonReferenceType().isVolatileQualified() ||
       Input.getNonReferenceType().isRestrictQualified() ||
       !Context.hasSameType(Input, Bound))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // Forwarding-reference deduction retains T& but deduces T from T&&.
   // The actual collapsed parameter and expression categories remain checked.
   auto Deduced = [](QualType Type) {
@@ -19729,13 +19884,13 @@ describeFunctionalBindNestedInvokeSignatureSource(
     return Type->isReferenceType() ? Type : Context.getRValueReferenceType(Type);
   };
   if (!Context.hasSameType(Function->getParamDecl(0)->getType(), Collapsed(Input)))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < Forwarded.size(); ++I) {
     const auto &Argument = Selected->get(1).pack_elements()[I];
     if (Argument.getKind() != TemplateArgument::Type || Forwarded[I].isNull() ||
         !Context.hasSameType(Argument.getAsType(), Deduced(Forwarded[I])) ||
         !Context.hasSameType(Function->getParamDecl(I + 1)->getType(), Collapsed(Forwarded[I])))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   auto PrimaryCast = [&](const Expr *Expression, unsigned I) {
     const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(Expression));
@@ -19770,12 +19925,12 @@ describeFunctionalBindNestedInvokeSignatureSource(
   const auto *PrimaryException = Check.exceptionSource(Primary);
   const auto *Exception = dyn_cast_or_null<CXXNoexceptExpr>(PrimaryException);
   if (!PrimaryCall(PrimaryReturn) || !Exception || !PrimaryCall(Exception->getOperand()))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Return = dyn_cast<DecltypeType>(Primary->getReturnType().getTypePtr());
   const auto *Signature = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParenImpCasts()) : nullptr;
   const auto *Pack = Signature && Signature->getNumArgs() == 1
       ? dyn_cast<PackExpansionExpr>(Signature->getArg(0)) : nullptr;
-  if (!Signature || Signature->getDirectCallee() || !Pack) return std::nullopt;
+  if (!Signature || Signature->getDirectCallee() || !Pack) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> Declvals;
   auto Declval = [&](const Expr *Expression, const TemplateTypeParmDecl *Expected) {
     const auto *Call = dyn_cast_or_null<CallExpr>(Check.stripped(Expression));
@@ -19788,12 +19943,12 @@ describeFunctionalBindNestedInvokeSignatureSource(
         Lookup->getName().getAsIdentifierInfo()->getName() != "declval" || !Type ||
         Type->getDecl() != Expected ||
         !Check.family(*Lookup->decls_begin(), {"__utility/declval.h"}) ||
-        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
     Declvals.push_back(Call);
     return true;
   };
   if (!Declval(Signature->getCallee(), Callable) || !Declval(Pack->getPattern(), Arguments))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // Keep these actual expressions separate from optional instantiated bodies.
   const auto *SpecializedReturn = dyn_cast<DecltypeType>(Function->getReturnType().getTypePtr());
   const auto *SpecializedCall = SpecializedReturn
@@ -19805,7 +19960,7 @@ describeFunctionalBindNestedInvokeSignatureSource(
       SpecializedCall->getNumArgs() != Forwarded.size() + 1 ||
       !Context.hasSameType(SpecializedCall->getType(), Target->getReturnType().getNonLValueExprType(Context)) ||
       SpecializedCall->getValueKind() != Expr::getValueKindForType(Target->getReturnType()) ||
-      !Check.location(SpecializedCall->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.location(SpecializedCall->getExprLoc(), {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> SpecializedDeclvals;
   auto SpecializedDeclval = [&](const Expr *Expression, QualType Expected,
                                 const CallExpr *Original) {
@@ -19816,7 +19971,7 @@ describeFunctionalBindNestedInvokeSignatureSource(
         ? dyn_cast<UnresolvedLookupExpr>(Original->getCallee()->IgnoreParenImpCasts()) : nullptr;
     if (!Description || !Lookup || Lookup->getNumDecls() != 1 ||
         *Lookup->decls_begin() != Description->Function->getPrimaryTemplate() ||
-        Call->getExprLoc() != Original->getExprLoc()) return false;
+        Call->getExprLoc() != Original->getExprLoc()) return functionalBindDiagnosticFailure(__LINE__);
     SpecializedDeclvals.push_back(Call);
     return true;
   };
@@ -19832,13 +19987,31 @@ describeFunctionalBindNestedInvokeSignatureSource(
     return Reference;
   };
   const auto *SelectedReference = MethodReference(SpecializedCall->getCallee());
-  if (!SelectedReference || SelectedReference->getDecl() != SelectedMethod ||
+  const bool InvalidNestedReference = (!SelectedReference || SelectedReference->getDecl() != SelectedMethod ||
       SelectedReference->hasExplicitTemplateArgs() ||
       !Context.hasSameType(SelectedReference->getType(), SelectedMethod->getType()) ||
       !Check.location(SelectedReference->getExprLoc(), {"__type_traits/invoke.h"}) ||
-      !SpecializedDeclval(SpecializedCall->getArg(0), Input, Declvals[0])) return std::nullopt;
+      !SpecializedDeclval(SpecializedCall->getArg(0), Input, Declvals[0]));
+  if (InvalidNestedReference) {
+    if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+      const auto *Core = Check.stripped(SpecializedCall->getCallee());
+      const auto *Direct = SpecializedCall->getDirectCallee();
+      const auto File = SelectedReference ? S.sdkFile(SM, SelectedReference->getExprLoc()) : std::nullopt;
+      const auto Path = File ? llvm::StringRef(File->Path).str() : std::string("<missing>");
+      std::fprintf(stderr, "BIND-INVOKE-REFERENCE callee=%s core=%s ref=%u decl=%u canon=%u direct=%u directcanon=%u explicit=%u type=%u location=%u path=%.*s\n",
+          SpecializedCall->getCallee()->getStmtClassName(), Core ? Core->getStmtClassName() : "<missing>",
+          unsigned(bool(SelectedReference)), unsigned(SelectedReference && SelectedReference->getDecl() == SelectedMethod),
+          unsigned(SelectedReference && SelectedReference->getDecl()->getCanonicalDecl() == SelectedMethod->getCanonicalDecl()),
+          unsigned(Direct == SelectedMethod), unsigned(Direct && Direct->getCanonicalDecl() == SelectedMethod->getCanonicalDecl()),
+          unsigned(SelectedReference && SelectedReference->hasExplicitTemplateArgs()),
+          unsigned(SelectedReference && Context.hasSameType(SelectedReference->getType(), SelectedMethod->getType())),
+          unsigned(SelectedReference && Check.location(SelectedReference->getExprLoc(), {"__type_traits/invoke.h"})),
+          int(std::min<std::size_t>(Path.size(), 2048)), Path.c_str());
+    }
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
+  }
   for (unsigned I = 0; I < Forwarded.size(); ++I)
-    if (!SpecializedDeclval(SpecializedCall->getArg(I + 1), Deduced(Forwarded[I]), Declvals[1])) return std::nullopt;
+    if (!SpecializedDeclval(SpecializedCall->getArg(I + 1), Deduced(Forwarded[I]), Declvals[1])) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
 
   const auto *ActualReturn = Check.returned(Function);
   const auto *ActualException = functionalBindInvokeExceptionSource(S, SM, Context, Function);
@@ -19850,7 +20023,7 @@ describeFunctionalBindNestedInvokeSignatureSource(
         Call->isTypeDependent() || Call->isValueDependent() ||
         !Context.hasSameType(Call->getType(), Target->getReturnType().getNonLValueExprType(Context)) ||
         Call->getValueKind() != Expr::getValueKindForType(Target->getReturnType()) ||
-        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
     auto Cast = [&](const Expr *Expression, unsigned I) {
       const auto *Written = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(Expression));
       const auto *Use = Written
@@ -19872,15 +20045,15 @@ describeFunctionalBindNestedInvokeSignatureSource(
     if (!Reference || Reference->getDecl() != SelectedMethod || Reference->hasExplicitTemplateArgs() ||
         !Context.hasSameType(Reference->getType(), SelectedMethod->getType()) ||
         !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"}) ||
-        !Cast(Call->getArg(0), 0)) return false;
+        !Cast(Call->getArg(0), 0)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Forwarded.size(); ++I)
-      if (!Cast(Call->getArg(I + 1), I + 1)) return false;
+      if (!Cast(Call->getArg(I + 1), I + 1)) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   };
   const auto *ActualNoexcept = dyn_cast_or_null<CXXNoexceptExpr>(ActualException);
   if ((ActualReturn && !ActualCall(ActualReturn)) ||
       (ActualException && (!ActualNoexcept || !ActualCall(ActualNoexcept->getOperand()))))
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // Keep these original optional nodes. This descriptor neither asks Sema to
   // materialize them nor treats their absence as a runtime body certificate.
   return FunctionalBindInvokeSignatureSource{Function, Primary, PrimaryReturn, PrimaryException,
@@ -19919,13 +20092,13 @@ describeFunctionalBindTryCallSignatureSource(
       !Selected->get(0).structurallyEquals(Owner->getTemplateArgs()[1]) ||
       !Selected->get(1).structurallyEquals(Owner->getTemplateArgs()[2]) ||
       !Check.family(Method, {"__type_traits/invoke.h"}) ||
-      !Check.family(Owner, {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.family(Owner, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const FunctionTemplateDecl *> Ancestors;
   std::set<const FunctionTemplateDecl *> Seen;
   for (const auto *Template = Primary; Template;
        Template = Template->getInstantiatedFromMemberTemplate()) {
     if (Ancestors.size() == 64 || !Seen.insert(Template).second ||
-        !Check.family(Template, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.family(Template, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Parameters = Template->getTemplateParameters();
     const auto *First = Parameters->size() == 2
         ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
@@ -19939,7 +20112,7 @@ describeFunctionalBindTryCallSignatureSource(
         Pattern->getParamDecl(0)->hasDefaultArg() || !Pattern->getTypeSourceInfo() ||
         !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy) ||
         !Check.family(First, {"__type_traits/invoke.h"}) ||
-        !Check.family(Rest, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.family(Rest, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Ancestors.push_back(Template);
   }
   const auto *Return = dyn_cast<DecltypeType>(Method->getReturnType().getTypePtr());
@@ -19949,14 +20122,14 @@ describeFunctionalBindTryCallSignatureSource(
             Storage, Forwarded, Context) : std::nullopt;
   if (!Invoke || !Dispatcher || Invoke->getNumArgs() != Forwarded.size() + 1 ||
       !Context.hasSameType(Method->getReturnType(), Dispatcher->Function->getReturnType()) ||
-      !Check.location(Invoke->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.location(Invoke->getExprLoc(), {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> Declvals;
   auto Declval = [&](const Expr *Expression, QualType Input) {
     const auto *Call = dyn_cast_or_null<CallExpr>(Check.stripped(Expression));
     const auto *Function = Call ? Call->getDirectCallee() : nullptr;
     const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     const auto Result = Input->isReferenceType() ? Input : Context.getRValueReferenceType(Input);
-    if (!Call || Call->getNumArgs() || !Function || !Function->getIdentifier() ||
+    const bool InvalidDeclvalSource = (!Call || Call->getNumArgs() || !Function || !Function->getIdentifier() ||
         Function->getName() != "declval" || !Function->getPrimaryTemplate() ||
         !Arguments || Arguments->size() != 1 ||
         Arguments->get(0).getKind() != TemplateArgument::Type ||
@@ -19965,19 +20138,36 @@ describeFunctionalBindTryCallSignatureSource(
         !Context.hasSameType(Call->getType(), Result.getNonLValueExprType(Context)) ||
         Call->getValueKind() != Expr::getValueKindForType(Result) ||
         !Check.family(Function, {"__utility/declval.h"}) ||
-        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"}));
+    if (InvalidDeclvalSource) {
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+        const auto ExpectedName = Input.getAsString();
+        const auto SelectedName = Arguments && Arguments->size() == 1 && Arguments->get(0).getKind() == TemplateArgument::Type
+            ? Arguments->get(0).getAsType().getAsString() : std::string("<missing>");
+        const auto ReturnName = Function ? Function->getReturnType().getAsString() : std::string("<missing>");
+        const auto ExpressionName = Call ? Call->getType().getAsString() : std::string("<missing>");
+        std::fprintf(stderr, "BIND-TRY-CALL-DECLVAL call=%u argc=%u function=%u expected=%.*s selected=%.*s returned=%.*s expression=%.*s actualkind=%u expectedkind=%u\n",
+            unsigned(bool(Call)), Call ? Call->getNumArgs() : 999U, unsigned(bool(Function)),
+            int(std::min<std::size_t>(ExpectedName.size(), 1024)), ExpectedName.c_str(),
+            int(std::min<std::size_t>(SelectedName.size(), 1024)), SelectedName.c_str(),
+            int(std::min<std::size_t>(ReturnName.size(), 1024)), ReturnName.c_str(),
+            int(std::min<std::size_t>(ExpressionName.size(), 1024)), ExpressionName.c_str(),
+            Call ? unsigned(Call->getValueKind()) : 999U, unsigned(Expr::getValueKindForType(Result)));
+      }
+      return functionalBindDiagnosticFailure(__LINE__);
+    }
     Declvals.push_back(Call);
     return true;
   };
   if (Selected->get(0).getKind() != TemplateArgument::Type ||
-      !Declval(Invoke->getArg(0), Selected->get(0).getAsType())) return std::nullopt;
+      !Declval(Invoke->getArg(0), Selected->get(0).getAsType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &ArgumentPack = Selected->get(1);
   if (ArgumentPack.getKind() != TemplateArgument::Pack ||
-      ArgumentPack.pack_size() != Forwarded.size()) return std::nullopt;
+      ArgumentPack.pack_size() != Forwarded.size()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < Forwarded.size(); ++I) {
     const auto &Argument = ArgumentPack.pack_elements()[I];
     if (Forwarded[I].isNull() || Argument.getKind() != TemplateArgument::Type)
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto Input = Argument.getAsType();
     // __invokable_r retains the selected result type, while the real
     // invocation records its expression as T&& for a non-reference result.
@@ -19986,7 +20176,7 @@ describeFunctionalBindTryCallSignatureSource(
     if ((!Context.hasSameType(Input, Forwarded[I]) &&
          (!Forwarded[I]->isRValueReferenceType() ||
           !Context.hasSameType(Input, Forwarded[I].getNonReferenceType()))) ||
-        !Declval(Invoke->getArg(I + 1), Input)) return std::nullopt;
+        !Declval(Invoke->getArg(I + 1), Input)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   std::vector<const CallExpr *> OriginalInvokes, OriginalCallableDeclvals, OriginalArgumentDeclvals;
   for (const auto *Ancestor : Ancestors) {
@@ -20010,7 +20200,7 @@ describeFunctionalBindTryCallSignatureSource(
         Lookup->getName().getNameKind() != DeclarationName::Identifier ||
         Lookup->getName().getAsIdentifierInfo()->getName() != "__invoke" ||
         !Check.location(Original->getExprLoc(), {"__type_traits/invoke.h"}) ||
-        !Check.location(Lookup->getNameLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.location(Lookup->getNameLoc(), {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     unsigned Selected = 0;
     std::set<const FunctionTemplateDecl *> Overloads;
     for (const auto *Declaration : Lookup->decls()) {
@@ -20020,11 +20210,11 @@ describeFunctionalBindTryCallSignatureSource(
           !Function->getIdentifier() || Function->getName() != "__invoke" ||
           !Check.family(Template, {"__type_traits/invoke.h"}) ||
           !Check.family(Function, {"__type_traits/invoke.h"}) ||
-          !Overloads.insert(Template->getCanonicalDecl()).second) return std::nullopt;
+          !Overloads.insert(Template->getCanonicalDecl()).second) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       Selected += Template->getCanonicalDecl() == Dispatcher->Function
           ->getPrimaryTemplate()->getCanonicalDecl();
     }
-    if (Selected != 1) return std::nullopt;
+    if (Selected != 1) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Expansion = dyn_cast<PackExpansionExpr>(Original->getArg(1));
     const auto *FirstCall = dyn_cast_or_null<CallExpr>(Check.stripped(Original->getArg(0)));
     const auto *RestCall = Expansion
@@ -20040,7 +20230,7 @@ describeFunctionalBindTryCallSignatureSource(
           Use->getName().getNameKind() != DeclarationName::Identifier ||
           Use->getName().getAsIdentifierInfo()->getName() != "declval" ||
           !Check.family(Template, {"__utility/declval.h"}) ||
-          !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+          !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Argument = Use->getTemplateArgs()[0];
       const auto *Info = Argument.getArgument().getKind() == TemplateArgument::Type
           ? Argument.getTypeSourceInfo() : nullptr;
@@ -20053,7 +20243,7 @@ describeFunctionalBindTryCallSignatureSource(
         !Check.location(Expansion->getEllipsisLoc(), {"__type_traits/invoke.h"}) ||
         !OriginalDeclval(FirstCall, First, Declvals[0]->getDirectCallee()->getPrimaryTemplate()) ||
         !OriginalDeclval(RestCall, Rest, Declvals[Forwarded.empty() ? 0 : 1]
-            ->getDirectCallee()->getPrimaryTemplate())) return std::nullopt;
+            ->getDirectCallee()->getPrimaryTemplate())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     // The empty original pack still names the same real declval template.
     // It has no concrete argument; source permission is proved separately.
     OriginalInvokes.push_back(Original);
@@ -20063,13 +20253,13 @@ describeFunctionalBindTryCallSignatureSource(
   const auto *Definition = Owner->getDefinition();
   if (!Definition || Definition->isUnion() || Definition->isDynamicClass() ||
       Definition->getNumBases() || !Definition->field_empty() ||
-      !Check.family(Definition, {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.family(Definition, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const TypeAliasDecl *Result = nullptr;
   for (const auto *Declaration : Definition->decls()) {
     const auto *Alias = dyn_cast<TypeAliasDecl>(Declaration);
     if (!Alias || !Alias->getIdentifier() || Alias->getName() != "_Result") continue;
     if (Result || !Alias->getTypeSourceInfo() ||
-        !Check.family(Alias, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.family(Alias, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Result = Alias;
   }
   const auto *Type = Result ? dyn_cast<DecltypeType>(Result->getUnderlyingType().getTypePtr()) : nullptr;
@@ -20081,7 +20271,7 @@ describeFunctionalBindTryCallSignatureSource(
       Reference->getDecl() != Method || !Reference->hasExplicitTemplateArgs() ||
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonLValueExprType(Context)) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()) ||
-      !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalBindTryCallSignatureSource{Method, Owner, Result, Call, Invoke,
       *Dispatcher, std::move(Ancestors), std::move(Declvals),
       std::move(OriginalInvokes), std::move(OriginalCallableDeclvals),
@@ -20096,7 +20286,7 @@ describeFunctionalBindNestedTryCallSignatureSource(
     const ASTContext &Context) {
   const auto *Target = Nested.Invocation.Method;
   if (!Target || !Nested.Invocation.Object || Target->getNumParams() > 2 ||
-      !Context.hasSameType(Target->getReturnType(), Nested.ResultType)) return std::nullopt;
+      !Context.hasSameType(Target->getReturnType(), Nested.ResultType)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<QualType> Forwarded;
   for (const auto *Parameter : Target->parameters()) Forwarded.push_back(Parameter->getType());
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
@@ -20128,13 +20318,13 @@ describeFunctionalBindNestedTryCallSignatureSource(
       !Selected->get(0).structurallyEquals(Owner->getTemplateArgs()[1]) ||
       !Selected->get(1).structurallyEquals(Owner->getTemplateArgs()[2]) ||
       !Check.family(Method, {"__type_traits/invoke.h"}) ||
-      !Check.family(Owner, {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.family(Owner, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const FunctionTemplateDecl *> Ancestors;
   std::set<const FunctionTemplateDecl *> Seen;
   for (const auto *Template = Primary; Template;
        Template = Template->getInstantiatedFromMemberTemplate()) {
     if (Ancestors.size() == 64 || !Seen.insert(Template).second ||
-        !Check.family(Template, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.family(Template, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Parameters = Template->getTemplateParameters();
     const auto *First = Parameters->size() == 2
         ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
@@ -20148,7 +20338,7 @@ describeFunctionalBindNestedTryCallSignatureSource(
         Pattern->getParamDecl(0)->hasDefaultArg() || !Pattern->getTypeSourceInfo() ||
         !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy) ||
         !Check.family(First, {"__type_traits/invoke.h"}) ||
-        !Check.family(Rest, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.family(Rest, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Ancestors.push_back(Template);
   }
   const auto *Return = dyn_cast<DecltypeType>(Method->getReturnType().getTypePtr());
@@ -20158,7 +20348,7 @@ describeFunctionalBindNestedTryCallSignatureSource(
             Nested, Context) : std::nullopt;
   if (!Invoke || !Dispatcher || !Dispatcher->Nested || Invoke->getNumArgs() != Forwarded.size() + 1 ||
       !Context.hasSameType(Method->getReturnType(), Dispatcher->Function->getReturnType()) ||
-      !Check.location(Invoke->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.location(Invoke->getExprLoc(), {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> Declvals;
   auto Declval = [&](const Expr *Expression, QualType Input) {
     const auto *Call = dyn_cast_or_null<CallExpr>(Check.stripped(Expression));
@@ -20174,14 +20364,14 @@ describeFunctionalBindNestedTryCallSignatureSource(
         !Context.hasSameType(Call->getType(), Result.getNonLValueExprType(Context)) ||
         Call->getValueKind() != Expr::getValueKindForType(Result) ||
         !Check.family(Function, {"__utility/declval.h"}) ||
-        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
     Declvals.push_back(Call);
     return true;
   };
   if (Selected->get(0).getKind() != TemplateArgument::Type ||
-      !Declval(Invoke->getArg(0), Selected->get(0).getAsType())) return std::nullopt;
+      !Declval(Invoke->getArg(0), Selected->get(0).getAsType())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   for (unsigned I = 0; I < Forwarded.size(); ++I)
-    if (Forwarded[I].isNull() || !Declval(Invoke->getArg(I + 1), Forwarded[I])) return std::nullopt;
+    if (Forwarded[I].isNull() || !Declval(Invoke->getArg(I + 1), Forwarded[I])) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const CallExpr *> OriginalInvokes, OriginalCallableDeclvals, OriginalArgumentDeclvals;
   for (const auto *Ancestor : Ancestors) {
     const auto *Pattern = dyn_cast<CXXMethodDecl>(Ancestor->getTemplatedDecl());
@@ -20204,7 +20394,7 @@ describeFunctionalBindNestedTryCallSignatureSource(
         Lookup->getName().getNameKind() != DeclarationName::Identifier ||
         Lookup->getName().getAsIdentifierInfo()->getName() != "__invoke" ||
         !Check.location(Original->getExprLoc(), {"__type_traits/invoke.h"}) ||
-        !Check.location(Lookup->getNameLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.location(Lookup->getNameLoc(), {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     unsigned Selected = 0;
     std::set<const FunctionTemplateDecl *> Overloads;
     for (const auto *Declaration : Lookup->decls()) {
@@ -20214,11 +20404,11 @@ describeFunctionalBindNestedTryCallSignatureSource(
           !Function->getIdentifier() || Function->getName() != "__invoke" ||
           !Check.family(Template, {"__type_traits/invoke.h"}) ||
           !Check.family(Function, {"__type_traits/invoke.h"}) ||
-          !Overloads.insert(Template->getCanonicalDecl()).second) return std::nullopt;
+          !Overloads.insert(Template->getCanonicalDecl()).second) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       Selected += Template->getCanonicalDecl() == Dispatcher->Function
           ->getPrimaryTemplate()->getCanonicalDecl();
     }
-    if (Selected != 1) return std::nullopt;
+    if (Selected != 1) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Expansion = dyn_cast<PackExpansionExpr>(Original->getArg(1));
     const auto *FirstCall = dyn_cast_or_null<CallExpr>(Check.stripped(Original->getArg(0)));
     const auto *RestCall = Expansion
@@ -20234,7 +20424,7 @@ describeFunctionalBindNestedTryCallSignatureSource(
           Use->getName().getNameKind() != DeclarationName::Identifier ||
           Use->getName().getAsIdentifierInfo()->getName() != "declval" ||
           !Check.family(Template, {"__utility/declval.h"}) ||
-          !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+          !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Argument = Use->getTemplateArgs()[0];
       const auto *Info = Argument.getArgument().getKind() == TemplateArgument::Type
           ? Argument.getTypeSourceInfo() : nullptr;
@@ -20247,7 +20437,7 @@ describeFunctionalBindNestedTryCallSignatureSource(
         !Check.location(Expansion->getEllipsisLoc(), {"__type_traits/invoke.h"}) ||
         !OriginalDeclval(FirstCall, First, Declvals[0]->getDirectCallee()->getPrimaryTemplate()) ||
         !OriginalDeclval(RestCall, Rest, Declvals[Forwarded.empty() ? 0 : 1]
-            ->getDirectCallee()->getPrimaryTemplate())) return std::nullopt;
+            ->getDirectCallee()->getPrimaryTemplate())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     // The empty original pack still names the same real declval template.
     // It has no concrete argument; source permission is proved separately.
     OriginalInvokes.push_back(Original);
@@ -20257,13 +20447,13 @@ describeFunctionalBindNestedTryCallSignatureSource(
   const auto *Definition = Owner->getDefinition();
   if (!Definition || Definition->isUnion() || Definition->isDynamicClass() ||
       Definition->getNumBases() || !Definition->field_empty() ||
-      !Check.family(Definition, {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.family(Definition, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const TypeAliasDecl *Result = nullptr;
   for (const auto *Declaration : Definition->decls()) {
     const auto *Alias = dyn_cast<TypeAliasDecl>(Declaration);
     if (!Alias || !Alias->getIdentifier() || Alias->getName() != "_Result") continue;
     if (Result || !Alias->getTypeSourceInfo() ||
-        !Check.family(Alias, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.family(Alias, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Result = Alias;
   }
   const auto *Type = Result ? dyn_cast<DecltypeType>(Result->getUnderlyingType().getTypePtr()) : nullptr;
@@ -20275,7 +20465,7 @@ describeFunctionalBindNestedTryCallSignatureSource(
       Reference->getDecl() != Method || !Reference->hasExplicitTemplateArgs() ||
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonLValueExprType(Context)) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()) ||
-      !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalBindTryCallSignatureSource{Method, Owner, Result, Call, Invoke,
       *Dispatcher, std::move(Ancestors), std::move(Declvals),
       std::move(OriginalInvokes), std::move(OriginalCallableDeclvals),
@@ -20291,10 +20481,10 @@ describeFunctionalBindTryCallFallbackSource(
     llvm::ArrayRef<const TemplateUseSource *> Sources, const ASTContext &Context) {
   if (!Probe.Function || !Probe.Owner || Probe.Owner->getTemplateArgs().size() != 3 ||
       Probe.Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-      Sources.size() > 200000) return std::nullopt;
+      Sources.size() > 200000) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<QualType> Forwarded;
   for (const auto &Argument : Probe.Owner->getTemplateArgs()[2].pack_elements()) {
-    if (Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+    if (Argument.getKind() != TemplateArgument::Type) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Forwarded.push_back(Argument.getAsType());
   }
   const auto Actual = Probe.Dispatcher.Nested
@@ -20306,10 +20496,10 @@ describeFunctionalBindTryCallFallbackSource(
       Actual->Ancestors != Probe.Ancestors || Actual->Declvals != Probe.Declvals ||
       Actual->OriginalInvokes != Probe.OriginalInvokes ||
       Actual->OriginalCallableDeclvals != Probe.OriginalCallableDeclvals ||
-      Actual->OriginalArgumentDeclvals != Probe.OriginalArgumentDeclvals) return std::nullopt;
+      Actual->OriginalArgumentDeclvals != Probe.OriginalArgumentDeclvals) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Wanted = Actual->Function->getTemplateSpecializationArgs();
   const auto *OwnerPrimary = Actual->Owner->getSpecializedTemplate();
-  if (!Wanted || Wanted->size() != 2 || !OwnerPrimary) return std::nullopt;
+  if (!Wanted || Wanted->size() != 2 || !OwnerPrimary) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   const CXXMethodDecl *Fallback = nullptr;
   const CXXRecordDecl *Sentinel = nullptr;
@@ -20340,11 +20530,11 @@ describeFunctionalBindTryCallFallbackSource(
         !Use->Canonical || !Use->Sugared || Use->Canonical->size() != 2 || Use->Sugared->size() != 2 ||
         !Check.family(Method, {"__type_traits/invoke.h"}) ||
         !Check.family(Record, {"__type_traits/nat.h"}) ||
-        !Check.location(Use->Location, {"__type_traits/invoke.h"})) return std::nullopt;
+        !Check.location(Use->Location, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     for (unsigned I = 0; I < 2; ++I)
       if (!Use->Canonical->get(I).structurallyEquals(Selected->get(I)) ||
           !Use->Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Use->Sugared->get(I)))) return std::nullopt;
+              Context.getCanonicalTemplateArgument(Use->Sugared->get(I)))) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     auto Signature = [&](const CXXMethodDecl *Declaration) {
       const auto *Info = Declaration ? Declaration->getTypeSourceInfo() : nullptr;
       const auto Location = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
@@ -20357,17 +20547,17 @@ describeFunctionalBindTryCallFallbackSource(
           Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
           !Context.hasSameType(Info->getType(), Declaration->getType()) ||
           Result->getCanonicalDecl() != Record->getCanonicalDecl() ||
-          !Check.family(Declaration, {"__type_traits/invoke.h"})) return false;
+          !Check.family(Declaration, {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                               Prototype->getEllipsisLoc()})
-        if (!Check.location(Site, {"__type_traits/invoke.h"})) return false;
+        if (!Check.location(Site, {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     };
     std::vector<const FunctionTemplateDecl *> Chain;
     std::set<const FunctionTemplateDecl *> Seen;
     for (const auto *Current = Primary; Current; Current = Current->getInstantiatedFromMemberTemplate()) {
       if (Chain.size() == 64 || !Seen.insert(Current).second ||
-          !Check.family(Current, {"__type_traits/invoke.h"})) return std::nullopt;
+          !Check.family(Current, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto *Parameters = Current->getTemplateParameters();
       const auto *First = Parameters->size() == 2
           ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
@@ -20379,21 +20569,21 @@ describeFunctionalBindTryCallFallbackSource(
           Rest->hasDefaultArgument() || !Pattern ||
           (Pattern->getParent() != Actual->Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
           !Check.family(First, {"__type_traits/invoke.h"}) ||
-          !Check.family(Rest, {"__type_traits/invoke.h"})) return std::nullopt;
+          !Check.family(Rest, {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       for (const auto *Declaration : Pattern->redecls())
-        if (!Signature(cast<CXXMethodDecl>(Declaration))) return std::nullopt;
+        if (!Signature(cast<CXXMethodDecl>(Declaration))) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       Chain.push_back(Current);
     }
     for (const auto *Declaration : Method->redecls())
-      if (!Signature(cast<CXXMethodDecl>(Declaration))) return std::nullopt;
+      if (!Signature(cast<CXXMethodDecl>(Declaration))) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     if (!Packets.empty() && (!Sentinel ||
-        Sentinel->getCanonicalDecl() != Record->getCanonicalDecl() || Ancestors != Chain)) return std::nullopt;
+        Sentinel->getCanonicalDecl() != Record->getCanonicalDecl() || Ancestors != Chain)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Fallback = Method;
     Sentinel = Record;
     if (SeenPackets.insert(Use).second) Packets.push_back(Use);
     Ancestors = std::move(Chain);
   }
-  if (!Fallback || Packets.empty() || !Sentinel || Ancestors.empty()) return std::nullopt;
+  if (!Fallback || Packets.empty() || !Sentinel || Ancestors.empty()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // No selection is invented for this unselected ellipsis candidate. This
   // description grants no sentinel storage, value, construction or body use.
   return FunctionalBindTryCallFallbackSource{Fallback, Sentinel, std::move(Ancestors), std::move(Packets)};
@@ -20419,7 +20609,7 @@ describeFunctionalBindCopySource(
       Construction->getType().isVolatileQualified() || Construction->getType().isRestrictQualified() ||
       Construction->getType().getAddressSpace() != LangAS::Default ||
       !Context.hasSameUnqualifiedType(Construction->getType(),
-                                      Context.getRecordType(Layout->Storage.Record))) return std::nullopt;
+                                      Context.getRecordType(Layout->Storage.Record))) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Parameter = Constructor->getParamDecl(0)->getType();
   const auto Self = Context.getRecordType(Layout->Storage.Record);
   const auto Expected = Constructor->isMoveConstructor()
@@ -20430,7 +20620,7 @@ describeFunctionalBindCopySource(
   if (!Object || !Context.hasSameType(Parameter, Expected) ||
       !Context.hasSameType(Object->getType(), Parameter.getNonReferenceType()) ||
       Object->getValueKind() != Expr::getValueKindForType(Parameter) ||
-      !Check.family(Constructor, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Constructor, {"__functional/bind.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalBindCopySource{*Layout, Construction, Object};
 }
 
@@ -20447,7 +20637,7 @@ describeFunctionalBindDestructionSource(
       Destructor->isVariadic() || Destructor->getPrimaryTemplate() ||
       Destructor->getNumParams() || !Layout->Storage.Record->getDestructor() ||
       Destructor->getCanonicalDecl() != Layout->Storage.Record->getDestructor()->getCanonicalDecl() ||
-      !Check.family(Destructor, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Destructor, {"__functional/bind.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   return FunctionalBindDestructionSource{*Layout, Destructor};
 }
 
@@ -20479,11 +20669,11 @@ describeFunctionalBindDeclvalSource(
       Prototype->getNoexceptExpr() || !Function->getTypeSourceInfo() ||
       !Primary->getTypeSourceInfo() || !Check.family(Function, {"__utility/declval.h"}) ||
       !Check.family(Parameter, {"__utility/declval.h"}) ||
-      !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto Result = Input->isReferenceType() ? Input : Context.getRValueReferenceType(Input);
   if (!Context.hasSameType(Function->getReturnType(), Result) ||
       !Context.hasSameType(Call->getType(), Result.getNonLValueExprType(Context)) ||
-      Call->getValueKind() != Expr::getValueKindForType(Result)) return std::nullopt;
+      Call->getValueKind() != Expr::getValueKindForType(Result)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *Return = dyn_cast<DecltypeType>(Function->getReturnType().getTypePtr());
   const auto *HelperCall = Return ? dyn_cast<CallExpr>(Check.stripped(Return->getUnderlyingExpr())) : nullptr;
   const auto *Helper = HelperCall ? HelperCall->getDirectCallee() : nullptr;
@@ -20505,7 +20695,7 @@ describeFunctionalBindDeclvalSource(
       HelperCall->getValueKind() != Expr::getValueKindForType(Result) ||
       !Zero || !Zero->getValue().isZero() || !Context.hasSameType(Zero->getType(), Context.IntTy) ||
       !Check.family(Helper, {"__utility/declval.h"}) ||
-      !Check.location(HelperCall->getExprLoc(), {"__utility/declval.h"})) return std::nullopt;
+      !Check.location(HelperCall->getExprLoc(), {"__utility/declval.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto *PrimaryReturn = dyn_cast<DecltypeType>(Primary->getReturnType().getTypePtr());
   const auto *PrimaryCall = PrimaryReturn
       ? dyn_cast<CallExpr>(Check.stripped(PrimaryReturn->getUnderlyingExpr())) : nullptr;
@@ -20518,12 +20708,12 @@ describeFunctionalBindDeclvalSource(
       Lookup->getName().getNameKind() != DeclarationName::Identifier ||
       Lookup->getName().getAsIdentifierInfo()->getName() != "__declval" ||
       !PrimaryZero || !PrimaryZero->getValue().isZero() ||
-      !Context.hasSameType(PrimaryZero->getType(), Context.IntTy)) return std::nullopt;
+      !Context.hasSameType(PrimaryZero->getType(), Context.IntTy)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   const auto &Written = Lookup->template_arguments()[0];
   const auto *WrittenType = Written.getArgument().getKind() == TemplateArgument::Type
       ? dyn_cast<TemplateTypeParmType>(Written.getArgument().getAsType().getTypePtr()) : nullptr;
   if (!WrittenType || WrittenType->getDecl() != Parameter || !Written.getTypeSourceInfo())
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   std::vector<const FunctionTemplateDecl *> Overloads;
   unsigned Int = 0, Long = 0;
   for (const auto *Declaration : Lookup->decls()) {
@@ -20536,20 +20726,20 @@ describeFunctionalBindDeclvalSource(
         !Pattern || Pattern->hasBody() || Pattern->isVariadic() || Pattern->getNumParams() != 1 ||
         Pattern->getParamDecl(0)->hasDefaultArg() || !Pattern->getTypeSourceInfo() ||
         !Check.family(Candidate, {"__utility/declval.h"}) ||
-        !Check.family(Type, {"__utility/declval.h"})) return std::nullopt;
+        !Check.family(Type, {"__utility/declval.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     auto Returned = Pattern->getReturnType();
     if (Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) {
-      if (++Int != 1 || !Returned->isRValueReferenceType()) return std::nullopt;
+      if (++Int != 1 || !Returned->isRValueReferenceType()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       Returned = Returned->getPointeeType();
     } else {
       if (++Long != 1 || !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.LongTy))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     }
     const auto *ReturnedParameter = dyn_cast<TemplateTypeParmType>(Returned.getTypePtr());
-    if (!ReturnedParameter || ReturnedParameter->getDecl() != Type) return std::nullopt;
+    if (!ReturnedParameter || ReturnedParameter->getDecl() != Type) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     Overloads.push_back(Candidate);
   }
-  if (Int != 1 || Long != 1 || !llvm::is_contained(Overloads, HelperPrimary)) return std::nullopt;
+  if (Int != 1 || Long != 1 || !llvm::is_contained(Overloads, HelperPrimary)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   // No body of declval is queried or instantiated by this description.
   return FunctionalBindDeclvalSource{Call, HelperCall, PrimaryCall, Function, Helper,
       Parameter, std::move(Overloads)};
@@ -20562,7 +20752,7 @@ describeFunctionalBindDeclvalSource(
 static bool functionalBindInertObjectSourceIdentity(
     const State &S, const SourceManager &SM, QualType Type,
     const ASTContext &Context) {
-  if (!S.coreV2() || Type.isNull()) return false;
+  if (!S.coreV2() || Type.isNull()) return functionalBindDiagnosticFailure(__LINE__);
   NotFnSelectedSource Check(S, SM, Context);
   unsigned Nodes = 0;
   std::set<const CXXRecordDecl *> Active;
@@ -20598,13 +20788,13 @@ static bool functionalBindInertObjectSourceIdentity(
   };
   std::function<bool(QualType, unsigned)> Object;
   auto Capture = [&](QualType T, unsigned Depth) {
-    if (!Step(Depth)) return false;
+    if (!Step(Depth)) return functionalBindDiagnosticFailure(__LINE__);
     return Scalar(T) || Reference(T) ||
         describeFunctionalBindPlaceholderIdentity(S, SM, T, Context).has_value() ||
         Object(T, Depth + 1);
   };
   Object = [&](QualType T, unsigned Depth) {
-    if (!Step(Depth)) return false;
+    if (!Step(Depth)) return functionalBindDiagnosticFailure(__LINE__);
     T = Value(T);
     const auto *R = T.isNull() ? nullptr :
         dyn_cast_or_null<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
@@ -20616,7 +20806,7 @@ static bool functionalBindInertObjectSourceIdentity(
         R->getSpecializedTemplateOrPartial().is<ClassTemplatePartialSpecializationDecl *>() ||
         R->getDeclContext() != Primary->getDeclContext() || !Origin(R) ||
         !Origin(Primary) || !Origin(Primary->getTemplatedDecl()) ||
-        !Active.insert(R->getCanonicalDecl()).second) return false;
+        !Active.insert(R->getCanonicalDecl()).second) return functionalBindDiagnosticFailure(__LINE__);
     auto Restore = llvm::make_scope_exit([&] { Active.erase(R->getCanonicalDecl()); });
     const auto *Parameters = Primary->getTemplateParameters();
     const auto *CallableParameter = Parameters && Parameters->size() == 2
@@ -20628,30 +20818,30 @@ static bool functionalBindInertObjectSourceIdentity(
         CallableParameter->hasDefaultArgument() || BoundParameter->getDepth() ||
         BoundParameter->getIndex() != 1 || !BoundParameter->isParameterPack() ||
         BoundParameter->hasDefaultArgument() || !Origin(CallableParameter) ||
-        !Origin(BoundParameter)) return false;
+        !Origin(BoundParameter)) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Arguments = R->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
         Arguments[1].getKind() != TemplateArgument::Pack || Arguments[1].pack_size() > 8)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     const auto Callable = Value(Arguments[0].getAsType());
     const auto *Prototype = Callable.isNull() ? nullptr : Callable->isFunctionPointerType()
         ? Callable->getPointeeType()->getAs<FunctionProtoType>() : Callable->getAs<FunctionProtoType>();
     if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
         Prototype->getNumParams() != Arguments[1].pack_size() ||
         (!Prototype->getReturnType()->isVoidType() && !Scalar(Prototype->getReturnType())))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto Parameter : Prototype->param_types())
-      if (!Step(Depth) || !Scalar(Parameter)) return false;
+      if (!Step(Depth) || !Scalar(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
     unsigned Declarations = 0;
     for (const auto *D : Primary->redecls())
       if (++Declarations > 64 || !Step(Depth) || !Origin(D) ||
-          !Origin(D->getTemplatedDecl())) return false;
+          !Origin(D->getTemplatedDecl())) return functionalBindDiagnosticFailure(__LINE__);
     Declarations = 0;
     for (const auto *D : R->redecls())
-      if (++Declarations > 64 || !Step(Depth) || !Origin(D)) return false;
+      if (++Declarations > 64 || !Step(Depth) || !Origin(D)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Argument : Arguments[1].pack_elements())
       if (Argument.getKind() != TemplateArgument::Type ||
-          !Capture(Argument.getAsType(), Depth + 1)) return false;
+          !Capture(Argument.getAsType(), Depth + 1)) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   };
   return Object(Type, 0);
@@ -20661,9 +20851,9 @@ bool retainFunctionalBindConstraintRoot(
     const State &S, const SourceManager &SM, TemplateSourceKind Kind,
     const NamedDecl *Template, const Decl *Declaration, const Type *Type,
     const TypeSourceInfo *Underlying, SourceLocation Location) {
-  if (!S.coreV2() || !Template || S.owns(SM, Location)) return false;
+  if (!S.coreV2() || !Template || S.owns(SM, Location)) return functionalBindDiagnosticFailure(__LINE__);
   const auto Use = S.sdkFile(SM, Location);
-  if (!Use || Use->Root != "libcxx") return false;
+  if (!Use || Use->Root != "libcxx") return functionalBindDiagnosticFailure(__LINE__);
   const bool InBind = Use->Path == "__functional/bind.h";
   const bool InTuple = Use->Path == "tuple";
   const bool InInvoke = Use->Path == "__type_traits/invoke.h";
@@ -20676,23 +20866,23 @@ bool retainFunctionalBindConstraintRoot(
       Use->Path == "__utility/forward.h" || Use->Path == "__utility/move.h" ||
       Use->Path == "__utility/declval.h" || Use->Path == "__utility/integer_sequence.h" ||
       Use->Path == "__fwd/tuple.h" || Use->Path == "__cstddef/size_t.h";
-  if (!InBind && !InTuple && !InInvoke && !InMetadata) return false;
+  if (!InBind && !InTuple && !InInvoke && !InMetadata) return functionalBindDiagnosticFailure(__LINE__);
   NotFnSelectedSource Check(S, SM, Template->getASTContext());
   auto Scalar = [&](QualType T) {
-    if (T.isNull()) return false;
+    if (T.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     T = T.getNonReferenceType();
     if (T.isVolatileQualified() || T.isRestrictQualified() ||
         T.getAddressSpace() != LangAS::Default || T->isDependentType() || T->isArrayType())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     return T->isIntegralOrEnumerationType() || T->isSpecificBuiltinType(BuiltinType::Float) ||
         T->isSpecificBuiltinType(BuiltinType::Double) || T->isNullPtrType() ||
         (T->isPointerType() && T->getPointeeType()->isObjectType());
   };
   auto Reference = [&](QualType T) {
-    if (T.isNull()) return false;
+    if (T.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     T = T.getNonReferenceType();
     if (T.isVolatileQualified() || T.isRestrictQualified() ||
-        T.getAddressSpace() != LangAS::Default || T->isDependentType()) return false;
+        T.getAddressSpace() != LangAS::Default || T->isDependentType()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
     // No definition/layout/special-member request is permitted during this
     // producer callback. Runtime storage is independently described later.
@@ -20709,42 +20899,42 @@ bool retainFunctionalBindConstraintRoot(
   };
   auto Pack = [&](const TemplateArgument &Argument, unsigned Minimum) {
     if (Argument.getKind() != TemplateArgument::Pack ||
-        Argument.pack_size() < Minimum) return false;
+        Argument.pack_size() < Minimum) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Element : Argument.pack_elements())
       if (Element.getKind() != TemplateArgument::Type || !Capture(Element.getAsType()))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
     return true;
   };
   auto Tuple = [&](QualType T, unsigned Minimum) {
-    if (T.isNull()) return false;
+    if (T.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     T = T.getNonReferenceType();
     if (T.isVolatileQualified() || T.isRestrictQualified() ||
-        T.getAddressSpace() != LangAS::Default) return false;
+        T.getAddressSpace() != LangAS::Default) return functionalBindDiagnosticFailure(__LINE__);
     const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
     return R && R->getIdentifier() && R->getName() == "tuple" &&
         R->getTemplateArgs().size() == 1 && Pack(R->getTemplateArgs()[0], Minimum) &&
         Check.family(R, {"tuple", "__fwd/tuple.h"});
   };
   auto Callable = [&](QualType T) {
-    if (T.isNull()) return false;
+    if (T.isNull()) return functionalBindDiagnosticFailure(__LINE__);
     T = T.getNonReferenceType();
     if (T.isVolatileQualified() || T.isRestrictQualified() ||
-        T.getAddressSpace() != LangAS::Default || T->isDependentType()) return false;
+        T.getAddressSpace() != LangAS::Default || T->isDependentType()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *F = T->isFunctionPointerType()
         ? T->getPointeeType()->getAs<FunctionProtoType>() : T->getAs<FunctionProtoType>();
     if (!F || !ordinaryCallbackPrototype(F) ||
-        (!F->getReturnType()->isVoidType() && !Scalar(F->getReturnType()))) return false;
+        (!F->getReturnType()->isVoidType() && !Scalar(F->getReturnType()))) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto Parameter : F->param_types())
-      if (!Scalar(Parameter)) return false;
+      if (!Scalar(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   };
   auto BindObject = [&](QualType T) {
     return functionalBindInertObjectSourceIdentity(S, SM, T, Template->getASTContext());
   };
   auto IncomingPack = [&](const TemplateArgument &Argument) {
-    if (Argument.getKind() != TemplateArgument::Pack || Argument.pack_size() > 2) return false;
+    if (Argument.getKind() != TemplateArgument::Pack || Argument.pack_size() > 2) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Element : Argument.pack_elements())
-      if (Element.getKind() != TemplateArgument::Type || !Scalar(Element.getAsType())) return false;
+      if (Element.getKind() != TemplateArgument::Type || !Scalar(Element.getAsType())) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   };
   if (Kind == TemplateSourceKind::Function) {
@@ -20753,15 +20943,15 @@ bool retainFunctionalBindConstraintRoot(
     if (!Function || !Primary || Template != Primary || Type || Underlying ||
         Function->isInvalidDecl() || Function->isDeleted() ||
         Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Function)) {
       const auto *R = dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent());
-      if (!R || !R->getIdentifier()) return false;
+      if (!R || !R->getIdentifier()) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Arguments = R->getTemplateArgs();
       if (InBind && R->getName() == "__bind" && Arguments.size() == 2 &&
           Arguments[0].getKind() == TemplateArgument::Type && Callable(Arguments[0].getAsType()) &&
           Pack(Arguments[1], 0)) return Check.family(Constructor, {"__functional/bind.h"});
-      if (!Check.family(Constructor, {"tuple"})) return false;
+      if (!Check.family(Constructor, {"tuple"})) return functionalBindDiagnosticFailure(__LINE__);
       return (R->getName() == "tuple" && Arguments.size() == 1 && Pack(Arguments[0], 0)) ||
           (R->getName() == "__tuple_impl" && Arguments.size() == 2 && Pack(Arguments[1], 0)) ||
           (R->getName() == "__tuple_leaf" && Arguments.size() == 3 &&
@@ -20800,7 +20990,7 @@ bool retainFunctionalBindConstraintRoot(
       const auto *Selected = Method->getTemplateSpecializationArgs();
       if (!Selected || Selected->size() != 2 ||
           !Selected->get(0).structurallyEquals(Owner->getTemplateArgs()[1]) ||
-          !Selected->get(1).structurallyEquals(Owner->getTemplateArgs()[2])) return false;
+          !Selected->get(1).structurallyEquals(Owner->getTemplateArgs()[2])) return functionalBindDiagnosticFailure(__LINE__);
       return Check.family(Method, {"__type_traits/invoke.h"}) &&
           Check.family(Owner, {"__type_traits/invoke.h"});
     }
@@ -20840,7 +21030,7 @@ bool retainFunctionalBindConstraintRoot(
           Arguments->get(0).getKind() == TemplateArgument::Type && Capture(Arguments->get(0).getAsType()) &&
           Check.family(Method, {"tuple"}) && Check.family(Owner, {"tuple"});
     }
-    if (Method || !Function->getIdentifier()) return false;
+    if (Method || !Function->getIdentifier()) return functionalBindDiagnosticFailure(__LINE__);
     if (Function->getName() == "__and_helper" && InMetadata &&
         !Function->hasBody() &&
         ((Function->isVariadic() && !Function->getNumParams()) ||
@@ -20874,13 +21064,13 @@ bool retainFunctionalBindConstraintRoot(
     if (Function->getName() == "__invoke" && Function->getNumParams() >= 1 &&
         Function->getNumParams() <= 3 && BindObject(Function->getParamDecl(0)->getType())) {
       for (unsigned I = 1; I < Function->getNumParams(); ++I)
-        if (!Scalar(Function->getParamDecl(I)->getType())) return false;
+        if (!Scalar(Function->getParamDecl(I)->getType())) return functionalBindDiagnosticFailure(__LINE__);
       return Check.family(Function, {"__type_traits/invoke.h"});
     }
     if (InBind && Function->getName() == "bind" && Function->getNumParams() >= 1 &&
         Callable(Function->getParamDecl(0)->getType())) {
       for (unsigned I = 1; I < Function->getNumParams(); ++I)
-        if (!Capture(Function->getParamDecl(I)->getType())) return false;
+        if (!Capture(Function->getParamDecl(I)->getType())) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Result = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
           Function->getReturnType()->getAsCXXRecordDecl());
       return Result && Result->getIdentifier() && Result->getName() == "__bind" &&
@@ -20909,14 +21099,14 @@ bool retainFunctionalBindConstraintRoot(
     if (Function->getName() == "__invoke" && Function->getNumParams() >= 1 &&
         Callable(Function->getParamDecl(0)->getType()))
       return Check.family(Function, {"__type_traits/invoke.h"});
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   }
   // Metadata collection is inert. Every actual use still needs its exact
   // original Type/alias/partial/default source graph at the consumer. Broad
   // evidence collection supplies no ordinary SDK or runtime permission.
   const auto Origin = S.sdkFile(SM, Template->getLocation());
   if (!Origin || Origin->Root != "libcxx" ||
-      !approvedStandardSDKDeclaration(S, SM, Template)) return false;
+      !approvedStandardSDKDeclaration(S, SM, Template)) return functionalBindDiagnosticFailure(__LINE__);
   const auto &Path = Origin->Path;
   if (!(Path == "tuple" || Path == "__functional/bind.h" ||
         Path == "__functional/weak_result_type.h" ||
@@ -20925,7 +21115,7 @@ bool retainFunctionalBindConstraintRoot(
         Path == "__functional/reference_wrapper.h" || Path == "__fwd/functional.h" ||
         Path == "__utility/integer_sequence.h" || Path == "__fwd/tuple.h" ||
         llvm::StringRef(Path).starts_with("__tuple/") ||
-        llvm::StringRef(Path).starts_with("__type_traits/"))) return false;
+        llvm::StringRef(Path).starts_with("__type_traits/"))) return functionalBindDiagnosticFailure(__LINE__);
   switch (Kind) {
   case TemplateSourceKind::Type:
     return !Declaration && Type && (!isa<TypeAliasTemplateDecl>(Template) || Underlying);
@@ -20936,7 +21126,7 @@ bool retainFunctionalBindConstraintRoot(
   case TemplateSourceKind::PartialPattern:
   case TemplateSourceKind::VariableUse:
     return Declaration && !Type;
-  default: return false;
+  default: return functionalBindDiagnosticFailure(__LINE__);
   }
 }
 
@@ -20948,7 +21138,7 @@ bool matchesFunctionalBindSelectedSource(
       (!S.owns(SM, Source.Location) && (!Source.FunctionalBindConstraint ||
       !retainFunctionalBindConstraintRoot(S, SM, TemplateSourceKind::Function,
           Source.Function->getPrimaryTemplate(), Source.Function,
-          nullptr, nullptr, Source.Location)))) return false;
+          nullptr, nullptr, Source.Location)))) return functionalBindDiagnosticFailure(__LINE__);
   const FunctionDecl *Selected = nullptr;
   if (const auto *Construction = dyn_cast<CXXConstructExpr>(Source.Expression))
     Selected = Construction->getConstructor();
@@ -21045,9 +21235,9 @@ class BindSourceProof {
     return Location.isValid() && File && File->Root == "libcxx";
   }
   bool family(const Decl *Declaration) {
-    if (!Declaration) return false;
+    if (!Declaration) return functionalBindDiagnosticFailure(__LINE__);
     const auto File = S.sdkFile(SM, Declaration->getLocation());
-    if (!File || File->Root != "libcxx") return false;
+    if (!File || File->Root != "libcxx") return functionalBindDiagnosticFailure(__LINE__);
     const auto &Path = File->Path;
     if (!(Path == "tuple" || Path == "__config" ||
           Path == "__functional/bind.h" || Path == "__functional/weak_result_type.h" ||
@@ -21057,7 +21247,7 @@ class BindSourceProof {
           Path == "__utility/declval.h" || Path == "__utility/integer_sequence.h" ||
           Path == "__cstddef/size_t.h" || llvm::StringRef(Path).starts_with("__type_traits/") ||
           llvm::StringRef(Path).starts_with("__tuple/") ||
-          llvm::StringRef(Path).starts_with("__fwd/"))) return false;
+          llvm::StringRef(Path).starts_with("__fwd/"))) return functionalBindDiagnosticFailure(__LINE__);
     // A fresh family checker preserves each declaration's own permitted path
     // set. An earlier family hit cannot hide an invalid alternative path.
     NotFnSelectedSource Family(S, SM, Context);
@@ -21082,9 +21272,9 @@ class BindSourceProof {
     return Family.family(Declaration, {Path});
   }
   bool same(const TemplateArgumentList *Left, const TemplateArgumentList *Right) const {
-    if (!Left || !Right || Left->size() != Right->size() || Left->size() > 64) return false;
+    if (!Left || !Right || Left->size() != Right->size() || Left->size() > 64) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Left->size(); ++I)
-      if (!Left->get(I).structurallyEquals(Right->get(I))) return false;
+      if (!Left->get(I).structurallyEquals(Right->get(I))) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
   bool packet(const TemplateUseSource &Source, const TemplateParameterList *Parameters) {
@@ -21096,11 +21286,11 @@ class BindSourceProof {
         Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
         Source.Origin || Source.WrittenStorageClass ||
         (Source.Selection && Source.Kind != TemplateSourceKind::PartialDeduction &&
-         Source.Kind != TemplateSourceKind::PartialPattern)) return false;
+         Source.Kind != TemplateSourceKind::PartialPattern)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Source.Canonical->size(); ++I)
       if (Source.Canonical->get(I).isNull() ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
   bool convertedValue(const TemplateArgumentLoc &Location, const TemplateArgument &Canonical) {
@@ -21108,12 +21298,12 @@ class BindSourceProof {
     if (Argument.getKind() == TemplateArgument::Type)
       return Canonical.getKind() == TemplateArgument::Type && Location.getTypeSourceInfo() &&
           Context.hasSameType(Argument.getAsType(), Canonical.getAsType());
-    if (Canonical.getKind() != TemplateArgument::Integral) return false;
+    if (Canonical.getKind() != TemplateArgument::Integral) return functionalBindDiagnosticFailure(__LINE__);
     const Expr *Expression = Argument.getKind() == TemplateArgument::Expression
         ? Argument.getAsExpr() : Argument.getKind() == TemplateArgument::Integral
         ? Location.getSourceIntegralExpression() : nullptr;
     if (!Expression || Expression->isTypeDependent() || Expression->isValueDependent() ||
-        !Context.hasSameType(Expression->getType(), Canonical.getIntegralType())) return false;
+        !Context.hasSameType(Expression->getType(), Canonical.getIntegralType())) return functionalBindDiagnosticFailure(__LINE__);
     Expr::EvalResult Value;
     // Fold only after the actual original/written/converted graphs close.
     // This value binds a converted slot; it never supplies source permission.
@@ -21148,7 +21338,7 @@ class BindSourceProof {
         !IndexDeclaration->getIdentifier() || IndexDeclaration->getName() != "__indx" ||
         !Context.hasSameType(IndexDeclaration->getType(), Context.getConstType(Context.getSizeType())) ||
         !Check.family(IndexDeclaration, {"__functional/bind.h"}) || !IndexSubtract ||
-        IndexSubtract->getOpcode() != BO_Sub || IndexSubtract->getLHS() != Substituted)) return false;
+        IndexSubtract->getOpcode() != BO_Sub || IndexSubtract->getLHS() != Substituted)) return functionalBindDiagnosticFailure(__LINE__);
       const auto *OriginalRead = dyn_cast_or_null<DependentScopeDeclRefExpr>(Core(Written));
       const auto *ActualRead = dyn_cast_or_null<DeclRefExpr>(Core(Substituted));
       const auto *OriginalQualifier = OriginalRead ? OriginalRead->getQualifier() : nullptr;
@@ -21185,7 +21375,7 @@ class BindSourceProof {
           !Variable || !Variable->getIdentifier() || Variable->getName() != "value" ||
           !Variable->isStaticDataMember() || !Variable->hasInit() || !Variable->getType().isConstQualified() ||
           !Context.hasSameType(Variable->getType().getUnqualifiedType(), Integer ? Context.IntTy : Context.BoolTy))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       return true;
   }
 
@@ -21195,7 +21385,7 @@ class BindSourceProof {
     const auto *Primary = dyn_cast_or_null<FunctionTemplateDecl>(Source.Template);
     if (!ActiveUnwrapSource || ActiveScalarParameter != &Source || !Primary || !Input ||
         !PlaceholderRank || PlaceholderRank > ActiveUnwrapSource->CallForwards.size() || !Children)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     auto Core = [](const Expr *Expression) -> const Expr * {
       if (!Expression) return nullptr;
       Expression = Expression->IgnoreParenImpCasts();
@@ -21215,13 +21405,13 @@ class BindSourceProof {
           !Lookup || !Lookup->requiresADL() || Lookup->hasExplicitTemplateArgs() ||
           !Lookup->getNumDecls() || Lookup->getNumDecls() > 64 ||
           Lookup->getName().getNameKind() != DeclarationName::CXXOperatorName ||
-          Lookup->getName().getCXXOverloadedOperator() != OO_Less) return false;
-      for (const auto *Candidate : Lookup->decls()) if (!family(Candidate)) return false;
+          Lookup->getName().getCXXOverloadedOperator() != OO_Less) return functionalBindDiagnosticFailure(__LINE__);
+      for (const auto *Candidate : Lookup->decls()) if (!family(Candidate)) return functionalBindDiagnosticFailure(__LINE__);
       Left = Comparison->getArg(0); Right = Comparison->getArg(1);
       OperatorLocation = Comparison->getOperatorLoc();
     } else {
       if (!Binary || Binary->getOpcode() != BO_LT || !Binary->isValueDependent() ||
-          !Context.hasSameType(Binary->getType(), Context.BoolTy)) return false;
+          !Context.hasSameType(Binary->getType(), Context.BoolTy)) return functionalBindDiagnosticFailure(__LINE__);
       Left = Binary->getLHS(); Right = Binary->getRHS(); OperatorLocation = Binary->getOperatorLoc();
     }
     const auto *Converted = dyn_cast_or_null<BinaryOperator>(Core(ActualSource));
@@ -21236,14 +21426,14 @@ class BindSourceProof {
         Converted->getOperatorLoc() != OperatorLocation ||
         Written->getBeginLoc() != Converted->getBeginLoc() || Written->getEndLoc() != Converted->getEndLoc() ||
         !Check.location(Written->getExprLoc(), {"__functional/bind.h"}) ||
-        !unwrapConstraintTraitSource(Source, Primary, Input, Right, Read, "is_placeholder", true)) return false;
+        !unwrapConstraintTraitSource(Source, Primary, Input, Right, Read, "is_placeholder", true)) return functionalBindDiagnosticFailure(__LINE__);
     // Each positive comparison owns its original and substituted children.
     // The return selector cannot borrow the distinct NTTP constraint's proof.
     if (!Graph.withBindScalarConstraintSource([&] {
-          if (!Graph.TraverseStmt(const_cast<Expr *>(ActualSource))) return false;
+          if (!Graph.TraverseStmt(const_cast<Expr *>(ActualSource))) return functionalBindDiagnosticFailure(__LINE__);
           if (Comparison) UnwrapScalarConstraintSources.insert(Comparison);
           return Graph.TraverseStmt(const_cast<Expr *>(WrittenSource)) && Children();
-        })) return false;
+        })) return functionalBindDiagnosticFailure(__LINE__);
     Expr::EvalResult Positive, Rank;
     return Converted->EvaluateAsInt(Positive, Context, Expr::SE_NoSideEffects) &&
         Positive.Val.isInt() && Positive.Val.getInt().getBoolValue() &&
@@ -21260,7 +21450,7 @@ class BindSourceProof {
     if (!Function || !Pattern || Source.Declaration != Function || Source.Template != Primary ||
         ActiveScalarParameter != &Source || !Source.Canonical || !Source.Sugared ||
         Source.Canonical->size() != 3 || Source.Sugared->size() != 3 || !Input || !Incoming)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     auto Return = [](const FunctionDecl *Declaration) -> TypeLoc {
       const auto *Type = Declaration ? Declaration->getTypeSourceInfo() : nullptr;
       const auto Prototype = Type ? Type->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
@@ -21311,14 +21501,14 @@ class BindSourceProof {
         Owner->getSpecializedTemplate() != Template ||
         Owner->getSpecializationKind() != TSK_ImplicitInstantiation ||
         Actual.getTypePtr()->getAsCXXRecordDecl() != Owner ||
-        !Parameters || Parameters->size() != 3 || Owner->getTemplateArgs().size() != 3) return false;
+        !Parameters || Parameters->size() != 3 || Owner->getTemplateArgs().size() != 3) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Positive = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     if (!Positive || Positive->getIndex() || Positive->isParameterPack() || Positive->hasDefaultArgument() ||
-        !Context.hasSameType(Positive->getType(), Context.BoolTy) || !family(Positive)) return false;
+        !Context.hasSameType(Positive->getType(), Context.BoolTy) || !family(Positive)) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Selected = Owner->getTemplateArgs();
     if (Selected[0].getKind() != TemplateArgument::Integral ||
         !Context.hasSameType(Selected[0].getIntegralType(), Context.BoolTy) ||
-        !Selected[0].getAsIntegral().getBoolValue()) return false;
+        !Selected[0].getAsIntegral().getBoolValue()) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 1; I < 3; ++I) {
       const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
       const auto OriginalArgument = Original.getArgLoc(I);
@@ -21331,7 +21521,7 @@ class BindSourceProof {
           Selected[I].getKind() != TemplateArgument::Type ||
           Source.Canonical->get(I - 1).getKind() != TemplateArgument::Type ||
           Source.Sugared->get(I - 1).getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Selected[I].getAsType(), Source.Canonical->get(I - 1).getAsType())) return false;
+          !Context.hasSameType(Selected[I].getAsType(), Source.Canonical->get(I - 1).getAsType())) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Written = dyn_cast<TemplateTypeParmType>(OriginalArgument.getArgument().getAsType().getTypePtr());
       const auto *Substituted = dyn_cast<SubstTemplateTypeParmType>(
           ActualArgument.getArgument().getAsType().getTypePtr());
@@ -21340,7 +21530,7 @@ class BindSourceProof {
           Substituted->getAssociatedDecl() != Primary || Substituted->getReplacedParameter() != Expected ||
           Substituted->getPackIndex() ||
           !Context.hasSameType(Substituted->getReplacementType(),
-              Source.Sugared->get(I - 1).getAsType())) return false;
+              Source.Sugared->get(I - 1).getAsType())) return functionalBindDiagnosticFailure(__LINE__);
     }
     auto Expression = [](const TemplateArgumentLoc &Location) -> const Expr * {
       const auto &Argument = Location.getArgument();
@@ -21353,7 +21543,7 @@ class BindSourceProof {
         unwrapPlaceholderPositiveSource(Source, Input, Written, Converted, Argument.PlaceholderRank, [&] {
           for (unsigned I = 1; I < 3; ++I)
             if (!Graph.TraverseTemplateArgumentLoc(Original.getArgLoc(I)) ||
-                !Graph.TraverseTemplateArgumentLoc(Actual.getArgLoc(I))) return false;
+                !Graph.TraverseTemplateArgumentLoc(Actual.getArgLoc(I))) return functionalBindDiagnosticFailure(__LINE__);
           return true;
         });
   }
@@ -21367,7 +21557,7 @@ class BindSourceProof {
     if (!ActiveUnwrapSource || ActiveScalarParameter != &Source || !Function || !Primary || !Pattern ||
         Source.Declaration != Function || Source.Template != Primary || !Input ||
         !Argument.PlaceholderRank || Argument.PlaceholderRank > ActiveUnwrapSource->CallForwards.size() ||
-        !Argument.PlaceholderIndex || !Argument.PlaceholderGet || !Argument.PlaceholderForward) return false;
+        !Argument.PlaceholderIndex || !Argument.PlaceholderGet || !Argument.PlaceholderForward) return functionalBindDiagnosticFailure(__LINE__);
     auto Index = [&](const FunctionDecl *Declaration) -> const VarDecl * {
       const auto *Body = Declaration ? dyn_cast_or_null<CompoundStmt>(Declaration->getBody()) : nullptr;
       const auto *Statement = Body && Body->size() == 2 ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
@@ -21392,7 +21582,7 @@ class BindSourceProof {
     if (!Original || !Actual || Actual != Argument.PlaceholderIndex ||
         Original->getLocation() != Actual->getLocation() ||
         Original->getBeginLoc() != Actual->getBeginLoc() || Original->getEndLoc() != Actual->getEndLoc())
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     auto Core = [](const Expr *Expression) -> const Expr * {
       if (!Expression) return nullptr;
       Expression = Expression->IgnoreParenImpCasts();
@@ -21412,11 +21602,11 @@ class BindSourceProof {
           !Lookup || !Lookup->requiresADL() || Lookup->hasExplicitTemplateArgs() ||
           !Lookup->getNumDecls() || Lookup->getNumDecls() > 64 ||
           Lookup->getName().getNameKind() != DeclarationName::CXXOperatorName ||
-          Lookup->getName().getCXXOverloadedOperator() != OO_Minus) return false;
-      for (const auto *Candidate : Lookup->decls()) if (!family(Candidate)) return false;
+          Lookup->getName().getCXXOverloadedOperator() != OO_Minus) return functionalBindDiagnosticFailure(__LINE__);
+      for (const auto *Candidate : Lookup->decls()) if (!family(Candidate)) return functionalBindDiagnosticFailure(__LINE__);
       Left = Operator->getArg(0); Right = Operator->getArg(1); OperatorLocation = Operator->getOperatorLoc();
     } else {
-      if (!Binary || Binary->getOpcode() != BO_Sub || !Binary->isValueDependent()) return false;
+      if (!Binary || Binary->getOpcode() != BO_Sub || !Binary->isValueDependent()) return functionalBindDiagnosticFailure(__LINE__);
       Left = Binary->getLHS(); Right = Binary->getRHS(); OperatorLocation = Binary->getOperatorLoc();
     }
     const auto *Converted = dyn_cast_or_null<BinaryOperator>(Core(Actual->getInit()));
@@ -21431,18 +21621,18 @@ class BindSourceProof {
         Converted->getOperatorLoc() != OperatorLocation ||
         Written->getBeginLoc() != Converted->getBeginLoc() || Written->getEndLoc() != Converted->getEndLoc() ||
         !Context.hasSameType(Actual->getInit()->getType().getUnqualifiedType(), Context.getSizeType()) ||
-        !unwrapConstraintTraitSource(Source, Primary, Input, Left, Read, "is_placeholder", true, Actual)) return false;
+        !unwrapConstraintTraitSource(Source, Primary, Input, Left, Read, "is_placeholder", true, Actual)) return functionalBindDiagnosticFailure(__LINE__);
     // A local size_t index is not an arbitrary SDK variable value. Close both
     // real declaration TSIs and initializers; no read or runtime permission is
     // published here. Later body/get/forward proofs must own their occurrences.
     if (!Graph.withBindScalarConstraintSource([&] {
           if (!Graph.TraverseTypeLoc(Actual->getTypeSourceInfo()->getTypeLoc()) ||
-              !Graph.TraverseStmt(const_cast<Expr *>(Actual->getInit()))) return false;
+              !Graph.TraverseStmt(const_cast<Expr *>(Actual->getInit()))) return functionalBindDiagnosticFailure(__LINE__);
           if (Operator) UnwrapScalarConstraintSources.insert(Operator);
           return Graph.TraverseTypeLoc(Original->getTypeSourceInfo()->getTypeLoc()) &&
               Graph.TraverseStmt(const_cast<Expr *>(Original->getInit())) &&
               (!IndexDeclarations || IndexDeclarations());
-        })) return false;
+        })) return functionalBindDiagnosticFailure(__LINE__);
     Expr::EvalResult Value;
     return Actual->getInit()->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects) &&
         Value.Val.isInt() && !Value.Val.getInt().isNegative() &&
@@ -21474,20 +21664,20 @@ class BindSourceProof {
         Incoming->hasDefaultArgument() || !family(Input) || !family(Incoming) ||
         !Check.family(Primary, {"__functional/bind.h"}) ||
         !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 3 ||
-        Source.Sugared->size() != 3) return false;
+        Source.Sugared->size() != 3) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Arguments : {Source.Canonical, Source.Sugared}) {
       if (Arguments->get(0).getKind() != TemplateArgument::Type ||
           Arguments->get(1).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Arguments->get(1).getAsType(), ActiveUnwrapSource->CallArguments->getType()) ||
           Arguments->get(2).getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy) ||
-          !Arguments->get(2).getAsIntegral().isZero()) return false;
+          !Arguments->get(2).getAsIntegral().isZero()) return functionalBindDiagnosticFailure(__LINE__);
       const auto Identity = describeFunctionalBindPlaceholderIdentity(
           S, SM, Arguments->get(0).getAsType(), Context);
-      if (!Identity || Identity->Rank != Argument.PlaceholderRank) return false;
+      if (!Identity || Identity->Rank != Argument.PlaceholderRank) return functionalBindDiagnosticFailure(__LINE__);
     }
     if (!Context.hasSameType(Source.Canonical->get(0).getAsType(), Source.Sugared->get(0).getAsType()) ||
-        ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+        ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return functionalBindDiagnosticFailure(__LINE__);
     ActiveScalarParameter = &Source;
     auto Restore = llvm::make_scope_exit([&] {
       ActiveScalarValues.clear(); CompletedScalarValues.clear(); ActiveScalarParameter = nullptr;
@@ -21504,12 +21694,12 @@ class BindSourceProof {
     if (!Original || !Actual || !Alias || !Alias->getIdentifier() || Alias->getName() != "__enable_if_t" ||
         !Check.family(Alias, {"__type_traits/enable_if.h"}) || !Original->isTypeAlias() || !Actual->isTypeAlias() ||
         Actual->getTemplateName().getAsTemplateDecl() != Alias || !Original->isDependentType() ||
-        Actual->isDependentType() || !Context.hasSameType(ActualType->getType(), Context.IntTy)) return false;
+        Actual->isDependentType() || !Context.hasSameType(ActualType->getType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Type : {Original, Actual}) {
       const auto Arguments = Type->template_arguments();
       if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Expression ||
           Arguments[1].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return false;
+          !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
     }
     return unwrapPlaceholderPositiveSource(Source, Input,
         Original->template_arguments()[0].getAsExpr(), Actual->template_arguments()[0].getAsExpr(),
@@ -21541,14 +21731,14 @@ class BindSourceProof {
         Incoming->hasDefaultArgument() || !family(Incoming) ||
         !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 3 ||
         Source.Sugared->size() != 3 || !Check.family(Primary, {"__functional/bind.h"}) ||
-        ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+        ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, *ActiveUnwrapSource, Context);
     const auto &Child = *Argument.Nested;
     if (!Fresh || Child.Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Child.Slot].Nested ||
         Fresh->Arguments[Child.Slot].Unwrap != Argument.Unwrap || Child.Root != Fresh->OwnedRoot ||
         Child.Parent != Fresh->SourceCall ||
         Fresh->Arguments[Child.Slot].Nested->Invocation.SourceCall != Child.Invocation.SourceCall)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Arguments : {Source.Canonical, Source.Sugared})
       if (Arguments->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Arguments->get(0).getAsType(), Child.Invocation.Object->getType()) ||
@@ -21556,7 +21746,7 @@ class BindSourceProof {
           Arguments->get(1).pack_size() != Fresh->CallForwards.size() ||
           Arguments->get(2).getKind() != TemplateArgument::Integral ||
           !Arguments->get(2).getAsIntegral().isZero() ||
-          !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy)) return false;
+          !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
     auto Enable = [](QualType Type) -> const TemplateSpecializationType * {
       if (Type.isNull()) return nullptr;
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Type.getTypePtr())) Type = Elaborated->getNamedType();
@@ -21571,12 +21761,12 @@ class BindSourceProof {
         Actual->getTemplateName().getAsTemplateDecl() != Alias || !Original->isDependentType() ||
         Actual->isDependentType() || Original->template_arguments().size() != 2 ||
         Actual->template_arguments().size() != 2 || !Context.hasSameType(ActualType->getType(), Context.IntTy))
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Type : {Original, Actual}) {
       const auto Arguments = Type->template_arguments();
       if (Arguments[0].getKind() != TemplateArgument::Expression ||
           Arguments[1].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return false;
+          !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
     }
     ActiveScalarParameter = &Source;
     auto Restore = llvm::make_scope_exit([&] {
@@ -21594,7 +21784,7 @@ class BindSourceProof {
           return Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) &&
               Graph.TraverseTypeLoc(ActualType->getTypeLoc()) &&
               Graph.TraverseStmt(const_cast<Expr *>(Substituted));
-        })) return false;
+        })) return functionalBindDiagnosticFailure(__LINE__);
     Expr::EvalResult Value;
     return Substituted->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects) &&
         Value.Val.isInt() && Value.Val.getInt().getBoolValue() && Graph.bindSourceComplete();
@@ -21616,11 +21806,24 @@ class BindSourceProof {
       for (const auto &Argument : ActiveUnwrapSource->Arguments)
         if (!Argument.Reference && Argument.Unwrap && Argument.Unwrap->getDirectCallee() == Function)
           Scalar = true;
-    if (!Scalar)
-      return Parameter && Parameter->getTypeSourceInfo() && ActualType &&
-          Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) &&
-          Graph.TraverseTypeLoc(ActualType->getTypeLoc());
-    if (ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+    if (!Scalar) {
+      const bool OriginalComplete = Parameter && Parameter->getTypeSourceInfo() && ActualType &&
+          Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc());
+      const bool ActualComplete = OriginalComplete && Graph.TraverseTypeLoc(ActualType->getTypeLoc());
+      if (!ActualComplete && std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+        const auto Original = Parameter && Parameter->getTypeSourceInfo()
+            ? Parameter->getTypeSourceInfo()->getType().getAsString() : std::string("<missing>");
+        const auto Actual = ActualType ? ActualType->getType().getAsString() : std::string("<missing>");
+        const auto Name = Function ? Function->getQualifiedNameAsString() : std::string("<missing>");
+        std::fprintf(stderr, "BIND-PARAMETER-SOURCE-FAIL originalcomplete=%u actualcomplete=%u location=%u function=%.*s original=%.*s actual=%.*s\n",
+            unsigned(OriginalComplete), unsigned(ActualComplete), Source.Location.getRawEncoding(),
+            int(std::min<std::size_t>(Name.size(), 512)), Name.c_str(),
+            int(std::min<std::size_t>(Original.size(), 1024)), Original.c_str(),
+            int(std::min<std::size_t>(Actual.size(), 1024)), Actual.c_str());
+      }
+      return ActualComplete;
+    }
+    if (ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return functionalBindDiagnosticFailure(__LINE__);
     ActiveScalarParameter = &Source;
     auto RestoreScalar = llvm::make_scope_exit([&] {
       CompletedScalarValues.clear();
@@ -21639,7 +21842,7 @@ class BindSourceProof {
         !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 3 ||
         Source.Sugared->size() != 3 || Source.Canonical->get(0).getKind() != TemplateArgument::Type ||
         Source.Sugared->get(0).getKind() != TemplateArgument::Type ||
-        !Check.family(Primary, {"__functional/bind.h"})) return false;
+        !Check.family(Primary, {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
     auto Enable = [](QualType Type) -> const TemplateSpecializationType * {
       if (Type.isNull()) return nullptr;
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Type.getTypePtr()))
@@ -21655,12 +21858,12 @@ class BindSourceProof {
         Actual->getTemplateName().getAsTemplateDecl() != Alias || !Original->isDependentType() ||
         Actual->isDependentType() || Original->template_arguments().size() != 2 ||
         Actual->template_arguments().size() != 2 ||
-        !Context.hasSameType(ActualType->getType(), Context.IntTy)) return false;
+        !Context.hasSameType(ActualType->getType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Type : {Original, Actual}) {
       const auto Arguments = Type->template_arguments();
       if (Arguments[0].getKind() != TemplateArgument::Expression ||
           Arguments[1].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return false;
+          !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
     }
     auto Core = [](const Expr *Expression) -> const Expr * {
       if (!Expression) return nullptr;
@@ -21678,7 +21881,7 @@ class BindSourceProof {
         OriginalLeft->getOpcode() != BO_LAnd || ActualLeft->getOpcode() != BO_LAnd ||
         !Context.hasSameType(ActualRoot->getType(), Context.BoolTy) ||
         OriginalRoot->getBeginLoc() != ActualRoot->getBeginLoc() ||
-        OriginalRoot->getEndLoc() != ActualRoot->getEndLoc()) return false;
+        OriginalRoot->getEndLoc() != ActualRoot->getEndLoc()) return functionalBindDiagnosticFailure(__LINE__);
     auto Trait = [&](const Expr *Written, const Expr *Substituted, llvm::StringRef Name,
                      bool Integer) {
       return unwrapConstraintTraitSource(Source, Primary, Input, Written, Substituted, Name, Integer);
@@ -21713,18 +21916,18 @@ class BindSourceProof {
         !Check.location(Comparison->getExprLoc(), {"__functional/bind.h"}) ||
         !Trait(Comparison->getArg(0), Read, "is_placeholder", true) ||
         !Negation(OriginalLeft->getLHS(), ActualLeft->getLHS(), "is_bind_expression") ||
-        !Negation(OriginalRoot->getRHS(), ActualRoot->getRHS(), "__is_reference_wrapper")) return false;
+        !Negation(OriginalRoot->getRHS(), ActualRoot->getRHS(), "__is_reference_wrapper")) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Candidate : Lookup->decls())
-      if (!family(Candidate)) return false;
+      if (!family(Candidate)) return functionalBindDiagnosticFailure(__LINE__);
     // Sema's real substituted graph contains an int comparison. Closing it
     // supplies only this original constraint expression, never a selected
     // overloaded function, runtime call, or replacement deduction packet.
     if (!Graph.withBindScalarConstraintSource([&] {
-          if (!Graph.TraverseStmt(const_cast<BinaryOperator *>(ActualRoot))) return false;
+          if (!Graph.TraverseStmt(const_cast<BinaryOperator *>(ActualRoot))) return functionalBindDiagnosticFailure(__LINE__);
           UnwrapScalarConstraintSources.insert(Comparison);
           return Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) &&
               Graph.TraverseTypeLoc(ActualType->getTypeLoc());
-        })) return false;
+        })) return functionalBindDiagnosticFailure(__LINE__);
     Expr::EvalResult Value;
     return ActualRoot->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects) &&
         Value.Val.isInt() && Value.Val.getInt().getBoolValue();
@@ -21752,42 +21955,42 @@ class BindSourceProof {
         !Check.family(Pack, {"tuple"}) || Owner->getTemplateArgs().size() != 1 ||
         Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
         Owner->getTemplateArgs()[0].pack_size() < 1 ||
-        Owner->getTemplateArgs()[0].pack_size() > 8) return false;
+        Owner->getTemplateArgs()[0].pack_size() > 8) return functionalBindDiagnosticFailure(__LINE__);
     const bool PlaceholderCopy = Owner->getCanonicalDecl() == Storage.Arguments.Record->getCanonicalDecl();
     if (PlaceholderCopy) {
-      if (Owner->getTemplateArgs()[0].pack_size() != Storage.Arguments.Elements.size()) return false;
+      if (Owner->getTemplateArgs()[0].pack_size() != Storage.Arguments.Elements.size()) return functionalBindDiagnosticFailure(__LINE__);
       unsigned I = 0;
       for (const auto &Argument : Owner->getTemplateArgs()[0].pack_elements()) {
         const auto &Element = Storage.Arguments.Elements[I++];
         if (Argument.getKind() != TemplateArgument::Type || Element.Field || !Element.EmptyBase ||
             !Context.hasSameType(Argument.getAsType(), Element.getType()) ||
-            !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context)) return false;
+            !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context)) return functionalBindDiagnosticFailure(__LINE__);
       }
     } else {
-      if (Owner->getTemplateArgs()[0].pack_size() > 2) return false;
+      if (Owner->getTemplateArgs()[0].pack_size() > 2) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Argument : Owner->getTemplateArgs()[0].pack_elements())
         if (Argument.getKind() != TemplateArgument::Type ||
             !Argument.getAsType()->isLValueReferenceType() ||
-            !Argument.getAsType().getNonReferenceType()->isScalarType()) return false;
+            !Argument.getAsType().getNonReferenceType()->isScalarType()) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto &Original = Parameter->getDefaultArgument().getArgument();
-    if (Original.getKind() != TemplateArgument::Template) return false;
+    if (Original.getKind() != TemplateArgument::Template) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Target = Original.getAsTemplate().getAsTemplateDecl();
     if (!Target || !Target->getIdentifier() || Target->getName() != "_And" ||
-        !Check.family(Target, {"__type_traits/conjunction.h"})) return false;
+        !Check.family(Target, {"__type_traits/conjunction.h"})) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Arguments : {Source.Canonical, Source.Sugared}) {
-      if (Arguments->get(0).getKind() != TemplateArgument::Template) return false;
+      if (Arguments->get(0).getKind() != TemplateArgument::Template) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Selected = Arguments->get(0).getAsTemplate().getAsTemplateDecl();
-      if (!Selected || Selected->getCanonicalDecl() != Target->getCanonicalDecl()) return false;
+      if (!Selected || Selected->getCanonicalDecl() != Target->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
     }
     return true;
   }
 
   bool source(const TemplateUseSource &Source, const TemplateParameterList *Parameters) {
     return Graph.withBindSourceChild([&] {
-      if (!packet(Source, Parameters)) return false;
+      if (!packet(Source, Parameters)) return functionalBindDiagnosticFailure(__LINE__);
       if (CompletedSources.count(&Source)) return true;
-      if (!ActiveSources.insert(&Source).second) return false;
+      if (!ActiveSources.insert(&Source).second) return functionalBindDiagnosticFailure(__LINE__);
       auto Restore = llvm::make_scope_exit([&] { ActiveSources.erase(&Source); });
       return Graph.withBindTemplateParameters(Source.Template, Parameters, [&] {
         std::set<unsigned> Defaults;
@@ -21796,104 +21999,118 @@ class BindSourceProof {
           unsigned Index = ~0U;
           for (unsigned I = 0; I < Parameters->size(); ++I)
             if (Parameters->getParam(I) == Default.Parameter) Index = I;
-          if (Index == ~0U || !Defaults.insert(Index).second || !family(Default.Parameter)) return false;
+          if (Index == ~0U || !Defaults.insert(Index).second || !family(Default.Parameter)) return functionalBindDiagnosticFailure(__LINE__);
           if (const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Default.Parameter)) {
             if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
                 Default.Written.getArgument().getKind() != TemplateArgument::Type ||
-                Default.Converted.getArgument().getKind() != TemplateArgument::Type) return false;
+                Default.Converted.getArgument().getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
             const auto *Original = Parameter->getDefaultArgument().getTypeSourceInfo();
-            if (!Original || !Graph.TraverseTypeLoc(Original->getTypeLoc())) return false;
+            if (!Original || !Graph.TraverseTypeLoc(Original->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
           } else if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Default.Parameter)) {
             if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
                 Parameter->getDefaultArgument().getArgument().getKind() != TemplateArgument::Expression ||
-                !Graph.TraverseTemplateArgumentLoc(Parameter->getDefaultArgument())) return false;
+                !Graph.TraverseTemplateArgumentLoc(Parameter->getDefaultArgument())) return functionalBindDiagnosticFailure(__LINE__);
           } else if (const auto *Parameter = dyn_cast<TemplateTemplateParmDecl>(Default.Parameter)) {
             if (!callTupleConjunctionDefaultSource(Source, Parameter) ||
                 Default.Written.getArgument().getKind() != TemplateArgument::Template ||
-                Default.Converted.getArgument().getKind() != TemplateArgument::Template) return false;
+                Default.Converted.getArgument().getKind() != TemplateArgument::Template) return functionalBindDiagnosticFailure(__LINE__);
             const auto *Original = Parameter->getDefaultArgument().getArgument()
                 .getAsTemplate().getAsTemplateDecl();
             for (const auto *Argument : {&Default.Written, &Default.Converted}) {
               const auto *Target = Argument->getArgument().getAsTemplate().getAsTemplateDecl();
-              if (!Target || Target->getCanonicalDecl() != Original->getCanonicalDecl()) return false;
+              if (!Target || Target->getCanonicalDecl() != Original->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
             }
-            if (!Graph.TraverseTemplateArgumentLoc(Parameter->getDefaultArgument())) return false;
-          } else return false;
+            if (!Graph.TraverseTemplateArgumentLoc(Parameter->getDefaultArgument())) return functionalBindDiagnosticFailure(__LINE__);
+          } else return functionalBindDiagnosticFailure(__LINE__);
           if (!Graph.TraverseTemplateArgumentLoc(Default.Written) ||
               !Graph.TraverseTemplateArgumentLoc(Default.Converted) ||
-              !convertedValue(Default.Converted, Source.Canonical->get(Index))) return false;
+              !convertedValue(Default.Converted, Source.Canonical->get(Index))) return functionalBindDiagnosticFailure(__LINE__);
         }
         for (const auto &Entry : Source.ParameterTypes) {
           const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Entry.Parameter);
           unsigned Index = ~0U;
           for (unsigned I = 0; I < Parameters->size(); ++I)
             if (Parameters->getParam(I) == Parameter) Index = I;
-          if (!Parameter || Index == ~0U || !Entry.Type) return false;
-          if (!family(Parameter)) return false;
-          if (!ParameterTypes.insert({Index, Entry.PackIndex}).second) return false;
-          if (!Parameter->getTypeSourceInfo()) return false;
-          if (!unwrapScalarParameterSource(Source, Parameter, Entry.Type)) return false;
+          if (!Parameter || Index == ~0U || !Entry.Type) return functionalBindDiagnosticFailure(__LINE__);
+          if (!family(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
+          if (!ParameterTypes.insert({Index, Entry.PackIndex}).second) return functionalBindDiagnosticFailure(__LINE__);
+          if (!Parameter->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
+          if (!unwrapScalarParameterSource(Source, Parameter, Entry.Type)) return functionalBindDiagnosticFailure(__LINE__);
           const auto &Slot = Source.Canonical->get(Index);
           const TemplateArgument *Argument = &Slot;
           if (Parameter->isParameterPack()) {
-            if (Slot.getKind() != TemplateArgument::Pack) return false;
+            if (Slot.getKind() != TemplateArgument::Pack) return functionalBindDiagnosticFailure(__LINE__);
             if (Slot.pack_size() == 0) {
-              if (Entry.PackIndex != ~0U) return false;
+              if (Entry.PackIndex != ~0U) return functionalBindDiagnosticFailure(__LINE__);
               Argument = nullptr;
             } else {
-              if (Entry.PackIndex >= Slot.pack_size()) return false;
+              if (Entry.PackIndex >= Slot.pack_size()) return functionalBindDiagnosticFailure(__LINE__);
               Argument = &Slot.pack_elements()[Entry.PackIndex];
             }
-          } else if (Entry.PackIndex != 0) return false;
+          } else if (Entry.PackIndex != 0) return functionalBindDiagnosticFailure(__LINE__);
           if (Argument && (Argument->getKind() != TemplateArgument::Integral ||
-              !Context.hasSameType(Entry.Type->getType(), Argument->getIntegralType()))) return false;
+              !Context.hasSameType(Entry.Type->getType(), Argument->getIntegralType()))) return functionalBindDiagnosticFailure(__LINE__);
         }
         for (unsigned I = 0; I < Parameters->size(); ++I) {
           const auto *Parameter = Parameters->getParam(I);
-          if (!family(Parameter)) return false;
+          if (!family(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
           // Defaults are obligations only for omitted slots. A selected class
           // partial pattern retains explicit primary arguments as written.
           bool Explicit = Source.Written && I < Source.Written->getNumTemplateArgs();
           for (unsigned J = 0; J < I && Explicit; ++J)
             if (Parameters->getParam(J)->isParameterPack()) Explicit = false;
           if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter)) {
-            if (Type->hasDefaultArgument() && !Explicit && !Defaults.count(I)) return false;
+            if (Type->hasDefaultArgument() && !Explicit && !Defaults.count(I)) return functionalBindDiagnosticFailure(__LINE__);
           } else if (const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter)) {
-            if (Value->hasDefaultArgument() && !Explicit && !Defaults.count(I)) return false;
+            if (Value->hasDefaultArgument() && !Explicit && !Defaults.count(I)) return functionalBindDiagnosticFailure(__LINE__);
             const auto &Slot = Source.Canonical->get(I);
             if (Value->isParameterPack()) {
-              if (Slot.getKind() != TemplateArgument::Pack) return false;
+              if (Slot.getKind() != TemplateArgument::Pack) return functionalBindDiagnosticFailure(__LINE__);
               if (!Slot.pack_size() && !ParameterTypes.count({I, ~0U})) {
                 if (Context.hasSameType(Value->getType(), Context.BoolTy)) {
-                  if (!Graph.bindFunctionalBindEmptyConjunctionParameterSource(Source, Value)) return false;
-                } else if (!Graph.bindFunctionalBindEmptyIndexParameterSource(Source, Value)) return false;
+                  if (!Graph.bindFunctionalBindEmptyConjunctionParameterSource(Source, Value)) return functionalBindDiagnosticFailure(__LINE__);
+                } else if (!Graph.bindFunctionalBindEmptyIndexParameterSource(Source, Value)) return functionalBindDiagnosticFailure(__LINE__);
               }
               for (unsigned J = 0; J < Slot.pack_size(); ++J)
-                if (!ParameterTypes.count({I, J})) return false;
-            } else if (!ParameterTypes.count({I, 0})) return false;
+                if (!ParameterTypes.count({I, J})) return functionalBindDiagnosticFailure(__LINE__);
+            } else if (!ParameterTypes.count({I, 0})) return functionalBindDiagnosticFailure(__LINE__);
           } else if (const auto *Template = dyn_cast<TemplateTemplateParmDecl>(Parameter)) {
             // Sema's function packet may retain only the non-type default.
             // The exact incoming constructor still owns its actual original
             // template default; never synthesize a written/converted packet.
             if (Template->hasDefaultArgument()) {
-              if (!callTupleConjunctionDefaultSource(Source, Template)) return false;
+              if (!callTupleConjunctionDefaultSource(Source, Template)) return functionalBindDiagnosticFailure(__LINE__);
               if (!Defaults.count(I) &&
                   (Source.Written || !Graph.TraverseTemplateArgumentLoc(
-                      Template->getDefaultArgument()))) return false;
+                      Template->getDefaultArgument()))) return functionalBindDiagnosticFailure(__LINE__);
             }
             if (Template->isParameterPack() ||
                 Source.Canonical->get(I).getKind() != TemplateArgument::Template ||
-                !Graph.TraverseTemplateName(Source.Canonical->get(I).getAsTemplate())) return false;
-          } else return false;
+                !Graph.TraverseTemplateName(Source.Canonical->get(I).getAsTemplate())) return functionalBindDiagnosticFailure(__LINE__);
+          } else return functionalBindDiagnosticFailure(__LINE__);
         }
         return Graph.withBindRetainedTupleProjectionSources(Source, [&] {
           if (Source.Written)
             for (unsigned I = 0; I < Source.Written->getNumTemplateArgs(); ++I)
               if (!Graph.TraverseBindResultSourceWrittenArgument(
-                      Source, I, Source.Written->arguments()[I])) return false;
+                      Source, I, Source.Written->arguments()[I])) {
+                if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+                  const auto TemplateName = Source.Template->getQualifiedNameAsString();
+                  const auto TypeName = Source.Type ? QualType(Source.Type, 0).getAsString() : std::string("<declaration>");
+                  const auto &Argument = Source.Written->arguments()[I].getArgument();
+                  const auto ArgumentName = Argument.getKind() == TemplateArgument::Type
+                      ? Argument.getAsType().getAsString() : std::string("<non-type>");
+                  std::fprintf(stderr, "BIND-WRITTEN-ARG-FAIL index=%u location=%u template=%.*s type=%.*s argument=%.*s\n",
+                      I, Source.Location.getRawEncoding(),
+                      int(std::min<std::size_t>(TemplateName.size(), 512)), TemplateName.c_str(),
+                      int(std::min<std::size_t>(TypeName.size(), 1024)), TypeName.c_str(),
+                      int(std::min<std::size_t>(ArgumentName.size(), 1024)), ArgumentName.c_str());
+                }
+                return functionalBindDiagnosticFailure(__LINE__);
+              }
           for (const auto *Arguments : {Source.Canonical, Source.Sugared})
             for (unsigned I = 0; I < Arguments->size(); ++I)
-              if (!Graph.TraverseBindResultSourceArgument(Source, I, Arguments->get(I))) return false;
+              if (!Graph.TraverseBindResultSourceArgument(Source, I, Arguments->get(I))) return functionalBindDiagnosticFailure(__LINE__);
           CompletedSources.insert(&Source);
           return true;
         });
@@ -21927,7 +22144,7 @@ class BindSourceProof {
   }
   bool typeTraversalSource(const TemplateSpecializationType *Type,
                            const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return functionalBindDiagnosticFailure(__LINE__);
     // Keep the exact retained source in scope while the original type's
     // ordinary traversal visits the same sugared argument again. Each source
     // packet still closes independently in typeSource()/source().
@@ -21956,10 +22173,10 @@ class BindSourceProof {
       const TemplateUseSource *Actual = nullptr;
       for (const auto *Use : Sources) {
         if (!Use || Use->Kind != TemplateSourceKind::Type || Use->Type != Type) continue;
-        if (Actual && Actual != Use) return false;
+        if (Actual && Actual != Use) return functionalBindDiagnosticFailure(__LINE__);
         Actual = Use;
       }
-      if (!Actual) return false;
+      if (!Actual) return functionalBindDiagnosticFailure(__LINE__);
       return Graph.withBindFactoryLeafComparisonSource(*Actual, ActiveFactoryLeafConstructor, Proof);
     }
     // Nested children retain the already authenticated enclosing source scope.
@@ -21970,16 +22187,16 @@ class BindSourceProof {
     const TemplateUseSource *Actual = nullptr;
     for (const auto *Use : Sources) {
       if (!Use || Use->Kind != TemplateSourceKind::Type || Use->Type != Type) continue;
-      if (Actual && Actual != Use) return false;
+      if (Actual && Actual != Use) return functionalBindDiagnosticFailure(__LINE__);
       Actual = Use;
     }
-    if (!Actual) return false;
+    if (!Actual) return functionalBindDiagnosticFailure(__LINE__);
     return withUnusedVoidConversionSource(*Actual, Proof);
   }
 
   bool withUnusedVoidConversionSource(const TemplateUseSource &Source,
                                       const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Type = Source.Kind == TemplateSourceKind::Type
         ? dyn_cast_or_null<TemplateSpecializationType>(Source.Type) : nullptr;
     const auto *Alias = Type ? dyn_cast_or_null<TypeAliasTemplateDecl>(
@@ -22001,7 +22218,7 @@ class BindSourceProof {
           !Source.Canonical->get(0).getAsIntegral().getBoolValue() ||
           Source.Canonical->get(1).getKind() != TemplateArgument::Type ||
           !Check.family(Alias, {"__type_traits/conditional.h"}) ||
-          !Check.location(Source.Location, {"__type_traits/invoke.h"})) return false;
+          !Check.location(Source.Location, {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
       const auto *True = Check.record(Source.Canonical->get(1).getAsType(), "integral_constant",
           {"__type_traits/integral_constant.h"});
       if (!True || True->getTemplateArgs().size() != 2 ||
@@ -22009,7 +22226,7 @@ class BindSourceProof {
           !Context.hasSameType(True->getTemplateArgs()[0].getAsType(), Context.BoolTy) ||
           True->getTemplateArgs()[1].getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(True->getTemplateArgs()[1].getIntegralType(), Context.BoolTy) ||
-          !True->getTemplateArgs()[1].getAsIntegral().getBoolValue()) return false;
+          !True->getTemplateArgs()[1].getAsIntegral().getBoolValue()) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Last = Source.Written->arguments()[2];
       const auto Core = Last.getArgument().getKind() == TemplateArgument::Type && Last.getTypeSourceInfo()
           ? unusedVoidSpecializationLoc(Last.getTypeSourceInfo()->getTypeLoc()) : TemplateSpecializationTypeLoc();
@@ -22018,10 +22235,10 @@ class BindSourceProof {
           Core.getTypePtr()->getTemplateName().getAsTemplateDecl() != Primary ||
           !Check.location(Core.getTemplateNameLoc(), {"__type_traits/invoke.h"}) ||
           Record->getTemplateArgs().size() != 3 ||
-          Record->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Primary) return false;
+          Record->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Primary) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I = 0; I < 3; ++I)
         if (Record->getTemplateArgs()[I].getKind() != TemplateArgument::Type ||
-            (I && !Context.hasSameType(Record->getTemplateArgs()[I].getAsType(), Context.VoidTy))) return false;
+            (I && !Context.hasSameType(Record->getTemplateArgs()[I].getAsType(), Context.VoidTy))) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Result = Core.getArgLoc(0).getArgument().getKind() == TemplateArgument::Type
           ? unusedVoidResultAlias(Core.getArgLoc(0).getTypeSourceInfo()) : nullptr;
       const auto *Owner = Result
@@ -22057,20 +22274,20 @@ class BindSourceProof {
               ? ActiveCompleteCall->Method->getNumParams() : ActiveCompleteCall->Arguments.size()) ||
           !Context.hasSameType(Record->getTemplateArgs()[0].getAsType(), Result->getUnderlyingType()) ||
           !Check.family(Result, {"__type_traits/invoke.h"}) ||
-          !Check.family(Owner, {"__type_traits/invoke.h"})) return false;
+          !Check.family(Owner, {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
       unsigned I = 0;
       for (const auto &Argument : Owner->getTemplateArgs()[2].pack_elements()) {
         const auto Expected = NestedQuery ? ActiveCompleteCall->Method->getParamDecl(I)->getType()
             : ActiveCompleteCall->Arguments[I].ForwardedType;
         if (Argument.getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Argument.getAsType(), Expected)) return false;
+            !Context.hasSameType(Argument.getAsType(), Expected)) return functionalBindDiagnosticFailure(__LINE__);
         ++I;
       }
       const TypeAliasDecl *ReturnAlias = nullptr;
       for (const auto *Declaration : Owner->decls()) {
         const auto *Member = dyn_cast<TypeAliasDecl>(Declaration);
         if (!Member || !Member->getIdentifier() || Member->getName() != "type") continue;
-        if (ReturnAlias) return false;
+        if (ReturnAlias) return functionalBindDiagnosticFailure(__LINE__);
         ReturnAlias = Member;
       }
       const auto Outer = ReturnAlias && ReturnAlias->getTypeSourceInfo()
@@ -22084,7 +22301,7 @@ class BindSourceProof {
           Inner.getTemplateNameLoc() != Source.Location ||
           Inner.getLAngleLoc() != Source.Written->getLAngleLoc() ||
           Inner.getRAngleLoc() != Source.Written->getRAngleLoc() ||
-          !Check.family(ReturnAlias, {"__type_traits/invoke.h"})) return false;
+          !Check.family(ReturnAlias, {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
       const auto Condition = Inner.getArgLoc(0);
       const auto &Argument = Condition.getArgument();
       const Expr *Expression = Argument.getKind() == TemplateArgument::Expression ? Argument.getAsExpr()
@@ -22103,7 +22320,7 @@ class BindSourceProof {
           !Check.family(Void, {"__type_traits/is_void.h"}) ||
           !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"}) ||
           !Graph.TraverseTemplateArgumentLoc(Condition) ||
-          !convertedValue(Condition, Source.Canonical->get(0))) return false;
+          !convertedValue(Condition, Source.Canonical->get(0))) return functionalBindDiagnosticFailure(__LINE__);
       return Graph.withBindUnusedResultOperandSource(Result, [&] {
         ActiveUnusedVoidConversion = UnusedVoidConversionSource{Record, Result, &Source, Core};
         auto Restore = llvm::make_scope_exit([&] { ActiveUnusedVoidConversion.reset(); });
@@ -22114,7 +22331,7 @@ class BindSourceProof {
   bool unusedVoidConversionDeclarationSource(const ClassTemplateSpecializationDecl *Instance) {
     if (!ActiveCompleteCall || !ActiveUnusedVoidConversion ||
         Instance != ActiveUnusedVoidConversion->Record ||
-        Instance->getSpecializationKind() != TSK_Undeclared || Instance->getDefinition()) return false;
+        Instance->getSpecializationKind() != TSK_Undeclared || Instance->getDefinition()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Primary = Instance->getSpecializedTemplate();
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     const auto *Definition = Primary ? Primary->getTemplatedDecl()->getDefinition() : nullptr;
@@ -22122,17 +22339,17 @@ class BindSourceProof {
         !Parameters || Parameters->size() != 3 || !Definition || !Definition->isCompleteDefinition() ||
         Definition->isUnion() || Definition->isDynamicClass() || !Definition->field_empty() ||
         !Check.family(Primary, {"__type_traits/is_core_convertible.h"}) ||
-        !Check.family(Definition, {"__type_traits/is_core_convertible.h"})) return false;
+        !Check.family(Definition, {"__type_traits/is_core_convertible.h"})) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < 3; ++I) {
       const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
       if (!Parameter || Parameter->getIndex() != I || Parameter->isParameterPack() ||
           Parameter->hasDefaultArgument() != (I == 2) ||
-          !Check.family(Parameter, {"__type_traits/is_core_convertible.h"})) return false;
+          !Check.family(Parameter, {"__type_traits/is_core_convertible.h"})) return functionalBindDiagnosticFailure(__LINE__);
     }
     const auto *DefaultParameter = cast<TemplateTypeParmDecl>(Parameters->getParam(2));
     const auto &Original = DefaultParameter->getDefaultArgument();
     if (Original.getArgument().getKind() != TemplateArgument::Type || !Original.getTypeSourceInfo() ||
-        !Context.hasSameType(Original.getArgument().getAsType(), Context.VoidTy)) return false;
+        !Context.hasSameType(Original.getArgument().getAsType(), Context.VoidTy)) return functionalBindDiagnosticFailure(__LINE__);
     bool Found = false;
     for (const auto *Use : CompletedSources) {
       if (!Use || Use->Template != Primary || !same(Use->Canonical, &Instance->getTemplateArgs())) continue;
@@ -22144,7 +22361,7 @@ class BindSourceProof {
           Use->Written->getNumTemplateArgs() != 2 || Use->Defaults.size() != 1 || !Use->ParameterTypes.empty() ||
           Use->Written->getLAngleLoc() != ActiveUnusedVoidConversion->Written.getLAngleLoc() ||
           Use->Written->getRAngleLoc() != ActiveUnusedVoidConversion->Written.getRAngleLoc() ||
-          Use->Location != ActiveUnusedVoidConversion->Written.getTemplateNameLoc()) return false;
+          Use->Location != ActiveUnusedVoidConversion->Written.getTemplateNameLoc()) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Written = dyn_cast<TemplateSpecializationType>(Use->Type);
       const auto &Default = Use->Defaults[0];
       if (!Written || Written->getTemplateName().getAsTemplateDecl() != Primary ||
@@ -22158,12 +22375,12 @@ class BindSourceProof {
           Use->Written->arguments()[0].getArgument().getKind() != TemplateArgument::Type ||
           unusedVoidResultAlias(Use->Written->arguments()[0].getTypeSourceInfo()) != ActiveUnusedVoidConversion->Result ||
           Use->Written->arguments()[1].getArgument().getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Use->Written->arguments()[1].getArgument().getAsType(), Context.VoidTy)) return false;
+          !Context.hasSameType(Use->Written->arguments()[1].getArgument().getAsType(), Context.VoidTy)) return functionalBindDiagnosticFailure(__LINE__);
       Found = true;
     }
     if (!Found || !Graph.withBindTemplateParameters(Primary, Parameters, [&] {
           return Graph.TraverseTemplateArgumentLoc(Original);
-        })) return false;
+        })) return functionalBindDiagnosticFailure(__LINE__);
     // The actual specialization remains undeclared. Only this original
     // declaration and its completed argument/default source are consumed.
     return true;
@@ -22178,17 +22395,17 @@ class BindSourceProof {
       const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
       const auto *Namespace = Identity ? dyn_cast<NamespaceDecl>(Identity->Record->getDeclContext()) : nullptr;
       if (!Identity || !Namespace || Element.Field ||
-          Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return false;
+          Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
       const VarDecl *Variable = nullptr;
       unsigned Namespaces = 0, Declarations = 0;
       for (const auto *Owner : Namespace->redecls()) {
-        if (++Namespaces > 64) return false;
+        if (++Namespaces > 64) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Declaration : Owner->decls()) {
-          if (++Declarations > 64) return false;
+          if (++Declarations > 64) return functionalBindDiagnosticFailure(__LINE__);
           const auto *Candidate = dyn_cast<VarDecl>(Declaration);
           if (!Candidate || !Candidate->getIdentifier() ||
               Candidate->getName() != (Identity->Rank == 1 ? "_1" : "_2")) continue;
-          if (Variable && Variable->getCanonicalDecl() != Candidate->getCanonicalDecl()) return false;
+          if (Variable && Variable->getCanonicalDecl() != Candidate->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
           Variable = Candidate;
         }
       }
@@ -22196,7 +22413,7 @@ class BindSourceProof {
       if (!Variable || Variable->getAnyInitializer(Initializer) ||
           !Variable->getType().isConstQualified() || Variable->getType().isVolatileQualified() ||
           Variable->getType().isRestrictQualified() || Variable->getType().getAddressSpace() != LangAS::Default ||
-          !Context.hasSameUnqualifiedType(Variable->getType(), Element.getType())) return false;
+          !Context.hasSameUnqualifiedType(Variable->getType(), Element.getType())) return functionalBindDiagnosticFailure(__LINE__);
       unsigned Redeclarations = 0;
       for (const auto *Declaration : Variable->redecls()) {
         const auto *Owner = dyn_cast<NamespaceDecl>(Declaration->getDeclContext());
@@ -22207,10 +22424,10 @@ class BindSourceProof {
             Declaration->getTLSKind() != VarDecl::TLS_None || Declaration->isConstexpr() || Declaration->hasInit() ||
             !Info || !Context.hasSameType(Declaration->getType(), Variable->getType()) ||
             !Check.family(Declaration, {"__functional/bind.h"}) ||
-            S.owns(SM, Declaration->getLocation())) return false;
+            S.owns(SM, Declaration->getLocation())) return functionalBindDiagnosticFailure(__LINE__);
         TypeLoc Written = Info->getTypeLoc().getUnqualifiedLoc();
         if (const auto Name = Written.getAs<ElaboratedTypeLoc>()) {
-          if (Name.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Name.getQualifierLoc()) return false;
+          if (Name.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Name.getQualifierLoc()) return functionalBindDiagnosticFailure(__LINE__);
           Written = Name.getNamedTypeLoc();
         }
         const auto Location = Written.getAs<TemplateSpecializationTypeLoc>();
@@ -22221,7 +22438,7 @@ class BindSourceProof {
             !Record || Record->getCanonicalDecl() != Identity->Record->getCanonicalDecl() ||
             Type->template_arguments().size() != 1 ||
             !Check.location(Written.getBeginLoc(), {"__functional/bind.h"}) ||
-            !Check.location(Written.getEndLoc(), {"__functional/bind.h"})) return false;
+            !Check.location(Written.getEndLoc(), {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
         const auto Argument = Location.getArgLoc(0);
         const Expr *Expression = Argument.getArgument().getKind() == TemplateArgument::Integral
             ? Argument.getSourceIntegralExpression()
@@ -22239,27 +22456,27 @@ class BindSourceProof {
             if (!Child || Constant->isTypeDependent() || Constant->isValueDependent() ||
                 Constant->getValueKind() != Child->getValueKind() ||
                 Constant->getBeginLoc() != Child->getBeginLoc() || Constant->getEndLoc() != Child->getEndLoc())
-              return false;
+              return functionalBindDiagnosticFailure(__LINE__);
           } else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Spelling)) {
-            if (Cast->getCastKind() != CK_NoOp) return false;
+            if (Cast->getCastKind() != CK_NoOp) return functionalBindDiagnosticFailure(__LINE__);
             Child = Cast->getSubExpr();
           } else break;
           if (!Child || !Context.hasSameType(Spelling->getType(), Context.IntTy) ||
-              !Context.hasSameType(Child->getType(), Context.IntTy)) return false;
+              !Context.hasSameType(Child->getType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
           Spelling = Child;
         }
         const auto *Literal = dyn_cast_or_null<IntegerLiteral>(Spelling);
         if (!Literal || !Context.hasSameType(Literal->getType(), Context.IntTy) ||
             Literal->getValue().getLimitedValue(3) != Identity->Rank ||
-            !Check.location(Literal->getExprLoc(), {"__functional/bind.h"})) return false;
+            !Check.location(Literal->getExprLoc(), {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
         const auto &Converted = Type->template_arguments()[0];
         if (Converted.getKind() == TemplateArgument::Integral) {
           if (!Context.hasSameType(Converted.getIntegralType(), Context.IntTy) ||
               Converted.getAsIntegral().isNegative() ||
-              Converted.getAsIntegral().getLimitedValue(3) != Identity->Rank) return false;
+              Converted.getAsIntegral().getLimitedValue(3) != Identity->Rank) return functionalBindDiagnosticFailure(__LINE__);
         } else if (Converted.getKind() != TemplateArgument::Expression ||
-                   (Converted.getAsExpr() != Literal && Converted.getAsExpr() != Expression)) return false;
-        if (ActivePlaceholderDeclarationType || !Identity->Parameter->getTypeSourceInfo()) return false;
+                   (Converted.getAsExpr() != Literal && Converted.getAsExpr() != Expression)) return functionalBindDiagnosticFailure(__LINE__);
+        if (ActivePlaceholderDeclarationType || !Identity->Parameter->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
         ActivePlaceholderDeclarationType = Type;
         auto Restore = llvm::make_scope_exit([&] { ActivePlaceholderDeclarationType = nullptr; });
         if (!Graph.withBindSourceChild([&] {
@@ -22267,11 +22484,11 @@ class BindSourceProof {
                 return Graph.TraverseTypeLoc(Identity->Parameter->getTypeSourceInfo()->getTypeLoc()) &&
                     Graph.TraverseTypeLoc(Info->getTypeLoc());
               });
-            })) return false;
+            })) return functionalBindDiagnosticFailure(__LINE__);
         // This is a completed fixed SDK type leaf within this owning bind
         // proof, not permission to read the extern variable or run an operation.
         CompletedPlaceholderDeclarationTypes.insert(Type);
-        if (CompletedPlaceholderDeclarationTypes.size() > 2) return false;
+        if (CompletedPlaceholderDeclarationTypes.size() > 2) return functionalBindDiagnosticFailure(__LINE__);
       }
     }
     return Graph.bindSourceComplete();
@@ -22281,32 +22498,32 @@ class BindSourceProof {
     return Graph.withBindSourceChild([&] {
       const auto *Template = Type ? dyn_cast_or_null<TemplateDecl>(
           Type->getTemplateName().getAsTemplateDecl()) : nullptr;
-      if (!Type || !Template || !family(Template)) return false;
+      if (!Type || !Template || !family(Template)) return functionalBindDiagnosticFailure(__LINE__);
       if (Type == ActivePlaceholderDeclarationType || CompletedPlaceholderDeclarationTypes.count(Type)) {
         const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, QualType(Type, 0), Context);
-        if (!Identity || Template != Identity->Primary) return false;
+        if (!Identity || Template != Identity->Primary) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto &Element : Storage.Arguments.Elements)
           if (Element.EmptyBase && Identity->Record->getCanonicalDecl() == Element.EmptyBase->getCanonicalDecl())
             return Graph.bindSourceComplete();
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       }
       bool Found = false;
       for (const auto *Use : Sources) {
         if (!Use || Use->Kind != TemplateSourceKind::Type || Use->Type != Type) continue;
         if (Use->Template != Template || Use->Declaration || !Use->Written ||
-            Use->Instantiation || Use->Selection) return false;
+            Use->Instantiation || Use->Selection) return functionalBindDiagnosticFailure(__LINE__);
         if (!Graph.withBindScalarConditionalSource(*Use, [&] {
-              if (!source(*Use, Template->getTemplateParameters())) return false;
+              if (!source(*Use, Template->getTemplateParameters())) return functionalBindDiagnosticFailure(__LINE__);
               if (Type->isTypeAlias()) {
                 if (!Use->Underlying || Use->Underlying->getType().isNull() ||
                     !Context.hasSameType(Use->Underlying->getType(), Type->getAliasedType()) ||
-                    !Graph.TraverseBindAliasUnderlying(Type, Use->Underlying)) return false;
-              } else if (Use->Underlying) return false;
+                    !Graph.TraverseBindAliasUnderlying(Type, Use->Underlying)) return functionalBindDiagnosticFailure(__LINE__);
+              } else if (Use->Underlying) return functionalBindDiagnosticFailure(__LINE__);
               return true;
-            })) return false;
+            })) return functionalBindDiagnosticFailure(__LINE__);
         Found = true;
       }
-      if (!Found) return false;
+      if (!Found) return functionalBindDiagnosticFailure(__LINE__);
       return true;
     });
   }
@@ -22316,7 +22533,7 @@ class BindSourceProof {
         Instance->getDefinition() != Instance || !Instance->isCompleteDefinition() ||
         Instance->isUnion() || Instance->isDynamicClass() || Instance->getNumBases() ||
         !Instance->field_empty() || !Instance->getIdentifier() || Instance->getName() != "_IfImpl" ||
-        !Check.family(Instance, {"__type_traits/conditional.h"})) return false;
+        !Check.family(Instance, {"__type_traits/conditional.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Primary = Instance->getSpecializedTemplate();
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     const auto *Parameter = Parameters && Parameters->size() == 1
@@ -22332,7 +22549,7 @@ class BindSourceProof {
         !Context.hasSameType(Arguments[0].getIntegralType(), Context.BoolTy) ||
         !Written || Written->getNumTemplateArgs() != 1 ||
         !Check.family(Primary, {"__type_traits/conditional.h"}) ||
-        !Check.family(Parameter, {"__type_traits/conditional.h"})) return false;
+        !Check.family(Parameter, {"__type_traits/conditional.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const auto &WrittenArgument = Written->arguments()[0];
     const auto &Argument = WrittenArgument.getArgument();
     const Expr *Expression = Argument.getKind() == TemplateArgument::Expression ? Argument.getAsExpr()
@@ -22342,7 +22559,7 @@ class BindSourceProof {
     const bool Choice = Arguments[0].getAsIntegral().getBoolValue();
     if (!Literal || Literal->getValue() != Choice ||
         !Context.hasSameType(Literal->getType(), Context.BoolTy) ||
-        !Check.location(Literal->getExprLoc(), {"__type_traits/conditional.h"})) return false;
+        !Check.location(Literal->getExprLoc(), {"__type_traits/conditional.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const TypeAliasTemplateDecl *Selector = nullptr;
     for (const auto *Declaration : Instance->decls()) {
       if (const auto *Injected = dyn_cast<CXXRecordDecl>(Declaration)) {
@@ -22350,7 +22567,7 @@ class BindSourceProof {
       }
       if (Declaration->isImplicit()) continue; // Unconsumed generated members supply no body or runtime witness.
       const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Declaration);
-      if (!Alias || Selector || !Alias->getIdentifier() || Alias->getName() != "_Select") return false;
+      if (!Alias || Selector || !Alias->getIdentifier() || Alias->getName() != "_Select") return functionalBindDiagnosticFailure(__LINE__);
       Selector = Alias;
     }
     const auto *Alias = Selector ? Selector->getTemplatedDecl() : nullptr;
@@ -22365,13 +22582,13 @@ class BindSourceProof {
         !Check.family(Selector, {"__type_traits/conditional.h"}) ||
         !Check.family(Alias, {"__type_traits/conditional.h"}) ||
         !Check.family(First, {"__type_traits/conditional.h"}) ||
-        !Check.family(Second, {"__type_traits/conditional.h"})) return false;
+        !Check.family(Second, {"__type_traits/conditional.h"})) return functionalBindDiagnosticFailure(__LINE__);
     bool DeclarationSource = false;
     for (const auto *Use : Sources) {
       if (!Use || Use->Kind != TemplateSourceKind::ClassDeclaration || Use->Declaration != Instance) continue;
       if (Use->Template != Primary || Use->Type || Use->Underlying || Use->Instantiation || Use->Selection ||
           Use->Location != Instance->getLocation() || !Use->Defaults.empty() ||
-          !same(Use->Canonical, &Arguments) || !source(*Use, Parameters)) return false;
+          !same(Use->Canonical, &Arguments) || !source(*Use, Parameters)) return functionalBindDiagnosticFailure(__LINE__);
       DeclarationSource = true;
     }
     if (!DeclarationSource || !Graph.withBindTemplateParameters(Primary, Parameters, [&] {
@@ -22380,14 +22597,14 @@ class BindSourceProof {
         !convertedValue(WrittenArgument, Arguments[0]) ||
         !Graph.withBindTemplateParameters(Selector, Inputs, [&] {
           return Graph.TraverseTypeLoc(Alias->getTypeSourceInfo()->getTypeLoc());
-        }) || !Graph.bindSourceComplete()) return false;
+        }) || !Graph.bindSourceComplete()) return functionalBindDiagnosticFailure(__LINE__);
     CompletedRecords.insert(Instance);
     return true;
   }
 
   bool storedReturnOperandSource(QualType Type, bool ReferenceWrapper) {
     if (Type.isNull() || Type->isDependentType() || Type.isVolatileQualified() ||
-        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default) return false;
+        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Element : Storage.Arguments.Elements) {
       if (!Context.hasSameType(Type, Element.getType()) &&
           !Context.hasSameType(Type, Context.getConstType(Element.getType()))) continue;
@@ -22395,13 +22612,13 @@ class BindSourceProof {
       return bool(approvedFunctionalReferenceRecord(S, SM,
           Element.getType()->getAsCXXRecordDecl(), Context));
     }
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   }
   bool bindReturnMetadataTupleSource(const TemplateUseSource &Use, QualType Tuple) {
     if (!ActiveCompleteCall || Tuple.isNull() || Use.Kind != TemplateSourceKind::Type ||
         !Use.FunctionalBindConstraint || !Use.Template || !Use.Template->getIdentifier() ||
         Use.Template->getName() != "__bind_return" || !Use.Canonical || Use.Canonical->size() != 4 ||
-        !Check.family(Use.Template, {"__functional/bind.h"})) return false;
+        !Check.family(Use.Template, {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const auto &A = *Use.Canonical;
     const auto StoredTuple = Context.getRecordType(Storage.Arguments.Record);
     const bool Mutable = A.get(0).getKind() == TemplateArgument::Type &&
@@ -22425,7 +22642,7 @@ class BindSourceProof {
         !Tuple->getIdentifier() || Tuple->getName() != "tuple" ||
         Tuple->getSpecializationKind() != TSK_ExplicitSpecialization ||
         Tuple->getTemplateArgs().size() != 1 || Tuple->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
-        Tuple->getTemplateArgs()[0].pack_size()) return false;
+        Tuple->getTemplateArgs()[0].pack_size()) return functionalBindDiagnosticFailure(__LINE__);
     bool Return = false, Operator = false;
     for (const auto *Use : ActiveSources) {
       if (!Use) continue;
@@ -22477,13 +22694,13 @@ class BindSourceProof {
         !Tuple->getIdentifier() || Tuple->getName() != "tuple" ||
         Tuple->getSpecializationKind() != TSK_ImplicitInstantiation ||
         Tuple->getTemplateArgs().size() != 1 || Tuple->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
-        !Check.family(Tuple, {"tuple", "__fwd/tuple.h"})) return std::nullopt;
+        !Check.family(Tuple, {"tuple", "__fwd/tuple.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto Elements = Tuple->getTemplateArgs()[0].pack_elements();
-    if (Elements.empty() || Elements.size() > 2) return std::nullopt;
+    if (Elements.empty() || Elements.size() > 2) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     for (const auto &Element : Elements)
       if (Element.getKind() != TemplateArgument::Type || !Element.getAsType()->isReferenceType() ||
           !Element.getAsType().getNonReferenceType()->isScalarType() ||
-          Element.getAsType().getNonReferenceType().isVolatileQualified()) return std::nullopt;
+          Element.getAsType().getNonReferenceType().isVolatileQualified()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     bool Return = false, Scalar = false, Invocable = false;
     for (const auto *Use : ActiveSources) {
       if (!Use || !Use->Template || !Use->Template->getIdentifier() ||
@@ -22536,7 +22753,7 @@ class BindSourceProof {
         Instance->getSpecializationKind() != TSK_ExplicitSpecialization ||
         Instance->getTemplateArgs().size() != 1 ||
         Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
-        Instance->getTemplateArgs()[0].pack_size()) return false;
+        Instance->getTemplateArgs()[0].pack_size()) return functionalBindDiagnosticFailure(__LINE__);
     bool BoundReturn = false, ScalarOperand = false;
     for (const auto *Use : ActiveSources) {
       if (!Use || Use->Kind != TemplateSourceKind::Type || !Use->FunctionalBindConstraint ||
@@ -22577,7 +22794,7 @@ class BindSourceProof {
       const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
       if (!Instance) return family(Record) && Record->isDependentContext();
       const auto *Primary = Instance->getSpecializedTemplate();
-      if (!Primary || !family(Instance)) return false;
+      if (!Primary || !family(Instance)) return functionalBindDiagnosticFailure(__LINE__);
       if (CompletedRecords.count(Record)) return true;
       if (ActiveUnusedVoidConversion && Instance == ActiveUnusedVoidConversion->Record)
         return unusedVoidConversionDeclarationSource(Instance);
@@ -22590,9 +22807,9 @@ class BindSourceProof {
         for (const auto *Use : CompletedSources)
           if (Use && Use->Template == Primary && same(Use->Canonical, &Instance->getTemplateArgs()) &&
               Graph.bindFunctionalBindConjunctionOperand(Instance, *Use)) return true;
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       }
-      if (!ActiveRecords.insert(Record).second) return false;
+      if (!ActiveRecords.insert(Record).second) return functionalBindDiagnosticFailure(__LINE__);
       auto Restore = llvm::make_scope_exit([&] { ActiveRecords.erase(Record); });
       if (const auto *Partial = Instance->getSpecializedTemplateOrPartial()
               .dyn_cast<ClassTemplatePartialSpecializationDecl *>()) {
@@ -22603,35 +22820,35 @@ class BindSourceProof {
           if (Use->Kind == TemplateSourceKind::PartialDeduction) {
             if (Deduction || Use->Template != Partial || Use->Written ||
                 !same(Use->Canonical, &Instance->getTemplateInstantiationArgs()) ||
-                !Use->Defaults.empty()) return false;
+                !Use->Defaults.empty()) return functionalBindDiagnosticFailure(__LINE__);
             Deduction = Use;
           } else if (Use->Kind == TemplateSourceKind::PartialPattern) {
             if (Pattern || Use->Template != Primary || !Use->Written ||
-                !same(Use->Canonical, &Instance->getTemplateArgs())) return false;
+                !same(Use->Canonical, &Instance->getTemplateArgs())) return functionalBindDiagnosticFailure(__LINE__);
             Pattern = Use;
           }
         }
         if (!Deduction || !Pattern || Deduction->Selection != Pattern->Selection ||
-            !family(Partial)) return false;
-        if (!source(*Deduction, Partial->getTemplateParameters())) return false;
+            !family(Partial)) return functionalBindDiagnosticFailure(__LINE__);
+        if (!source(*Deduction, Partial->getTemplateParameters())) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Original = Partial->getTemplateArgsAsWritten();
         if (!Original || !Graph.withBindPartialPatternSource(Instance, *Pattern, [&] {
-              if (!source(*Pattern, Primary->getTemplateParameters())) return false;
+              if (!source(*Pattern, Primary->getTemplateParameters())) return functionalBindDiagnosticFailure(__LINE__);
               return Graph.withBindTemplateParameters(Partial, Partial->getTemplateParameters(), [&] {
                 for (const auto &Argument : Original->arguments())
-                  if (!Graph.TraverseTemplateArgumentLoc(Argument)) return false;
+                  if (!Graph.TraverseTemplateArgumentLoc(Argument)) return functionalBindDiagnosticFailure(__LINE__);
                 return true;
               });
-            })) return false;
+            })) return functionalBindDiagnosticFailure(__LINE__);
       } else if (Instance->getSpecializedTemplateOrPartial().get<ClassTemplateDecl *>() != Primary)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       CompletedRecords.insert(Record);
       return true;
     });
   }
   bool weakResultInput(QualType Type) {
     if (Type.isNull() || Type->isDependentType() || Type.isVolatileQualified() ||
-        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default) return false;
+        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default) return functionalBindDiagnosticFailure(__LINE__);
     if (Context.hasSameType(Type, Storage.CallableType)) return true;
     for (const auto &Element : Storage.Arguments.Elements) {
       if (Element.getType()->isScalarType() &&
@@ -22640,7 +22857,7 @@ class BindSourceProof {
           Element.getType()->getAsCXXRecordDecl(), Context);
       if (Wrapper && Context.hasSameType(Type, Wrapper->ReferentType)) return true;
     }
-    return false;
+    return functionalBindDiagnosticFailure(__LINE__);
   }
   bool weakResultBooleanType(QualType Type, bool Value) {
     const auto *Record = Type.isNull() ? nullptr
@@ -22664,20 +22881,20 @@ class BindSourceProof {
         Method->isVariadic() != Ellipsis || Method->getNumParams() != (Ellipsis ? 0U : 1U) ||
         !Method->getTypeSourceInfo() || !Prototype || Prototype->getExceptionSpecType() != EST_None ||
         Prototype->getNoexceptExpr() || !weakResultBooleanType(Method->getReturnType(), !Ellipsis) ||
-        !Check.family(Method, {"__functional/weak_result_type.h"})) return false;
+        !Check.family(Method, {"__functional/weak_result_type.h"})) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Parameter : Method->parameters()) {
       if (!Parameter->getTypeSourceInfo() || !Parameter->getType()->isPointerType() ||
-          !Parameter->getType()->isDependentType() || Parameter->hasUnparsedDefaultArg()) return false;
-      if (RequireDefault && !Parameter->hasDefaultArg()) return false;
+          !Parameter->getType()->isDependentType() || Parameter->hasUnparsedDefaultArg()) return functionalBindDiagnosticFailure(__LINE__);
+      if (RequireDefault && !Parameter->hasDefaultArg()) return functionalBindDiagnosticFailure(__LINE__);
       const Expr *Default = Parameter->hasUninstantiatedDefaultArg()
           ? Parameter->getUninstantiatedDefaultArg() : Parameter->hasDefaultArg() ? Parameter->getDefaultArg() : nullptr;
       if (Default) {
         const auto *Zero = dyn_cast<IntegerLiteral>(Default->IgnoreParenImpCasts());
         if (!Zero || !Zero->getValue().isZero() || !Context.hasSameType(Zero->getType(), Context.IntTy) ||
             !Check.location(Zero->getExprLoc(), {"__functional/weak_result_type.h"}) ||
-            !Graph.TraverseStmt(const_cast<Expr *>(Default))) return false;
+            !Graph.TraverseStmt(const_cast<Expr *>(Default))) return functionalBindDiagnosticFailure(__LINE__);
       }
-      if (!Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+      if (!Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     }
     return Graph.function(Method) && Graph.TraverseTypeLoc(Method->getTypeSourceInfo()->getTypeLoc());
   }
@@ -22691,11 +22908,11 @@ class BindSourceProof {
         Owner->getTemplateArgs().size() != 1 || Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
         !weakResultInput(Owner->getTemplateArgs()[0].getAsType()) ||
         !Check.family(Owner, {"__functional/weak_result_type.h"}) ||
-        !Check.family(Variable, {"__functional/weak_result_type.h"})) return false;
+        !Check.family(Variable, {"__functional/weak_result_type.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Read = dyn_cast<DeclRefExpr>(Variable->getInit()->IgnoreParenImpCasts());
     auto Location = Read ? Read->getQualifierLoc().getTypeLoc() : TypeLoc();
     if (const auto Elaborated = Location.getAs<ElaboratedTypeLoc>()) {
-      if (Elaborated.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Elaborated.getQualifierLoc()) return false;
+      if (Elaborated.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Elaborated.getQualifierLoc()) return functionalBindDiagnosticFailure(__LINE__);
       Location = Elaborated.getNamedTypeLoc();
     }
     const auto Query = Location.getAs<DecltypeTypeLoc>();
@@ -22714,24 +22931,24 @@ class BindSourceProof {
         !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
         !Context.hasSameType(Query.getType(), Function->getReturnType()) ||
         !weakResultBooleanType(Function->getReturnType(), false) ||
-        !Check.location(Call->getExprLoc(), {"__functional/weak_result_type.h"})) return false;
+        !Check.location(Call->getExprLoc(), {"__functional/weak_result_type.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const auto Found = CompletedWeakResultCalls.find(Call);
     if (Found != CompletedWeakResultCalls.end()) return Found->second == Function;
-    if (CompletedWeakResultCalls.size() == 64) return false;
+    if (CompletedWeakResultCalls.size() == 64) return functionalBindDiagnosticFailure(__LINE__);
     return functionSource(Call, Function, [&] {
       const auto *Definition = Owner->getDefinition();
       const auto *OwnerPrimary = Owner->getSpecializedTemplate();
       if (!Definition || !OwnerPrimary || !OwnerPrimary->getIdentifier() ||
           OwnerPrimary->getName() != "__has_result_type" ||
-          !Check.family(OwnerPrimary, {"__functional/weak_result_type.h"})) return false;
+          !Check.family(OwnerPrimary, {"__functional/weak_result_type.h"})) return functionalBindDiagnosticFailure(__LINE__);
       unsigned Ellipsis = 0, Named = 0;
       for (const auto *Declaration : Definition->decls()) {
         const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
         if (!Template) continue;
         const auto *Pattern = Template->getTemplatedDecl();
-        if (!Pattern->getIdentifier() || Pattern->getName() != "__test") return false;
+        if (!Pattern->getIdentifier() || Pattern->getName() != "__test") return functionalBindDiagnosticFailure(__LINE__);
         const bool Variadic = Pattern->isVariadic();
-        if (Variadic ? ++Ellipsis != 1 : ++Named != 1) return false;
+        if (Variadic ? ++Ellipsis != 1 : ++Named != 1) return functionalBindDiagnosticFailure(__LINE__);
         std::set<const FunctionTemplateDecl *> Seen;
         for (const auto *Current = Template; Current; Current = Current->getInstantiatedFromMemberTemplate()) {
           const auto *Parameters = Current->getTemplateParameters();
@@ -22741,18 +22958,18 @@ class BindSourceProof {
               !PatternMethod || (PatternMethod->getParent() != Owner &&
                PatternMethod->getParent() != OwnerPrimary->getTemplatedDecl()) ||
               Seen.size() == 64 || !Seen.insert(Current).second ||
-              !Check.family(Current, {"__functional/weak_result_type.h"})) return false;
+              !Check.family(Current, {"__functional/weak_result_type.h"})) return functionalBindDiagnosticFailure(__LINE__);
           if (!Graph.withBindTemplateParameters(Current, Parameters, [&] {
                 for (const auto *Redeclaration : Current->getTemplatedDecl()->redecls())
                   if (!weakHasResultSignature(Redeclaration, Variadic,
-                          !Variadic && !Current->getInstantiatedFromMemberTemplate())) return false;
+                          !Variadic && !Current->getInstantiatedFromMemberTemplate())) return functionalBindDiagnosticFailure(__LINE__);
                 return true;
-              })) return false;
+              })) return functionalBindDiagnosticFailure(__LINE__);
         }
       }
-      if (Ellipsis != 1 || Named != 1) return false;
+      if (Ellipsis != 1 || Named != 1) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : Function->redecls())
-        if (!weakHasResultSignature(Declaration, true)) return false;
+        if (!weakHasResultSignature(Declaration, true)) return functionalBindDiagnosticFailure(__LINE__);
       CompletedWeakResultCalls.emplace(Call, Function);
       return Graph.TraverseStmt(const_cast<CallExpr *>(Call)) && Graph.bindSourceComplete();
     });
@@ -22773,13 +22990,13 @@ class BindSourceProof {
         !weakResultInput(Owner->getTemplateArgs()[0].getAsType()) ||
         !Check.family(Owner, {"__functional/weak_result_type.h"}) ||
         !Check.family(Primary, {"__functional/weak_result_type.h"}) ||
-        !Check.family(Variable, {"__functional/weak_result_type.h"})) return false;
+        !Check.family(Variable, {"__functional/weak_result_type.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Negation = dyn_cast<UnaryOperator>(Variable->getInit()->IgnoreParens());
     const auto *Read = Negation ? dyn_cast<DeclRefExpr>(Negation->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
-    if (!Read || Negation->getOpcode() != UO_LNot || !Read->getQualifierLoc()) return false;
+    if (!Read || Negation->getOpcode() != UO_LNot || !Read->getQualifierLoc()) return functionalBindDiagnosticFailure(__LINE__);
     auto Location = Read->getQualifierLoc().getTypeLoc();
     if (const auto Elaborated = Location.getAs<ElaboratedTypeLoc>()) {
-      if (Elaborated.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Elaborated.getQualifierLoc()) return false;
+      if (Elaborated.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Elaborated.getQualifierLoc()) return functionalBindDiagnosticFailure(__LINE__);
       Location = Elaborated.getNamedTypeLoc();
     }
     const auto Comparison = Location.getAs<TemplateSpecializationTypeLoc>();
@@ -22814,7 +23031,7 @@ class BindSourceProof {
         !Context.hasSameType(Call->getType(), Context.getRecordType(Sentinel)) ||
         !Context.hasSameType(Query.getType(), Context.getRecordType(Sentinel)) ||
         !Call->isPRValue() || Call->isTypeDependent() || Call->isValueDependent() ||
-        !Check.location(Call->getExprLoc(), {"__functional/weak_result_type.h"})) return false;
+        !Check.location(Call->getExprLoc(), {"__functional/weak_result_type.h"})) return functionalBindDiagnosticFailure(__LINE__);
     return Graph.withBindWeakResultMetadata(Sentinel, Original, [&] {
       for (const auto *Root : {Function, OriginalFunction})
         for (const auto *Declaration : Root->redecls()) {
@@ -22827,24 +23044,24 @@ class BindSourceProof {
               !Method->getTypeSourceInfo() || !Prototype || Prototype->getExceptionSpecType() != EST_None ||
               Prototype->getNoexceptExpr() || !Context.hasSameType(Method->getReturnType(), Context.getRecordType(Expected)) ||
               !Check.family(Method, {"__functional/weak_result_type.h"}) || !Graph.function(Method) ||
-              !Graph.TraverseTypeLoc(Method->getTypeSourceInfo()->getTypeLoc())) return false;
+              !Graph.TraverseTypeLoc(Method->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
         }
       const auto *Definition = Owner->getDefinition();
-      if (!Definition) return false;
+      if (!Definition) return functionalBindDiagnosticFailure(__LINE__);
       unsigned Named = 0;
       for (const auto *Declaration : Definition->decls()) {
         const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
         if (!Template) continue;
-        if (++Named != 1) return false;
+        if (++Named != 1) return functionalBindDiagnosticFailure(__LINE__);
         std::set<const FunctionTemplateDecl *> Seen;
         for (const auto *Current = Template; Current; Current = Current->getInstantiatedFromMemberTemplate()) {
           const auto *Method = dyn_cast<CXXMethodDecl>(Current->getTemplatedDecl());
           if (!Method || (Method->getParent() != Owner && Method->getParent() != Primary->getTemplatedDecl()) ||
               Seen.size() == 64 || !Seen.insert(Current).second ||
-              !Graph.TraverseBindWeakResultNamedSignature(Current, Binary)) return false;
+              !Graph.TraverseBindWeakResultNamedSignature(Current, Binary)) return functionalBindDiagnosticFailure(__LINE__);
         }
       }
-      if (Named != 1 || !ActiveWeakDerivesCalls.emplace(Call, Function).second) return false;
+      if (Named != 1 || !ActiveWeakDerivesCalls.emplace(Call, Function).second) return functionalBindDiagnosticFailure(__LINE__);
       auto Restore = llvm::make_scope_exit([&] { ActiveWeakDerivesCalls.erase(Call); });
       return Graph.TraverseStmt(const_cast<CallExpr *>(Call)) && Complete() && Graph.bindSourceComplete();
     });
@@ -22862,7 +23079,7 @@ class BindSourceProof {
         !Context.hasSameType(Owner->getTemplateArgs()[0].getAsType(), Context.getSizeType()) ||
         !Context.hasSameType(Owner->getTemplateArgs()[1].getIntegralType(), Context.getSizeType()) ||
         Owner->getTemplateArgs()[1].getAsIntegral().isNegative() ||
-        !Check.location(Reference->getExprLoc(), {"__functional/bind.h"})) return false;
+        !Check.location(Reference->getExprLoc(), {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const auto Qualifier = Reference->getQualifierLoc();
     const auto Written = Qualifier ? Qualifier.getTypeLoc() : TypeLoc();
     const auto *Trait = Written ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
@@ -22871,7 +23088,7 @@ class BindSourceProof {
         Trait->getSpecializationKind() != TSK_ImplicitInstantiation || !Trait->isCompleteDefinition() ||
         Trait->getTemplateArgs().size() != 1 ||
         Trait->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
-        Trait->getNumBases() != 1 || !family(Trait)) return false;
+        Trait->getNumBases() != 1 || !family(Trait)) return functionalBindDiagnosticFailure(__LINE__);
     const auto Input = Trait->getTemplateArgs()[0].getAsType();
     unsigned Expected = unsigned(ActiveCompleteCall->CallForwards.size());
     if (!Context.hasSameType(Input, ActiveCompleteCall->CallArguments->getType())) {
@@ -22880,9 +23097,9 @@ class BindSourceProof {
         Expected = 0;
       } else if (const auto Size = alternateScalarTupleSizeSource(Metadata)) {
         Expected = *Size;
-      } else return false;
+      } else return functionalBindDiagnosticFailure(__LINE__);
     }
-    if (Owner->getTemplateArgs()[1].getAsIntegral().getLimitedValue(3) != Expected) return false;
+    if (Owner->getTemplateArgs()[1].getAsIntegral().getLimitedValue(3) != Expected) return functionalBindDiagnosticFailure(__LINE__);
     const auto &Base = *Trait->bases_begin();
     // Identify the exact current call tuple or its independently authenticated
     // empty scalar-return metadata tuple, with that tuple's own count. The
@@ -22896,11 +23113,11 @@ class BindSourceProof {
         Context.hasSameType(Variable->getType().getUnqualifiedType(), Context.BoolTy);
     if ((!ActiveScalarParameter && !ActiveCompleteCall && !ConstructorBooleanSource) ||
         !Reference || !Variable || !Variable->getIdentifier() ||
-        Variable->getName() != "value") return std::nullopt;
+        Variable->getName() != "value") return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Variable->getDeclContext());
     const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
     if (!Owner || !Primary || !Primary->getIdentifier() || Primary->getName() != "integral_constant")
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const bool EmptyCallSize = completeCallTupleSizeConstant(Reference, Variable, Owner);
     if (!Variable->isStaticDataMember() || !Variable->isConstexpr() || !Variable->getTypeSourceInfo() ||
         !Variable->hasInit() || !Variable->getType().isConstQualified() || Variable->getType().isVolatileQualified() ||
@@ -22913,18 +23130,18 @@ class BindSourceProof {
         !Context.hasSameType(Owner->getTemplateArgs()[0].getAsType(), Variable->getType().getUnqualifiedType()) ||
         !Context.hasSameType(Owner->getTemplateArgs()[1].getIntegralType(), Variable->getType().getUnqualifiedType()) ||
         !(Context.hasSameType(Variable->getType().getUnqualifiedType(), Context.BoolTy) ||
-          Context.hasSameType(Variable->getType().getUnqualifiedType(), Context.IntTy) || EmptyCallSize)) return false;
+          Context.hasSameType(Variable->getType().getUnqualifiedType(), Context.IntTy) || EmptyCallSize)) return functionalBindDiagnosticFailure(__LINE__);
     // A qualifier may read the same shared false value while proving a
     // different trait. Finish the real definition before proving that name.
     // Every reference still closes its own qualifier below.
     if (!CompletedScalarValues.count(Variable)) {
-      if (!ActiveScalarValues.insert(Variable).second) return false;
+      if (!ActiveScalarValues.insert(Variable).second) return functionalBindDiagnosticFailure(__LINE__);
       auto Restore = llvm::make_scope_exit([&] { ActiveScalarValues.erase(Variable); });
       if (!Graph.TraverseTypeLoc(Variable->getTypeSourceInfo()->getTypeLoc()) ||
-          !Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()))) return false;
+          !Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()))) return functionalBindDiagnosticFailure(__LINE__);
       CompletedScalarValues.insert(Variable);
     }
-    if (!recordSource(Owner)) return false;
+    if (!recordSource(Owner)) return functionalBindDiagnosticFailure(__LINE__);
     const auto Qualifier = Reference->getQualifierLoc();
     return (!Qualifier || Graph.TraverseTypeLoc(Qualifier.getTypeLoc())) && Graph.bindSourceComplete();
   }
@@ -22935,14 +23152,14 @@ class BindSourceProof {
     if (Check.location(Use.Location, {"__functional/bind.h"})) return true;
     if (!ActiveCompleteCall || !Instance || !Reference || Reference->getDecl() != Instance ||
         Reference->getExprLoc() != Use.Location ||
-        !Check.location(Use.Location, {"__type_traits/invoke.h"})) return false;
+        !Check.location(Use.Location, {"__type_traits/invoke.h"})) return functionalBindDiagnosticFailure(__LINE__);
     if (!Use.Written || !Reference->hasExplicitTemplateArgs() ||
         Use.Written->getNumTemplateArgs() != Reference->getNumTemplateArgs() ||
         Use.Written->getLAngleLoc() != Reference->getLAngleLoc() ||
-        Use.Written->getRAngleLoc() != Reference->getRAngleLoc()) return false;
+        Use.Written->getRAngleLoc() != Reference->getRAngleLoc()) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Invoke = ActiveCompleteCall->Invoke
         ? ActiveCompleteCall->Invoke->getDirectCallee() : nullptr;
-    if (!Invoke) return false;
+    if (!Invoke) return functionalBindDiagnosticFailure(__LINE__);
     const TemplateUseSource *Enclosing = nullptr;
     // This is the real first written operand of the currently traversed
     // enable_if base in __invoke_result. It is not a header-wide read grant.
@@ -22972,12 +23189,12 @@ class BindSourceProof {
       if (const auto *Constant = dyn_cast_or_null<ConstantExpr>(Expression))
         Expression = Check.stripped(Constant->getSubExpr());
       if (Expression != Reference) continue;
-      if (Enclosing && Enclosing != Parent) return false;
+      if (Enclosing && Enclosing != Parent) return functionalBindDiagnosticFailure(__LINE__);
       Enclosing = Parent;
     }
     // The variable primary, actual initializer and every enclosing argument
     // still close in the existing source walk before its value may be folded.
-    if (!Enclosing) return false;
+    if (!Enclosing) return functionalBindDiagnosticFailure(__LINE__);
     return true;
   }
 
@@ -22995,7 +23212,7 @@ class BindSourceProof {
     const auto ApplyCallable = Apply && Apply->getNumParams() == 4 &&
         Apply->getParamDecl(0)->getType()->isLValueReferenceType()
         ? Apply->getParamDecl(0)->getType()->getPointeeType() : QualType();
-    if (!ActiveCompleteCall || ActiveCompleteCall->Storage.Record != Storage.Record ||
+    const bool InvalidInvocableSource = (!ActiveCompleteCall || ActiveCompleteCall->Storage.Record != Storage.Record ||
         !Instance || !Primary || !Original || !Primary->getIdentifier() ||
         Primary->getName() != "__is_invocable_v" || Use.Kind != TemplateSourceKind::VariableUse ||
         Use.Declaration != Instance || Use.Template != Primary || Use.Type || Use.Underlying ||
@@ -23012,7 +23229,28 @@ class BindSourceProof {
         !completeCallInvocableUseLocationSource(Instance, Use, Reference) ||
         !Check.family(Primary, {"__type_traits/invoke.h"}) ||
         !Check.family(Original, {"__type_traits/invoke.h"}) ||
-        !Check.family(Instance, {"__type_traits/invoke.h"})) return false;
+        !Check.family(Instance, {"__type_traits/invoke.h"}));
+    if (InvalidInvocableSource) {
+      if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+        const auto Input = Use.Canonical && Use.Canonical->size() &&
+            Use.Canonical->get(0).getKind() == TemplateArgument::Type
+            ? Use.Canonical->get(0).getAsType().getAsString() : std::string("<missing>");
+        std::fprintf(stderr, "BIND-INVOCABLE-STATE active=%u record=%u instance=%u primary=%u original=%u name=%u kind=%u decl=%u template=%u type=%u underlying=%u constrained=%u applynull=%u defaults=%zu params=%zu canonical=%d sugared=%d originalinit=%u instanceinit=%u originaltsi=%u instancetsi=%u path=%lld nested=%u returnloc=%u input=%.*s\n",
+            unsigned(bool(ActiveCompleteCall)), unsigned(ActiveCompleteCall && ActiveCompleteCall->Storage.Record == Storage.Record),
+            unsigned(bool(Instance)), unsigned(bool(Primary)), unsigned(bool(Original)),
+            unsigned(Primary && Primary->getIdentifier() && Primary->getName() == "__is_invocable_v"), unsigned(Use.Kind),
+            unsigned(Use.Declaration == Instance), unsigned(Use.Template == Primary), unsigned(bool(Use.Type)),
+            unsigned(bool(Use.Underlying)), unsigned(Use.FunctionalBindConstraint), unsigned(ApplyCallable.isNull()),
+            Use.Defaults.size(), Use.ParameterTypes.size(), Use.Canonical ? int(Use.Canonical->size()) : -1,
+            Use.Sugared ? int(Use.Sugared->size()) : -1, unsigned(Original && Original->hasInit()),
+            unsigned(Instance && Instance->hasInit()), unsigned(Original && Original->getTypeSourceInfo()),
+            unsigned(Instance && Instance->getTypeSourceInfo()),
+            ActiveCompleteCall ? static_cast<long long>(ActiveCompleteCall->OwnedPath.size()) : -1LL,
+            unsigned(bool(ActiveNestedObjectQuery)), unsigned(bool(ActiveNestedReturnLocation)),
+            int(std::min<std::size_t>(Input.size(), 2048)), Input.c_str());
+      }
+      return functionalBindDiagnosticFailure(__LINE__);
+    }
     const bool NestedQuery = ActiveNestedObjectQuery && ActiveNestedReturnLocation &&
         ActiveNestedObjectQuery->Invocation.SourceCall == ActiveCompleteCall->SourceCall &&
         ActiveNestedObjectQuery->Invocation.Method == ActiveCompleteCall->Method &&
@@ -23025,12 +23263,12 @@ class BindSourceProof {
             !Context.hasSameType(ActualArguments->get(0).getAsType(),
                 Context.getLValueReferenceType(ActiveNestedObjectQuery->Invocation.Object->getType())) ||
             ActualArguments->get(1).getKind() != TemplateArgument::Pack ||
-            ActualArguments->get(1).pack_size() != ActiveCompleteCall->Method->getNumParams()) return false;
+            ActualArguments->get(1).pack_size() != ActiveCompleteCall->Method->getNumParams()) return functionalBindDiagnosticFailure(__LINE__);
         unsigned I = 0;
         for (const auto &Argument : ActualArguments->get(1).pack_elements())
           if (Argument.getKind() != TemplateArgument::Type ||
               !Context.hasSameType(Argument.getAsType(), ActiveCompleteCall->Method->getParamDecl(I++)->getType()))
-            return false;
+            return functionalBindDiagnosticFailure(__LINE__);
       }
     } else {
     for (const auto *ActualArguments : {Use.Canonical, Use.Sugared}) {
@@ -23041,11 +23279,11 @@ class BindSourceProof {
              Context.hasSameType(ActualArguments->get(0).getAsType(),
                  Apply->getParamDecl(0)->getType()))) ||
           ActualArguments->get(1).getKind() != TemplateArgument::Pack ||
-          ActualArguments->get(1).pack_size() != ActiveCompleteCall->Arguments.size()) return false;
+          ActualArguments->get(1).pack_size() != ActiveCompleteCall->Arguments.size()) return functionalBindDiagnosticFailure(__LINE__);
       unsigned I = 0;
       for (const auto &Argument : ActualArguments->get(1).pack_elements())
         if (Argument.getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Argument.getAsType(), ActiveCompleteCall->Arguments[I++].ForwardedType)) return false;
+            !Context.hasSameType(Argument.getAsType(), ActiveCompleteCall->Arguments[I++].ForwardedType)) return functionalBindDiagnosticFailure(__LINE__);
     }
     }
     // A use event intentionally has no declaration TSI. Its exact retained
@@ -23056,7 +23294,7 @@ class BindSourceProof {
       for (const auto *Declaration : Original->redecls())
         if (!Declaration->getTypeSourceInfo() ||
             !Check.family(Declaration, {"__type_traits/invoke.h"}) ||
-            !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+            !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       return Graph.TraverseStmt(const_cast<Expr *>(Original->getInit()));
     });
   }
@@ -23174,7 +23412,7 @@ class BindSourceProof {
       const TemplateUseSource &Use, const CXXRecordDecl *Tuple, unsigned Slot,
       const TypeAliasDecl *Alias) {
     if (!Tuple || !Alias || !Use.FunctionalBindConstraint ||
-        std::find(Sources.begin(), Sources.end(), &Use) == Sources.end()) return std::nullopt;
+        std::find(Sources.begin(), Sources.end(), &Use) == Sources.end()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Alias->getDeclContext());
     if (!Owner || !Owner->getIdentifier() || Owner->getName() != "tuple_element" ||
         Owner->getTemplateArgs().size() != 2 ||
@@ -23187,7 +23425,7 @@ class BindSourceProof {
         Owner->getTemplateArgs()[1].getAsType()->getAsCXXRecordDecl()->getCanonicalDecl() != Tuple->getCanonicalDecl() ||
         !Alias->getIdentifier() || Alias->getName() != "type" ||
         !Check.location(Alias->getLocation(), {"__tuple/sfinae_helpers.h"}) ||
-        !family(Alias) || !family(Owner)) return std::nullopt;
+        !family(Alias) || !family(Owner)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     auto AliasIn = [&](QualType Type) {
       Type = Type.getNonReferenceType();
       for (unsigned Depth = 0; !Type.isNull() && Depth < 64; ++Depth) {
@@ -23200,9 +23438,9 @@ class BindSourceProof {
         if (const auto *Name = dyn_cast<TypedefType>(Type.getTypePtr())) return Name->getDecl() == Alias;
         if (const auto *Name = dyn_cast<TemplateSpecializationType>(Type.getTypePtr()))
           if (Name->isTypeAlias()) { Type = Name->getAliasedType(); continue; }
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       }
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     };
     std::set<const CXXOperatorCallExpr *> Seen;
     for (const auto *Selection : Selections) {
@@ -23211,7 +23449,7 @@ class BindSourceProof {
       const auto Root = describeFunctionalBindCallSource(S, SM, RootCall, Context);
       if (!Root) continue;
       Seen.insert(RootCall);
-      if (Seen.size() > 64 || !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return std::nullopt;
+      if (Seen.size() > 64 || !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       unsigned Nodes = 0;
       std::optional<UtilityTupleRecord> Found;
       bool Valid = true;
@@ -23220,13 +23458,23 @@ class BindSourceProof {
         if (!Valid || Found) return;
         if (Depth >= 64 || ++Nodes > 64) { Valid = false; return; }
         Valid = Graph.withBindSourceChild([&] {
-          if (Current.OwnedRoot != RootCall || Current.OwnedPath.size() != Depth) return false;
+          if (Current.OwnedRoot != RootCall || Current.OwnedPath.size() != Depth) return functionalBindDiagnosticFailure(__LINE__);
           if (Current.Storage.Arguments.Record->getCanonicalDecl() == Tuple->getCanonicalDecl() &&
               Slot < Current.Arguments.size()) {
             const auto &Argument = Current.Arguments[Slot];
             const auto *Get = Argument.Get ? Argument.Get->getDirectCallee() : nullptr;
             const auto *Unwrap = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
             const auto *Types = Get ? Get->getTemplateSpecializationArgs() : nullptr;
+            if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+              const auto StoredName = Context.getRecordType(Current.Storage.Arguments.Record).getAsString();
+              const auto ReturnedName = Get ? Get->getReturnType().getAsString() : std::string("<missing>");
+              std::fprintf(stderr, "BIND-RETAINED-GETTER-WITNESS slot=%u path=%zu get=%u unwrap=%u returnalias=%u decl=%u location=%u kind=%u stored=%.*s returned=%.*s\n",
+                  Slot, Current.OwnedPath.size(), unsigned(bool(Get)), unsigned(bool(Unwrap)),
+                  unsigned(Get && AliasIn(Get->getReturnType())), unsigned(Use.Declaration == Unwrap),
+                  unsigned(Argument.Unwrap && Use.Location == Argument.Unwrap->getExprLoc()), unsigned(Use.Kind),
+                  int(std::min<std::size_t>(StoredName.size(), 512)), StoredName.c_str(),
+                  int(std::min<std::size_t>(ReturnedName.size(), 512)), ReturnedName.c_str());
+            }
             if (!Get || !Unwrap || !Types || Types->size() != 2 ||
                 Types->get(0).getKind() != TemplateArgument::Integral ||
                 Types->get(0).getAsIntegral().isNegative() ||
@@ -23258,25 +23506,25 @@ class BindSourceProof {
             Path.push_back(I);
             if (Child.Root != RootCall || Child.Parent != Current.SourceCall || Child.Slot != I ||
                 Child.Path != Path || Child.Invocation.OwnedPath != Path || Child.Invocation.OwnedRoot != RootCall ||
-                Child.Get != Current.Arguments[I].Get || Child.Unwrap != Current.Arguments[I].Unwrap) return false;
+                Child.Get != Current.Arguments[I].Get || Child.Unwrap != Current.Arguments[I].Unwrap) return functionalBindDiagnosticFailure(__LINE__);
             Visit(Child.Invocation, Depth + 1);
-            if (!Valid) return false;
+            if (!Valid) return functionalBindDiagnosticFailure(__LINE__);
             if (Found) break;
           }
           return true;
         });
       };
       Visit(*Root, 0);
-      if (!Valid) return std::nullopt;
+      if (!Valid) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       if (Found) return Found;
     }
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
 
   std::optional<FunctionalBindCallSource> retainedOwnedCallOccurrence(
       const CXXOperatorCallExpr *Wanted) {
     if (!Wanted || !ActiveUnwrapSource || !ActiveUnwrapSource->OwnedRoot ||
-        !S.owns(SM, ActiveUnwrapSource->OwnedRoot->getExprLoc())) return std::nullopt;
+        !S.owns(SM, ActiveUnwrapSource->OwnedRoot->getExprLoc())) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     // Preserve the original owned call path without requiring a nested SDK
     // operator expression itself to have a user-source location.
     if (S.owns(SM, Wanted->getExprLoc()))
@@ -23290,7 +23538,7 @@ class BindSourceProof {
         continue;
       Roots.insert(Root);
       if (Roots.size() > 64 || !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       std::optional<FunctionalBindCallSource> Found;
       unsigned Nodes = 0;
       bool Valid = true;
@@ -23301,7 +23549,7 @@ class BindSourceProof {
         // bounded lookup additionally charges each visited child to our graph.
         if (Depth >= 64 || ++Nodes > 64) { Valid = false; return; }
         Valid = Graph.withBindSourceChild([&] {
-          if (Current.OwnedRoot != Root || Current.OwnedPath.size() != Depth) return false;
+          if (Current.OwnedRoot != Root || Current.OwnedPath.size() != Depth) return functionalBindDiagnosticFailure(__LINE__);
           if (Current.SourceCall == Wanted) { Found = Current; return true; }
           for (unsigned I = 0; I < Current.Arguments.size(); ++I) {
             const auto &Argument = Current.Arguments[I];
@@ -23312,19 +23560,19 @@ class BindSourceProof {
             if (Child.Root != Root || Child.Parent != Current.SourceCall || Child.Slot != I ||
                 Child.Path != Path || Child.Invocation.OwnedPath != Path ||
                 Child.Invocation.OwnedRoot != Root || Child.Unwrap != Argument.Unwrap ||
-                Child.Get != Argument.Get) return false;
+                Child.Get != Argument.Get) return functionalBindDiagnosticFailure(__LINE__);
             Visit(Child.Invocation, Depth + 1);
-            if (!Valid) return false;
+            if (!Valid) return functionalBindDiagnosticFailure(__LINE__);
             if (Found) break;
           }
           return true;
         });
       };
       Visit(*Fresh, 0);
-      if (!Valid) return std::nullopt;
+      if (!Valid) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       if (Found) return Found;
     }
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
 
   bool retainedPlaceholderForwardIndexReadSource(const DeclRefExpr *Reference,
@@ -23348,7 +23596,7 @@ class BindSourceProof {
           Use->Sugared->get(0).getKind() != TemplateArgument::Type ||
           !Function || !CurrentFunction || Function == CurrentFunction ||
           Function->getPrimaryTemplate() != CurrentFunction->getPrimaryTemplate() ||
-          !Check.family(Function, {"__functional/bind.h"})) return false;
+          !Check.family(Function, {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
       // A builtin forward specialization can retain differently sugared
       // arguments from mutable/const __mu instances at the same SDK location.
       // Find the actual owned operator call that supplies this exact index
@@ -23363,7 +23611,7 @@ class BindSourceProof {
         // Bind the real selected node/function. Sema reports its own
         // selection location, independently of the AST delimiter positions.
         if (Seen.size() > 64 ||
-            !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
+            !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return functionalBindDiagnosticFailure(__LINE__);
         const auto Actual = retainedOwnedCallOccurrence(Call);
         if (!Actual || Actual->Method != Method || Actual->Storage.Record != Storage.Record ||
             !Actual->CallArguments || !Context.hasSameType(Actual->CallArguments->getType(),
@@ -23375,12 +23623,12 @@ class BindSourceProof {
           if (!Argument.PlaceholderRank || !Argument.Unwrap ||
               Argument.Unwrap->getDirectCallee() != Function || !Argument.PlaceholderForward ||
               Argument.PlaceholderForward->getDirectCallee() != Forward ||
-              !Context.hasSameType(Argument.ForwardedType, Current->ForwardedType)) return false;
+              !Context.hasSameType(Argument.ForwardedType, Current->ForwardedType)) return functionalBindDiagnosticFailure(__LINE__);
           const auto *Callee = dyn_cast<DeclRefExpr>(Argument.PlaceholderForward->getCallee()->IgnoreParenImpCasts());
           const auto *Info = Callee && Callee->hasExplicitTemplateArgs() && Callee->getNumTemplateArgs() == 1
               ? Callee->template_arguments()[0].getTypeSourceInfo() : nullptr;
           if (!Info || Info->getType() != Use->Sugared->get(0).getAsType() ||
-              unwrapPlaceholderForwardIndexReference(Argument) != Reference) return false;
+              unwrapPlaceholderForwardIndexReference(Argument) != Reference) return functionalBindDiagnosticFailure(__LINE__);
           const auto *Saved = ActiveUnwrapSource;
           ActiveUnwrapSource = &*Actual;
           ActiveRetainedPlaceholderForwardSource = true;
@@ -23395,7 +23643,7 @@ class BindSourceProof {
           return unwrapPlaceholderGetterIndexReadSource(Reference, Variable);
         }
       }
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     });
   }
 
@@ -23410,7 +23658,7 @@ class BindSourceProof {
         !Variable->getTypeSourceInfo() ||
         !Context.hasSameType(Variable->getType(), Context.getConstType(Context.getSizeType())) ||
         !Context.hasSameType(Reference->getType(), Variable->getType()) ||
-        !Check.location(Reference->getExprLoc(), {"__functional/bind.h"})) return false;
+        !Check.location(Reference->getExprLoc(), {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
     const FunctionalBindArgumentSource *Owner = nullptr;
     for (const auto &Argument : ActiveUnwrapSource->Arguments) {
       if (!Argument.PlaceholderRank || Argument.PlaceholderIndex != Variable ||
@@ -23418,7 +23666,7 @@ class BindSourceProof {
       const auto *Callee = dyn_cast<DeclRefExpr>(
           Argument.PlaceholderGet->getCallee()->IgnoreParenImpCasts());
       if (!Callee || !Callee->hasExplicitTemplateArgs() || Callee->getNumTemplateArgs() != 1)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto &Written = Callee->template_arguments()[0];
       const auto &ArgumentValue = Written.getArgument();
       const Expr *Expression = ArgumentValue.getKind() == TemplateArgument::Expression
@@ -23430,7 +23678,7 @@ class BindSourceProof {
       // exact getter, local declaration and selected function, not just a rank.
       if (Owner && (Owner->PlaceholderGet != Argument.PlaceholderGet ||
           Owner->PlaceholderRank != Argument.PlaceholderRank ||
-          Owner->Unwrap->getDirectCallee() != Argument.Unwrap->getDirectCallee())) return false;
+          Owner->Unwrap->getDirectCallee() != Argument.Unwrap->getDirectCallee())) return functionalBindDiagnosticFailure(__LINE__);
       Owner = &Argument;
     }
     if (!Owner && ActivePlaceholderForwardSource)
@@ -23442,23 +23690,23 @@ class BindSourceProof {
         ? dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(2)) : nullptr;
     if (!Owner || !Function || !Primary || !Parameter ||
         Variable->getDeclContext() != Function || !Owner->PlaceholderForward ||
-        !ActivePlaceholderIndexReads.insert(Variable).second) return false;
+        !ActivePlaceholderIndexReads.insert(Variable).second) return functionalBindDiagnosticFailure(__LINE__);
     auto Restore = llvm::make_scope_exit([&] { ActivePlaceholderIndexReads.erase(Variable); });
     return functionSource(Owner->Unwrap, Function, [&] {
       bool Found = false;
       for (const auto *Use : Sources) {
         if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
             Use->Location != Owner->Unwrap->getExprLoc()) continue;
-        if (Use->Template != Primary || !Use->FunctionalBindConstraint) return false;
+        if (Use->Template != Primary || !Use->FunctionalBindConstraint) return functionalBindDiagnosticFailure(__LINE__);
         unsigned Matches = 0;
         for (const auto &Entry : Use->ParameterTypes) {
           if (Entry.Parameter != Parameter) continue;
           if (++Matches != 1 || Entry.PackIndex || !Entry.Type ||
               !Graph.withBindTemplateParameters(Primary, Parameters, [&] {
                 return unwrapPlaceholderParameterSource(*Use, Parameter, Entry.Type, *Owner);
-              })) return false;
+              })) return functionalBindDiagnosticFailure(__LINE__);
         }
-        if (Matches != 1) return false;
+        if (Matches != 1) return functionalBindDiagnosticFailure(__LINE__);
         Found = true;
       }
       // Even a cached function packet must freshly close the positive/return
@@ -23473,7 +23721,7 @@ class BindSourceProof {
       const FunctionDecl *Declaration) {
     if (!ActiveUnwrapSource || ActivePlaceholderBody || ActiveScalarParameter ||
         !Argument.PlaceholderRank || Argument.Reference || !Argument.PlaceholderIndex ||
-        !Argument.PlaceholderGet || !Argument.PlaceholderForward) return false;
+        !Argument.PlaceholderGet || !Argument.PlaceholderForward) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
     const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -23501,7 +23749,7 @@ class BindSourceProof {
         (Declaration != Function && Declaration != Pattern) ||
         OriginalIndex->getDeclContext() != Pattern || OriginalIndex->getLocation() != Argument.PlaceholderIndex->getLocation() ||
         OriginalGet->getNumArgs() != 1 || !OriginalGet->isTypeDependent() || !OriginalForward->isTypeDependent() ||
-        Closed == CompletedPlaceholderGetSources.end() || Closed->second != SelectedGet) return false;
+        Closed == CompletedPlaceholderGetSources.end() || Closed->second != SelectedGet) return functionalBindDiagnosticFailure(__LINE__);
     auto Lookup = [&](const CallExpr *Call, llvm::StringRef Name,
                       const FunctionTemplateDecl *Selected) -> const UnresolvedLookupExpr * {
       const auto *Use = Call ? dyn_cast<UnresolvedLookupExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
@@ -23545,7 +23793,7 @@ class BindSourceProof {
     const auto *DependentName = Dependent ? Dependent.getTypePtr() : nullptr;
     if (Dependent) {
       const auto Written = Dependent.getQualifierLoc();
-      if (Qualifier && Written && Qualifier.getNestedNameSpecifier() != Written.getNestedNameSpecifier()) return false;
+      if (Qualifier && Written && Qualifier.getNestedNameSpecifier() != Written.getNestedNameSpecifier()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Qualifier) Qualifier = Written;
     }
     TypeLoc Location = Qualifier ? Qualifier.getTypeLoc().getUnqualifiedLoc() : TypeLoc();
@@ -23575,7 +23823,7 @@ class BindSourceProof {
         !Check.family(TupleElement, {"__fwd/tuple.h", "__tuple/tuple_element.h"}) ||
         !ForwardRead || ForwardRead->getDecl() != OriginalIndex ||
         !IncomingType || IncomingType->getDecl() != Incoming ||
-        !ActualGetRead || ActualGetRead->getDecl() != Argument.PlaceholderIndex || !ActualForwardRead) return false;
+        !ActualGetRead || ActualGetRead->getDecl() != Argument.PlaceholderIndex || !ActualForwardRead) return functionalBindDiagnosticFailure(__LINE__);
     PlaceholderBodySources Frame{&Argument, OriginalIndex, OriginalGet, OriginalForward,
         {GetRead, ForwardRead, ActualGetRead, ActualForwardRead}, false};
     ActivePlaceholderBody = &Frame;
@@ -23592,7 +23840,7 @@ class BindSourceProof {
         for (const auto *Use : Sources) {
           if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
               Use->Location != Argument.Unwrap->getExprLoc()) continue;
-          if (Use->Template != Primary || !Use->FunctionalBindConstraint) return false;
+          if (Use->Template != Primary || !Use->FunctionalBindConstraint) return functionalBindDiagnosticFailure(__LINE__);
           unsigned Matches = 0;
           for (const auto &Entry : Use->ParameterTypes) {
             if (Entry.Parameter != Parameter) continue;
@@ -23601,9 +23849,9 @@ class BindSourceProof {
                   return unwrapPlaceholderParameterSource(*Use, Parameter, Entry.Type, Argument, [&] {
                     return Graph.TraverseStmt(const_cast<DeclStmt *>(Statement));
                   });
-                })) return false;
+                })) return functionalBindDiagnosticFailure(__LINE__);
           }
-          if (Matches != 1) return false;
+          if (Matches != 1) return functionalBindDiagnosticFailure(__LINE__);
           Found = true;
         }
         Frame.IndexComplete = Found;
@@ -23616,7 +23864,7 @@ class BindSourceProof {
     return Graph.withBindSourceChild([&] {
       const auto *Variable = Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
       if (!Variable || !family(Variable) || !Variable->getType().isConstQualified() ||
-          Variable->getType().isVolatileQualified() || !Variable->hasInit()) return false;
+          Variable->getType().isVolatileQualified() || !Variable->hasInit()) return functionalBindDiagnosticFailure(__LINE__);
       if (Variable->isLocalVarDecl() && ActivePlaceholderBody && ActivePlaceholderBody->IndexComplete &&
           ActivePlaceholderBody->Argument && ActivePlaceholderBody->IndexReads.count(Reference) &&
           (Variable == ActivePlaceholderBody->OriginalIndex ||
@@ -23632,17 +23880,17 @@ class BindSourceProof {
       }
       if (Variable->isLocalVarDecl()) return unwrapPlaceholderGetterIndexReadSource(Reference, Variable);
       return withWeakDerivesVariableSource(Variable, [&] {
-      if (!weakHasResultVariableSource(Variable)) return false;
+      if (!weakHasResultVariableSource(Variable)) return functionalBindDiagnosticFailure(__LINE__);
       if (const auto Constant = scalarConstantValueSource(Reference, Variable)) return *Constant;
       if (CompletedVariables.count(Variable)) return true;
-      if (!ActiveVariables.insert(Variable).second) return false;
+      if (!ActiveVariables.insert(Variable).second) return functionalBindDiagnosticFailure(__LINE__);
       auto Restore = llvm::make_scope_exit([&] { ActiveVariables.erase(Variable); });
       if (const auto *Instance = dyn_cast<VarTemplateSpecializationDecl>(Variable)) {
         const auto *Primary = Instance->getSpecializedTemplate();
         if (!Primary || !family(Primary) ||
             Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
             Instance->getSpecializedTemplateOrPartial().dyn_cast<VarTemplateDecl *>() != Primary)
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         bool Found = false;
         for (const auto *Use : Sources) {
           if (!Use || Use->Kind != TemplateSourceKind::VariableUse ||
@@ -23653,19 +23901,35 @@ class BindSourceProof {
               (Use->Underlying
                   ? (!Context.hasSameType(Use->Underlying->getType(), Instance->getType()) ||
                      !Graph.TraverseTypeLoc(Use->Underlying->getTypeLoc()))
-                  : !completeCallInvocableVariableSource(Instance, *Use, Reference))) return false;
+                  : !completeCallInvocableVariableSource(Instance, *Use, Reference))) return functionalBindDiagnosticFailure(__LINE__);
           Found = true;
         }
-        if (!Found) return false;
+        if (!Found) return functionalBindDiagnosticFailure(__LINE__);
       } else {
         const auto *Owner = dyn_cast<CXXRecordDecl>(Variable->getDeclContext());
-        if (!Variable->isStaticDataMember() || !Owner || !recordSource(Owner)) return false;
+        if (!Variable->isStaticDataMember() || !Owner || !recordSource(Owner)) return functionalBindDiagnosticFailure(__LINE__);
         const auto Qualifier = Reference->getQualifierLoc();
-        if (Qualifier && !Graph.TraverseTypeLoc(Qualifier.getTypeLoc())) return false;
+        if (Qualifier && !Graph.TraverseTypeLoc(Qualifier.getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       }
-      if (!Variable->getTypeSourceInfo() ||
-          !Graph.TraverseTypeLoc(Variable->getTypeSourceInfo()->getTypeLoc()) ||
-          !Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()))) return false;
+      const bool VariableTypeSourceComplete = Variable->getTypeSourceInfo() &&
+          Graph.TraverseTypeLoc(Variable->getTypeSourceInfo()->getTypeLoc());
+      const bool VariableInitializerComplete = VariableTypeSourceComplete &&
+          Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
+      if (!VariableInitializerComplete) {
+        if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+          const auto Name = Variable->getQualifiedNameAsString();
+          const auto Type = Variable->getType().getAsString();
+          std::fprintf(stderr, "BIND-VARIABLE-SOURCE typecomplete=%u initcomplete=%u active=%u nested=%u returnloc=%u path=%lld name=%.*s type=%.*s init=%s\n",
+              unsigned(VariableTypeSourceComplete), unsigned(VariableInitializerComplete),
+              unsigned(bool(ActiveCompleteCall)), unsigned(bool(ActiveNestedObjectQuery)),
+              unsigned(bool(ActiveNestedReturnLocation)),
+              ActiveCompleteCall ? static_cast<long long>(ActiveCompleteCall->OwnedPath.size()) : -1LL,
+              int(std::min<std::size_t>(Name.size(), 512)), Name.c_str(),
+              int(std::min<std::size_t>(Type.size(), 512)), Type.c_str(),
+              Variable->getInit() ? Variable->getInit()->getStmtClassName() : "<missing>");
+        }
+        return functionalBindDiagnosticFailure(__LINE__);
+      }
       CompletedVariables.insert(Variable);
       return true;
       });
@@ -23673,7 +23937,7 @@ class BindSourceProof {
   }
   bool withUnwrapFunctionSourceProjections(const Expr *Expression,
       const FunctionDecl *Function, const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!ActiveUnwrapSource || !Function || !Function->getIdentifier() || Function->getName() != "__mu" ||
         !Arguments || Arguments->size() != 3 || Arguments->get(0).getKind() != TemplateArgument::Type)
@@ -23687,21 +23951,21 @@ class BindSourceProof {
       Actual |= !Argument.Reference && !Argument.Nested &&
           (InputPlaceholder ? Argument.PlaceholderRank == InputPlaceholder->Rank : !Argument.PlaceholderRank) &&
           Argument.Unwrap == Expression && Argument.Unwrap->getDirectCallee() == Function;
-    if (!Actual || !Check.family(Function, {"__functional/bind.h"})) return false;
+    if (!Actual || !Check.family(Function, {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<const TemplateUseSource *> Uses;
     for (const auto *Selection : Selections) {
       if (!Selection || Selection->Expression != Expression || Selection->Function != Function) continue;
-      if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
+      if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Use : Sources) {
         if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
             Use->Location != Selection->Location) continue;
         if (std::find(Uses.begin(), Uses.end(), Use) == Uses.end()) {
-          if (Uses.size() == 64) return false;
+          if (Uses.size() == 64) return functionalBindDiagnosticFailure(__LINE__);
           Uses.push_back(Use);
         }
       }
     }
-    if (Uses.empty()) return false;
+    if (Uses.empty()) return functionalBindDiagnosticFailure(__LINE__);
     // All retained packets still close in functionSource below. Their exact
     // projection sources must remain in scope through the selected/original
     // signatures too: Clang can reuse one scalar __mu across different binds.
@@ -23709,7 +23973,7 @@ class BindSourceProof {
       if (I == Uses.size()) return Proof();
       if (ActiveUnwrapProjectionSources.size() == 64 ||
           std::find(ActiveUnwrapProjectionSources.begin(), ActiveUnwrapProjectionSources.end(), Uses[I]) !=
-              ActiveUnwrapProjectionSources.end()) return false;
+              ActiveUnwrapProjectionSources.end()) return functionalBindDiagnosticFailure(__LINE__);
       ActiveUnwrapProjectionSources.push_back(Uses[I]);
       auto Restore = llvm::make_scope_exit([&] { ActiveUnwrapProjectionSources.pop_back(); });
       return Graph.withBindRetainedUnwrapProjectionSource(*Uses[I], [&] { return Scope(I + 1); });
@@ -23723,33 +23987,47 @@ class BindSourceProof {
       const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
       const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
       if (!Expression || !Function || !Primary || !Arguments || !Signature || !family(Function) ||
-          Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+          Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return functionalBindDiagnosticFailure(__LINE__);
       return withUnwrapFunctionSourceProjections(Expression, Function, [&] {
         bool Found = false;
         for (const auto *Selection : Selections) {
           if (!Selection || Selection->Expression != Expression || Selection->Function != Function) continue;
-          if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
+          if (!matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return functionalBindDiagnosticFailure(__LINE__);
           bool UseFound = false;
           for (const auto *Use : Sources) {
             if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Declaration != Function ||
                 Use->Location != Selection->Location) continue;
             if (Use->Template != Primary || Use->Type || Use->Underlying || Use->Written ||
-                Use->Instantiation || Use->Selection || !same(Use->Canonical, Arguments)) return false;
+                Use->Instantiation || Use->Selection || !same(Use->Canonical, Arguments)) return functionalBindDiagnosticFailure(__LINE__);
             if (Function->getIdentifier() && Function->getName() == "bind" &&
                 Check.family(Function, {"__functional/bind.h"})) {
               const auto *Call = dyn_cast<CallExpr>(Expression);
               const auto Factory = Call
                   ? describeFunctionalBindFactorySource(S, SM, Call, Context) : std::nullopt;
               if (!Factory || Factory->Factory != Function || Factory->Storage.Record != Storage.Record ||
-                  !Graph.bindFunctionalBindOwnedInputAliases(*Factory, *Use, OwnedInputAliasSource)) return false;
+                  !Graph.bindFunctionalBindOwnedInputAliases(*Factory, *Use, OwnedInputAliasSource)) return functionalBindDiagnosticFailure(__LINE__);
             }
-            if (!source(*Use, Primary->getTemplateParameters())) return false;
+            if (!source(*Use, Primary->getTemplateParameters())) {
+              if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+                const auto Name = Function->getQualifiedNameAsString();
+                const auto *Constructor = dyn_cast<CXXConstructorDecl>(Function);
+                const auto Owner = Constructor ? Context.getRecordType(Constructor->getParent()).getAsString()
+                    : Function->getType().getAsString();
+                const auto Root = Context.getRecordType(Storage.Record).getAsString();
+                std::fprintf(stderr, "BIND-FUNCTION-PACKET-FAIL location=%u expression=%s name=%.*s owner=%.*s root=%.*s\n",
+                    Use->Location.getRawEncoding(), Expression->getStmtClassName(),
+                    int(std::min<std::size_t>(Name.size(), 512)), Name.c_str(),
+                    int(std::min<std::size_t>(Owner.size(), 1024)), Owner.c_str(),
+                    int(std::min<std::size_t>(Root.size(), 1024)), Root.c_str());
+              }
+              return functionalBindDiagnosticFailure(__LINE__);
+            }
             UseFound = true;
           }
-          if (!UseFound) return false;
+          if (!UseFound) return functionalBindDiagnosticFailure(__LINE__);
           Found = true;
         }
-        if (!Found) return false;
+        if (!Found) return functionalBindDiagnosticFailure(__LINE__);
         return Signature();
       });
     });
@@ -23775,7 +24053,7 @@ class BindSourceProof {
             Inputs->get(0).getAsType()->isLValueReferenceType()
                 ? Inputs->get(0).getAsType()
                 : Context.getRValueReferenceType(Inputs->get(0).getAsType().getNonReferenceType())) ||
-        !Check.family(Function, {"tuple"}) || !Check.location(Call->getExprLoc(), {"tuple"})) return false;
+        !Check.family(Function, {"tuple"}) || !Check.location(Call->getExprLoc(), {"tuple"})) return functionalBindDiagnosticFailure(__LINE__);
     return functionSource(Call, Function, [&] {
       auto Signature = [&](const FunctionDecl *Declaration, bool RequireBody) {
         const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Declaration);
@@ -23785,7 +24063,7 @@ class BindSourceProof {
             Method->isInvalidDecl() || Method->isDeleted() || !Method->getReturnType()->isBooleanType() ||
             !Method->getTypeSourceInfo() || !Prototype || Prototype->getExceptionSpecType() != EST_None ||
             Prototype->getNoexceptExpr() || !Check.family(Method, {"tuple"}) || !Graph.function(Method) ||
-            !Graph.TraverseTypeLoc(Method->getTypeSourceInfo()->getTypeLoc())) return false;
+            !Graph.TraverseTypeLoc(Method->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
         if (!Body) return !RequireBody;
         const auto *Return = Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
@@ -23793,7 +24071,7 @@ class BindSourceProof {
             Graph.TraverseStmt(const_cast<CompoundStmt *>(Body));
       };
       for (const auto *Declaration : Function->redecls())
-        if (!Signature(Declaration, Declaration == Function)) return false;
+        if (!Signature(Declaration, Declaration == Function)) return functionalBindDiagnosticFailure(__LINE__);
       std::set<const FunctionTemplateDecl *> Seen;
       for (const auto *Current = Primary; Current; Current = Current->getInstantiatedFromMemberTemplate()) {
         const auto *Parameters = Current->getTemplateParameters();
@@ -23802,9 +24080,9 @@ class BindSourceProof {
             Seen.size() == 64 || !Seen.insert(Current).second || !Check.family(Current, {"tuple"}) ||
             !Graph.withBindTemplateParameters(Current, Parameters, [&] {
               for (const auto *Declaration : Current->getTemplatedDecl()->redecls())
-                if (!Signature(Declaration, !Current->getInstantiatedFromMemberTemplate())) return false;
+                if (!Signature(Declaration, !Current->getInstantiatedFromMemberTemplate())) return functionalBindDiagnosticFailure(__LINE__);
               return true;
-            })) return false;
+            })) return functionalBindDiagnosticFailure(__LINE__);
       }
       return Graph.TraverseTemplateArgumentLoc(Reference->template_arguments()[0]) && Graph.bindSourceComplete();
     });
@@ -23831,7 +24109,7 @@ class BindSourceProof {
       if (ActiveNestedIncomingSource) {
         for (unsigned I = 0; I < ActiveNestedIncomingSource->IncomingForwards.size(); ++I)
           if (ActiveNestedIncomingSource->IncomingForwards[I] == Call) {
-            if (Nested) return false;
+            if (Nested) return functionalBindDiagnosticFailure(__LINE__);
             Nested = ActiveNestedIncomingSource;
             NestedIndex = I;
           }
@@ -23854,7 +24132,7 @@ class BindSourceProof {
             !Context.hasSameType(Function->getReturnType(), Method->getParamDecl(NestedIndex)->getType()) ||
             Function->getNumParams() != 1 || !Context.hasSameType(Function->getParamDecl(0)->getType(),
                 Context.getLValueReferenceType(Method->getParamDecl(NestedIndex)->getType().getNonReferenceType())))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
       }
       if (Placeholder) {
         const auto Closed = CompletedPlaceholderGetSources.find(Placeholder->PlaceholderGet);
@@ -23866,7 +24144,7 @@ class BindSourceProof {
             !Context.hasSameType(Function->getReturnType(), Placeholder->ForwardedType) ||
             Function->getNumParams() != 1 || !Context.hasSameType(Function->getParamDecl(0)->getType(),
                 Context.getLValueReferenceType(Placeholder->ForwardedType.getNonReferenceType())) ||
-            !unwrapPlaceholderForwardIndexReference(*Placeholder)) return false;
+            !unwrapPlaceholderForwardIndexReference(*Placeholder)) return functionalBindDiagnosticFailure(__LINE__);
       }
       if (!Call || (!Placeholder && !Nested && (!FactoryBuiltinForwards.count(Call) || !Parameter)) || !Function || !Pattern ||
           !Builtin || !Builtin->isImplicit() || Builtin->getID() != Builtin::BIforward ||
@@ -23883,7 +24161,7 @@ class BindSourceProof {
           !Check.family(Primary, {"__utility/forward.h"}) ||
           !Check.family(Pattern, {"__utility/forward.h"}) ||
           !Check.location(Call->getExprLoc(), {"__functional/bind.h", "tuple"}) ||
-          (!Placeholder && !Nested && !utilityTupleCarrierParameter(S, SM, Context, Call, Parameter))) return false;
+          (!Placeholder && !Nested && !utilityTupleCarrierParameter(S, SM, Context, Call, Parameter))) return functionalBindDiagnosticFailure(__LINE__);
       // The real builtin call has no selected-call callback. Its actual
       // successful Function deduction packet still has this exact location,
       // specialization, primary, arguments and all retained source children.
@@ -23895,26 +24173,26 @@ class BindSourceProof {
             Use->Location != Call->getExprLoc()) continue;
         if (!Use->FunctionalBindConstraint || Use->Template != Primary || Use->Type || Use->Underlying ||
             Use->Written || Use->Instantiation || Use->Selection || !Use->Defaults.empty() ||
-            !Use->ParameterTypes.empty() || !same(Use->Canonical, Arguments)) return false;
+            !Use->ParameterTypes.empty() || !same(Use->Canonical, Arguments)) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Saved = ActivePlaceholderForwardSource;
         if (Placeholder) {
-          if (Saved) return false;
+          if (Saved) return functionalBindDiagnosticFailure(__LINE__);
           ActivePlaceholderForwardSource = Use;
         }
         auto RestoreSource = llvm::make_scope_exit([&] { ActivePlaceholderForwardSource = Saved; });
-        if (!source(*Use, Parameters)) return false;
+        if (!source(*Use, Parameters)) return functionalBindDiagnosticFailure(__LINE__);
         Found = true;
       }
-      if (!Found || !Graph.TraverseTemplateArgumentLoc(Reference->template_arguments()[0])) return false;
+      if (!Found || !Graph.TraverseTemplateArgumentLoc(Reference->template_arguments()[0])) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : Function->redecls())
         if (!Declaration->getTypeSourceInfo() || !Check.family(Declaration, {"__utility/forward.h"}) ||
             !Graph.function(Declaration) ||
-            !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+            !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       if (!Graph.withBindTemplateParameters(Primary, Parameters, [&] {
             for (const auto *Declaration : Pattern->redecls())
               if (!Declaration->getTypeSourceInfo() || !Check.family(Declaration, {"__utility/forward.h"}) ||
                   !Graph.function(Declaration) ||
-                  !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+                  !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
             const auto *Definition = Pattern->getDefinition();
             const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
             const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
@@ -23923,9 +24201,9 @@ class BindSourceProof {
             if (!Definition || Definition->getNumParams() != 1 || !Cast || !Argument ||
                 Argument->getDecl() != Definition->getParamDecl(0) ||
                 !Context.hasSameType(Cast->getTypeAsWritten(), Definition->getReturnType()) ||
-                !Check.family(Definition, {"__utility/forward.h"})) return false;
+                !Check.family(Definition, {"__utility/forward.h"})) return functionalBindDiagnosticFailure(__LINE__);
             return Graph.TraverseStmt(const_cast<CompoundStmt *>(Body));
-          }) || !Graph.bindSourceComplete()) return false;
+          }) || !Graph.bindSourceComplete()) return functionalBindDiagnosticFailure(__LINE__);
       CompletedBuiltinForwards.insert(Call);
       return true;
     });
@@ -23943,16 +24221,16 @@ class BindSourceProof {
         Constructor->getParent()->getCanonicalDecl() != Storage.Arguments.Record->getCanonicalDecl() ||
         Storage.Arguments.Elements.empty() || Storage.Arguments.Elements.size() > 8 ||
         ActiveCallTupleConstructor || ActiveScalarParameter || ActiveCompleteCall ||
-        !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+        !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindFactorySource(S, SM, Factory.SourceCall, Context);
     const auto Construction = Actual
         ? describeFunctionalBindTupleConstructionSource(S, SM, *Actual, Context) : std::nullopt;
     if (!Actual || !Construction || !sameFunctionalBindPlaceholderOperands(*Actual, Factory) ||
         Construction->Tuple != Tuple.Tuple || Construction->Implementation != Tuple.Implementation ||
-        Actual->BoundConstruction != Tuple.Tuple) return false;
+        Actual->BoundConstruction != Tuple.Tuple) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto &Element : Storage.Arguments.Elements)
       if (Element.Field || !Element.EmptyBase ||
-          !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context)) return false;
+          !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context)) return functionalBindDiagnosticFailure(__LINE__);
     // Only this freshly described const-element constructor can use its
     // actual _And default and scoped boolean definitions. Other factory
     // constructors retain their existing source path.
@@ -23973,9 +24251,9 @@ class BindSourceProof {
     });
   }
   bool declvalSource(const CallExpr *Call, QualType Input) {
-    if (ActiveDeclval) return false;
+    if (ActiveDeclval) return functionalBindDiagnosticFailure(__LINE__);
     const auto Description = describeFunctionalBindDeclvalSource(S, SM, Call, Input, Context);
-    if (!Description) return false;
+    if (!Description) return functionalBindDiagnosticFailure(__LINE__);
     ActiveDeclval = &*Description;
     auto Restore = llvm::make_scope_exit([&] { ActiveDeclval = nullptr; });
     const bool Complete = functionSource(Call, Description->Function, [&] {
@@ -23984,15 +24262,15 @@ class BindSourceProof {
       // remain separate source obligations within the same graph budget.
       if (!Graph.function(Description->Function) ||
           !Graph.TraverseTypeLoc(Description->Function->getTypeSourceInfo()->getTypeLoc()))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto *Primary = Description->Function->getPrimaryTemplate()->getTemplatedDecl();
       if (!family(Primary) || !Primary->getTypeSourceInfo() || !Graph.function(Primary) ||
-          !Graph.TraverseTypeLoc(Primary->getTypeSourceInfo()->getTypeLoc())) return false;
+          !Graph.TraverseTypeLoc(Primary->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Template : Description->HelperOverloads) {
         const auto *Pattern = Template ? Template->getTemplatedDecl() : nullptr;
         if (!Template || !Pattern || !family(Template) || !family(Pattern) ||
             !Pattern->getTypeSourceInfo() || !Graph.function(Pattern) ||
-            !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return false;
+            !Graph.TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
       }
       return Graph.bindSourceComplete();
     });
@@ -24005,10 +24283,10 @@ class BindSourceProof {
           ? Description.Function->getTemplateSpecializationArgs() : nullptr;
       if (!Selected || Selected->size() != 2 ||
           Selected->get(0).getKind() != TemplateArgument::Type ||
-          Selected->get(1).getKind() != TemplateArgument::Pack) return false;
+          Selected->get(1).getKind() != TemplateArgument::Pack) return functionalBindDiagnosticFailure(__LINE__);
       std::vector<QualType> Forwarded;
       for (const auto &Argument : Selected->get(1).pack_elements()) {
-        if (Argument.getKind() != TemplateArgument::Type) return false;
+        if (Argument.getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
         Forwarded.push_back(Argument.getAsType());
       }
       const auto Actual = Description.Nested
@@ -24022,7 +24300,7 @@ class BindSourceProof {
           Actual->Declvals != Description.Declvals ||
           Actual->SpecializedDeclvals != Description.SpecializedDeclvals ||
           Description.Declvals.size() != 2 ||
-          Description.SpecializedDeclvals.size() != Forwarded.size() + 1) return false;
+          Description.SpecializedDeclvals.size() != Forwarded.size() + 1) return functionalBindDiagnosticFailure(__LINE__);
       auto Inputs = DeclvalInputs;
       auto Originals = OriginalDeclvalSources;
       auto EmptyPacks = EmptyPackDeclvalSources;
@@ -24034,21 +24312,21 @@ class BindSourceProof {
         const auto *Lookup = Original
             ? dyn_cast<UnresolvedLookupExpr>(Original->getCallee()->IgnoreParenImpCasts()) : nullptr;
         if (!Declval || !Lookup || Lookup->requiresADL() || Lookup->getNumDecls() != 1 ||
-            *Lookup->decls_begin() != Declval->Function->getPrimaryTemplate()) return false;
+            *Lookup->decls_begin() != Declval->Function->getPrimaryTemplate()) return functionalBindDiagnosticFailure(__LINE__);
         const auto Bound = Inputs.find(Call);
-        if (Bound != Inputs.end() && !Context.hasSameType(Bound->second, Input)) return false;
+        if (Bound != Inputs.end() && !Context.hasSameType(Bound->second, Input)) return functionalBindDiagnosticFailure(__LINE__);
         Inputs.emplace(Call, Input);
         Originals[Original].insert(Call);
       }
-      if (Inputs.size() > 64 || Originals.size() > 64) return false;
+      if (Inputs.size() > 64 || Originals.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &[Original, Calls] : Originals)
-        if (!Original || Calls.empty() || Calls.size() > 64) return false;
+        if (!Original || Calls.empty() || Calls.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
       if (Forwarded.empty()) {
         if ((Description.Nested ? Description.Nested->Invocation.Method->getNumParams() != 0
                                 : !Storage.Arguments.Elements.empty()) || Description.SpecializedDeclvals.size() != 1 ||
-            !Description.Declvals[1]) return false;
+            !Description.Declvals[1]) return functionalBindDiagnosticFailure(__LINE__);
         EmptyPacks[Description.Declvals[1]].insert(Description.Function);
-        if (EmptyPacks.size() > 64 || EmptyPacks[Description.Declvals[1]].size() > 64) return false;
+        if (EmptyPacks.size() > 64 || EmptyPacks[Description.Declvals[1]].size() > 64) return functionalBindDiagnosticFailure(__LINE__);
       }
       // Publish atomically only after every identity/type pair matches. Each
       // concrete call must still close functionSource before an original
@@ -24062,14 +24340,14 @@ class BindSourceProof {
   bool invokeSignatureSource(const CallExpr *Use,
       const FunctionalBindInvokeSignatureSource &Description) {
     if (ActiveInvokeSignature || !Use || Use->getDirectCallee() != Description.Function)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     return functionSource(Use, Description.Function, [&] {
-      if (!bindInvokeDeclvalInputs(Description)) return false;
+      if (!bindInvokeDeclvalInputs(Description)) return functionalBindDiagnosticFailure(__LINE__);
       // Complete every concrete declval declaration/helper source first. The
       // exact original signature calls cannot supply those certificates.
       for (const auto *Call : Description.SpecializedDeclvals) {
         const auto Input = DeclvalInputs.find(Call);
-        if (Input == DeclvalInputs.end() || !declvalSource(Call, Input->second)) return false;
+        if (Input == DeclvalInputs.end() || !declvalSource(Call, Input->second)) return functionalBindDiagnosticFailure(__LINE__);
       }
       ActiveInvokeSignature = &Description;
       auto Restore = llvm::make_scope_exit([&] { ActiveInvokeSignature = nullptr; });
@@ -24080,10 +24358,10 @@ class BindSourceProof {
     if (ActiveTryCallSignature || !Probe.Function || !Probe.Owner ||
         Probe.Owner->getTemplateArgs().size() != 3 ||
         Probe.Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type ||
-        Probe.Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack) return false;
+        Probe.Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Probe.Owner->getTemplateArgs()[2].pack_elements()) {
-      if (Argument.getKind() != TemplateArgument::Type) return false;
+      if (Argument.getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
       Forwarded.push_back(Argument.getAsType());
     }
     const auto Actual = Probe.Dispatcher.Nested
@@ -24100,7 +24378,7 @@ class BindSourceProof {
         Actual->Declvals.size() != Forwarded.size() + 1 ||
         Actual->OriginalInvokes.size() != Actual->Ancestors.size() ||
         Actual->OriginalCallableDeclvals.size() != Actual->Ancestors.size() ||
-        Actual->OriginalArgumentDeclvals.size() != Actual->Ancestors.size()) return false;
+        Actual->OriginalArgumentDeclvals.size() != Actual->Ancestors.size()) return functionalBindDiagnosticFailure(__LINE__);
     return Graph.withBindSourceChild([&] {
       auto Inputs = DeclvalInputs;
       auto Originals = OriginalDeclvalSources;
@@ -24109,29 +24387,29 @@ class BindSourceProof {
         const auto Input = I ? Forwarded[I - 1] : Actual->Owner->getTemplateArgs()[1].getAsType();
         const auto *Call = Actual->Declvals[I];
         const auto Declval = describeFunctionalBindDeclvalSource(S, SM, Call, Input, Context);
-        if (!Declval) return false;
+        if (!Declval) return functionalBindDiagnosticFailure(__LINE__);
         const auto Bound = Inputs.find(Call);
-        if (Bound != Inputs.end() && !Context.hasSameType(Bound->second, Input)) return false;
+        if (Bound != Inputs.end() && !Context.hasSameType(Bound->second, Input)) return functionalBindDiagnosticFailure(__LINE__);
         Inputs.emplace(Call, Input);
         const auto &Calls = I ? Actual->OriginalArgumentDeclvals : Actual->OriginalCallableDeclvals;
         for (const auto *Original : Calls) {
           const auto *Lookup = Original
               ? dyn_cast<UnresolvedLookupExpr>(Original->getCallee()->IgnoreParenImpCasts()) : nullptr;
           if (!Lookup || Lookup->requiresADL() || Lookup->getNumDecls() != 1 ||
-              *Lookup->decls_begin() != Declval->Function->getPrimaryTemplate()) return false;
+              *Lookup->decls_begin() != Declval->Function->getPrimaryTemplate()) return functionalBindDiagnosticFailure(__LINE__);
           Originals[Original].insert(Call);
         }
       }
-      if (Inputs.size() > 64 || Originals.size() > 64) return false;
+      if (Inputs.size() > 64 || Originals.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &[Original, Calls] : Originals)
-        if (!Original || Calls.empty() || Calls.size() > 64) return false;
+        if (!Original || Calls.empty() || Calls.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
       if (Forwarded.empty()) {
         if ((Actual->Dispatcher.Nested ? Actual->Dispatcher.Nested->Invocation.Method->getNumParams() != 0
-                                       : !Storage.Arguments.Elements.empty()) || Actual->Declvals.size() != 1) return false;
+                                       : !Storage.Arguments.Elements.empty()) || Actual->Declvals.size() != 1) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Original : Actual->OriginalArgumentDeclvals) {
-          if (!Original) return false;
+          if (!Original) return functionalBindDiagnosticFailure(__LINE__);
           EmptyPacks[Original].insert(Actual->Function);
-          if (EmptyPacks.size() > 64 || EmptyPacks[Original].size() > 64) return false;
+          if (EmptyPacks.size() > 64 || EmptyPacks[Original].size() > 64) return functionalBindDiagnosticFailure(__LINE__);
         }
       }
       DeclvalInputs.swap(Inputs);
@@ -24139,11 +24417,11 @@ class BindSourceProof {
       EmptyPackDeclvalSources.swap(EmptyPacks);
       for (unsigned I = 0; I < Actual->Declvals.size(); ++I) {
         const auto Input = I ? Forwarded[I - 1] : Actual->Owner->getTemplateArgs()[1].getAsType();
-        if (!declvalSource(Actual->Declvals[I], Input)) return false;
+        if (!declvalSource(Actual->Declvals[I], Input)) return functionalBindDiagnosticFailure(__LINE__);
       }
       // The exact selected dispatcher and its own declval/noexcept sources
       // close before any original probe call enters its metadata-only scope.
-      if (!invokeSignatureSource(Actual->Invoke, Actual->Dispatcher)) return false;
+      if (!invokeSignatureSource(Actual->Invoke, Actual->Dispatcher)) return functionalBindDiagnosticFailure(__LINE__);
       return functionSource(Actual->ResultCall, Actual->Function, [&] {
         ActiveTryCallSignature = &*Actual;
         auto Restore = llvm::make_scope_exit([&] { ActiveTryCallSignature = nullptr; });
@@ -24151,20 +24429,20 @@ class BindSourceProof {
           const auto *Prototype = Declaration ? Declaration->getType()->getAs<FunctionProtoType>() : nullptr;
           if (!Declaration || Declaration->hasBody() || !Declaration->getTypeSourceInfo() ||
               !Prototype || Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
-              !family(Declaration) || !Graph.function(Declaration)) return false;
+              !family(Declaration) || !Graph.function(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
           for (const auto *Parameter : Declaration->parameters())
             if (!Parameter->getTypeSourceInfo() || Parameter->hasDefaultArg() || !family(Parameter) ||
-                !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+                !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
           return Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc());
         };
         for (const auto *Ancestor : Actual->Ancestors)
           if (!Graph.withBindTemplateParameters(Ancestor, Ancestor->getTemplateParameters(), [&] {
                 for (const auto *Declaration : Ancestor->getTemplatedDecl()->redecls())
-                  if (!Signature(Declaration)) return false;
+                  if (!Signature(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
                 return true;
-              })) return false;
+              })) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Declaration : Actual->Function->redecls())
-          if (!Signature(Declaration)) return false;
+          if (!Signature(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
         return Graph.TraverseBindCompletedResultAliasSource(*Actual) && Graph.bindSourceComplete();
       });
     });
@@ -24172,37 +24450,37 @@ class BindSourceProof {
   bool tryCallFallbackSource(const FunctionalBindTryCallSignatureSource &Probe) {
     const auto Fallback = describeFunctionalBindTryCallFallbackSource(S, SM, Probe, Storage, Sources, Context);
     if (!Fallback || !Fallback->Function || !Fallback->Sentinel || Fallback->Uses.empty() ||
-        Fallback->Ancestors.empty()) return false;
+        Fallback->Ancestors.empty()) return functionalBindDiagnosticFailure(__LINE__);
     return Graph.withBindSourceChild([&] {
       const auto *Primary = Fallback->Function->getPrimaryTemplate();
       const auto *Selected = Fallback->Function->getTemplateSpecializationArgs();
       if (!Primary || !Selected || !family(Primary) ||
-          Fallback->Ancestors.front() != Primary) return false;
+          Fallback->Ancestors.front() != Primary) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Use : Fallback->Uses) {
         // These are actual unselected Function packets, not call selections.
         // Do not manufacture an occurrence, written arguments, or body root.
         if (!Use || Use->Kind != TemplateSourceKind::Function || Use->Template != Primary ||
             Use->Declaration != Fallback->Function || Use->Type || Use->Underlying || Use->Written ||
             Use->Selection || Use->Instantiation || !same(Use->Canonical, Selected) ||
-            !source(*Use, Primary->getTemplateParameters())) return false;
+            !source(*Use, Primary->getTemplateParameters())) return functionalBindDiagnosticFailure(__LINE__);
       }
       for (const auto *Ancestor : Fallback->Ancestors)
         if (!Graph.withBindTemplateParameters(Ancestor, Ancestor->getTemplateParameters(), [&] {
               for (const auto *Declaration : Ancestor->getTemplatedDecl()->redecls()) {
                 const auto *Method = dyn_cast<CXXMethodDecl>(Declaration);
-                if (!Method || !Graph.TraverseBindTryCallFallbackSignature(Method, Fallback->Sentinel)) return false;
+                if (!Method || !Graph.TraverseBindTryCallFallbackSignature(Method, Fallback->Sentinel)) return functionalBindDiagnosticFailure(__LINE__);
               }
               return true;
-            })) return false;
+            })) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : Fallback->Function->redecls()) {
         const auto *Method = dyn_cast<CXXMethodDecl>(Declaration);
-        if (!Method || !Graph.TraverseBindTryCallFallbackSignature(Method, Fallback->Sentinel)) return false;
+        if (!Method || !Graph.TraverseBindTryCallFallbackSignature(Method, Fallback->Sentinel)) return functionalBindDiagnosticFailure(__LINE__);
       }
       return Graph.bindSourceComplete();
     });
   }
   std::optional<const FunctionDecl *> completedCallFunction(const CallExpr *Call) const {
-    if (!ActiveCompleteCall || !Call) return std::nullopt;
+    if (!ActiveCompleteCall || !Call) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto Found = ClosedCompleteCalls.find(Call);
     if (Found != ClosedCompleteCalls.end()) return Found->second.Function;
     for (const auto &[Root, Source] : ClosedCompleteCalls) {
@@ -24210,14 +24488,14 @@ class BindSourceProof {
       if (const auto Found = Source.NestedMetadataCalls.find(Call); Found != Source.NestedMetadataCalls.end()) {
         if (!ActiveNestedObjectQuery || !ActiveNestedReturnLocation ||
             ActiveCompleteCall->SourceCall != ActiveNestedObjectQuery->Invocation.SourceCall ||
-            Found->second != ActiveNestedObjectQuery->Invocation.Method) return std::nullopt;
+            Found->second != ActiveNestedObjectQuery->Invocation.Method) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
         return Found->second;
       }
       if (Call == Source.PrimaryHelperCall ||
           std::find(Source.MetadataCalls.begin(), Source.MetadataCalls.end(), Call) != Source.MetadataCalls.end())
         return static_cast<const FunctionDecl *>(nullptr);
     }
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
   bool callSource(const CallExpr *Call) {
     const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -24269,7 +24547,7 @@ class BindSourceProof {
       if (Call == Probe.Invoke ||
           std::find(Probe.OriginalInvokes.begin(), Probe.OriginalInvokes.end(), Call) != Probe.OriginalInvokes.end()) {
         for (const auto *Declval : Probe.Declvals)
-          if (!CompletedDeclvalInputs.count(Declval)) return false;
+          if (!CompletedDeclvalInputs.count(Declval)) return functionalBindDiagnosticFailure(__LINE__);
         return Call == Probe.Invoke ? Function == Probe.Dispatcher.Function : !Function;
       }
     }
@@ -24294,7 +24572,7 @@ class BindSourceProof {
       if (Call == Description.SignatureCall || Call == Description.SpecializedCall ||
           Call == PrimaryNoexcept || Call == ActualNoexcept) {
         for (const auto *Declval : Description.SpecializedDeclvals)
-          if (!CompletedDeclvalInputs.count(Declval)) return false;
+          if (!CompletedDeclvalInputs.count(Declval)) return functionalBindDiagnosticFailure(__LINE__);
         return !Function || (Description.Nested && ActiveNestedObjectQuery && ActiveNestedReturnLocation &&
             Description.Nested->Root == ActiveNestedObjectQuery->Root &&
             Description.Nested->Path == ActiveNestedObjectQuery->Path &&
@@ -24315,7 +24593,7 @@ class BindSourceProof {
           (!Storage.Arguments.Elements.empty() &&
            !(ActiveNestedObjectQuery && ActiveNestedReturnLocation &&
              ActiveNestedObjectQuery->Invocation.SourceCall == ActiveCompleteCall->SourceCall &&
-             ActiveNestedObjectQuery->Invocation.Method->getNumParams() == 0))) return false;
+             ActiveNestedObjectQuery->Invocation.Method->getNumParams() == 0))) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Owner : EmptyPack->second) {
         const CallExpr *Concrete = nullptr;
         if (const auto *Method = dyn_cast<CXXMethodDecl>(Owner)) {
@@ -24327,7 +24605,7 @@ class BindSourceProof {
           if (!Probe || Probe->Declvals.size() != 1 ||
               std::find(Probe->OriginalArgumentDeclvals.begin(),
                   Probe->OriginalArgumentDeclvals.end(), Call) == Probe->OriginalArgumentDeclvals.end())
-            return false;
+            return functionalBindDiagnosticFailure(__LINE__);
           Concrete = Probe->Declvals[0];
         } else {
           const auto NestedDescription = ActiveNestedObjectQuery && ActiveNestedReturnLocation
@@ -24337,13 +24615,13 @@ class BindSourceProof {
               S, SM, Owner, Storage, {}, Context);
           if (!Description || Description->Declvals.size() != 2 ||
               Description->Declvals[1] != Call || Description->SpecializedDeclvals.size() != 1)
-            return false;
+            return functionalBindDiagnosticFailure(__LINE__);
           Concrete = Description->SpecializedDeclvals[0];
         }
         const auto *Selected = Concrete ? Concrete->getDirectCallee() : nullptr;
         if (!Selected || !CompletedDeclvalInputs.count(Concrete) ||
             !DeclvalInputs.count(Concrete) ||
-            *Lookup->decls_begin() != Selected->getPrimaryTemplate()) return false;
+            *Lookup->decls_begin() != Selected->getPrimaryTemplate()) return functionalBindDiagnosticFailure(__LINE__);
       }
       // This original pack node has no instantiated argument. Its actual
       // zero-argument owner and the shared declval declaration close above;
@@ -24355,12 +24633,12 @@ class BindSourceProof {
       const auto *Lookup = Call
           ? dyn_cast<UnresolvedLookupExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
       if (Function || !Call || Call->getNumArgs() || !Lookup || Lookup->requiresADL() ||
-          Lookup->getNumDecls() != 1 || Original->second.empty()) return false;
+          Lookup->getNumDecls() != 1 || Original->second.empty()) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Concrete : Original->second) {
         const auto *Selected = Concrete ? Concrete->getDirectCallee() : nullptr;
         if (!Selected || !CompletedDeclvalInputs.count(Concrete) ||
             !DeclvalInputs.count(Concrete) ||
-            *Lookup->decls_begin() != Selected->getPrimaryTemplate()) return false;
+            *Lookup->decls_begin() != Selected->getPrimaryTemplate()) return functionalBindDiagnosticFailure(__LINE__);
       }
       return true;
     }
@@ -24374,7 +24652,7 @@ class BindSourceProof {
         ? dyn_cast<DeclRefExpr>(Call->getArg(0)->IgnoreParenImpCasts()) : nullptr;
     const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
     if (!Function || !Function->getIdentifier() || Function->getName() != "forward" ||
-        !Parameter || !approvedFunctionalForwardingCall(S, SM, Call, Parameter)) return false;
+        !Parameter || !approvedFunctionalForwardingCall(S, SM, Call, Parameter)) return functionalBindDiagnosticFailure(__LINE__);
     const auto *Builtin = Function->getAttr<BuiltinAttr>();
     if (Builtin && Builtin->isImplicit() && Builtin->getID() == Builtin::BIforward &&
         Function->getBuiltinID() == Builtin::BIforward && !Function->getDefinition())
@@ -24388,7 +24666,7 @@ class BindSourceProof {
           ? dyn_cast<IntegerLiteral>(Call->getArg(0)->IgnoreParens()) : nullptr;
       if (!Zero || !Zero->getValue().isZero() ||
           !Context.hasSameType(Zero->getType(), Context.IntTy) ||
-          !Check.location(Call->getExprLoc(), {"__type_traits/conjunction.h"})) return false;
+          !Check.location(Call->getExprLoc(), {"__type_traits/conjunction.h"})) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Function = Call->getDirectCallee();
       const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Call->getCallee()->IgnoreParenImpCasts());
       std::vector<const FunctionTemplateDecl *> Templates;
@@ -24396,16 +24674,16 @@ class BindSourceProof {
         if (!Function->getIdentifier() || Function->getName() != "__and_helper" ||
             isa<CXXMethodDecl>(Function) || !Function->getPrimaryTemplate() ||
             Function->hasBody() || !Check.family(Function, {"__type_traits/conjunction.h"}))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         Templates.push_back(Function->getPrimaryTemplate());
       } else {
         if (!Lookup || !Call->isTypeDependent() || Lookup->requiresADL() ||
             Lookup->getNumDecls() != 2 || !Lookup->hasExplicitTemplateArgs() ||
             Lookup->getName().getNameKind() != DeclarationName::Identifier ||
-            Lookup->getName().getAsIdentifierInfo()->getName() != "__and_helper") return false;
+            Lookup->getName().getAsIdentifierInfo()->getName() != "__and_helper") return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Declaration : Lookup->decls()) {
           const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
-          if (!Template) return false;
+          if (!Template) return functionalBindDiagnosticFailure(__LINE__);
           Templates.push_back(Template);
         }
       }
@@ -24421,15 +24699,15 @@ class BindSourceProof {
             Pattern->isInvalidDecl() || Pattern->isDeleted() || Pattern->hasBody() ||
             !Pattern->getTypeSourceInfo() ||
             !Check.family(Template, {"__type_traits/conjunction.h"}) ||
-            !Check.family(Pack, {"__type_traits/conjunction.h"})) return false;
+            !Check.family(Pack, {"__type_traits/conjunction.h"})) return functionalBindDiagnosticFailure(__LINE__);
         if (Pattern->isVariadic()) {
-          if (Pattern->getNumParams() || ++Fallback != 1) return false;
+          if (Pattern->getNumParams() || ++Fallback != 1) return functionalBindDiagnosticFailure(__LINE__);
         } else {
           if (Pattern->getNumParams() != 1 || ++Success != 1 ||
               Pattern->getParamDecl(0)->hasDefaultArg() ||
-              !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return false;
+              !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
         }
-        if (!Graph.TraverseBindConjunctionHelperSignature(Template)) return false;
+        if (!Graph.TraverseBindConjunctionHelperSignature(Template)) return functionalBindDiagnosticFailure(__LINE__);
       }
       // Both unresolved declaration signatures are original source obligations.
       // A selected call additionally needs its exact retained Sema occurrence.
@@ -24439,7 +24717,7 @@ class BindSourceProof {
 
   bool incomingTupleConstructionSource(const CXXConstructExpr *Expression) {
     if (!ActiveCompleteCall || ActiveCompleteCall->CallForwards.empty() ||
-        !Expression || Expression != ActiveCompleteCall->CallArguments) return false;
+        !Expression || Expression != ActiveCompleteCall->CallArguments) return functionalBindDiagnosticFailure(__LINE__);
     const auto Closed = ClosedCallTupleConstructors.find(Expression);
     return Closed != ClosedCallTupleConstructors.end() &&
         Closed->second == Expression->getConstructor();
@@ -24448,9 +24726,9 @@ class BindSourceProof {
   bool withTupleReferenceAssertionSources(
       const FunctionalBindTupleConstructionSource &Tuple,
       const std::function<bool()> &Complete) {
-    if (!TupleReferenceQueries.empty() || !Complete) return false;
+    if (!TupleReferenceQueries.empty() || !Complete) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Assertion : Tuple.Assertions) {
-      if (!Assertion || !Assertion->getAssertExpr()) return false;
+      if (!Assertion || !Assertion->getAssertExpr()) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Constructor = dyn_cast<CXXConstructorDecl>(Assertion->getDeclContext());
       bool Bound = false;
       for (const auto *Leaf : Tuple.Leaves) Bound |= Leaf->getConstructor() == Constructor;
@@ -24458,20 +24736,20 @@ class BindSourceProof {
       if (const auto *Constant = dyn_cast<ConstantExpr>(Expression)) Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
       const auto *Query = dyn_cast<CallExpr>(Expression);
       if (!Bound || !Query || TupleReferenceQueries.size() == 64 ||
-          !TupleReferenceQueries.emplace(Query, Constructor).second) return false;
+          !TupleReferenceQueries.emplace(Query, Constructor).second) return functionalBindDiagnosticFailure(__LINE__);
     }
     auto RestoreQueries = llvm::make_scope_exit([&] { TupleReferenceQueries.clear(); });
     for (const auto *Assertion : Tuple.Assertions)
       if (!Assertion || !family(Assertion) || Assertion->isFailed() ||
           !Assertion->getAssertExpr() ||
-          !Graph.TraverseStmt(const_cast<Expr *>(Assertion->getAssertExpr()))) return false;
+          !Graph.TraverseStmt(const_cast<Expr *>(Assertion->getAssertExpr()))) return functionalBindDiagnosticFailure(__LINE__);
     return Complete();
   }
 
   bool withCallTupleSources(const FunctionalBindCallSource &Call,
       const std::function<bool()> &Complete) {
     if (!Complete || !Call.SourceCall || Call.Storage.Record != Storage.Record ||
-        !ClosedCallTupleConstructors.empty()) return false;
+        !ClosedCallTupleConstructors.empty()) return functionalBindDiagnosticFailure(__LINE__);
     if (Call.CallForwards.empty()) return Complete();
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     const auto Tuple = Actual
@@ -24480,11 +24758,11 @@ class BindSourceProof {
         Actual->Method != Call.Method || Actual->Object != Call.Object ||
         Actual->CallArguments != Call.CallArguments || Actual->CallForwards != Call.CallForwards ||
         Actual->CallForwards.size() > 2 || Tuple->Tuple != Actual->CallArguments ||
-        !Graph.bindFunctionalBindCallTupleTags(*Actual, *Tuple)) return false;
+        !Graph.bindFunctionalBindCallTupleTags(*Actual, *Tuple)) return functionalBindDiagnosticFailure(__LINE__);
     auto ConstructorSource = [&](const CXXConstructExpr *Construction) {
       if (!Construction || !Construction->getConstructor() || ActiveCallTupleConstructor ||
           ActiveScalarParameter || ActiveCompleteCall ||
-          !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+          !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return functionalBindDiagnosticFailure(__LINE__);
       // Only these freshly described incoming constructors may use the shared
       // boolean definition proof. Every reference still closes its qualifier.
       ActiveCallTupleConstructor = Construction->getConstructor();
@@ -24495,31 +24773,31 @@ class BindSourceProof {
       });
       return functionUse(Construction, Construction->getConstructor());
     };
-    if (!ConstructorSource(Tuple->Tuple) || !ConstructorSource(Tuple->Implementation)) return false;
+    if (!ConstructorSource(Tuple->Tuple) || !ConstructorSource(Tuple->Implementation)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Leaf : Tuple->Leaves)
-      if (!ConstructorSource(Leaf)) return false;
+      if (!ConstructorSource(Leaf)) return functionalBindDiagnosticFailure(__LINE__);
     // Keep exact incoming occurrences active through the complete selected and
     // original operator bodies, including ordinary traversal of their children.
-    if (!FactoryBuiltinForwards.empty()) return false;
+    if (!FactoryBuiltinForwards.empty()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Forward : Actual->CallForwards) FactoryBuiltinForwards.insert(Forward);
     for (const auto *Forward : Tuple->Forwards) FactoryBuiltinForwards.insert(Forward);
-    if (FactoryBuiltinForwards.count(nullptr) || FactoryBuiltinForwards.size() > 64) return false;
+    if (FactoryBuiltinForwards.count(nullptr) || FactoryBuiltinForwards.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
     auto RestoreForwards = llvm::make_scope_exit([&] { FactoryBuiltinForwards.clear(); });
-    if (!Graph.TraverseBindCallPhysicalStorageSource()) return false;
+    if (!Graph.TraverseBindCallPhysicalStorageSource()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Forward : Actual->CallForwards)
-      if (!callSource(Forward)) return false;
+      if (!callSource(Forward)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Forward : Tuple->Forwards)
-      if (!callSource(Forward)) return false;
+      if (!callSource(Forward)) return functionalBindDiagnosticFailure(__LINE__);
     return withTupleReferenceAssertionSources(*Tuple, [&] {
       for (const auto *Copy : Tuple->Copies)
-        if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) return false;
+        if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) return functionalBindDiagnosticFailure(__LINE__);
       const auto Tags = describeFunctionalBindCallTupleTagSources(S, SM, *Actual, Context);
-      if (!Tags || Tags->size() != 4) return false;
+      if (!Tags || Tags->size() != 4) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Tag : *Tags)
-        if (!Graph.bindFunctionalBindSpecialMember(Tag.Construction->getConstructor(), true)) return false;
+        if (!Graph.bindFunctionalBindSpecialMember(Tag.Construction->getConstructor(), true)) return functionalBindDiagnosticFailure(__LINE__);
       if (!Graph.bindSourceComplete() || !Actual->CallArguments->getConstructor() ||
           !ClosedCallTupleConstructors.emplace(Actual->CallArguments,
-              Actual->CallArguments->getConstructor()).second) return false;
+              Actual->CallArguments->getConstructor()).second) return functionalBindDiagnosticFailure(__LINE__);
       auto RestoreConstruction = llvm::make_scope_exit([&] { ClosedCallTupleConstructors.clear(); });
       return Complete();
     });
@@ -24529,13 +24807,13 @@ class BindSourceProof {
     if (!ActiveSourceCall || !ActiveSourceCall->CallArguments || Type.isNull() ||
         Child.Root != ActiveSourceCall->OwnedRoot || Child.Parent != ActiveSourceCall->SourceCall ||
         Child.Slot >= ActiveSourceCall->Arguments.size() ||
-        !ActiveSourceCall->Arguments[Child.Slot].Nested || !Child.Invocation.Method || !Child.Invocation.Object) return std::nullopt;
+        !ActiveSourceCall->Arguments[Child.Slot].Nested || !Child.Invocation.Method || !Child.Invocation.Object) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto Object = Child.Invocation.Object->getType();
     const auto Incoming = ActiveSourceCall->CallArguments->getType();
     const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Type->getAsCXXRecordDecl());
     if (!Record || !Record->getIdentifier() ||
         (Record->getName() != "__mu_return_impl" && Record->getName() != "__mu_return_invokable"))
-      return std::nullopt;
+      return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     auto Boolean = [&](const TemplateArgument &Argument, bool Value) {
       return Argument.getKind() == TemplateArgument::Integral &&
           Context.hasSameType(Argument.getIntegralType(), Context.BoolTy) &&
@@ -24578,13 +24856,13 @@ class BindSourceProof {
             Use->Canonical->get(I).structurallyEquals(Context.getCanonicalTemplateArgument(Argument)) &&
             Context.hasSameType(Argument.getAsType(), I ? Incoming : Object);
       }
-      if (!ExactWrittenArguments) return std::nullopt;
+      if (!ExactWrittenArguments) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto *Definition = Owner->getDefinition();
-      if (!Definition || Definition->getNumBases() != 1) return std::nullopt;
+      if (!Definition || Definition->getNumBases() != 1) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto &Base = *Definition->bases_begin();
       const auto *Implementation = Base.getType()->getAsCXXRecordDecl();
       if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public || !Base.getTypeSourceInfo() ||
-          !Specialization(Implementation, "__mu_return_impl")) return std::nullopt;
+          !Specialization(Implementation, "__mu_return_impl")) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto *Impl = cast<ClassTemplateSpecializationDecl>(Implementation);
       const auto &Arguments = Impl->getTemplateArgs();
       if (Arguments.size() != 5 || Arguments[0].getKind() != TemplateArgument::Type ||
@@ -24592,26 +24870,26 @@ class BindSourceProof {
           !Context.hasSameType(Arguments[0].getAsType(), Object) ||
           !Context.hasSameType(Arguments[4].getAsType(), Incoming) ||
           !Boolean(Arguments[1], false) || !Boolean(Arguments[2], true) || !Boolean(Arguments[3], false))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto *ImplDefinition = Impl->getDefinition();
-      if (!ImplDefinition || ImplDefinition->getNumBases() != 1) return std::nullopt;
+      if (!ImplDefinition || ImplDefinition->getNumBases() != 1) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto &InvokerBase = *ImplDefinition->bases_begin();
       const auto *InvokerRecord = InvokerBase.getType()->getAsCXXRecordDecl();
       if (InvokerBase.isVirtual() || InvokerBase.getAccessSpecifier() != AS_public ||
           !InvokerBase.getTypeSourceInfo() || !Specialization(InvokerRecord, "__mu_return_invokable"))
-        return std::nullopt;
+        return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       const auto *Invoker = cast<ClassTemplateSpecializationDecl>(InvokerRecord);
       const auto &InvokerArguments = Invoker->getTemplateArgs();
       if (InvokerArguments.size() != 3 || !Boolean(InvokerArguments[0], true) ||
           InvokerArguments[1].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(InvokerArguments[1].getAsType(), Object) ||
           InvokerArguments[2].getKind() != TemplateArgument::Pack ||
-          InvokerArguments[2].pack_size() != Child.Invocation.Method->getNumParams()) return std::nullopt;
+          InvokerArguments[2].pack_size() != Child.Invocation.Method->getNumParams()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       unsigned Index = 0;
       for (const auto &Argument : InvokerArguments[2].pack_elements())
         if (Argument.getKind() != TemplateArgument::Type ||
             !Context.hasSameType(Argument.getAsType(), Child.Invocation.Method->getParamDecl(Index++)->getType()))
-          return std::nullopt;
+          return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       TypeLoc Location;
       if (Record && Record->getCanonicalDecl() == Impl->getCanonicalDecl())
         Location = Base.getTypeSourceInfo()->getTypeLoc();
@@ -24621,7 +24899,7 @@ class BindSourceProof {
       auto Name = Location;
       if (const auto Elaborated = Name.getAs<ElaboratedTypeLoc>()) Name = Elaborated.getNamedTypeLoc();
       const auto Written = Name.getAs<TemplateSpecializationTypeLoc>();
-      if (!Written || !Check.location(Written.getTemplateNameLoc(), {"__functional/bind.h"})) return std::nullopt;
+      if (!Written || !Check.location(Written.getTemplateNameLoc(), {"__functional/bind.h"})) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       bool Retained = false;
       for (const auto *Actual : Sources)
         if (Actual && Actual->Kind == TemplateSourceKind::Type && Actual->FunctionalBindConstraint &&
@@ -24630,10 +24908,10 @@ class BindSourceProof {
             Actual->Location == Written.getTemplateNameLoc() &&
             Actual->Written->getLAngleLoc() == Written.getLAngleLoc() &&
             Actual->Written->getRAngleLoc() == Written.getRAngleLoc()) Retained = true;
-      if (!Retained) return std::nullopt;
+      if (!Retained) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
       return Location;
     }
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
 
   bool nestedMetadataTraitTypeSource(BindSourceProof &Parent,
@@ -24642,12 +24920,12 @@ class BindSourceProof {
         ActiveCompleteCall->SourceCall != Child.Invocation.SourceCall ||
         ActiveCompleteCall->Method != Child.Invocation.Method ||
         ActiveCompleteCall->OwnedRoot != Child.Root || ActiveCompleteCall->OwnedPath != Child.Path ||
-        ActiveCompleteCall->Storage.Record != Storage.Record || !Graph.bindSourceComplete()) return false;
+        ActiveCompleteCall->Storage.Record != Storage.Record || !Graph.bindSourceComplete()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Location = Parent.nestedMetadataTraitTypeLocation(Child, Type);
     const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Child.Invocation, Context);
     if (!Location || Location->getOpaqueData() != Expected.getOpaqueData() || Location->getType() != Expected.getType() ||
         !Fresh || Fresh->OwnedRoot != Child.Root || Fresh->OwnedPath != Child.Path ||
-        Fresh->SourceCall != Child.Invocation.SourceCall || Fresh->Method != Child.Invocation.Method) return false;
+        Fresh->SourceCall != Child.Invocation.SourceCall || Fresh->Method != Child.Invocation.Method) return functionalBindDiagnosticFailure(__LINE__);
     ActiveNestedObjectQuery = &Child;
     ActiveNestedReturnLocation = *Location;
     auto Restore = llvm::make_scope_exit([&] {
@@ -24664,11 +24942,11 @@ class BindSourceProof {
         const auto Probe = describeFunctionalBindNestedTryCallSignatureSource(S, SM, Method, Child, Context);
         if (!Probe) continue;
         if (Seen.size() == 64 || !tryCallSignatureSource(*Probe) || !tryCallFallbackSource(*Probe) ||
-            !Graph.bindFunctionalBindResultProbe(*Probe)) return false;
+            !Graph.bindFunctionalBindResultProbe(*Probe)) return functionalBindDiagnosticFailure(__LINE__);
         Seen.insert(Method);
         Probes.push_back(*Probe);
       }
-      if (Probes.empty() || !closeCompleteProbeSources(Probes)) return false;
+      if (Probes.empty() || !closeCompleteProbeSources(Probes)) return functionalBindDiagnosticFailure(__LINE__);
       return Graph.TraverseTypeLoc(*Location) && Graph.bindSourceComplete();
     });
   }
@@ -24677,8 +24955,39 @@ class BindSourceProof {
       const FunctionalBindNestedArgumentSource &Child, QualType Type) {
     if (!ActiveSourceCall || Type.isNull() || Child.Root != ActiveSourceCall->OwnedRoot ||
         Child.Parent != ActiveSourceCall->SourceCall || Child.Slot >= ActiveSourceCall->Arguments.size() ||
-        !ActiveSourceCall->Arguments[Child.Slot].Nested) return std::nullopt;
+        !ActiveSourceCall->Arguments[Child.Slot].Nested) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     if (const auto Metadata = nestedMetadataTraitTypeLocation(Child, Type)) return Metadata;
+    const auto *MuRecord = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Type->getAsCXXRecordDecl());
+    if (MuRecord && MuRecord->getIdentifier() &&
+        (MuRecord->getName() == "__mu_return_impl" || MuRecord->getName() == "__mu_return_invokable") &&
+        std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+      static thread_local unsigned MuQueries = 0;
+      if (MuQueries++ < 24) {
+        const auto QueryName = Type.getAsString();
+        const auto ObjectName = Child.Invocation.Object ? Child.Invocation.Object->getType().getAsString() : std::string("<none>");
+        std::fprintf(stderr, "BIND-MU-QUERY slot=%u path=%zu calltuple=%u object=%.*s query=%.*s\n",
+            Child.Slot, Child.Path.size(), unsigned(bool(ActiveSourceCall->CallArguments)),
+            int(std::min<std::size_t>(ObjectName.size(), 1024)), ObjectName.c_str(),
+            int(std::min<std::size_t>(QueryName.size(), 1024)), QueryName.c_str());
+        unsigned Count = 0;
+        for (const auto *Use : Sources) {
+          const auto *Owner = Use ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(Use->Declaration) : nullptr;
+          const auto *Template = Use ? Use->Template : nullptr;
+          if (!Use || !Template || !Template->getIdentifier() ||
+              (Template->getName() != "__mu_return" && Template->getName() != "__mu_return_impl" &&
+               Template->getName() != "__mu_return_invokable") || Count++ >= 64) continue;
+          const auto OwnerName = Owner ? Context.getRecordType(Owner).getAsString() : std::string("<none>");
+          const auto SourceType = Use->Type ? QualType(Use->Type, 0).getAsString() : std::string("<none>");
+          std::fprintf(stderr, "BIND-MU-SOURCE kind=%u constrained=%u owner=%u selected=%u exacttype=%u canonical=%d sugared=%d ownername=%.*s sourcetype=%.*s\n",
+              unsigned(Use->Kind), unsigned(Use->FunctionalBindConstraint), unsigned(bool(Owner)),
+              unsigned(Owner && Template == Owner->getSpecializedTemplate()),
+              unsigned(Use->Type == Type.getTypePtr()), Use->Canonical ? int(Use->Canonical->size()) : -1,
+              Use->Sugared ? int(Use->Sugared->size()) : -1,
+              int(std::min<std::size_t>(OwnerName.size(), 1024)), OwnerName.c_str(),
+              int(std::min<std::size_t>(SourceType.size(), 1024)), SourceType.c_str());
+        }
+      }
+    }
     for (const auto *Call : {Child.Unwrap, Child.Expand}) {
       const auto *Function = Call ? Call->getDirectCallee() : nullptr;
       const auto Prototype = Function && Function->getTypeSourceInfo()
@@ -24690,6 +24999,17 @@ class BindSourceProof {
       auto Location = Return;
       for (unsigned Depth = 0; !Location.isNull() && Depth < 64; ++Depth, Location = Location.getNextTypeLoc()) {
         ExactType |= Type == Location.getType();
+        if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) {
+          const auto Actual = Type.getAsString();
+          const auto Written = Location.getType().getAsString();
+          const auto Name = Function->getQualifiedNameAsString();
+          std::fprintf(stderr, "BIND-NESTED-RESULT-LOCATION slot=%u path=%zu exact=%u canonical=%u function=%.*s actual=%.*s written=%.*s\n",
+              Child.Slot, Child.Path.size(), unsigned(ExactType),
+              unsigned(Context.hasSameType(Type, Location.getType())),
+              int(std::min<std::size_t>(Name.size(), 512)), Name.c_str(),
+              int(std::min<std::size_t>(Actual.size(), 1024)), Actual.c_str(),
+              int(std::min<std::size_t>(Written.size(), 1024)), Written.c_str());
+        }
         const auto Alias = Location.getAs<TemplateSpecializationTypeLoc>();
         const auto *Template = Alias ? Alias.getTypePtr()->getTemplateName().getAsTemplateDecl() : nullptr;
         if (Alias && Alias.getTypePtr()->isTypeAlias() && Template && Template->getIdentifier() &&
@@ -24697,14 +25017,14 @@ class BindSourceProof {
             Check.family(Template, {"__type_traits/invoke.h"}) && ExactType) return Return;
       }
     }
-    return std::nullopt;
+    return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
   }
 
   bool nestedTraitTypeSource(BindSourceProof &Parent,
       const FunctionalBindNestedArgumentSource &Child, QualType Type, TypeLoc Expected) {
     const auto Location = Parent.nestedTraitTypeLocation(Child, Type);
     if (!Location || Location->getOpaqueData() != Expected.getOpaqueData() ||
-        Location->getType() != Expected.getType()) return false;
+        Location->getType() != Expected.getType()) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto Metadata = Parent.nestedMetadataTraitTypeLocation(Child, Type))
       return Metadata->getOpaqueData() == Expected.getOpaqueData() &&
           Metadata->getType() == Expected.getType() &&
@@ -24713,14 +25033,14 @@ class BindSourceProof {
   }
 
   std::optional<bool> nestedTraitTypeSource(QualType Type) {
-    if (!Ready || !ActiveSourceCall || Type.isNull()) return std::nullopt;
+    if (!Ready || !ActiveSourceCall || Type.isNull()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     const auto *Record = Type->getAsCXXRecordDecl();
     const auto *Alias = dyn_cast<TemplateSpecializationType>(Type.getTypePtr());
     const auto *Template = Alias ? Alias->getTemplateName().getAsTemplateDecl() : nullptr;
     if (!(Record && Record->getIdentifier() &&
             (Record->getName() == "__mu_return_impl" || Record->getName() == "__mu_return_invokable")) &&
         !(Alias && Alias->isTypeAlias() && Template && Template->getIdentifier() &&
-            Template->getName() == "__invoke_result_t")) return std::nullopt;
+            Template->getName() == "__invoke_result_t")) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     std::vector<std::pair<unsigned, TypeLoc>> Locations;
     for (unsigned Slot = 0; Slot < ActiveSourceCall->Arguments.size(); ++Slot) {
       const auto &Argument = ActiveSourceCall->Arguments[Slot];
@@ -24728,18 +25048,27 @@ class BindSourceProof {
       if (const auto Location = nestedTraitTypeLocation(*Argument.Nested, Type))
         Locations.emplace_back(Slot, *Location);
     }
-    if (Locations.empty()) return std::nullopt;
+    if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE") &&
+        std::any_of(ActiveSourceCall->Arguments.begin(), ActiveSourceCall->Arguments.end(),
+            [](const auto &Argument) { return bool(Argument.Nested); })) {
+      const auto Name = Type.getAsString();
+      std::fprintf(stderr, "BIND-NESTED-TRAIT-LOOKUP matches=%zu active=%u cached=%u completed=%zu type=%.*s\n",
+          Locations.size(), unsigned(bool(ActiveCompleteCall)),
+          unsigned(CompletedNestedTraitTypes.count(Type.getAsOpaquePtr())), CompletedNestedTraitTypes.size(),
+          int(std::min<std::size_t>(Name.size(), 1024)), Name.c_str());
+    }
+    if (Locations.empty()) return (functionalBindDiagnosticFailure(__LINE__), std::nullopt);
     return Graph.withBindSourceChild([&] {
       const auto Key = Type.getAsOpaquePtr();
       if (CompletedNestedTraitTypes.count(Key)) return Graph.bindSourceComplete();
-      if (ActiveNestedTraitTypes.size() == 64 || !ActiveNestedTraitTypes.insert(Key).second) return false;
+      if (ActiveNestedTraitTypes.size() == 64 || !ActiveNestedTraitTypes.insert(Key).second) return functionalBindDiagnosticFailure(__LINE__);
       auto Restore = llvm::make_scope_exit([&] { ActiveNestedTraitTypes.erase(Key); });
       for (const auto &[Slot, Location] : Locations)
         if (!withNestedCallCompleteSource(*ActiveSourceCall, Slot,
               [&](const FunctionalBindNestedArgumentSource &Child, BindSourceProof &Dependency) {
                 return Dependency.nestedTraitTypeSource(*this, Child, Type, Location);
-              })) return false;
-      if (CompletedNestedTraitTypes.size() == 64) return false;
+              })) return functionalBindDiagnosticFailure(__LINE__);
+      if (CompletedNestedTraitTypes.size() == 64) return functionalBindDiagnosticFailure(__LINE__);
       CompletedNestedTraitTypes.insert(Key);
       return Graph.bindSourceComplete();
     });
@@ -24750,7 +25079,7 @@ class BindSourceProof {
         ActiveCompleteCall->SourceCall != Child.Invocation.SourceCall ||
         ActiveCompleteCall->Method != Child.Invocation.Method ||
         ActiveCompleteCall->OwnedRoot != Child.Root || ActiveCompleteCall->OwnedPath != Child.Path ||
-        ActiveCompleteCall->Storage.Record != Storage.Record || !Graph.bindSourceComplete()) return false;
+        ActiveCompleteCall->Storage.Record != Storage.Record || !Graph.bindSourceComplete()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Child.Invocation, Context);
     const auto *Method = Child.Invocation.Method;
     const auto *Call = Child.Invocation.SourceCall;
@@ -24761,23 +25090,24 @@ class BindSourceProof {
         Fresh->SourceCall != Call || Fresh->Method != Method || !Return ||
         Call->getType() != Type || Type != Method->getReturnType().getNonReferenceType() ||
         Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()) ||
-        !Context.hasSameType(Return.getType(), Method->getReturnType())) return false;
+        !Context.hasSameType(Return.getType(), Method->getReturnType())) return functionalBindDiagnosticFailure(__LINE__);
     const auto ClosedApply = completedCallFunction(Child.Invocation.Apply);
-    if (!ClosedApply || *ClosedApply != Child.Invocation.Apply->getDirectCallee()) return false;
+    if (!ClosedApply || *ClosedApply != Child.Invocation.Apply->getDirectCallee()) return functionalBindDiagnosticFailure(__LINE__);
     return Graph.withBindScalarConstraintSource([&] {
       return Graph.TraverseTypeLoc(Return) && Graph.TraverseType(Type) && Graph.bindSourceComplete();
     });
   }
 
   bool nestedReturnTypeSource(const FunctionalBindNestedArgumentSource &Child, TypeLoc Location) {
+    if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) std::fprintf(stderr, "BIND-RETURN-PROOF-ENTER active=%u path=%zu\n", unsigned(bool(ActiveCompleteCall)), Child.Path.size());
     if (!Ready || !ActiveCompleteCall || ActiveNestedObjectQuery || ActiveNestedReturnLocation ||
         ActiveCompleteCall->SourceCall != Child.Invocation.SourceCall ||
         ActiveCompleteCall->Method != Child.Invocation.Method ||
-        ActiveCompleteCall->Storage.Record != Storage.Record) return false;
+        ActiveCompleteCall->Storage.Record != Storage.Record) return functionalBindDiagnosticFailure(__LINE__);
     const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Child.Invocation, Context);
     if (!Fresh || Fresh->OwnedRoot != Child.Root || Fresh->OwnedPath != Child.Path ||
         Fresh->SourceCall != Child.Invocation.SourceCall || Fresh->Method != Child.Invocation.Method)
-      return false;
+      return functionalBindDiagnosticFailure(__LINE__);
     bool ActualReturn = false;
     for (const auto *Call : {Child.Unwrap, Child.Expand}) {
       const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -24786,7 +25116,7 @@ class BindSourceProof {
       const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
       ActualReturn |= Return && Return.getOpaqueData() == Location.getOpaqueData() && Return.getType() == Location.getType();
     }
-    if (!ActualReturn) return false;
+    if (!ActualReturn) return functionalBindDiagnosticFailure(__LINE__);
     ActiveNestedObjectQuery = &Child;
     ActiveNestedReturnLocation = Location;
     auto Restore = llvm::make_scope_exit([&] {
@@ -24803,19 +25133,19 @@ class BindSourceProof {
         const auto Probe = describeFunctionalBindNestedTryCallSignatureSource(S, SM, Method, Child, Context);
         if (!Probe) continue;
         if (Seen.size() == 64 || !tryCallSignatureSource(*Probe) || !tryCallFallbackSource(*Probe) ||
-            !Graph.bindFunctionalBindResultProbe(*Probe)) return false;
+            !Graph.bindFunctionalBindResultProbe(*Probe)) return functionalBindDiagnosticFailure(__LINE__);
         Seen.insert(Method);
         Probes.push_back(*Probe);
       }
-      if (Probes.empty() || !closeCompleteProbeSources(Probes)) return false;
+      if (Probes.empty() || !closeCompleteProbeSources(Probes)) return functionalBindDiagnosticFailure(__LINE__);
       return Graph.TraverseTypeLoc(Location) && Graph.bindSourceComplete();
     });
   }
 
   bool closeCompleteCall(const CallExpr *Expression, const FunctionDecl *Function) {
-    if (!Expression) return false;
+    if (!Expression) return functionalBindDiagnosticFailure(__LINE__);
     if (const auto Existing = completedCallFunction(Expression)) return *Existing == Function;
-    if (ClosedCompleteCalls.size() == 64) return false;
+    if (ClosedCompleteCalls.size() == 64) return functionalBindDiagnosticFailure(__LINE__);
     return ClosedCompleteCalls.emplace(Expression, CompletedCallSource{Function}).second;
   }
   bool closeCompleteProbeSources(llvm::ArrayRef<FunctionalBindTryCallSignatureSource> CompletedProbes) {
@@ -24826,23 +25156,23 @@ class BindSourceProof {
       if (!Owner || !Function || Owner->getDirectCallee() != Function ||
           Found == ClosedCompleteCalls.end() || Found->second.Function != Function ||
           Found->second.HelperCall || Found->second.Helper || Found->second.PrimaryHelperCall ||
-          Expressions.size() > 64) return false;
+          Expressions.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
       std::vector<const CallExpr *> Children;
       std::map<const CallExpr *, const FunctionDecl *> NestedChildren;
       for (const auto *Expression : Expressions) {
         if (!Expression) continue;
-        if (Expression == Owner) return false;
+        if (Expression == Owner) return functionalBindDiagnosticFailure(__LINE__);
         if (const auto *Selected = Expression->getDirectCallee()) {
           if (!Nested || !ActiveNestedObjectQuery || !ActiveNestedReturnLocation ||
               Nested->Root != ActiveNestedObjectQuery->Root || Nested->Path != ActiveNestedObjectQuery->Path ||
-              Selected != ActiveNestedObjectQuery->Invocation.Method) return false;
+              Selected != ActiveNestedObjectQuery->Invocation.Method) return functionalBindDiagnosticFailure(__LINE__);
           if (const auto Existing = completedCallFunction(Expression))
-            if (*Existing != Selected) return false;
+            if (*Existing != Selected) return functionalBindDiagnosticFailure(__LINE__);
           NestedChildren.emplace(Expression, Selected);
           continue;
         }
         if (const auto Existing = completedCallFunction(Expression))
-          if (*Existing) return false;
+          if (*Existing) return functionalBindDiagnosticFailure(__LINE__);
         if (std::find(Children.begin(), Children.end(), Expression) == Children.end())
           Children.push_back(Expression);
       }
@@ -24862,55 +25192,55 @@ class BindSourceProof {
       if (!Probe.ResultCall || !Probe.Invoke || !Probe.Function || !Dispatcher.Function ||
           Probe.ResultCall->getDirectCallee() != Probe.Function ||
           Probe.Invoke->getDirectCallee() != Dispatcher.Function ||
-          !closeCompleteCall(Probe.ResultCall, Probe.Function) || !closeCompleteCall(Probe.Invoke, Dispatcher.Function)) return false;
+          !closeCompleteCall(Probe.ResultCall, Probe.Function) || !closeCompleteCall(Probe.Invoke, Dispatcher.Function)) return functionalBindDiagnosticFailure(__LINE__);
       // These exact concrete declval calls closed their selected and original
       // signatures above. Their ordinary written children still traverse here.
       auto CloseDeclval = [&](const CallExpr *Expression) {
         const auto *Selected = Expression ? Expression->getDirectCallee() : nullptr;
         const auto Input = DeclvalInputs.find(Expression);
         if (!Selected || !CompletedDeclvalInputs.count(Expression) || Input == DeclvalInputs.end())
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         const auto Source = describeFunctionalBindDeclvalSource(S, SM, Expression, Input->second, Context);
         if (!Source || Source->Call != Expression || Source->Function != Selected || !Source->Helper ||
             !Source->HelperCall || Source->HelperCall->getDirectCallee() != Source->Helper ||
-            !Source->PrimaryHelperCall || Source->PrimaryHelperCall->getDirectCallee()) return false;
+            !Source->PrimaryHelperCall || Source->PrimaryHelperCall->getDirectCallee()) return functionalBindDiagnosticFailure(__LINE__);
         // One completed declval source binds its selected call and both
         // exact helper calls. Keep that source in one of the same 64 slots;
         // reentry still walks every ordinary written type and child.
         if (Source->HelperCall == Expression || Source->PrimaryHelperCall == Expression ||
-            Source->HelperCall == Source->PrimaryHelperCall || !closeCompleteCall(Expression, Selected)) return false;
+            Source->HelperCall == Source->PrimaryHelperCall || !closeCompleteCall(Expression, Selected)) return functionalBindDiagnosticFailure(__LINE__);
         const auto Found = ClosedCompleteCalls.find(Expression);
-        if (Found == ClosedCompleteCalls.end()) return false;
+        if (Found == ClosedCompleteCalls.end()) return functionalBindDiagnosticFailure(__LINE__);
         auto &Closed = Found->second;
         if ((Closed.HelperCall && Closed.HelperCall != Source->HelperCall) ||
             (Closed.Helper && Closed.Helper != Source->Helper) ||
-            (Closed.PrimaryHelperCall && Closed.PrimaryHelperCall != Source->PrimaryHelperCall)) return false;
+            (Closed.PrimaryHelperCall && Closed.PrimaryHelperCall != Source->PrimaryHelperCall)) return functionalBindDiagnosticFailure(__LINE__);
         if (const auto Existing = completedCallFunction(Source->HelperCall))
-          if (*Existing != Source->Helper) return false;
+          if (*Existing != Source->Helper) return functionalBindDiagnosticFailure(__LINE__);
         if (const auto Existing = completedCallFunction(Source->PrimaryHelperCall))
-          if (*Existing) return false;
+          if (*Existing) return functionalBindDiagnosticFailure(__LINE__);
         Closed.HelperCall = Source->HelperCall;
         Closed.Helper = Source->Helper;
         Closed.PrimaryHelperCall = Source->PrimaryHelperCall;
         return true;
       };
       for (const auto *Expression : Probe.Declvals)
-        if (!CloseDeclval(Expression)) return false;
+        if (!CloseDeclval(Expression)) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Expression : Dispatcher.SpecializedDeclvals)
-        if (!CloseDeclval(Expression)) return false;
+        if (!CloseDeclval(Expression)) return functionalBindDiagnosticFailure(__LINE__);
       if (std::any_of(Probe.OriginalInvokes.begin(), Probe.OriginalInvokes.end(),
               [](const auto *Expression) { return !Expression; }) ||
-          !CloseMetadata(Probe.ResultCall, Probe.Function, Probe.OriginalInvokes)) return false;
+          !CloseMetadata(Probe.ResultCall, Probe.Function, Probe.OriginalInvokes)) return functionalBindDiagnosticFailure(__LINE__);
       const auto *PrimaryException = dyn_cast_or_null<CXXNoexceptExpr>(Dispatcher.PrimaryException);
       const auto *PrimaryNoexcept = PrimaryException
           ? dyn_cast_or_null<CallExpr>(Check.stripped(PrimaryException->getOperand())) : nullptr;
       const auto *ActualException = dyn_cast_or_null<CXXNoexceptExpr>(Dispatcher.ActualException);
       const auto *ActualNoexcept = ActualException
           ? dyn_cast_or_null<CallExpr>(Check.stripped(ActualException->getOperand())) : nullptr;
-      if (!Dispatcher.SignatureCall || !Dispatcher.SpecializedCall) return false;
+      if (!Dispatcher.SignatureCall || !Dispatcher.SpecializedCall) return functionalBindDiagnosticFailure(__LINE__);
       const CallExpr *Expressions[] = {Dispatcher.SignatureCall, Dispatcher.SpecializedCall,
                                         PrimaryNoexcept, ActualNoexcept};
-      if (!CloseMetadata(Probe.Invoke, Dispatcher.Function, Expressions, Dispatcher.Nested.get())) return false;
+      if (!CloseMetadata(Probe.Invoke, Dispatcher.Function, Expressions, Dispatcher.Nested.get())) return functionalBindDiagnosticFailure(__LINE__);
     }
     return true;
   }
@@ -24947,7 +25277,7 @@ public:
   }
   bool factory(const FunctionalBindFactorySource &Factory) {
     if (!Ready || Factory.Storage.Record != Storage.Record ||
-        !Factory.SourceCall || !S.owns(SM, Factory.SourceCall->getExprLoc())) return false;
+        !Factory.SourceCall || !S.owns(SM, Factory.SourceCall->getExprLoc())) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindFactorySource(S, SM, Factory.SourceCall, Context);
     const auto Tuple = describeFunctionalBindTupleConstructionSource(S, SM, Factory, Context);
     const auto *Reference = dyn_cast<DeclRefExpr>(Factory.SourceCall->getCallee()->IgnoreParenImpCasts());
@@ -24973,21 +25303,21 @@ public:
         !functionUse(Factory.Construction, Factory.Construction->getConstructor()) ||
         (!Storage.Arguments.Elements.empty() &&
          (!boundTupleConstructorSource(Factory, *Tuple) ||
-          !functionUse(Tuple->Implementation, Tuple->Implementation->getConstructor())))) return false;
+          !functionUse(Tuple->Implementation, Tuple->Implementation->getConstructor())))) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Leaf : Tuple->Leaves) {
-      if (ActiveFactoryLeafConstructor) return false;
+      if (ActiveFactoryLeafConstructor) return functionalBindDiagnosticFailure(__LINE__);
       ActiveFactoryLeafConstructor = Leaf->getConstructor();
       auto RestoreLeaf = llvm::make_scope_exit([&] { ActiveFactoryLeafConstructor = nullptr; });
-      if (!functionUse(Leaf, Leaf->getConstructor())) return false;
+      if (!functionUse(Leaf, Leaf->getConstructor())) return functionalBindDiagnosticFailure(__LINE__);
     }
     // Bind only fresh, independently described occurrences. These sets are
     // local proof state and never publish a runtime or ordinary SDK approval.
-    if (!FactoryBuiltinForwards.empty()) return false;
+    if (!FactoryBuiltinForwards.empty()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Forward : Actual->FactoryForwards) FactoryBuiltinForwards.insert(Forward);
     FactoryBuiltinForwards.insert(Actual->CallableForward);
     for (const auto *Forward : Actual->BoundForwards) FactoryBuiltinForwards.insert(Forward);
     for (const auto *Forward : Tuple->Forwards) FactoryBuiltinForwards.insert(Forward);
-    if (FactoryBuiltinForwards.count(nullptr) || FactoryBuiltinForwards.size() > 64) return false;
+    if (FactoryBuiltinForwards.count(nullptr) || FactoryBuiltinForwards.size() > 64) return functionalBindDiagnosticFailure(__LINE__);
     auto RestoreForwards = llvm::make_scope_exit([&] { FactoryBuiltinForwards.clear(); });
     const auto *Body = dyn_cast_or_null<CompoundStmt>(Factory.Factory->getBody());
     const auto *Statement = Body && Body->size() == 2 ? dyn_cast<DeclStmt>(*Body->body_begin()) : nullptr;
@@ -24996,37 +25326,37 @@ public:
     if (!Alias || !Alias->getTypeSourceInfo() || !family(Alias) ||
         !Graph.TraverseTypeLoc(Alias->getTypeSourceInfo()->getTypeLoc()) ||
         !Graph.TraverseType(Factory.Construction->getType()) ||
-        !Graph.bindFunctionalBindStorageSource()) return false;
+        !Graph.bindFunctionalBindStorageSource()) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Field : {Storage.Callable, Storage.BoundArguments})
       if (!Field || !Field->getTypeSourceInfo() || !family(Field) ||
-          !Graph.TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return false;
+          !Graph.TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Forward : Factory.FactoryForwards)
-      if (!callSource(Forward)) return false;
-    if (!callSource(Factory.CallableForward)) return false;
+      if (!callSource(Forward)) return functionalBindDiagnosticFailure(__LINE__);
+    if (!callSource(Factory.CallableForward)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Forward : Factory.BoundForwards)
-      if (!callSource(Forward)) return false;
+      if (!callSource(Forward)) return functionalBindDiagnosticFailure(__LINE__);
     for (const auto *Forward : Tuple->Forwards)
-      if (!callSource(Forward)) return false;
+      if (!callSource(Forward)) return functionalBindDiagnosticFailure(__LINE__);
     return withTupleReferenceAssertionSources(*Tuple, [&] {
       if (!Factory.WeakBaseConstruction ||
           !Graph.bindFunctionalBindSpecialMember(Factory.WeakBaseConstruction->getConstructor(), true))
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Copy : Tuple->Copies)
-        if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) return false;
+        if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) return functionalBindDiagnosticFailure(__LINE__);
       if (Storage.Arguments.Elements.empty()) return Graph.bindSourceComplete();
       const auto Tags = describeFunctionalBindTupleTagSources(S, SM, Factory, Context);
-      if (!Tags || Tags->size() != 4) return false;
+      if (!Tags || Tags->size() != 4) return functionalBindDiagnosticFailure(__LINE__);
       for (const auto &Tag : *Tags)
-        if (!Graph.bindFunctionalBindSpecialMember(Tag.Construction->getConstructor(), true)) return false;
+        if (!Graph.bindFunctionalBindSpecialMember(Tag.Construction->getConstructor(), true)) return functionalBindDiagnosticFailure(__LINE__);
       return Graph.bindSourceComplete();
     });
   }
   bool withNestedCallCompleteSource(const FunctionalBindCallSource &Parent, unsigned Slot,
       const std::function<bool(const FunctionalBindNestedArgumentSource &, BindSourceProof &)> &Complete) {
     return Graph.withBindSourceChild([&] {
-      if (!Ready || !Complete || Parent.Storage.Record != Storage.Record) return false;
+      if (!Ready || !Complete || Parent.Storage.Record != Storage.Record) return functionalBindDiagnosticFailure(__LINE__);
       const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
-      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
+      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return functionalBindDiagnosticFailure(__LINE__);
       const auto &Child = *Fresh->Arguments[Slot].Nested;
       const auto *Record = Fresh->Storage.Arguments.Elements[Slot].getType()->getAsCXXRecordDecl();
       auto Path = Fresh->OwnedPath;
@@ -25037,7 +25367,7 @@ public:
           Child.Invocation.OwnedRoot != Fresh->OwnedRoot || Child.Get != Fresh->Arguments[Slot].Get ||
           Child.Unwrap != Fresh->Arguments[Slot].Unwrap || !Child.Expand || !Child.IndexAlias ||
           !Child.Indices || Child.Invocation.Storage.Record->getCanonicalDecl() != Record->getCanonicalDecl() ||
-          !Context.hasSameType(Child.ResultType, Child.Invocation.Method->getReturnType())) return false;
+          !Context.hasSameType(Child.ResultType, Child.Invocation.Method->getReturnType())) return functionalBindDiagnosticFailure(__LINE__);
       // This child's defaults, source packets, probes and bodies spend the
       // parent's aggregate budget. A failed child poisons the owning graph.
       BindSourceProof Dependency(S, SM, Context, Child.Invocation.Storage, Sources, Selections,
@@ -25052,12 +25382,12 @@ public:
       const std::function<bool(const FunctionalBindCallSource &)> &AfterComplete = {}) {
     if (!Ready || ActiveSourceCall || ActiveCompleteCall || ActiveUnusedVoidConversion || !ClosedCompleteCalls.empty() || !ClosedCallTupleConstructors.empty() ||
         !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
-        Call.Storage.Record != Storage.Record) return false;
+        Call.Storage.Record != Storage.Record) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Object != Call.Object || Actual->Storage.Record != Storage.Record ||
-        Actual->Arguments.size() != Storage.Arguments.Elements.size()) return false;
+        Actual->Arguments.size() != Storage.Arguments.Elements.size()) return functionalBindDiagnosticFailure(__LINE__);
     ActiveSourceCall = &*Actual;
     auto RestoreSourceCall = llvm::make_scope_exit([&] {
       ActiveNestedTraitTypes.clear();
@@ -25066,10 +25396,10 @@ public:
     });
     // All selected children and both metadata probe alternatives close in
     // this proof and share its original graph budget.
-    if (!callAuxiliary(*Actual)) return false;
+    if (!callAuxiliary(*Actual)) return functionalBindDiagnosticFailure(__LINE__);
     return withCallTupleSources(*Actual, [&] {
       if (!callGetSource(*Actual) || !callUnwrapSource(*Actual) ||
-          !callInvokeBody(*Actual)) return false;
+          !callInvokeBody(*Actual)) return functionalBindDiagnosticFailure(__LINE__);
       std::vector<QualType> Forwarded;
       for (const auto &Argument : Actual->Arguments) Forwarded.push_back(Argument.ForwardedType);
       std::set<const CXXMethodDecl *> Probes;
@@ -25083,12 +25413,12 @@ public:
             S, SM, Function, Storage, Forwarded, Context);
         if (!Probe) continue;
         if (Probes.size() == 64 || !tryCallSignatureSource(*Probe) ||
-            !tryCallFallbackSource(*Probe) || !Graph.bindFunctionalBindResultProbe(*Probe)) return false;
+            !tryCallFallbackSource(*Probe) || !Graph.bindFunctionalBindResultProbe(*Probe)) return functionalBindDiagnosticFailure(__LINE__);
         Probes.insert(Function);
         CompletedProbes.push_back(*Probe);
       }
-      if (Probes.empty()) return false;
-      if (ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
+      if (Probes.empty()) return functionalBindDiagnosticFailure(__LINE__);
+      if (ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return functionalBindDiagnosticFailure(__LINE__);
       ActiveCompleteCall = &*Actual;
       auto Restore = llvm::make_scope_exit([&] {
         ClosedCompleteCalls.clear();
@@ -25099,11 +25429,11 @@ public:
       for (const auto &Argument : Actual->Arguments)
         if (!Argument.Get->getDirectCallee() || !Argument.Unwrap->getDirectCallee() ||
             !closeCompleteCall(Argument.Get, Argument.Get->getDirectCallee()) ||
-            !closeCompleteCall(Argument.Unwrap, Argument.Unwrap->getDirectCallee())) return false;
+            !closeCompleteCall(Argument.Unwrap, Argument.Unwrap->getDirectCallee())) return functionalBindDiagnosticFailure(__LINE__);
       if (!Actual->Invoke->getDirectCallee() ||
-          !closeCompleteCall(Actual->Invoke, Actual->Invoke->getDirectCallee())) return false;
+          !closeCompleteCall(Actual->Invoke, Actual->Invoke->getDirectCallee())) return functionalBindDiagnosticFailure(__LINE__);
 
-      if (!closeCompleteProbeSources(CompletedProbes)) return false;
+      if (!closeCompleteProbeSources(CompletedProbes)) return functionalBindDiagnosticFailure(__LINE__);
       // The exact probe and dispatcher sources closed above in this same graph.
       // Re-entering their written result/noexcept expressions still walks every
       // original and concrete child; these identities grant no runtime body.
@@ -25116,9 +25446,9 @@ public:
             !Use || Use->requiresADL() || Use->getNumDecls() != Count ||
             Use->getName().getNameKind() != DeclarationName::Identifier ||
             Use->getName().getAsIdentifierInfo()->getName() != Name ||
-            !Check.location(Expression->getExprLoc(), {"__functional/bind.h"})) return false;
+            !Check.location(Expression->getExprLoc(), {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Chosen = Selected ? Selected->getPrimaryTemplate() : nullptr;
-        if (Selected && !Chosen) return false;
+        if (Selected && !Chosen) return functionalBindDiagnosticFailure(__LINE__);
         std::set<const FunctionTemplateDecl *> Seen;
         std::vector<const NamedDecl *> Declarations;
         unsigned Matches = 0;
@@ -25127,7 +25457,7 @@ public:
           const auto *Function = Template ? Template->getTemplatedDecl() : nullptr;
           if (!Template || !Function || isa<CXXMethodDecl>(Function) ||
               !Function->getIdentifier() || Function->getName() != Name ||
-              !Seen.insert(Template->getCanonicalDecl()).second) return false;
+              !Seen.insert(Template->getCanonicalDecl()).second) return functionalBindDiagnosticFailure(__LINE__);
           bool Family = false;
           if (Name == "get")
             Family = Check.family(Template, {"tuple", "__fwd/tuple.h", "__utility/pair.h", "__fwd/pair.h", "array", "__fwd/array.h"});
@@ -25137,12 +25467,12 @@ public:
             Family = Check.family(Template, {"__utility/forward.h"});
           else
             Family = Check.family(Template, {"__functional/bind.h"});
-          if (!Family) return false;
+          if (!Family) return functionalBindDiagnosticFailure(__LINE__);
           Matches += Chosen && Template->getCanonicalDecl() == Chosen->getCanonicalDecl();
           Declarations.push_back(Declaration);
         }
-        if (Chosen && Matches != 1) return false;
-        if (Name == "get" && !LookupUses.emplace(Use, std::move(Declarations)).second) return false;
+        if (Chosen && Matches != 1) return functionalBindDiagnosticFailure(__LINE__);
+        if (Name == "get" && !LookupUses.emplace(Use, std::move(Declarations)).second) return functionalBindDiagnosticFailure(__LINE__);
         return closeCompleteCall(Expression, nullptr);
       };
       auto Parameter = [&](const Expr *Expression, const FunctionDecl *Function, unsigned Index) {
@@ -25182,11 +25512,11 @@ public:
               ? nullptr : Actual->Arguments.front().Get->getDirectCallee()) ||
           !Lookup(OriginalUnwrap, "__mu", 4, Actual->Arguments.empty()
               ? nullptr : Actual->Arguments.front().Unwrap->getDirectCallee()) ||
-          !Lookup(OriginalInvoke, "__invoke", 8, Actual->Invoke->getDirectCallee())) return false;
+          !Lookup(OriginalInvoke, "__invoke", 8, Actual->Invoke->getDirectCallee())) return functionalBindDiagnosticFailure(__LINE__);
       for (unsigned I : {0u, 1u, 3u}) {
         const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
         if (!Parameter || Parameter->getIndex() != I || Parameter->isParameterPack() ||
-            Parameter->hasDefaultArgument() || !family(Parameter)) return false;
+            Parameter->hasDefaultArgument() || !family(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
       }
       // Mixed scalar/reference-wrapper slots may select different __mu
       // primaries. Bind every completed child to this exact original lookup.
@@ -25196,14 +25526,14 @@ public:
                  std::make_pair(OriginalUnwrap, Argument.Unwrap->getDirectCallee())}) {
           const auto *Use = dyn_cast<UnresolvedLookupExpr>(Original->getCallee());
           const auto *Chosen = Concrete ? Concrete->getPrimaryTemplate() : nullptr;
-          if (!Use || !Chosen) return false;
+          if (!Use || !Chosen) return functionalBindDiagnosticFailure(__LINE__);
           unsigned Matches = 0;
           for (const auto *Declaration : Use->decls()) {
             const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
-            if (!Template) return false;
+            if (!Template) return functionalBindDiagnosticFailure(__LINE__);
             Matches += Template->getCanonicalDecl() == Chosen->getCanonicalDecl();
           }
-          if (Matches != 1) return false;
+          if (Matches != 1) return functionalBindDiagnosticFailure(__LINE__);
         }
       }
 
@@ -25212,7 +25542,7 @@ public:
       const auto *StorageRecord = dyn_cast<ClassTemplateSpecializationDecl>(Storage.Record);
       const auto *StorageTemplate = StorageRecord ? StorageRecord->getSpecializedTemplate() : nullptr;
       const auto *OriginalOwner = StorageTemplate ? StorageTemplate->getTemplatedDecl()->getDefinition() : nullptr;
-      if (!OriginalOwner) return false;
+      if (!OriginalOwner) return functionalBindDiagnosticFailure(__LINE__);
       unsigned OriginalBodies = 0;
       std::set<const FunctionTemplateDecl *> SeenOperators;
       for (const auto *Template = Actual->Method->getPrimaryTemplate(); Template;
@@ -25224,32 +25554,32 @@ public:
             SeenOperators.size() == 64 || !SeenOperators.insert(Template).second ||
             !Check.family(Template, {"__functional/bind.h"}) ||
             Method->getOverloadedOperator() != OO_Call || Method->isConst() != Actual->Method->isConst() ||
-            Method->getNumParams() != 1 || !Method->getParamDecl(0)->isParameterPack()) return false;
+            Method->getNumParams() != 1 || !Method->getParamDecl(0)->isParameterPack()) return functionalBindDiagnosticFailure(__LINE__);
         Operators.emplace_back(Template, Method);
         if (Method->hasBody()) {
-          if (Method->getParent()->getCanonicalDecl() != OriginalOwner->getCanonicalDecl()) return false;
+          if (Method->getParent()->getCanonicalDecl() != OriginalOwner->getCanonicalDecl()) return functionalBindDiagnosticFailure(__LINE__);
           ++OriginalBodies;
-        } else if (!Template->getInstantiatedFromMemberTemplate()) return false;
+        } else if (!Template->getInstantiatedFromMemberTemplate()) return functionalBindDiagnosticFailure(__LINE__);
       }
-      if (OriginalBodies != 1) return false;
+      if (OriginalBodies != 1) return functionalBindDiagnosticFailure(__LINE__);
       auto BodyMembers = [&](const CXXMethodDecl *Method, const CallExpr *Expression) {
-        if (!Method || !Expression || Expression->getNumArgs() != 4) return false;
+        if (!Method || !Expression || Expression->getNumArgs() != 4) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Owner = Method->getParent()->getDefinition();
         if (!Owner || (Owner->getCanonicalDecl() != OriginalOwner->getCanonicalDecl() &&
-            Owner->getCanonicalDecl() != Storage.Record->getCanonicalDecl())) return false;
+            Owner->getCanonicalDecl() != Storage.Record->getCanonicalDecl())) return functionalBindDiagnosticFailure(__LINE__);
         std::vector<const FieldDecl *> Fields;
         for (const auto *Field : Owner->fields()) Fields.push_back(Field);
-        if (Fields.size() != 2 || Fields[0]->getName() != "__f_" || Fields[1]->getName() != "__bound_args_") return false;
+        if (Fields.size() != 2 || Fields[0]->getName() != "__f_" || Fields[1]->getName() != "__bound_args_") return functionalBindDiagnosticFailure(__LINE__);
         for (unsigned I = 0; I < 2; ++I) {
           const auto *Member = dyn_cast_or_null<MemberExpr>(Check.stripped(Expression->getArg(I)));
           const auto *This = Member ? dyn_cast_or_null<CXXThisExpr>(Check.stripped(Member->getBase())) : nullptr;
           if (!Member || !Member->isArrow() || Member->getMemberDecl() != Fields[I] ||
               !This || !Context.hasSameType(This->getType(), Method->getThisType()) ||
-              !Members.emplace(Member, Fields[I]).second) return false;
+              !Members.emplace(Member, Fields[I]).second) return functionalBindDiagnosticFailure(__LINE__);
         }
         return true;
       };
-      if (!BodyMembers(Actual->Method, Actual->Apply)) return false;
+      if (!BodyMembers(Actual->Method, Actual->Apply)) return functionalBindDiagnosticFailure(__LINE__);
       std::vector<const CallExpr *> OriginalApplies;
       for (const auto &[Template, Method] : Operators) {
         if (!Method->hasBody()) continue; // An unselected instantiated pattern has no body.
@@ -25271,13 +25601,13 @@ public:
         for (const auto *Declaration : Method->getParent()->decls()) {
           const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
           if (!Alias || !Alias->getIdentifier() || Alias->getName() != "__indices") continue;
-          if (IndexAlias) return false;
+          if (IndexAlias) return functionalBindDiagnosticFailure(__LINE__);
           IndexAlias = Alias;
         }
         auto IndexType = Indices && Indices->getTypeSourceInfo() ? Indices->getTypeAsWritten() : QualType();
         if (!IndexType.isNull())
           if (const auto *Name = dyn_cast<ElaboratedType>(IndexType.getTypePtr())) {
-            if (Name->getQualifier()) return false;
+            if (Name->getQualifier()) return functionalBindDiagnosticFailure(__LINE__);
             IndexType = Name->getNamedType();
           }
         const auto *WrittenIndex = IndexType.isNull() ? nullptr : dyn_cast<TypedefType>(IndexType.getTypePtr());
@@ -25296,7 +25626,7 @@ public:
             WrittenIndex->getDecl() != IndexAlias || !IndexAlias->getTypeSourceInfo() ||
             !Tuple || !TupleRecord || Tuple->getTemplateName().getAsTemplateDecl() != TupleRecord->getSpecializedTemplate() ||
             !TupleParameter || TupleParameter->getDecl() != OwnPack ||
-            !Parameter(Forward->getArg(0), Method, 0) || !Lookup(Forward, "forward", 2, nullptr)) return false;
+            !Parameter(Forward->getArg(0), Method, 0) || !Lookup(Forward, "forward", 2, nullptr)) return functionalBindDiagnosticFailure(__LINE__);
         // The original forward-pack spelling closes independently of
         // the exact selected concrete calls proved in the incoming tuple scope.
         OriginalApplies.push_back(Expression);
@@ -25306,10 +25636,10 @@ public:
         if (!Function || !Prototype || Prototype->getExceptionSpecType() != EST_None ||
             Function->isVariadic() || Function->isInvalidDecl() || Function->isDeleted() ||
             !Function->getTypeSourceInfo() || !family(Function) || !Graph.function(Function) ||
-            !Graph.TraverseTypeLoc(Function->getTypeSourceInfo()->getTypeLoc())) return false;
+            !Graph.TraverseTypeLoc(Function->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Parameter : Function->parameters())
           if (Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() || !family(Parameter) ||
-              !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+              !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
         return true;
       };
       auto CompleteSources = [&] {
@@ -25317,27 +25647,27 @@ public:
           return Graph.withBindSourceLookupUses(LookupUses, [&] {
             if (!functionSource(Actual->Apply, Apply, [&] {
                   for (const auto *Declaration : Apply->redecls())
-                    if (!Signature(Declaration)) return false;
+                    if (!Signature(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
                   for (const auto *Template : ApplyTemplate->redecls()) {
                     const auto *Pattern = dyn_cast<FunctionDecl>(Template->getTemplatedDecl());
                     if (!Pattern || !Graph.withBindTemplateParameters(Template, Template->getTemplateParameters(), [&] {
-                          if (!Signature(Pattern)) return false;
+                          if (!Signature(Pattern)) return functionalBindDiagnosticFailure(__LINE__);
                           return !Pattern->hasBody() || Graph.TraverseStmt(const_cast<Stmt *>(Pattern->getBody()));
-                        })) return false;
+                        })) return functionalBindDiagnosticFailure(__LINE__);
                   }
                   return Apply->hasBody() && Graph.TraverseStmt(const_cast<Stmt *>(Apply->getBody()));
-                }) || !closeCompleteCall(Actual->Apply, Apply)) return false;
+                }) || !closeCompleteCall(Actual->Apply, Apply)) return functionalBindDiagnosticFailure(__LINE__);
             for (const auto *Expression : OriginalApplies)
-              if (!Lookup(Expression, "__apply_functor", 1, Apply)) return false;
+              if (!Lookup(Expression, "__apply_functor", 1, Apply)) return functionalBindDiagnosticFailure(__LINE__);
             return functionSource(Actual->SourceCall, Actual->Method, [&] {
               for (const auto *Declaration : Actual->Method->redecls())
-                if (!Signature(Declaration)) return false;
+                if (!Signature(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
               for (const auto &[Template, Method] : Operators)
                 if (!Graph.withBindTemplateParameters(Template, Template->getTemplateParameters(), [&] {
                       for (const auto *Declaration : Method->redecls())
-                        if (!Signature(Declaration)) return false;
+                        if (!Signature(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
                       return !Method->hasBody() || Graph.TraverseStmt(const_cast<Stmt *>(Method->getBody()));
-                    })) return false;
+                    })) return functionalBindDiagnosticFailure(__LINE__);
               return Actual->Method->hasBody() &&
                   Graph.TraverseStmt(const_cast<Stmt *>(Actual->Method->getBody())) && Graph.bindSourceComplete();
             });
@@ -25355,7 +25685,7 @@ public:
       }
       auto CompleteAndContinue = [&] {
         const bool Closed = Graph.withBindScalarConstraintSource([&] {
-          if (!Actual->Arguments.empty() && !Graph.TraverseBindTupleElementProjectionSources()) return false;
+          if (!Actual->Arguments.empty() && !Graph.TraverseBindTupleElementProjectionSources()) return functionalBindDiagnosticFailure(__LINE__);
           return CompleteSources();
         });
         // Its full source closes first. Keep only the child's exact projection
@@ -25370,15 +25700,15 @@ public:
 
   bool callAuxiliary(const FunctionalBindCallSource &Call) {
     if (!Ready || Call.Storage.Record != Storage.Record || !Call.SourceCall ||
-        (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc()))) return false;
+        (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc()))) return functionalBindDiagnosticFailure(__LINE__);
     return Graph.TraverseBindCallAuxiliarySource(Call) && Graph.bindSourceComplete();
   }
   bool callTryCallFallback(const FunctionalBindCallSource &Call, const CXXMethodDecl *Function) {
     if (!Ready || !Function || !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
-        Call.Storage.Record != Storage.Record) return false;
+        Call.Storage.Record != Storage.Record) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Invoke != Call.Invoke ||
-        Actual->Target != Call.Target || Actual->Storage.Record != Storage.Record) return false;
+        Actual->Target != Call.Target || Actual->Storage.Record != Storage.Record) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Actual->Arguments) Forwarded.push_back(Argument.ForwardedType);
     const auto Probe = describeFunctionalBindTryCallSignatureSource(S, SM, Function, Storage, Forwarded, Context);
@@ -25386,10 +25716,10 @@ public:
   }
   bool callTryCallSignature(const FunctionalBindCallSource &Call, const CXXMethodDecl *Function) {
     if (!Ready || !Function || !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
-        Call.Storage.Record != Storage.Record) return false;
+        Call.Storage.Record != Storage.Record) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Invoke != Call.Invoke ||
-        Actual->Target != Call.Target || Actual->Storage.Record != Storage.Record) return false;
+        Actual->Target != Call.Target || Actual->Storage.Record != Storage.Record) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Actual->Arguments) Forwarded.push_back(Argument.ForwardedType);
     const auto Probe = describeFunctionalBindTryCallSignatureSource(S, SM, Function, Storage, Forwarded, Context);
@@ -25397,16 +25727,16 @@ public:
   }
   bool callGetSource(const FunctionalBindCallSource &Call) {
     if (!Ready || !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
-        Call.Storage.Record != Storage.Record || !TupleGetMemberSources.empty()) return false;
+        Call.Storage.Record != Storage.Record || !TupleGetMemberSources.empty()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Storage.Record != Storage.Record ||
-        Actual->Arguments.size() != Storage.Arguments.Elements.size()) return false;
+        Actual->Arguments.size() != Storage.Arguments.Elements.size()) return functionalBindDiagnosticFailure(__LINE__);
     const bool Placeholders = std::any_of(Actual->Arguments.begin(), Actual->Arguments.end(),
         [](const auto &Argument) { return Argument.PlaceholderRank != 0; });
     if (Placeholders && (ActiveUnwrapSource || !ActivePlaceholderIndexReads.empty() ||
-        !UnwrapScalarConstraintSources.empty())) return false;
+        !UnwrapScalarConstraintSources.empty())) return functionalBindDiagnosticFailure(__LINE__);
     if (Placeholders) ActiveUnwrapSource = &*Actual;
     auto RestorePlaceholderSource = llvm::make_scope_exit([&] {
       if (Placeholders) {
@@ -25414,10 +25744,10 @@ public:
         UnwrapScalarConstraintSources.clear();
       }
     });
-    if (!Graph.TraverseBindCallAuxiliarySource(*Actual)) return false;
+    if (!Graph.TraverseBindCallAuxiliarySource(*Actual)) return functionalBindDiagnosticFailure(__LINE__);
     if (Actual->Arguments.empty()) return Graph.bindSourceComplete();
     return Graph.withBindTupleElementProjections(*Actual, [&] {
-      if (!Graph.TraverseBindTupleElementProjectionSources()) return false;
+      if (!Graph.TraverseBindTupleElementProjectionSources()) return functionalBindDiagnosticFailure(__LINE__);
       struct Source {
         const CallExpr *Get, *LeafCall, *OriginalLeafCall;
         const FunctionDecl *Function, *Pattern;
@@ -25430,7 +25760,7 @@ public:
       std::map<const MemberExpr *, const ValueDecl *> Members;
       auto Member = [&](const MemberExpr *Use, const ValueDecl *Declaration) {
         if (!Use || !Declaration || Use->getMemberDecl() != Declaration || !family(Declaration) ||
-            !Check.location(Use->getExprLoc(), {"tuple"})) return false;
+            !Check.location(Use->getExprLoc(), {"tuple"})) return functionalBindDiagnosticFailure(__LINE__);
         const auto Inserted = Members.emplace(Use, Declaration);
         return Inserted.second || Inserted.first->second == Declaration;
       };
@@ -25455,7 +25785,7 @@ public:
             ? dyn_cast<CXXStaticCastExpr>(Return->getRetValue()->IgnoreParens()) : nullptr;
         if (!Method || !Explicit || !Explicit->getTypeInfoAsWritten() || !Explicit->isLValue() ||
             !Method->getReturnType()->isLValueReferenceType() ||
-            !Context.hasSameType(Explicit->getTypeAsWritten(), Method->getReturnType())) return false;
+            !Context.hasSameType(Explicit->getTypeAsWritten(), Method->getReturnType())) return functionalBindDiagnosticFailure(__LINE__);
         const Expr *Input = Explicit->getSubExpr();
         if (Partial) {
           const auto *Parameters = Partial->getTemplateParameters();
@@ -25465,7 +25795,7 @@ public:
           const auto *Written = dyn_cast<TemplateTypeParmType>(Type.getUnqualifiedType().getTypePtr());
           if (Method->getParent() != Partial || !Parameter || !Written || Written->getDecl() != Parameter ||
               Type.isConstQualified() != Method->isConst() || Type.isVolatileQualified() ||
-              Explicit->getCastKind() != CK_Dependent || !Explicit->isTypeDependent()) return false;
+              Explicit->getCastKind() != CK_Dependent || !Explicit->isTypeDependent()) return functionalBindDiagnosticFailure(__LINE__);
         } else {
           const auto Identity = Empty
               ? describeFunctionalBindPlaceholderIdentity(S, SM, Context.getRecordType(Empty), Context) : std::nullopt;
@@ -25485,7 +25815,7 @@ public:
               Record->getCanonicalDecl() != Empty->getCanonicalDecl() ||
               !Context.hasSameType(Explicit->getType(), Type) ||
               !Context.hasSameType(Conversion->getType(), Type) ||
-              !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type))) return false;
+              !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type))) return functionalBindDiagnosticFailure(__LINE__);
           Input = Conversion->getSubExpr();
         }
         const auto *Dereference = Input ? dyn_cast<UnaryOperator>(Input->IgnoreParenImpCasts()) : nullptr;
@@ -25507,13 +25837,13 @@ public:
         Requests.push_back({Argument.Get, &Storage.Arguments, I, Actual->Method->isConst()});
         if (Argument.PlaceholderRank) {
           if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
-              Argument.PlaceholderRank > Incoming->Elements.size() || !Argument.PlaceholderGet) return false;
+              Argument.PlaceholderRank > Incoming->Elements.size() || !Argument.PlaceholderGet) return functionalBindDiagnosticFailure(__LINE__);
           Requests.push_back({Argument.PlaceholderGet, &*Incoming, Argument.PlaceholderRank - 1, false});
         }
         if (Argument.Nested) {
           if (Argument.Nested->IncomingGets.size() != Actual->CallForwards.size() ||
               (!Argument.Nested->IncomingGets.empty() &&
-               (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size()))) return false;
+               (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size()))) return functionalBindDiagnosticFailure(__LINE__);
           for (unsigned J = 0; J < Argument.Nested->IncomingGets.size(); ++J)
             Requests.push_back({Argument.Nested->IncomingGets[J], &*Incoming, J, false});
         }
@@ -25521,14 +25851,14 @@ public:
       for (const auto &Request : Requests) {
         const auto &Tuple = *Request.Tuple;
         const unsigned I = Request.Slot;
-        if (I >= Tuple.Elements.size()) return false;
+        if (I >= Tuple.Elements.size()) return functionalBindDiagnosticFailure(__LINE__);
         const FieldDecl *BaseField = nullptr;
         for (const auto *Field : Tuple.Record->fields()) {
           if (BaseField || !Field->getIdentifier() || Field->getName() != "__base_" ||
-              !Field->getTypeSourceInfo() || !family(Field)) return false;
+              !Field->getTypeSourceInfo() || !family(Field)) return functionalBindDiagnosticFailure(__LINE__);
           BaseField = Field;
         }
-        if (!BaseField) return false;
+        if (!BaseField) return functionalBindDiagnosticFailure(__LINE__);
         const auto *Get = Request.Get;
         const UtilityTupleLikeSource Elements{Tuple.Elements, nullptr, QualType(), 0};
         const auto *Selected = Get ? Get->getDirectCallee() : nullptr;
@@ -25536,7 +25866,7 @@ public:
             !Context.hasSameUnqualifiedType(Selected->getParamDecl(0)->getType().getNonReferenceType(),
                                              Context.getRecordType(Tuple.Record)) ||
             !approvedUtilityTupleLikeGet(S, SM, Get, Selected->getParamDecl(0)->getType(), Elements, I, Context))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         const auto *Function = Get ? Get->getDirectCallee() : nullptr;
         const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
         const auto *Definition = Function ? Function->getDefinition() : nullptr;
@@ -25571,7 +25901,7 @@ public:
           if (!Identity || Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl() ||
               !Owner || !Partial || !OwnerPattern || !Owner->field_empty() || Owner->getNumBases() != 1 ||
               !OwnerPattern->field_empty() || OwnerPattern->getNumBases() != 1 ||
-              Owner->getTemplateArgs().size() != 3 || !family(Partial)) return false;
+              Owner->getTemplateArgs().size() != 3 || !family(Partial)) return functionalBindDiagnosticFailure(__LINE__);
           const auto &Arguments = Owner->getTemplateArgs();
           if (Arguments[0].getKind() != TemplateArgument::Integral || Arguments[0].getAsIntegral().isNegative() ||
               Arguments[0].getAsIntegral().getLimitedValue(65) != I ||
@@ -25580,11 +25910,11 @@ public:
               !Context.hasSameType(Arguments[1].getAsType(), Element.getType()) ||
               Arguments[2].getKind() != TemplateArgument::Integral ||
               !Context.hasSameType(Arguments[2].getIntegralType(), Context.BoolTy) ||
-              !Arguments[2].getAsIntegral().getBoolValue()) return false;
+              !Arguments[2].getAsIntegral().getBoolValue()) return functionalBindDiagnosticFailure(__LINE__);
           ElementBase = &*Owner->bases_begin(); OriginalElementBase = &*OwnerPattern->bases_begin();
           if (ElementBase->isVirtual() || ElementBase->getAccessSpecifier() != AS_private ||
               OriginalElementBase->isVirtual() || OriginalElementBase->getAccessSpecifier() != AS_private ||
-              !ElementBase->getTypeSourceInfo() || !OriginalElementBase->getTypeSourceInfo()) return false;
+              !ElementBase->getTypeSourceInfo() || !OriginalElementBase->getTypeSourceInfo()) return functionalBindDiagnosticFailure(__LINE__);
         }
         const auto Stored = Element.getType();
         const auto Value = !Stored->isReferenceType() && Request.ReadOnly
@@ -25612,10 +25942,10 @@ public:
                    !ReturnEmptyBase(OriginalMethod, nullptr, Partial))
                 : (!ReturnMember(Method, Element.Field) || !ReturnMember(OriginalMethod, OriginalField))) ||
             !Member(Base, BaseField) || !Member(Reference, Method))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         const auto *ConversionBase = *Conversion->path_begin();
         if (!ConversionBase || ConversionBase->isVirtual() || !ConversionBase->getTypeSourceInfo() ||
-            ConversionBase->getType()->getAsCXXRecordDecl() != Leaf) return false;
+            ConversionBase->getType()->getAsCXXRecordDecl() != Leaf) return functionalBindDiagnosticFailure(__LINE__);
         const auto *OriginalBody = dyn_cast_or_null<CompoundStmt>(Pattern->getBody());
         const auto *OriginalStatement = OriginalBody && OriginalBody->size() == 2
             ? dyn_cast<DeclStmt>(OriginalBody->body_front()) : nullptr;
@@ -25649,9 +25979,9 @@ public:
             !OriginalObject || OriginalObject->getDecl() != Pattern->getParamDecl(0) ||
             !PatternTemplate || PatternTemplate->getCanonicalDecl() != Primary->getCanonicalDecl() ||
             !Index || Index->getIndex() || Index->isParameterPack() || Index->hasDefaultArgument() ||
-            !family(Index) || !Context.hasSameType(Index->getType(), Context.getSizeType())) return false;
+            !family(Index) || !Context.hasSameType(Index->getType(), Context.getSizeType())) return functionalBindDiagnosticFailure(__LINE__);
         const auto ReferenceLocation = OriginalCast->getTypeInfoAsWritten()->getTypeLoc().getAs<LValueReferenceTypeLoc>();
-        if (!ReferenceLocation) return false;
+        if (!ReferenceLocation) return functionalBindDiagnosticFailure(__LINE__);
         TypeLoc Named = ReferenceLocation.getPointeeLoc().getUnqualifiedLoc();
         if (const auto Elaborated = Named.getAs<ElaboratedTypeLoc>()) Named = Elaborated.getNamedTypeLoc();
         const auto Location = Named.getAs<TemplateSpecializationTypeLoc>();
@@ -25668,7 +25998,7 @@ public:
         if (!WrittenTemplate || WrittenTemplate->getCanonicalDecl() != Owner->getSpecializedTemplate()->getCanonicalDecl() ||
             !family(WrittenTemplate) ||
             !WrittenIndex || WrittenIndex->getDecl() != Index || !WrittenAlias || WrittenAlias->getDecl() != OriginalAlias)
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         Getters.push_back({Get, LeafCall, OriginalCall, Function, Pattern, Method, OriginalMethod,
             Element.Field, OriginalField, BaseField, ConversionBase, ElementBase, OriginalElementBase, EmptyPlaceholder});
       }
@@ -25686,22 +26016,22 @@ public:
                 !Prototype || !Prototype->isNothrow() || !Method->getBody() ||
                 (!Get.EmptyBase && !Entry.second) ||
                 (Entry.second && (!family(Entry.second) || !Entry.second->getTypeSourceInfo() ||
-                 !Graph.TraverseTypeLoc(Entry.second->getTypeSourceInfo()->getTypeLoc())))) return false;
+                 !Graph.TraverseTypeLoc(Entry.second->getTypeSourceInfo()->getTypeLoc())))) return functionalBindDiagnosticFailure(__LINE__);
             for (const auto *Declaration : Method->redecls())
               if (!Declaration->getTypeSourceInfo() || !family(Declaration) || !Graph.function(Declaration) ||
-                  !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
-            if (!Graph.TraverseStmt(const_cast<Stmt *>(Method->getBody()))) return false;
+                  !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
+            if (!Graph.TraverseStmt(const_cast<Stmt *>(Method->getBody()))) return functionalBindDiagnosticFailure(__LINE__);
           }
           for (const auto &Entry : {std::make_pair(Get.LeafCall, static_cast<const FunctionDecl *>(Get.Method)),
                                     std::make_pair(Get.OriginalLeafCall, static_cast<const FunctionDecl *>(nullptr))}) {
             const auto Inserted = TupleGetMemberSources.emplace(Entry.first, Entry.second);
-            if (!Inserted.second && Inserted.first->second != Entry.second) return false;
+            if (!Inserted.second && Inserted.first->second != Entry.second) return functionalBindDiagnosticFailure(__LINE__);
           }
           if (!Graph.TraverseTypeLoc(Get.Base->getTypeSourceInfo()->getTypeLoc()) ||
-              !Graph.TraverseTypeLoc(Get.ConversionBase->getTypeSourceInfo()->getTypeLoc())) return false;
+              !Graph.TraverseTypeLoc(Get.ConversionBase->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
           for (const auto *Base : {Get.ElementBase, Get.OriginalElementBase})
             if (Base && (!Base->getTypeSourceInfo() ||
-                !Graph.TraverseTypeLoc(Base->getTypeSourceInfo()->getTypeLoc()))) return false;
+                !Graph.TraverseTypeLoc(Base->getTypeSourceInfo()->getTypeLoc()))) return functionalBindDiagnosticFailure(__LINE__);
           auto Signature = [&](const FunctionDecl *Declaration) {
             const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
             if (!Declaration->getIdentifier() || Declaration->getName() != "get" ||
@@ -25711,16 +26041,16 @@ public:
                 !Declaration->getParamDecl(0)->getTypeSourceInfo() || !Prototype || !Prototype->isNothrow() ||
                 !family(Declaration) || !Graph.function(Declaration) ||
                 !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
-                !Graph.TraverseTypeLoc(Declaration->getParamDecl(0)->getTypeSourceInfo()->getTypeLoc())) return false;
+                !Graph.TraverseTypeLoc(Declaration->getParamDecl(0)->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
             return true;
           };
           if (!functionSource(Get.Get, Get.Function, [&] {
                 for (const auto *Declaration : Get.Function->redecls())
-                  if (!Signature(Declaration)) return false;
+                  if (!Signature(Declaration)) return functionalBindDiagnosticFailure(__LINE__);
                 const auto *Primary = Get.Function->getPrimaryTemplate();
                 for (const auto *Template : Primary->redecls()) {
                   const auto *Pattern = dyn_cast<FunctionDecl>(Template->getTemplatedDecl());
-                  if (!Pattern) return false;
+                  if (!Pattern) return functionalBindDiagnosticFailure(__LINE__);
                   const auto *Parameters = Template->getTemplateParameters();
                   const auto *Index = Parameters->size() == 2 ? dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0)) : nullptr;
                   const auto *Pack = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
@@ -25729,32 +26059,32 @@ public:
                       !Pack || Pack->getIndex() != 1 || !Pack->isParameterPack() || Pack->hasDefaultArgument() ||
                       !family(Pack) || !family(Template) ||
                       !Graph.withBindTemplateParameters(Template, Parameters, [&] {
-                        if (!Signature(Pattern)) return false;
+                        if (!Signature(Pattern)) return functionalBindDiagnosticFailure(__LINE__);
                         return Pattern != Get.Pattern || Graph.TraverseStmt(const_cast<Stmt *>(Pattern->getBody()));
-                      })) return false;
+                      })) return functionalBindDiagnosticFailure(__LINE__);
                 }
                 return Graph.TraverseStmt(const_cast<Stmt *>(Get.Function->getBody()));
-              })) return false;
+              })) return functionalBindDiagnosticFailure(__LINE__);
         }
-        if (!Graph.bindSourceComplete()) return false;
+        if (!Graph.bindSourceComplete()) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto &Argument : Actual->Arguments) {
           if (!Argument.Nested) continue;
           for (const auto *Get : Argument.Nested->IncomingGets) {
             const auto *Function = Get ? Get->getDirectCallee() : nullptr;
             if (!Function || (!CompletedPlaceholderGetSources.count(Get) &&
-                CompletedPlaceholderGetSources.size() == 64)) return false;
+                CompletedPlaceholderGetSources.size() == 64)) return functionalBindDiagnosticFailure(__LINE__);
             // Reuse the same bounded completed-source table. A nested body
             // still needs an exact active-child identity before reading it.
             const auto Bound = CompletedPlaceholderGetSources.emplace(Get, Function);
-            if (!Bound.second && Bound.first->second != Function) return false;
+            if (!Bound.second && Bound.first->second != Function) return functionalBindDiagnosticFailure(__LINE__);
           }
         }
         for (const auto &Argument : Actual->Arguments) {
           if (!Argument.PlaceholderRank) continue;
           const auto *Function = Argument.PlaceholderGet ? Argument.PlaceholderGet->getDirectCallee() : nullptr;
-          if (!Function || CompletedPlaceholderGetSources.size() == 64) return false;
+          if (!Function || CompletedPlaceholderGetSources.size() == 64) return functionalBindDiagnosticFailure(__LINE__);
           const auto Bound = CompletedPlaceholderGetSources.emplace(Argument.PlaceholderGet, Function);
-          if (!Bound.second && Bound.first->second != Function) return false;
+          if (!Bound.second && Bound.first->second != Function) return functionalBindDiagnosticFailure(__LINE__);
         }
         return true;
       });
@@ -25769,9 +26099,9 @@ public:
           !Dependency.ActiveCompleteCall || Dependency.ActiveCompleteCall->SourceCall != Child.Invocation.SourceCall ||
           Dependency.ActiveCompleteCall->Method != Child.Invocation.Method ||
           Dependency.ActiveCompleteCall->OwnedRoot != Child.Root || Dependency.ActiveCompleteCall->OwnedPath != Child.Path ||
-          !Dependency.Graph.bindSourceComplete()) return false;
+          !Dependency.Graph.bindSourceComplete()) return functionalBindDiagnosticFailure(__LINE__);
       const auto ClosedApply = Dependency.completedCallFunction(Child.Invocation.Apply);
-      if (!ClosedApply || *ClosedApply != Child.Invocation.Apply->getDirectCallee()) return false;
+      if (!ClosedApply || *ClosedApply != Child.Invocation.Apply->getDirectCallee()) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Function = Child.Expand ? Child.Expand->getDirectCallee() : nullptr;
       const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
       const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -25797,7 +26127,7 @@ public:
           Reference->getDecl() != Function || Reference->hasExplicitTemplateArgs() ||
           !Context.hasSameType(Pointer->getPointeeType(), Function->getType()) ||
           !Context.hasSameType(Reference->getType(), Function->getType()) ||
-          !Check.location(Reference->getExprLoc(), {"__functional/bind.h"})) return false;
+          !Check.location(Reference->getExprLoc(), {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
       const auto *Definition = Pattern->getDefinition();
       const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
       const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
@@ -25823,7 +26153,7 @@ public:
           !OriginalCall->isTypeDependent() || !Object || Object->getDecl() != Definition->getParamDecl(0) ||
           !Pack || Pack->getNumExpansions() || !Forward || Forward->getDirectCallee() ||
           !Get || Get->getDirectCallee() || !Argument || Argument->getDecl() != Definition->getParamDecl(1) ||
-          !Lookup(ForwardLookup, "forward", 2) || !Lookup(GetLookup, "get", 16)) return false;
+          !Lookup(ForwardLookup, "forward", 2) || !Lookup(GetLookup, "get", 16)) return functionalBindDiagnosticFailure(__LINE__);
       const auto &ForwardArgument = ForwardLookup->getTemplateArgs()[0].getArgument();
       const auto &GetArgument = GetLookup->getTemplateArgs()[0].getArgument();
       const auto *ForwardType = ForwardArgument.getKind() == TemplateArgument::Type
@@ -25831,20 +26161,20 @@ public:
       const auto *Index = GetArgument.getKind() == TemplateArgument::Expression
           ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(GetArgument.getAsExpr())) : nullptr;
       if (!ForwardType || ForwardType->getDecl() != Incoming || !Index || Index->getDecl() != Indices)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Declaration : ForwardLookup->decls()) {
         const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
         const auto *Original = Template ? Template->getTemplatedDecl() : nullptr;
         if (!Original || !Original->getIdentifier() || Original->getName() != "forward" ||
             !Check.family(Template, {"__utility/forward.h"}) || !Check.family(Original, {"__utility/forward.h"}))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
       }
       std::vector<const NamedDecl *> GetDeclarations;
       for (const auto *Declaration : GetLookup->decls()) {
         const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
         const auto *Original = Template ? Template->getTemplatedDecl() : nullptr;
         if (!Original || !Original->getIdentifier() || Original->getName() != "get" ||
-            !approvedStandardSDKDeclaration(S, SM, Declaration)) return false;
+            !approvedStandardSDKDeclaration(S, SM, Declaration)) return functionalBindDiagnosticFailure(__LINE__);
         GetDeclarations.push_back(Declaration);
       }
       for (unsigned I = 0; I < Child.IncomingGets.size(); ++I) {
@@ -25852,7 +26182,7 @@ public:
         const auto Closed = CompletedPlaceholderGetSources.find(Child.IncomingGets[I]);
         if (!Getter || Closed == CompletedPlaceholderGetSources.end() || Closed->second != Getter ||
             std::find(GetDeclarations.begin(), GetDeclarations.end(), Getter->getPrimaryTemplate()) == GetDeclarations.end() ||
-            !CompletedBuiltinForwards.count(Child.IncomingForwards[I])) return false;
+            !CompletedBuiltinForwards.count(Child.IncomingForwards[I])) return functionalBindDiagnosticFailure(__LINE__);
       }
       NestedExpansionSources Source{&Child, OriginalCall, Get, Forward};
       ActiveNestedExpansionProof = &Source;
@@ -25864,16 +26194,16 @@ public:
             Declaration->isDeleted() || !Declaration->isInlined() || !Prototype ||
             Prototype->getExceptionSpecType() != EST_None || !Declaration->getTypeSourceInfo() ||
             !family(Declaration) || !Graph.function(Declaration) ||
-            !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+            !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
         for (const auto *Parameter : Declaration->parameters())
           if (Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() || !family(Parameter) ||
-              !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+              !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
         const auto *ActualBody = dyn_cast_or_null<CompoundStmt>(Declaration->getBody());
         if (!ActualBody) return !RequireBody;
         const auto *ActualReturn = ActualBody->size() == 1 ? dyn_cast<ReturnStmt>(ActualBody->body_front()) : nullptr;
         const auto *Expression = ActualReturn ? dyn_cast_or_null<CallExpr>(Check.core(ActualReturn->getRetValue())) : nullptr;
         if (!Expression || Expression != (Declaration == Function ? Child.Invocation.SourceCall : OriginalCall))
-          return false;
+          return functionalBindDiagnosticFailure(__LINE__);
         return Graph.TraverseStmt(const_cast<CompoundStmt *>(ActualBody));
       };
       return Graph.withBindNestedExpansionSource(Parent, Child.Slot, Child,
@@ -25882,14 +26212,14 @@ public:
         if (!Graph.withBindSourceLookupUses(Lookups, [&] {
               return functionSource(Child.Expand, Function, [&] {
                 for (const auto *Declaration : Function->redecls())
-                  if (!Signature(Declaration, Declaration == Function)) return false;
+                  if (!Signature(Declaration, Declaration == Function)) return functionalBindDiagnosticFailure(__LINE__);
                 return Graph.withBindTemplateParameters(Primary, Parameters, [&] {
                   for (const auto *Declaration : Pattern->redecls())
-                    if (!Signature(Declaration, Declaration == Pattern)) return false;
+                    if (!Signature(Declaration, Declaration == Pattern)) return functionalBindDiagnosticFailure(__LINE__);
                   return true;
                 });
               });
-            }) || !Graph.bindSourceComplete()) return false;
+            }) || !Graph.bindSourceComplete()) return functionalBindDiagnosticFailure(__LINE__);
         Source.HelperComplete = true;
         return CompleteUnwrap() && Graph.bindSourceComplete();
       });
@@ -25901,10 +26231,10 @@ public:
     return Graph.withBindSourceChild([&] {
       if (!Proof || ActiveNestedIncomingSource || !ActiveUnwrapSource ||
           Parent.SourceCall != ActiveUnwrapSource->SourceCall || Parent.Storage.Record != Storage.Record)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
       if (!Fresh || Child.Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Child.Slot].Nested)
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       const auto &Actual = *Fresh->Arguments[Child.Slot].Nested;
       if (Actual.Root != Child.Root || Actual.Parent != Child.Parent || Actual.Path != Child.Path ||
           Actual.Get != Child.Get || Actual.Unwrap != Child.Unwrap || Actual.Expand != Child.Expand ||
@@ -25912,29 +26242,29 @@ public:
           Actual.IncomingGets != Child.IncomingGets || Actual.IncomingForwards != Child.IncomingForwards ||
           Child.IncomingGets.size() != Child.IncomingForwards.size() || Child.IncomingGets.size() > 2 ||
           !Child.Invocation.Method || Child.Invocation.Method->getNumParams() != Child.IncomingGets.size())
-        return false;
+        return functionalBindDiagnosticFailure(__LINE__);
       for (const auto *Get : Child.IncomingGets) {
         const auto Closed = CompletedPlaceholderGetSources.find(Get);
         if (!Get || !Get->getDirectCallee() || Closed == CompletedPlaceholderGetSources.end() ||
-            Closed->second != Get->getDirectCallee()) return false;
+            Closed->second != Get->getDirectCallee()) return functionalBindDiagnosticFailure(__LINE__);
       }
       ActiveNestedIncomingSource = &Child;
       auto Restore = llvm::make_scope_exit([&] { ActiveNestedIncomingSource = nullptr; });
       for (const auto *Forward : Child.IncomingForwards)
-        if (!builtinForwardSource(Forward, nullptr)) return false;
+        if (!builtinForwardSource(Forward, nullptr)) return functionalBindDiagnosticFailure(__LINE__);
       return Proof() && Graph.bindSourceComplete();
     });
   }
   bool callUnwrapSource(const FunctionalBindCallSource &Call) {
     if (!Ready || Call.Storage.Record != Storage.Record || !Call.SourceCall ||
         (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) || ActiveUnwrapSource ||
-        !UnwrapScalarConstraintSources.empty() || !UnwrapReferenceSources.empty()) return false;
+        !UnwrapScalarConstraintSources.empty() || !UnwrapReferenceSources.empty()) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Object != Call.Object || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Storage.Record != Storage.Record || Actual->Arguments.size() != Call.Arguments.size() ||
         Actual->Arguments.size() != Storage.Arguments.Elements.size() ||
-        !Graph.TraverseBindCallAuxiliarySource(*Actual)) return false;
+        !Graph.TraverseBindCallAuxiliarySource(*Actual)) return functionalBindDiagnosticFailure(__LINE__);
     for (unsigned I = 0; I < Actual->Arguments.size(); ++I)
       if (Actual->Arguments[I].Get != Call.Arguments[I].Get ||
           Actual->Arguments[I].Unwrap != Call.Arguments[I].Unwrap ||
@@ -25943,10 +26273,10 @@ public:
           Actual->Arguments[I].PlaceholderIndex != Call.Arguments[I].PlaceholderIndex ||
           Actual->Arguments[I].PlaceholderGet != Call.Arguments[I].PlaceholderGet ||
           Actual->Arguments[I].PlaceholderForward != Call.Arguments[I].PlaceholderForward ||
-          !Context.hasSameType(Actual->Arguments[I].ForwardedType, Call.Arguments[I].ForwardedType)) return false;
+          !Context.hasSameType(Actual->Arguments[I].ForwardedType, Call.Arguments[I].ForwardedType)) return functionalBindDiagnosticFailure(__LINE__);
     const bool Placeholders = std::any_of(Actual->Arguments.begin(), Actual->Arguments.end(),
         [](const auto &Argument) { return Argument.PlaceholderRank != 0; });
-    if (Placeholders && CompletedPlaceholderGetSources.empty() && !callGetSource(*Actual)) return false;
+    if (Placeholders && CompletedPlaceholderGetSources.empty() && !callGetSource(*Actual)) return functionalBindDiagnosticFailure(__LINE__);
     // A freshly described zero-bound call has no __mu or tuple-element
     // projection operations. Its real auxiliary and invocation sources remain
     // independent obligations; do not grant any nonempty projection identity.
@@ -25961,7 +26291,7 @@ public:
     auto Member = [&](const MemberExpr *Use, const ValueDecl *Declaration) {
       if (!Use || !Declaration || Use->getMemberDecl() != Declaration ||
           !family(Declaration) || !Check.location(Use->getExprLoc(),
-              {"__functional/reference_wrapper.h", "__functional/bind.h"})) return false;
+              {"__functional/reference_wrapper.h", "__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
       const auto Inserted = Members.emplace(Use, Declaration);
       return Inserted.second || Inserted.first->second == Declaration;
     };
@@ -25984,7 +26314,7 @@ public:
     for (const auto &Argument : Actual->Arguments) {
       const auto *Function = Argument.Unwrap ? Argument.Unwrap->getDirectCallee() : nullptr;
       if (!Function || !Function->getPrimaryTemplate() ||
-          !Function->getPrimaryTemplate()->getTemplatedDecl()->hasBody()) return false;
+          !Function->getPrimaryTemplate()->getTemplatedDecl()->hasBody()) return functionalBindDiagnosticFailure(__LINE__);
       if (!Argument.Reference) continue;
       const auto *Get = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(Function)));
       const auto Access = approvedFunctionalReferenceAccessCallImpl(S, SM, Get, Context, false);
@@ -26004,11 +26334,11 @@ public:
           Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
           OriginalField->getLocation() != Access->Wrapper.Pointer->getLocation() ||
           !PointerBody(Method, Access->Wrapper.Pointer) || !PointerBody(Original, OriginalField) ||
-          !Member(Use, Method)) return false;
+          !Member(Use, Method)) return functionalBindDiagnosticFailure(__LINE__);
       References.push_back({Get, Method, Original, Access->Wrapper.Pointer, OriginalField});
     }
     return Graph.withBindTupleElementProjections(*Actual, [&] {
-      if (!Graph.TraverseBindTupleElementProjectionSources()) return false;
+      if (!Graph.TraverseBindTupleElementProjectionSources()) return functionalBindDiagnosticFailure(__LINE__);
       ActiveUnwrapSource = &*Actual;
       auto RestoreScalar = llvm::make_scope_exit([&] {
         ActiveUnwrapSource = nullptr;
@@ -26026,15 +26356,15 @@ public:
               Method->isDeleted() || Method->isInvalidDecl() || !Method->isInlined() ||
               !Prototype || !Prototype->isNothrow() || !Method->getBody() ||
               !family(Entry.second) ||
-              !Graph.TraverseTypeLoc(Entry.second->getTypeSourceInfo()->getTypeLoc())) return false;
+              !Graph.TraverseTypeLoc(Entry.second->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
           for (const auto *Declaration : Method->redecls())
             if (!Declaration->getTypeSourceInfo() || !family(Declaration) ||
                 !Graph.function(Declaration) ||
-                !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
-          if (!Graph.TraverseStmt(const_cast<Stmt *>(Method->getBody()))) return false;
+                !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
+          if (!Graph.TraverseStmt(const_cast<Stmt *>(Method->getBody()))) return functionalBindDiagnosticFailure(__LINE__);
         }
         const auto Inserted = UnwrapReferenceSources.emplace(Reference.Call, Reference.Method);
-        if (!Inserted.second && Inserted.first->second != Reference.Method) return false;
+        if (!Inserted.second && Inserted.first->second != Reference.Method) return functionalBindDiagnosticFailure(__LINE__);
       }
       for (const auto &Argument : Actual->Arguments) {
         const auto *Function = Argument.Unwrap->getDirectCallee();
@@ -26046,20 +26376,20 @@ public:
         if (!Arguments || Arguments->size() != Count || Parameters->size() != Count ||
             Pattern->getNumParams() != 2 || Pattern->isVariadic() ||
             Primary->getInstantiatedFromMemberTemplate() || isa<CXXMethodDecl>(Function) ||
-            !family(Primary) || !family(Pattern)) return false;
+            !family(Primary) || !family(Pattern)) return functionalBindDiagnosticFailure(__LINE__);
         for (unsigned I = 0; I < 2; ++I) {
           const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
           const bool NestedPack = Argument.Nested && I == 1;
           if (!Parameter || Parameter->getIndex() != I || Parameter->isParameterPack() != NestedPack ||
-              Parameter->hasDefaultArgument() || !family(Parameter)) return false;
+              Parameter->hasDefaultArgument() || !family(Parameter)) return functionalBindDiagnosticFailure(__LINE__);
           const auto &Selected = Arguments->get(I);
           if (!NestedPack) {
-            if (Selected.getKind() != TemplateArgument::Type) return false;
+            if (Selected.getKind() != TemplateArgument::Type) return functionalBindDiagnosticFailure(__LINE__);
           } else {
             const auto &Child = *Argument.Nested;
             if (Selected.getKind() != TemplateArgument::Pack ||
                 Selected.pack_size() != Child.IncomingForwards.size() || Selected.pack_size() > 2 ||
-                Child.Invocation.Method->getNumParams() != Selected.pack_size()) return false;
+                Child.Invocation.Method->getNumParams() != Selected.pack_size()) return functionalBindDiagnosticFailure(__LINE__);
             unsigned J = 0;
             for (const auto &Input : Selected.pack_elements()) {
               const auto *Forward = Child.IncomingForwards[J]
@@ -26067,7 +26397,7 @@ public:
               if (Input.getKind() != TemplateArgument::Type || !Forward ||
                   !Context.hasSameType(Input.getAsType(), Forward->getReturnType()) ||
                   !Context.hasSameType(Input.getAsType(),
-                      Child.Invocation.Method->getParamDecl(J)->getType())) return false;
+                      Child.Invocation.Method->getParamDecl(J)->getType())) return functionalBindDiagnosticFailure(__LINE__);
               ++J;
             }
           }
@@ -26078,7 +26408,7 @@ public:
           if (!Parameter || Parameter->getIndex() != 2 || Parameter->isParameterPack() ||
               !Parameter->hasDefaultArgument() || !family(Parameter) ||
               Zero.getKind() != TemplateArgument::Integral || !Zero.getAsIntegral().isZero() ||
-              !Context.hasSameType(Zero.getIntegralType(), Context.IntTy)) return false;
+              !Context.hasSameType(Zero.getIntegralType(), Context.IntTy)) return functionalBindDiagnosticFailure(__LINE__);
         }
         const auto *OriginalGet = Argument.Reference
             ? dyn_cast_or_null<CallExpr>(Check.core(Check.returned(Pattern))) : nullptr;
@@ -26091,9 +26421,9 @@ public:
               Lookup->getMember().getNameKind() != DeclarationName::Identifier ||
               Lookup->getMember().getAsIdentifierInfo()->getName() != "get" ||
               !Object || Object->getDecl() != Pattern->getParamDecl(0) ||
-              !Check.location(OriginalGet->getExprLoc(), {"__functional/bind.h"})) return false;
+              !Check.location(OriginalGet->getExprLoc(), {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
           const auto Inserted = UnwrapReferenceSources.emplace(OriginalGet, nullptr);
-          if (!Inserted.second && Inserted.first->second) return false;
+          if (!Inserted.second && Inserted.first->second) return functionalBindDiagnosticFailure(__LINE__);
         }
         auto SignatureAndBody = [&](const FunctionDecl *Declaration, bool RequireBody) {
           const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
@@ -26103,10 +26433,10 @@ public:
               !Declaration->isInlined() || !Prototype || Prototype->getExceptionSpecType() != EST_None ||
               !Declaration->getTypeSourceInfo() || !family(Declaration) ||
               !Graph.function(Declaration) ||
-              !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+              !Graph.TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
           for (const auto *Parameter : Declaration->parameters())
             if (Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() || !family(Parameter) ||
-                !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+                !Graph.TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return functionalBindDiagnosticFailure(__LINE__);
           const auto *Body = dyn_cast_or_null<CompoundStmt>(Declaration->getBody());
           if (!Body) return !RequireBody;
           if (Argument.PlaceholderRank) return unwrapPlaceholderBodySource(Argument, Declaration);
@@ -26124,36 +26454,36 @@ public:
                 Alias->getName() != "__indices" || Alias->getDeclContext() != Definition ||
                 !Alias->getTypeSourceInfo() || !family(Alias) ||
                 !Expand || Expand->getNumArgs() != 3 || !ExpansionTemplate ||
-                !Check.location(Expand->getExprLoc(), {"__functional/bind.h"})) return false;
+                !Check.location(Expand->getExprLoc(), {"__functional/bind.h"})) return functionalBindDiagnosticFailure(__LINE__);
             auto Parameter = [&](const Expr *Expression, unsigned I) {
               const auto *Use = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Expression));
               return Use && I < Definition->getNumParams() && Use->getDecl() == Definition->getParamDecl(I);
             };
-            if (!Parameter(Expand->getArg(0), 0) || !Parameter(Expand->getArg(1), 1)) return false;
+            if (!Parameter(Expand->getArg(0), 0) || !Parameter(Expand->getArg(1), 1)) return functionalBindDiagnosticFailure(__LINE__);
             if (Declaration == Function) {
               if (Alias != Child.IndexAlias || Expand != Child.Expand || Expand->getDirectCallee() != Expansion)
-                return false;
+                return functionalBindDiagnosticFailure(__LINE__);
             } else {
               const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Expand->getCallee()->IgnoreParenImpCasts());
               const auto *Indices = dyn_cast<CXXUnresolvedConstructExpr>(Check.core(Expand->getArg(2)));
               auto IndexType = Indices && Indices->getTypeSourceInfo() ? Indices->getTypeAsWritten() : QualType();
               if (!IndexType.isNull())
                 if (const auto *Name = dyn_cast<ElaboratedType>(IndexType.getTypePtr())) {
-                  if (Name->getQualifier()) return false;
+                  if (Name->getQualifier()) return functionalBindDiagnosticFailure(__LINE__);
                   IndexType = Name->getNamedType();
                 }
               const auto *Index = IndexType.isNull() ? nullptr : dyn_cast<TypedefType>(IndexType.getTypePtr());
               if (Expand->getDirectCallee() || !Lookup || Lookup->requiresADL() ||
                   Lookup->hasExplicitTemplateArgs() || Lookup->getNumDecls() != 1 ||
                   *Lookup->decls_begin() != ExpansionTemplate ||
-                  !Indices || Indices->getNumArgs() || !Index || Index->getDecl() != Alias) return false;
+                  !Indices || Indices->getNumArgs() || !Index || Index->getDecl() != Alias) return functionalBindDiagnosticFailure(__LINE__);
             }
             // The independently completed helper is bound only to this
             // freshly described child. Its real local alias, sizeof-pack and
             // index construction still traverse in this same source graph.
             if (!ActiveNestedExpansionProof || !ActiveNestedExpansionProof->HelperComplete ||
                 ActiveNestedExpansionProof->Child->Unwrap != Argument.Unwrap ||
-                ActiveNestedExpansionProof->OriginalUnwrapExpand) return false;
+                ActiveNestedExpansionProof->OriginalUnwrapExpand) return functionalBindDiagnosticFailure(__LINE__);
             if (Declaration != Function) ActiveNestedExpansionProof->OriginalUnwrapExpand = Expand;
             auto RestoreExpansion = llvm::make_scope_exit([&] {
               ActiveNestedExpansionProof->OriginalUnwrapExpand = nullptr;
@@ -26161,22 +26491,22 @@ public:
             return Graph.TraverseStmt(const_cast<CompoundStmt *>(Body));
           }
           const auto *Return = Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
-          if (!Return || !Return->getRetValue()) return false;
+          if (!Return || !Return->getRetValue()) return functionalBindDiagnosticFailure(__LINE__);
           if (!Argument.Reference) {
             const auto *Use = dyn_cast<DeclRefExpr>(Return->getRetValue()->IgnoreParenImpCasts());
             if (!Use || Use->getDecl() != Declaration->getParamDecl(0) ||
                 !Declaration->getReturnType()->isLValueReferenceType() ||
-                !Context.hasSameType(Declaration->getReturnType(), Declaration->getParamDecl(0)->getType())) return false;
+                !Context.hasSameType(Declaration->getReturnType(), Declaration->getParamDecl(0)->getType())) return functionalBindDiagnosticFailure(__LINE__);
           }
           return Graph.TraverseStmt(const_cast<CompoundStmt *>(Body));
         };
         auto CompleteUnwrap = [&] {
           return functionSource(Argument.Unwrap, Function, [&] {
             for (const auto *Declaration : Function->redecls())
-              if (!SignatureAndBody(Declaration, Declaration == Function)) return false;
+              if (!SignatureAndBody(Declaration, Declaration == Function)) return functionalBindDiagnosticFailure(__LINE__);
             return Graph.withBindTemplateParameters(Primary, Parameters, [&] {
               for (const auto *Declaration : Pattern->redecls())
-                if (!SignatureAndBody(Declaration, Declaration == Pattern)) return false;
+                if (!SignatureAndBody(Declaration, Declaration == Pattern)) return functionalBindDiagnosticFailure(__LINE__);
               return true;
             });
           });
@@ -26188,16 +26518,16 @@ public:
           const unsigned Slot = unsigned(&Argument - Actual->Arguments.data());
           if (!withNestedCallCompleteSource(*Actual, Slot,
                   [&](const FunctionalBindNestedArgumentSource &Child, BindSourceProof &Dependency) {
-                    if (Child.Unwrap != Argument.Unwrap || Child.Get != Argument.Get) return false;
+                    if (Child.Unwrap != Argument.Unwrap || Child.Get != Argument.Get) return functionalBindDiagnosticFailure(__LINE__);
                     return withNestedIncomingForwardSources(*Actual, Child, [&] {
                       return Graph.withBindNestedReturnSources(*Actual, Slot, Child,
                           [&](TypeLoc Location) { return Dependency.nestedReturnTypeSource(Child, Location); },
                           [&] { return completeNestedExpansionSource(*Actual, Child, Dependency, CompleteUnwrap); });
                     });
-                  })) return false;
-        } else if (!CompleteUnwrap()) return false;
+                  })) return functionalBindDiagnosticFailure(__LINE__);
+        } else if (!CompleteUnwrap()) return functionalBindDiagnosticFailure(__LINE__);
         if (Argument.WrapperCopy &&
-            !Graph.bindFunctionalBindSpecialMember(Argument.WrapperCopy->getConstructor())) return false;
+            !Graph.bindFunctionalBindSpecialMember(Argument.WrapperCopy->getConstructor())) return functionalBindDiagnosticFailure(__LINE__);
       }
       return Graph.bindSourceComplete();
     });
@@ -26206,17 +26536,17 @@ public:
   bool callInvokeBody(const FunctionalBindCallSource &Call) {
     if (!Ready || ActiveRuntimeInvoke || ActiveRuntimeOriginalInvoke ||
         Call.Storage.Record != Storage.Record ||
-        !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc()))) return false;
+        !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc()))) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Storage.Record != Storage.Record || Actual->Method != Call.Method ||
         Actual->Object != Call.Object || Actual->Apply != Call.Apply ||
-        Actual->Invoke != Call.Invoke || Actual->Target != Call.Target) return false;
+        Actual->Invoke != Call.Invoke || Actual->Target != Call.Target) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Actual->Arguments) Forwarded.push_back(Argument.ForwardedType);
     const auto *Dispatcher = Actual->Invoke->getDirectCallee();
     const auto Signature = describeFunctionalBindInvokeSignatureSource(
         S, SM, Dispatcher, Storage, Forwarded, Context);
-    if (!Signature || !invokeSignatureSource(Actual->Invoke, *Signature)) return false;
+    if (!Signature || !invokeSignatureSource(Actual->Invoke, *Signature)) return functionalBindDiagnosticFailure(__LINE__);
     return Graph.withBindSourceChild([&] {
       const auto *Body = Dispatcher ? Dispatcher->getBody() : nullptr;
       const auto *Primary = Signature->Primary;
@@ -26225,7 +26555,7 @@ public:
       const auto *OriginalCall = dyn_cast_or_null<CallExpr>(Check.core(Signature->PrimaryReturn));
       if (!Body || !OriginalBody || !Template || Template->getTemplatedDecl() != Primary ||
           !OriginalCall || OriginalCall->getDirectCallee() ||
-          OriginalCall != dyn_cast_or_null<CallExpr>(Check.core(Check.returned(Primary)))) return false;
+          OriginalCall != dyn_cast_or_null<CallExpr>(Check.core(Check.returned(Primary)))) return functionalBindDiagnosticFailure(__LINE__);
       ActiveRuntimeInvoke = &*Actual;
       ActiveRuntimeOriginalInvoke = OriginalCall;
       auto Restore = llvm::make_scope_exit([&] {
@@ -26241,11 +26571,11 @@ public:
   }
   bool callInvokeSignature(const FunctionalBindCallSource &Call) {
     if (!Ready || Call.Storage.Record != Storage.Record || !Call.SourceCall ||
-        (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc()))) return false;
+        (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc()))) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Object != Call.Object ||
         Actual->Apply != Call.Apply || Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
-        Actual->Storage.Record != Storage.Record) return false;
+        Actual->Storage.Record != Storage.Record) return functionalBindDiagnosticFailure(__LINE__);
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Actual->Arguments) Forwarded.push_back(Argument.ForwardedType);
     const auto Signature = describeFunctionalBindInvokeSignatureSource(
@@ -26254,25 +26584,25 @@ public:
   }
   bool copy(const FunctionalBindCopySource &Copy) {
     if (!Ready || Copy.Layout.Storage.Record != Storage.Record ||
-        !Copy.Construction || !S.owns(SM, Copy.Construction->getExprLoc())) return false;
+        !Copy.Construction || !S.owns(SM, Copy.Construction->getExprLoc())) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindCopySource(S, SM, Copy.Construction, Context);
     if (!Actual || Actual->Construction != Copy.Construction || Actual->Object != Copy.Object ||
         Actual->Layout.Storage.Record != Storage.Record ||
         Actual->Layout.PaddedBase != Copy.Layout.PaddedBase ||
         !Graph.bindFunctionalBindStorageSource() ||
-        !Graph.bindFunctionalBindSpecialMember(Copy.Construction->getConstructor())) return false;
+        !Graph.bindFunctionalBindSpecialMember(Copy.Construction->getConstructor())) return functionalBindDiagnosticFailure(__LINE__);
     return Graph.bindSourceComplete();
   }
   bool destruction(const FunctionalBindDestructionSource &Destruction,
                    SourceLocation Location) {
     if (!Ready || Destruction.Layout.Storage.Record != Storage.Record ||
-        !Destruction.Destructor || !S.owns(SM, Location)) return false;
+        !Destruction.Destructor || !S.owns(SM, Location)) return functionalBindDiagnosticFailure(__LINE__);
     const auto Actual = describeFunctionalBindDestructionSource(S, SM, Destruction.Destructor, Context);
     if (!Actual || Actual->Destructor != Destruction.Destructor ||
         Actual->Layout.Storage.Record != Storage.Record ||
         Actual->Layout.PaddedBase != Destruction.Layout.PaddedBase ||
         !Graph.bindFunctionalBindStorageSource() ||
-        !Graph.bindFunctionalBindSpecialMember(Destruction.Destructor)) return false;
+        !Graph.bindFunctionalBindSpecialMember(Destruction.Destructor)) return functionalBindDiagnosticFailure(__LINE__);
     return Graph.bindSourceComplete();
   }
 };
@@ -26286,7 +26616,10 @@ bool approvedFunctionalBindFactorySource(
     const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
     const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
-  return BindSourceProof(S, SM, Context, Factory.Storage, Sources, Selections, Members, Traits, SourceAlias).factory(Factory);
+  functionalBindDiagnosticReset();
+  const bool Complete = BindSourceProof(S, SM, Context, Factory.Storage, Sources, Selections, Members, Traits, SourceAlias).factory(Factory);
+  if (!Complete) functionalBindDiagnosticDump();
+  return Complete;
 }
 
 bool approvedFunctionalBindCallAuxiliarySource(
@@ -26307,8 +26640,11 @@ bool approvedFunctionalBindCallCompleteSource(
     llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
     const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
-  return BindSourceProof(S, SM, Context, Call.Storage, Sources, Selections,
+  functionalBindDiagnosticReset();
+  const bool Complete = BindSourceProof(S, SM, Context, Call.Storage, Sources, Selections,
       Members, Traits).callCompleteSource(Call);
+  if (!Complete) functionalBindDiagnosticDump();
+  return Complete;
 }
 
 bool approvedFunctionalBindCallGetSource(
