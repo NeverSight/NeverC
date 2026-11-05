@@ -7715,12 +7715,14 @@ class UtilityTupleQueryGraph
   };
   std::map<const CXXRecordDecl *, BindTupleTagSlice> BindTupleTagSlices;
   std::function<bool(const TemplateSpecializationType *)> BindTypeSource;
+  std::function<std::optional<bool>(QualType)> BindNestedTraitTypeSource;
   std::function<bool(const TemplateSpecializationType *, const std::function<bool()> &)> BindTypeTraversalSource;
   std::function<bool(const CXXRecordDecl *)> BindRecordSource;
   std::function<bool(const CallExpr *)> BindCallSource;
   std::vector<TypeLoc> BindNestedReturnLocations;
   std::function<bool(TypeLoc)> BindNestedReturnSource;
   const FunctionalBindNestedArgumentSource *BindNestedExpansionSource = nullptr;
+  std::function<bool(QualType)> BindNestedCallResultSource;
   std::function<std::optional<UtilityTupleRecord>(const TemplateUseSource &, const CXXRecordDecl *, unsigned, const TypeAliasDecl *)> BindRetainedOwnedTupleSource;
   std::function<bool(const DeclRefExpr *)> BindVariableSource;
   std::function<bool(const CXXConstructExpr *)> BindConstructionSource;
@@ -7813,6 +7815,7 @@ class UtilityTupleQueryGraph
       BindCompletedResultAliasSources;
   const TypeAliasDecl *BindUnusedResultOperand = nullptr;
   const CXXRecordDecl *BindResultComparisonRecord = nullptr;
+  const CXXRecordDecl *BindFactoryLeafComparisonRecord = nullptr;
   const CXXMethodDecl *BindFallbackSignature = nullptr;
   const CXXRecordDecl *BindFallbackSentinel = nullptr;
   const CXXRecordDecl *BindWeakResultSentinel = nullptr;
@@ -10712,6 +10715,9 @@ class UtilityTupleQueryGraph
   }
   bool record(const CXXRecordDecl *R) {
     if (!R || Failed) return false;
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindFactoryLeafComparisonRecord &&
+        R->getCanonicalDecl() == BindFactoryLeafComparisonRecord)
+      return family(R); // Only the exact type-comparison operand; no storage or member permission.
     if (const auto Self = bindScalarConditionalUnselectedSelf(R)) return *Self;
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindCallMetadata &&
         BindCallMetadata->CallForwards.empty() && BindCallMetadata->CallArguments &&
@@ -11357,12 +11363,143 @@ public:
       return Proof() && !Failed;
     });
   }
+  bool bindFunctionalBindNestedTraitTypeSource(std::function<std::optional<bool>(QualType)> Source) {
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
+        BindNestedTraitTypeSource || !Source || !step()) return false;
+    BindNestedTraitTypeSource = std::move(Source);
+    return true;
+  }
+
   bool bindFunctionalBindTypeTraversalSource(
       std::function<bool(const TemplateSpecializationType *, const std::function<bool()> &)> Source) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         BindTypeTraversalSource || !Source || !step()) return false;
     BindTypeTraversalSource = std::move(Source);
     return true;
+  }
+
+  bool withBindFactoryLeafComparisonSource(const TemplateUseSource &Source,
+      const CXXConstructorDecl *Constructor, const std::function<bool()> &Proof) {
+    if (!Proof) return false;
+    const auto *AliasType = Source.Kind == TemplateSourceKind::Type
+        ? dyn_cast_or_null<TemplateSpecializationType>(Source.Type) : nullptr;
+    const auto *Owned = Constructor
+        ? dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()) : nullptr;
+    const auto *Alias = AliasType ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+        AliasType->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Owned || !Alias ||
+        !Alias->getIdentifier() || Alias->getName() != "_IsNotSame" || AliasType->isDependentType() ||
+        AliasType->template_arguments().size() != 2 ||
+        AliasType->template_arguments()[0].getKind() != TemplateArgument::Type ||
+        AliasType->template_arguments()[1].getKind() != TemplateArgument::Type ||
+        Owned->getTemplateArgs().size() != 3 || Owned->getTemplateArgs()[1].getKind() != TemplateArgument::Type)
+      return Proof();
+    const auto Scalar = Owned->getTemplateArgs()[1].getAsType();
+    const auto *Compared = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        AliasType->template_arguments()[1].getAsType()->getAsCXXRecordDecl());
+    if (!utilityScalar(Context, Scalar) || Scalar.hasQualifiers() || !Compared ||
+        !Compared->getIdentifier() || Compared->getName() != "__tuple_leaf" ||
+        BindPhysicalRecords.count(Compared->getCanonicalDecl())) return Proof();
+    return withBindSourceChild([&] {
+      const auto *Primary = Owned->getSpecializedTemplate();
+      const auto *Method = Constructor->getPrimaryTemplate();
+      const auto *MethodParameters = Method ? Method->getTemplateParameters() : nullptr;
+      const auto *Selected = Constructor->getTemplateSpecializationArgs();
+      const auto *Constraint = MethodParameters && MethodParameters->size() == 2
+          ? dyn_cast<NonTypeTemplateParmDecl>(MethodParameters->getParam(1)) : nullptr;
+      const auto ConstraintLocation = Constraint && Constraint->getTypeSourceInfo()
+          ? Constraint->getTypeSourceInfo()->getTypeLoc() : TypeLoc();
+      const auto Begin = ConstraintLocation ? SM.getSpellingLoc(ConstraintLocation.getBeginLoc()) : SourceLocation();
+      const auto End = ConstraintLocation ? SM.getSpellingLoc(ConstraintLocation.getEndLoc()) : SourceLocation();
+      const auto Location = SM.getSpellingLoc(Source.Location);
+      const auto *Definition = Compared->getDefinition();
+      if (BindFactoryLeafComparisonRecord || !Primary ||
+          !BindPhysicalRecords.count(Owned->getCanonicalDecl()) ||
+          Constructor->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+          !family(Constructor) || !family(Method) || !Constraint || !Constraint->hasDefaultArgument() ||
+          Constraint->isParameterPack() || Constraint->getIndex() != 1 ||
+          !Constraint->getType()->isDependentType() || ConstraintLocation.isNull() ||
+          !Selected || Selected->size() != 2 || Selected->get(0).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Selected->get(0).getAsType().getNonReferenceType().getUnqualifiedType(), Scalar) ||
+          Selected->get(1).getKind() != TemplateArgument::Integral ||
+          !Context.hasSameType(Selected->get(1).getIntegralType(), Context.IntTy) ||
+          !Selected->get(1).getAsIntegral().isZero() ||
+          Location.isInvalid() || Begin.isInvalid() || End.isInvalid() ||
+          SM.getFileID(Location) != SM.getFileID(Begin) || SM.getFileID(Location) != SM.getFileID(End) ||
+          (Location != Begin && !SM.isBeforeInTranslationUnit(Begin, Location)) ||
+          (Location != End && !SM.isBeforeInTranslationUnit(Location, End)) ||
+          !cstddefOrigin(S, SM, Source.Location, "libcxx", "tuple") ||
+          Compared->getSpecializedTemplate() != Primary ||
+          Compared->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Primary ||
+          Compared->getSpecializationKind() != TSK_ImplicitInstantiation ||
+          Compared->getTemplateArgs().size() != 3 || !Definition || Definition->isUnion() ||
+          Definition->isDynamicClass() || Definition->getNumBases() ||
+          std::distance(Definition->field_begin(), Definition->field_end()) != 1 ||
+          !family(Compared) || !family(Definition) || !family(Primary)) return false;
+      const auto *Field = *Definition->field_begin();
+      if (!Field->getIdentifier() || Field->getName() != "__value_" || Field->isBitField() ||
+          Field->hasInClassInitializer() || !Field->getTypeSourceInfo() || !family(Field) ||
+          !Context.hasSameType(Field->getType(), Scalar)) return false;
+      const auto &Arguments = Compared->getTemplateArgs();
+      if (Arguments[0].getKind() != TemplateArgument::Integral || Arguments[0].getAsIntegral().isNegative() ||
+          Arguments[0].getAsIntegral().getLimitedValue(8) >= 8 ||
+          !Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType()) ||
+          Arguments[1].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments[1].getAsType(), Scalar) ||
+          Arguments[2].getKind() != TemplateArgument::Integral ||
+          !Context.hasSameType(Arguments[2].getIntegralType(), Context.BoolTy) ||
+          !Arguments[2].getAsIntegral().isZero()) return false;
+      if (Source.Template != Alias || Source.Declaration || Source.Instantiation || Source.Selection ||
+          !Source.FunctionalBindConstraint || !Source.Written || Source.Written->getNumTemplateArgs() != 2 ||
+          !Source.Underlying || !Source.Defaults.empty() || !Source.ParameterTypes.empty() ||
+          !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 2 || Source.Sugared->size() != 2 ||
+          !family(Alias) || !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/is_same.h"))
+        return false;
+      for (const auto *Values : {Source.Canonical, Source.Sugared})
+        if (Values->get(0).getKind() != TemplateArgument::Type ||
+            Values->get(1).getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(Values->get(0).getAsType(), Scalar) ||
+            Values->get(1).getAsType()->getAsCXXRecordDecl() != Compared) return false;
+      const auto *Expansion = dyn_cast<ElaboratedType>(AliasType->getAliasedType().getTypePtr());
+      const auto *Constant = Expansion ? dyn_cast<TemplateSpecializationType>(Expansion->getNamedType().getTypePtr()) : nullptr;
+      const auto *ConstantAlias = Constant
+          ? dyn_cast_or_null<TypeAliasTemplateDecl>(Constant->getTemplateName().getAsTemplateDecl()) : nullptr;
+      if (!ConstantAlias || !ConstantAlias->getIdentifier() || ConstantAlias->getName() != "_BoolConstant" ||
+          !family(ConstantAlias) || Constant->template_arguments().size() != 1 ||
+          Constant->template_arguments()[0].getKind() != TemplateArgument::Expression ||
+          !cstddefOrigin(S, SM, ConstantAlias->getLocation(), "libcxx", "__type_traits/integral_constant.h")) return false;
+      const Expr *Expression = Constant->template_arguments()[0].getAsExpr();
+      if (const auto *Value = dyn_cast<ConstantExpr>(Expression)) Expression = Value->getSubExpr();
+      const auto *Negation = dyn_cast<UnaryOperator>(Expression->IgnoreParenImpCasts());
+      const auto *Query = Negation && Negation->getOpcode() == UO_LNot
+          ? dyn_cast<TypeTraitExpr>(Negation->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+      const auto *Parameters = Alias->getTemplateParameters();
+      if (!Query || Query->getTrait() != BTT_IsSame || Query->getNumArgs() != 2 ||
+          Query->isTypeDependent() || Query->isValueDependent() || Parameters->size() != 2 ||
+          !cstddefOrigin(S, SM, Query->getExprLoc(), "libcxx", "__type_traits/is_same.h")) return false;
+      for (unsigned I = 0; I < 2; ++I) {
+        const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
+        const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Query->getArg(I)->getType().getTypePtr());
+        if (!Parameter || Parameter->getIndex() != I || Parameter->isParameterPack() ||
+            Parameter->hasDefaultArgument() || !family(Parameter) || !Substitution ||
+            Substitution->getAssociatedDecl() != Alias || Substitution->getReplacedParameter() != Parameter ||
+            !Context.hasSameType(Substitution->getReplacementType(), AliasType->template_arguments()[I].getAsType()))
+          return false;
+      }
+      // This exact comparison names a pinned SDK type. It neither owns that
+      // leaf's storage nor registers a constructor, member, body or operation.
+      // The full original/selected alias and both real operands still walk.
+      std::set<const Type *> SavedTypes;
+      std::set<const Stmt *> SavedExpressions;
+      SavedTypes.swap(Types); SavedExpressions.swap(Expressions);
+      BindFactoryLeafComparisonRecord = Compared->getCanonicalDecl();
+      auto Restore = llvm::make_scope_exit([&] {
+        BindFactoryLeafComparisonRecord = nullptr;
+        Types.clear(); Types.swap(SavedTypes);
+        Expressions.clear(); Expressions.swap(SavedExpressions);
+      });
+      return Proof() && !Failed;
+    });
   }
 
   bool withBindUnusedResultOperandSource(const TypeAliasDecl *Result,
@@ -11752,9 +11889,10 @@ public:
   }
 
   bool withBindNestedExpansionSource(const FunctionalBindCallSource &Parent, unsigned Slot,
-      const FunctionalBindNestedArgumentSource &Given, const std::function<bool()> &Proof) {
+      const FunctionalBindNestedArgumentSource &Given,
+      const std::function<bool(QualType)> &ResultSource, const std::function<bool()> &Proof) {
     return withBindSourceChild([&] {
-      if (!Proof || BindNestedExpansionSource || !BindNestedReturnSource ||
+      if (!Proof || !ResultSource || BindNestedCallResultSource || BindNestedExpansionSource || !BindNestedReturnSource ||
           !BindCallMetadata || Parent.SourceCall != BindCallMetadata->SourceCall ||
           Parent.Storage.Record != BindMetadata->Record) return false;
       const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
@@ -11795,7 +11933,11 @@ public:
       });
       if (!bindFunctionalBindSpecialMember(Constructor, true)) return false;
       BindNestedExpansionSource = &Child;
-      auto RestoreChild = llvm::make_scope_exit([&] { BindNestedExpansionSource = nullptr; });
+      BindNestedCallResultSource = ResultSource;
+      auto RestoreChild = llvm::make_scope_exit([&] {
+        BindNestedCallResultSource = {};
+        BindNestedExpansionSource = nullptr;
+      });
       return Proof() && bindSourceComplete();
     });
   }
@@ -11892,7 +12034,7 @@ public:
             utilityScalar(Context, Value.getUnqualifiedType());
       };
       const auto Selected = Storage->Elements[Slot].getType();
-      const auto Placeholder = OwnedWitness && Storage->Elements[Slot].EmptyBase
+      const auto Placeholder = (OwnedAncestor || OwnedWitness) && Storage->Elements[Slot].EmptyBase
           ? describeFunctionalBindPlaceholderIdentity(S, SM, Selected, Context) : std::nullopt;
       const auto Wrapper = OwnedWitness && !Storage->Elements[Slot].EmptyBase
           ? approvedFunctionalReferenceRecord(S, SM, Selected->getAsCXXRecordDecl(), Context) : std::nullopt;
@@ -12038,7 +12180,8 @@ public:
             !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default &&
             utilityScalar(Context, Value.getUnqualifiedType());
       };
-      const auto ProjectedPlaceholder = InputPlaceholder && OwnedWitness && Storage->Elements[Slot].EmptyBase
+      const auto ProjectedPlaceholder = InputPlaceholder && (OwnedAncestor || OwnedWitness) &&
+          Storage->Elements[Slot].EmptyBase
           ? describeFunctionalBindPlaceholderIdentity(S, SM, Storage->Elements[Slot].getType(), Context)
           : std::nullopt;
       if ((!Scalar(Storage->Elements[Slot].getType()) &&
@@ -14745,6 +14888,11 @@ public:
             !BindWeakResultSignaturePointee.isNull() && T == BindWeakResultSignaturePointee)) ||
         T.isRestrictQualified() || T.getAddressSpace() != LangAS::Default)
       return false;
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedTraitTypeSource)
+      if (const auto Complete = BindNestedTraitTypeSource(T)) {
+        if (!*Complete) Failed = true;
+        return *Complete && !Failed;
+      }
     // Source purpose precedes type memoization. These lazy nested records
     // never become ordinary storage, values or operations through a cache.
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata)
@@ -14919,6 +15067,17 @@ public:
            GeneratedPairScalarInitializers.count(E)) ||
           (Origin && Origin->Root == "libcxx"))) return false;
     const auto *Query = dyn_cast<CXXOperatorCallExpr>(E);
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedExpansionSource &&
+        Query == BindNestedExpansionSource->Invocation.SourceCall) {
+      const auto *Method = BindNestedExpansionSource->Invocation.Method;
+      // The selected call keeps its sugared return type. Reprove that exact
+      // type in the live child that owns its defaults and invocation source;
+      // a canonical scalar result supplies no permission to the parent.
+      return Method && Query->getDirectCallee() == Method &&
+          Query->getType() == Method->getReturnType().getNonReferenceType() &&
+          Query->getValueKind() == Expr::getValueKindForType(Method->getReturnType()) &&
+          BindNestedCallResultSource && BindNestedCallResultSource(Query->getType());
+    }
     if (Mode == UtilityTupleQueryMode::NotFnSignature && NotFnNestedCall &&
         NotFnNestedChildClosed && Query) {
       const auto Bound = NotFnOwnedInvokeQueries.find(Query);
@@ -19812,8 +19971,23 @@ describeFunctionalBindTryCallSignatureSource(
   };
   if (Selected->get(0).getKind() != TemplateArgument::Type ||
       !Declval(Invoke->getArg(0), Selected->get(0).getAsType())) return std::nullopt;
-  for (unsigned I = 0; I < Forwarded.size(); ++I)
-    if (Forwarded[I].isNull() || !Declval(Invoke->getArg(I + 1), Forwarded[I])) return std::nullopt;
+  const auto &ArgumentPack = Selected->get(1);
+  if (ArgumentPack.getKind() != TemplateArgument::Pack ||
+      ArgumentPack.pack_size() != Forwarded.size()) return std::nullopt;
+  for (unsigned I = 0; I < Forwarded.size(); ++I) {
+    const auto &Argument = ArgumentPack.pack_elements()[I];
+    if (Forwarded[I].isNull() || Argument.getKind() != TemplateArgument::Type)
+      return std::nullopt;
+    const auto Input = Argument.getAsType();
+    // __invokable_r retains the selected result type, while the real
+    // invocation records its expression as T&& for a non-reference result.
+    // declval<T>() and declval<T&&>() both produce that same xvalue. Require
+    // the actual owner pack, then check its exact selected declval below.
+    if ((!Context.hasSameType(Input, Forwarded[I]) &&
+         (!Forwarded[I]->isRValueReferenceType() ||
+          !Context.hasSameType(Input, Forwarded[I].getNonReferenceType()))) ||
+        !Declval(Invoke->getArg(I + 1), Input)) return std::nullopt;
+  }
   std::vector<const CallExpr *> OriginalInvokes, OriginalCallableDeclvals, OriginalArgumentDeclvals;
   for (const auto *Ancestor : Ancestors) {
     const auto *Pattern = dyn_cast<CXXMethodDecl>(Ancestor->getTemplatedDecl());
@@ -20843,10 +21017,13 @@ class BindSourceProof {
   std::set<const CallExpr *> UnwrapScalarConstraintSources;
   const TemplateUseSource *ActiveScalarParameter = nullptr;
   const CXXConstructorDecl *ActiveCallTupleConstructor = nullptr;
+  const CXXConstructorDecl *ActiveFactoryLeafConstructor = nullptr;
   std::set<const VarDecl *> ActiveScalarValues, CompletedScalarValues;
   std::map<const CallExpr *, const FunctionDecl *> UnwrapReferenceSources;
   std::map<const CallExpr *, const FunctionDecl *> TupleGetMemberSources;
   const FunctionalBindCallSource *ActiveCompleteCall = nullptr;
+  const FunctionalBindCallSource *ActiveSourceCall = nullptr;
+  std::set<const void *> ActiveNestedTraitTypes, CompletedNestedTraitTypes;
   const FunctionalBindNestedArgumentSource *ActiveNestedObjectQuery = nullptr;
   TypeLoc ActiveNestedReturnLocation;
   struct CompletedCallSource {
@@ -21774,6 +21951,17 @@ class BindSourceProof {
       }
       if (Written) return Graph.withBindRetainedTupleProjectionSources(*Written, Proof);
     }
+    if (ActiveFactoryLeafConstructor && Type && Type->isTypeAlias() && Template &&
+        Template->getIdentifier() && Template->getName() == "_IsNotSame") {
+      const TemplateUseSource *Actual = nullptr;
+      for (const auto *Use : Sources) {
+        if (!Use || Use->Kind != TemplateSourceKind::Type || Use->Type != Type) continue;
+        if (Actual && Actual != Use) return false;
+        Actual = Use;
+      }
+      if (!Actual) return false;
+      return Graph.withBindFactoryLeafComparisonSource(*Actual, ActiveFactoryLeafConstructor, Proof);
+    }
     // Nested children retain the already authenticated enclosing source scope.
     // Their existing type, declaration and argument callbacks still run.
     if (!ActiveCompleteCall || ActiveUnusedVoidConversion || !Type || !Type->isTypeAlias()) return Proof();
@@ -21842,25 +22030,42 @@ class BindSourceProof {
       const auto ApplyCallable = Apply && Apply->getNumParams() == 4 &&
           Apply->getParamDecl(0)->getType()->isLValueReferenceType()
           ? Apply->getParamDecl(0)->getType()->getPointeeType() : QualType();
+      // A nested return query asks about the actual child bind object,
+      // rather than its stored callback. Bind that alternative to this live
+      // occurrence; all alias, conditional, default and declaration sources
+      // below still close independently before the unused operand is named.
+      const bool NestedQuery = ActiveNestedObjectQuery && ActiveNestedReturnLocation &&
+          ActiveNestedObjectQuery->Invocation.SourceCall == ActiveCompleteCall->SourceCall &&
+          ActiveNestedObjectQuery->Invocation.Method == ActiveCompleteCall->Method &&
+          Owner && Owner->getTemplateArgs().size() == 3 &&
+          Owner->getTemplateArgs()[1].getKind() == TemplateArgument::Type &&
+          Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(),
+              Context.getLValueReferenceType(ActiveNestedObjectQuery->Invocation.Object->getType()));
       if (!Result || !Result->getIdentifier() || Result->getName() != "_Result" ||
           !Result->getTypeSourceInfo() || !Owner || !Owner->getIdentifier() || Owner->getName() != "__invokable_r" ||
           Owner->getSpecializationKind() != TSK_ImplicitInstantiation || Owner->getTemplateArgs().size() != 3 ||
           Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Owner->getTemplateArgs()[0].getAsType(), Context.VoidTy) ||
           Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type || ApplyCallable.isNull() ||
-          (!Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(), Storage.CallableType) &&
+          (!NestedQuery &&
+           !Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(), Storage.CallableType) &&
            !Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(), ApplyCallable) &&
            !Context.hasSameType(Owner->getTemplateArgs()[1].getAsType(),
                Apply->getParamDecl(0)->getType())) ||
           Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-          Owner->getTemplateArgs()[2].pack_size() != ActiveCompleteCall->Arguments.size() ||
+          Owner->getTemplateArgs()[2].pack_size() != (NestedQuery
+              ? ActiveCompleteCall->Method->getNumParams() : ActiveCompleteCall->Arguments.size()) ||
           !Context.hasSameType(Record->getTemplateArgs()[0].getAsType(), Result->getUnderlyingType()) ||
           !Check.family(Result, {"__type_traits/invoke.h"}) ||
           !Check.family(Owner, {"__type_traits/invoke.h"})) return false;
       unsigned I = 0;
-      for (const auto &Argument : Owner->getTemplateArgs()[2].pack_elements())
+      for (const auto &Argument : Owner->getTemplateArgs()[2].pack_elements()) {
+        const auto Expected = NestedQuery ? ActiveCompleteCall->Method->getParamDecl(I)->getType()
+            : ActiveCompleteCall->Arguments[I].ForwardedType;
         if (Argument.getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Argument.getAsType(), ActiveCompleteCall->Arguments[I++].ForwardedType)) return false;
+            !Context.hasSameType(Argument.getAsType(), Expected)) return false;
+        ++I;
+      }
       const TypeAliasDecl *ReturnAlias = nullptr;
       for (const auto *Declaration : Owner->decls()) {
         const auto *Member = dyn_cast<TypeAliasDecl>(Declaration);
@@ -24319,6 +24524,96 @@ class BindSourceProof {
       return Complete();
     });
   }
+  std::optional<TypeLoc> nestedTraitTypeLocation(
+      const FunctionalBindNestedArgumentSource &Child, QualType Type) {
+    if (!ActiveSourceCall || Type.isNull() || Child.Root != ActiveSourceCall->OwnedRoot ||
+        Child.Parent != ActiveSourceCall->SourceCall || Child.Slot >= ActiveSourceCall->Arguments.size() ||
+        !ActiveSourceCall->Arguments[Child.Slot].Nested) return std::nullopt;
+    for (const auto *Call : {Child.Unwrap, Child.Expand}) {
+      const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+      const auto Prototype = Function && Function->getTypeSourceInfo()
+          ? Function->getTypeSourceInfo()->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
+      const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
+      if (!Function || !Return || !Check.family(Function, {"__functional/bind.h"}) ||
+          !Context.hasSameType(Function->getReturnType(), Child.ResultType)) continue;
+      bool ExactType = Type == Return.getType();
+      auto Location = Return;
+      for (unsigned Depth = 0; !Location.isNull() && Depth < 64; ++Depth, Location = Location.getNextTypeLoc()) {
+        ExactType |= Type == Location.getType();
+        const auto Alias = Location.getAs<TemplateSpecializationTypeLoc>();
+        const auto *Template = Alias ? Alias.getTypePtr()->getTemplateName().getAsTemplateDecl() : nullptr;
+        if (Alias && Alias.getTypePtr()->isTypeAlias() && Template && Template->getIdentifier() &&
+            Template->getName() == "__invoke_result_t" &&
+            Check.family(Template, {"__type_traits/invoke.h"}) && ExactType) return Return;
+      }
+    }
+    return std::nullopt;
+  }
+
+  bool nestedTraitTypeSource(BindSourceProof &Parent,
+      const FunctionalBindNestedArgumentSource &Child, QualType Type, TypeLoc Expected) {
+    const auto Location = Parent.nestedTraitTypeLocation(Child, Type);
+    return Location && Location->getOpaqueData() == Expected.getOpaqueData() &&
+        Location->getType() == Expected.getType() && nestedReturnTypeSource(Child, *Location);
+  }
+
+  std::optional<bool> nestedTraitTypeSource(QualType Type) {
+    if (!Ready || !ActiveSourceCall || Type.isNull()) return std::nullopt;
+    const auto *Record = Type->getAsCXXRecordDecl();
+    const auto *Alias = dyn_cast<TemplateSpecializationType>(Type.getTypePtr());
+    const auto *Template = Alias ? Alias->getTemplateName().getAsTemplateDecl() : nullptr;
+    if (!(Record && Record->getIdentifier() &&
+            (Record->getName() == "__mu_return_impl" || Record->getName() == "__mu_return_invokable")) &&
+        !(Alias && Alias->isTypeAlias() && Template && Template->getIdentifier() &&
+            Template->getName() == "__invoke_result_t")) return std::nullopt;
+    std::vector<std::pair<unsigned, TypeLoc>> Locations;
+    for (unsigned Slot = 0; Slot < ActiveSourceCall->Arguments.size(); ++Slot) {
+      const auto &Argument = ActiveSourceCall->Arguments[Slot];
+      if (!Argument.Nested) continue;
+      if (const auto Location = nestedTraitTypeLocation(*Argument.Nested, Type))
+        Locations.emplace_back(Slot, *Location);
+    }
+    if (Locations.empty()) return std::nullopt;
+    return Graph.withBindSourceChild([&] {
+      const auto Key = Type.getAsOpaquePtr();
+      if (CompletedNestedTraitTypes.count(Key)) return Graph.bindSourceComplete();
+      if (ActiveNestedTraitTypes.size() == 64 || !ActiveNestedTraitTypes.insert(Key).second) return false;
+      auto Restore = llvm::make_scope_exit([&] { ActiveNestedTraitTypes.erase(Key); });
+      for (const auto &[Slot, Location] : Locations)
+        if (!withNestedCallCompleteSource(*ActiveSourceCall, Slot,
+              [&](const FunctionalBindNestedArgumentSource &Child, BindSourceProof &Dependency) {
+                return Dependency.nestedTraitTypeSource(*this, Child, Type, Location);
+              })) return false;
+      if (CompletedNestedTraitTypes.size() == 64) return false;
+      CompletedNestedTraitTypes.insert(Key);
+      return Graph.bindSourceComplete();
+    });
+  }
+
+  bool nestedCallResultTypeSource(const FunctionalBindNestedArgumentSource &Child, QualType Type) {
+    if (!Ready || !ActiveCompleteCall || ActiveNestedObjectQuery || ActiveNestedReturnLocation || Type.isNull() ||
+        ActiveCompleteCall->SourceCall != Child.Invocation.SourceCall ||
+        ActiveCompleteCall->Method != Child.Invocation.Method ||
+        ActiveCompleteCall->OwnedRoot != Child.Root || ActiveCompleteCall->OwnedPath != Child.Path ||
+        ActiveCompleteCall->Storage.Record != Storage.Record || !Graph.bindSourceComplete()) return false;
+    const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Child.Invocation, Context);
+    const auto *Method = Child.Invocation.Method;
+    const auto *Call = Child.Invocation.SourceCall;
+    const auto Prototype = Method && Method->getTypeSourceInfo()
+        ? Method->getTypeSourceInfo()->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
+    const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
+    if (!Fresh || Fresh->OwnedRoot != Child.Root || Fresh->OwnedPath != Child.Path ||
+        Fresh->SourceCall != Call || Fresh->Method != Method || !Return ||
+        Call->getType() != Type || Type != Method->getReturnType().getNonReferenceType() ||
+        Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()) ||
+        !Context.hasSameType(Return.getType(), Method->getReturnType())) return false;
+    const auto ClosedApply = completedCallFunction(Child.Invocation.Apply);
+    if (!ClosedApply || *ClosedApply != Child.Invocation.Apply->getDirectCallee()) return false;
+    return Graph.withBindScalarConstraintSource([&] {
+      return Graph.TraverseTypeLoc(Return) && Graph.TraverseType(Type) && Graph.bindSourceComplete();
+    });
+  }
+
   bool nestedReturnTypeSource(const FunctionalBindNestedArgumentSource &Child, TypeLoc Location) {
     if (!Ready || !ActiveCompleteCall || ActiveNestedObjectQuery || ActiveNestedReturnLocation ||
         ActiveCompleteCall->SourceCall != Child.Invocation.SourceCall ||
@@ -24487,6 +24782,8 @@ public:
         [this](const TemplateSpecializationType *Type, const std::function<bool()> &Proof) {
           return typeTraversalSource(Type, Proof);
         });
+    Ready = Ready && Graph.bindFunctionalBindNestedTraitTypeSource(
+        [this](QualType Type) { return nestedTraitTypeSource(Type); });
     Ready = Ready && Graph.bindFunctionalBindRetainedTupleSource(
         [this](const TemplateUseSource &Use, const CXXRecordDecl *Tuple, unsigned Slot, const TypeAliasDecl *Alias) {
           return retainedOwnedTupleProjectionStorage(Use, Tuple, Slot, Alias);
@@ -24522,8 +24819,12 @@ public:
         (!Storage.Arguments.Elements.empty() &&
          (!boundTupleConstructorSource(Factory, *Tuple) ||
           !functionUse(Tuple->Implementation, Tuple->Implementation->getConstructor())))) return false;
-    for (const auto *Leaf : Tuple->Leaves)
+    for (const auto *Leaf : Tuple->Leaves) {
+      if (ActiveFactoryLeafConstructor) return false;
+      ActiveFactoryLeafConstructor = Leaf->getConstructor();
+      auto RestoreLeaf = llvm::make_scope_exit([&] { ActiveFactoryLeafConstructor = nullptr; });
       if (!functionUse(Leaf, Leaf->getConstructor())) return false;
+    }
     // Bind only fresh, independently described occurrences. These sets are
     // local proof state and never publish a runtime or ordinary SDK approval.
     if (!FactoryBuiltinForwards.empty()) return false;
@@ -24594,7 +24895,7 @@ public:
   }
   bool callCompleteSource(const FunctionalBindCallSource &Call,
       const std::function<bool(const FunctionalBindCallSource &)> &AfterComplete = {}) {
-    if (!Ready || ActiveCompleteCall || ActiveUnusedVoidConversion || !ClosedCompleteCalls.empty() || !ClosedCallTupleConstructors.empty() ||
+    if (!Ready || ActiveSourceCall || ActiveCompleteCall || ActiveUnusedVoidConversion || !ClosedCompleteCalls.empty() || !ClosedCallTupleConstructors.empty() ||
         !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
         Call.Storage.Record != Storage.Record) return false;
     const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
@@ -24602,6 +24903,12 @@ public:
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Object != Call.Object || Actual->Storage.Record != Storage.Record ||
         Actual->Arguments.size() != Storage.Arguments.Elements.size()) return false;
+    ActiveSourceCall = &*Actual;
+    auto RestoreSourceCall = llvm::make_scope_exit([&] {
+      ActiveNestedTraitTypes.clear();
+      CompletedNestedTraitTypes.clear();
+      ActiveSourceCall = nullptr;
+    });
     // All selected children and both metadata probe alternatives close in
     // this proof and share its original graph budget.
     if (!callAuxiliary(*Actual)) return false;
@@ -25414,7 +25721,8 @@ public:
           return false;
         return Graph.TraverseStmt(const_cast<CompoundStmt *>(ActualBody));
       };
-      return Graph.withBindNestedExpansionSource(Parent, Child.Slot, Child, [&] {
+      return Graph.withBindNestedExpansionSource(Parent, Child.Slot, Child,
+          [&](QualType Type) { return Dependency.nestedCallResultTypeSource(Child, Type); }, [&] {
         std::map<const UnresolvedLookupExpr *, std::vector<const NamedDecl *>> Lookups{{GetLookup, GetDeclarations}};
         if (!Graph.withBindSourceLookupUses(Lookups, [&] {
               return functionSource(Child.Expand, Function, [&] {
