@@ -17149,21 +17149,50 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
   const auto CallableType = Callable->getType();
   const auto OriginalCallable = DecayedValue(TemplateArguments[0].getAsType());
   if (CallableType.isNull() || CallableType.hasQualifiers() ||
-      CallableType->isDependentType() || !CallableType->isFunctionPointerType() ||
+      CallableType->isDependentType() ||
       OriginalCallable.isNull() ||
       !Context.hasSameType(CallableType, OriginalCallable)) return std::nullopt;
-  const auto *Prototype = CallableType->getPointeeType()->getAs<FunctionProtoType>();
-  if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
-      Prototype->getNumParams() != TemplateArguments[1].pack_size())
-    return std::nullopt;
-  const auto Result = Prototype->getReturnType();
-  if (!Result->isVoidType() &&
-      !ScalarValue(Result->isReferenceType() ? Result->getPointeeType() : Result))
-    return std::nullopt;
-  for (const auto Parameter : Prototype->param_types())
-    if (!ScalarValue(Parameter->isReferenceType()
-                         ? Parameter->getPointeeType() : Parameter))
+  const bool FunctionPointer = CallableType->isFunctionPointerType();
+  if (!FunctionPointer) {
+    const auto *CallableRecord = CallableType->getAsCXXRecordDecl();
+    const auto *Definition = CallableRecord ? CallableRecord->getDefinition() : nullptr;
+    // Inert identity and physical shape only. The exact selected copy,
+    // weak-result/query graph, ordinary method body and invocation must
+    // complete independently before a runtime operation can be admitted.
+    if (!Definition || !S.owns(SM, Definition->getLocation()) ||
+        Definition->isInvalidDecl() || Definition->hasAttrs() ||
+        isa<ClassTemplateSpecializationDecl>(Definition) ||
+        Definition->getDescribedClassTemplate() || Definition->isUnion() ||
+        Definition->isLambda() || Definition->isDynamicClass() ||
+        Definition->getNumBases() || !Definition->isStandardLayout() ||
+        !Definition->hasTrivialCopyConstructor() || !Definition->hasTrivialDestructor() ||
+        !Context.hasSameType(Context.getRecordType(Definition), CallableType))
       return std::nullopt;
+    for (const auto *Declaration : CallableRecord->redecls())
+      if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
+        return std::nullopt;
+    unsigned Fields = 0;
+    for (const auto *Field : Definition->fields())
+      if (++Fields > 64 || ++Nodes > 200000 ||
+          !S.owns(SM, Field->getLocation()) || Field->hasAttrs() ||
+          Field->getAccess() != AS_public || Field->isBitField() || Field->isMutable() ||
+          Field->hasInClassInitializer() || Field->getType().hasQualifiers() ||
+          !Field->getType()->isArithmeticType()) return std::nullopt;
+  }
+  if (FunctionPointer) {
+    const auto *Prototype = CallableType->getPointeeType()->getAs<FunctionProtoType>();
+    if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
+        Prototype->getNumParams() != TemplateArguments[1].pack_size())
+      return std::nullopt;
+    const auto Result = Prototype->getReturnType();
+    if (!Result->isVoidType() &&
+        !ScalarValue(Result->isReferenceType() ? Result->getPointeeType() : Result))
+      return std::nullopt;
+    for (const auto Parameter : Prototype->param_types())
+      if (!ScalarValue(Parameter->isReferenceType()
+                           ? Parameter->getPointeeType() : Parameter))
+        return std::nullopt;
+  }
 
   const auto &Base = *Instance->bases_begin();
   const auto *Weak = Check.record(Base.getType(), "__weak_result_type",
@@ -17245,7 +17274,8 @@ describeFunctionalBindFactorySource(
   const auto *Factory = Call ? Call->getDirectCallee() : nullptr;
   const auto Storage = describeFunctionalBindStorage(
       S, SM, Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context);
-  if (!Storage || !Factory || !Factory->getIdentifier() ||
+  if (!Storage || !Storage->CallableType->isFunctionPointerType() ||
+      !Factory || !Factory->getIdentifier() ||
       Factory->getName() != "bind" || !S.owns(SM, Call->getExprLoc()) ||
       !Call->isPRValue() || Call->isTypeDependent() || Call->isValueDependent() ||
       Factory->isVariadic() || Factory->getNumParams() != Call->getNumArgs() ||
@@ -17427,7 +17457,8 @@ describeFunctionalBindCallSourceImpl(
       S, SM, Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context);
   const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
   const auto *MethodArguments = Method->getTemplateSpecializationArgs();
-  if (!Storage || !Object->isGLValue() || !Prototype || Prototype->isNothrow() ||
+  if (!Storage || !Storage->CallableType->isFunctionPointerType() ||
+      !Object->isGLValue() || !Prototype || Prototype->isNothrow() ||
       Prototype->getNoexceptExpr() || !Method->getPrimaryTemplate() ||
       !MethodArguments || MethodArguments->size() != 1 ||
       MethodArguments->get(0).getKind() != TemplateArgument::Pack ||
