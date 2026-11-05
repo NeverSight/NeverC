@@ -18001,7 +18001,7 @@ describeFunctionalBindCallSourceImpl(
         !Definition || !Definition->getBody() || !S.owns(SM, Definition->getLocation()) ||
         !S.owns(SM, Definition->getBody()->getBeginLoc())) return std::nullopt;
     for (const auto *Declaration : Ordinary->redecls())
-      if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() ||
+      if (!Walk.step() || !S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() ||
           !Declaration->getTypeSourceInfo()) return std::nullopt;
     const auto *Receiver = Target->getArg(0);
     const auto Expected = Method->isConst() ? Context.getConstType(Storage->CallableType) : Storage->CallableType;
@@ -18017,6 +18017,7 @@ describeFunctionalBindCallSourceImpl(
                           !Ordinary->isConst() || Expected.isConstQualified())
                        : Receiver->IgnoreParens() != Cast)) return std::nullopt;
     for (unsigned I = 0; I < Ordinary->getNumParams(); ++I) {
+      if (!Walk.step()) return std::nullopt;
       const auto Value = Ordinary->getParamDecl(I)->getType();
       if (!utilityScalar(Context, Value) || Ordinary->getParamDecl(I)->hasDefaultArg() ||
           !Context.hasSameUnqualifiedType(Value, InvokeFunction->getParamDecl(I + 1)->getType().getNonReferenceType()) ||
@@ -27277,6 +27278,40 @@ bool approvedFunctionalBindCopySource(
     const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
   return BindSourceProof(S, SM, Context, Copy.Layout.Storage, Sources, Selections,
       Members, Traits).copy(Copy);
+}
+
+bool approvedFunctionalBindOwnedCopySource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindCopySource &Copy, const ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const CXXMethodDecl *> &OwnedQuerySources) {
+  if (Copy.Layout.Storage.CallableType.isNull() ||
+      !Copy.Layout.Storage.CallableType->isRecordType()) return false;
+  std::set<const CXXMethodDecl *> Selected;
+  if (!BindSourceProof(S, SM, Context, Copy.Layout.Storage, Sources, Selections,
+          Members, Traits, {}, nullptr, nullptr, &Selected).copy(Copy)) return false;
+  OwnedQuerySources.insert(Selected.begin(), Selected.end());
+  return true;
+}
+
+bool approvedFunctionalBindOwnedDestructionSource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindDestructionSource &Destruction, SourceLocation Location,
+    const ASTContext &Context, llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const CXXMethodDecl *> &OwnedQuerySources) {
+  if (Destruction.Layout.Storage.CallableType.isNull() ||
+      !Destruction.Layout.Storage.CallableType->isRecordType()) return false;
+  std::set<const CXXMethodDecl *> Selected;
+  if (!BindSourceProof(S, SM, Context, Destruction.Layout.Storage, Sources, Selections,
+          Members, Traits, {}, nullptr, nullptr, &Selected).destruction(Destruction, Location)) return false;
+  OwnedQuerySources.insert(Selected.begin(), Selected.end());
+  return true;
 }
 
 bool approvedFunctionalBindDestructionSource(
