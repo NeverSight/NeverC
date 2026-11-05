@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify native LLVM far-pointer loads in protected code16/code32 using KVM."""
+"""Qualify native IR/C far-pointer loads in protected code16/code32 using KVM."""
 
 import argparse
 import hashlib
@@ -39,11 +39,29 @@ def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def c_sources():
+    source = []
+    for operation in OPERATIONS:
+        for bits in (16, 32):
+            for used in (0, 1):
+                source.append(
+                    f"unsigned probe_{operation}{bits}_{used}(const void *p, "
+                    "unsigned char *marker) {\n"
+                    "  *marker = 17;\n"
+                    f"  unsigned value = __builtin_ia32_{operation}{bits}(p);\n"
+                    "  *marker = 29;\n"
+                    f"  return {'value' if used else '42'};\n}}\n"
+                )
+    return "".join(source)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--llvm-bin", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--mode", type=int, choices=(16, 32), required=True)
+    parser.add_argument("--frontend", type=Path,
+                        help="compile builtin C through this Clang or NeverC")
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -53,6 +71,9 @@ def main():
         parser.error("clang, ld.lld and objcopy are required")
     tools.update({name: str((args.llvm_bin / name).resolve())
                   for name in ("llc", "opt", "llvm-objdump")})
+    if args.frontend:
+        tools["frontend"] = str(args.frontend.resolve())
+    tool_hashes = {name: sha256(path) for name, path in tools.items()}
     records = []
 
     def run(command, stem, expected=0, timeout=600):
@@ -71,6 +92,7 @@ def main():
         return result.stdout
 
     (output / "input.ll").write_text(sources())
+    (output / "input.c").write_text(c_sources())
     (output / "guest.ld").write_text("""ENTRY(probe_lds16_0)
 SECTIONS {
   . = 0x10000;
@@ -87,6 +109,18 @@ SECTIONS {
     profiles = []
     for level in ("O0", "O2"):
         source = output / "input.ll"
+        triple = "i386-unknown-linux-" + ("code16" if args.mode == 16 else "gnu")
+        if args.frontend:
+            source = output / f"{level}-frontend.ll"
+            run([tools["frontend"], f"--target={triple}", f"-{level}",
+                 "-fno-pic", "-fno-pie", "-fno-stack-protector",
+                 "-mno-sse", "-mno-sse2", "-mno-mmx", "-S", "-emit-llvm",
+                 output / "input.c", "-o", source], level + "-frontend")
+            text = source.read_text()
+            assert "asm " not in text and "memory(none)" not in text, source
+            for operation in OPERATIONS:
+                for bits in (16, 32):
+                    assert text.count(f"call i{bits} @llvm.x86.{operation}{bits}(ptr") == 2, source
         if level == "O2":
             optimized = output / "optimized.ll"
             run([tools["opt"], "-S", "-passes=default<O2>", source,
@@ -94,7 +128,6 @@ SECTIONS {
             source = optimized
         obj, elf, binary = (output / (level + suffix)
                             for suffix in (".o", ".elf", ".bin"))
-        triple = "i386-unknown-linux-" + ("code16" if args.mode == 16 else "gnu")
         run([tools["llc"], f"-mtriple={triple}", f"-{level}",
              *(["-enable-new-pm"] if level == "O2" else []),
              "-verify-machineinstrs", "-filetype=obj", source, "-o", obj],
@@ -154,13 +187,15 @@ SECTIONS {
                              image_sha256=sha256(binary), manifest_sha256=sha256(manifest_path),
                              negative_control="wrong pointer before intact far load rejected", **native))
         print(f"PASS code{args.mode} {level}: {native}", flush=True)
-    report = dict(schema_version=1, tools={k: sha256(v) for k, v in tools.items()},
+    assert tool_hashes == {name: sha256(path) for name, path in tools.items()}, "compiler changed during qualification"
+    report = dict(schema_version=2, tools=tool_hashes,
+                  frontend=str(args.frontend.resolve()) if args.frontend else None,
                   inputs={str(p.relative_to(ROOT)): sha256(p) for p in
                           [Path(__file__), ROOT / "protected_far_pointer_kvm.c",
                            ROOT / "KvmTransferFixture.h", ROOT / "KvmProtectedFaultFixture.h"]},
                   profiles=profiles,
                   comparisons=sum(p["complete_state_pairs"] for p in profiles),
-                  boundary="CPL0 protected code16/code32 with a 32-bit stack/pointer ABI; native offset/segment loads, descriptor effects and #GP/#NP/#SS/#PF frames. Original fault handlers expose their vector with OUT. ABI-compatible successful cases also return through the compiler frame. No NeverC i386 frontend, real/VM86, CPL3 #AC, MOV-SS shadows or asynchronous events.")
+                  boundary="CPL0 protected code16/code32 with a 32-bit stack/pointer ABI; native offset/segment loads, descriptor effects and #GP/#NP/#SS/#PF frames. Original fault handlers expose their vector with OUT. ABI-compatible successful cases also return through the compiler frame. Frontend C, when selected, is compiled through the full LLVM backend. No embedded NeverC i386 backend, real/VM86, CPL3 #AC, MOV-SS shadows or asynchronous events.")
     (output / "qualification.json").write_text(json.dumps(report, indent=2) + "\n")
 
 

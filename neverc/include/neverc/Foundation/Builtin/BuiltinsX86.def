@@ -30,6 +30,10 @@ BUILTIN(__builtin_ia32_writeseg, "vIUiUs", "n")
 BUILTIN(__builtin_ia32_writeseg_mem, "vIUivC*", "n")
 
 // Native packed far-pointer loads; selector validation stays instruction-owned.
+BUILTIN(__builtin_ia32_lds16, "UsvC*", "n")
+BUILTIN(__builtin_ia32_lds32, "UivC*", "n")
+BUILTIN(__builtin_ia32_les16, "UsvC*", "n")
+BUILTIN(__builtin_ia32_les32, "UivC*", "n")
 BUILTIN(__builtin_ia32_lss16, "UsvC*", "n")
 BUILTIN(__builtin_ia32_lss32, "UivC*", "n")
 BUILTIN(__builtin_ia32_lfs16, "UsvC*", "n")

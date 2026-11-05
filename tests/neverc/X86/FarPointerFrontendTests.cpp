@@ -108,14 +108,89 @@ TEST_F(X86FarPointerTest, SignaturesRejectMissingExtraAndIntegerOperands) {
       }
 }
 
-TEST_F(X86FarPointerTest, LongModeDoesNotAdvertiseLdsOrLes) {
+TEST_F(X86FarPointerTest, LongModeRejectsLdsOrLes) {
   const auto Source = tmpFile("far-pointer-mode.c");
-  writeFile(Source, R"(
-#if __has_builtin(__builtin_ia32_lds16) || __has_builtin(__builtin_ia32_lds32) || \
-    __has_builtin(__builtin_ia32_les16) || __has_builtin(__builtin_ia32_les32)
-#error LDS and LES are invalid in long mode
-#endif
-int valid;
-)");
-  EXPECT_EQ(ncc({"-fsyntax-only", Source.string()}).exitCode, 0);
+  for (const char *Op : {"lds", "les"})
+    for (unsigned Bits : {16, 32}) {
+      const auto Name = std::string(Op) + std::to_string(Bits);
+      writeFile(Source, "void bad(const void *p) { __builtin_ia32_" + Name +
+                            "(p); }\n");
+      const auto Result = ncc({"--target=x86_64-unknown-linux-gnu",
+                               "-fsyntax-only", Source.string()});
+      EXPECT_NE(Result.exitCode, 0);
+      EXPECT_NE(Result.err.find("requires a 32-bit x86 target"),
+                std::string::npos)
+          << Result.err;
+    }
+}
+
+TEST_F(X86FarPointerTest, LegacySourceKeepsPackedLoadsAndDescriptorEffects) {
+  const auto Source = tmpFile("legacy-far-pointer.c");
+  std::string Text;
+  for (const char *Op : {"lds", "les", "lfs", "lgs", "lss"})
+    for (unsigned Bits : {16, 32}) {
+      const auto Name = std::string(Op) + std::to_string(Bits);
+      Text += "#if !__has_builtin(__builtin_ia32_" + Name +
+              ")\n#error missing\n#endif\n";
+      Text += std::string(type(Bits)) + " probe_" + Name +
+              "(const void *p, unsigned *marker) {\n";
+      Text += "_Static_assert(_Generic(__builtin_ia32_" + Name + "(p), " +
+              type(Bits) + ": 1, default: 0));\n";
+      Text += "*marker = 17;\n" + std::string(type(Bits)) +
+              " result = __builtin_ia32_" + Name + "(p);\n";
+      Text +=
+          "__builtin_ia32_" + Name + "(p);\n*marker = 23;\nreturn result;\n}\n";
+    }
+  writeFile(Source, Text);
+  for (const char *Opt : {"-O0", "-O2"}) {
+    const auto IR = tmpFile("legacy-far-pointer.ll");
+    const auto Result = ncc({"--target=i386-unknown-linux-gnu", Opt,
+                             "-ffreestanding", "-fno-builtin-mimalloc", "-S",
+                             "-emit-llvm", Source.string(), "-o", IR.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    const auto Emitted = readFile(IR);
+    EXPECT_EQ(Emitted.find("asm "), std::string::npos);
+    EXPECT_EQ(Emitted.find("memory(none)"), std::string::npos);
+    EXPECT_EQ(Emitted.find("memory(read)"), std::string::npos);
+    for (const char *Op : {"lds", "les", "lfs", "lgs", "lss"})
+      for (unsigned Bits : {16, 32}) {
+        const auto Name = std::string(Op) + std::to_string(Bits);
+        const auto Start = Emitted.find("@probe_" + Name + "(");
+        ASSERT_NE(Start, std::string::npos);
+        const auto End = Emitted.find("\n}", Start);
+        ASSERT_NE(End, std::string::npos);
+        const auto Body = Emitted.substr(Start, End - Start);
+        const auto Needle =
+            "call i" + std::to_string(Bits) + " @llvm.x86." + Name + "(ptr";
+        const auto First = Body.find(Needle);
+        ASSERT_NE(First, std::string::npos) << Body;
+        const auto Second = Body.find(Needle, First + 1);
+        ASSERT_NE(Second, std::string::npos) << Body;
+        EXPECT_EQ(Body.find(Needle, Second + 1), std::string::npos);
+        EXPECT_LT(Body.find("store i32 17"), First);
+        EXPECT_NE(Body.find("store i32 23", Second), std::string::npos);
+      }
+  }
+}
+
+TEST_F(X86FarPointerTest, LegacySourceRejectsInvalidWidthsAndOperands) {
+  const auto Source = tmpFile("legacy-far-pointer-invalid.c");
+  for (const char *Op : {"lds", "les", "lfs", "lgs", "lss"})
+    for (unsigned Bits : {16, 32, 64})
+      for (const char *Args : {"", "p, p", "42"}) {
+        const auto Call = "__builtin_ia32_" + std::string(Op) +
+                          std::to_string(Bits) + "(" + Args + ")";
+        writeFile(Source, "void bad(const void *p) { " + Call + "; }\n");
+        const auto Result = ncc({"--target=i386-unknown-linux-gnu", "-Werror",
+                                 "-fsyntax-only", Source.string()});
+        EXPECT_NE(Result.exitCode, 0) << Call;
+      }
+  for (const char *Op : Operations) {
+    writeFile(Source, "void bad(const void *p) { __builtin_ia32_" +
+                          std::string(Op) + "64(p); }\n");
+    EXPECT_NE(ncc({"--target=i386-unknown-linux-gnu", "-fsyntax-only",
+                   Source.string()})
+                  .exitCode,
+              0);
+  }
 }

@@ -3483,6 +3483,18 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_writeseg_mem:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writeseg_mem,
                                    {Ops[0], Ops[1]});
+  case X86::BI__builtin_ia32_lds16:
+    return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_lds16,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_lds32:
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_lds32,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_les16:
+    return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_les16,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_les32:
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_les32,
+                                   {Ops[0]});
   case X86::BI__builtin_ia32_lss16:
     return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_lss16,
                                    {Ops[0]});

@@ -239,6 +239,7 @@ i386 source dispatcher. The instruction contract follows
 
 ## Native far-pointer segment loads
 
+`__builtin_ia32_lds16/32`, `__builtin_ia32_les16/32`,
 `__builtin_ia32_lfs16/32/64`, `__builtin_ia32_lgs16/32/64` and
 `__builtin_ia32_lss16/32/64` each take one `const void *`. The result is an
 `unsigned short`, `unsigned int` or `unsigned long long`, respectively. The
@@ -262,13 +263,25 @@ The pointer follows compiler-selected addressing. The API does not retain an
 original instruction's source segment, address-size prefix or default-stack
 fault provenance.
 
-The full LLVM fork also exposes `llvm.x86.lds16/32` and `llvm.x86.les16/32` in
-protected 16/32-bit code. NeverC targets x86-64 and does not advertise those four invalid
-long-mode builtins; its IR reader retains their signatures and diagnoses native
-compilation. All 64-bit result forms require long mode. The full fork supports
-16/32-bit far-pointer results in protected code16 with its 32-bit stack/pointer
-ABI; NeverC retains its x64 frontend and trimmed-backend mode admission.
-These mode checks do not substitute another instruction.
+NeverC's Linux i386 frontend exposes all ten word/dword forms, emitting IR for
+the full LLVM fork. The four LDS/LES calls diagnose long-mode use at the frontend;
+all 64-bit result forms require long mode. The full fork's Clang exposes the same
+thirteen builtins and maps them directly to the existing effectful intrinsics.
+Its protected code16 target uses the 32-bit stack/pointer ABI. These APIs do not
+restore NeverC's pruned embedded i386 backend or add a NeverC code16 frontend.
+Invalid code modes fail rather than substituting another instruction.
+`__has_builtin` reports registration; it does not override the call's code-mode
+checks, just as for the existing legacy BOUND and ARPL interfaces.
+
+`verify_protected_far_pointer.py --llvm-bin LLVM_BIN --mode 32 --frontend
+NEVERC --output ARTIFACTS` compiles actual C for the protected-mode KVM oracle.
+Use `--frontend CLANG` with `--mode 16` or `32` for the full fork's frontend;
+omitting `--frontend` retains the direct-IR baseline. Every profile checks used
+and unused results, ordinary-memory ordering, complete represented CPU state,
+descriptor effects and original #GP/#NP/#SS/#PF frames. Its wrong-pointer
+negative control retains the native instruction. `verify_far_pointer.py` also
+accepts `--frontend CLANG` to check direct native Clang and Clang IR through the
+full LLVM backend on x64, alongside the existing NeverC and LLVM profiles.
 
 `FarPointerFrontendTests.cpp` checks native identity, unused effects, exact C
 types, malformed operands and both assembly dialects at O0/O2 on ELF/COFF/Mach-O.

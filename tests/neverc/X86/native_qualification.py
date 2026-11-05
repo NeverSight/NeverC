@@ -19,17 +19,19 @@ def run_qualification(description, harness_text, sources, expected, expected_row
     parser.add_argument("--opt", type=Path,
                         help="LLVM optimizer; defaults to the sibling of --llc")
     parser.add_argument("--neverc", type=Path)
+    parser.add_argument("--frontend", type=Path,
+                        help="additional native C frontend (for example patched Clang)")
     parser.add_argument("--clang", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
-    if not args.llc and not args.neverc:
-        parser.error("provide --llc and/or --neverc")
+    if not args.llc and not args.neverc and not args.frontend:
+        parser.error("provide --llc, --neverc and/or --frontend")
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         parser.error("native Linux x64 is required")
     if args.llc and not args.opt:
         args.opt = args.llc.with_name("opt")
     tools = {str(path.resolve()): digest(path.resolve())
-             for path in (args.llc, args.opt, args.neverc, args.clang) if path}
+             for path in (args.llc, args.opt, args.neverc, args.frontend, args.clang) if path}
     script_hashes = {str(Path(name).resolve()): digest(Path(name))
                      for name in (script_path, __file__)}
     root = args.output_dir.resolve()
@@ -49,11 +51,14 @@ def run_qualification(description, harness_text, sources, expected, expected_row
         result.check_returncode()
         return result.stdout
 
-    profiles = [name for name in ("llc", "neverc") if getattr(args, name)]
+    profiles = [name for name in ("llc", "neverc", "frontend") if getattr(args, name)]
     if args.llc and args.neverc:
         profiles.append("neverc-llvm")
+    if args.llc and args.frontend:
+        profiles.append("frontend-llvm")
     for compiler in profiles:
-        tool = (args.llc if compiler == "llc" else args.neverc).resolve()
+        tool = (args.llc if compiler == "llc" else
+                args.frontend if compiler.startswith("frontend") else args.neverc).resolve()
         source = root / (compiler + (".ll" if compiler == "llc" else ".c"))
         source.write_text(sources["ir" if compiler == "llc" else "c"])
         for opt in (0, 2):
@@ -70,10 +75,14 @@ def run_qualification(description, harness_text, sources, expected, expected_row
             elif compiler == "neverc":
                 command = [tool, "--target=x86_64-unknown-linux-gnu", "-fno-lto",
                            "-fno-builtin-mimalloc", "-c", f"-O{opt}", source, "-o", obj]
+            elif compiler == "frontend":
+                command = [tool, "--target=x86_64-unknown-linux-gnu", "-fno-lto",
+                           "-c", f"-O{opt}", source, "-o", obj]
             else:
                 ir = root / (name + ".ll")
                 run([tool, "--target=x86_64-unknown-linux-gnu", "-fno-lto",
-                     "-fno-builtin-mimalloc", "-S", "-emit-llvm", f"-O{opt}", source,
+                     *(["-fno-builtin-mimalloc"] if compiler == "neverc-llvm" else []),
+                     "-S", "-emit-llvm", f"-O{opt}", source,
                      "-o", ir], name + "-frontend")
                 command = [args.llc.resolve(), "-mtriple=x86_64-unknown-linux-gnu",
                            "-verify-machineinstrs", "-filetype=obj", f"-O{opt}", ir, "-o", obj]

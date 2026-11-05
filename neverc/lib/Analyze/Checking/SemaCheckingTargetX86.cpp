@@ -546,6 +546,10 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
   switch (BuiltinID) {
+  case X86::BI__builtin_ia32_lds16:
+  case X86::BI__builtin_ia32_lds32:
+  case X86::BI__builtin_ia32_les16:
+  case X86::BI__builtin_ia32_les32:
   case X86::BI__builtin_ia32_arpl_reg:
   case X86::BI__builtin_ia32_arpl_mem:
   case X86::BI__builtin_ia32_arpl_mem_address32:
