@@ -14,6 +14,9 @@ BUILTIN(__builtin_ia32_bound32, "vivC*", "n")
 BUILTIN(__builtin_ia32_bound16_address32, "vsUiIUiIUi", "n")
 BUILTIN(__builtin_ia32_bound32_address32, "viUiIUiIUi", "n")
 
+// HRESET consumes EAX in both legacy and long mode.
+TARGET_BUILTIN(__builtin_ia32_hreset, "vUi", "n", "hreset")
+
 // Native ARPL; the CPU owns m16 read and conditional write.
 BUILTIN(__builtin_ia32_arpl_reg, "UsUsUsUc*", "n")
 BUILTIN(__builtin_ia32_arpl_mem, "Ucv*Us", "n")

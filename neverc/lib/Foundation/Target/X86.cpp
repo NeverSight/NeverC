@@ -868,6 +868,9 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__ENQCMD__");
   if (HasHRESET)
     Builder.defineMacro("__HRESET__");
+  // This declares the native API, not the ambient processor feature. A source
+  // function can use target("hreset") without enabling it for the entire TU.
+  Builder.defineMacro("__NEVERSIGHT_X86_HRESET__", "1");
   // Compiler API availability is independent of the current CPU feature set.
   // Consumers can select the builtins first and attach per-function features.
   if (getTriple().getArch() == llvm::Triple::x86_64) {

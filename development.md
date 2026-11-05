@@ -162,6 +162,36 @@ event state and every mapped RAM byte. XSTATE, CET, NT task returns, fault and
 asynchronous delivery, other CPU models, and successful FRED/UIRET transitions
 remain outside this native fixture's scope.
 
+## i386 intrinsic headers
+
+The standard MMX/SSE and umbrella intrinsic headers admit both x86 pointer
+widths. AMX remains guarded by long mode; its builtins are not declared by the
+i386 target. `__SSC_MARK` saves the full EBX or RBX according to that target,
+including PIC code. Linux i386 source still emits IR for the full LLVM fork;
+these headers do not restore NeverC's embedded machine backend.
+
+`__builtin_ia32_hreset` is available in both modes. The shared compiler macro
+`__NEVERSIGHT_X86_HRESET__=1` declares this API independently of global CPU
+options. It does not assert a processor feature. Callers still need
+`target("hreset")` or `-mhreset`; this distinction lets NeverD's generated
+functions select the native call without requiring a global target option.
+The LLVM fork's Clang exposes the same builtin, capability macro and native
+`_hreset` header wrapper.
+
+`tests/neverc/X86/verify_i386_intrinsic_headers.py --neverc NEVERC --llvm-bin
+LLVM_BIN --output OUT` executes O0/O2 static/PIC code in both widths. It checks
+MMX/SSE/AVX2 values, carry/borrow, CRC32C, x87 after EMMS and full EBX/RBX
+preservation. HRESET and AVX-512 are emitted without execution. The fixture
+requires Linux multilib and a CPU with SSE4.2/AVX2/ADX.
+
+`verify_hreset_source.py --exports EXPORTS --frontend COMPILER --llvm-bin
+LLVM_BIN --output OUT` consumes actual NeverD `X86HresetSource` exports.
+Patched Clang/NeverC must select native calls; stock Clang uses `--fallback`.
+The verifier decodes HRESET, replaces it with a trap, observes EAX and resumes
+to check the compiled return. Wrong-control mutations preserve the call but
+must fail. These observations do not qualify physical prediction-history
+effects or original-machine fault/event routing.
+
 ## Native protected ARPL
 
 The LLVM fork provides `llvm.x86.arpl.reg(i16, i16)` returning the

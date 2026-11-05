@@ -1,8 +1,8 @@
 #ifndef __ADCINTRIN_H
 #define __ADCINTRIN_H
 
-#if !defined(__x86_64__)
-#error "This header is only meant to be used on x86_64"
+#if !defined(__i386__) && !defined(__x86_64__)
+#error "This header is only meant to be used on x86 targets"
 #endif
 
 /* Define the default attributes for the functions in this file. */

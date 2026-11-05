@@ -1,8 +1,8 @@
 #ifndef __IMMINTRIN_H
 #define __IMMINTRIN_H
 
-#if !defined(__x86_64__)
-#error "This header is only meant to be used on x86_64"
+#if !defined(__i386__) && !defined(__x86_64__)
+#error "This header is only meant to be used on x86 targets"
 #endif
 
 #include <x86gprintrin.h>

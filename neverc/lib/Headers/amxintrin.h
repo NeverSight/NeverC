@@ -13,6 +13,8 @@
 #ifndef __AMXINTRIN_H
 #define __AMXINTRIN_H
 
+#ifdef __x86_64__
+
 /* Physical tile numbers are compile-time constants in [0, 7]. Configuration
  * and the architectural tile bank belong to the caller. These APIs must not
  * be mixed with compiler-managed tile values in one function. */
@@ -147,5 +149,7 @@ static __inline__ void __DEFAULT_FN_ATTRS_AMX_TILE _tile_release(void) {
   ((__m512i)__builtin_ia32_tilemovrow((tile), (row)))
 #define _tile_movrowi(tile, row)                                               \
   ((__m512i)__builtin_ia32_tilemovrowi((tile), (row)))
+
+#endif /* __x86_64__ */
 
 #endif /* __AMXINTRIN_H */

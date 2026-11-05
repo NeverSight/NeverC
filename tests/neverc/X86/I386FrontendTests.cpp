@@ -163,3 +163,62 @@ TEST_F(I386FrontendTest, RejectsLongModeArplAndInvalidAddressControls) {
     EXPECT_NE(R.exitCode, 0) << Case.second;
   }
 }
+
+TEST_F(I386FrontendTest, IntrinsicHeadersAdmitBothX86Modes) {
+  const auto Source = tmpFile("headers.c");
+  writeFile(Source, R"(
+#include <immintrin.h>
+#include <x86intrin.h>
+#include <ammintrin.h>
+#include <nmmintrin.h>
+#include <adcintrin.h>
+#if !defined(__NEVERSIGHT_X86_HRESET__) || __NEVERSIGHT_X86_HRESET__ != 1
+#error Native HRESET availability must not require global CPU features
+#endif
+#if defined(__i386__) && defined(_tile_loadd)
+#error AMX requires long mode
+#elif defined(__x86_64__) && !defined(_tile_loadd)
+#error Missing AMX header interfaces
+#endif
+_Static_assert(sizeof(__m64) == 8, "MMX width");
+_Static_assert(sizeof(__m128) == 16, "SSE width");
+void marker(void) { __SSC_MARK(4); }
+)");
+  for (const char *Triple : {"i386", "x86_64"}) {
+    const auto R =
+        ncc({std::string("--target=") + Triple + "-unknown-linux-gnu",
+             "-std=c23", "-Werror", "-fsyntax-only", Source.string()});
+    EXPECT_EQ(R.exitCode, 0) << R.err;
+  }
+}
+
+TEST_F(I386FrontendTest, HeaderHresetUsesNativeEffectfulCalls) {
+  const auto Source = tmpFile("hreset-header.c");
+  writeFile(Source, R"(
+#include <x86gprintrin.h>
+void reset(unsigned x, volatile unsigned *marker) {
+  *marker = 1;
+  _hreset(x);
+  __builtin_ia32_hreset(x + 1);
+  *marker = 2;
+}
+)");
+  for (const char *Triple : {"i386", "x86_64"})
+    for (const char *Opt : {"-O0", "-O2"}) {
+      const auto IR = tmpFile("hreset-header.ll");
+      const auto R =
+          ncc({std::string("--target=") + Triple + "-unknown-linux-gnu", Opt,
+               "-mhreset", "-ffreestanding", "-fno-builtin-mimalloc", "-S",
+               "-emit-llvm", Source.string(), "-o", IR.string()});
+      ASSERT_EQ(R.exitCode, 0) << R.err;
+      const auto Text = readFile(IR);
+      const auto First = Text.find("call void @llvm.x86.hreset(");
+      ASSERT_NE(First, std::string::npos) << Text;
+      const auto Second = Text.find("call void @llvm.x86.hreset(", First + 1);
+      ASSERT_NE(Second, std::string::npos) << Text;
+      EXPECT_LT(Text.find("store volatile i32 1"), First);
+      EXPECT_LT(Second, Text.find("store volatile i32 2"));
+      EXPECT_EQ(Text.find(" asm "), std::string::npos) << Text;
+      EXPECT_EQ(Text.find("memory(none)"), std::string::npos) << Text;
+    }
+}
