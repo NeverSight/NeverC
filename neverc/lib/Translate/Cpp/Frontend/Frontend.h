@@ -1852,6 +1852,19 @@ std::optional<FunctionalBindCallSource>
 describeFunctionalBindCallSource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+// Source-only ordinary callable metadata. The existing runtime and nested
+// occurrence descriptions remain function-pointer-only until independent
+// source, ordinary operation/lifetime and C23 lowering checks are complete.
+struct FunctionalBindOwnedCallSource {
+  FunctionalBindCallSource Selected;
+  const clang::CXXMethodDecl *Target;
+  const clang::Expr *Receiver;
+};
+std::optional<FunctionalBindOwnedCallSource>
+describeFunctionalBindOwnedCallSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 std::optional<FunctionalBindCallSource>
 describeFunctionalBindCallSourceOccurrence(
     const State &S, const clang::SourceManager &SM,

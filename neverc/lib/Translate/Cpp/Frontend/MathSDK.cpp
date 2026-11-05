@@ -17517,6 +17517,7 @@ describeFunctionalBindOwnedFactorySource(
 // through the exact __mu_expand return selected by their enclosing argument.
 struct FunctionalBindCallDescriptionWalk {
   const CXXOperatorCallExpr *Root;
+  bool OwnedCallableMetadata = false;
   unsigned Nodes = 0;
   std::vector<unsigned> Path;
   std::set<const CallExpr *> Active;
@@ -17532,6 +17533,7 @@ describeFunctionalBindCallSourceImpl(
       !Walk.Active.insert(Call).second) return std::nullopt;
   auto RestoreActive = llvm::make_scope_exit([&] { Walk.Active.erase(Call); });
   NotFnSelectedSource Entry(S, SM, Context);
+  if (Walk.OwnedCallableMetadata && !Walk.Path.empty()) return std::nullopt;
   if (Walk.Path.empty()) {
     if (Call != Walk.Root || Parent || Expansion) return std::nullopt;
   } else {
@@ -17557,7 +17559,9 @@ describeFunctionalBindCallSourceImpl(
       S, SM, Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context);
   const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
   const auto *MethodArguments = Method->getTemplateSpecializationArgs();
-  if (!Storage || !Storage->CallableType->isFunctionPointerType() ||
+  if (!Storage ||
+      (Walk.OwnedCallableMetadata ? !Storage->CallableType->isRecordType()
+                                : !Storage->CallableType->isFunctionPointerType()) ||
       !Object->isGLValue() || !Prototype || Prototype->isNothrow() ||
       Prototype->getNoexceptExpr() || !Method->getPrimaryTemplate() ||
       !MethodArguments || MethodArguments->size() != 1 ||
@@ -17975,10 +17979,52 @@ describeFunctionalBindCallSourceImpl(
         PlaceholderRank, PlaceholderIndex, PlaceholderGet, PlaceholderForward, std::move(Nested)});
   }
   const auto *Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(InvokeFunction)));
-  if (!Target || Target->getDirectCallee() || Target->getNumArgs() != Arguments.size() ||
-      !Context.hasSameUnqualifiedType(Target->getCallee()->getType(), Storage->CallableType) ||
+  if (!Target ||
       !Context.hasSameType(Target->getType(), Method->getReturnType().getNonReferenceType()) ||
       Target->getValueKind() != Expr::getValueKindForType(Method->getReturnType())) return std::nullopt;
+  if (Walk.OwnedCallableMetadata) {
+    const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Target);
+    const auto *Ordinary = Operation ? dyn_cast_or_null<CXXMethodDecl>(Operation->getDirectCallee()) : nullptr;
+    const auto *CallableRecord = Storage->CallableType->getAsCXXRecordDecl();
+    const auto *Definition = Ordinary ? Ordinary->getDefinition() : nullptr;
+    const auto *Reference = Operation
+        ? dyn_cast<DeclRefExpr>(Operation->getCallee()->IgnoreParenImpCasts()) : nullptr;
+    if (!Operation || Operation->getOperator() != OO_Call || !Ordinary || !CallableRecord ||
+        !ordinaryOperator(Ordinary) || Ordinary->getOverloadedOperator() != OO_Call ||
+        Ordinary->getTemplatedKind() != FunctionDecl::TK_NonTemplate || Ordinary->hasAttrs() ||
+        Ordinary->getRefQualifier() == RQ_RValue ||
+        Ordinary->getParent()->getCanonicalDecl() != CallableRecord->getCanonicalDecl() ||
+        !Reference || Reference->getDecl() != Ordinary ||
+        !Context.hasSameType(Reference->getType(), Ordinary->getType()) ||
+        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"}) ||
+        Target->getNumArgs() != Arguments.size() + 1 || Ordinary->getNumParams() != Arguments.size() ||
+        !Definition || !Definition->getBody() || !S.owns(SM, Definition->getLocation()) ||
+        !S.owns(SM, Definition->getBody()->getBeginLoc())) return std::nullopt;
+    for (const auto *Declaration : Ordinary->redecls())
+      if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() ||
+          !Declaration->getTypeSourceInfo()) return std::nullopt;
+    const auto *Receiver = Target->getArg(0);
+    const auto Expected = Method->isConst() ? Context.getConstType(Storage->CallableType) : Storage->CallableType;
+    const auto Parameter = InvokeFunction->getParamDecl(0)->getType();
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(Receiver));
+    const auto *Qualification = dyn_cast<ImplicitCastExpr>(Receiver->IgnoreParens());
+    if (!Parameter->isLValueReferenceType() || !Cast || !Receiver->isLValue() ||
+        !Context.hasSameType(Parameter.getNonReferenceType(), Expected) ||
+        !Context.hasSameType(Receiver->getType(), Ordinary->getThisType()->getPointeeType()) ||
+        !Context.hasSameType(Cast->getType(), Expected) ||
+        (Qualification ? (Qualification->getCastKind() != CK_NoOp ||
+                          Qualification->getSubExpr()->IgnoreParens() != Cast ||
+                          !Ordinary->isConst() || Expected.isConstQualified())
+                       : Receiver->IgnoreParens() != Cast)) return std::nullopt;
+    for (unsigned I = 0; I < Ordinary->getNumParams(); ++I) {
+      const auto Value = Ordinary->getParamDecl(I)->getType();
+      if (!utilityScalar(Context, Value) || Ordinary->getParamDecl(I)->hasDefaultArg() ||
+          !Context.hasSameUnqualifiedType(Value, InvokeFunction->getParamDecl(I + 1)->getType().getNonReferenceType()) ||
+          !Context.hasSameType(Target->getArg(I + 1)->getType(), Value.getNonLValueExprType(Context)) ||
+          Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Value)) return std::nullopt;
+    }
+  } else if (Target->getDirectCallee() || Target->getNumArgs() != Arguments.size() ||
+      !Context.hasSameUnqualifiedType(Target->getCallee()->getType(), Storage->CallableType)) return std::nullopt;
   // The selected bullet-7 __invoke body forwards with explicit reference
   // casts, not calls to std::forward. Retain each original cast and its written
   // TypeSourceInfo for the independently completed source graph.
@@ -18002,9 +18048,11 @@ describeFunctionalBindCallSourceImpl(
     Casts.push_back(Cast);
     return true;
   };
-  if (!InvokeCast(Target->getCallee(), InvokeFunction->getParamDecl(0))) return std::nullopt;
+  if (!InvokeCast(Walk.OwnedCallableMetadata ? Target->getArg(0) : Target->getCallee(),
+                  InvokeFunction->getParamDecl(0))) return std::nullopt;
   for (unsigned I = 0; I < Arguments.size(); ++I)
-    if (!InvokeCast(Target->getArg(I), InvokeFunction->getParamDecl(I + 1))) return std::nullopt;
+    if (!InvokeCast(Target->getArg(I + unsigned(Walk.OwnedCallableMetadata)),
+                    InvokeFunction->getParamDecl(I + 1))) return std::nullopt;
   return FunctionalBindCallSource{*Storage, Operator, Method, Object, Apply, Invoke,
       Target, Indices, CallArguments, std::move(CallForwards),
       std::move(Arguments), std::move(Casts), Walk.Root, Walk.Path};
@@ -18018,6 +18066,22 @@ describeFunctionalBindCallSource(
   if (!Root || !S.owns(SM, Root->getExprLoc())) return std::nullopt;
   FunctionalBindCallDescriptionWalk Walk{Root};
   return describeFunctionalBindCallSourceImpl(S, SM, Call, Context, Walk);
+}
+
+std::optional<FunctionalBindOwnedCallSource>
+describeFunctionalBindOwnedCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Root = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  if (!Root || !S.owns(SM, Root->getExprLoc())) return std::nullopt;
+  FunctionalBindCallDescriptionWalk Walk{Root};
+  Walk.OwnedCallableMetadata = true;
+  const auto Source = describeFunctionalBindCallSourceImpl(S, SM, Call, Context, Walk);
+  const auto *Target = Source && Source->Target
+      ? dyn_cast_or_null<CXXMethodDecl>(Source->Target->getDirectCallee()) : nullptr;
+  if (!Source || !Target || !Source->Target->getNumArgs()) return std::nullopt;
+  // Original nodes only. No source/body, selected lifetime or runtime grant.
+  return FunctionalBindOwnedCallSource{*Source, Target, Source->Target->getArg(0)};
 }
 
 // This is a fresh lookup, not an ownership bypass. Neither a canonical type
@@ -20918,6 +20982,14 @@ bool retainFunctionalBindConstraintRoot(
     T = T.getNonReferenceType();
     if (T.isVolatileQualified() || T.isRestrictQualified() ||
         T.getAddressSpace() != LangAS::Default || T->isDependentType()) return false;
+    // Inert callback retention only. Do not ask Sema for a definition,
+    // layout or special member while its queries are being computed. The
+    // consuming bind graph must bind the exact original source occurrence,
+    // admitted storage, selected operations and ordinary body/lifetime.
+    const auto *Owned = T->getAsCXXRecordDecl();
+    if (Owned && !Owned->isInvalidDecl() && !Owned->isUnion() && !Owned->isLambda() &&
+        !Owned->hasAttrs() && !isa<ClassTemplateSpecializationDecl>(Owned) &&
+        !Owned->getDescribedClassTemplate() && S.owns(SM, Owned->getLocation())) return true;
     const auto *F = T->isFunctionPointerType()
         ? T->getPointeeType()->getAs<FunctionProtoType>() : T->getAs<FunctionProtoType>();
     if (!F || !ordinaryCallbackPrototype(F) ||
@@ -24230,7 +24302,9 @@ class BindSourceProof {
                 Check.family(Function, {"__functional/bind.h"})) {
               const auto *Call = dyn_cast<CallExpr>(Expression);
               const auto Factory = Call
-                  ? describeFunctionalBindFactorySource(S, SM, Call, Context) : std::nullopt;
+                  ? (Storage.CallableType->isRecordType()
+                      ? describeFunctionalBindOwnedFactorySource(S, SM, Call, Context)
+                      : describeFunctionalBindFactorySource(S, SM, Call, Context)) : std::nullopt;
               if (!Factory || Factory->Factory != Function || Factory->Storage.Record != Storage.Record ||
                   !Graph.bindFunctionalBindOwnedInputAliases(*Factory, *Use, OwnedInputAliasSource)) return false;
             }
