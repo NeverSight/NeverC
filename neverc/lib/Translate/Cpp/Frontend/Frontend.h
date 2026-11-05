@@ -1925,6 +1925,14 @@ describeFunctionalBindNestedInvokeSignatureSource(
     const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
     const FunctionalBindNestedArgumentSource &Nested, const clang::ASTContext &Context);
 
+// Original primary/specialized signature, declval and optional body/exception
+// nodes only. No completed source graph or ordinary runtime body is granted.
+std::optional<FunctionalBindInvokeSignatureSource>
+describeFunctionalBindOwnedInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, const FunctionalBindOwnedCallSource &Given,
+    const clang::ASTContext &Context);
+
 struct FunctionalBindTryCallSignatureSource {
   const clang::CXXMethodDecl *Function;
   const clang::ClassTemplateSpecializationDecl *Owner;
@@ -1953,6 +1961,13 @@ std::optional<FunctionalBindTryCallSignatureSource>
 describeFunctionalBindNestedTryCallSignatureSource(
     const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
     const FunctionalBindNestedArgumentSource &Nested, const clang::ASTContext &Context);
+
+// Source metadata only. The retained declaration chain, original declvals,
+// result alias and invoke signature all still require independent traversal.
+std::optional<FunctionalBindTryCallSignatureSource>
+describeFunctionalBindOwnedTryCallSignatureSource(
+    const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
+    const FunctionalBindOwnedCallSource &Given, const clang::ASTContext &Context);
 
 struct FunctionalBindTryCallFallbackSource {
   const clang::CXXMethodDecl *Function;
