@@ -1,28 +1,28 @@
 {
-  "component_commit": "a629ab8113573174247514da5a583968659e7dd7",
-  "component_run_id": 41797348718,
-  "component_actual_job": 126464470248,
+  "component_commit": "c5c7daafbec6053e64731960445171ea956435d2",
+  "component_run_id": 42045969118,
+  "component_actual_job": 127308877850,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 13306752288,
-    "name": "cpp-bind-call-arguments-clean456-a629ab8113573174247514da5a583968659e7dd7",
-    "digest": "sha256:ab692fdb2fea7ad52130cb5f936040107bea8241f55aa54e22480d0d20911d30"
+    "id": 13425259290,
+    "name": "cpp-bind-call-arguments-clean456-c5c7daafbec6053e64731960445171ea956435d2",
+    "digest": "sha256:85f1a64ed28a061a5bd84c3bd411e334d4ac812f9478f370056ea691733b38aa"
   },
   "component_archive_artifact": {
-    "id": 13307426106,
-    "name": "cpp-current-private-archive-remote-only-a629ab8113573174247514da5a583968659e7dd7",
-    "digest": "sha256:418520e2f6c1c27cccdaac261e7523bb60d0b8dfa7eae630c72cfca4f4f28880"
+    "id": 13425748579,
+    "name": "cpp-current-private-archive-remote-only-c5c7daafbec6053e64731960445171ea956435d2",
+    "digest": "sha256:efbae51c7e9a684d95ca2a6e8d92d9e36e0c2c01dd0fbd3596dd6582a1d724b5"
   },
-  "component_report_sha256": "8dc5404f97b4384d8fe39f9e6e88eb3fe2e46bec849c2a2aa7bcaed17a18c2f5",
-  "private_archive_sha256": "205397384af3d211d72640c3308df5604218ce90b52995ddb06a4e8d7e2ef790",
-  "frontend_build_id": "cpp-frontend-1-3d9300c928ee62b31d2dc8ac7218ac851b44d8f7af5437b8c1141aa44b6d2a8a",
+  "component_report_sha256": "d57c5edfb734b47db9aeb5498bead4666d9dbee430c3a90948acda51c77275ac",
+  "private_archive_sha256": "a0080d226517dbf38771d5ced0ffff2a4ff64cfff9888736b88cb545714a1def",
+  "frontend_build_id": "cpp-frontend-1-a7eb4e5b839fc345cc174ea4bfb15b493a7130108134efcfe4e4f86e299ba4b6",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "af37dafc18876a46a3207f41959bae7c47874d5bca276c9972c778088e4cae4e",
-    "Lowering.cpp": "a2def7fd200b58588bcc7c5a5d7cd59c56abcac20b247f349a0ad952d627152e",
+    "Frontend.cpp": "4eb62bc2d94ee90d1eedcfc41416d38e420f14fa06a2536e7118dcf3ce130e6e",
+    "Lowering.cpp": "65a0bbb0ead9f0944e389b061eac5f7aa99fa3f31ffe02eae9b9ef93402fe31b",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "e479a0860d4a42472001d8045f804db4293997accfadf0f322c5962c21572686",
+    "MathSDK.cpp": "fd3de6a8e63ec4adf0137f6d4dd867a2cc7c40a959b8a21b83c5a00f174ae0eb",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "2ed7b142423c9e364d5efe2361095d4b5798ff271878d3c138b964f963fc8670",
+    "Frontend.h": "58c4f1fc0a9cf0dfbe090597a30f953b44399840fcc018c632418488d59c400f",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -46,7 +46,7 @@
   "dependency_producer_run_id": 41770367743,
   "private_prefix_sha256": "cf4d69ade740f971db56cc3f4e1b811d8094d2549a0aed84f6d97f9eaed140f8",
   "authenticated_system_libraries_sha256": "1c998ace53fdcebd4e6836bc2f9d50b481b0aa38c2625f9c73fd75c0234f820e",
-  "original_tests_file_sha256": "dc42e287ed5f6ad0c66369429ff1cfc852f22b4977d308db18f40d42e4df4665",
+  "original_tests_file_sha256": "52b52f1a8c9911eaa822df66d871f6d214da6fd3623c16d0bc7aa617ffc80d7c",
   "formal_manifest_sha256": "a4e047df483c770a7dd077e50abad961d8a0833c86e56d1bbcb47e92a6c27979",
   "required_actual_original_gtest_xml": 124,
   "original_gtest_bodies_modified": false,
@@ -78,13 +78,15 @@
     "utils/ci/bind-expanded-bound-eight-formal-additions.cpp",
     "utils/ci/bind-forty-eight-formal-additions.cpp",
     "utils/ci/bind-placeholder-thirteen-formal-additions.cpp",
-    "utils/ci/bind-sixty-one-formal-additions.cpp"
+    "utils/ci/bind-sixty-one-formal-additions.cpp",
+    "utils/ci/bind-seventy-one-formal-additions.cpp",
+    "utils/ci/bind-nested-ten-formal-additions.cpp"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,
   "actual_current_translate_owners_required": true,
   "actual_fresh_host_private_abi_audit_required": true,
-  "scope": "Actual original124 plus40 registered STL goldens,80 generated executions and775 current frontend requests",
+  "scope": "Actual original124 plus71 registered STL goldens,142 generated executions and806 current frontend requests",
   "full_ci_passed": false,
   "published_to_dev": false,
   "goal_complete": false,
@@ -135,8 +137,8 @@
     ],
     "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
   },
-  "not_fn_formal_additions_path": "utils/ci/bind-sixty-one-formal-additions.cpp",
-  "not_fn_formal_additions_sha256": "73f36c04fabb4af01ede679c2fede542876f865a81143bc65f512970ce615df9",
+  "not_fn_formal_additions_path": "utils/ci/bind-seventy-one-formal-additions.cpp",
+  "not_fn_formal_additions_sha256": "4b93f31e40633a58faaaf93752a3d4dab3a4e073cabf556f7e77018d2b6abc2a",
   "not_fn_formal_cases": [
     {
       "name": "not-fn-function-pointer",
@@ -503,25 +505,85 @@
       "formal_test_name": "TranslateTest.CoreV2BindPlaceholderCaptureAndQueriesRunAtBothOptimizations",
       "source_sha256": "2e4b5463256765c309dfe495afc305b5fbb3586834f4927594ac9c49a3967e19",
       "gtest_body_sha256": "0a5ca6eafbf37bd62b18aa225a6bcd4054a24dc0d898efa6291cc5b21630cff3"
+    },
+    {
+      "name": "bind-nested-nullary",
+      "formal_test_name": "TranslateTest.CoreV2BindNestedNullaryRunAtBothOptimizations",
+      "source_sha256": "0f684c35625cffe3170c61f242a6139ce5cb5bcaf9c6b8b350800e119fb69e4a",
+      "gtest_body_sha256": "4730d6943d71c730864f0786003eca5f8d3cd69f42eee7c689e4c6b97a9fb7c7"
+    },
+    {
+      "name": "bind-nested-one-placeholder",
+      "formal_test_name": "TranslateTest.CoreV2BindNestedOnePlaceholderRunAtBothOptimizations",
+      "source_sha256": "0389f38f661a69c502aac59ec5da26b1ee281ee5b8dab49dc45ca3295a21ac57",
+      "gtest_body_sha256": "41b07b0b9bcb33f6e9b02a2ea198fec6b2648fe8fa0e61d10d17cced56db06fb"
+    },
+    {
+      "name": "bind-nested-reordered",
+      "formal_test_name": "TranslateTest.CoreV2BindNestedReorderedRunAtBothOptimizations",
+      "source_sha256": "a0aa3f7413ffbafe0ed20d8cb991f2817699078d7cacf7cbb7eaaa4bdabc8a38",
+      "gtest_body_sha256": "54cafa016446e6d8aca9b865c2834de62db16b3f32d9842e731af465e638caaf"
+    },
+    {
+      "name": "bind-nested-two-shared-inputs",
+      "formal_test_name": "TranslateTest.CoreV2BindNestedTwoSharedInputsRunAtBothOptimizations",
+      "source_sha256": "f371f7e61d76be87b77bc9bbbbc2372e5e876e69e72831aaaffebb5d3379dece",
+      "gtest_body_sha256": "ec947d001141e514ff714067e6d2a04ac45ae1ebf371e6b18ace3794bcc58c2c"
+    },
+    {
+      "name": "bind-nested-live-reference-result",
+      "formal_test_name": "TranslateTest.CoreV2BindNestedLiveReferenceResultRunAtBothOptimizations",
+      "source_sha256": "ffda91473630ffc78952c5091af7c79e4925a913a96a494072dfdc2b866317cf",
+      "gtest_body_sha256": "9b24e12fa6c92c334ae20f9a186e19b493a8dc533cea7911fb49f6546e72657e"
+    },
+    {
+      "name": "bind-nested-independent-captured-state",
+      "formal_test_name": "TranslateTest.CoreV2BindNestedIndependentCapturedStateRunAtBothOptimizations",
+      "source_sha256": "f9bdd5f8a99dd28961d63bc2e549d5072f47f5063fe54e4498c45379437b8be5",
+      "gtest_body_sha256": "35d6d4ac3368cd02c7c2b2d7baa9c2680f81b9ae84e6fd19ce6b76e7299ce479"
+    },
+    {
+      "name": "bind-nested-unused-effects-before-read",
+      "formal_test_name": "TranslateTest.CoreV2BindNestedUnusedEffectsBeforeReadRunAtBothOptimizations",
+      "source_sha256": "1e548663ded29eaf688c8ef74a9cd0e1d77d1889ec857bfd70eeb01e5beab757",
+      "gtest_body_sha256": "e7aa61b745dc81e9c593e079c1bc9586e06506cf40281cfc01ad68557fc48e66"
+    },
+    {
+      "name": "bind-nested-const-copy-and-temporary",
+      "formal_test_name": "TranslateTest.CoreV2BindNestedConstCopyAndTemporaryRunAtBothOptimizations",
+      "source_sha256": "fff81fb70f6a91e4830a028e313f6325aaf6d42466930543c639e5463447c0a1",
+      "gtest_body_sha256": "caf3f479e786ccc7cd43496e00092965a360b3157d9bd3a83c6f9026273274f8"
+    },
+    {
+      "name": "bind-nested-late-reference-value-read",
+      "formal_test_name": "TranslateTest.CoreV2BindNestedLateReferenceValueReadRunAtBothOptimizations",
+      "source_sha256": "bbbb7dcfe856ae6dbe4754400c9d2296d6aa99994be884cd59c98cd5b5619ea2",
+      "gtest_body_sha256": "68a0aca0a3c2bda9e3910ade25b649636a89557adc29f5e8346393d599d1ff22"
+    },
+    {
+      "name": "bind-nested-late-placeholder-value-read",
+      "formal_test_name": "TranslateTest.CoreV2BindNestedLatePlaceholderValueReadRunAtBothOptimizations",
+      "source_sha256": "296efb30fe0b3a5dd34896e75395c9af3ee403e1173d706f762ee2384278ac4b",
+      "gtest_body_sha256": "f78d221166d220b876e26a305ed715b7402916a235b7bd686e4917acdfe4539d"
     }
   ],
-  "required_actual_total_gtest_xml": 185,
-  "required_actual_not_fn_gtest_xml": 61,
-  "required_actual_not_fn_generated_o0_o2_products": 122,
-  "not_fn_registered_previous_additions_path": "utils/ci/bind-sixty-one-formal-additions.cpp",
-  "not_fn_registered_previous_additions_sha256": "73f36c04fabb4af01ede679c2fede542876f865a81143bc65f512970ce615df9",
-  "required_actual_frontend_requests": 796,
+  "required_actual_total_gtest_xml": 195,
+  "required_actual_not_fn_gtest_xml": 71,
+  "required_actual_not_fn_generated_o0_o2_products": 142,
+  "not_fn_registered_previous_additions_path": "utils/ci/bind-seventy-one-formal-additions.cpp",
+  "not_fn_registered_previous_additions_sha256": "4b93f31e40633a58faaaf93752a3d4dab3a4e073cabf556f7e77018d2b6abc2a",
+  "required_actual_frontend_requests": 806,
   "actual_new_signature_native_reference_verified": false,
   "actual_prior_custom_native_reference_verified": true,
   "preparation_only": false,
   "execution_binding_required": true,
-  "current_clean_syntax6_proof_sha256": "97f1dffdcdc2f77bb1cd24bad123cae8cd7e8db8c8f5df17146a99b3403f9a05",
+  "current_clean_syntax6_proof_sha256": "06c78ade2ecc9d737520760b8bcd16e0e968fb8f7ee89e4f435d5bfe86fb3ab9",
   "dependency_producer_actual_job": 126378412532,
   "dependency_producer_attempt": 1,
   "dependency_producer_authentication_sha256": "0a2440fc57a6b728293a872375f6d3714b9c6ef2dc2abd6baee3f45c0bed0799",
-  "required_component_accept": 520,
+  "required_component_accept": 600,
   "required_component_reject": 240,
   "required_component_invalid": 8,
-  "required_component_requests": 768,
-  "current_full456_proof_sha256": "a4441a03f470d4fc2f7702532a12a6190e93d0e8cc95822906f54405fb8b34ad"
+  "required_component_requests": 848,
+  "current_full456_proof_sha256": "577f25fa78a9d6ede03e42959a7bfa23c4348c0cb82b30ece560dc3255c5890c"
 }
