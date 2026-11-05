@@ -20946,6 +20946,14 @@ bool retainFunctionalBindConstraintRoot(
     T = T.getNonReferenceType();
     if (T.isVolatileQualified() || T.isRestrictQualified() ||
         T.getAddressSpace() != LangAS::Default || T->isDependentType()) return functionalBindDiagnosticFailure(__LINE__);
+    // Inert callback retention only. Do not ask Sema for a definition,
+    // layout or special member while its queries are being computed. The
+    // consuming bind graph must bind the exact original source occurrence,
+    // admitted storage, selected operations and ordinary body/lifetime.
+    const auto *Owned = T->getAsCXXRecordDecl();
+    if (Owned && !Owned->isInvalidDecl() && !Owned->isUnion() && !Owned->isLambda() &&
+        !Owned->hasAttrs() && !isa<ClassTemplateSpecializationDecl>(Owned) &&
+        !Owned->getDescribedClassTemplate() && S.owns(SM, Owned->getLocation())) return true;
     const auto *F = T->isFunctionPointerType()
         ? T->getPointeeType()->getAs<FunctionProtoType>() : T->getAs<FunctionProtoType>();
     if (!F || !ordinaryCallbackPrototype(F) ||
@@ -24273,7 +24281,13 @@ class BindSourceProof {
           if (!UseFound) return functionalBindDiagnosticFailure(__LINE__);
           Found = true;
         }
-        if (!Found) return functionalBindDiagnosticFailure(__LINE__);
+        if (!Found) {
+          if (std::getenv("NEVERC_CPP_BIND_PROOF_TRACE"))
+            std::fprintf(stderr, "BIND-OWNED-MISSING-SELECTION function=%s expression=%s location=%u selections=%zu\n",
+                Function->getQualifiedNameAsString().c_str(), Expression->getStmtClassName(),
+                Expression->getExprLoc().getRawEncoding(), Selections.size());
+          return functionalBindDiagnosticFailure(__LINE__);
+        }
         return Signature();
       });
     });
