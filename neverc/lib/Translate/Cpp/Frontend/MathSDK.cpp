@@ -7814,6 +7814,7 @@ class UtilityTupleQueryGraph
       BindCompletedResultAliasSources;
   const TypeAliasDecl *BindUnusedResultOperand = nullptr;
   const CXXRecordDecl *BindResultComparisonRecord = nullptr;
+  const CXXRecordDecl *BindFactoryLeafComparisonRecord = nullptr;
   const CXXMethodDecl *BindFallbackSignature = nullptr;
   const CXXRecordDecl *BindFallbackSentinel = nullptr;
   const CXXRecordDecl *BindWeakResultSentinel = nullptr;
@@ -10713,6 +10714,9 @@ class UtilityTupleQueryGraph
   }
   bool record(const CXXRecordDecl *R) {
     if (!R || Failed) return false;
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindFactoryLeafComparisonRecord &&
+        R->getCanonicalDecl() == BindFactoryLeafComparisonRecord)
+      return family(R); // Only the exact type-comparison operand; no storage or member permission.
     if (const auto Self = bindScalarConditionalUnselectedSelf(R)) return *Self;
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindCallMetadata &&
         BindCallMetadata->CallForwards.empty() && BindCallMetadata->CallArguments &&
@@ -11364,6 +11368,124 @@ public:
         BindTypeTraversalSource || !Source || !step()) return false;
     BindTypeTraversalSource = std::move(Source);
     return true;
+  }
+
+  bool withBindFactoryLeafComparisonSource(const TemplateUseSource &Source,
+      const CXXConstructorDecl *Constructor, const std::function<bool()> &Proof) {
+    if (!Proof) return false;
+    const auto *AliasType = Source.Kind == TemplateSourceKind::Type
+        ? dyn_cast_or_null<TemplateSpecializationType>(Source.Type) : nullptr;
+    const auto *Owned = Constructor
+        ? dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()) : nullptr;
+    const auto *Alias = AliasType ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+        AliasType->getTemplateName().getAsTemplateDecl()) : nullptr;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Owned || !Alias ||
+        !Alias->getIdentifier() || Alias->getName() != "_IsNotSame" || AliasType->isDependentType() ||
+        AliasType->template_arguments().size() != 2 ||
+        AliasType->template_arguments()[0].getKind() != TemplateArgument::Type ||
+        AliasType->template_arguments()[1].getKind() != TemplateArgument::Type ||
+        Owned->getTemplateArgs().size() != 3 || Owned->getTemplateArgs()[1].getKind() != TemplateArgument::Type)
+      return Proof();
+    const auto Scalar = Owned->getTemplateArgs()[1].getAsType();
+    const auto *Compared = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        AliasType->template_arguments()[1].getAsType()->getAsCXXRecordDecl());
+    if (!utilityScalar(Context, Scalar) || Scalar.hasQualifiers() || !Compared ||
+        !Compared->getIdentifier() || Compared->getName() != "__tuple_leaf" ||
+        BindPhysicalRecords.count(Compared->getCanonicalDecl())) return Proof();
+    return withBindSourceChild([&] {
+      const auto *Primary = Owned->getSpecializedTemplate();
+      const auto *Method = Constructor->getPrimaryTemplate();
+      const auto *MethodParameters = Method ? Method->getTemplateParameters() : nullptr;
+      const auto *Constraint = MethodParameters && MethodParameters->size() == 2
+          ? dyn_cast<NonTypeTemplateParmDecl>(MethodParameters->getParam(1)) : nullptr;
+      const auto ConstraintLocation = Constraint && Constraint->getTypeSourceInfo()
+          ? Constraint->getTypeSourceInfo()->getTypeLoc() : TypeLoc();
+      const auto Begin = ConstraintLocation ? SM.getSpellingLoc(ConstraintLocation.getBeginLoc()) : SourceLocation();
+      const auto End = ConstraintLocation ? SM.getSpellingLoc(ConstraintLocation.getEndLoc()) : SourceLocation();
+      const auto Location = SM.getSpellingLoc(Source.Location);
+      const auto *Definition = Compared->getDefinition();
+      if (BindFactoryLeafComparisonRecord || !Primary ||
+          !BindPhysicalRecords.count(Owned->getCanonicalDecl()) ||
+          Constructor->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+          !family(Constructor) || !family(Method) || !Constraint || !Constraint->hasDefaultArgument() ||
+          Constraint->isParameterPack() || Constraint->getIndex() != 1 ||
+          !Context.hasSameType(Constraint->getType(), Context.IntTy) || ConstraintLocation.isNull() ||
+          Location.isInvalid() || Begin.isInvalid() || End.isInvalid() ||
+          SM.getFileID(Location) != SM.getFileID(Begin) || SM.getFileID(Location) != SM.getFileID(End) ||
+          (Location != Begin && !SM.isBeforeInTranslationUnit(Begin, Location)) ||
+          (Location != End && !SM.isBeforeInTranslationUnit(Location, End)) ||
+          !cstddefOrigin(S, SM, Source.Location, "libcxx", "tuple") ||
+          Compared->getSpecializedTemplate() != Primary ||
+          Compared->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Primary ||
+          Compared->getSpecializationKind() != TSK_ImplicitInstantiation ||
+          Compared->getTemplateArgs().size() != 3 || !Definition || Definition->isUnion() ||
+          Definition->isDynamicClass() || Definition->getNumBases() ||
+          std::distance(Definition->field_begin(), Definition->field_end()) != 1 ||
+          !family(Compared) || !family(Definition) || !family(Primary)) return false;
+      const auto *Field = *Definition->field_begin();
+      if (!Field->getIdentifier() || Field->getName() != "__value_" || Field->isBitField() ||
+          Field->hasInClassInitializer() || !Field->getTypeSourceInfo() || !family(Field) ||
+          !Context.hasSameType(Field->getType(), Scalar)) return false;
+      const auto &Arguments = Compared->getTemplateArgs();
+      if (Arguments[0].getKind() != TemplateArgument::Integral || Arguments[0].getAsIntegral().isNegative() ||
+          Arguments[0].getAsIntegral().getLimitedValue(8) >= 8 ||
+          !Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType()) ||
+          Arguments[1].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments[1].getAsType(), Scalar) ||
+          Arguments[2].getKind() != TemplateArgument::Integral ||
+          !Context.hasSameType(Arguments[2].getIntegralType(), Context.BoolTy) ||
+          !Arguments[2].getAsIntegral().isZero()) return false;
+      if (Source.Template != Alias || Source.Declaration || Source.Instantiation || Source.Selection ||
+          !Source.FunctionalBindConstraint || !Source.Written || Source.Written->getNumTemplateArgs() != 2 ||
+          !Source.Underlying || !Source.Defaults.empty() || !Source.ParameterTypes.empty() ||
+          !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 2 || Source.Sugared->size() != 2 ||
+          !family(Alias) || !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/is_same.h"))
+        return false;
+      for (const auto *Values : {Source.Canonical, Source.Sugared})
+        if (Values->get(0).getKind() != TemplateArgument::Type ||
+            Values->get(1).getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(Values->get(0).getAsType(), Scalar) ||
+            Values->get(1).getAsType()->getAsCXXRecordDecl() != Compared) return false;
+      const auto *Expansion = dyn_cast<ElaboratedType>(AliasType->getAliasedType().getTypePtr());
+      const auto *Constant = Expansion ? dyn_cast<TemplateSpecializationType>(Expansion->getNamedType().getTypePtr()) : nullptr;
+      const auto *ConstantAlias = Constant
+          ? dyn_cast_or_null<TypeAliasTemplateDecl>(Constant->getTemplateName().getAsTemplateDecl()) : nullptr;
+      if (!ConstantAlias || !ConstantAlias->getIdentifier() || ConstantAlias->getName() != "_BoolConstant" ||
+          !family(ConstantAlias) || Constant->template_arguments().size() != 1 ||
+          Constant->template_arguments()[0].getKind() != TemplateArgument::Expression ||
+          !cstddefOrigin(S, SM, ConstantAlias->getLocation(), "libcxx", "__type_traits/integral_constant.h")) return false;
+      const Expr *Expression = Constant->template_arguments()[0].getAsExpr();
+      if (const auto *Value = dyn_cast<ConstantExpr>(Expression)) Expression = Value->getSubExpr();
+      const auto *Negation = dyn_cast<UnaryOperator>(Expression->IgnoreParenImpCasts());
+      const auto *Query = Negation && Negation->getOpcode() == UO_LNot
+          ? dyn_cast<TypeTraitExpr>(Negation->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+      const auto *Parameters = Alias->getTemplateParameters();
+      if (!Query || Query->getTrait() != BTT_IsSame || Query->getNumArgs() != 2 ||
+          Query->isTypeDependent() || Query->isValueDependent() || Parameters->size() != 2 ||
+          !cstddefOrigin(S, SM, Query->getExprLoc(), "libcxx", "__type_traits/is_same.h")) return false;
+      for (unsigned I = 0; I < 2; ++I) {
+        const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
+        const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Query->getArg(I)->getType().getTypePtr());
+        if (!Parameter || Parameter->getIndex() != I || Parameter->isParameterPack() ||
+            Parameter->hasDefaultArgument() || !family(Parameter) || !Substitution ||
+            Substitution->getAssociatedDecl() != Alias || Substitution->getReplacedParameter() != Parameter ||
+            !Context.hasSameType(Substitution->getReplacementType(), AliasType->template_arguments()[I].getAsType()))
+          return false;
+      }
+      // This exact comparison names a pinned SDK type. It neither owns that
+      // leaf's storage nor registers a constructor, member, body or operation.
+      // The full original/selected alias and both real operands still walk.
+      std::set<const Type *> SavedTypes;
+      std::set<const Stmt *> SavedExpressions;
+      SavedTypes.swap(Types); SavedExpressions.swap(Expressions);
+      BindFactoryLeafComparisonRecord = Compared->getCanonicalDecl();
+      auto Restore = llvm::make_scope_exit([&] {
+        BindFactoryLeafComparisonRecord = nullptr;
+        Types.clear(); Types.swap(SavedTypes);
+        Expressions.clear(); Expressions.swap(SavedExpressions);
+      });
+      return Proof() && !Failed;
+    });
   }
 
   bool withBindUnusedResultOperandSource(const TypeAliasDecl *Result,
@@ -20861,6 +20983,7 @@ class BindSourceProof {
   std::set<const CallExpr *> UnwrapScalarConstraintSources;
   const TemplateUseSource *ActiveScalarParameter = nullptr;
   const CXXConstructorDecl *ActiveCallTupleConstructor = nullptr;
+  const CXXConstructorDecl *ActiveFactoryLeafConstructor = nullptr;
   std::set<const VarDecl *> ActiveScalarValues, CompletedScalarValues;
   std::map<const CallExpr *, const FunctionDecl *> UnwrapReferenceSources;
   std::map<const CallExpr *, const FunctionDecl *> TupleGetMemberSources;
@@ -21791,6 +21914,17 @@ class BindSourceProof {
         }
       }
       if (Written) return Graph.withBindRetainedTupleProjectionSources(*Written, Proof);
+    }
+    if (ActiveFactoryLeafConstructor && Type && Type->isTypeAlias() && Template &&
+        Template->getIdentifier() && Template->getName() == "_IsNotSame") {
+      const TemplateUseSource *Actual = nullptr;
+      for (const auto *Use : Sources) {
+        if (!Use || Use->Kind != TemplateSourceKind::Type || Use->Type != Type) continue;
+        if (Actual && Actual != Use) return false;
+        Actual = Use;
+      }
+      if (!Actual) return false;
+      return Graph.withBindFactoryLeafComparisonSource(*Actual, ActiveFactoryLeafConstructor, Proof);
     }
     // Nested children retain the already authenticated enclosing source scope.
     // Their existing type, declaration and argument callbacks still run.
@@ -24581,8 +24715,12 @@ public:
         (!Storage.Arguments.Elements.empty() &&
          (!boundTupleConstructorSource(Factory, *Tuple) ||
           !functionUse(Tuple->Implementation, Tuple->Implementation->getConstructor())))) return false;
-    for (const auto *Leaf : Tuple->Leaves)
+    for (const auto *Leaf : Tuple->Leaves) {
+      if (ActiveFactoryLeafConstructor) return false;
+      ActiveFactoryLeafConstructor = Leaf->getConstructor();
+      auto RestoreLeaf = llvm::make_scope_exit([&] { ActiveFactoryLeafConstructor = nullptr; });
       if (!functionUse(Leaf, Leaf->getConstructor())) return false;
+    }
     // Bind only fresh, independently described occurrences. These sets are
     // local proof state and never publish a runtime or ordinary SDK approval.
     if (!FactoryBuiltinForwards.empty()) return false;
