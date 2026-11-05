@@ -340,22 +340,72 @@
       "name": "bind-placeholder-capture-and-queries",
       "source": "#include <functional>\n#include <type_traits>\nusing Callback=int(*)(int);int selections,calls;int first(int n){++calls;return n+1;}int second(int){return -1;}Callback target=&first;Callback select(){++selections;return target;}\nint main(){auto f=std::bind(select(),std::placeholders::_2);using F=decltype(f);static_assert(!std::is_invocable<F&,int>::value,\"second call argument required\");static_assert(std::is_invocable<F&,int,int>::value,\"two call arguments\");static_assert(std::is_same<decltype(f(3,4)),int>::value,\"scalar result\");static_assert(!std::is_nothrow_invocable<F&,int,int>::value,\"pinned exception signature\");target=&second;return selections!=1||calls!=0||f(3,4)!=5||calls!=1;}\n",
       "source_sha256": "2e4b5463256765c309dfe495afc305b5fbb3586834f4927594ac9c49a3967e19"
+    },
+    {
+      "name": "bind-nested-nullary",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint value() { ++inner_calls; return 6; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  auto f = std::bind(&add, std::bind(&value), 7);\n  return f() == 13 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "0f684c35625cffe3170c61f242a6139ce5cb5bcaf9c6b8b350800e119fb69e4a"
+    },
+    {
+      "name": "bind-nested-one-placeholder",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint twice(int x) { ++inner_calls; return x * 2; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  auto f = std::bind(&add, std::bind(&twice, std::placeholders::_1), 7);\n  return f(3) == 13 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "0389f38f661a69c502aac59ec5da26b1ee281ee5b8dab49dc45ca3295a21ac57"
+    },
+    {
+      "name": "bind-nested-reordered",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint subtract(int x, int y) { ++inner_calls; return x - y; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  auto f = std::bind(&add,\n    std::bind(&subtract, std::placeholders::_2, std::placeholders::_1), 4);\n  return f(3, 8) == 9 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "a0aa3f7413ffbafe0ed20d8cb991f2817699078d7cacf7cbb7eaaa4bdabc8a38"
+    },
+    {
+      "name": "bind-nested-two-shared-inputs",
+      "source": "#include <functional>\nint left_calls, right_calls, outer_calls;\nint add(int x, int y) { ++left_calls; return x + y; }\nint subtract(int x, int y) { ++right_calls; return x - y; }\nint combine(int x, int y) { ++outer_calls; return x - y; }\nint main() {\n  auto f = std::bind(&combine,\n    std::bind(&add, std::placeholders::_2, std::placeholders::_1),\n    std::bind(&subtract, std::placeholders::_1, std::placeholders::_2));\n  return f(3, 8) == 16 && left_calls == 1 && right_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "f371f7e61d76be87b77bc9bbbbc2372e5e876e69e72831aaaffebb5d3379dece"
+    },
+    {
+      "name": "bind-nested-live-reference-result",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint& select(int& value, int ignored) { ++inner_calls; return value; }\nint write(int& target, int value) { ++outer_calls; target = value; return target; }\nint main() {\n  int value = 2;\n  auto inner = std::bind(&select, std::ref(value), std::placeholders::_1);\n  auto f = std::bind(&write, inner, 5);\n  if (f(0) != 5 || value != 5) return 1;\n  value = 9;\n  return f(4) == 5 && value == 5 && inner_calls == 2 && outer_calls == 2 ? 0 : 2;\n}\n",
+      "source_sha256": "ffda91473630ffc78952c5091af7c79e4925a913a96a494072dfdc2b866317cf"
+    },
+    {
+      "name": "bind-nested-independent-captured-state",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint advance(int& stored, int delta) { ++inner_calls; stored += delta; return stored; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  auto inner = std::bind(&advance, 5, std::placeholders::_1);\n  auto f = std::bind(&add, inner, 1);\n  if (inner(2) != 7 || f(3) != 9) return 1;\n  auto g = f;\n  if (g(2) != 11 || f(1) != 10) return 2;\n  return inner(1) == 8 && inner_calls == 5 && outer_calls == 3 ? 0 : 3;\n}\n",
+      "source_sha256": "f9bdd5f8a99dd28961d63bc2e549d5072f47f5063fe54e4498c45379437b8be5"
+    },
+    {
+      "name": "bind-nested-unused-effects-before-read",
+      "source": "#include <functional>\nint effects, inner_calls, outer_calls, wrong;\nint argument(int value) { ++effects; return value; }\nint read(int x) { if (effects != 2) wrong = 1; ++inner_calls; return x; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  auto f = std::bind(&add, std::bind(&read, std::placeholders::_1), 4);\n  return f(argument(3), argument(8)) == 7 && effects == 2 && !wrong &&\n    inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "1e548663ded29eaf688c8ef74a9cd0e1d77d1889ec857bfd70eeb01e5beab757"
+    },
+    {
+      "name": "bind-nested-const-copy-and-temporary",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint add(int x, int y) { ++inner_calls; return x + y; }\nint twice(int x) { ++outer_calls; return x * 2; }\nint main() {\n  const auto f = std::bind(&twice,\n    std::bind(&add, std::placeholders::_1, 4));\n  auto g = f;\n  if (f(3) != 14 || g(5) != 18) return 1;\n  return std::bind(&twice, std::bind(&add, std::placeholders::_1, 4))(2) == 12 &&\n    inner_calls == 3 && outer_calls == 3 ? 0 : 2;\n}\n",
+      "source_sha256": "fff81fb70f6a91e4830a028e313f6325aaf6d42466930543c639e5463447c0a1"
+    },
+    {
+      "name": "bind-nested-late-reference-value-read",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint change(int& value) { ++inner_calls; value = 9; return 1; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  int value = 3;\n  auto inner = std::bind(&change, std::ref(value));\n  auto f = std::bind(&add, std::ref(value), inner);\n  return f() == 10 && value == 9 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "bbbb7dcfe856ae6dbe4754400c9d2296d6aa99994be884cd59c98cd5b5619ea2"
+    },
+    {
+      "name": "bind-nested-late-placeholder-value-read",
+      "source": "#include <functional>\nint inner_calls, outer_calls;\nint change(int& value) { ++inner_calls; value = 9; return 1; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  int value = 3;\n  auto f = std::bind(&add, std::placeholders::_1,\n    std::bind(&change, std::placeholders::_1));\n  return f(value) == 10 && value == 9 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "296efb30fe0b3a5dd34896e75395c9af3ee403e1173d706f762ee2384278ac4b"
     }
   ],
   "fixture_group": "bind-call-arguments-native40",
   "execution_binding_required": true,
-  "source_repair_commit": "1eaba17c6a778135c2947848bbb5d7bb16353a6e",
-  "clean_source_basis": "1eaba17c6a778135c2947848bbb5d7bb16353a6e",
-  "actual_same_source_six_report_sha256": "ec2a0eb43f357fd9c42d4ed1da8fffed1466aaa8309b83f591c104312408cd50",
-  "actual_same_source_six_proof_sha256": "a8a0dfb84b0b509558ae6fcb131e85f8aa2e4784b470e5fb67dcacc6a3e43b14",
-  "source_contract_sha256": "e71b11486d5ce55e759950d55163e60cb12215064b055cbaa58ce6fa6353bb8f",
-  "required_native_programs": 98,
+  "source_repair_commit": "543a11d52726e68b0548baeb35f21fd4d9fecfef",
+  "clean_source_basis": "543a11d52726e68b0548baeb35f21fd4d9fecfef",
+  "actual_same_source_six_report_sha256": "41323a7a329e285863cc4862cb2b046e689329e589a13c71aaf6c7aa8d034d4d",
+  "actual_same_source_six_proof_sha256": "06c78ade2ecc9d737520760b8bcd16e0e968fb8f7ee89e4f435d5bfe86fb3ab9",
+  "source_contract_sha256": "95f3df68ae2c5a1c3669dd508662e1aae2e23eb399111c44e949bf5befebc6b8",
+  "required_native_programs": 118,
   "cpp_executed_locally": false,
   "current_private_input_sha256": {
     "Frontend.cpp": "4eb62bc2d94ee90d1eedcfc41416d38e420f14fa06a2536e7118dcf3ce130e6e",
     "Lowering.cpp": "65a0bbb0ead9f0944e389b061eac5f7aa99fa3f31ffe02eae9b9ef93402fe31b",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "aa6a0f1bf80116859957732692bf30c889692f69f15fb8a9a909da205db6dd16",
+    "MathSDK.cpp": "fd3de6a8e63ec4adf0137f6d4dd867a2cc7c40a959b8a21b83c5a00f174ae0eb",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "58c4f1fc0a9cf0dfbe090597a30f953b44399840fcc018c632418488d59c400f",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -377,7 +427,7 @@
     "commit": "043b3f02feb6ec117a18ebbb96ab80ea1f309f5f",
     "publication_receipt_sha256": "09b0cba021679211178a0f746be32f9908f9f44ec2026b79823819960b0ed4fa"
   },
-  "requires_actual_current_bind_dev_publication_first": true,
+  "requires_actual_current_bind_dev_publication_first": false,
   "requires_exact_current_source_six": true,
   "requires_exact_tuple_tag_role_source_assembly_sha256": "f94fc9d68297942f262fbeed166791da5755baeaf4b516c8795a0021c042a45b",
   "current_source_review_sha256": "255e8e148511f5636074abca3a856e254192be2a3706a54297dee20bed7f4a3d",
@@ -385,5 +435,7 @@
   "requires_current_source6_before_dispatch": true,
   "expanded_bound_pack_cases_contract_sha256": "1345a813ac0fdd6056fb11aeebdabf3b758eab26960f9610f06d8b8396539549",
   "source_syntax_validation_pending": false,
-  "post_merge_validation": true
+  "post_merge_validation": false,
+  "validation_before_dev_merge": true,
+  "focused14_evidence_sha256": "3ce78833ce705658467ef96abea88d23c99c3a338190d02e243e29dbf69a4cd7"
 }

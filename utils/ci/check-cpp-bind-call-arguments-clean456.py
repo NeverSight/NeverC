@@ -170,7 +170,7 @@ def main():
         assert plan['fixture_group'] == 'bind-call-arguments-clean456' and plan['preparation_only'] is False
         assert plan['execution_binding_required'] is True and plan['source_trace_included'] is False
         assert plan['private_bind_admission_implemented'] is True and plan['bind_lowering_implemented'] is True
-        assert plan['required_requests'] == 768 and len(plan['cases']) == 96
+        assert plan['required_requests'] == 848 and len(plan['cases']) == 106
         assert len(plan['target_abis']) == 8 and len(set(plan['target_abis'])) == 8
         assert re.fullmatch('[0-9a-f]{40}', plan['source_repair_commit'])
         assert plan['clean_source_basis'] == plan['source_repair_commit']
@@ -375,7 +375,7 @@ def main():
                 save()
         report['invocation_inventory'] = [{'path': str(path.relative_to(out)), 'sha256': sha(path), 'bytes': path.stat().st_size}
             for path in sorted((out / 'invocations').rglob('*')) if path.is_file()]
-        assert len(report['requests']) == 768 and len(report['invocation_inventory']) == 3840
+        assert len(report['requests']) == 848 and len(report['invocation_inventory']) == 4240
         passed = all(row['expectation_satisfied'] for row in report['requests'])
         report.update(completed=True, evidence_authenticated=True, passed=passed, not_fn_private_support_complete=False, scope='original600_plus168_placeholder_requests',
                       focused_request_contract_passed=passed,
