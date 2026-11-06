@@ -1889,6 +1889,13 @@ describeFunctionalBindCallTupleConstructionSource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
 
+// Original owned caller's incoming tuple and tag constructions only. These
+// descriptions do not grant tuple, callable or runtime operation permission.
+std::optional<FunctionalBindTupleConstructionSource>
+describeFunctionalBindOwnedCallTupleConstructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
+
 // Logical C23 storage only. This layout description grants no SDK operation,
 // base conversion, lifecycle, default/trait source, body or lifetime permission.
 struct FunctionalBindNaturalLayout {
@@ -2041,6 +2048,11 @@ std::optional<std::vector<FunctionalBindTupleTagSource>>
 describeFunctionalBindCallTupleTagSources(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
+std::optional<std::vector<FunctionalBindTupleTagSource>>
+describeFunctionalBindOwnedCallTupleTagSources(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
+
 bool shouldRetainFunctionalBindSpecialMemberSource(
     const State &S, const clang::SourceManager &SM, const clang::CXXMethodDecl *Method);
 

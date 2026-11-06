@@ -8414,6 +8414,20 @@ class UtilityTupleQueryGraph
     Complete = true;
     return true;
   }
+  std::optional<FunctionalBindTupleConstructionSource> freshBindCallTupleConstructionSource(
+      const State &GivenState, const SourceManager &GivenSources,
+      const FunctionalBindCallSource &Call, const ASTContext &GivenContext) const {
+    return BindOwnedCallableRecord
+        ? describeFunctionalBindOwnedCallTupleConstructionSource(GivenState, GivenSources, Call, GivenContext)
+        : describeFunctionalBindCallTupleConstructionSource(GivenState, GivenSources, Call, GivenContext);
+  }
+  std::optional<std::vector<FunctionalBindTupleTagSource>> freshBindCallTupleTagSources(
+      const State &GivenState, const SourceManager &GivenSources,
+      const FunctionalBindCallSource &Call, const ASTContext &GivenContext) const {
+    return BindOwnedCallableRecord
+        ? describeFunctionalBindOwnedCallTupleTagSources(GivenState, GivenSources, Call, GivenContext)
+        : describeFunctionalBindCallTupleTagSources(GivenState, GivenSources, Call, GivenContext);
+  }
   std::optional<FunctionalBindCallSource> freshBindCallSource(
       const State &GivenState, const SourceManager &GivenSources,
       const CallExpr *Call, const ASTContext &GivenContext) const {
@@ -12432,7 +12446,7 @@ public:
         Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return false;
     const auto Input = approvedUtilityReferenceTupleRecord(
         S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
-    const auto Construction = describeFunctionalBindCallTupleConstructionSource(S, SM, *Actual, Context);
+    const auto Construction = freshBindCallTupleConstructionSource(S, SM, *Actual, Context);
     if (!Input || !Construction || Construction->Tuple != Actual->CallArguments ||
         Input->Elements.size() != Actual->CallForwards.size() ||
         Construction->Leaves.size() != Input->Elements.size()) return false;
@@ -13323,8 +13337,8 @@ public:
         Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return false;
     const auto Input = approvedUtilityReferenceTupleRecord(
         S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
-    const auto Construction = describeFunctionalBindCallTupleConstructionSource(S, SM, *Actual, Context);
-    const auto Tags = describeFunctionalBindCallTupleTagSources(S, SM, *Actual, Context);
+    const auto Construction = freshBindCallTupleConstructionSource(S, SM, *Actual, Context);
+    const auto Tags = freshBindCallTupleTagSources(S, SM, *Actual, Context);
     if (!Input || Input->Elements.size() != Actual->CallForwards.size() || !Construction || !Tags ||
         Construction->Tuple != Tuple.Tuple || Construction->Implementation != Tuple.Implementation ||
         Construction->Leaves != Tuple.Leaves || Construction->Copies != Tuple.Copies ||
@@ -19569,6 +19583,25 @@ describeFunctionalBindCallTupleConstructionSource(
       S, SM, *Arguments, Actual->CallArguments, Context, true);
 }
 
+std::optional<FunctionalBindTupleConstructionSource>
+describeFunctionalBindOwnedCallTupleConstructionSource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindCallSource &Call, const ASTContext &Context) {
+  if (!Call.SourceCall || Call.SourceCall != Call.OwnedRoot || !Call.OwnedPath.empty()) return std::nullopt;
+  const auto Owned = describeFunctionalBindOwnedCallSource(S, SM, Call.SourceCall, Context);
+  const auto *Actual = Owned ? &Owned->Selected : nullptr;
+  if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
+      Actual->Object != Call.Object || Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
+      Actual->CallArguments != Call.CallArguments || Actual->CallForwards != Call.CallForwards ||
+      Actual->Storage.Record != Call.Storage.Record || Actual->CallForwards.empty() ||
+      Actual->CallForwards.size() > 2) return std::nullopt;
+  const auto Arguments = approvedUtilityReferenceTupleRecord(
+      S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
+  if (!Arguments || Arguments->Elements.size() != Actual->CallForwards.size()) return std::nullopt;
+  return describeFunctionalBindTupleConstructionSourceImpl(
+      S, SM, *Arguments, Actual->CallArguments, Context, true);
+}
+
 std::optional<FunctionalBindNaturalLayout>
 describeFunctionalBindNaturalLayout(
     const State &S, const SourceManager &SM,
@@ -19653,6 +19686,16 @@ describeFunctionalBindCallTupleTagSources(
     return std::nullopt;
   return describeFunctionalBindTupleTagSourcesImpl(
       S, SM, *Tuple, Call.CallForwards.size(), Context);
+}
+
+std::optional<std::vector<FunctionalBindTupleTagSource>>
+describeFunctionalBindOwnedCallTupleTagSources(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindCallSource &Call, const ASTContext &Context) {
+  const auto Tuple = describeFunctionalBindOwnedCallTupleConstructionSource(S, SM, Call, Context);
+  if (!Tuple || !Call.Method || Call.CallForwards.size() != Call.Method->getNumParams())
+    return std::nullopt;
+  return describeFunctionalBindTupleTagSourcesImpl(S, SM, *Tuple, Call.CallForwards.size(), Context);
 }
 
 bool shouldRetainFunctionalBindSpecialMemberSource(
@@ -21823,6 +21866,20 @@ class BindSourceProof {
   bool sdk(SourceLocation Location) const {
     const auto File = S.sdkFile(SM, Location);
     return Location.isValid() && File && File->Root == "libcxx";
+  }
+  std::optional<FunctionalBindTupleConstructionSource> freshBindCallTupleConstructionSource(
+      const State &GivenState, const SourceManager &GivenSources,
+      const FunctionalBindCallSource &Call, const ASTContext &GivenContext) const {
+    return OwnedCallableRecord
+        ? describeFunctionalBindOwnedCallTupleConstructionSource(GivenState, GivenSources, Call, GivenContext)
+        : describeFunctionalBindCallTupleConstructionSource(GivenState, GivenSources, Call, GivenContext);
+  }
+  std::optional<std::vector<FunctionalBindTupleTagSource>> freshBindCallTupleTagSources(
+      const State &GivenState, const SourceManager &GivenSources,
+      const FunctionalBindCallSource &Call, const ASTContext &GivenContext) const {
+    return OwnedCallableRecord
+        ? describeFunctionalBindOwnedCallTupleTagSources(GivenState, GivenSources, Call, GivenContext)
+        : describeFunctionalBindCallTupleTagSources(GivenState, GivenSources, Call, GivenContext);
   }
   std::optional<FunctionalBindCallSource> freshBindCallSource(
       const State &GivenState, const SourceManager &GivenSources,
@@ -25646,7 +25703,7 @@ class BindSourceProof {
     if (Call.CallForwards.empty()) return Complete();
     const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     const auto Tuple = Actual
-        ? describeFunctionalBindCallTupleConstructionSource(S, SM, *Actual, Context) : std::nullopt;
+        ? freshBindCallTupleConstructionSource(S, SM, *Actual, Context) : std::nullopt;
     if (!Actual || !Tuple || Actual->Storage.Record != Storage.Record ||
         Actual->Method != Call.Method || Actual->Object != Call.Object ||
         Actual->CallArguments != Call.CallArguments || Actual->CallForwards != Call.CallForwards ||
@@ -25686,7 +25743,7 @@ class BindSourceProof {
     return withTupleReferenceAssertionSources(*Tuple, [&] {
       for (const auto *Copy : Tuple->Copies)
         if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) return false;
-      const auto Tags = describeFunctionalBindCallTupleTagSources(S, SM, *Actual, Context);
+      const auto Tags = freshBindCallTupleTagSources(S, SM, *Actual, Context);
       if (!Tags || Tags->size() != 4) return false;
       for (const auto &Tag : *Tags)
         if (!Graph.bindFunctionalBindSpecialMember(Tag.Construction->getConstructor(), true)) return false;
