@@ -28618,12 +28618,16 @@ class FunctionLowering {
       std::optional<Expression> Destination) {
     const auto L = Call->getExprLoc();
     const auto Verified = A.VerifiedBindFactories.find(Call);
-    const auto Layout = describeFunctionalBindRuntimeLayout(
-        A.S, A.Sources, Source.Storage.Record, A.Context);
+    const auto StandardFactory = describeFunctionalBindStandardFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto Layout = StandardFactory
+        ? describeFunctionalBindStandardNaturalLayout(A.S, A.Sources, Source.Storage.Record, A.Context)
+        : describeFunctionalBindRuntimeLayout(A.S, A.Sources, Source.Storage.Record, A.Context);
     const auto ReferenceFactory = describeFunctionalBindReferenceFactorySource(A.S, A.Sources, Call, A.Context);
-    const auto TupleSource = ReferenceFactory
-        ? describeFunctionalBindReferenceTupleConstructionSource(A.S, A.Sources, Source, A.Context)
-        : describeFunctionalBindTupleConstructionSource(A.S, A.Sources, Source, A.Context);
+    const auto TupleSource = StandardFactory
+        ? describeFunctionalBindStandardTupleConstructionSource(A.S, A.Sources, Source, A.Context)
+        : ReferenceFactory
+            ? describeFunctionalBindReferenceTupleConstructionSource(A.S, A.Sources, Source, A.Context)
+            : describeFunctionalBindTupleConstructionSource(A.S, A.Sources, Source, A.Context);
     const auto *Factory = Source.Factory;
     if (Verified == A.VerifiedBindFactories.end() || &Verified->second != &Source ||
         Source.SourceCall != Call || !Layout || !TupleSource || !Factory ||
@@ -28784,6 +28788,7 @@ class FunctionLowering {
     }
     const auto Borrowed = A.VerifiedBindReferenceCalls.find(Source.SourceCall);
     const auto *Reference = Borrowed != A.VerifiedBindReferenceCalls.end() ? &Borrowed->second : nullptr;
+    const auto Standard = describeFunctionalBindStandardCallSource(A.S, A.Sources, Source.SourceCall, A.Context);
     const auto *OwnedTarget = Reference ? Reference->Reference.Method
         : Source.Storage.CallableType->isRecordType() && Source.Target
             ? dyn_cast_or_null<CXXMethodDecl>(Source.Target->getDirectCallee()) : nullptr;
@@ -28904,6 +28909,31 @@ class FunctionLowering {
         Captured = functionalReferenceArgumentAddress(dereference(std::move(Captured), L), Wrapper, L);
       }
       Bindings.push_back(std::move(Captured));
+    }
+    if (Standard) {
+      if (Reference || !Path.empty() || &Source != &Root || !OwnedTarget ||
+          Standard->Selected.SourceCall != Source.SourceCall ||
+          Standard->Selected.Method != Source.Method || Standard->Selected.Object != Source.Object ||
+          Standard->Selected.Target != Source.Target || Standard->Selected.Invoke != Source.Invoke ||
+          Standard->Selected.Storage.Record != Source.Storage.Record || Standard->Method != OwnedTarget ||
+          !approvedStandardSDKDeclaration(A.S, A.Sources, Standard->Method) ||
+          Standard->Method->getParent()->getCanonicalDecl() !=
+              Source.Storage.CallableType->getAsCXXRecordDecl()->getCanonicalDecl() ||
+          Standard->Method->getNumParams() != Bindings.size() ||
+          (Bindings.size() != 1 && Bindings.size() != 2) ||
+          !A.Context.hasSameType(Standard->Method->getReturnType(), Source.Method->getReturnType()))
+        reject(L, "bind standard target", "The completed exact standard operation and original argument bindings are required.");
+      // Every incoming expression and bound projection has already been
+      // captured above. In particular logical operations preserve eager
+      // function-argument evaluation before applying the scalar operation.
+      auto Argument = [&](unsigned I) {
+        return utilityInvocationArgument(std::move(Bindings[I]), Source.Arguments[I].ForwardedType,
+            functionalOperationParameterValueType(Standard->Method, I), nullptr, L);
+      };
+      auto Left = Argument(0);
+      std::optional<Expression> Right;
+      if (Bindings.size() == 2) Right = Argument(1);
+      return functionalOperationValues(L, std::move(Left), std::move(Right), Standard->Operation);
     }
     if (Reference) {
       const auto &Info = Reference->Reference;
