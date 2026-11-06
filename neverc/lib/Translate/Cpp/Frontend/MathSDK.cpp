@@ -8414,6 +8414,44 @@ class UtilityTupleQueryGraph
     Complete = true;
     return true;
   }
+  std::optional<FunctionalBindOwnedCallSource> freshOwnedBindInvocation() const {
+    if (!BindOwnedCallableRecord || !BindCallMetadata || !BindCallMetadata->SourceCall ||
+        BindCallMetadata->SourceCall != BindCallMetadata->OwnedRoot || !BindCallMetadata->OwnedPath.empty()) return std::nullopt;
+    const auto Actual = describeFunctionalBindOwnedCallSource(S, SM, BindCallMetadata->SourceCall, Context);
+    const auto *Owner = Actual ? Actual->Selected.Storage.CallableType->getAsCXXRecordDecl() : nullptr;
+    if (!Actual || !Owner || Owner->getCanonicalDecl() != BindOwnedCallableRecord->getCanonicalDecl() ||
+        Actual->Selected.SourceCall != BindCallMetadata->SourceCall || Actual->Selected.Method != BindCallMetadata->Method ||
+        Actual->Selected.Object != BindCallMetadata->Object || Actual->Selected.Apply != BindCallMetadata->Apply ||
+        Actual->Selected.Invoke != BindCallMetadata->Invoke || Actual->Selected.Target != BindCallMetadata->Target ||
+        Actual->Selected.Storage.Record != BindCallMetadata->Storage.Record) return std::nullopt;
+    return Actual;
+  }
+  std::optional<FunctionalBindInvokeSignatureSource> freshBindInvokeSignatureSource(
+      const State &GivenState, const SourceManager &GivenSources, const FunctionDecl *Function,
+      const FunctionalBindStorage &GivenStorage, llvm::ArrayRef<QualType> Forwarded,
+      const ASTContext &GivenContext) const {
+    if (!BindOwnedCallableRecord) return describeFunctionalBindInvokeSignatureSource(
+        GivenState, GivenSources, Function, GivenStorage, Forwarded, GivenContext);
+    const auto Actual = freshOwnedBindInvocation();
+    if (!Actual || Actual->Selected.Storage.Record != GivenStorage.Record ||
+        Actual->Selected.Arguments.size() != Forwarded.size()) return std::nullopt;
+    for (unsigned I = 0; I < Forwarded.size(); ++I)
+      if (!Context.hasSameType(Forwarded[I], Actual->Selected.Arguments[I].ForwardedType)) return std::nullopt;
+    return describeFunctionalBindOwnedInvokeSignatureSource(GivenState, GivenSources, Function, *Actual, GivenContext);
+  }
+  std::optional<FunctionalBindTryCallSignatureSource> freshBindTryCallSignatureSource(
+      const State &GivenState, const SourceManager &GivenSources, const FunctionDecl *Function,
+      const FunctionalBindStorage &GivenStorage, llvm::ArrayRef<QualType> Forwarded,
+      const ASTContext &GivenContext) const {
+    if (!BindOwnedCallableRecord) return describeFunctionalBindTryCallSignatureSource(
+        GivenState, GivenSources, Function, GivenStorage, Forwarded, GivenContext);
+    const auto Actual = freshOwnedBindInvocation();
+    if (!Actual || Actual->Selected.Storage.Record != GivenStorage.Record ||
+        Actual->Selected.Arguments.size() != Forwarded.size()) return std::nullopt;
+    for (unsigned I = 0; I < Forwarded.size(); ++I)
+      if (!Context.hasSameType(Forwarded[I], Actual->Selected.Arguments[I].ForwardedType)) return std::nullopt;
+    return describeFunctionalBindOwnedTryCallSignatureSource(GivenState, GivenSources, Function, *Actual, GivenContext);
+  }
   std::optional<FunctionalBindTupleConstructionSource> freshBindCallTupleConstructionSource(
       const State &GivenState, const SourceManager &GivenSources,
       const FunctionalBindCallSource &Call, const ASTContext &GivenContext) const {
@@ -11873,7 +11911,7 @@ public:
       const auto Actual = Probe.Dispatcher.Nested
           ? describeFunctionalBindNestedTryCallSignatureSource(S, SM, Probe.Function,
                 *Probe.Dispatcher.Nested, Context)
-          : describeFunctionalBindTryCallSignatureSource(
+          : freshBindTryCallSignatureSource(
                 S, SM, Probe.Function, *BindMetadata, Forwarded, Context);
       if (!Actual || Actual->Owner != Probe.Owner || Actual->Result != Probe.Result ||
           Actual->ResultCall != Probe.ResultCall || Actual->Invoke != Probe.Invoke ||
@@ -12389,7 +12427,7 @@ public:
     const auto Actual = Description.Nested
         ? describeFunctionalBindNestedInvokeSignatureSource(S, SM, Function,
               *Description.Nested, Context)
-        : describeFunctionalBindInvokeSignatureSource(
+        : freshBindInvokeSignatureSource(
               S, SM, Function, *BindMetadata, Forwarded, Context);
     if (!Actual || Actual->Primary != Primary ||
         Actual->SignatureCall != Description.SignatureCall ||
@@ -15368,6 +15406,30 @@ public:
     return value(E->getMemberDecl());
   }
   bool TraverseCXXOperatorCallExpr(CXXOperatorCallExpr *E, DataRecursionQueue *Queue = nullptr) {
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindOwnedCallableRecord && BindCallMetadata) {
+      const auto Actual = freshOwnedBindInvocation();
+      const auto *Dispatcher = Actual ? Actual->Selected.Invoke->getDirectCallee() : nullptr;
+      const auto Signature = Actual ? describeFunctionalBindOwnedInvokeSignatureSource(
+          S, SM, Dispatcher, *Actual, Context) : std::nullopt;
+      const auto *Exception = Signature ? dyn_cast_or_null<CXXNoexceptExpr>(Signature->ActualException) : nullptr;
+      auto CoreCall = [](const Expr *Expression) -> const Expr * {
+        return Expression ? Expression->IgnoreParenImpCasts() : nullptr;
+      };
+      if (Actual && Signature && (E == Actual->Selected.Target ||
+          E == Signature->SpecializedCall || E == CoreCall(Signature->ActualReturn) ||
+          (Exception && E == CoreCall(Exception->getOperand())))) {
+        if (!BindOwnedQuerySources || !step() || !VisitExpr(E) || !VisitCallExpr(E) || !step() || !step() ||
+            E->getOperator() != OO_Call || E->getDirectCallee() != Actual->Target ||
+            E->getNumArgs() != Actual->Target->getNumParams() + 1 ||
+            !bindOwnedCallableRecordSource(Actual->Target->getParent())) return false;
+        // The fresh descriptor binds this exact ordinary method reference and
+        // all receiver/argument casts. Its ordinary signature and body remain
+        // separate outer-checker obligations; no SDK family is enlarged.
+        BindOwnedQuerySources->insert(Actual->Target);
+        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return false;
+        return !Failed;
+      }
+    }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedExpansionSource &&
         E == BindNestedExpansionSource->Invocation.SourceCall) {
       const auto &Child = *BindNestedExpansionSource;
@@ -21867,6 +21929,44 @@ class BindSourceProof {
     const auto File = S.sdkFile(SM, Location);
     return Location.isValid() && File && File->Root == "libcxx";
   }
+  std::optional<FunctionalBindOwnedCallSource> freshOwnedBindInvocation() const {
+    if (!OwnedCallableRecord || !ActiveSourceCall || !ActiveSourceCall->SourceCall ||
+        ActiveSourceCall->SourceCall != ActiveSourceCall->OwnedRoot || !ActiveSourceCall->OwnedPath.empty()) return std::nullopt;
+    const auto Actual = describeFunctionalBindOwnedCallSource(S, SM, ActiveSourceCall->SourceCall, Context);
+    const auto *Owner = Actual ? Actual->Selected.Storage.CallableType->getAsCXXRecordDecl() : nullptr;
+    if (!Actual || !Owner || Owner->getCanonicalDecl() != OwnedCallableRecord->getCanonicalDecl() ||
+        Actual->Selected.SourceCall != ActiveSourceCall->SourceCall || Actual->Selected.Method != ActiveSourceCall->Method ||
+        Actual->Selected.Object != ActiveSourceCall->Object || Actual->Selected.Apply != ActiveSourceCall->Apply ||
+        Actual->Selected.Invoke != ActiveSourceCall->Invoke || Actual->Selected.Target != ActiveSourceCall->Target ||
+        Actual->Selected.Storage.Record != ActiveSourceCall->Storage.Record) return std::nullopt;
+    return Actual;
+  }
+  std::optional<FunctionalBindInvokeSignatureSource> freshBindInvokeSignatureSource(
+      const State &GivenState, const SourceManager &GivenSources, const FunctionDecl *Function,
+      const FunctionalBindStorage &GivenStorage, llvm::ArrayRef<QualType> Forwarded,
+      const ASTContext &GivenContext) const {
+    if (!OwnedCallableRecord) return describeFunctionalBindInvokeSignatureSource(
+        GivenState, GivenSources, Function, GivenStorage, Forwarded, GivenContext);
+    const auto Actual = freshOwnedBindInvocation();
+    if (!Actual || Actual->Selected.Storage.Record != GivenStorage.Record ||
+        Actual->Selected.Arguments.size() != Forwarded.size()) return std::nullopt;
+    for (unsigned I = 0; I < Forwarded.size(); ++I)
+      if (!Context.hasSameType(Forwarded[I], Actual->Selected.Arguments[I].ForwardedType)) return std::nullopt;
+    return describeFunctionalBindOwnedInvokeSignatureSource(GivenState, GivenSources, Function, *Actual, GivenContext);
+  }
+  std::optional<FunctionalBindTryCallSignatureSource> freshBindTryCallSignatureSource(
+      const State &GivenState, const SourceManager &GivenSources, const FunctionDecl *Function,
+      const FunctionalBindStorage &GivenStorage, llvm::ArrayRef<QualType> Forwarded,
+      const ASTContext &GivenContext) const {
+    if (!OwnedCallableRecord) return describeFunctionalBindTryCallSignatureSource(
+        GivenState, GivenSources, Function, GivenStorage, Forwarded, GivenContext);
+    const auto Actual = freshOwnedBindInvocation();
+    if (!Actual || Actual->Selected.Storage.Record != GivenStorage.Record ||
+        Actual->Selected.Arguments.size() != Forwarded.size()) return std::nullopt;
+    for (unsigned I = 0; I < Forwarded.size(); ++I)
+      if (!Context.hasSameType(Forwarded[I], Actual->Selected.Arguments[I].ForwardedType)) return std::nullopt;
+    return describeFunctionalBindOwnedTryCallSignatureSource(GivenState, GivenSources, Function, *Actual, GivenContext);
+  }
   std::optional<FunctionalBindTupleConstructionSource> freshBindCallTupleConstructionSource(
       const State &GivenState, const SourceManager &GivenSources,
       const FunctionalBindCallSource &Call, const ASTContext &GivenContext) const {
@@ -25134,7 +25234,7 @@ class BindSourceProof {
       const auto Actual = Description.Nested
           ? describeFunctionalBindNestedInvokeSignatureSource(S, SM, Description.Function,
                 *Description.Nested, Context)
-          : describeFunctionalBindInvokeSignatureSource(
+          : freshBindInvokeSignatureSource(
                 S, SM, Description.Function, Storage, Forwarded, Context);
       if (!Actual || Actual->Primary != Description.Primary ||
           Actual->SignatureCall != Description.SignatureCall ||
@@ -25209,7 +25309,7 @@ class BindSourceProof {
     const auto Actual = Probe.Dispatcher.Nested
         ? describeFunctionalBindNestedTryCallSignatureSource(S, SM, Probe.Function,
               *Probe.Dispatcher.Nested, Context)
-        : describeFunctionalBindTryCallSignatureSource(
+        : freshBindTryCallSignatureSource(
               S, SM, Probe.Function, Storage, Forwarded, Context);
     if (!Actual || Actual->Owner != Probe.Owner || Actual->Result != Probe.Result ||
         Actual->ResultCall != Probe.ResultCall || Actual->Invoke != Probe.Invoke ||
@@ -25400,7 +25500,9 @@ class BindSourceProof {
       // call descriptor binds this exact indirect target and every original
       // written cast/parameter; the walker still consumes all those children.
       const auto *Dispatcher = ActiveRuntimeInvoke->Invoke->getDirectCallee();
-      return !Function && Dispatcher &&
+      const auto Owned = OwnedCallableRecord ? freshOwnedBindInvocation() : std::nullopt;
+      return (Owned ? Function == Owned->Target : !Function) && Dispatcher &&
+          (!OwnedCallableRecord || bool(Owned)) &&
           dyn_cast_or_null<CallExpr>(Check.core(Check.returned(Dispatcher))) == Call;
     }
     if (ActiveInvokeSignature && Call) {
@@ -25415,7 +25517,10 @@ class BindSourceProof {
           Call == PrimaryNoexcept || Call == ActualNoexcept) {
         for (const auto *Declval : Description.SpecializedDeclvals)
           if (!CompletedDeclvalInputs.count(Declval)) return false;
-        return !Function || (Description.Nested && ActiveNestedObjectQuery && ActiveNestedReturnLocation &&
+        const auto Owned = OwnedCallableRecord ? freshOwnedBindInvocation() : std::nullopt;
+        return !Function || (Owned && Function == Owned->Target &&
+            Description.Function == Owned->Selected.Invoke->getDirectCallee()) ||
+            (Description.Nested && ActiveNestedObjectQuery && ActiveNestedReturnLocation &&
             Description.Nested->Root == ActiveNestedObjectQuery->Root &&
             Description.Nested->Path == ActiveNestedObjectQuery->Path &&
             Function == ActiveNestedObjectQuery->Invocation.Method);
@@ -25442,7 +25547,7 @@ class BindSourceProof {
           const auto NestedProbe = ActiveNestedObjectQuery && ActiveNestedReturnLocation
               ? describeFunctionalBindNestedTryCallSignatureSource(S, SM, Method, *ActiveNestedObjectQuery, Context)
               : std::nullopt;
-          const auto Probe = NestedProbe ? NestedProbe : describeFunctionalBindTryCallSignatureSource(
+          const auto Probe = NestedProbe ? NestedProbe : freshBindTryCallSignatureSource(
               S, SM, Method, Storage, {}, Context);
           if (!Probe || Probe->Declvals.size() != 1 ||
               std::find(Probe->OriginalArgumentDeclvals.begin(),
@@ -25453,7 +25558,7 @@ class BindSourceProof {
           const auto NestedDescription = ActiveNestedObjectQuery && ActiveNestedReturnLocation
               ? describeFunctionalBindNestedInvokeSignatureSource(S, SM, Owner, *ActiveNestedObjectQuery, Context)
               : std::nullopt;
-          const auto Description = NestedDescription ? NestedDescription : describeFunctionalBindInvokeSignatureSource(
+          const auto Description = NestedDescription ? NestedDescription : freshBindInvokeSignatureSource(
               S, SM, Owner, Storage, {}, Context);
           if (!Description || Description->Declvals.size() != 2 ||
               Description->Declvals[1] != Call || Description->SpecializedDeclvals.size() != 1)
@@ -26485,7 +26590,7 @@ public:
             ? dyn_cast_or_null<CXXMethodDecl>(Use->Declaration) : nullptr;
         if (!Function || !Function->getIdentifier() || Function->getName() != "__try_call" ||
             Probes.count(Function)) continue;
-        const auto Probe = describeFunctionalBindTryCallSignatureSource(
+        const auto Probe = freshBindTryCallSignatureSource(
             S, SM, Function, Storage, Forwarded, Context);
         if (!Probe) continue;
         if (Probes.size() == 64 || !withSharedArithmeticProbeSources(*Probe, [&] {
@@ -26802,7 +26907,7 @@ public:
         Actual->Target != Call.Target || Actual->Storage.Record != Storage.Record) return false;
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Actual->Arguments) Forwarded.push_back(Argument.ForwardedType);
-    const auto Probe = describeFunctionalBindTryCallSignatureSource(S, SM, Function, Storage, Forwarded, Context);
+    const auto Probe = freshBindTryCallSignatureSource(S, SM, Function, Storage, Forwarded, Context);
     return Probe && tryCallFallbackSource(*Probe) && Graph.bindSourceComplete();
   }
   bool callTryCallSignature(const FunctionalBindCallSource &Call, const CXXMethodDecl *Function) {
@@ -26813,7 +26918,7 @@ public:
         Actual->Target != Call.Target || Actual->Storage.Record != Storage.Record) return false;
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Actual->Arguments) Forwarded.push_back(Argument.ForwardedType);
-    const auto Probe = describeFunctionalBindTryCallSignatureSource(S, SM, Function, Storage, Forwarded, Context);
+    const auto Probe = freshBindTryCallSignatureSource(S, SM, Function, Storage, Forwarded, Context);
     return Probe && tryCallSignatureSource(*Probe) && Graph.bindSourceComplete();
   }
   bool callGetSource(const FunctionalBindCallSource &Call) {
@@ -27642,7 +27747,7 @@ public:
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Actual->Arguments) Forwarded.push_back(Argument.ForwardedType);
     const auto *Dispatcher = Actual->Invoke->getDirectCallee();
-    const auto Signature = describeFunctionalBindInvokeSignatureSource(
+    const auto Signature = freshBindInvokeSignatureSource(
         S, SM, Dispatcher, Storage, Forwarded, Context);
     if (!Signature || !invokeSignatureSource(Actual->Invoke, *Signature)) return false;
     return Graph.withBindSourceChild([&] {
@@ -27676,7 +27781,7 @@ public:
         Actual->Storage.Record != Storage.Record) return false;
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Actual->Arguments) Forwarded.push_back(Argument.ForwardedType);
-    const auto Signature = describeFunctionalBindInvokeSignatureSource(
+    const auto Signature = freshBindInvokeSignatureSource(
         S, SM, Actual->Invoke->getDirectCallee(), Storage, Forwarded, Context);
     return Signature && invokeSignatureSource(Actual->Invoke, *Signature);
   }
