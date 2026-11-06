@@ -17507,7 +17507,8 @@ static std::optional<FunctionalBindStorage>
 describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record,
                               const ASTContext &Context, unsigned Depth,
-                              unsigned &Nodes, std::set<const CXXRecordDecl *> &Active) {
+                              unsigned &Nodes, std::set<const CXXRecordDecl *> &Active,
+                               bool StandardCallableMetadata = false) {
   if (!S.coreV2() || !Record || Depth >= 64 || ++Nodes > 200000 ||
       !Active.insert(Record->getCanonicalDecl()).second) return std::nullopt;
   auto Restore = llvm::make_scope_exit([&] { Active.erase(Record->getCanonicalDecl()); });
@@ -17560,7 +17561,16 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
       OriginalCallable.isNull() ||
       !Context.hasSameType(CallableType, OriginalCallable)) return std::nullopt;
   const bool FunctionPointer = CallableType->isFunctionPointerType();
-  if (!FunctionPointer) {
+  if (StandardCallableMetadata) {
+    const auto Object = approvedFunctionalObjectRecord(
+        S, SM, CallableType->getAsCXXRecordDecl(), Context);
+    const auto Name = Object ? Object->Record->getName() : llvm::StringRef();
+    // The hash families have separate byte/owner semantics and are not part
+    // of this scalar operator description.
+    if (!Object || Name == "hash" ||
+        !Context.hasSameType(Context.getRecordType(Object->Record), CallableType))
+      return std::nullopt;
+  } else if (!FunctionPointer) {
     const auto *CallableRecord = CallableType->getAsCXXRecordDecl();
     const auto *Definition = CallableRecord ? CallableRecord->getDefinition() : nullptr;
     // Inert identity and physical shape only. The exact selected copy,
@@ -17662,6 +17672,21 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
   return FunctionalBindStorage{Instance, Weak, Callable, Bound, CallableType,
       std::move(*Arguments), CallableOffset, BoundOffset, Size,
       uint64_t(Layout.getAlignment().getQuantity())};
+}
+
+
+std::optional<FunctionalBindStandardStorage>
+describeFunctionalBindStandardStorage(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  unsigned Nodes = 0;
+  std::set<const CXXRecordDecl *> Active;
+  const auto Storage = describeFunctionalBindStorageImpl(
+      S, SM, Record, Context, 0, Nodes, Active, true);
+  const auto Object = Storage ? approvedFunctionalObjectRecord(
+      S, SM, Storage->CallableType->getAsCXXRecordDecl(), Context) : std::nullopt;
+  if (!Storage || !Object || Object->Record->getName() == "hash") return std::nullopt;
+  return FunctionalBindStandardStorage{*Storage, *Object};
 }
 
 
@@ -17833,10 +17858,17 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
 static std::optional<FunctionalBindFactorySource>
 describeFunctionalBindFactorySourceImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context, bool OwnedCallableMetadata) {
+    const ASTContext &Context, bool OwnedCallableMetadata,
+    bool StandardCallableMetadata = false) {
   const auto *Factory = Call ? Call->getDirectCallee() : nullptr;
-  const auto Storage = describeFunctionalBindStorage(
-      S, SM, Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context);
+  if (StandardCallableMetadata && !OwnedCallableMetadata) return std::nullopt;
+  const auto StandardStorage = StandardCallableMetadata
+      ? describeFunctionalBindStandardStorage(S, SM,
+          Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context) : std::nullopt;
+  const auto Storage = StandardCallableMetadata
+      ? (StandardStorage ? std::optional<FunctionalBindStorage>(StandardStorage->Storage) : std::nullopt)
+      : describeFunctionalBindStorage(
+          S, SM, Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context);
   if (!Storage ||
       (OwnedCallableMetadata ? !Storage->CallableType->isRecordType()
                              : !Storage->CallableType->isFunctionPointerType()) ||
@@ -17949,15 +17981,23 @@ describeFunctionalBindFactorySourceImpl(
     if (!CallableCopy || !Selected || !Record || CallableCopy->getNumArgs() != 1 ||
         Selected->getNumParams() != 1 || !Selected->isCopyOrMoveConstructor() ||
         !Selected->isImplicit() || !Selected->isDefaulted() || !Selected->isTrivial() ||
-        Selected->isDeleted() || Selected->isUserProvided() || Selected->hasAttrs() ||
-        !S.owns(SM, Selected->getLocation()) ||
+        Selected->isDeleted() || Selected->isUserProvided() ||
+        (StandardCallableMetadata
+             ? approvedFunctionalObjectConstruction(S, SM, CallableCopy, Context) !=
+                   FunctionalObjectConstruction::CopyOrMove
+             : (Selected->hasAttrs() || !S.owns(SM, Selected->getLocation()))) ||
         Selected->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
         !Context.hasSameType(CallableCopy->getType(), Storage->CallableType) ||
         !Check.location(CallableCopy->getExprLoc(), {"__functional/bind.h"}))
       return std::nullopt;
-    for (const auto *Declaration : Selected->redecls())
-      if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
+    for (const auto *Declaration : Selected->redecls()) {
+      if (StandardCallableMetadata) {
+        if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+            !functionalObjectOrigin(S, SM, Declaration, Record->getName()))
+          return std::nullopt;
+      } else if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
         return std::nullopt;
+    }
     // Retain the exact ordinary operation. This description closes neither
     // its query/signature sources nor its runtime constructor/lifetime work.
     ForwardedCallable = CallableCopy->getArg(0);
@@ -18195,12 +18235,20 @@ describeFunctionalBindOwnedFactorySource(
   return describeFunctionalBindFactorySourceImpl(S, SM, Call, Context, true);
 }
 
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindStandardFactorySource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  return describeFunctionalBindFactorySourceImpl(S, SM, Call, Context, true, true);
+}
+
 // One owned call is the only entry point. SDK children can be described only
 // through the exact __mu_expand return selected by their enclosing argument.
 struct FunctionalBindCallDescriptionWalk {
   const CXXOperatorCallExpr *Root;
   bool OwnedCallableMetadata = false;
   bool ReferenceCallableMetadata = false;
+  bool StandardCallableMetadata = false;
   unsigned Nodes = 0;
   std::vector<unsigned> Path;
   std::set<const CallExpr *> Active;
@@ -18216,8 +18264,9 @@ describeFunctionalBindCallSourceImpl(
       !Walk.Active.insert(Call).second) return std::nullopt;
   auto RestoreActive = llvm::make_scope_exit([&] { Walk.Active.erase(Call); });
   NotFnSelectedSource Entry(S, SM, Context);
-  if ((Walk.OwnedCallableMetadata && Walk.ReferenceCallableMetadata) ||
-      ((Walk.OwnedCallableMetadata || Walk.ReferenceCallableMetadata) && !Walk.Path.empty())) return std::nullopt;
+  const unsigned ObjectModes = unsigned(Walk.OwnedCallableMetadata) +
+      unsigned(Walk.ReferenceCallableMetadata) + unsigned(Walk.StandardCallableMetadata);
+  if (ObjectModes > 1 || (ObjectModes && !Walk.Path.empty())) return std::nullopt;
   if (Walk.Path.empty()) {
     if (Call != Walk.Root || Parent || Expansion) return std::nullopt;
   } else {
@@ -18242,11 +18291,16 @@ describeFunctionalBindCallSourceImpl(
   const auto ReferenceStorage = Walk.ReferenceCallableMetadata
       ? describeFunctionalBindReferenceStorage(S, SM,
           Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context) : std::nullopt;
+  const auto StandardStorage = Walk.StandardCallableMetadata
+      ? describeFunctionalBindStandardStorage(S, SM,
+          Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context) : std::nullopt;
   const auto Storage = Walk.ReferenceCallableMetadata
       ? (ReferenceStorage ? std::optional<FunctionalBindStorage>(ReferenceStorage->Storage) : std::nullopt)
-      : describeFunctionalBindStorage(S, SM,
-          Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context);
-  const bool ObjectCallable = Walk.OwnedCallableMetadata || Walk.ReferenceCallableMetadata;
+      : Walk.StandardCallableMetadata
+          ? (StandardStorage ? std::optional<FunctionalBindStorage>(StandardStorage->Storage) : std::nullopt)
+          : describeFunctionalBindStorage(S, SM,
+              Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context);
+  const bool ObjectCallable = ObjectModes != 0;
   const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
   const auto *MethodArguments = Method->getTemplateSpecializationArgs();
   if (!Storage ||
@@ -18703,7 +18757,7 @@ describeFunctionalBindCallSourceImpl(
       if (!Walk.step() || !Context.hasSameType(Wrapper->getParamDecl(I)->getType(),
                                               InvokeFunction->getParamDecl(I + 1)->getType()))
         return std::nullopt;
-  } else if (Walk.OwnedCallableMetadata) {
+  } else if (Walk.OwnedCallableMetadata || Walk.StandardCallableMetadata) {
     const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Target);
     const auto *Ordinary = Operation ? dyn_cast_or_null<CXXMethodDecl>(Operation->getDirectCallee()) : nullptr;
     const auto *CallableRecord = Storage->CallableType->getAsCXXRecordDecl();
@@ -18711,19 +18765,29 @@ describeFunctionalBindCallSourceImpl(
     const auto *Reference = Operation
         ? dyn_cast<DeclRefExpr>(Operation->getCallee()->IgnoreParenImpCasts()) : nullptr;
     if (!Operation || Operation->getOperator() != OO_Call || !Ordinary || !CallableRecord ||
-        !ordinaryOperator(Ordinary) || Ordinary->getOverloadedOperator() != OO_Call ||
-        Ordinary->getTemplatedKind() != FunctionDecl::TK_NonTemplate || Ordinary->hasAttrs() ||
+        (Walk.StandardCallableMetadata
+             ? !approvedFunctionalOperationImpl(S, SM, Operation, Context, false)
+             : (!ordinaryOperator(Ordinary) ||
+                Ordinary->getTemplatedKind() != FunctionDecl::TK_NonTemplate || Ordinary->hasAttrs())) ||
+        Ordinary->getOverloadedOperator() != OO_Call ||
         Ordinary->getRefQualifier() == RQ_RValue ||
         Ordinary->getParent()->getCanonicalDecl() != CallableRecord->getCanonicalDecl() ||
         !Reference || Reference->getDecl() != Ordinary ||
         !Context.hasSameType(Reference->getType(), Ordinary->getType()) ||
         !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"}) ||
         Target->getNumArgs() != Arguments.size() + 1 || Ordinary->getNumParams() != Arguments.size() ||
-        !Definition || !Definition->getBody() || !S.owns(SM, Definition->getLocation()) ||
-        !S.owns(SM, Definition->getBody()->getBeginLoc())) return std::nullopt;
-    for (const auto *Declaration : Ordinary->redecls())
-      if (!Walk.step() || !S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() ||
-          !Declaration->getTypeSourceInfo()) return std::nullopt;
+        !Definition || !Definition->getBody() ||
+        (!Walk.StandardCallableMetadata && (!S.owns(SM, Definition->getLocation()) ||
+          !S.owns(SM, Definition->getBody()->getBeginLoc())))) return std::nullopt;
+    for (const auto *Declaration : Ordinary->redecls()) {
+      if (!Walk.step() || !Declaration->getTypeSourceInfo()) return std::nullopt;
+      if (Walk.StandardCallableMetadata) {
+        if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+            !functionalObjectOrigin(S, SM, Declaration, CallableRecord->getName()))
+          return std::nullopt;
+      } else if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
+        return std::nullopt;
+    }
     const auto *Receiver = Target->getArg(0);
     const auto Expected = Method->isConst() ? Context.getConstType(Storage->CallableType) : Storage->CallableType;
     const auto Parameter = InvokeFunction->getParamDecl(0)->getType();
@@ -18740,7 +18804,9 @@ describeFunctionalBindCallSourceImpl(
     for (unsigned I = 0; I < Ordinary->getNumParams(); ++I) {
       if (!Walk.step()) return std::nullopt;
       const auto Value = Ordinary->getParamDecl(I)->getType();
-      if (!utilityScalar(Context, Value) || Ordinary->getParamDecl(I)->hasDefaultArg() ||
+      if (!(Walk.StandardCallableMetadata ? utilityScalar(Context, Value.getNonReferenceType())
+                                          : utilityScalar(Context, Value)) ||
+          Ordinary->getParamDecl(I)->hasDefaultArg() ||
           !Context.hasSameUnqualifiedType(Value, InvokeFunction->getParamDecl(I + 1)->getType().getNonReferenceType()) ||
           !Context.hasSameType(Target->getArg(I + 1)->getType(), Value.getNonLValueExprType(Context)) ||
           Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Value)) return std::nullopt;
@@ -18804,6 +18870,23 @@ describeFunctionalBindOwnedCallSource(
   if (!Source || !Target || !Source->Target->getNumArgs()) return std::nullopt;
   // Original nodes only. No source/body, selected lifetime or runtime grant.
   return FunctionalBindOwnedCallSource{*Source, Target, Source->Target->getArg(0)};
+}
+
+std::optional<FunctionalBindStandardCallSource>
+describeFunctionalBindStandardCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Root = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  if (!Root || !S.owns(SM, Root->getExprLoc())) return std::nullopt;
+  FunctionalBindCallDescriptionWalk Walk{Root};
+  Walk.StandardCallableMetadata = true;
+  const auto Source = describeFunctionalBindCallSourceImpl(S, SM, Call, Context, Walk);
+  const auto *Method = Source && Source->Target
+      ? dyn_cast_or_null<CXXMethodDecl>(Source->Target->getDirectCallee()) : nullptr;
+  const auto Operation = Source ? approvedFunctionalOperationImpl(
+      S, SM, Source->Target, Context, false) : std::nullopt;
+  if (!Source || !Method || !Operation || !Source->Target->getNumArgs()) return std::nullopt;
+  return FunctionalBindStandardCallSource{*Source, Method, *Operation};
 }
 
 // This is a fresh lookup, not an ownership bypass. Neither a canonical type
