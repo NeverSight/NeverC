@@ -1989,6 +1989,14 @@ describeFunctionalBindTryCallFallbackSource(
     const FunctionalBindStorage &Storage,
     llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
 
+std::optional<FunctionalBindTryCallFallbackSource>
+describeFunctionalBindOwnedTryCallFallbackSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindTryCallSignatureSource &Probe,
+    const FunctionalBindOwnedCallSource &Owned,
+    const FunctionalBindStorage &Storage,
+    llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
+
 struct FunctionalBindCopySource {
   FunctionalBindNaturalLayout Layout;
   const clang::CXXConstructExpr *Construction;
