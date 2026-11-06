@@ -6524,7 +6524,7 @@ retain separate source requirements, including when used as an adapter's type
 argument for a fresh factory temporary.
 
 Other cv-qualified typed template arguments, addresses or pointers to function
-objects, user-defined operands, `long double`, `std::function`, binders and searchers do
+objects, user-defined operands, `long double`, `std::function`, binder forms beyond the checked `std::bind` subset and searchers do
 not yet lower. Reassigned or null member pointers, `mem_fn` copies or moves
 from parameters, reassigned `mem_fn` objects, base-adjusting
 receivers, volatile
