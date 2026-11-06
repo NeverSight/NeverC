@@ -390,24 +390,39 @@
       "name": "bind-nested-late-placeholder-value-read",
       "source": "#include <functional>\nint inner_calls, outer_calls;\nint change(int& value) { ++inner_calls; value = 9; return 1; }\nint add(int x, int y) { ++outer_calls; return x + y; }\nint main() {\n  int value = 3;\n  auto f = std::bind(&add, std::placeholders::_1,\n    std::bind(&change, std::placeholders::_1));\n  return f(value) == 10 && value == 9 && inner_calls == 1 && outer_calls == 1 ? 0 : 1;\n}\n",
       "source_sha256": "296efb30fe0b3a5dd34896e75395c9af3ee403e1173d706f762ee2384278ac4b"
+    },
+    {
+      "name": "bind-callable-owned-const",
+      "source": "#include <functional>\nstruct Op { int offset; int operator()(int x, int y) const { return offset + x + y; } };\nextern \"C\" int replacement() {\n  auto b = std::bind(Op{3}, std::placeholders::_1, 4);\n  return b(5) == 12 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "571b37022bee7a6adad5484be6170d3233b2df9b03f9bb8ee20b34340dbd602e"
+    },
+    {
+      "name": "bind-callable-independent-state",
+      "source": "#include <functional>\nstruct Counter { int value; int operator()(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  auto b = std::bind(Counter{1}, std::placeholders::_1);\n  int first = b(2);\n  auto c = b;\n  int second = b(3);\n  int copied = c(4);\n  return first == 3 && second == 6 && copied == 7 && b(0) == 6 && c(0) == 7 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "d2400f0b956c4ef264c84679e8a3d6a2f0636047ca49727c08acd09f28216c01"
+    },
+    {
+      "name": "bind-callable-receiver-cvref",
+      "source": "#include <functional>\n#include <utility>\nstruct Op {\n  int value;\n  int operator()(int x) & { return value + x + 1; }\n  int operator()(int x) const & { return value + x + 10; }\n};\nextern \"C\" int replacement() {\n  auto b = std::bind(Op{2}, std::placeholders::_1);\n  const auto &c = b;\n  int left = b(3);\n  int constant = c(3);\n  int right = std::move(b)(3);\n  return left == 6 && constant == 15 && right == 6 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "877d3784fff59f092e33ed05233f9c97fa8aeabd87da46a118565831bc497cc7"
     }
   ],
   "fixture_group": "bind-call-arguments-native40",
   "execution_binding_required": true,
-  "source_repair_commit": "543a11d52726e68b0548baeb35f21fd4d9fecfef",
-  "clean_source_basis": "543a11d52726e68b0548baeb35f21fd4d9fecfef",
-  "actual_same_source_six_report_sha256": "41323a7a329e285863cc4862cb2b046e689329e589a13c71aaf6c7aa8d034d4d",
-  "actual_same_source_six_proof_sha256": "06c78ade2ecc9d737520760b8bcd16e0e968fb8f7ee89e4f435d5bfe86fb3ab9",
-  "source_contract_sha256": "95f3df68ae2c5a1c3669dd508662e1aae2e23eb399111c44e949bf5befebc6b8",
-  "required_native_programs": 118,
+  "source_repair_commit": "dca2e12ccc2eeca75143ee8482b2c53b8c50f5f1",
+  "clean_source_basis": "dca2e12ccc2eeca75143ee8482b2c53b8c50f5f1",
+  "actual_same_source_six_report_sha256": "69fc79a19081aa6c5da4caf8ec4cb6e1069403e8b163522d05f257cfdc044b8c",
+  "actual_same_source_six_proof_sha256": "0038625072137a91280aeba41b88e4e00640900428885f24cecadf077bd0e837",
+  "source_contract_sha256": "8c8f2458967edb84998dd78a00582f3f605861afbae8e37a7ec86f463bb34788",
+  "required_native_programs": 124,
   "cpp_executed_locally": false,
   "current_private_input_sha256": {
-    "Frontend.cpp": "4eb62bc2d94ee90d1eedcfc41416d38e420f14fa06a2536e7118dcf3ce130e6e",
-    "Lowering.cpp": "65a0bbb0ead9f0944e389b061eac5f7aa99fa3f31ffe02eae9b9ef93402fe31b",
+    "Frontend.cpp": "b0f9c98b8f2b6b5b612582a0041c67766db4c4749d3bb77f9c85e2c71a4f5c50",
+    "Lowering.cpp": "529f8b80078bb18e93f05a0cefb1cc154fe8afc215c6f624f3e47c0bebcb79bc",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "fd3de6a8e63ec4adf0137f6d4dd867a2cc7c40a959b8a21b83c5a00f174ae0eb",
+    "MathSDK.cpp": "1e8ec45a8aa8feb3c32f3edede4cd2360039f3d8b1a513f3a41538f6db7ede1a",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "58c4f1fc0a9cf0dfbe090597a30f953b44399840fcc018c632418488d59c400f",
+    "Frontend.h": "779b2a1aa9de628f2b7ac5ca48f3ff217a9afb5815802b122afb41c1d72c32e7",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -437,5 +452,5 @@
   "source_syntax_validation_pending": false,
   "post_merge_validation": false,
   "validation_before_dev_merge": true,
-  "focused14_evidence_sha256": "3ce78833ce705658467ef96abea88d23c99c3a338190d02e243e29dbf69a4cd7"
+  "focused14_evidence_sha256": "84b90f7864ed92b12666746cbbc8db276c3f3bdefa92e5d1d830306170724f22"
 }
