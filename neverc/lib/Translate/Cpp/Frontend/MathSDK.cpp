@@ -25107,6 +25107,14 @@ class BindSourceProof {
   const FunctionalBindReferenceCallSource *ReferenceCallRoot = nullptr;
   bool ReferenceReferentQueries = false;
   TypeLoc ActiveReferentReturnLocation;
+  struct ClosedReferentReturnSource {
+    const FunctionalBindReferenceCallSource *Call;
+    TypeLoc Return;
+    BindSourceProof *Proof;
+  };
+  std::optional<ClosedReferentReturnSource> ClosedReferentReturn;
+  std::map<const DeclRefExpr *, const VarDecl *> ClosedReferentVariableReads;
+
   std::set<const CXXMethodDecl *> *ReferenceQueryOutput = nullptr;
   const CXXRecordDecl *OwnedCallableRecord = nullptr;
   const std::map<const CXXMethodDecl *, SpecialMemberSource> &SpecialMembers;
@@ -25281,6 +25289,21 @@ class BindSourceProof {
     }
     return std::nullopt;
   }
+  const FunctionalBindCallSource *activeReferenceSignatureCall() const {
+    if (ReferenceReferentQueries || !ReferenceCallRoot || !ActiveInvokeSignature || ActiveCompleteCall)
+      return nullptr;
+    const auto Fresh = freshReferenceBindInvocation();
+    if (!Fresh || ActiveInvokeSignature->SpecializedCall->getDirectCallee() != Fresh->WrapperMethod)
+      return nullptr;
+    const auto Signature = describeFunctionalBindReferenceInvokeSignatureSource(
+        S, SM, ActiveInvokeSignature->Function, *Fresh, Context);
+    if (!Signature || Signature->Primary != ActiveInvokeSignature->Primary ||
+        Signature->SignatureCall != ActiveInvokeSignature->SignatureCall ||
+        Signature->SpecializedCall != ActiveInvokeSignature->SpecializedCall ||
+        Signature->Declvals != ActiveInvokeSignature->Declvals ||
+        Signature->SpecializedDeclvals != ActiveInvokeSignature->SpecializedDeclvals) return nullptr;
+    return ActiveSourceCall;
+  }
   std::optional<FunctionalBindReferenceCallSource> activeReferentReturnQuery() const {
     if (!ReferenceReferentQueries || ActiveReferentReturnLocation.isNull()) return std::nullopt;
     const auto Fresh = freshReferenceBindInvocation();
@@ -25289,10 +25312,82 @@ class BindSourceProof {
         Location->getType() != ActiveReferentReturnLocation.getType()) return std::nullopt;
     return Fresh;
   }
+  bool exactClosedReferentReturnSource() const {
+    if (!ClosedReferentReturn || ReferenceReferentQueries || !ReferenceCallRoot || !ActiveSourceCall)
+      return false;
+    const auto &Closed = *ClosedReferentReturn;
+    const auto Fresh = freshReferenceBindInvocation();
+    const auto Location = referenceReferentReturnLocation(Closed.Return.getType());
+    return Fresh && Location && Closed.Call && Closed.Proof &&
+        Fresh->Selected.SourceCall == Closed.Call->Selected.SourceCall &&
+        Fresh->Reference.Method == Closed.Call->Reference.Method && Fresh->WrapperMethod == Closed.Call->WrapperMethod &&
+        Fresh->ReferentInvoke == Closed.Call->ReferentInvoke && Fresh->ReferentTarget == Closed.Call->ReferentTarget &&
+        Location->getOpaqueData() == Closed.Return.getOpaqueData() && Location->getType() == Closed.Return.getType() &&
+        Closed.Proof->ReferenceReferentQueries && Closed.Proof->ActiveSourceCall &&
+        Closed.Proof->ActiveSourceCall->SourceCall == ActiveSourceCall->SourceCall &&
+        Closed.Proof->ActiveReferentReturnLocation.getOpaqueData() == Closed.Return.getOpaqueData() &&
+        Closed.Proof->ActiveReferentReturnLocation.getType() == Closed.Return.getType() &&
+        Closed.Proof->Graph.bindSourceComplete();
+  }
+  std::optional<bool> closedReferentVariableSource(const DeclRefExpr *Reference) {
+    if (!ClosedReferentReturn || !Reference) return std::nullopt;
+    if (!exactClosedReferentReturnSource()) return false;
+    auto &Dependency = *ClosedReferentReturn->Proof;
+    const auto Found = Dependency.ClosedReferentVariableReads.find(Reference);
+    if (Found == Dependency.ClosedReferentVariableReads.end()) return std::nullopt;
+    if (Reference->getDecl() != Found->second) return false;
+    // This actual read was consumed by the real selected return TypeLoc.
+    // Revisit that same AST child in the live proof; a canonical variable,
+    // header location or another invocation cannot substitute for its identity.
+    return Graph.withBindSourceChild([&] {
+      return Dependency.Graph.withBindScalarConstraintSource([&] {
+        return Dependency.Graph.TraverseStmt(const_cast<DeclRefExpr *>(Reference)) &&
+            Dependency.Graph.bindSourceComplete();
+      });
+    });
+  }
+  bool withClosedReferentReturnSource(const std::function<bool()> &Proof) {
+    if (!Proof) return false;
+    if (!ReferenceCallRoot || ReferenceReferentQueries) return Proof();
+    if (!Ready || !ActiveSourceCall || ActiveCompleteCall || ClosedReferentReturn) return false;
+    const auto Fresh = freshReferenceBindInvocation();
+    const auto *Method = Fresh ? Fresh->WrapperMethod : nullptr;
+    const auto Prototype = Method && Method->getTypeSourceInfo()
+        ? Method->getTypeSourceInfo()->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
+    const auto Location = Prototype ? referenceReferentReturnLocation(Prototype.getReturnLoc().getType()) : std::nullopt;
+    if (!Fresh || !Location) return false;
+    std::set<const CXXMethodDecl *> Queries;
+    BindSourceProof Dependency(S, SM, Context, Storage, Sources, Selections, SpecialMembers, OperationTraits,
+        {}, &Graph, nullptr, &Queries, nullptr, nullptr, &*Fresh, true);
+    const bool Complete = Dependency.referenceReferentQuerySources(*Fresh, [&] {
+      Dependency.ActiveReferentReturnLocation = *Location;
+      auto RestoreLocation = llvm::make_scope_exit([&] { Dependency.ActiveReferentReturnLocation = TypeLoc(); });
+      if (!Dependency.closeCompleteProbeSources(Dependency.ReferentReturnProbes) ||
+          !Dependency.Graph.withBindScalarConstraintSource([&] {
+            return Dependency.Graph.TraverseTypeLoc(*Location) && Dependency.Graph.bindSourceComplete();
+          })) return false;
+      ClosedReferentReturn = ClosedReferentReturnSource{&*Fresh, *Location, &Dependency};
+      auto RestoreSource = llvm::make_scope_exit([&] { ClosedReferentReturn.reset(); });
+      return exactClosedReferentReturnSource() && Proof() && Dependency.Graph.bindSourceComplete();
+    });
+    if (!Complete || !Graph.bindSourceComplete()) return false;
+    if (ReferenceQueryOutput) ReferenceQueryOutput->insert(Queries.begin(), Queries.end());
+    return true;
+  }
   std::optional<bool> referenceReferentReturnTypeSource(QualType Type) {
     if (!ReferenceCallRoot || ReferenceReferentQueries || !ActiveSourceCall) return std::nullopt;
     const auto Location = referenceReferentReturnLocation(Type);
     if (!Location) return std::nullopt;
+    if (ClosedReferentReturn) {
+      if (!exactClosedReferentReturnSource() || Location->getOpaqueData() != ClosedReferentReturn->Return.getOpaqueData() ||
+          Location->getType() != ClosedReferentReturn->Return.getType()) return false;
+      auto &Dependency = *ClosedReferentReturn->Proof;
+      return Graph.withBindSourceChild([&] {
+        return Dependency.Graph.withBindScalarConstraintSource([&] {
+          return Dependency.Graph.TraverseTypeLoc(*Location) && Dependency.Graph.bindSourceComplete();
+        });
+      });
+    }
     const auto Fresh = freshReferenceBindInvocation();
     if (!Fresh) return false;
     std::set<const CXXMethodDecl *> Queries;
@@ -26442,7 +26537,7 @@ class BindSourceProof {
     }
     // Nested children retain the already authenticated enclosing source scope.
     // Their existing type, declaration and argument callbacks still run.
-    if ((!ActiveCompleteCall && !activeReferentReturnQuery()) || ActiveUnusedVoidConversion || !Type || !Type->isTypeAlias()) return Proof();
+    if ((!ActiveCompleteCall && !activeReferentReturnQuery() && !activeReferenceSignatureCall()) || ActiveUnusedVoidConversion || !Type || !Type->isTypeAlias()) return Proof();
     const auto *Alias = dyn_cast_or_null<TypeAliasTemplateDecl>(Type->getTemplateName().getAsTemplateDecl());
     if (!Alias || !Alias->getIdentifier() || Alias->getName() != "__conditional_t") return Proof();
     const TemplateUseSource *Actual = nullptr;
@@ -26468,7 +26563,8 @@ class BindSourceProof {
   bool withUnusedVoidConversionSource(const TemplateUseSource &Source,
                                       const std::function<bool()> &Proof) {
     const auto ReferentQuery = activeReferentReturnQuery();
-    const auto *QueryCall = ReferentQuery ? &ReferentQuery->Selected : ActiveCompleteCall;
+    const auto *QueryCall = ReferentQuery ? &ReferentQuery->Selected
+        : ActiveCompleteCall ? ActiveCompleteCall : activeReferenceSignatureCall();
     if (!Proof) return false;
     const auto *Type = Source.Kind == TemplateSourceKind::Type
         ? dyn_cast_or_null<TemplateSpecializationType>(Source.Type) : nullptr;
@@ -26607,7 +26703,7 @@ class BindSourceProof {
     });
   }
   bool unusedVoidConversionDeclarationSource(const ClassTemplateSpecializationDecl *Instance) {
-    if ((!ActiveCompleteCall && !activeReferentReturnQuery()) || !ActiveUnusedVoidConversion ||
+    if ((!ActiveCompleteCall && !activeReferentReturnQuery() && !activeReferenceSignatureCall()) || !ActiveUnusedVoidConversion ||
         Instance != ActiveUnusedVoidConversion->Record ||
         Instance->getSpecializationKind() != TSK_Undeclared || Instance->getDefinition()) return false;
     const auto *Primary = Instance->getSpecializedTemplate();
@@ -27391,7 +27487,7 @@ class BindSourceProof {
   std::optional<bool> scalarConstantValueSource(const DeclRefExpr *Reference, const VarDecl *Variable) {
     const bool ConstructorBooleanSource = ActiveCallTupleConstructor && Variable &&
         Context.hasSameType(Variable->getType().getUnqualifiedType(), Context.BoolTy);
-    if ((!ActiveScalarParameter && !ActiveCompleteCall && !activeReferentReturnQuery() && !ConstructorBooleanSource) ||
+    if ((!ActiveScalarParameter && !ActiveCompleteCall && !activeReferentReturnQuery() && !activeReferenceSignatureCall() && !ConstructorBooleanSource) ||
         !Reference || !Variable || !Variable->getIdentifier() ||
         Variable->getName() != "value") return std::nullopt;
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Variable->getDeclContext());
@@ -27430,7 +27526,8 @@ class BindSourceProof {
       const VarTemplateSpecializationDecl *Instance, const TemplateUseSource &Use,
       const DeclRefExpr *Reference) {
     const auto ReferentQuery = activeReferentReturnQuery();
-    const auto *QueryCall = ReferentQuery ? &ReferentQuery->Selected : ActiveCompleteCall;
+    const auto *QueryCall = ReferentQuery ? &ReferentQuery->Selected
+        : ActiveCompleteCall ? ActiveCompleteCall : activeReferenceSignatureCall();
     if (Check.location(Use.Location, {"__functional/bind.h"})) return true;
     if (!QueryCall || !Instance || !Reference || Reference->getDecl() != Instance ||
         Reference->getExprLoc() != Use.Location ||
@@ -27483,7 +27580,8 @@ class BindSourceProof {
   bool completeCallInvocableVariableSource(const VarTemplateSpecializationDecl *Instance,
                                            const TemplateUseSource &Use, const DeclRefExpr *Reference) {
     const auto ReferentQuery = activeReferentReturnQuery();
-    const auto *QueryCall = ReferentQuery ? &ReferentQuery->Selected : ActiveCompleteCall;
+    const auto *QueryCall = ReferentQuery ? &ReferentQuery->Selected
+        : ActiveCompleteCall ? ActiveCompleteCall : activeReferenceSignatureCall();
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Original = Primary ? Primary->getTemplatedDecl() : nullptr;
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
@@ -28226,7 +28324,8 @@ class BindSourceProof {
     return Graph.bindSourceComplete();
   }
   bool variableSource(const DeclRefExpr *Reference) {
-    return Graph.withBindSourceChild([&] {
+    if (const auto Closed = closedReferentVariableSource(Reference)) return *Closed;
+    const bool Complete = Graph.withBindSourceChild([&] {
       const auto *Variable = Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
       if (!Variable || !family(Variable) || !Variable->getType().isConstQualified() ||
           Variable->getType().isVolatileQualified() || !Variable->hasInit()) return false;
@@ -28284,6 +28383,16 @@ class BindSourceProof {
       return true;
       });
     });
+    if (!Complete) return false;
+    if (activeReferentReturnQuery()) {
+      const auto *Variable = Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+      if (!Variable || ClosedReferentVariableReads.size() > 64) return false;
+      const auto Found = ClosedReferentVariableReads.find(Reference);
+      if (Found != ClosedReferentVariableReads.end()) return Found->second == Variable;
+      if (ClosedReferentVariableReads.size() == 64) return false;
+      ClosedReferentVariableReads.emplace(Reference, Variable);
+    }
+    return true;
   }
   bool withUnwrapFunctionSourceProjections(const Expr *Expression,
       const FunctionDecl *Function, const std::function<bool()> &Proof) {
@@ -28929,7 +29038,7 @@ class BindSourceProof {
     });
   }
   std::optional<const FunctionDecl *> completedCallFunction(const CallExpr *Call) const {
-    if ((!ActiveCompleteCall && !activeReferentReturnQuery()) || !Call) return std::nullopt;
+    if ((!ActiveCompleteCall && !activeReferentReturnQuery() && !activeReferenceSignatureCall()) || !Call) return std::nullopt;
     const auto Found = ClosedCompleteCalls.find(Call);
     if (Found != ClosedCompleteCalls.end()) return Found->second.Function;
     for (const auto &[Root, Source] : ClosedCompleteCalls) {
@@ -30481,7 +30590,9 @@ public:
       return Graph.withBindTupleElementProjections(*Actual, CompleteAndContinue) && Graph.bindSourceComplete();
     });
     };
-    const bool Complete = withClosedNestedDependencySources(*Actual, CompleteOwnedSource);
+    const bool Complete = withClosedReferentReturnSource([&] {
+      return withClosedNestedDependencySources(*Actual, CompleteOwnedSource);
+    });
     // A child's continuation runs the enclosing root while every child proof
     // stays alive. All representative packets must have closed in full at
     // that root before any callCompleteSource invocation may return success.
@@ -31367,7 +31478,7 @@ public:
         Fresh->Object != Call.Object || Fresh->Invoke != Call.Invoke) return false;
     ActiveSourceCall = &*Fresh;
     auto Restore = llvm::make_scope_exit([&] { ActiveSourceCall = nullptr; });
-    return callAuxiliary(*Fresh) && Proof(*Fresh);
+    return callAuxiliary(*Fresh) && withClosedReferentReturnSource([&] { return Proof(*Fresh); });
   }
   bool callReferenceInvokeSignature(const FunctionalBindCallSource &Call) {
     return withReferenceInvocationSource(Call,
