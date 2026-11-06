@@ -8429,14 +8429,18 @@ class UtilityTupleQueryGraph
   std::optional<FunctionalBindInvokeSignatureSource> freshBindInvokeSignatureSource(
       const State &GivenState, const SourceManager &GivenSources, const FunctionDecl *Function,
       const FunctionalBindStorage &GivenStorage, llvm::ArrayRef<QualType> Forwarded,
-      const ASTContext &GivenContext) const {
+      const ASTContext &GivenContext, bool DeducedPack = false) const {
     if (!BindOwnedCallableRecord) return describeFunctionalBindInvokeSignatureSource(
         GivenState, GivenSources, Function, GivenStorage, Forwarded, GivenContext);
     const auto Actual = freshOwnedBindInvocation();
     if (!Actual || Actual->Selected.Storage.Record != GivenStorage.Record ||
         Actual->Selected.Arguments.size() != Forwarded.size()) return std::nullopt;
-    for (unsigned I = 0; I < Forwarded.size(); ++I)
-      if (!Context.hasSameType(Forwarded[I], Actual->Selected.Arguments[I].ForwardedType)) return std::nullopt;
+    for (unsigned I = 0; I < Forwarded.size(); ++I) {
+      const auto Original = Actual->Selected.Arguments[I].ForwardedType;
+      const auto Expected = DeducedPack && Original->isRValueReferenceType()
+          ? Original.getNonReferenceType() : Original;
+      if (!Context.hasSameType(Forwarded[I], Expected)) return std::nullopt;
+    }
     return describeFunctionalBindOwnedInvokeSignatureSource(GivenState, GivenSources, Function, *Actual, GivenContext);
   }
   std::optional<FunctionalBindTryCallSignatureSource> freshBindTryCallSignatureSource(
@@ -12428,7 +12432,7 @@ public:
         ? describeFunctionalBindNestedInvokeSignatureSource(S, SM, Function,
               *Description.Nested, Context)
         : freshBindInvokeSignatureSource(
-              S, SM, Function, *BindMetadata, Forwarded, Context);
+              S, SM, Function, *BindMetadata, Forwarded, Context, true);
     if (!Actual || Actual->Primary != Primary ||
         Actual->SignatureCall != Description.SignatureCall ||
         Actual->SpecializedCall != Description.SpecializedCall ||
@@ -22060,14 +22064,18 @@ class BindSourceProof {
   std::optional<FunctionalBindInvokeSignatureSource> freshBindInvokeSignatureSource(
       const State &GivenState, const SourceManager &GivenSources, const FunctionDecl *Function,
       const FunctionalBindStorage &GivenStorage, llvm::ArrayRef<QualType> Forwarded,
-      const ASTContext &GivenContext) const {
+      const ASTContext &GivenContext, bool DeducedPack = false) const {
     if (!OwnedCallableRecord) return describeFunctionalBindInvokeSignatureSource(
         GivenState, GivenSources, Function, GivenStorage, Forwarded, GivenContext);
     const auto Actual = freshOwnedBindInvocation();
     if (!Actual || Actual->Selected.Storage.Record != GivenStorage.Record ||
         Actual->Selected.Arguments.size() != Forwarded.size()) return std::nullopt;
-    for (unsigned I = 0; I < Forwarded.size(); ++I)
-      if (!Context.hasSameType(Forwarded[I], Actual->Selected.Arguments[I].ForwardedType)) return std::nullopt;
+    for (unsigned I = 0; I < Forwarded.size(); ++I) {
+      const auto Original = Actual->Selected.Arguments[I].ForwardedType;
+      const auto Expected = DeducedPack && Original->isRValueReferenceType()
+          ? Original.getNonReferenceType() : Original;
+      if (!Context.hasSameType(Forwarded[I], Expected)) return std::nullopt;
+    }
     return describeFunctionalBindOwnedInvokeSignatureSource(GivenState, GivenSources, Function, *Actual, GivenContext);
   }
   std::optional<FunctionalBindTryCallSignatureSource> freshBindTryCallSignatureSource(
@@ -25351,7 +25359,7 @@ class BindSourceProof {
           ? describeFunctionalBindNestedInvokeSignatureSource(S, SM, Description.Function,
                 *Description.Nested, Context)
           : freshBindInvokeSignatureSource(
-                S, SM, Description.Function, Storage, Forwarded, Context);
+                S, SM, Description.Function, Storage, Forwarded, Context, true);
       if (!Actual || Actual->Primary != Description.Primary ||
           Actual->SignatureCall != Description.SignatureCall ||
           Actual->SpecializedCall != Description.SpecializedCall ||
