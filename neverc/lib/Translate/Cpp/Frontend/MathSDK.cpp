@@ -21050,12 +21050,12 @@ static bool functionalBindReferenceWrapperQueryMethodSource(
     const FunctionalBindReferenceCallSource &Call, const ASTContext &Context) {
   const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
   const auto *RuntimePrimary = Call.WrapperMethod ? Call.WrapperMethod->getPrimaryTemplate() : nullptr;
-  if (!Method || !Primary || !RuntimePrimary || !Call.Storage.Reference.Record ||
+  if (!Method || Method != Call.WrapperMethod || !Primary || !RuntimePrimary || !Call.Storage.Reference.Record ||
       Primary->getCanonicalDecl() != RuntimePrimary->getCanonicalDecl() ||
       Method->getParent()->getCanonicalDecl() != Call.Storage.Reference.Record->getCanonicalDecl() ||
       Method->getOverloadedOperator() != OO_Call || !Method->isConst() || Method->isStatic() ||
       Method->isVolatile() || Method->isVariadic() || Method->isDeleted() || Method->isInvalidDecl() ||
-      Method->hasAttrs() || Method->getRefQualifier() != RQ_None ||
+      Method->getRefQualifier() != RQ_None ||
       Method->getNumParams() != Call.Selected.Arguments.size() || Call.Selected.Arguments.size() > 8)
     return false;
   NotFnSelectedSource Check(S, SM, Context);
@@ -21063,7 +21063,7 @@ static bool functionalBindReferenceWrapperQueryMethodSource(
       !Check.family(Primary, {"__functional/reference_wrapper.h"})) return false;
   unsigned Nodes = 0;
   for (const auto *Declaration : Method->redecls())
-    if (++Nodes > 64 || Declaration->hasAttrs() || !Declaration->getTypeSourceInfo() ||
+    if (++Nodes > 64 || !Declaration->getTypeSourceInfo() ||
         !Check.family(Declaration, {"__functional/reference_wrapper.h"})) return false;
   return true;
 }
@@ -25366,6 +25366,10 @@ class BindSourceProof {
           !Dependency.Graph.withBindScalarConstraintSource([&] {
             return Dependency.Graph.TraverseTypeLoc(*Location) && Dependency.Graph.bindSourceComplete();
           })) return false;
+      const auto *Exception = Dependency.Check.exceptionSource(Fresh->WrapperMethod);
+      const auto *Reference = Exception ? dyn_cast<DeclRefExpr>(Exception->IgnoreParenImpCasts()) : nullptr;
+      if (!Reference || !Dependency.referenceNoexceptVariableSource(Reference).value_or(false) ||
+          !Dependency.ClosedReferenceNothrow) return false;
       ClosedReferentReturn = ClosedReferentReturnSource{&*Fresh, *Location, &Dependency};
       auto RestoreSource = llvm::make_scope_exit([&] { ClosedReferentReturn.reset(); });
       return exactClosedReferentReturnSource() && Proof() && Dependency.Graph.bindSourceComplete();
@@ -28323,7 +28327,298 @@ class BindSourceProof {
             })) return false;
     return Graph.bindSourceComplete();
   }
+  bool ReferencePublicNothrowInitializer = false;
+  struct ClosedReferenceNothrowSource {
+    const DeclRefExpr *Reference;
+    const CXXMethodDecl *Wrapper;
+    const FunctionDecl *Dispatcher;
+    std::set<const Type *> Types;
+    std::set<const Stmt *> Expressions;
+  };
+  std::optional<ClosedReferenceNothrowSource> ClosedReferenceNothrow;
+
+  static const TemplateSpecializationType *referenceNothrowSpecialization(QualType Type) {
+    if (Type.isNull()) return nullptr;
+    if (const auto *Elaborated = dyn_cast<ElaboratedType>(Type.getTypePtr())) Type = Elaborated->getNamedType();
+    return dyn_cast<TemplateSpecializationType>(Type.getTypePtr());
+  }
+  const FunctionDecl *referenceNothrowFunction() const {
+    const auto Fresh = freshReferenceBindInvocation();
+    return Fresh && Fresh->ReferentInvoke ? Fresh->ReferentInvoke->getDirectCallee() : nullptr;
+  }
+  bool referencePublicInvokeArguments(const TemplateArgumentList &Arguments,
+      const TemplateArgumentList &Expected) const {
+    if (Arguments.size() != 2 || Expected.size() != 2 ||
+        Arguments[0].getKind() != TemplateArgument::Type ||
+        Expected[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments[0].getAsType(), Expected[0].getAsType()) ||
+        Arguments[1].getKind() != TemplateArgument::Pack ||
+        Expected[1].getKind() != TemplateArgument::Pack ||
+        Arguments[1].pack_size() != Expected[1].pack_size()) return false;
+    const auto Actual = Arguments[1].pack_elements(), Wanted = Expected[1].pack_elements();
+    for (unsigned I = 0; I < Actual.size(); ++I)
+      if (Actual[I].getKind() != TemplateArgument::Type || Wanted[I].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Actual[I].getAsType(), Wanted[I].getAsType())) return false;
+    return true;
+  }
+
+  bool referenceNothrowValueCalls(const VarDecl *Value, const VarDecl *Pattern) {
+    const auto Fresh = freshReferenceBindInvocation();
+    const auto *Function = referenceNothrowFunction();
+    const auto *Expected = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+    const auto *Exception = Value && Value->hasInit()
+        ? dyn_cast<CXXNoexceptExpr>(Value->getInit()->IgnoreParenImpCasts()) : nullptr;
+    const auto *OriginalException = Pattern && Pattern->hasInit()
+        ? dyn_cast<CXXNoexceptExpr>(Pattern->getInit()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Call = Exception ? dyn_cast_or_null<CallExpr>(Check.stripped(Exception->getOperand())) : nullptr;
+    const auto *Original = OriginalException
+        ? dyn_cast_or_null<CallExpr>(Check.stripped(OriginalException->getOperand())) : nullptr;
+    const auto *Lookup = Original
+        ? dyn_cast<UnresolvedLookupExpr>(Original->getCallee()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Partial = Pattern ? dyn_cast<ClassTemplatePartialSpecializationDecl>(Pattern->getDeclContext()) : nullptr;
+    const auto *Parameters = Partial ? Partial->getTemplateParameters() : nullptr;
+    const auto *Callable = Parameters && Parameters->size() == 3
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+    const auto *Pack = Parameters && Parameters->size() == 3
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(2)) : nullptr;
+    if (!ReferenceReferentQueries || !ReferencePublicNothrowInitializer || !activeReferentReturnQuery() ||
+        !Fresh || !Expected || Expected->size() != 2 ||
+        Expected->get(0).getKind() != TemplateArgument::Type ||
+        Expected->get(1).getKind() != TemplateArgument::Pack || Expected->get(1).pack_size() > 2 ||
+        !Call || Call->getDirectCallee() != Function || Call->isTypeDependent() || Call->isValueDependent() ||
+        Call->getNumArgs() != Expected->get(1).pack_size() + 1 || !Function->getPrimaryTemplate() ||
+        !Check.location(Call->getExprLoc(), {"__type_traits/invoke.h"}) ||
+        !Original || Original->getDirectCallee() || !Original->isTypeDependent() || Original->getNumArgs() != 2 ||
+        !Lookup || Lookup->requiresADL() || Lookup->getNumDecls() != 8 || Lookup->hasExplicitTemplateArgs() ||
+        Lookup->getName().getNameKind() != DeclarationName::Identifier ||
+        Lookup->getName().getAsIdentifierInfo()->getName() != "__invoke" ||
+        !Check.location(Original->getExprLoc(), {"__type_traits/invoke.h"}) ||
+        !Callable || !Pack || Callable->isParameterPack() || !Pack->isParameterPack() ||
+        Callable->getIndex() != 1 || Pack->getIndex() != 2 ||
+        Callable->hasDefaultArgument() || Pack->hasDefaultArgument() ||
+        !Check.family(Callable, {"__type_traits/invoke.h"}) ||
+        !Check.family(Pack, {"__type_traits/invoke.h"}) ||
+        !Context.hasSameType(Call->getType(), Function->getReturnType().getNonLValueExprType(Context)) ||
+        Call->getValueKind() != Expr::getValueKindForType(Function->getReturnType())) return false;
+    std::set<const FunctionTemplateDecl *> Candidates;
+    unsigned Selected = 0;
+    for (const auto *Declaration : Lookup->decls()) {
+      const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+      const auto *Candidate = Template ? Template->getTemplatedDecl() : nullptr;
+      if (!Template || !Candidate || isa<CXXMethodDecl>(Candidate) || !Candidate->getIdentifier() ||
+          Candidate->getName() != "__invoke" ||
+          !Check.family(Template, {"__type_traits/invoke.h"}) ||
+          !Candidates.insert(Template->getCanonicalDecl()).second) return false;
+      Selected += Template->getCanonicalDecl() == Function->getPrimaryTemplate()->getCanonicalDecl();
+    }
+    if (Selected != 1) return false;
+    const auto *Expansion = dyn_cast<PackExpansionExpr>(Original->getArg(1));
+    const CallExpr *OriginalDeclvals[] = {
+        dyn_cast_or_null<CallExpr>(Check.stripped(Original->getArg(0))),
+        Expansion ? dyn_cast_or_null<CallExpr>(Check.stripped(Expansion->getPattern())) : nullptr};
+    auto Inputs = DeclvalInputs;
+    auto Originals = OriginalDeclvalSources;
+    std::vector<const CallExpr *> Concrete;
+    const auto Arguments = Expected->get(1).pack_elements();
+    for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+      if (I && Arguments[I - 1].getKind() != TemplateArgument::Type) return false;
+      const auto Input = I ? Arguments[I - 1].getAsType() : Expected->get(0).getAsType();
+      const auto *Argument = dyn_cast_or_null<CallExpr>(Check.stripped(Call->getArg(I)));
+      const auto Description = describeFunctionalBindDeclvalSource(S, SM, Argument, Input, Context);
+      const auto *Written = OriginalDeclvals[I ? 1 : 0];
+      const auto *Name = Written ? dyn_cast<UnresolvedLookupExpr>(Written->getCallee()->IgnoreParenImpCasts()) : nullptr;
+      const auto *Parameter = I ? Pack : Callable;
+      const auto *WrittenType = Name && Name->hasExplicitTemplateArgs() && Name->getNumTemplateArgs() == 1 &&
+          Name->getTemplateArgs()[0].getArgument().getKind() == TemplateArgument::Type
+          ? dyn_cast<TemplateTypeParmType>(Name->getTemplateArgs()[0].getArgument().getAsType().getTypePtr()) : nullptr;
+      if (!Description || !Written || Written->getDirectCallee() || Written->getNumArgs() ||
+          !Written->isTypeDependent() || !Name || Name->requiresADL() || Name->getNumDecls() != 1 ||
+          !WrittenType || WrittenType->getDecl() != Parameter ||
+          *Name->decls_begin() != Description->Function->getPrimaryTemplate() ||
+          !Check.location(Written->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+      if (const auto Found = Inputs.find(Argument); Found != Inputs.end() &&
+          !Context.hasSameType(Found->second, Input)) return false;
+      Inputs.emplace(Argument, Input);
+      Originals[Written].insert(Argument);
+      Concrete.push_back(Argument);
+    }
+    if (Inputs.size() > 64 || Originals.size() > 64) return false;
+    for (const auto &[Written, Calls] : Originals)
+      if (!Written || Calls.empty() || Calls.size() > 64) return false;
+    DeclvalInputs.swap(Inputs);
+    OriginalDeclvalSources.swap(Originals);
+    for (const auto *Argument : Concrete)
+      if (!declvalSource(Argument, DeclvalInputs.find(Argument)->second) ||
+          !closeCompleteDeclvalSource(Argument)) return false;
+    const auto Signature = describeFunctionalBindReferenceReferentInvokeSignatureSource(
+        S, SM, Function, *Fresh, Context);
+    if (!Signature || !invokeSignatureSource(Call, *Signature) || !closeCompleteCall(Call, Function)) return false;
+    auto Found = ClosedCompleteCalls.find(Call);
+    if (Found == ClosedCompleteCalls.end() || Found->second.Function != Function ||
+        Found->second.HelperCall || Found->second.Helper || Found->second.PrimaryHelperCall ||
+        !Found->second.NestedMetadataCalls.empty()) return false;
+    const std::vector<const CallExpr *> Children{Original};
+    if (!Found->second.MetadataCalls.empty() && Found->second.MetadataCalls != Children) return false;
+    // Only these real selected and original children belong to this value.
+    // Their written arguments still traverse, under the same64 source slots.
+    Found->second.MetadataCalls = Children;
+    return Graph.bindSourceComplete();
+  }
+
+  bool referencePublicNothrowValueUse(const DeclRefExpr *Reference) {
+    const auto *Expected = referenceNothrowFunction() ? referenceNothrowFunction()->getTemplateSpecializationArgs() : nullptr;
+    const auto *Value = Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+    const auto *Owner = Value ? dyn_cast<ClassTemplateSpecializationDecl>(Value->getDeclContext()) : nullptr;
+    const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
+    if (!ReferencePublicNothrowInitializer || !Expected || !Reference || !Value || !Owner || !Primary ||
+        !Primary->getIdentifier() || !Value->getIdentifier() || Value->getName() != "value" ||
+        !Value->isStaticDataMember() || !Value->getType().isConstQualified() ||
+        !Value->getType()->isBooleanType() || !Value->isUsableInConstantExpressions(Context) ||
+        Owner->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Check.family(Owner, {"__type_traits/invoke.h"}) ||
+        !Check.family(Primary, {"__type_traits/invoke.h"}) ||
+        !Check.family(Value, {"__type_traits/invoke.h"}) ||
+        !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+    const auto &Arguments = Owner->getTemplateArgs();
+    const auto Name = Primary->getName();
+    unsigned Offset = 0;
+    if (Name == "__invokable_r") {
+      if (Arguments.size() != 3 || Arguments[0].getKind() != TemplateArgument::Type ||
+          !Arguments[0].getAsType()->isVoidType() ||
+          Owner->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Primary) return false;
+      Offset = 1;
+    } else if (Name == "__nothrow_invokable_r_imp") {
+      const auto *Partial = Owner->getSpecializedTemplateOrPartial()
+          .dyn_cast<ClassTemplatePartialSpecializationDecl *>();
+      if (Arguments.size() != 5 || !Partial ||
+          !Check.family(Partial, {"__type_traits/invoke.h"}) ||
+          Partial->getSpecializedTemplate() != Primary || Partial->getTemplateArgs().size() != 5 ||
+          Arguments[2].getKind() != TemplateArgument::Type || !Arguments[2].getAsType()->isVoidType()) return false;
+      for (unsigned I : {0U, 1U})
+        if (Arguments[I].getKind() != TemplateArgument::Integral ||
+            !Arguments[I].getIntegralType()->isBooleanType() || Arguments[I].getAsIntegral() != 1 ||
+            Partial->getTemplateArgs()[I].getKind() != TemplateArgument::Integral ||
+            Partial->getTemplateArgs()[I].getAsIntegral() != 1) return false;
+      Offset = 3;
+      const auto *Pattern = Value->getInstantiatedFromStaticDataMember();
+      if (!Pattern || Pattern->getDeclContext() != Partial || !Pattern->hasInit() ||
+          !Check.family(Pattern, {"__type_traits/invoke.h"}) ||
+          !isa<CXXNoexceptExpr>(Pattern->getInit()->IgnoreParenImpCasts()) ||
+          !Value->hasInit() || !isa<CXXNoexceptExpr>(Value->getInit()->IgnoreParenImpCasts())) return false;
+    } else return false;
+    if (Arguments[Offset].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments[Offset].getAsType(), Expected->get(0).getAsType()) ||
+        Arguments[Offset + 1].getKind() != TemplateArgument::Pack ||
+        Arguments[Offset + 1].pack_size() != Expected->get(1).pack_size()) return false;
+    const auto Pack = Arguments[Offset + 1].pack_elements();
+    const auto Wanted = Expected->get(1).pack_elements();
+    for (unsigned I = 0; I < Pack.size(); ++I)
+      if (Pack[I].getKind() != TemplateArgument::Type || Wanted[I].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Pack[I].getAsType(), Wanted[I].getAsType())) return false;
+    const auto Qualifier = Reference->getQualifierLoc();
+    const auto *Holder = static_cast<const VarDecl *>(nullptr);
+    const auto *Initializer = Value->getAnyInitializer(Holder);
+    if (!Qualifier || !Initializer || !Holder ||
+        Holder->getCanonicalDecl() != Value->getCanonicalDecl() ||
+        !Check.family(Holder, {"__type_traits/invoke.h"})) return false;
+    for (const auto *Redeclaration : Value->redecls())
+      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return false;
+    if (Name == "__nothrow_invokable_r_imp" &&
+        !referenceNothrowValueCalls(Value, Value->getInstantiatedFromStaticDataMember())) return false;
+    return Graph.TraverseTypeLoc(Qualifier.getTypeLoc()) &&
+        Graph.TraverseStmt(const_cast<Expr *>(Initializer));
+  }
+
+  bool referencePublicNothrowVariableUse(const DeclRefExpr *Reference) {
+    const auto *Function = referenceNothrowFunction();
+    const auto Fresh = freshReferenceBindInvocation();
+    const auto *Exception = Fresh ? Check.exceptionSource(Fresh->WrapperMethod) : nullptr;
+    const auto *Root = Exception ? dyn_cast<DeclRefExpr>(Exception->IgnoreParenImpCasts()) : nullptr;
+    const auto *Expected = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+    const auto *Variable = Reference ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
+    const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
+    const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
+    const auto *First = Parameters && Parameters->size() == 2
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+    const auto *Rest = Parameters && Parameters->size() == 2
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+    if (!Reference || Reference != Root || ReferencePublicNothrowInitializer || !Expected || !Variable || !Primary ||
+        !Primary->getIdentifier() || Primary->getName() != "is_nothrow_invocable_v" ||
+        Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Variable->getSpecializedTemplateOrPartial().dyn_cast<VarTemplateDecl *>() != Primary ||
+        !Variable->isConstexpr() || !Variable->getType().isConstQualified() ||
+        !Variable->getType()->isBooleanType() || !Variable->hasInit() ||
+        !Variable->isUsableInConstantExpressions(Context) ||
+        !referencePublicInvokeArguments(Variable->getTemplateArgs(), *Expected) ||
+        !Check.family(Primary, {"__type_traits/invoke.h"}) || !First || !Rest ||
+        First->isParameterPack() || First->hasDefaultArgument() ||
+        !Rest->isParameterPack() || Rest->hasDefaultArgument() ||
+        !Check.family(First, {"__type_traits/invoke.h"}) ||
+        !Check.family(Rest, {"__type_traits/invoke.h"}) ||
+        !Check.location(Reference->getExprLoc(), {"__functional/reference_wrapper.h"})) return false;
+    for (const auto *Redeclaration : Variable->redecls())
+      if (!Check.family(Redeclaration, {"__type_traits/invoke.h"})) return false;
+    const auto *Load = dyn_cast<ImplicitCastExpr>(Variable->getInit());
+    const auto *Value = Load && Load->getCastKind() == CK_LValueToRValue
+        ? dyn_cast<DeclRefExpr>(Load->getSubExpr()) : nullptr;
+    const auto Qualifier = Value ? Value->getQualifierLoc() : NestedNameSpecifierLoc();
+    const auto Location = Qualifier ? referenceNothrowSpecialization(Qualifier.getTypeLoc().getType()) : nullptr;
+    const auto *Class = Location ? dyn_cast_or_null<ClassTemplateDecl>(
+        Location->getTemplateName().getAsTemplateDecl()) : nullptr;
+    const auto *Instance = Location ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(Location->getAsCXXRecordDecl()) : nullptr;
+    if (!Class || !Instance || Class->getName() != "is_nothrow_invocable" ||
+        Instance->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Class ||
+        !Check.family(Class, {"__type_traits/invoke.h"}) ||
+        !Check.family(Instance, {"__type_traits/invoke.h"}) ||
+        !referencePublicInvokeArguments(Instance->getTemplateArgs(), *Expected)) return false;
+    ReferencePublicNothrowInitializer = true;
+    auto Restore = llvm::make_scope_exit([&] { ReferencePublicNothrowInitializer = false; });
+    // Both the selected class/base/alias graph and its original initializer
+    // execute in this same graph, with the original cumulative budgets.
+    return Graph.TraverseTypeLoc(Qualifier.getTypeLoc()) &&
+        Graph.TraverseStmt(const_cast<Expr *>(Variable->getInit()));
+  }
+
+  std::optional<bool> referenceNoexceptVariableSource(const DeclRefExpr *Reference) {
+    if (!ReferenceCallRoot || !Reference || !ActiveSourceCall) return std::nullopt;
+    if (ReferenceReferentQueries && ReferencePublicNothrowInitializer) {
+      const auto *Value = dyn_cast<VarDecl>(Reference->getDecl());
+      const auto *Owner = Value ? dyn_cast<ClassTemplateSpecializationDecl>(Value->getDeclContext()) : nullptr;
+      if (Value && Owner && Value->getIdentifier() && Value->getName() == "value" && Owner->getIdentifier() &&
+          (Owner->getName() == "__invokable_r" || Owner->getName() == "__nothrow_invokable_r_imp"))
+        return referencePublicNothrowValueUse(Reference);
+    }
+    const auto Fresh = freshReferenceBindInvocation();
+    const auto *Exception = Fresh ? Check.exceptionSource(Fresh->WrapperMethod) : nullptr;
+    const auto *Root = Exception ? dyn_cast<DeclRefExpr>(Exception->IgnoreParenImpCasts()) : nullptr;
+    if (Reference != Root) return std::nullopt;
+    if (!ReferenceReferentQueries) {
+      if (!exactClosedReferentReturnSource()) return false;
+      return Graph.withBindSourceChild([&] {
+        return ClosedReferentReturn->Proof->referenceNoexceptVariableSource(Reference).value_or(false);
+      });
+    }
+    // The actual wrapper exception node supplies this role. The initializer,
+    // class/base/partial and selected expression still close in this graph.
+    if (ClosedReferenceNothrow) {
+      auto &Closed = *ClosedReferenceNothrow;
+      if (!Fresh || Closed.Reference != Reference || Closed.Wrapper != Fresh->WrapperMethod ||
+          Closed.Dispatcher != referenceNothrowFunction()) return false;
+      return Graph.withBindScalarConstraintSource([&] {
+        return referencePublicNothrowVariableUse(Reference) && Graph.bindSourceComplete();
+      }, &Closed.Types, &Closed.Expressions);
+    }
+    if (!Fresh) return false;
+    ClosedReferenceNothrowSource Closed{Reference, Fresh->WrapperMethod, referenceNothrowFunction(), {}, {}};
+    const bool Complete = Graph.withBindScalarConstraintSource([&] {
+      return referencePublicNothrowVariableUse(Reference) && Graph.bindSourceComplete();
+    }, &Closed.Types, &Closed.Expressions);
+    if (!Complete || !Graph.bindSourceComplete()) return false;
+    ClosedReferenceNothrow = std::move(Closed);
+    return true;
+  }
   bool variableSource(const DeclRefExpr *Reference) {
+    if (const auto Exception = referenceNoexceptVariableSource(Reference)) return *Exception;
     if (const auto Closed = closedReferentVariableSource(Reference)) return *Closed;
     const bool Complete = Graph.withBindSourceChild([&] {
       const auto *Variable = Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
@@ -29886,6 +30181,35 @@ class BindSourceProof {
     if (ClosedCompleteCalls.size() == 64) return false;
     return ClosedCompleteCalls.emplace(Expression, CompletedCallSource{Function}).second;
   }
+  bool closeCompleteDeclvalSource(const CallExpr *Expression) {
+    const auto *Selected = Expression ? Expression->getDirectCallee() : nullptr;
+    const auto Input = DeclvalInputs.find(Expression);
+    if (!Selected || !CompletedDeclvalInputs.count(Expression) || Input == DeclvalInputs.end())
+      return false;
+    const auto Source = describeFunctionalBindDeclvalSource(S, SM, Expression, Input->second, Context);
+    if (!Source || Source->Call != Expression || Source->Function != Selected || !Source->Helper ||
+        !Source->HelperCall || Source->HelperCall->getDirectCallee() != Source->Helper ||
+        !Source->PrimaryHelperCall || Source->PrimaryHelperCall->getDirectCallee()) return false;
+    // One completed declval source binds its selected call and both
+    // exact helper calls. Keep that source in one of the same 64 slots;
+    // reentry still walks every ordinary written type and child.
+    if (Source->HelperCall == Expression || Source->PrimaryHelperCall == Expression ||
+        Source->HelperCall == Source->PrimaryHelperCall || !closeCompleteCall(Expression, Selected)) return false;
+    const auto Found = ClosedCompleteCalls.find(Expression);
+    if (Found == ClosedCompleteCalls.end()) return false;
+    auto &Closed = Found->second;
+    if ((Closed.HelperCall && Closed.HelperCall != Source->HelperCall) ||
+        (Closed.Helper && Closed.Helper != Source->Helper) ||
+        (Closed.PrimaryHelperCall && Closed.PrimaryHelperCall != Source->PrimaryHelperCall)) return false;
+    if (const auto Existing = completedCallFunction(Source->HelperCall))
+      if (*Existing != Source->Helper) return false;
+    if (const auto Existing = completedCallFunction(Source->PrimaryHelperCall))
+      if (*Existing) return false;
+    Closed.HelperCall = Source->HelperCall;
+    Closed.Helper = Source->Helper;
+    Closed.PrimaryHelperCall = Source->PrimaryHelperCall;
+    return true;
+  }
   bool closeCompleteProbeSources(llvm::ArrayRef<FunctionalBindTryCallSignatureSource> CompletedProbes) {
     auto CloseMetadata = [&](const CallExpr *Owner, const FunctionDecl *Function,
                              llvm::ArrayRef<const CallExpr *> Expressions,
@@ -29971,35 +30295,7 @@ class BindSourceProof {
           !closeCompleteCall(Probe.ResultCall, Probe.Function) || !closeCompleteCall(Probe.Invoke, Dispatcher.Function)) return false;
       // These exact concrete declval calls closed their selected and original
       // signatures above. Their ordinary written children still traverse here.
-      auto CloseDeclval = [&](const CallExpr *Expression) {
-        const auto *Selected = Expression ? Expression->getDirectCallee() : nullptr;
-        const auto Input = DeclvalInputs.find(Expression);
-        if (!Selected || !CompletedDeclvalInputs.count(Expression) || Input == DeclvalInputs.end())
-          return false;
-        const auto Source = describeFunctionalBindDeclvalSource(S, SM, Expression, Input->second, Context);
-        if (!Source || Source->Call != Expression || Source->Function != Selected || !Source->Helper ||
-            !Source->HelperCall || Source->HelperCall->getDirectCallee() != Source->Helper ||
-            !Source->PrimaryHelperCall || Source->PrimaryHelperCall->getDirectCallee()) return false;
-        // One completed declval source binds its selected call and both
-        // exact helper calls. Keep that source in one of the same 64 slots;
-        // reentry still walks every ordinary written type and child.
-        if (Source->HelperCall == Expression || Source->PrimaryHelperCall == Expression ||
-            Source->HelperCall == Source->PrimaryHelperCall || !closeCompleteCall(Expression, Selected)) return false;
-        const auto Found = ClosedCompleteCalls.find(Expression);
-        if (Found == ClosedCompleteCalls.end()) return false;
-        auto &Closed = Found->second;
-        if ((Closed.HelperCall && Closed.HelperCall != Source->HelperCall) ||
-            (Closed.Helper && Closed.Helper != Source->Helper) ||
-            (Closed.PrimaryHelperCall && Closed.PrimaryHelperCall != Source->PrimaryHelperCall)) return false;
-        if (const auto Existing = completedCallFunction(Source->HelperCall))
-          if (*Existing != Source->Helper) return false;
-        if (const auto Existing = completedCallFunction(Source->PrimaryHelperCall))
-          if (*Existing) return false;
-        Closed.HelperCall = Source->HelperCall;
-        Closed.Helper = Source->Helper;
-        Closed.PrimaryHelperCall = Source->PrimaryHelperCall;
-        return true;
-      };
+      auto CloseDeclval = [&](const CallExpr *Expression) { return closeCompleteDeclvalSource(Expression); };
       for (const auto *Expression : Probe.Declvals)
         if (!CloseDeclval(Expression)) return false;
       for (const auto *Expression : Dispatcher.SpecializedDeclvals)
