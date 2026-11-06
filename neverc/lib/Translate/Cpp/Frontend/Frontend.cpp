@@ -26810,6 +26810,32 @@ public:
         functionalBindDestructionSourceComplete(Found->second, Site->second);
   }
   std::optional<bool> traverseBindFactory(CallExpr *Call) {
+    const auto *ReferenceFunction = Call ? Call->getDirectCallee() : nullptr;
+    const auto ReferenceOrigin = ReferenceFunction
+        ? A.S.sdkFile(A.Sources, ReferenceFunction->getLocation()) : std::nullopt;
+    if (ReferenceFunction && ReferenceFunction->getIdentifier() && ReferenceFunction->getName() == "bind" &&
+        A.S.owns(A.Sources, Call->getExprLoc()) && ReferenceOrigin && ReferenceOrigin->Root == "libcxx" &&
+        ReferenceOrigin->Path == "__functional/bind.h") {
+      const auto Reference = describeFunctionalBindReferenceStorage(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      llvm::errs() << "BIND-REFERENCE-STORAGE described=" << bool(Reference);
+      if (Reference) {
+        const auto &Storage = Reference->Storage;
+        const auto &Wrapper = Reference->Reference;
+        const auto &WrapperLayout = A.Context.getASTRecordLayout(Wrapper.Record);
+        llvm::errs() << " source-owned=" << bool(A.S.owns(A.Sources, Wrapper.ReferentType->getAsCXXRecordDecl()->getLocation()))
+            << " pointer-bits=" << A.Context.getTypeSize(Wrapper.PointerType)
+            << " reference-padded=" << Wrapper.PaddedBase
+            << " callable-offset=" << Storage.CallableOffsetBits
+            << " bound-offset=" << Storage.BoundOffsetBits
+            << " size-bits=" << Storage.SizeBytes * 8
+            << " align-bits=" << Storage.AlignmentBytes * 8
+            << " wrapper-bits=" << A.Context.getTypeSize(Storage.CallableType)
+            << " wrapper-align=" << A.Context.getTypeAlign(Storage.CallableType)
+            << " pointer-offset=" << WrapperLayout.getFieldOffset(Wrapper.Pointer->getFieldIndex());
+      }
+      llvm::errs() << "\n";
+    }
     const auto Owned = describeFunctionalBindOwnedFactorySource(A.S, A.Sources, Call, A.Context);
     const auto Source = Owned ? Owned : describeFunctionalBindFactorySource(A.S, A.Sources, Call, A.Context);
     if (!Source) return std::nullopt;

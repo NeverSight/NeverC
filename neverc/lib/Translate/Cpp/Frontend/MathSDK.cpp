@@ -17433,6 +17433,162 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
 }
 
 
+static std::optional<FunctionalBindStorage>
+describeFunctionalBindReferenceStorageImpl(const State &S, const SourceManager &SM,
+                              const CXXRecordDecl *Record,
+                              const ASTContext &Context, unsigned Depth,
+                              unsigned &Nodes, std::set<const CXXRecordDecl *> &Active) {
+  if (!S.coreV2() || !Record || Depth >= 64 || ++Nodes > 200000 ||
+      !Active.insert(Record->getCanonicalDecl()).second) return std::nullopt;
+  auto Restore = llvm::make_scope_exit([&] { Active.erase(Record->getCanonicalDecl()); });
+  // Reuse only the declaration-family locator. Its mode-specific not_fn
+  // expression, default and exception routines do not prove any bind source.
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Instance = Check.record(Context.getRecordType(Record), "__bind",
+                                       {"__functional/bind.h"});
+  if (!Instance || Instance->getNumBases() != 1 ||
+      std::distance(Instance->field_begin(), Instance->field_end()) != 2 ||
+      !Instance->hasTrivialDestructor()) return std::nullopt;
+  const auto &TemplateArguments = Instance->getTemplateArgs();
+  if (TemplateArguments.size() != 2 ||
+      TemplateArguments[0].getKind() != TemplateArgument::Type ||
+      TemplateArguments[1].getKind() != TemplateArgument::Pack) return std::nullopt;
+
+  auto DecayedValue = [&](QualType Type) -> QualType {
+    if (Type.isNull()) return {};
+    Type = Type.getNonReferenceType();
+    if (Type.isVolatileQualified() || Type.isRestrictQualified() ||
+        Type.getAddressSpace() != LangAS::Default || Type->isDependentType() ||
+        Type->isIncompleteType() || Type->isArrayType()) return {};
+    Type = Type.getUnqualifiedType();
+    return Type->isFunctionType() ? Context.getPointerType(Type) : Type;
+  };
+  auto ScalarValue = [&](QualType Type) {
+    if (Type.isNull() || Type->isReferenceType() || Type.isVolatileQualified() ||
+        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default ||
+        Type->isDependentType() || Type->isIncompleteType()) return false;
+    Type = Type.getUnqualifiedType();
+    return supportedFunctionalScalar(Type, Context) ||
+           utilityObjectPointer(Context, Type);
+  };
+
+  auto Field = Instance->field_begin();
+  const auto *Callable = *Field++;
+  const auto *Bound = *Field;
+  auto StorageField = [&](const FieldDecl *Value, llvm::StringRef Name) {
+    return Value && Value->getIdentifier() && Value->getName() == Name &&
+           Value->getAccess() == AS_private && !Value->isBitField() &&
+           !Value->isMutable() && !Value->hasAttrs() &&
+           Check.family(Value, {"__functional/bind.h"});
+  };
+  if (!StorageField(Callable, "__f_") ||
+      !StorageField(Bound, "__bound_args_")) return std::nullopt;
+  const auto CallableType = Callable->getType();
+  const auto OriginalCallable = DecayedValue(TemplateArguments[0].getAsType());
+  if (CallableType.isNull() || CallableType.hasQualifiers() ||
+      CallableType->isDependentType() ||
+      OriginalCallable.isNull() ||
+      !Context.hasSameType(CallableType, OriginalCallable)) return std::nullopt;
+  // This role stores an authenticated reference_wrapper, never its referent.
+  // The ordinary object's body, lifetime and every selected SDK source remain
+  // separate later obligations. Describing this shape grants no runtime use.
+  const auto Reference = approvedFunctionalReferenceRecord(
+      S, SM, CallableType->getAsCXXRecordDecl(), Context);
+  const auto ReferentType = Reference ? Reference->ReferentType : QualType();
+  const auto *Referent = !ReferentType.isNull() ? ReferentType->getAsCXXRecordDecl() : nullptr;
+  const auto *Definition = Referent ? Referent->getDefinition() : nullptr;
+  if (!Reference || !Definition || !S.owns(SM, Definition->getLocation()) ||
+      ReferentType->isDependentType() || ReferentType->isInstantiationDependentType() ||
+      ReferentType.isVolatileQualified() || ReferentType.isRestrictQualified() ||
+      ReferentType.getAddressSpace() != LangAS::Default ||
+      Definition->isInvalidDecl() || Definition->hasAttrs() || Definition->isUnion() ||
+      Definition->isLambda() || Definition->isDynamicClass() ||
+      isa<ClassTemplateSpecializationDecl>(Definition) || Definition->getDescribedClassTemplate() ||
+      !Context.hasSameType(Context.getRecordType(Reference->Record), CallableType) ||
+      !Reference->Record->hasTrivialCopyConstructor() ||
+      !Reference->Record->hasTrivialDestructor()) return std::nullopt;
+  for (const auto *Declaration : Referent->redecls())
+    if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return std::nullopt;
+
+  const auto &Base = *Instance->bases_begin();
+  const auto *Weak = Check.record(Base.getType(), "__weak_result_type",
+                                  {"__functional/weak_result_type.h"});
+  if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public || !Weak ||
+      !Weak->isEmpty() || !Weak->field_empty() || !Weak->hasTrivialDestructor() ||
+      Weak->getTemplateArgs().size() != 1 ||
+      Weak->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Weak->getTemplateArgs()[0].getAsType(), CallableType))
+    return std::nullopt;
+  // A noexcept callback can select the generic weak-result chain. Its
+  // selected partial/default/base sources are independent later obligations.
+  // tuple<> is an explicit SDK specialization; the generic implicit-record
+  // locator is intentionally unchanged for every nonempty stored pack.
+  const auto *Tuple = TemplateArguments[1].pack_size()
+      ? Check.record(Bound->getType(), "tuple", {"tuple", "__fwd/tuple.h"})
+      : Bound->getType()->getAsCXXRecordDecl();
+  // Placeholder empty bases are described only for this exact bind storage.
+  // Generic tuple/value consumers retain their existing classification.
+  auto Arguments = Tuple ? approvedUtilityTupleRecordImpl(
+      S, SM, Tuple, Context, Depth, false, false, nullptr, true) : std::nullopt;
+  if (!Arguments || Arguments->Elements.size() != TemplateArguments[1].pack_size())
+    return std::nullopt;
+  unsigned Index = 0;
+  for (const auto &Argument : TemplateArguments[1].pack_elements()) {
+    if (++Nodes > 200000 || Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+    const auto Value = DecayedValue(Argument.getAsType());
+    if (Value.isNull() ||
+        !Context.hasSameType(Value, Arguments->Elements[Index++].getType()))
+      return std::nullopt;
+    if (ScalarValue(Value)) continue;
+    if (functionalBindEmptyPlaceholderStorage(S, SM, Value, Context)) {
+      const auto &Element = Arguments->Elements[Index - 1];
+      if (Element.Field || !Element.EmptyBase ||
+          Element.EmptyBase->getCanonicalDecl() != Value->getAsCXXRecordDecl()->getCanonicalDecl())
+        return std::nullopt;
+      continue;
+    }
+    const auto Reference = approvedFunctionalReferenceRecord(
+        S, SM, Value->getAsCXXRecordDecl(), Context);
+    if (Reference && ScalarValue(Reference->ReferentType)) continue;
+    const auto *Nested = Value->getAsCXXRecordDecl();
+    if (!Nested || !functionalBindInertObjectSourceIdentity(S, SM, Value, Context) ||
+        !describeFunctionalBindStorageImpl(S, SM, Nested, Context, Depth + 1, Nodes, Active))
+      return std::nullopt;
+  }
+
+  // Retain the real ABI offsets rather than copying reference_wrapper's
+  // one-field layout or assuming the callback begins at byte zero. A tuple's
+  // own structural certificate governs its leaves and selected operations.
+  const auto &Layout = Context.getASTRecordLayout(Instance);
+  const auto CallableOffset = Layout.getFieldOffset(0);
+  const auto BoundOffset = Layout.getFieldOffset(1);
+  const auto Size = uint64_t(Layout.getSize().getQuantity());
+  if (Layout.getBaseClassOffset(Weak).getQuantity() || CallableOffset % 8 ||
+      BoundOffset % 8 ||
+      CallableOffset + Context.getTypeSize(CallableType) > BoundOffset ||
+      BoundOffset + Context.getTypeSize(Bound->getType()) > Size * 8)
+    return std::nullopt;
+  return FunctionalBindStorage{Instance, Weak, Callable, Bound, CallableType,
+      std::move(*Arguments), CallableOffset, BoundOffset, Size,
+      uint64_t(Layout.getAlignment().getQuantity())};
+}
+
+
+std::optional<FunctionalBindReferenceStorage>
+describeFunctionalBindReferenceStorage(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  unsigned Nodes = 0;
+  std::set<const CXXRecordDecl *> Active;
+  const auto Storage = describeFunctionalBindReferenceStorageImpl(
+      S, SM, Record, Context, 0, Nodes, Active);
+  const auto Reference = Storage ? approvedFunctionalReferenceRecord(
+      S, SM, Storage->CallableType->getAsCXXRecordDecl(), Context) : std::nullopt;
+  if (!Storage || !Reference) return std::nullopt;
+  return FunctionalBindReferenceStorage{*Storage, *Reference};
+}
+
+
 std::optional<FunctionalBindStorage>
 describeFunctionalBindStorage(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record,

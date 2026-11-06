@@ -1778,6 +1778,19 @@ describeFunctionalBindStorage(const State &S, const clang::SourceManager &SM,
                               const clang::ASTContext &Context);
 
 
+// Borrowed storage has its own shape description. Copying this wrapper must
+// preserve its pointer binding; this description supplies no body, lifecycle,
+// default/query proof or runtime permission for either the wrapper or referent.
+struct FunctionalBindReferenceStorage {
+  FunctionalBindStorage Storage;
+  FunctionalReferenceRecord Reference;
+};
+std::optional<FunctionalBindReferenceStorage>
+describeFunctionalBindReferenceStorage(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+
 // These are descriptions of the original selected source, not operation
 // certificates. The default/trait/alias/partial graph and tuple leaves must
 // close independently before either construction or lowering is permitted.
