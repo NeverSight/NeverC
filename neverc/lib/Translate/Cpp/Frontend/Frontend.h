@@ -1940,6 +1940,12 @@ describeFunctionalBindOwnedInvokeSignatureSource(
     const clang::FunctionDecl *Function, const FunctionalBindOwnedCallSource &Given,
     const clang::ASTContext &Context);
 
+std::optional<FunctionalBindInvokeSignatureSource>
+describeFunctionalBindOwnedValueQueryInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, const FunctionalBindOwnedCallSource &Given,
+    const clang::ASTContext &Context);
+
 struct FunctionalBindTryCallSignatureSource {
   const clang::CXXMethodDecl *Function;
   const clang::ClassTemplateSpecializationDecl *Owner;
@@ -1976,6 +1982,11 @@ describeFunctionalBindOwnedTryCallSignatureSource(
     const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
     const FunctionalBindOwnedCallSource &Given, const clang::ASTContext &Context);
 
+std::optional<FunctionalBindTryCallSignatureSource>
+describeFunctionalBindOwnedValueQueryTryCallSignatureSource(
+    const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
+    const FunctionalBindOwnedCallSource &Given, const clang::ASTContext &Context);
+
 struct FunctionalBindTryCallFallbackSource {
   const clang::CXXMethodDecl *Function;
   const clang::CXXRecordDecl *Sentinel;
@@ -1991,6 +2002,14 @@ describeFunctionalBindTryCallFallbackSource(
 
 std::optional<FunctionalBindTryCallFallbackSource>
 describeFunctionalBindOwnedTryCallFallbackSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindTryCallSignatureSource &Probe,
+    const FunctionalBindOwnedCallSource &Owned,
+    const FunctionalBindStorage &Storage,
+    llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
+
+std::optional<FunctionalBindTryCallFallbackSource>
+describeFunctionalBindOwnedValueQueryTryCallFallbackSource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindTryCallSignatureSource &Probe,
     const FunctionalBindOwnedCallSource &Owned,

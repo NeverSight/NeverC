@@ -26949,14 +26949,24 @@ public:
         if (!Destructor->isImplicit() || !Destructor->isDefaulted() || !Destructor->isTrivial() ||
             !Check.generatedDestructor(Destructor)) return false;
       } else {
-        const bool Selected = std::any_of(PendingBindCalls.begin(), PendingBindCalls.end(), [&](const auto &Entry) {
-          return Entry.second.Target && Entry.second.Target->getDirectCallee() == Method;
-        });
-        const auto *Definition = Method->getDefinition();
-        if (!Selected || !Definition || !ordinaryOperator(Method) || !Check.defined(Method) ||
-            std::find(A.Functions.begin(), A.Functions.end(), Definition) == A.Functions.end()) return false;
+        if (!ordinaryOperator(Method) || !(Check.defined(Method) || Check.queryCallSignature(Method))) return false;
       }
       if (!Check.finish(Method->getLocation())) return false;
+    }
+    // A by-value invocability probe can select a different overload. Its
+    // ordinary signature supplies no runtime body; finish every actual target
+    // independently before publishing the bind call maps used by lowering.
+    for (const auto &[Call, Source] : PendingBindCalls) {
+      if (!Source.Storage.CallableType->isRecordType()) continue;
+      const auto Fresh = describeFunctionalBindOwnedCallSource(A.S, A.Sources, Call, A.Context);
+      const auto *Target = Fresh ? Fresh->Target : nullptr;
+      const auto *Definition = Target ? Target->getDefinition() : nullptr;
+      auto Check = NewCheck();
+      if (!Fresh || Fresh->Selected.Target != Source.Target || Fresh->Selected.Method != Source.Method ||
+          Fresh->Selected.Object != Source.Object || Fresh->Selected.Storage.Record != Source.Storage.Record ||
+          !Target || !Definition || !ordinaryOperator(Target) || !Check.defined(Target) ||
+          !Check.finish(Call->getExprLoc()) ||
+          std::find(A.Functions.begin(), A.Functions.end(), Definition) == A.Functions.end()) return false;
     }
     for (const auto &[Call, Factory] : PendingBindFactories) {
       if (!Factory.Storage.CallableType->isRecordType()) continue;
