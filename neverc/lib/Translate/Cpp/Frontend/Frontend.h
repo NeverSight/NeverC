@@ -1778,6 +1778,18 @@ describeFunctionalBindStorage(const State &S, const clang::SourceManager &SM,
                               const clang::ASTContext &Context);
 
 
+// Original standard functional-object descriptions only. These carry no
+// completed bind source, lifecycle or lowering permission.
+struct FunctionalBindStandardStorage {
+  FunctionalBindStorage Storage;
+  FunctionalObjectRecord Object;
+};
+std::optional<FunctionalBindStandardStorage>
+describeFunctionalBindStandardStorage(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+
 // Borrowed storage has its own shape description. Copying this wrapper must
 // preserve its pointer binding; this description supplies no body, lifecycle,
 // default/query proof or runtime permission for either the wrapper or referent.
@@ -1884,6 +1896,21 @@ struct FunctionalBindOwnedCallSource {
   const clang::CXXMethodDecl *Target;
   const clang::Expr *Receiver;
 };
+
+struct FunctionalBindStandardCallSource {
+  FunctionalBindCallSource Selected;
+  const clang::CXXMethodDecl *Method;
+  FunctionalOperationInfo Operation;
+};
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindStandardFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<FunctionalBindStandardCallSource>
+describeFunctionalBindStandardCallSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 std::optional<FunctionalBindOwnedCallSource>
 describeFunctionalBindOwnedCallSource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
@@ -1943,6 +1970,13 @@ struct FunctionalBindNaturalLayout {
   bool PaddedBase;
   clang::QualType BaseStorageType;
 };
+// Exact SDK scalar function-object layout only. The descriptor grants no
+// source/lifecycle or runtime operation for this adapter.
+std::optional<FunctionalBindNaturalLayout>
+describeFunctionalBindStandardNaturalLayout(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
 std::optional<FunctionalBindNaturalLayout>
 describeFunctionalBindNaturalLayout(
     const State &S, const clang::SourceManager &SM,
@@ -2127,6 +2161,25 @@ bool shouldRetainFunctionalBindSpecialMemberSource(
 
 // Source certificates are purpose bound and never admit ordinary SDK calls.
 // The caller must separately finish runtime operands, callbacks and lifetimes.
+// These are independent standard-target source roots. Their descriptions
+// do not classify an SDK object as a source-owned user callable.
+std::optional<FunctionalBindTupleConstructionSource>
+describeFunctionalBindStandardTupleConstructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context);
+std::optional<std::vector<FunctionalBindTupleTagSource>>
+describeFunctionalBindStandardTupleTagSources(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context);
+bool approvedFunctionalBindStandardFactorySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
+
 bool approvedFunctionalBindFactorySource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,
