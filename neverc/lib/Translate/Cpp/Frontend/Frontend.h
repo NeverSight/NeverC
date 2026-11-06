@@ -1778,6 +1778,18 @@ describeFunctionalBindStorage(const State &S, const clang::SourceManager &SM,
                               const clang::ASTContext &Context);
 
 
+// Original standard functional-object descriptions only. These carry no
+// completed bind source, lifecycle or lowering permission.
+struct FunctionalBindStandardStorage {
+  FunctionalBindStorage Storage;
+  FunctionalObjectRecord Object;
+};
+std::optional<FunctionalBindStandardStorage>
+describeFunctionalBindStandardStorage(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+
 // Borrowed storage has its own shape description. Copying this wrapper must
 // preserve its pointer binding; this description supplies no body, lifecycle,
 // default/query proof or runtime permission for either the wrapper or referent.
@@ -1884,6 +1896,21 @@ struct FunctionalBindOwnedCallSource {
   const clang::CXXMethodDecl *Target;
   const clang::Expr *Receiver;
 };
+
+struct FunctionalBindStandardCallSource {
+  FunctionalBindCallSource Selected;
+  const clang::CXXMethodDecl *Method;
+  FunctionalOperationInfo Operation;
+};
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindStandardFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<FunctionalBindStandardCallSource>
+describeFunctionalBindStandardCallSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 std::optional<FunctionalBindOwnedCallSource>
 describeFunctionalBindOwnedCallSource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
