@@ -26810,6 +26810,85 @@ public:
         functionalBindDestructionSourceComplete(Found->second, Site->second);
   }
   std::optional<bool> traverseBindFactory(CallExpr *Call) {
+    const auto *ReferenceFunction = Call ? Call->getDirectCallee() : nullptr;
+    const auto ReferenceOrigin = ReferenceFunction
+        ? A.S.sdkFile(A.Sources, ReferenceFunction->getLocation()) : std::nullopt;
+    if (ReferenceFunction && ReferenceFunction->getIdentifier() && ReferenceFunction->getName() == "bind" &&
+        A.S.owns(A.Sources, Call->getExprLoc()) && ReferenceOrigin && ReferenceOrigin->Root == "libcxx" &&
+        ReferenceOrigin->Path == "__functional/bind.h") {
+      const auto Reference = describeFunctionalBindReferenceStorage(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      llvm::errs() << "BIND-REFERENCE-STORAGE described=" << bool(Reference);
+      if (Reference) {
+        const auto &Storage = Reference->Storage;
+        const auto &Wrapper = Reference->Reference;
+        const auto &WrapperLayout = A.Context.getASTRecordLayout(Wrapper.Record);
+        llvm::errs() << " source-owned=" << bool(A.S.owns(A.Sources, Wrapper.ReferentType->getAsCXXRecordDecl()->getLocation()))
+            << " pointer-bits=" << A.Context.getTypeSize(Wrapper.PointerType)
+            << " reference-padded=" << Wrapper.PaddedBase
+            << " callable-offset=" << Storage.CallableOffsetBits
+            << " bound-offset=" << Storage.BoundOffsetBits
+            << " size-bits=" << Storage.SizeBytes * 8
+            << " align-bits=" << Storage.AlignmentBytes * 8
+            << " wrapper-bits=" << A.Context.getTypeSize(Storage.CallableType)
+            << " wrapper-align=" << A.Context.getTypeAlign(Storage.CallableType)
+            << " pointer-offset=" << WrapperLayout.getFieldOffset(Wrapper.Pointer->getFieldIndex());
+      }
+      llvm::errs() << "\n";
+    }
+    if (ReferenceFunction && ReferenceFunction->getIdentifier() && ReferenceFunction->getName() == "bind" &&
+        A.S.owns(A.Sources, Call->getExprLoc()) && ReferenceOrigin && ReferenceOrigin->Root == "libcxx" &&
+        ReferenceOrigin->Path == "__functional/bind.h") {
+      const auto Description = describeFunctionalBindReferenceFactorySource(A.S, A.Sources, Call, A.Context);
+      const auto *Copy = Description && Description->Factory.CallableCopy ? Description->Factory.CallableCopy->getConstructor() : nullptr;
+      const auto Origin = Copy ? A.S.sdkFile(A.Sources, Copy->getLocation()) : std::nullopt;
+      llvm::errs() << "BIND-REFERENCE-FACTORY described=" << bool(Description)
+          << " selected-copy=" << bool(Copy)
+          << " sdk=" << bool(Origin && Origin->Root == "libcxx" && Origin->Path == "__functional/reference_wrapper.h")
+          << " implicit=" << bool(Copy && Copy->isImplicit())
+          << " defaulted=" << bool(Copy && Copy->isDefaulted())
+          << " trivial=" << bool(Copy && Copy->isTrivial())
+          << " move=" << bool(Copy && Copy->isMoveConstructor()) << "\n";
+    }
+    if (ReferenceFunction && ReferenceFunction->getIdentifier() && ReferenceFunction->getName() == "bind" &&
+        A.S.owns(A.Sources, Call->getExprLoc()) && ReferenceOrigin && ReferenceOrigin->Root == "libcxx" &&
+        ReferenceOrigin->Path == "__functional/bind.h") {
+      const auto Description = describeFunctionalBindReferenceFactorySource(A.S, A.Sources, Call, A.Context);
+      const auto Inputs = functionalBindSourceInputs();
+      unsigned Uses = 0, Selected = 0, Pairs = 0;
+      if (Description && Inputs) {
+        for (const auto *Use : Inputs->Dependencies)
+          if (Use && Use->Kind == TemplateSourceKind::Function && Use->Declaration == Description->Factory.Factory &&
+              Use->Template == Description->Factory.Factory->getPrimaryTemplate() && Use->Canonical && Use->Sugared &&
+              Use->Canonical->size() == 2 && Use->Sugared->size() == 2) ++Uses;
+        for (const auto *CallSource : Inputs->Selections) {
+          if (!CallSource || CallSource->Expression != Description->Factory.SourceCall || CallSource->Function != Description->Factory.Factory) continue;
+          ++Selected;
+          for (const auto *Use : Inputs->Dependencies)
+            if (Use && Use->Kind == TemplateSourceKind::Function && Use->Declaration == CallSource->Function &&
+                Use->Location == CallSource->Location && Use->Canonical && Use->Sugared) ++Pairs;
+        }
+      }
+      const auto *Copy = Description && Description->Factory.CallableCopy ? Description->Factory.CallableCopy->getConstructor() : nullptr;
+      const auto Member = Copy ? A.SpecialMembers.find(Copy) : A.SpecialMembers.end();
+      llvm::errs() << "BIND-REFERENCE-RETAINED inputs=" << bool(Inputs) << " factory=" << bool(Description)
+          << " uses=" << Uses << " selected=" << Selected << " pairs=" << Pairs
+          << " copy-packet=" << bool(Member != A.SpecialMembers.end())
+          << " copy-complete=" << bool(Member != A.SpecialMembers.end() && Member->second.Complete) << "\n";
+    }
+    if (ReferenceFunction && ReferenceFunction->getIdentifier() && ReferenceFunction->getName() == "bind" &&
+        A.S.owns(A.Sources, Call->getExprLoc()) && ReferenceOrigin && ReferenceOrigin->Root == "libcxx" &&
+        ReferenceOrigin->Path == "__functional/bind.h") {
+      const auto Description = describeFunctionalBindReferenceFactorySource(A.S, A.Sources, Call, A.Context);
+      const auto Inputs = functionalBindSourceInputs();
+      std::set<const CXXMethodDecl *> Queries;
+      const bool Complete = Description && Inputs && approvedFunctionalBindReferenceFactorySource(
+          A.S, A.Sources, *Description, A.Context, Inputs->Dependencies, Inputs->Selections,
+          A.SpecialMembers, A.OperationTraits, Queries);
+      llvm::errs() << "BIND-REFERENCE-FACTORY-SOURCE inputs=" << bool(Inputs)
+          << " described=" << bool(Description) << " complete=" << Complete
+          << " ordinary-queries=" << Queries.size() << "\n";
+    }
     const auto Owned = describeFunctionalBindOwnedFactorySource(A.S, A.Sources, Call, A.Context);
     const auto Source = Owned ? Owned : describeFunctionalBindFactorySource(A.S, A.Sources, Call, A.Context);
     if (!Source) return std::nullopt;
@@ -26857,6 +26936,22 @@ public:
     });
   }
   std::optional<bool> traverseBindCall(CXXOperatorCallExpr *Call) {
+    const auto *ReferenceMethod = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+    const auto ReferenceOrigin = ReferenceMethod
+        ? A.S.sdkFile(A.Sources, ReferenceMethod->getLocation()) : std::nullopt;
+    if (Call && A.S.owns(A.Sources, Call->getExprLoc()) && ReferenceOrigin &&
+        ReferenceOrigin->Root == "libcxx" && ReferenceOrigin->Path == "__functional/bind.h") {
+      const auto Description = describeFunctionalBindReferenceCallSource(A.S, A.Sources, Call, A.Context);
+      const auto *Method = Description ? Description->Reference.Method : nullptr;
+      llvm::errs() << "BIND-REFERENCE-CALL described=" << bool(Description)
+          << " ordinary-target=" << bool(Method && A.S.owns(A.Sources, Method->getLocation()))
+          << " two-dispatchers=" << bool(Description && Description->Selected.Invoke && Description->ReferentInvoke &&
+              Description->Selected.Invoke->getDirectCallee() != Description->ReferentInvoke->getDirectCallee())
+          << " arguments=" << (Description ? Description->Selected.Arguments.size() : 0)
+          << " const-wrapper=" << bool(Description && Description->Selected.Method->isConst())
+          << " const-referent=" << bool(Description && Description->Storage.Reference.ReferentType.isConstQualified())
+          << " target-const=" << bool(Method && Method->isConst()) << "\n";
+    }
     const auto Owned = describeFunctionalBindOwnedCallSource(A.S, A.Sources, Call, A.Context);
     const auto Source = Owned ? std::optional<FunctionalBindCallSource>(Owned->Selected)
         : describeFunctionalBindCallSource(A.S, A.Sources, Call, A.Context);
