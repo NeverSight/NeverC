@@ -19,6 +19,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include <deque>
+#include <cstdio>
 #include <functional>
 #include <set>
 
@@ -17503,13 +17504,20 @@ describeFunctionalBindPlaceholderOperandSource(
   return FunctionalBindPlaceholderOperandSource{*Identity, Operand, Reference, Variable};
 }
 
+static void functionalBindStandardDescriptionFailure(unsigned Line) {
+  // Diagnostic output only; the counter is never read by any admission gate.
+  static thread_local unsigned Printed = 0;
+  if (Printed++ < 128) std::fprintf(stderr, "BIND-STANDARD-DESCRIPTION-LINE %u\n", Line);
+}
+
 static std::optional<FunctionalBindStorage>
 describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record,
                               const ASTContext &Context, unsigned Depth,
-                              unsigned &Nodes, std::set<const CXXRecordDecl *> &Active) {
+                              unsigned &Nodes, std::set<const CXXRecordDecl *> &Active,
+                               bool StandardCallableMetadata = false) {
   if (!S.coreV2() || !Record || Depth >= 64 || ++Nodes > 200000 ||
-      !Active.insert(Record->getCanonicalDecl()).second) return std::nullopt;
+      !Active.insert(Record->getCanonicalDecl()).second) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   auto Restore = llvm::make_scope_exit([&] { Active.erase(Record->getCanonicalDecl()); });
   // Reuse only the declaration-family locator. Its mode-specific not_fn
   // expression, default and exception routines do not prove any bind source.
@@ -17518,11 +17526,11 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
                                        {"__functional/bind.h"});
   if (!Instance || Instance->getNumBases() != 1 ||
       std::distance(Instance->field_begin(), Instance->field_end()) != 2 ||
-      !Instance->hasTrivialDestructor()) return std::nullopt;
+      !Instance->hasTrivialDestructor()) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto &TemplateArguments = Instance->getTemplateArgs();
   if (TemplateArguments.size() != 2 ||
       TemplateArguments[0].getKind() != TemplateArgument::Type ||
-      TemplateArguments[1].getKind() != TemplateArgument::Pack) return std::nullopt;
+      TemplateArguments[1].getKind() != TemplateArgument::Pack) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
 
   auto DecayedValue = [&](QualType Type) -> QualType {
     if (Type.isNull()) return {};
@@ -17552,15 +17560,24 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
            Check.family(Value, {"__functional/bind.h"});
   };
   if (!StorageField(Callable, "__f_") ||
-      !StorageField(Bound, "__bound_args_")) return std::nullopt;
+      !StorageField(Bound, "__bound_args_")) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto CallableType = Callable->getType();
   const auto OriginalCallable = DecayedValue(TemplateArguments[0].getAsType());
   if (CallableType.isNull() || CallableType.hasQualifiers() ||
       CallableType->isDependentType() ||
       OriginalCallable.isNull() ||
-      !Context.hasSameType(CallableType, OriginalCallable)) return std::nullopt;
+      !Context.hasSameType(CallableType, OriginalCallable)) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const bool FunctionPointer = CallableType->isFunctionPointerType();
-  if (!FunctionPointer) {
+  if (StandardCallableMetadata) {
+    const auto Object = approvedFunctionalObjectRecord(
+        S, SM, CallableType->getAsCXXRecordDecl(), Context);
+    const auto Name = Object ? Object->Record->getName() : llvm::StringRef();
+    // The hash families have separate byte/owner semantics and are not part
+    // of this scalar operator description.
+    if (!Object || Name == "hash" ||
+        !Context.hasSameType(Context.getRecordType(Object->Record), CallableType))
+      return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
+  } else if (!FunctionPointer) {
     const auto *CallableRecord = CallableType->getAsCXXRecordDecl();
     const auto *Definition = CallableRecord ? CallableRecord->getDefinition() : nullptr;
     // Inert identity and physical shape only. The exact selected copy,
@@ -17574,31 +17591,31 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
         Definition->getNumBases() || !Definition->isStandardLayout() ||
         !Definition->hasTrivialCopyConstructor() || !Definition->hasTrivialDestructor() ||
         !Context.hasSameType(Context.getRecordType(Definition), CallableType))
-      return std::nullopt;
+      return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     for (const auto *Declaration : CallableRecord->redecls())
       if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
-        return std::nullopt;
+        return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     unsigned Fields = 0;
     for (const auto *Field : Definition->fields())
       if (++Fields > 64 || ++Nodes > 200000 ||
           !S.owns(SM, Field->getLocation()) || Field->hasAttrs() ||
           Field->getAccess() != AS_public || Field->isBitField() || Field->isMutable() ||
           Field->hasInClassInitializer() || Field->getType().hasQualifiers() ||
-          !Field->getType()->isArithmeticType()) return std::nullopt;
+          !Field->getType()->isArithmeticType()) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
   if (FunctionPointer) {
     const auto *Prototype = CallableType->getPointeeType()->getAs<FunctionProtoType>();
     if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
         Prototype->getNumParams() != TemplateArguments[1].pack_size())
-      return std::nullopt;
+      return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     const auto Result = Prototype->getReturnType();
     if (!Result->isVoidType() &&
         !ScalarValue(Result->isReferenceType() ? Result->getPointeeType() : Result))
-      return std::nullopt;
+      return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     for (const auto Parameter : Prototype->param_types())
       if (!ScalarValue(Parameter->isReferenceType()
                            ? Parameter->getPointeeType() : Parameter))
-        return std::nullopt;
+        return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
 
   const auto &Base = *Instance->bases_begin();
@@ -17609,7 +17626,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
       Weak->getTemplateArgs().size() != 1 ||
       Weak->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Weak->getTemplateArgs()[0].getAsType(), CallableType))
-    return std::nullopt;
+    return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   // A noexcept callback can select the generic weak-result chain. Its
   // selected partial/default/base sources are independent later obligations.
   // tuple<> is an explicit SDK specialization; the generic implicit-record
@@ -17622,20 +17639,20 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
   auto Arguments = Tuple ? approvedUtilityTupleRecordImpl(
       S, SM, Tuple, Context, Depth, false, false, nullptr, true) : std::nullopt;
   if (!Arguments || Arguments->Elements.size() != TemplateArguments[1].pack_size())
-    return std::nullopt;
+    return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   unsigned Index = 0;
   for (const auto &Argument : TemplateArguments[1].pack_elements()) {
-    if (++Nodes > 200000 || Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+    if (++Nodes > 200000 || Argument.getKind() != TemplateArgument::Type) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     const auto Value = DecayedValue(Argument.getAsType());
     if (Value.isNull() ||
         !Context.hasSameType(Value, Arguments->Elements[Index++].getType()))
-      return std::nullopt;
+      return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     if (ScalarValue(Value)) continue;
     if (functionalBindEmptyPlaceholderStorage(S, SM, Value, Context)) {
       const auto &Element = Arguments->Elements[Index - 1];
       if (Element.Field || !Element.EmptyBase ||
           Element.EmptyBase->getCanonicalDecl() != Value->getAsCXXRecordDecl()->getCanonicalDecl())
-        return std::nullopt;
+        return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       continue;
     }
     const auto Reference = approvedFunctionalReferenceRecord(
@@ -17644,7 +17661,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
     const auto *Nested = Value->getAsCXXRecordDecl();
     if (!Nested || !functionalBindInertObjectSourceIdentity(S, SM, Value, Context) ||
         !describeFunctionalBindStorageImpl(S, SM, Nested, Context, Depth + 1, Nodes, Active))
-      return std::nullopt;
+      return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
 
   // Retain the real ABI offsets rather than copying reference_wrapper's
@@ -17658,10 +17675,25 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
       BoundOffset % 8 ||
       CallableOffset + Context.getTypeSize(CallableType) > BoundOffset ||
       BoundOffset + Context.getTypeSize(Bound->getType()) > Size * 8)
-    return std::nullopt;
+    return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   return FunctionalBindStorage{Instance, Weak, Callable, Bound, CallableType,
       std::move(*Arguments), CallableOffset, BoundOffset, Size,
       uint64_t(Layout.getAlignment().getQuantity())};
+}
+
+
+std::optional<FunctionalBindStandardStorage>
+describeFunctionalBindStandardStorage(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  unsigned Nodes = 0;
+  std::set<const CXXRecordDecl *> Active;
+  const auto Storage = describeFunctionalBindStorageImpl(
+      S, SM, Record, Context, 0, Nodes, Active, true);
+  const auto Object = Storage ? approvedFunctionalObjectRecord(
+      S, SM, Storage->CallableType->getAsCXXRecordDecl(), Context) : std::nullopt;
+  if (!Storage || !Object || Object->Record->getName() == "hash") return std::nullopt;
+  return FunctionalBindStandardStorage{*Storage, *Object};
 }
 
 
@@ -17833,10 +17865,17 @@ describeFunctionalBindStorage(const State &S, const SourceManager &SM,
 static std::optional<FunctionalBindFactorySource>
 describeFunctionalBindFactorySourceImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context, bool OwnedCallableMetadata) {
+    const ASTContext &Context, bool OwnedCallableMetadata,
+    bool StandardCallableMetadata = false) {
   const auto *Factory = Call ? Call->getDirectCallee() : nullptr;
-  const auto Storage = describeFunctionalBindStorage(
-      S, SM, Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context);
+  if (StandardCallableMetadata && !OwnedCallableMetadata) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
+  const auto StandardStorage = StandardCallableMetadata
+      ? describeFunctionalBindStandardStorage(S, SM,
+          Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context) : std::nullopt;
+  const auto Storage = StandardCallableMetadata
+      ? (StandardStorage ? std::optional<FunctionalBindStorage>(StandardStorage->Storage) : std::nullopt)
+      : describeFunctionalBindStorage(
+          S, SM, Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context);
   if (!Storage ||
       (OwnedCallableMetadata ? !Storage->CallableType->isRecordType()
                              : !Storage->CallableType->isFunctionPointerType()) ||
@@ -17846,7 +17885,7 @@ describeFunctionalBindFactorySourceImpl(
       Factory->isVariadic() || Factory->getNumParams() != Call->getNumArgs() ||
       Call->getNumArgs() != Storage->Arguments.Elements.size() + 1 ||
       !Context.hasSameType(Call->getType(), Factory->getReturnType()))
-    return std::nullopt;
+    return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Primary = Factory->getPrimaryTemplate();
   const auto *Arguments = Factory->getTemplateSpecializationArgs();
@@ -17855,7 +17894,7 @@ describeFunctionalBindFactorySourceImpl(
       Arguments->get(0).getKind() != TemplateArgument::Type ||
       Arguments->get(1).getKind() != TemplateArgument::Pack ||
       Arguments->get(1).pack_size() + 1 != Factory->getNumParams() ||
-      !Check.family(Factory, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Factory, {"__functional/bind.h"})) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   auto DeducedParameter = [&](unsigned Index) -> QualType {
     const auto &Argument = Index ? Arguments->get(1).pack_elements()[Index - 1]
                                  : Arguments->get(0);
@@ -17869,7 +17908,7 @@ describeFunctionalBindFactorySourceImpl(
         !Context.hasSameType(Factory->getParamDecl(Index)->getType(), Expected) ||
         !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
                                         Expected->getPointeeType()))
-      return std::nullopt;
+      return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
   // The pinned bind factory has exactly its local result alias and return.
   // This description retains the alias as part of the original function body;
@@ -17886,7 +17925,7 @@ describeFunctionalBindFactorySourceImpl(
       ResultAlias->getDeclContext() != Factory || !ResultAlias->getTypeSourceInfo() ||
       !Context.hasSameType(ResultAlias->getUnderlyingType(), Factory->getReturnType()) ||
       !Check.family(ResultAlias, {"__functional/bind.h"}))
-    return std::nullopt;
+    return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto *Construction = Check.construction(Return->getRetValue());
   const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
   const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody())
@@ -17898,12 +17937,12 @@ describeFunctionalBindFactorySourceImpl(
       Constructor->getParent()->getCanonicalDecl() != Storage->Record->getCanonicalDecl() ||
       Constructor->getNumParams() != Factory->getNumParams() ||
       Construction->getNumArgs() != Factory->getNumParams() ||
-      !Check.family(Constructor, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Constructor, {"__functional/bind.h"})) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   std::vector<const CallExpr *> FactoryForwards;
   for (unsigned Index = 0; Index < Factory->getNumParams(); ++Index) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(Construction->getArg(Index), Factory->getParamDecl(Index),
-                          "__functional/bind.h", Forward)) return std::nullopt;
+                          "__functional/bind.h", Forward)) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     FactoryForwards.push_back(Forward);
   }
   const CXXConstructExpr *WeakConstruction = nullptr, *BoundConstruction = nullptr;
@@ -17918,17 +17957,17 @@ describeFunctionalBindFactorySourceImpl(
           !Construct || Construct->getNumArgs() || !Selected ||
           !Selected->isDefaultConstructor() || !Selected->isTrivial() ||
           !Check.family(Selected, {"__functional/weak_result_type.h"}))
-        return std::nullopt;
+        return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       WeakConstruction = Construct;
     } else if (Initializer->isMemberInitializer() &&
                Initializer->getMember() == Storage->Callable) {
-      if (CallableInitializer) return std::nullopt;
+      if (CallableInitializer) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       CallableInitializer = Initializer->getInit();
     } else if (Initializer->isMemberInitializer() &&
                Initializer->getMember() == Storage->BoundArguments) {
-      if (BoundConstruction) return std::nullopt;
+      if (BoundConstruction) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       BoundConstruction = Check.construction(Initializer->getInit());
-    } else return std::nullopt;
+    } else return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
   const auto *BoundConstructor = BoundConstruction
       ? BoundConstruction->getConstructor() : nullptr;
@@ -17938,7 +17977,7 @@ describeFunctionalBindFactorySourceImpl(
       BoundConstructor->getNumParams() != Storage->Arguments.Elements.size() ||
       BoundConstructor->getParent()->getCanonicalDecl() !=
           Storage->Arguments.Record->getCanonicalDecl() ||
-      !Check.family(BoundConstructor, {"tuple"})) return std::nullopt;
+      !Check.family(BoundConstructor, {"tuple"})) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const CallExpr *CallableForward = nullptr;
   const Expr *ForwardedCallable = Check.stripped(CallableInitializer);
   const CXXConstructExpr *CallableCopy = nullptr;
@@ -17949,15 +17988,23 @@ describeFunctionalBindFactorySourceImpl(
     if (!CallableCopy || !Selected || !Record || CallableCopy->getNumArgs() != 1 ||
         Selected->getNumParams() != 1 || !Selected->isCopyOrMoveConstructor() ||
         !Selected->isImplicit() || !Selected->isDefaulted() || !Selected->isTrivial() ||
-        Selected->isDeleted() || Selected->isUserProvided() || Selected->hasAttrs() ||
-        !S.owns(SM, Selected->getLocation()) ||
+        Selected->isDeleted() || Selected->isUserProvided() ||
+        (StandardCallableMetadata
+             ? approvedFunctionalObjectConstruction(S, SM, CallableCopy, Context) !=
+                   FunctionalObjectConstruction::CopyOrMove
+             : (Selected->hasAttrs() || !S.owns(SM, Selected->getLocation()))) ||
         Selected->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
         !Context.hasSameType(CallableCopy->getType(), Storage->CallableType) ||
         !Check.location(CallableCopy->getExprLoc(), {"__functional/bind.h"}))
-      return std::nullopt;
-    for (const auto *Declaration : Selected->redecls())
-      if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
-        return std::nullopt;
+      return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
+    for (const auto *Declaration : Selected->redecls()) {
+      if (StandardCallableMetadata) {
+        if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+            !functionalObjectOrigin(S, SM, Declaration, Record->getName()))
+          return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
+      } else if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
+        return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
+    }
     // Retain the exact ordinary operation. This description closes neither
     // its query/signature sources nor its runtime constructor/lifetime work.
     ForwardedCallable = CallableCopy->getArg(0);
@@ -17972,17 +18019,17 @@ describeFunctionalBindFactorySourceImpl(
         !Parameter->getPointeeType()->isFunctionType() ||
         !Context.hasSameType(Decay->getSubExpr()->getType(), Parameter->getPointeeType()) ||
         !Context.hasSameType(Decay->getType(), Storage->CallableType))
-      return std::nullopt;
+      return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     ForwardedCallable = Decay->getSubExpr();
   }
   if (!Check.forwarding(ForwardedCallable, Constructor->getParamDecl(0),
-                        "__functional/bind.h", CallableForward)) return std::nullopt;
+                        "__functional/bind.h", CallableForward)) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   std::vector<const CallExpr *> BoundForwards;
   for (unsigned Index = 0; Index < Storage->Arguments.Elements.size(); ++Index) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(BoundConstruction->getArg(Index),
                           Constructor->getParamDecl(Index + 1),
-                          "__functional/bind.h", Forward)) return std::nullopt;
+                          "__functional/bind.h", Forward)) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     BoundForwards.push_back(Forward);
   }
   std::vector<std::optional<FunctionalBindPlaceholderOperandSource>> Placeholders(
@@ -17992,7 +18039,7 @@ describeFunctionalBindFactorySourceImpl(
     if (!Element.EmptyBase) continue;
     Placeholders[Index] = describeFunctionalBindPlaceholderOperandSource(S, SM, Call->getArg(Index + 1), Context);
     if (!Placeholders[Index] || Placeholders[Index]->Identity.Record->getCanonicalDecl() !=
-                                   Element.EmptyBase->getCanonicalDecl()) return std::nullopt;
+                                   Element.EmptyBase->getCanonicalDecl()) return ((StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
   return FunctionalBindFactorySource{*Storage, Call, Factory, Construction,
       WeakConstruction, CallableInitializer, BoundConstruction,
@@ -18195,12 +18242,20 @@ describeFunctionalBindOwnedFactorySource(
   return describeFunctionalBindFactorySourceImpl(S, SM, Call, Context, true);
 }
 
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindStandardFactorySource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  return describeFunctionalBindFactorySourceImpl(S, SM, Call, Context, true, true);
+}
+
 // One owned call is the only entry point. SDK children can be described only
 // through the exact __mu_expand return selected by their enclosing argument.
 struct FunctionalBindCallDescriptionWalk {
   const CXXOperatorCallExpr *Root;
   bool OwnedCallableMetadata = false;
   bool ReferenceCallableMetadata = false;
+  bool StandardCallableMetadata = false;
   unsigned Nodes = 0;
   std::vector<unsigned> Path;
   std::set<const CallExpr *> Active;
@@ -18213,20 +18268,21 @@ describeFunctionalBindCallSourceImpl(
     const ASTContext &Context, FunctionalBindCallDescriptionWalk &Walk,
     const CXXOperatorCallExpr *Parent = nullptr, const CallExpr *Expansion = nullptr) {
   if (!Walk.Root || !S.owns(SM, Walk.Root->getExprLoc()) || !Walk.step() || !Call ||
-      !Walk.Active.insert(Call).second) return std::nullopt;
+      !Walk.Active.insert(Call).second) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   auto RestoreActive = llvm::make_scope_exit([&] { Walk.Active.erase(Call); });
   NotFnSelectedSource Entry(S, SM, Context);
-  if ((Walk.OwnedCallableMetadata && Walk.ReferenceCallableMetadata) ||
-      ((Walk.OwnedCallableMetadata || Walk.ReferenceCallableMetadata) && !Walk.Path.empty())) return std::nullopt;
+  const unsigned ObjectModes = unsigned(Walk.OwnedCallableMetadata) +
+      unsigned(Walk.ReferenceCallableMetadata) + unsigned(Walk.StandardCallableMetadata);
+  if (ObjectModes > 1 || (ObjectModes && !Walk.Path.empty())) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   if (Walk.Path.empty()) {
-    if (Call != Walk.Root || Parent || Expansion) return std::nullopt;
+    if (Call != Walk.Root || Parent || Expansion) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   } else {
     const auto *Selected = Expansion ? Expansion->getDirectCallee() : nullptr;
     if (!Parent || !Walk.Active.count(Parent) || !Walk.Active.count(Walk.Root) ||
         !Selected || !Selected->getIdentifier() || Selected->getName() != "__mu_expand" ||
         !Entry.family(Selected, {"__functional/bind.h"}) ||
         !Entry.location(Call->getExprLoc(), {"__functional/bind.h"}) ||
-        Entry.core(Entry.returned(Selected)) != Call) return std::nullopt;
+        Entry.core(Entry.returned(Selected)) != Call) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee())
@@ -18236,17 +18292,22 @@ describeFunctionalBindCallSourceImpl(
       Method->getNumParams() > 2 || Method->isStatic() ||
       Method->isVariadic() || Method->isDeleted() || Method->isVolatile() ||
       Method->getRefQualifier() != RQ_None || Method->getAccess() != AS_public ||
-      !Walk.step()) return std::nullopt;
+      !Walk.step()) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Object = Check.stripped(Call->getArg(0));
   const auto ReferenceStorage = Walk.ReferenceCallableMetadata
       ? describeFunctionalBindReferenceStorage(S, SM,
           Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context) : std::nullopt;
+  const auto StandardStorage = Walk.StandardCallableMetadata
+      ? describeFunctionalBindStandardStorage(S, SM,
+          Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context) : std::nullopt;
   const auto Storage = Walk.ReferenceCallableMetadata
       ? (ReferenceStorage ? std::optional<FunctionalBindStorage>(ReferenceStorage->Storage) : std::nullopt)
-      : describeFunctionalBindStorage(S, SM,
-          Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context);
-  const bool ObjectCallable = Walk.OwnedCallableMetadata || Walk.ReferenceCallableMetadata;
+      : Walk.StandardCallableMetadata
+          ? (StandardStorage ? std::optional<FunctionalBindStorage>(StandardStorage->Storage) : std::nullopt)
+          : describeFunctionalBindStorage(S, SM,
+              Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context);
+  const bool ObjectCallable = ObjectModes != 0;
   const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
   const auto *MethodArguments = Method->getTemplateSpecializationArgs();
   if (!Storage ||
@@ -18261,13 +18322,13 @@ describeFunctionalBindCallSourceImpl(
       Method->isConst() != Object->getType().isConstQualified() ||
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()) ||
-      !Check.family(Method, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Method, {"__functional/bind.h"})) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   std::vector<QualType> CallTypes;
   unsigned CallIndex = 0;
   for (const auto &Argument : MethodArguments->get(0).pack_elements()) {
-    if (Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+    if (Argument.getKind() != TemplateArgument::Type) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     const auto Input = Argument.getAsType();
-    if (Input.isNull()) return std::nullopt;
+    if (Input.isNull()) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     const auto Value = Input.getNonReferenceType();
     const auto Forwarded = Input->isLValueReferenceType()
         ? Input : Context.getRValueReferenceType(Value);
@@ -18277,7 +18338,7 @@ describeFunctionalBindCallSourceImpl(
         !utilityScalar(Context, Value.getUnqualifiedType()) ||
         !Context.hasSameType(Method->getParamDecl(CallIndex)->getType(), Forwarded) ||
         !Context.hasSameType(Operand->getType(), Value) ||
-        Operand->isLValue() != Forwarded->isLValueReferenceType()) return std::nullopt;
+        Operand->isLValue() != Forwarded->isLValueReferenceType()) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     CallTypes.push_back(Forwarded);
     ++CallIndex;
   }
@@ -18288,7 +18349,7 @@ describeFunctionalBindCallSourceImpl(
       ApplyFunction->getNumParams() != 4 || !ApplyFunction->getPrimaryTemplate() ||
       ApplyFunction->isVariadic() ||
       !Check.location(Apply->getExprLoc(), {"__functional/bind.h"}) ||
-      !Check.family(ApplyFunction, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(ApplyFunction, {"__functional/bind.h"})) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   auto MemberSlot = [&](const Expr *Expression, const FieldDecl *Field,
                         const ParmVarDecl *Parameter) {
     const auto *Member = dyn_cast_or_null<MemberExpr>(Check.stripped(Expression));
@@ -18303,7 +18364,7 @@ describeFunctionalBindCallSourceImpl(
   };
   if (!MemberSlot(Apply->getArg(0), Storage->Callable, ApplyFunction->getParamDecl(0)) ||
       !MemberSlot(Apply->getArg(1), Storage->BoundArguments, ApplyFunction->getParamDecl(1)))
-    return std::nullopt;
+    return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto *Indices = Check.construction(Check.core(Apply->getArg(2)));
   const auto *IndexRecord = Indices ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
       Indices->getType()->getAsCXXRecordDecl()) : nullptr;
@@ -18315,17 +18376,17 @@ describeFunctionalBindCallSourceImpl(
       IndexPattern->getNumBases() || !IndexPattern->field_empty() ||
       !Check.family(IndexRecord, {"__tuple/tuple_indices.h", "__utility/integer_sequence.h"}) ||
       !Context.hasSameType(Indices->getType(), ApplyFunction->getParamDecl(2)->getType()))
-    return std::nullopt;
+    return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto &IndexArguments = IndexRecord->getTemplateArgs();
   if (IndexArguments.size() != 1 || IndexArguments[0].getKind() != TemplateArgument::Pack ||
-      IndexArguments[0].pack_size() != Storage->Arguments.Elements.size()) return std::nullopt;
+      IndexArguments[0].pack_size() != Storage->Arguments.Elements.size()) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   unsigned Index = 0;
   for (const auto &Argument : IndexArguments[0].pack_elements()) {
     if (Argument.getKind() != TemplateArgument::Integral ||
         Argument.getAsIntegral().isNegative() ||
         Argument.getAsIntegral().getLimitedValue(65) != Index++ ||
         !Context.hasSameType(Argument.getIntegralType(), Context.getSizeType()))
-      return std::nullopt;
+      return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
   const auto *CallArguments = Check.construction(Check.core(Apply->getArg(3)));
   const auto *CallConstructor = CallArguments ? CallArguments->getConstructor() : nullptr;
@@ -18339,14 +18400,14 @@ describeFunctionalBindCallSourceImpl(
       CallStorage->Elements.size() != CallTypes.size() ||
       !Check.family(CallConstructor, {"tuple"}) ||
       !Context.hasSameType(ApplyFunction->getParamDecl(3)->getType(),
-                           Context.getRValueReferenceType(CallArguments->getType()))) return std::nullopt;
+                           Context.getRValueReferenceType(CallArguments->getType()))) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   std::vector<const CallExpr *> CallForwards;
   for (unsigned I = 0; I < CallTypes.size(); ++I) {
     const CallExpr *Forward = nullptr;
     if (!Context.hasSameType(CallStorage->Elements[I].getType(), CallTypes[I]) ||
         !Context.hasSameType(CallConstructor->getParamDecl(I)->getType(), CallTypes[I]) ||
         !Check.forwarding(CallArguments->getArg(I), Method->getParamDecl(I),
-                          "__functional/bind.h", Forward)) return std::nullopt;
+                          "__functional/bind.h", Forward)) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     CallForwards.push_back(Forward);
   }
   const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(ApplyFunction)));
@@ -18356,14 +18417,14 @@ describeFunctionalBindCallSourceImpl(
       Invoke->getNumArgs() != Storage->Arguments.Elements.size() + 1 ||
       InvokeFunction->getNumParams() != Invoke->getNumArgs() ||
       !Check.location(Invoke->getExprLoc(), {"__functional/bind.h"}) ||
-      !Check.family(InvokeFunction, {"__type_traits/invoke.h"})) return std::nullopt;
+      !Check.family(InvokeFunction, {"__type_traits/invoke.h"})) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   auto ParameterReference = [&](const Expr *Expression, const ParmVarDecl *Parameter) {
     const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Expression));
     return Reference && Reference->getDecl() == Parameter &&
         Context.hasSameType(Reference->getType(), Parameter->getType().getNonReferenceType());
   };
   if (!ParameterReference(Invoke->getArg(0), ApplyFunction->getParamDecl(0)))
-    return std::nullopt;
+    return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   std::vector<FunctionalBindArgumentSource> Arguments;
   for (unsigned I = 0; I < Storage->Arguments.Elements.size(); ++I) {
     const auto Stored = Storage->Arguments.Elements[I].getType();
@@ -18375,7 +18436,7 @@ describeFunctionalBindCallSourceImpl(
         !Check.location(Unwrap->getExprLoc(), {"__functional/bind.h"}) ||
         !Check.family(UnwrapFunction, {"__functional/bind.h"}) ||
         !ParameterReference(Unwrap->getArg(1), ApplyFunction->getParamDecl(3)))
-      return std::nullopt;
+      return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     const auto Wrapper = approvedFunctionalReferenceRecord(
         S, SM, Stored->getAsCXXRecordDecl(), Context);
     const auto *Copy = Wrapper ? Check.construction(Check.core(Unwrap->getArg(0))) : nullptr;
@@ -18394,12 +18455,12 @@ describeFunctionalBindCallSourceImpl(
         GetArguments->get(1).pack_size() != Storage->Arguments.Elements.size() ||
         !Context.hasSameType(GetFunction->getReturnType(), Context.getLValueReferenceType(Bound)) ||
         !ParameterReference(Get->getArg(0), ApplyFunction->getParamDecl(1)) ||
-        !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return std::nullopt;
+        !Check.family(GetFunction, {"tuple", "__fwd/tuple.h"})) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     unsigned ArgumentIndex = 0;
     for (const auto &Argument : GetArguments->get(1).pack_elements()) {
       if (Argument.getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Argument.getAsType(),
-              Storage->Arguments.Elements[ArgumentIndex++].getType())) return std::nullopt;
+              Storage->Arguments.Elements[ArgumentIndex++].getType())) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     }
     std::optional<FunctionalReferenceAccessCall> Access;
     std::shared_ptr<const FunctionalBindNestedArgumentSource> Nested;
@@ -18418,7 +18479,7 @@ describeFunctionalBindCallSourceImpl(
           Access->Wrapper.Record->getCanonicalDecl() != Wrapper->Record->getCanonicalDecl() ||
           !ParameterReference(Access->Object, UnwrapFunction->getParamDecl(0)) ||
           !Context.hasSameType(UnwrapFunction->getParamDecl(0)->getType(), Stored))
-        return std::nullopt;
+        return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       Forwarded = Context.getLValueReferenceType(Wrapper->ReferentType);
     } else if (const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Stored, Context)) {
       if (Copy || !Placeholder->Rank || Placeholder->Rank > CallTypes.size() ||
@@ -18426,7 +18487,7 @@ describeFunctionalBindCallSourceImpl(
                                Context.getLValueReferenceType(Bound)) ||
           !Context.hasSameType(UnwrapFunction->getParamDecl(1)->getType(),
                                Context.getLValueReferenceType(CallArguments->getType())))
-        return std::nullopt;
+        return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       const auto *Body = dyn_cast_or_null<CompoundStmt>(UnwrapFunction->getBody());
       const auto *Declaration = Body && Body->size() == 2
           ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
@@ -18488,11 +18549,11 @@ describeFunctionalBindCallSourceImpl(
           !GetterReference->hasExplicitTemplateArgs() || GetterReference->getNumTemplateArgs() != 1 ||
           PlaceholderGet->getValueKind() != VK_LValue ||
           PlaceholderForward->getValueKind() != Expr::getValueKindForType(Forwarded))
-        return std::nullopt;
+        return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       unsigned Input = 0;
       for (const auto &Argument : GetterArguments->get(1).pack_elements())
         if (Argument.getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Argument.getAsType(), CallTypes[Input++])) return std::nullopt;
+            !Context.hasSameType(Argument.getAsType(), CallTypes[Input++])) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       const auto &WrittenIndex = GetterReference->template_arguments()[0];
       const auto &WrittenArgument = WrittenIndex.getArgument();
       const Expr *IndexSource = WrittenArgument.getKind() == TemplateArgument::Expression
@@ -18501,7 +18562,7 @@ describeFunctionalBindCallSourceImpl(
       const auto *IndexReference = IndexSource
           ? dyn_cast_or_null<DeclRefExpr>(Check.core(IndexSource)) : nullptr;
       if (!IndexReference || IndexReference->getDecl() != PlaceholderIndex ||
-          !Check.location(IndexReference->getExprLoc(), {"__functional/bind.h"})) return std::nullopt;
+          !Check.location(IndexReference->getExprLoc(), {"__functional/bind.h"})) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       PlaceholderRank = Rank;
     } else if (functionalBindInertObjectSourceIdentity(S, SM, Stored, Context)) {
       const auto *UnwrapArguments = UnwrapFunction->getTemplateSpecializationArgs();
@@ -18550,7 +18611,7 @@ describeFunctionalBindCallSourceImpl(
           !Context.hasSameType(Expansion->getParamDecl(1)->getType(),
                                UnwrapFunction->getParamDecl(1)->getType()) ||
           !Context.hasSameType(Expansion->getReturnType(), UnwrapFunction->getReturnType()))
-        return std::nullopt;
+        return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       const auto *ExpansionIndices = Check.construction(Check.core(Expand->getArg(2)));
       const auto *ExpansionRecord = ExpansionIndices
           ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(ExpansionIndices->getType()->getAsCXXRecordDecl())
@@ -18564,30 +18625,30 @@ describeFunctionalBindCallSourceImpl(
           !Check.family(ExpansionRecord, {"__tuple/tuple_indices.h", "__utility/integer_sequence.h"}) ||
           !Context.hasSameType(ExpansionIndices->getType(), Alias->getUnderlyingType()) ||
           !Context.hasSameType(ExpansionIndices->getType(), Expansion->getParamDecl(2)->getType()))
-        return std::nullopt;
+        return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       for (unsigned J = 0; J < CallTypes.size(); ++J) {
-        if (!Walk.step()) return std::nullopt;
+        if (!Walk.step()) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
         for (const auto *Pack : {&UnwrapArguments->get(1), &ExpansionArguments->get(1)}) {
           const auto &Argument = Pack->pack_elements()[J];
           if (Argument.getKind() != TemplateArgument::Type ||
-              !Context.hasSameType(Argument.getAsType(), CallTypes[J])) return std::nullopt;
+              !Context.hasSameType(Argument.getAsType(), CallTypes[J])) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
         }
         for (const auto *Pack : {&ExpansionArguments->get(2), &ExpansionRecord->getTemplateArgs()[0]}) {
           const auto &Argument = Pack->pack_elements()[J];
           if (Argument.getKind() != TemplateArgument::Integral || Argument.getAsIntegral().isNegative() ||
               Argument.getAsIntegral().getLimitedValue(3) != J ||
               !Context.hasSameType(Argument.getIntegralType(), Context.getSizeType()))
-            return std::nullopt;
+            return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
         }
       }
       const auto *ChildCall = dyn_cast_or_null<CXXOperatorCallExpr>(Check.core(Check.returned(Expansion)));
       if (!ChildCall || ChildCall->getOperator() != OO_Call ||
           ChildCall->getNumArgs() != CallTypes.size() + 1 ||
           !ParameterReference(ChildCall->getArg(0), Expansion->getParamDecl(0)) ||
-          !Check.location(ChildCall->getExprLoc(), {"__functional/bind.h"})) return std::nullopt;
+          !Check.location(ChildCall->getExprLoc(), {"__functional/bind.h"})) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       std::vector<const CallExpr *> IncomingGets, IncomingForwards;
       for (unsigned J = 0; J < CallTypes.size(); ++J) {
-        if (!Walk.step()) return std::nullopt;
+        if (!Walk.step()) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
         const auto *ForwardCall = dyn_cast_or_null<CallExpr>(Check.core(ChildCall->getArg(J + 1)));
         const auto *Forward = ForwardCall ? ForwardCall->getDirectCallee() : nullptr;
         const auto *ForwardArguments = Forward ? Forward->getTemplateSpecializationArgs() : nullptr;
@@ -18630,11 +18691,11 @@ describeFunctionalBindCallSourceImpl(
             IncomingGet->getNumArgs() != 1 ||
             !ParameterReference(IncomingGet->getArg(0), Expansion->getParamDecl(1)) ||
             IncomingGet->getValueKind() != VK_LValue ||
-            ForwardCall->getValueKind() != Expr::getValueKindForType(CallTypes[J])) return std::nullopt;
+            ForwardCall->getValueKind() != Expr::getValueKindForType(CallTypes[J])) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
         for (unsigned K = 0; K < CallTypes.size(); ++K) {
           const auto &Argument = GetterArguments->get(1).pack_elements()[K];
           if (Argument.getKind() != TemplateArgument::Type ||
-              !Context.hasSameType(Argument.getAsType(), CallTypes[K])) return std::nullopt;
+              !Context.hasSameType(Argument.getAsType(), CallTypes[K])) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
         }
         IncomingGets.push_back(IncomingGet);
         IncomingForwards.push_back(ForwardCall);
@@ -18643,14 +18704,14 @@ describeFunctionalBindCallSourceImpl(
       const auto Value = Result.getNonReferenceType();
       if (Result.isNull() || Value->isVoidType() || Value.isVolatileQualified() ||
           Value.isRestrictQualified() || Value.getAddressSpace() != LangAS::Default ||
-          !utilityScalar(Context, Value.getUnqualifiedType())) return std::nullopt;
+          !utilityScalar(Context, Value.getUnqualifiedType())) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       Walk.Path.push_back(I);
       auto RestorePath = llvm::make_scope_exit([&] { Walk.Path.pop_back(); });
       auto Child = describeFunctionalBindCallSourceImpl(S, SM, ChildCall, Context, Walk, Operator, Expand);
       const auto *StoredRecord = Stored->getAsCXXRecordDecl();
       if (!Child || !StoredRecord || Child->Storage.Record->getCanonicalDecl() != StoredRecord->getCanonicalDecl() ||
           !Context.hasSameType(Child->Object->getType(), Bound) ||
-          !Context.hasSameType(Child->Method->getReturnType(), Result)) return std::nullopt;
+          !Context.hasSameType(Child->Method->getReturnType(), Result)) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       Forwarded = Result->isReferenceType() ? Result : Context.getRValueReferenceType(Result);
       Nested = std::make_shared<const FunctionalBindNestedArgumentSource>(FunctionalBindNestedArgumentSource{
           Walk.Root, Operator, I, Walk.Path, Get, Unwrap, Expand, Alias, ExpansionIndices,
@@ -18660,18 +18721,18 @@ describeFunctionalBindCallSourceImpl(
       if (Copy || !ParameterReference(Check.returned(UnwrapFunction),
                                      UnwrapFunction->getParamDecl(0)) ||
           !Context.hasSameType(UnwrapFunction->getParamDecl(0)->getType(), Forwarded))
-        return std::nullopt;
+        return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     }
     if ((!Nested && !Context.hasSameType(UnwrapFunction->getReturnType(), Forwarded)) ||
         !Context.hasSameType(InvokeFunction->getParamDecl(I + 1)->getType(), Forwarded))
-      return std::nullopt;
+      return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     Arguments.push_back(FunctionalBindArgumentSource{Get, Unwrap, Copy, Access, Forwarded,
         PlaceholderRank, PlaceholderIndex, PlaceholderGet, PlaceholderForward, std::move(Nested)});
   }
   const auto *Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(InvokeFunction)));
   if (!Target ||
       !Context.hasSameType(Target->getType(), Method->getReturnType().getNonReferenceType()) ||
-      Target->getValueKind() != Expr::getValueKindForType(Method->getReturnType())) return std::nullopt;
+      Target->getValueKind() != Expr::getValueKindForType(Method->getReturnType())) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   if (Walk.ReferenceCallableMetadata) {
     const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Target);
     const auto *Wrapper = Operation ? dyn_cast_or_null<CXXMethodDecl>(Operation->getDirectCallee()) : nullptr;
@@ -18698,12 +18759,12 @@ describeFunctionalBindCallSourceImpl(
         !Context.hasSameType(Cast->getType(), Expected) ||
         (Qualification ? (Qualification->getCastKind() != CK_NoOp ||
                           Qualification->getSubExpr()->IgnoreParens() != Cast || Expected.isConstQualified())
-                       : Receiver->IgnoreParens() != Cast)) return std::nullopt;
+                       : Receiver->IgnoreParens() != Cast)) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     for (unsigned I = 0; I < Arguments.size(); ++I)
       if (!Walk.step() || !Context.hasSameType(Wrapper->getParamDecl(I)->getType(),
                                               InvokeFunction->getParamDecl(I + 1)->getType()))
-        return std::nullopt;
-  } else if (Walk.OwnedCallableMetadata) {
+        return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
+  } else if (Walk.OwnedCallableMetadata || Walk.StandardCallableMetadata) {
     const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Target);
     const auto *Ordinary = Operation ? dyn_cast_or_null<CXXMethodDecl>(Operation->getDirectCallee()) : nullptr;
     const auto *CallableRecord = Storage->CallableType->getAsCXXRecordDecl();
@@ -18711,19 +18772,29 @@ describeFunctionalBindCallSourceImpl(
     const auto *Reference = Operation
         ? dyn_cast<DeclRefExpr>(Operation->getCallee()->IgnoreParenImpCasts()) : nullptr;
     if (!Operation || Operation->getOperator() != OO_Call || !Ordinary || !CallableRecord ||
-        !ordinaryOperator(Ordinary) || Ordinary->getOverloadedOperator() != OO_Call ||
-        Ordinary->getTemplatedKind() != FunctionDecl::TK_NonTemplate || Ordinary->hasAttrs() ||
+        (Walk.StandardCallableMetadata
+             ? !approvedFunctionalOperationImpl(S, SM, Operation, Context, false)
+             : (!ordinaryOperator(Ordinary) ||
+                Ordinary->getTemplatedKind() != FunctionDecl::TK_NonTemplate || Ordinary->hasAttrs())) ||
+        Ordinary->getOverloadedOperator() != OO_Call ||
         Ordinary->getRefQualifier() == RQ_RValue ||
         Ordinary->getParent()->getCanonicalDecl() != CallableRecord->getCanonicalDecl() ||
         !Reference || Reference->getDecl() != Ordinary ||
         !Context.hasSameType(Reference->getType(), Ordinary->getType()) ||
         !Check.location(Reference->getExprLoc(), {"__type_traits/invoke.h"}) ||
         Target->getNumArgs() != Arguments.size() + 1 || Ordinary->getNumParams() != Arguments.size() ||
-        !Definition || !Definition->getBody() || !S.owns(SM, Definition->getLocation()) ||
-        !S.owns(SM, Definition->getBody()->getBeginLoc())) return std::nullopt;
-    for (const auto *Declaration : Ordinary->redecls())
-      if (!Walk.step() || !S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() ||
-          !Declaration->getTypeSourceInfo()) return std::nullopt;
+        !Definition || !Definition->getBody() ||
+        (!Walk.StandardCallableMetadata && (!S.owns(SM, Definition->getLocation()) ||
+          !S.owns(SM, Definition->getBody()->getBeginLoc())))) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
+    for (const auto *Declaration : Ordinary->redecls()) {
+      if (!Walk.step() || !Declaration->getTypeSourceInfo()) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
+      if (Walk.StandardCallableMetadata) {
+        if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+            !functionalObjectOrigin(S, SM, Declaration, CallableRecord->getName()))
+          return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
+      } else if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
+        return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
+    }
     const auto *Receiver = Target->getArg(0);
     const auto Expected = Method->isConst() ? Context.getConstType(Storage->CallableType) : Storage->CallableType;
     const auto Parameter = InvokeFunction->getParamDecl(0)->getType();
@@ -18736,17 +18807,25 @@ describeFunctionalBindCallSourceImpl(
         (Qualification ? (Qualification->getCastKind() != CK_NoOp ||
                           Qualification->getSubExpr()->IgnoreParens() != Cast ||
                           !Ordinary->isConst() || Expected.isConstQualified())
-                       : Receiver->IgnoreParens() != Cast)) return std::nullopt;
+                       : Receiver->IgnoreParens() != Cast)) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     for (unsigned I = 0; I < Ordinary->getNumParams(); ++I) {
-      if (!Walk.step()) return std::nullopt;
+      if (!Walk.step()) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       const auto Value = Ordinary->getParamDecl(I)->getType();
-      if (!utilityScalar(Context, Value) || Ordinary->getParamDecl(I)->hasDefaultArg() ||
-          !Context.hasSameUnqualifiedType(Value, InvokeFunction->getParamDecl(I + 1)->getType().getNonReferenceType()) ||
-          !Context.hasSameType(Target->getArg(I + 1)->getType(), Value.getNonLValueExprType(Context)) ||
-          Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Value)) return std::nullopt;
+      if (!(Walk.StandardCallableMetadata ? utilityScalar(Context, Value.getNonReferenceType())
+                                          : utilityScalar(Context, Value)) ||
+          Ordinary->getParamDecl(I)->hasDefaultArg() ||
+          !Context.hasSameUnqualifiedType(
+              Walk.StandardCallableMetadata ? Value.getNonReferenceType() : Value,
+              InvokeFunction->getParamDecl(I + 1)->getType().getNonReferenceType()) ||
+          !Context.hasSameType(Target->getArg(I + 1)->getType(),
+              Walk.StandardCallableMetadata && Value->isReferenceType()
+                  ? Value.getNonReferenceType() : Value.getNonLValueExprType(Context)) ||
+          Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(
+              Walk.StandardCallableMetadata && Value->isReferenceType()
+                  ? InvokeFunction->getParamDecl(I + 1)->getType() : Value)) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     }
   } else if (Target->getDirectCallee() || Target->getNumArgs() != Arguments.size() ||
-      !Context.hasSameUnqualifiedType(Target->getCallee()->getType(), Storage->CallableType)) return std::nullopt;
+      !Context.hasSameUnqualifiedType(Target->getCallee()->getType(), Storage->CallableType)) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   // The selected bullet-7 __invoke body forwards with explicit reference
   // casts, not calls to std::forward. Retain each original cast and its written
   // TypeSourceInfo for the independently completed source graph.
@@ -18771,10 +18850,10 @@ describeFunctionalBindCallSourceImpl(
     return true;
   };
   if (!InvokeCast(ObjectCallable ? Target->getArg(0) : Target->getCallee(),
-                  InvokeFunction->getParamDecl(0))) return std::nullopt;
+                  InvokeFunction->getParamDecl(0))) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   for (unsigned I = 0; I < Arguments.size(); ++I)
     if (!InvokeCast(Target->getArg(I + unsigned(ObjectCallable)),
-                    InvokeFunction->getParamDecl(I + 1))) return std::nullopt;
+                    InvokeFunction->getParamDecl(I + 1))) return ((Walk.StandardCallableMetadata ? (functionalBindStandardDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   return FunctionalBindCallSource{*Storage, Operator, Method, Object, Apply, Invoke,
       Target, Indices, CallArguments, std::move(CallForwards),
       std::move(Arguments), std::move(Casts), Walk.Root, Walk.Path};
@@ -18804,6 +18883,23 @@ describeFunctionalBindOwnedCallSource(
   if (!Source || !Target || !Source->Target->getNumArgs()) return std::nullopt;
   // Original nodes only. No source/body, selected lifetime or runtime grant.
   return FunctionalBindOwnedCallSource{*Source, Target, Source->Target->getArg(0)};
+}
+
+std::optional<FunctionalBindStandardCallSource>
+describeFunctionalBindStandardCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Root = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  if (!Root || !S.owns(SM, Root->getExprLoc())) return std::nullopt;
+  FunctionalBindCallDescriptionWalk Walk{Root};
+  Walk.StandardCallableMetadata = true;
+  const auto Source = describeFunctionalBindCallSourceImpl(S, SM, Call, Context, Walk);
+  const auto *Method = Source && Source->Target
+      ? dyn_cast_or_null<CXXMethodDecl>(Source->Target->getDirectCallee()) : nullptr;
+  const auto Operation = Source ? approvedFunctionalOperationImpl(
+      S, SM, Source->Target, Context, false) : std::nullopt;
+  if (!Source || !Method || !Operation || !Source->Target->getNumArgs()) return std::nullopt;
+  return FunctionalBindStandardCallSource{*Source, Method, *Operation};
 }
 
 // This is a fresh lookup, not an ownership bypass. Neither a canonical type
