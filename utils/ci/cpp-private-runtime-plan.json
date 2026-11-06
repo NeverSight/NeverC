@@ -1,28 +1,28 @@
 {
-  "component_commit": "b27271aecbad5fda519a4fce71aaf424ad557c28",
-  "component_run_id": 42167471717,
-  "component_actual_job": 127727168698,
+  "component_commit": "fe8fe20e44fe7619758fc4370299a1ba208f7ccd",
+  "component_run_id": 42230196681,
+  "component_actual_job": 127933833099,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 13480262164,
-    "name": "cpp-bind-call-arguments-clean456-b27271aecbad5fda519a4fce71aaf424ad557c28",
-    "digest": "sha256:1efadf22efebd1ebcaca9e436e5c5788ebfd658f82c1518e8a7a735d5b8f525e"
+    "id": 13510062262,
+    "name": "cpp-bind-call-arguments-clean456-fe8fe20e44fe7619758fc4370299a1ba208f7ccd",
+    "digest": "sha256:2b9c5578105ece472fdc08f192c15fb4219c3c6c1cc8decc574d7f29cb355230"
   },
   "component_archive_artifact": {
-    "id": 13480735206,
-    "name": "cpp-current-private-archive-remote-only-b27271aecbad5fda519a4fce71aaf424ad557c28",
-    "digest": "sha256:dc69422faa159ae638820f731694157dd41ce9b2835157f8655439b415c12af2"
+    "id": 13510247099,
+    "name": "cpp-current-private-archive-remote-only-fe8fe20e44fe7619758fc4370299a1ba208f7ccd",
+    "digest": "sha256:fe5bdfad0b062a0ea73a4d9da91a92dc1a1a9a41dfd3f6d6896e9237cd15d3c9"
   },
-  "component_report_sha256": "efa27ba061903a2d91a6e01660e4ad8ddef88188148c3f3a345e397f0fd343cc",
-  "private_archive_sha256": "c1f3f6fd007ea307ed5f74e6b31a9b6789ac20b54125dca1e417a0d964e3e4bd",
-  "frontend_build_id": "cpp-frontend-1-32a3a93f8a633a82bfdec08e055c199bb6a5968cb7397b389b70223525581c62",
+  "component_report_sha256": "17496c5d56c6d3d5726aa1f86583df733bb911592fc6605856a6eea24ab72562",
+  "private_archive_sha256": "850917b361f15a587da0e7e387c8a66507d7c7c917eb91d2cf31e61931adab59",
+  "frontend_build_id": "cpp-frontend-1-36beba43a9b499e7979a3eff188583d060a09f21b2fba2dcea77073e705031b0",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "b0f9c98b8f2b6b5b612582a0041c67766db4c4749d3bb77f9c85e2c71a4f5c50",
-    "Lowering.cpp": "529f8b80078bb18e93f05a0cefb1cc154fe8afc215c6f624f3e47c0bebcb79bc",
+    "Frontend.cpp": "b13b82af14ba019b42483b3463193bd629ee7f15f2d23cde446b14135d2b1555",
+    "Lowering.cpp": "3aa4219dd8cda5f36c0d10fdb64fb664dca821c956dfec848936c108c69ce849",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "1e8ec45a8aa8feb3c32f3edede4cd2360039f3d8b1a513f3a41538f6db7ede1a",
+    "MathSDK.cpp": "5a4ef50589f6f9e862c5773ad31baf0a9e17c3bec4001ca9b54928c2a0ae3205",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "779b2a1aa9de628f2b7ac5ca48f3ff217a9afb5815802b122afb41c1d72c32e7",
+    "Frontend.h": "72618882e64dce87b2cc42de6530f0b7ccb8adb1bcc7021923fb221d550f37b9",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -46,7 +46,7 @@
   "dependency_producer_run_id": 41770367743,
   "private_prefix_sha256": "cf4d69ade740f971db56cc3f4e1b811d8094d2549a0aed84f6d97f9eaed140f8",
   "authenticated_system_libraries_sha256": "1c998ace53fdcebd4e6836bc2f9d50b481b0aa38c2625f9c73fd75c0234f820e",
-  "original_tests_file_sha256": "7773c0427e09acd364c4902b1d7b26bcd5b25d64cbe05d57ee02905141614c99",
+  "original_tests_file_sha256": "3876bd21a94eea64e965d78ec7cff2278e2aba8e92c8d4bce1f643a9b01183a1",
   "formal_manifest_sha256": "a4e047df483c770a7dd077e50abad961d8a0833c86e56d1bbcb47e92a6c27979",
   "required_actual_original_gtest_xml": 124,
   "original_gtest_bodies_modified": false,
@@ -82,13 +82,15 @@
     "utils/ci/bind-seventy-one-formal-additions.cpp",
     "utils/ci/bind-nested-ten-formal-additions.cpp",
     "utils/ci/bind-seventy-four-formal-additions.cpp",
-    "utils/ci/bind-owned-three-formal-additions.cpp"
+    "utils/ci/bind-owned-three-formal-additions.cpp",
+    "utils/ci/bind-seventy-seven-formal-additions.cpp",
+    "utils/ci/bind-reference-three-formal-additions.cpp"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,
   "actual_current_translate_owners_required": true,
   "actual_fresh_host_private_abi_audit_required": true,
-  "scope": "Actual original124 plus74 registered STL goldens,148 generated executions and809 current frontend requests",
+  "scope": "Actual original124 plus77 registered STL goldens,154 generated executions and812 current frontend requests",
   "full_ci_passed": false,
   "published_to_dev": false,
   "goal_complete": false,
@@ -139,8 +141,8 @@
     ],
     "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
   },
-  "not_fn_formal_additions_path": "utils/ci/bind-seventy-four-formal-additions.cpp",
-  "not_fn_formal_additions_sha256": "2ef5c4fe1b79816647351b7fbc20cd20810e7b6335bb9c637be2e08e4b9895f5",
+  "not_fn_formal_additions_path": "utils/ci/bind-seventy-seven-formal-additions.cpp",
+  "not_fn_formal_additions_sha256": "7ada3488050fcb697a7046e3ff43bfa88d68be0e90f5c37751bdd6e6f50ccae7",
   "not_fn_formal_cases": [
     {
       "name": "not-fn-function-pointer",
@@ -585,25 +587,43 @@
       "formal_test_name": "TranslateTest.CoreV2BindOwnedCallableReceiverCvrefRunAtBothOptimizations",
       "source_sha256": "877d3784fff59f092e33ed05233f9c97fa8aeabd87da46a118565831bc497cc7",
       "gtest_body_sha256": "b1e5cc96063e5bfb40aef36edbcb30113ae570c4976807626926c8bc0a54a901"
+    },
+    {
+      "name": "bind-callable-reference-target",
+      "formal_test_name": "TranslateTest.CoreV2BindReferenceCallableSharedStateRunAtBothOptimizations",
+      "source_sha256": "394c68f214868d1520a4fe4ac505c12f184363104a4f709e0a472e6192cd9d79",
+      "gtest_body_sha256": "1fd663c2bc499950d7ac85db7fffba1f997be22c311a593afa7c3aeb79ea97af"
+    },
+    {
+      "name": "bind-callable-reference-const-wrapper",
+      "formal_test_name": "TranslateTest.CoreV2BindReferenceCallableConstWrapperRunAtBothOptimizations",
+      "source_sha256": "1563d79c57e9ed983f687cc9439376df662e567177fc7c293f9c752574d53a63",
+      "gtest_body_sha256": "da67dbc5a31cb90b928639130e03b7daf638e8779224f817f606f825e84f3c66"
+    },
+    {
+      "name": "bind-callable-reference-const-referent",
+      "formal_test_name": "TranslateTest.CoreV2BindReferenceCallableConstReferentRunAtBothOptimizations",
+      "source_sha256": "0fba5df1e974e7f88aacbf4abc4fc290f041384dfc8dca122c25dd09b88beb64",
+      "gtest_body_sha256": "b531784c83e14b86e2e0a9e6268ae73ef5cbc960bfd0e7fee2f1e6599ec880e2"
     }
   ],
-  "required_actual_total_gtest_xml": 198,
-  "required_actual_not_fn_gtest_xml": 74,
-  "required_actual_not_fn_generated_o0_o2_products": 148,
-  "not_fn_registered_previous_additions_path": "utils/ci/bind-seventy-four-formal-additions.cpp",
-  "not_fn_registered_previous_additions_sha256": "2ef5c4fe1b79816647351b7fbc20cd20810e7b6335bb9c637be2e08e4b9895f5",
-  "required_actual_frontend_requests": 809,
+  "required_actual_total_gtest_xml": 201,
+  "required_actual_not_fn_gtest_xml": 77,
+  "required_actual_not_fn_generated_o0_o2_products": 154,
+  "not_fn_registered_previous_additions_path": "utils/ci/bind-seventy-seven-formal-additions.cpp",
+  "not_fn_registered_previous_additions_sha256": "7ada3488050fcb697a7046e3ff43bfa88d68be0e90f5c37751bdd6e6f50ccae7",
+  "required_actual_frontend_requests": 812,
   "actual_new_signature_native_reference_verified": false,
   "actual_prior_custom_native_reference_verified": true,
   "preparation_only": false,
   "execution_binding_required": true,
-  "current_clean_syntax6_proof_sha256": "0038625072137a91280aeba41b88e4e00640900428885f24cecadf077bd0e837",
+  "current_clean_syntax6_proof_sha256": "1bddb85e850ee6304766050dc89f39dc5cf752f112d84a69348552ab0c15a808",
   "dependency_producer_actual_job": 126378412532,
   "dependency_producer_attempt": 1,
   "dependency_producer_authentication_sha256": "0a2440fc57a6b728293a872375f6d3714b9c6ef2dc2abd6baee3f45c0bed0799",
-  "required_component_accept": 624,
-  "required_component_reject": 248,
-  "required_component_invalid": 16,
-  "required_component_requests": 888,
-  "current_full456_proof_sha256": "e41904ac48d74d3e86ccd1a0dd116863f6c48e29b3561a6b41caccac74c160cd"
+  "required_component_accept": 648,
+  "required_component_reject": 256,
+  "required_component_invalid": 24,
+  "required_component_requests": 928,
+  "current_full456_proof_sha256": "a1ea10fdf73a15eafa390287bc352c98a40cd77c96c3df592fb34b65a40ba32d"
 }
