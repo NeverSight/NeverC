@@ -19687,14 +19687,38 @@ describeFunctionalBindNaturalLayout(
   const uint64_t SizeBits = Context.getTypeSize(Context.getSizeType());
   const uint64_t SizeAlign = Context.getTypeAlign(Context.getSizeType());
   const bool Padded = Storage->CallableOffsetBits != 0;
-  if (!CallableBits || !CallableAlign || !BoundBits || !BoundAlign ||
-      (Padded && (Storage->CallableOffsetBits != SizeBits ||
-                  SizeBits != CallableBits || SizeAlign != CallableAlign)))
-    return std::nullopt;
+  if (!CallableBits || !CallableAlign || !BoundBits || !BoundAlign) return std::nullopt;
   auto Rounded = [](uint64_t Value, uint64_t Alignment) {
     return (Value + Alignment - 1) / Alignment * Alignment;
   };
-  // Preserve the actual source ABI. The optional word stores only the empty
+  QualType BaseStorageType;
+  if (Padded) {
+    if (!Storage->CallableType->isRecordType()) {
+      // Keep the original function-pointer prefix contract exactly.
+      if (Storage->CallableOffsetBits != SizeBits || SizeBits != CallableBits || SizeAlign != CallableAlign)
+        return std::nullopt;
+      BaseStorageType = Context.getSizeType();
+    } else {
+      const auto *Weak = Storage->WeakResult ? Storage->WeakResult->getDefinition() : nullptr;
+      if (!Context.getTargetInfo().getCXXABI().isMicrosoft() || !Weak || !Weak->isEmpty())
+        return std::nullopt;
+      const uint64_t WeakBits = Context.getTypeSize(Context.getRecordType(Weak));
+      if (!WeakBits || Storage->CallableOffsetBits != Rounded(WeakBits, CallableAlign)) return std::nullopt;
+      // An ordinary callable need not have pointer width/alignment. Describe
+      // the real reserved empty-base prefix, with an exact-size scalar whose
+      // alignment is no stronger than this source record's callable alignment.
+      for (const auto Type : {Context.UnsignedCharTy, Context.UnsignedShortTy, Context.UnsignedIntTy,
+                              Context.UnsignedLongTy, Context.UnsignedLongLongTy, Context.UnsignedInt128Ty}) {
+        if (Context.getTypeSize(Type) == Storage->CallableOffsetBits &&
+            Context.getTypeAlign(Type) == CallableAlign) {
+          BaseStorageType = Type;
+          break;
+        }
+      }
+      if (BaseStorageType.isNull()) return std::nullopt;
+    }
+  }
+  // Preserve the actual source ABI. The optional scalar stores only the empty
   // weak-result base's reserved prefix; no empty-base identity is exposed.
   // The bound tuple keeps its independently authenticated logical fields.
   const uint64_t Alignment = std::max(CallableAlign, BoundAlign);
@@ -19702,7 +19726,7 @@ describeFunctionalBindNaturalLayout(
       Storage->AlignmentBytes * 8 != Alignment ||
       Storage->SizeBytes * 8 != Rounded(Storage->BoundOffsetBits + BoundBits, Alignment))
     return std::nullopt;
-  return FunctionalBindNaturalLayout{*Storage, Padded};
+  return FunctionalBindNaturalLayout{*Storage, Padded, BaseStorageType};
 }
 
 static std::optional<std::vector<FunctionalBindTupleTagSource>>

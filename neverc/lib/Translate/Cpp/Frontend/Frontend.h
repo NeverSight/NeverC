@@ -1901,6 +1901,7 @@ describeFunctionalBindOwnedCallTupleConstructionSource(
 struct FunctionalBindNaturalLayout {
   FunctionalBindStorage Storage;
   bool PaddedBase;
+  clang::QualType BaseStorageType;
 };
 std::optional<FunctionalBindNaturalLayout>
 describeFunctionalBindNaturalLayout(

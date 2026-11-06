@@ -28729,10 +28729,10 @@ class FunctionLowering {
     }
     auto Result = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
     if (Layout->PaddedBase) {
-      Expression Base{{"kind", "member"}, {"type", type(A.Context.getSizeType(), L)},
+      Expression Base{{"kind", "member"}, {"type", type(Layout->BaseStorageType, L)},
           {"name", "nct_bind_base_storage"}, {"args", json::Array{json::Object(Result)}},
           {"loc", A.loc(L)}};
-      assign(std::move(Base), A.zero(A.Context.getSizeType(), L), L);
+      assign(std::move(Base), A.zero(Layout->BaseStorageType, L), L);
     }
     Expression CallableField{{"kind", "member"},
         {"type", type(Source.Storage.CallableType, L)}, {"name", "nct_bind_callable"},

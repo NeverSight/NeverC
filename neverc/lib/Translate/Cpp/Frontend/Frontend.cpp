@@ -14331,7 +14331,7 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
                Found != VerifiedBindRecords.end()) {
       const auto Bind = describeFunctionalBindNaturalLayout(S, Sources, R, Context);
       if (!Bind || Found->second.PaddedBase != Bind->PaddedBase) throw Failure{};
-      if (Bind->PaddedBase) Args.push_back(zero(Context.getSizeType(), L));
+      if (Bind->PaddedBase) Args.push_back(zero(Bind->BaseStorageType, L));
       Args.push_back(zero(Bind->Storage.CallableType, L));
       Args.push_back(zeroFunctionalBindTupleStorage(Bind->Storage, L));
     } else if (auto Wrapper =
@@ -30541,7 +30541,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     } else if (Bind) {
       if (Bind->PaddedBase)
         Fields.push_back(json::Object{{"name", "nct_bind_base_storage"},
-            {"type", type(Context.getSizeType(), R->getLocation())}});
+            {"type", type(Bind->BaseStorageType, R->getLocation())}});
       Fields.push_back(json::Object{{"name", "nct_bind_callable"},
           {"type", type(Bind->Storage.CallableType, R->getLocation())}});
       Fields.push_back(json::Object{{"name", "nct_bind_bound"},
