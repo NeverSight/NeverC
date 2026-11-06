@@ -1778,6 +1778,19 @@ describeFunctionalBindStorage(const State &S, const clang::SourceManager &SM,
                               const clang::ASTContext &Context);
 
 
+// Borrowed storage has its own shape description. Copying this wrapper must
+// preserve its pointer binding; this description supplies no body, lifecycle,
+// default/query proof or runtime permission for either the wrapper or referent.
+struct FunctionalBindReferenceStorage {
+  FunctionalBindStorage Storage;
+  FunctionalReferenceRecord Reference;
+};
+std::optional<FunctionalBindReferenceStorage>
+describeFunctionalBindReferenceStorage(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+
 // These are descriptions of the original selected source, not operation
 // certificates. The default/trait/alias/partial graph and tuple leaves must
 // close independently before either construction or lowering is permitted.
@@ -1804,6 +1817,17 @@ describeFunctionalBindFactorySource(
 // remains restricted to function pointers until complete source proofs close.
 std::optional<FunctionalBindFactorySource>
 describeFunctionalBindOwnedFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+// Original factory and selected implicit SDK wrapper copy only. The source
+// graph and ordinary referent body/lifetime are independent later obligations.
+struct FunctionalBindReferenceFactorySource {
+  FunctionalBindReferenceStorage Storage;
+  FunctionalBindFactorySource Factory;
+};
+std::optional<FunctionalBindReferenceFactorySource>
+describeFunctionalBindReferenceFactorySource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
@@ -1862,6 +1886,22 @@ struct FunctionalBindOwnedCallSource {
 };
 std::optional<FunctionalBindOwnedCallSource>
 describeFunctionalBindOwnedCallSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+// Borrowed callable metadata retains both SDK dispatcher layers and the
+// ordinary referent target. No body, lifetime or lowering permission follows.
+struct FunctionalBindReferenceCallSource {
+  FunctionalBindReferenceStorage Storage;
+  FunctionalBindCallSource Selected;
+  FunctionalReferenceInvokeCall Reference;
+  const clang::CallExpr *ReferentInvoke;
+  const clang::CallExpr *ReferentTarget;
+  const clang::CXXMethodDecl *WrapperMethod;
+  const clang::Expr *WrapperReceiver;
+};
+std::optional<FunctionalBindReferenceCallSource>
+describeFunctionalBindReferenceCallSource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
@@ -2106,6 +2146,196 @@ bool approvedFunctionalBindOwnedFactorySource(
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
     std::set<const clang::CXXMethodDecl *> &OwnedQuerySources,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
+
+// Root-bound borrowed factory metadata graph only. Ordinary bodies, runtime
+// argument evaluation and both wrapper/referent lifetimes remain separate.
+std::optional<FunctionalBindTupleConstructionSource>
+describeFunctionalBindReferenceTupleConstructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context);
+std::optional<std::vector<FunctionalBindTupleTagSource>>
+describeFunctionalBindReferenceTupleTagSources(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context);
+// Exact borrowed wrapper signatures only. The referent signature/body and
+// both runtime invoke layers remain independent source obligations.
+std::optional<FunctionalBindInvokeSignatureSource>
+describeFunctionalBindReferenceInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, const FunctionalBindReferenceCallSource &Given,
+    const clang::ASTContext &Context);
+
+std::optional<FunctionalBindInvokeSignatureSource>
+describeFunctionalBindReferenceValueQueryInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, const FunctionalBindReferenceCallSource &Given,
+    const clang::ASTContext &Context);
+
+std::optional<FunctionalBindTryCallSignatureSource>
+describeFunctionalBindReferenceTryCallSignatureSource(
+    const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
+    const FunctionalBindReferenceCallSource &Given, const clang::ASTContext &Context);
+
+std::optional<FunctionalBindTryCallSignatureSource>
+describeFunctionalBindReferenceValueQueryTryCallSignatureSource(
+    const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
+    const FunctionalBindReferenceCallSource &Given, const clang::ASTContext &Context);
+
+std::optional<FunctionalBindTryCallFallbackSource>
+describeFunctionalBindReferenceTryCallFallbackSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindTryCallSignatureSource &Probe,
+    const FunctionalBindReferenceCallSource &Owned,
+    const FunctionalBindStorage &Storage,
+    llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
+
+std::optional<FunctionalBindTryCallFallbackSource>
+describeFunctionalBindReferenceValueQueryTryCallFallbackSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindTryCallSignatureSource &Probe,
+    const FunctionalBindReferenceCallSource &Owned,
+    const FunctionalBindStorage &Storage,
+    llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
+
+// Incoming argument graphs for one exact borrowed call root; no body or runtime grant.
+std::optional<FunctionalBindTupleConstructionSource>
+describeFunctionalBindReferenceCallTupleConstructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
+
+std::optional<std::vector<FunctionalBindTupleTagSource>>
+describeFunctionalBindReferenceCallTupleTagSources(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
+
+bool approvedFunctionalBindReferenceCallAuxiliarySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindReferenceCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferentQuerySources);
+
+bool approvedFunctionalBindReferenceCallGetSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindReferenceCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferentQuerySources);
+
+bool approvedFunctionalBindReferenceCallUnwrapSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindReferenceCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferentQuerySources);
+
+// Whole borrowed call graph: ordinary referent body and runtime execution
+// remain separate obligations before any lowering map may be published.
+bool approvedFunctionalBindReferenceCallInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindReferenceCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferentQuerySources);
+
+bool approvedFunctionalBindReferenceCallInvokeBodySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindReferenceCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferentQuerySources);
+
+bool approvedFunctionalBindReferenceCallCompleteSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindReferenceCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferentQuerySources);
+
+// Inner invoke/probe metadata comes from the exact reference_wrapper get()/
+// forwarding chain and its real referent method, never a synthetic bind record.
+std::optional<FunctionalBindInvokeSignatureSource>
+describeFunctionalBindReferenceReferentInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, const FunctionalBindReferenceCallSource &Given,
+    const clang::ASTContext &Context);
+
+std::optional<FunctionalBindTryCallSignatureSource>
+describeFunctionalBindReferenceReferentTryCallSignatureSource(
+    const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
+    const FunctionalBindReferenceCallSource &Given, const clang::ASTContext &Context);
+
+std::optional<FunctionalBindTryCallFallbackSource>
+describeFunctionalBindReferenceReferentTryCallFallbackSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindTryCallSignatureSource &Probe,
+    const FunctionalBindReferenceCallSource &Owned,
+    const FunctionalBindStorage &Storage,
+    llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
+
+bool approvedFunctionalBindReferenceReferentQuerySources(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindReferenceCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferentQuerySources);
+
+// Borrowed wrappers retain their own SDK layout/copy/destructor. These
+// descriptions never request or copy the referenced ordinary object's lifetime.
+std::optional<FunctionalBindNaturalLayout>
+describeFunctionalBindReferenceNaturalLayout(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<FunctionalBindCopySource>
+describeFunctionalBindReferenceCopySource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+std::optional<FunctionalBindDestructionSource>
+describeFunctionalBindReferenceDestructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
+
+bool approvedFunctionalBindReferenceCopySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCopySource &Copy, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferentQuerySources);
+
+bool approvedFunctionalBindReferenceDestructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindDestructionSource &Destruction, clang::SourceLocation Location,
+    const clang::ASTContext &Context, llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferentQuerySources);
+
+bool approvedFunctionalBindReferenceFactorySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindReferenceFactorySource &Factory, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &ReferentQuerySources,
     const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
 
 // Only the selected bullet-7 signature/default/declval source is certified.
