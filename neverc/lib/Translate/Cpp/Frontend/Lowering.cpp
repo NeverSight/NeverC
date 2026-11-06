@@ -28618,10 +28618,12 @@ class FunctionLowering {
       std::optional<Expression> Destination) {
     const auto L = Call->getExprLoc();
     const auto Verified = A.VerifiedBindFactories.find(Call);
-    const auto Layout = describeFunctionalBindNaturalLayout(
+    const auto Layout = describeFunctionalBindRuntimeLayout(
         A.S, A.Sources, Source.Storage.Record, A.Context);
-    const auto TupleSource = describeFunctionalBindTupleConstructionSource(
-        A.S, A.Sources, Source, A.Context);
+    const auto ReferenceFactory = describeFunctionalBindReferenceFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto TupleSource = ReferenceFactory
+        ? describeFunctionalBindReferenceTupleConstructionSource(A.S, A.Sources, Source, A.Context)
+        : describeFunctionalBindTupleConstructionSource(A.S, A.Sources, Source, A.Context);
     const auto *Factory = Source.Factory;
     if (Verified == A.VerifiedBindFactories.end() || &Verified->second != &Source ||
         Source.SourceCall != Call || !Layout || !TupleSource || !Factory ||
@@ -28692,7 +28694,7 @@ class FunctionLowering {
           reject(L, "bind wrapper capture", "The selected trivial binding copy must be retained.");
         Values[I] = functionalReferenceArgumentAddress(
             dereference(std::move(*Captured[I + 1]), L), *Wrapper, L);
-      } else if (const auto Nested = describeFunctionalBindNaturalLayout(
+      } else if (const auto Nested = describeFunctionalBindRuntimeLayout(
                      A.S, A.Sources, Stored->getAsCXXRecordDecl(), A.Context)) {
         const auto *Copy = TupleSource->Copies[I];
         const auto *Selected = Copy ? Copy->getConstructor() : nullptr;
@@ -28780,8 +28782,11 @@ class FunctionLowering {
         reject(L, "nested bind owner", "The child must belong to this root, parent and stored slot.");
       Cursor = &Child.Invocation;
     }
-    const auto *OwnedTarget = Source.Storage.CallableType->isRecordType() && Source.Target
-        ? dyn_cast_or_null<CXXMethodDecl>(Source.Target->getDirectCallee()) : nullptr;
+    const auto Borrowed = A.VerifiedBindReferenceCalls.find(Source.SourceCall);
+    const auto *Reference = Borrowed != A.VerifiedBindReferenceCalls.end() ? &Borrowed->second : nullptr;
+    const auto *OwnedTarget = Reference ? Reference->Reference.Method
+        : Source.Storage.CallableType->isRecordType() && Source.Target
+            ? dyn_cast_or_null<CXXMethodDecl>(Source.Target->getDirectCallee()) : nullptr;
     const auto *Prototype = OwnedTarget ? OwnedTarget->getType()->getAs<FunctionProtoType>()
         : Source.Storage.CallableType->isFunctionPointerType()
             ? Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
@@ -28900,6 +28905,52 @@ class FunctionLowering {
       }
       Bindings.push_back(std::move(Captured));
     }
+    if (Reference) {
+      const auto &Info = Reference->Reference;
+      const auto *Dispatcher = Reference->ReferentInvoke ? Reference->ReferentInvoke->getDirectCallee() : nullptr;
+      const auto *Referent = Info.Wrapper.ReferentType->getAsCXXRecordDecl();
+      if (!Path.empty() || &Source != &Root || Reference->Selected.SourceCall != Source.SourceCall ||
+          Reference->Selected.Method != Source.Method || Reference->Selected.Object != Source.Object ||
+          Reference->Selected.Target != Source.Target || Reference->Selected.Invoke != Source.Invoke ||
+          Reference->Selected.Storage.Record != Source.Storage.Record ||
+          Reference->Storage.Reference.Record != Info.Wrapper.Record || !Referent ||
+          Info.Kind != FunctionalReferenceInvokeKind::UserFunctionObject || !OwnedTarget ||
+          !ordinaryOperator(OwnedTarget) || OwnedTarget->getOverloadedOperator() != OO_Call ||
+          OwnedTarget->getParent()->getCanonicalDecl() != Referent->getCanonicalDecl() ||
+          !Reference->ReferentTarget || Reference->ReferentTarget->getDirectCallee() != OwnedTarget ||
+          Reference->ReferentTarget->getNumArgs() != Bindings.size() + 1 ||
+          !Dispatcher || Dispatcher->getNumParams() != Bindings.size() + 1)
+        reject(L, "bind reference target", "The completed original reference binding and ordinary target are required.");
+      const auto Stored = Source.Object->getType().isConstQualified()
+          ? A.Context.getConstType(Source.Storage.CallableType) : Source.Storage.CallableType;
+      Expression Wrapper{{"kind", "member"}, {"type", type(Stored, L)}, {"name", "nct_bind_callable"},
+          {"args", json::Array{dereference(std::move(Address), L)}}, {"loc", A.loc(L)}};
+      // Read only after every incoming and bound argument effect. Copies of
+      // the adaptor share this live pointer, including through a const wrapper.
+      Expression Pointer{{"kind", "member"}, {"type", type(Info.Wrapper.PointerType, L)},
+          {"name", "nct_reference_wrapper_pointer"}, {"args", json::Array{std::move(Wrapper)}}, {"loc", A.loc(L)}};
+      std::vector<Expression> Forwarded;
+      Forwarded.push_back(snapshot(cast(snapshot(std::move(Pointer), L),
+          type(Dispatcher->getParamDecl(0)->getType(), L), L), L));
+      for (unsigned I = 0; I < Bindings.size(); ++I)
+        Forwarded.push_back(cast(std::move(Bindings[I]), type(Dispatcher->getParamDecl(I + 1)->getType(), L), L));
+      using StorageNode = decltype(Storage)::node_type;
+      std::vector<std::pair<const Decl *, StorageNode>> Saved;
+      auto Restore = llvm::make_scope_exit([&] {
+        for (auto &Entry : Saved) {
+          Storage.erase(Entry.first);
+          if (!Entry.second.empty()) Storage.insert(std::move(Entry.second));
+        }
+      });
+      for (unsigned I = 0; I < Dispatcher->getNumParams(); ++I) {
+        if (!Dispatcher->getParamDecl(I)->getType()->isReferenceType())
+          reject(L, "bind reference forwarding", "Every actual inner dispatcher parameter must retain its reference binding.");
+        const auto *Key = Dispatcher->getParamDecl(I)->getCanonicalDecl();
+        Saved.emplace_back(Key, Storage.extract(Key));
+        Storage.emplace(Key, dereference(std::move(Forwarded[I]), L));
+      }
+      return call(Reference->ReferentTarget);
+    }
     if (OwnedTarget) {
       const auto *Dispatcher = Source.Invoke ? Source.Invoke->getDirectCallee() : nullptr;
       if (!ordinaryOperator(OwnedTarget) || OwnedTarget->getOverloadedOperator() != OO_Call ||
@@ -28949,8 +29000,11 @@ class FunctionLowering {
       const CallExpr *Call, const FunctionalBindCallSource &Source) {
     const auto L = Call->getExprLoc();
     const auto Verified = A.VerifiedBindCalls.find(Call);
-    const auto *OwnedTarget = Source.Storage.CallableType->isRecordType() && Source.Target
-        ? dyn_cast_or_null<CXXMethodDecl>(Source.Target->getDirectCallee()) : nullptr;
+    const auto Borrowed = A.VerifiedBindReferenceCalls.find(Source.SourceCall);
+    const auto *Reference = Borrowed != A.VerifiedBindReferenceCalls.end() ? &Borrowed->second : nullptr;
+    const auto *OwnedTarget = Reference ? Reference->Reference.Method
+        : Source.Storage.CallableType->isRecordType() && Source.Target
+            ? dyn_cast_or_null<CXXMethodDecl>(Source.Target->getDirectCallee()) : nullptr;
     const auto *Prototype = OwnedTarget ? OwnedTarget->getType()->getAs<FunctionProtoType>()
         : Source.Storage.CallableType->isFunctionPointerType()
             ? Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
