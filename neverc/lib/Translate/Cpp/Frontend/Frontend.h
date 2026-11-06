@@ -2091,6 +2091,17 @@ bool approvedFunctionalBindCallCompleteSource(
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 
 // Exact stored tuple get and leaf source only; no runtime registration.
+// Complete SDK invocation graph only. Ordinary selected signature, body and
+// lifetime closure and runtime lowering remain independent obligations.
+bool approvedFunctionalBindOwnedCallCompleteSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindOwnedCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnedQuerySources);
+
 bool approvedFunctionalBindCallGetSource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindCallSource &Call, const clang::ASTContext &Context,

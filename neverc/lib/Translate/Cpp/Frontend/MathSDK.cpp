@@ -8414,6 +8414,32 @@ class UtilityTupleQueryGraph
     Complete = true;
     return true;
   }
+  std::optional<FunctionalBindCallSource> freshBindCallSource(
+      const State &GivenState, const SourceManager &GivenSources,
+      const CallExpr *Call, const ASTContext &GivenContext) const {
+    const auto *Owned = BindOwnedCallableRecord;
+    if (!Owned) return describeFunctionalBindCallSource(GivenState, GivenSources, Call, GivenContext);
+    const auto Actual = describeFunctionalBindOwnedCallSource(GivenState, GivenSources, Call, GivenContext);
+    const auto *Callable = Actual ? Actual->Selected.Storage.CallableType->getAsCXXRecordDecl() : nullptr;
+    if (!Actual || !Callable || Callable->getCanonicalDecl() != Owned->getCanonicalDecl() ||
+        !Actual->Selected.OwnedPath.empty() || Actual->Selected.SourceCall != Actual->Selected.OwnedRoot)
+      return std::nullopt;
+    return Actual->Selected;
+  }
+  std::optional<FunctionalBindCallSource> freshBindCallOccurrence(
+      const State &GivenState, const SourceManager &GivenSources,
+      const FunctionalBindCallSource &Call, const ASTContext &GivenContext) const {
+    if (!BindOwnedCallableRecord)
+      return describeFunctionalBindCallSourceOccurrence(GivenState, GivenSources, Call, GivenContext);
+    if (!Call.SourceCall || Call.SourceCall != Call.OwnedRoot || !Call.OwnedPath.empty()) return std::nullopt;
+    const auto Actual = freshBindCallSource(GivenState, GivenSources, Call.OwnedRoot, GivenContext);
+    if (!Actual || Actual->SourceCall != Call.SourceCall || Actual->OwnedRoot != Call.OwnedRoot ||
+        Actual->Method != Call.Method || Actual->Object != Call.Object || Actual->Apply != Call.Apply ||
+        Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
+        Actual->Storage.Record != Call.Storage.Record || Actual->Arguments.size() != Call.Arguments.size())
+      return std::nullopt;
+    return Actual;
+  }
   bool bindOwnedCallableRecordSource(const CXXRecordDecl *Record) const {
     return Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         BindOwnedCallableRecord && BindOwnedQuerySources && Record &&
@@ -11245,7 +11271,7 @@ public:
           !BindTupleElementProjections.empty() || BindTupleElementProjectionRoots || !Proof || !Call.SourceCall ||
           (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) || Call.Storage.Record != BindMetadata->Record)
         return false;
-      const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+      const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
       if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
           Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
           Actual->Storage.Record != BindMetadata->Record || Actual->Arguments.empty() ||
@@ -11873,8 +11899,8 @@ public:
         !Tuple || !BindCallMetadata->OwnedRoot || BindCallMetadata->OwnedPath.empty() ||
         BindCallMetadata->OwnedPath.size() >= 64 ||
         !S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc())) return std::nullopt;
-    const auto Occurrence = describeFunctionalBindCallSourceOccurrence(S, SM, *BindCallMetadata, Context);
-    const auto Root = describeFunctionalBindCallSource(S, SM, BindCallMetadata->OwnedRoot, Context);
+    const auto Occurrence = freshBindCallOccurrence(S, SM, *BindCallMetadata, Context);
+    const auto Root = freshBindCallSource(S, SM, BindCallMetadata->OwnedRoot, Context);
     if (!Occurrence || !Root || Occurrence->Storage.Record != BindMetadata->Record ||
         Occurrence->Method != BindCallMetadata->Method ||
         Occurrence->SourceCall != BindCallMetadata->SourceCall) return std::nullopt;
@@ -11916,7 +11942,7 @@ public:
       if (!Source || !Complete || BindNestedReturnSource || !BindNestedReturnLocations.empty() ||
           !BindCallMetadata || Parent.SourceCall != BindCallMetadata->SourceCall ||
           Parent.Storage.Record != BindMetadata->Record) return false;
-      const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
+      const auto Fresh = freshBindCallOccurrence(S, SM, Parent, Context);
       if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
       const auto &Child = *Fresh->Arguments[Slot].Nested;
       if (Child.Root != Given.Root || Child.Parent != Given.Parent || Child.Slot != Given.Slot ||
@@ -11954,7 +11980,7 @@ public:
       if (!Proof || !ResultSource || BindNestedCallResultSource || BindNestedExpansionSource || !BindNestedReturnSource ||
           !BindCallMetadata || Parent.SourceCall != BindCallMetadata->SourceCall ||
           Parent.Storage.Record != BindMetadata->Record) return false;
-      const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
+      const auto Fresh = freshBindCallOccurrence(S, SM, Parent, Context);
       if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
       const auto &Child = *Fresh->Arguments[Slot].Nested;
       if (Child.Root != Given.Root || Child.Parent != Given.Parent || Child.Slot != Given.Slot ||
@@ -12396,7 +12422,7 @@ public:
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !Call.SourceCall || Call.SourceCall != BindCallMetadata->SourceCall ||
         Call.Storage.Record != BindMetadata->Record) return false;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Storage.Record != BindMetadata->Record ||
         Actual->Method != Call.Method || Actual->Method != BindCallMetadata->Method ||
         !Actual->CallArguments || Actual->CallArguments != Call.CallArguments ||
@@ -12549,7 +12575,7 @@ public:
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !step() || !Call.SourceCall || Call.Storage.Record != BindMetadata->Record ||
         (BindCallMetadata && BindCallMetadata->SourceCall != Call.SourceCall)) return false;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Indices != Call.Indices ||
         Actual->CallArguments != Call.CallArguments ||
         Actual->CallForwards != Call.CallForwards ||
@@ -13287,7 +13313,7 @@ public:
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !Call.SourceCall || Call.SourceCall != BindCallMetadata->SourceCall ||
         Call.Storage.Record != BindMetadata->Record) return false;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Storage.Record != BindMetadata->Record ||
         Actual->Method != Call.Method || Actual->Method != BindCallMetadata->Method ||
         Actual->CallArguments != Call.CallArguments ||
@@ -21669,6 +21695,7 @@ class BindSourceProof {
   const SourceManager &SM;
   const ASTContext &Context;
   const FunctionalBindStorage &Storage;
+  const CXXRecordDecl *OwnedCallableRecord = nullptr;
   const std::map<const CXXMethodDecl *, SpecialMemberSource> &SpecialMembers;
   const std::map<const TypeTraitExpr *, OperationTraitSource> &OperationTraits;
   NotFnSelectedSource Check;
@@ -21796,6 +21823,32 @@ class BindSourceProof {
   bool sdk(SourceLocation Location) const {
     const auto File = S.sdkFile(SM, Location);
     return Location.isValid() && File && File->Root == "libcxx";
+  }
+  std::optional<FunctionalBindCallSource> freshBindCallSource(
+      const State &GivenState, const SourceManager &GivenSources,
+      const CallExpr *Call, const ASTContext &GivenContext) const {
+    const auto *Owned = OwnedCallableRecord;
+    if (!Owned) return describeFunctionalBindCallSource(GivenState, GivenSources, Call, GivenContext);
+    const auto Actual = describeFunctionalBindOwnedCallSource(GivenState, GivenSources, Call, GivenContext);
+    const auto *Callable = Actual ? Actual->Selected.Storage.CallableType->getAsCXXRecordDecl() : nullptr;
+    if (!Actual || !Callable || Callable->getCanonicalDecl() != Owned->getCanonicalDecl() ||
+        !Actual->Selected.OwnedPath.empty() || Actual->Selected.SourceCall != Actual->Selected.OwnedRoot)
+      return std::nullopt;
+    return Actual->Selected;
+  }
+  std::optional<FunctionalBindCallSource> freshBindCallOccurrence(
+      const State &GivenState, const SourceManager &GivenSources,
+      const FunctionalBindCallSource &Call, const ASTContext &GivenContext) const {
+    if (!OwnedCallableRecord)
+      return describeFunctionalBindCallSourceOccurrence(GivenState, GivenSources, Call, GivenContext);
+    if (!Call.SourceCall || Call.SourceCall != Call.OwnedRoot || !Call.OwnedPath.empty()) return std::nullopt;
+    const auto Actual = freshBindCallSource(GivenState, GivenSources, Call.OwnedRoot, GivenContext);
+    if (!Actual || Actual->SourceCall != Call.SourceCall || Actual->OwnedRoot != Call.OwnedRoot ||
+        Actual->Method != Call.Method || Actual->Object != Call.Object || Actual->Apply != Call.Apply ||
+        Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
+        Actual->Storage.Record != Call.Storage.Record || Actual->Arguments.size() != Call.Arguments.size())
+      return std::nullopt;
+    return Actual;
   }
   bool family(const Decl *Declaration) {
     if (!Declaration) return false;
@@ -22349,7 +22402,7 @@ class BindSourceProof {
         !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 3 ||
         Source.Sugared->size() != 3 || !Check.family(Primary, {"__functional/bind.h"}) ||
         ActiveScalarParameter || !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
-    const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, *ActiveUnwrapSource, Context);
+    const auto Fresh = freshBindCallOccurrence(S, SM, *ActiveUnwrapSource, Context);
     const auto &Child = *Argument.Nested;
     if (!Fresh || Child.Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Child.Slot].Nested ||
         Fresh->Arguments[Child.Slot].Unwrap != Argument.Unwrap || Child.Root != Fresh->OwnedRoot ||
@@ -24026,7 +24079,7 @@ class BindSourceProof {
     for (const auto *Selection : Selections) {
       const auto *RootCall = Selection ? dyn_cast_or_null<CXXOperatorCallExpr>(Selection->Expression) : nullptr;
       if (!RootCall || !S.owns(SM, RootCall->getExprLoc()) || Seen.count(RootCall)) continue;
-      const auto Root = describeFunctionalBindCallSource(S, SM, RootCall, Context);
+      const auto Root = freshBindCallSource(S, SM, RootCall, Context);
       if (!Root) continue;
       Seen.insert(RootCall);
       if (Seen.size() > 64 || !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return std::nullopt;
@@ -24098,12 +24151,12 @@ class BindSourceProof {
     // Preserve the original owned call path without requiring a nested SDK
     // operator expression itself to have a user-source location.
     if (S.owns(SM, Wanted->getExprLoc()))
-      return describeFunctionalBindCallSource(S, SM, Wanted, Context);
+      return freshBindCallSource(S, SM, Wanted, Context);
     std::set<const CXXOperatorCallExpr *> Roots;
     for (const auto *Selection : Selections) {
       const auto *Root = Selection ? dyn_cast_or_null<CXXOperatorCallExpr>(Selection->Expression) : nullptr;
       if (!Root || !S.owns(SM, Root->getExprLoc()) || Roots.count(Root)) continue;
-      const auto Fresh = describeFunctionalBindCallSource(S, SM, Root, Context);
+      const auto Fresh = freshBindCallSource(S, SM, Root, Context);
       if (!Fresh || Fresh->SourceCall != Root || Fresh->OwnedRoot != Root || !Fresh->OwnedPath.empty())
         continue;
       Roots.insert(Root);
@@ -24521,7 +24574,7 @@ class BindSourceProof {
     const auto *Instance = dyn_cast_or_null<VarTemplateSpecializationDecl>(Variable);
     if (!NestedDependencySourcesActive || ClosedNestedDependencySources.empty() ||
         !ActiveSourceCall || !Reference || !Instance) return std::nullopt;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, *ActiveSourceCall, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, *ActiveSourceCall, Context);
     if (!Actual || Actual->SourceCall != ActiveSourceCall->SourceCall ||
         Actual->OwnedRoot != ActiveSourceCall->OwnedRoot || Actual->OwnedPath != ActiveSourceCall->OwnedPath)
       return false;
@@ -24682,7 +24735,7 @@ class BindSourceProof {
         Use.Canonical->get(1).pack_size() != Use.Sugared->get(1).pack_size() ||
         Use.Sugared->get(1).pack_size() > 8 || ActiveSources.count(&Use) || Root->ActiveSources.count(&Use))
       return false;
-    const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, *Call, Context);
+    const auto Fresh = freshBindCallOccurrence(S, SM, *Call, Context);
     if (!Fresh || Fresh->SourceCall != Call->SourceCall || Fresh->Method != Call->Method ||
         Fresh->Invoke != Call->Invoke || Fresh->OwnedRoot != Call->OwnedRoot ||
         Fresh->OwnedPath != Call->OwnedPath || Fresh->Storage.Record != Root->Storage.Record)
@@ -25591,7 +25644,7 @@ class BindSourceProof {
     if (!Complete || !Call.SourceCall || Call.Storage.Record != Storage.Record ||
         !ClosedCallTupleConstructors.empty()) return false;
     if (Call.CallForwards.empty()) return Complete();
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     const auto Tuple = Actual
         ? describeFunctionalBindCallTupleConstructionSource(S, SM, *Actual, Context) : std::nullopt;
     if (!Actual || !Tuple || Actual->Storage.Record != Storage.Record ||
@@ -25818,7 +25871,7 @@ class BindSourceProof {
         ActiveCompleteCall->OwnedRoot != Child.Root || ActiveCompleteCall->OwnedPath != Child.Path ||
         ActiveCompleteCall->Storage.Record != Storage.Record || !Graph.bindSourceComplete()) return false;
     const auto Location = Parent.nestedMetadataTraitTypeLocation(Child, Type);
-    const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Child.Invocation, Context);
+    const auto Fresh = freshBindCallOccurrence(S, SM, Child.Invocation, Context);
     if (!Location || Location->getOpaqueData() != Expected.getOpaqueData() || Location->getType() != Expected.getType() ||
         !Fresh || Fresh->OwnedRoot != Child.Root || Fresh->OwnedPath != Child.Path ||
         Fresh->SourceCall != Child.Invocation.SourceCall || Fresh->Method != Child.Invocation.Method) return false;
@@ -25960,7 +26013,7 @@ class BindSourceProof {
         ActiveCompleteCall->Method != Child.Invocation.Method ||
         ActiveCompleteCall->OwnedRoot != Child.Root || ActiveCompleteCall->OwnedPath != Child.Path ||
         ActiveCompleteCall->Storage.Record != Storage.Record || !Graph.bindSourceComplete()) return false;
-    const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Child.Invocation, Context);
+    const auto Fresh = freshBindCallOccurrence(S, SM, Child.Invocation, Context);
     const auto *Method = Child.Invocation.Method;
     const auto *Call = Child.Invocation.SourceCall;
     const auto Prototype = Method && Method->getTypeSourceInfo()
@@ -25983,7 +26036,7 @@ class BindSourceProof {
         ActiveCompleteCall->SourceCall != Child.Invocation.SourceCall ||
         ActiveCompleteCall->Method != Child.Invocation.Method ||
         ActiveCompleteCall->Storage.Record != Storage.Record) return false;
-    const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Child.Invocation, Context);
+    const auto Fresh = freshBindCallOccurrence(S, SM, Child.Invocation, Context);
     if (!Fresh || Fresh->OwnedRoot != Child.Root || Fresh->OwnedPath != Child.Path ||
         Fresh->SourceCall != Child.Invocation.SourceCall || Fresh->Method != Child.Invocation.Method)
       return false;
@@ -26144,6 +26197,8 @@ public:
         Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::BindSignature, ParentBudget),
         Sources(Sources), Selections(Selections), SharedRootSources(SharedSources),
         OwnedInputAliasSource(std::move(SourceAlias)) {
+    if (OwnedQuerySources && !Storage.CallableType.isNull())
+      OwnedCallableRecord = Storage.CallableType->getAsCXXRecordDecl();
     Ready = Graph.bindFunctionalBindMetadata(Storage,
         [this](const TemplateSpecializationType *Type) { return typeSource(Type); },
         [this](const CXXRecordDecl *Record) { return recordSource(Record); },
@@ -26286,7 +26341,7 @@ public:
       const std::function<bool(const FunctionalBindNestedArgumentSource &, BindSourceProof &)> &Complete) {
     return Graph.withBindSourceChild([&] {
       if (!Ready || !Complete || Parent.Storage.Record != Storage.Record) return false;
-      const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
+      const auto Fresh = freshBindCallOccurrence(S, SM, Parent, Context);
       if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
       const auto &Child = *Fresh->Arguments[Slot].Nested;
       const auto *Record = Fresh->Storage.Arguments.Elements[Slot].getType()->getAsCXXRecordDecl();
@@ -26338,7 +26393,7 @@ public:
     if (!Ready || ActiveSourceCall || ActiveCompleteCall || ActiveUnusedVoidConversion || !ClosedCompleteCalls.empty() || !ClosedCallTupleConstructors.empty() ||
         !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
         Call.Storage.Record != Storage.Record) return false;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Object != Call.Object || Actual->Storage.Record != Storage.Record ||
@@ -26685,7 +26740,7 @@ public:
   bool callTryCallFallback(const FunctionalBindCallSource &Call, const CXXMethodDecl *Function) {
     if (!Ready || !Function || !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
         Call.Storage.Record != Storage.Record) return false;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Invoke != Call.Invoke ||
         Actual->Target != Call.Target || Actual->Storage.Record != Storage.Record) return false;
     std::vector<QualType> Forwarded;
@@ -26696,7 +26751,7 @@ public:
   bool callTryCallSignature(const FunctionalBindCallSource &Call, const CXXMethodDecl *Function) {
     if (!Ready || !Function || !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
         Call.Storage.Record != Storage.Record) return false;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Invoke != Call.Invoke ||
         Actual->Target != Call.Target || Actual->Storage.Record != Storage.Record) return false;
     std::vector<QualType> Forwarded;
@@ -26707,7 +26762,7 @@ public:
   bool callGetSource(const FunctionalBindCallSource &Call) {
     if (!Ready || !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
         Call.Storage.Record != Storage.Record || !TupleGetMemberSources.empty()) return false;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Storage.Record != Storage.Record ||
@@ -27218,7 +27273,7 @@ public:
       if (!Proof || ActiveNestedIncomingSource || !ActiveUnwrapSource ||
           Parent.SourceCall != ActiveUnwrapSource->SourceCall || Parent.Storage.Record != Storage.Record)
         return false;
-      const auto Fresh = describeFunctionalBindCallSourceOccurrence(S, SM, Parent, Context);
+      const auto Fresh = freshBindCallOccurrence(S, SM, Parent, Context);
       if (!Fresh || Child.Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Child.Slot].Nested)
         return false;
       const auto &Actual = *Fresh->Arguments[Child.Slot].Nested;
@@ -27245,7 +27300,7 @@ public:
     if (!Ready || Call.Storage.Record != Storage.Record || !Call.SourceCall ||
         (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) || ActiveUnwrapSource ||
         !UnwrapScalarConstraintSources.empty() || !UnwrapReferenceSources.empty()) return false;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Object != Call.Object || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Storage.Record != Storage.Record || Actual->Arguments.size() != Call.Arguments.size() ||
@@ -27523,7 +27578,7 @@ public:
     if (!Ready || ActiveRuntimeInvoke || ActiveRuntimeOriginalInvoke ||
         Call.Storage.Record != Storage.Record ||
         !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc()))) return false;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Storage.Record != Storage.Record || Actual->Method != Call.Method ||
         Actual->Object != Call.Object || Actual->Apply != Call.Apply ||
         Actual->Invoke != Call.Invoke || Actual->Target != Call.Target) return false;
@@ -27558,7 +27613,7 @@ public:
   bool callInvokeSignature(const FunctionalBindCallSource &Call) {
     if (!Ready || Call.Storage.Record != Storage.Record || !Call.SourceCall ||
         (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc()))) return false;
-    const auto Actual = describeFunctionalBindCallSourceOccurrence(S, SM, Call, Context);
+    const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Object != Call.Object ||
         Actual->Apply != Call.Apply || Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
         Actual->Storage.Record != Storage.Record) return false;
@@ -27642,6 +27697,27 @@ bool approvedFunctionalBindCallCompleteSource(
     const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits) {
   return BindSourceProof(S, SM, Context, Call.Storage, Sources, Selections,
       Members, Traits).callCompleteSource(Call);
+}
+
+bool approvedFunctionalBindOwnedCallCompleteSource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindOwnedCallSource &Call, const ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const CXXMethodDecl *> &OwnedQuerySources) {
+  if (!Call.Selected.SourceCall || Call.Selected.SourceCall != Call.Selected.OwnedRoot ||
+      !Call.Selected.OwnedPath.empty()) return false;
+  const auto Actual = describeFunctionalBindOwnedCallSource(S, SM, Call.Selected.SourceCall, Context);
+  if (!Actual || Actual->Target != Call.Target || Actual->Receiver != Call.Receiver ||
+      Actual->Selected.Method != Call.Selected.Method || Actual->Selected.Target != Call.Selected.Target ||
+      Actual->Selected.Storage.Record != Call.Selected.Storage.Record) return false;
+  std::set<const CXXMethodDecl *> Selected;
+  if (!BindSourceProof(S, SM, Context, Actual->Selected.Storage, Sources, Selections,
+          Members, Traits, {}, nullptr, nullptr, &Selected).callCompleteSource(Actual->Selected)) return false;
+  OwnedQuerySources.insert(Selected.begin(), Selected.end());
+  return true;
 }
 
 bool approvedFunctionalBindCallGetSource(
