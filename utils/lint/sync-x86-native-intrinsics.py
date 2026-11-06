@@ -92,6 +92,15 @@ for name, immediate in re.findall(
         (ROOT / "llvm/lib/Target/X86/X86NativeFrameReturns.def").read_text()):
     FRAME_RETURNS[name] = immediate == "true"
     DECLARATIONS[name] = ("Done", "PTR", "I16") if FRAME_RETURNS[name] else ("Done", "PTR")
+FAR_TRANSFERS = {}
+for name, bits, immediate, call in re.findall(
+        r"X86_FAR_TRANSFER\((\w+), \w+, (\d+), (true|false), (true|false)\)",
+        (ROOT / "llvm/lib/Target/X86/X86NativeFarTransfers.def").read_text()):
+    immediate, call = immediate == "true", call == "true"
+    FAR_TRANSFERS[name] = (immediate, call)
+    operands = (f"I{bits}", "I16") if immediate else ("PTR",)
+    DECLARATIONS[name] = ((f"I{bits}",) + operands if call else
+                          ("Done",) + operands + ("PTR",))
 DECLARATIONS["sysenter"] = ("Done",)
 DECLARATIONS["rsm"] = ("Done",)
 DECLARATIONS["rsm_context"] = ("Done", "PTR")
@@ -383,6 +392,11 @@ def synchronize(write):
     hle_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (3, 4), returning=True)
     rtm_abort_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, (0,), returning=True)
     hypercall_attribute, updated_impl = nonreturning_transfer_attribute(updated_impl, returning=True)
+    far_attributes = {}
+    for immediate, call in sorted(set(FAR_TRANSFERS.values())):
+        attribute, updated_impl = nonreturning_transfer_attribute(
+            updated_impl, (0, 1) if immediate else (), returning=call)
+        far_attributes[(immediate, call)] = attribute
     address_attributes = {}
     for indices in sorted({indices for _, indices in ADDRESS_SIGNATURES.values()}):
         attribute, updated_impl = immediate_arguments_attribute(updated_impl, indices)
@@ -415,6 +429,8 @@ def synchronize(write):
             attribute = rtm_abort_attribute
         if suffix in KVM_HYPERCALLS or suffix in NATIVE_DIVISIONS or suffix in NATIVE_BIT_TESTS or suffix == "vmgexit_sev":
             attribute = hypercall_attribute
+        if suffix in FAR_TRANSFERS:
+            attribute = far_attributes[FAR_TRANSFERS[suffix]]
         cpp, name = "x86_" + suffix, "llvm.x86." + suffix.replace("_", ".")
         encoding, updated_impl = encode_signature(signature, updated_impl)
         if name in names:

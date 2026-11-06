@@ -18621,7 +18621,10 @@ namespace X86 {
     WRITE_SEGMENT_MEM	= 18606,
     RDFLAGS16	= 18607,
     WRFLAGS16	= 18608,
-    INSTRUCTION_LIST_END = 18609
+    NATIVE_FAR_JUMP32	= 18609,
+    NATIVE_FAR_JUMP64	= 18610,
+    NATIVE_FAR_JUMP_IMM32	= 18611,
+    INSTRUCTION_LIST_END = 18612
   };
 
 } // end namespace X86
@@ -21012,11 +21015,11 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18609];
+  MCInstrDesc Insts[18612];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
-  MCOperandInfo OperandInfo[5526];
+  MCOperandInfo OperandInfo[5536];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
-  MCPhysReg ImplicitOps[1048];
+  MCPhysReg ImplicitOps[1063];
 };
 
 } // end namespace llvm
@@ -21031,6 +21034,9 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18611,	4,	0,	0,	8,	0,	15,	X86ImpOpBase + 1048,	5532,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18611 = NATIVE_FAR_JUMP_IMM32
+    { 18610,	3,	0,	0,	8,	0,	15,	X86ImpOpBase + 901,	5529,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18610 = NATIVE_FAR_JUMP64
+    { 18609,	3,	0,	0,	8,	0,	15,	X86ImpOpBase + 1048,	5526,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18609 = NATIVE_FAR_JUMP32
     { 18608,	1,	0,	0,	10,	1,	3,	X86ImpOpBase + 1044,	140,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18608 = WRFLAGS16
     { 18607,	1,	1,	0,	10,	1,	1,	X86ImpOpBase + 1042,	140,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::UnmodeledSideEffects), 0x0ULL },  // Inst #18607 = RDFLAGS16
     { 18606,	6,	0,	0,	8,	0,	0,	X86ImpOpBase + 0,	1119,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UsesCustomInserter)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18606 = WRITE_SEGMENT_MEM
@@ -40767,6 +40773,9 @@ extern const X86InstrTable X86Descs = {
     /* 5519 */ { X86::GR64_TCW64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64_TCW64RegClassID, 0, MCOI::OPERAND_REGISTER, MCOI_TIED_TO(0) },
     /* 5521 */ { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
     /* 5524 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { X86::GR16RegClassID, 0, MCOI::OPERAND_REGISTER, 0 },
+    /* 5526 */ { X86::GR32_NOSPRegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
+    /* 5529 */ { X86::GR64_NOSPRegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { X86::GR64RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
+    /* 5532 */ { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 }, { X86::GR32RegClassID, 0, MCOI::OPERAND_REGISTER, 0 }, { -1, 0, MCOI::OPERAND_IMMEDIATE, 0 },
   }, {
     /* 0 */
     /* 0 */ X86::EFLAGS,
@@ -40965,6 +40974,7 @@ extern const X86InstrTable X86Descs = {
     /* 1022 */ X86::RSP, X86::FS, X86::GS, X86::EFLAGS, X86::RAX, X86::RCX, X86::RDX, X86::RBX, X86::RSP, X86::RBP, X86::RSI, X86::RDI, X86::R8, X86::R9, X86::R10, X86::R11, X86::R12, X86::R13, X86::R14, X86::R15,
     /* 1042 */ X86::ESP, X86::ESP,
     /* 1044 */ X86::ESP, X86::ESP, X86::EFLAGS, X86::DF,
+    /* 1048 */ X86::CS, X86::SS, X86::DS, X86::ES, X86::FS, X86::GS, X86::EFLAGS, X86::EAX, X86::ECX, X86::EDX, X86::EBX, X86::ESP, X86::EBP, X86::ESI, X86::EDI,
   }
 };
 
@@ -58666,6 +58676,9 @@ extern const char X86InstrNameData[] = {
   /* 260698 */ "WRITE_SEGMENT_MEM\0"
   /* 260716 */ "RDFLAGS16\0"
   /* 260726 */ "WRFLAGS16\0"
+  /* 260736 */ "NATIVE_FAR_JUMP32\0"
+  /* 260754 */ "NATIVE_FAR_JUMP64\0"
+  /* 260772 */ "NATIVE_FAR_JUMP_IMM32\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -61139,10 +61152,13 @@ extern const unsigned X86InstrNameIndices[] = {
     260698U,
     260716U,
     260726U,
+    260736U,
+    260754U,
+    260772U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18609);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18612);
 }
 
 } // end namespace llvm
@@ -61202,7 +61218,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18609);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18612);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98646,6 +98662,12 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     661,
     /* WRFLAGS16 */
     661,
+    /* NATIVE_FAR_JUMP32 */
+    64520,
+    /* NATIVE_FAR_JUMP64 */
+    64523,
+    /* NATIVE_FAR_JUMP_IMM32 */
+    64526,
   };
 
   using namespace OpTypes;
@@ -135331,6 +135353,9 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     GR64_ABCD, GR64,
     GR64_TCW64, GR64_TCW64,
     GR64, i64mem, i32imm,
+    GR32_NOSP, GR32, i32imm,
+    GR64_NOSP, GR64, i32imm,
+    i32imm, i32imm, GR32, i32imm,
 };
   return OpcodeOperandTypes[Offsets[Opcode] + OpIdx];
 }
@@ -154123,9 +154148,12 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // WRITE_SEGMENT_MEM = 18606
     CEFBS_In64BitMode, // RDFLAGS16 = 18607
     CEFBS_In64BitMode, // WRFLAGS16 = 18608
+    CEFBS_In64BitMode, // NATIVE_FAR_JUMP32 = 18609
+    CEFBS_In64BitMode, // NATIVE_FAR_JUMP64 = 18610
+    CEFBS_In64BitMode, // NATIVE_FAR_JUMP_IMM32 = 18611
   };
 
-  assert(Opcode < 18609);
+  assert(Opcode < 18612);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

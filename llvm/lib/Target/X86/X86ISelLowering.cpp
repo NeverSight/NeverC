@@ -25,6 +25,7 @@
 #include "X86MachineFunctionInfo.h"
 #include "X86NativeBitTest.h"
 #include "X86NativeDivision.h"
+#include "X86NativeFarTransfer.h"
 #include "X86NativeFrameReturn.h"
 #include "X86RTMAbortPair.h"
 #include "X86SNPContext.h"
@@ -28360,6 +28361,12 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
 #undef X86_FRAME_RETURN
       return lowerNativeFrameReturn(Op, Subtarget, DAG);
 
+#define X86_FAR_TRANSFER(Name, Opcode, Bits, Immediate, Call)                  \
+  case Intrinsic::x86_##Name:
+#include "X86NativeFarTransfers.def"
+#undef X86_FAR_TRANSFER
+      return X86::lowerNativeFarTransfer(Op, Subtarget, DAG);
+
     case Intrinsic::x86_enclu_transfer_context:
     case Intrinsic::x86_enclu_transfer_at_context: {
       if (!Subtarget.is64Bit() || !Subtarget.hasXSAVE() || !Subtarget.hasSGX())
@@ -35197,6 +35204,9 @@ void X86TargetLowering::ReplaceNodeResults(SDNode *N,
     case Intrinsic::x86_sdivrem64:
       report_fatal_error(
           "native division intrinsic does not match target code mode");
+    case Intrinsic::x86_lcall64:
+      report_fatal_error(
+          "native far-transfer intrinsic does not match the target code mode");
     case Intrinsic::x86_lfs64:
     case Intrinsic::x86_lgs64:
     case Intrinsic::x86_lss64:

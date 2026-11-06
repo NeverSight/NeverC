@@ -546,6 +546,19 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
   switch (BuiltinID) {
+  case X86::BI__builtin_ia32_lcall64:
+  case X86::BI__builtin_ia32_ljmp64:
+    if (TI.getTriple().getArch() != llvm::Triple::x86_64) {
+      unsigned ID = getDiagnostics().getCustomDiagID(
+          DiagnosticsEngine::Error,
+          "this builtin requires a 64-bit x86 target");
+      return bool(Diag(TheCall->getBeginLoc(), ID));
+    }
+    return false;
+  case X86::BI__builtin_ia32_lcall16_imm:
+  case X86::BI__builtin_ia32_lcall32_imm:
+  case X86::BI__builtin_ia32_ljmp16_imm:
+  case X86::BI__builtin_ia32_ljmp32_imm:
   case X86::BI__builtin_ia32_lds16:
   case X86::BI__builtin_ia32_lds32:
   case X86::BI__builtin_ia32_les16:

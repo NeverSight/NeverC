@@ -79,6 +79,7 @@ set(NEVERC_TEST_SOURCES
   X86/HLEContextFrontendTests.cpp
   X86/SystemReturnFrontendTests.cpp
   X86/FrameReturnFrontendTests.cpp
+  X86/FarTransferFrontendTests.cpp
   X86/MMXStateFrontendTests.cpp
   X86/X87ControlFrontendTests.cpp
   X86/FarPointerFrontendTests.cpp

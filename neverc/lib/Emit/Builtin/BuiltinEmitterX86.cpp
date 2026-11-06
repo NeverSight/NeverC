@@ -3557,6 +3557,19 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     genBlock(createBasicBlock("skinit.cont"));
     return Call;
   }
+#define X86_NATIVE_FAR_TRANSFER(Name, Type, Bits, Attributes)                  \
+  case X86::BI__builtin_ia32_##Name: {                                         \
+    auto *Call = Builder.CreateIntrinsic(                                      \
+        Bits == 0 ? VoidTy : llvm::IntegerType::get(getLLVMContext(), Bits),   \
+        llvm::Intrinsic::x86_##Name, Ops);                                     \
+    if (Bits == 0) {                                                           \
+      genUnreachable(E->getExprLoc());                                         \
+      genBlock(createBasicBlock("native.far.cont"));                           \
+    }                                                                          \
+    return Call;                                                               \
+  }
+#include "neverc/Foundation/Builtin/X86NativeFarTransfers.def"
+#undef X86_NATIVE_FAR_TRANSFER
 #define X86_NATIVE_TRANSFER(Name, Type, Features)                              \
   case X86::BI__builtin_ia32_##Name: {                                         \
     auto *Call =                                                               \

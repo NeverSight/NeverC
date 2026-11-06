@@ -29,6 +29,11 @@ BUILTIN(__builtin_ia32_readseg_mem, "vIUiv*", "n")
 BUILTIN(__builtin_ia32_writeseg, "vIUiUs", "n")
 BUILTIN(__builtin_ia32_writeseg_mem, "vIUivC*", "n")
 
+#define X86_NATIVE_FAR_TRANSFER(Name, Type, Bits, Attributes) \
+  BUILTIN(__builtin_ia32_##Name, Type, Attributes)
+#include "X86NativeFarTransfers.def"
+#undef X86_NATIVE_FAR_TRANSFER
+
 // Native packed far-pointer loads; selector validation stays instruction-owned.
 BUILTIN(__builtin_ia32_lds16, "UsvC*", "n")
 BUILTIN(__builtin_ia32_lds32, "UivC*", "n")

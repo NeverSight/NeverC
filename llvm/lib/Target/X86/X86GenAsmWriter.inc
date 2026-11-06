@@ -20496,6 +20496,9 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// WRITE_SEGMENT_MEM
     0U,	// RDFLAGS16
     0U,	// WRFLAGS16
+    0U,	// NATIVE_FAR_JUMP32
+    0U,	// NATIVE_FAR_JUMP64
+    0U,	// NATIVE_FAR_JUMP_IMM32
 };
 
   static const uint16_t OpInfo1[] = {
@@ -39108,6 +39111,9 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// WRITE_SEGMENT_MEM
     0U,	// RDFLAGS16
     0U,	// WRFLAGS16
+    0U,	// NATIVE_FAR_JUMP32
+    0U,	// NATIVE_FAR_JUMP64
+    0U,	// NATIVE_FAR_JUMP_IMM32
 };
 
   static const uint8_t OpInfo2[] = {
@@ -57720,6 +57726,9 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// WRITE_SEGMENT_MEM
     0U,	// RDFLAGS16
     0U,	// WRFLAGS16
+    0U,	// NATIVE_FAR_JUMP32
+    0U,	// NATIVE_FAR_JUMP64
+    0U,	// NATIVE_FAR_JUMP_IMM32
 };
 
   // Emit the opcode for the instruction.

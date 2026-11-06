@@ -34,8 +34,11 @@ on:
       - 'utils/lint/test_sync_x86_segment_moves.py'
       - 'utils/lint/sync-x86-system-returns.py'
       - 'utils/lint/sync-x86-frame-returns.py'
+      - 'utils/lint/sync-x86-far-transfers.py'
+      - 'llvm/lib/Target/X86/X86NativeFarTransfers.def'
       - 'utils/lint/test_sync_x86_system_returns.py'
       - 'utils/lint/test_sync_x86_frame_returns.py'
+      - 'utils/lint/test_sync_x86_far_transfers.py'
       - 'utils/lint/sync-x86-x87-environment.py'
       - 'utils/lint/test_sync_x86_x87_environment.py'
       - 'utils/lint/sync-x86-amx-instructions.py'
@@ -94,8 +97,11 @@ on:
       - 'utils/lint/test_sync_x86_segment_moves.py'
       - 'utils/lint/sync-x86-system-returns.py'
       - 'utils/lint/sync-x86-frame-returns.py'
+      - 'utils/lint/sync-x86-far-transfers.py'
+      - 'llvm/lib/Target/X86/X86NativeFarTransfers.def'
       - 'utils/lint/test_sync_x86_system_returns.py'
       - 'utils/lint/test_sync_x86_frame_returns.py'
+      - 'utils/lint/test_sync_x86_far_transfers.py'
       - 'utils/lint/sync-x86-x87-environment.py'
       - 'utils/lint/test_sync_x86_x87_environment.py'
       - 'utils/lint/sync-x86-amx-instructions.py'
@@ -221,8 +227,10 @@ jobs:
           python3 utils/lint/sync-x86-system-effects.py
           python3 utils/lint/sync-x86-system-returns.py
           python3 utils/lint/sync-x86-frame-returns.py
+          python3 utils/lint/sync-x86-far-transfers.py
           python3 utils/lint/test_sync_x86_system_returns.py
           python3 utils/lint/test_sync_x86_frame_returns.py
+          python3 utils/lint/test_sync_x86_far_transfers.py
           python3 utils/lint/sync-x86-x87-environment.py
           python3 utils/lint/test_sync_x86_x87_environment.py
 

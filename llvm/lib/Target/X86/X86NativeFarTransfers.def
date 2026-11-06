@@ -1,0 +1,18 @@
+//===- X86NativeFarTransfers.def - Native far transfers ---------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+// Name, native opcode, operand width, immediate target, returning call.
+X86_FAR_TRANSFER(lcall16, FARCALL16m, 16, false, true)
+X86_FAR_TRANSFER(lcall32, FARCALL32m, 32, false, true)
+X86_FAR_TRANSFER(lcall64, FARCALL64m, 64, false, true)
+X86_FAR_TRANSFER(lcall16_imm, FARCALL16i, 16, true, true)
+X86_FAR_TRANSFER(lcall32_imm, FARCALL32i, 32, true, true)
+X86_FAR_TRANSFER(ljmp16, FARJMP16m, 16, false, false)
+X86_FAR_TRANSFER(ljmp32, FARJMP32m, 32, false, false)
+X86_FAR_TRANSFER(ljmp64, FARJMP64m, 64, false, false)
+X86_FAR_TRANSFER(ljmp16_imm, FARJMP16i, 16, true, false)
+X86_FAR_TRANSFER(ljmp32_imm, FARJMP32i, 32, true, false)

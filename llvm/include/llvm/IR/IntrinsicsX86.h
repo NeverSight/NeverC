@@ -1163,6 +1163,11 @@ enum X86Intrinsics : unsigned {
     x86_lar_reg16,                                   // llvm.x86.lar.reg16
     x86_lar_reg32,                                   // llvm.x86.lar.reg32
     x86_lar_reg64,                                   // llvm.x86.lar.reg64
+    x86_lcall16,                                     // llvm.x86.lcall16
+    x86_lcall16_imm,                                 // llvm.x86.lcall16.imm
+    x86_lcall32,                                     // llvm.x86.lcall32
+    x86_lcall32_imm,                                 // llvm.x86.lcall32.imm
+    x86_lcall64,                                     // llvm.x86.lcall64
     x86_lds16,                                       // llvm.x86.lds16
     x86_lds32,                                       // llvm.x86.lds32
     x86_ldtilecfg,                                   // llvm.x86.ldtilecfg
@@ -1180,6 +1185,11 @@ enum X86Intrinsics : unsigned {
     x86_lgs64,                                       // llvm.x86.lgs64
     x86_lidt,                                        // llvm.x86.lidt
     x86_lidt_address,                                // llvm.x86.lidt.address
+    x86_ljmp16,                                      // llvm.x86.ljmp16
+    x86_ljmp16_imm,                                  // llvm.x86.ljmp16.imm
+    x86_ljmp32,                                      // llvm.x86.ljmp32
+    x86_ljmp32_imm,                                  // llvm.x86.ljmp32.imm
+    x86_ljmp64,                                      // llvm.x86.ljmp64
     x86_lkgs_address,                                // llvm.x86.lkgs.address
     x86_lkgs_mem,                                    // llvm.x86.lkgs.mem
     x86_lkgs_reg,                                    // llvm.x86.lkgs.reg

@@ -116,6 +116,60 @@ option enables an i386/code16 frontend in NeverC; its builtins retain their
 x86-64 target. The contract follows [Intel SDM SYSRET/SYSEXIT and section
 3.4.1.1](https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf).
 
+## Native far calls and terminal jumps
+
+Ten C23 builtins now expose the LLVM fork's native far-transfer interfaces.
+`__builtin_ia32_lcall16/32/64(const void *target)` returns an unsigned short,
+unsigned int or unsigned long long from AX/EAX/RAX. The target is a packed
+native-width offset followed by a u16 selector. The two `lcall16/32_imm`
+forms instead take constant offset and selector arguments and retain the 9A
+encoding. The memory forms retain FF /3; all pointer reads, descriptor checks
+and faults remain inside the native instruction.
+
+These are zero-argument returning far entries. The destination must preserve
+the platform C callee-saved registers, return with RETF, and restore the exact
+caller CS/SS/SP and ordinary C ABI environment. Call gates must copy zero
+parameters. Their frame width comes from the gate rather than the intrinsic
+suffix. The actual native return frame must be able to represent the
+generated continuation offset, including narrow direct calls in code64. The
+backend uses a real call sequence, a platform call-preserved mask and Win64
+outgoing home space, and forbids leaf red-zone allocation. It does not silently
+promise preservation of arbitrary original-image registers.
+
+`__builtin_ia32_ljmp16/32/64(const void *target, const void *stack)` is
+nonreturning. `ljmp16/32_imm(offset, selector, stack)` supplies constant target
+fields. A terminal carrier sets ESP/RSP immediately before the native far
+jump, after all compiler-frame accesses; its target-address operand excludes
+the stack register. No ordinary epilogue follows. The compiler does not
+promise values for other registers or an asynchronous unwind contract.
+
+Immediate forms require a legacy target, while 64-bit operands require a
+long-mode target. Memory 16/32-bit operands are available in both. Linux i386
+source uses `-fllvm-backend=/path/to/full-fork/llc`; x64 uses the embedded
+backend. No inline assembly or runtime helper implements these APIs.
+`X86NativeFarTransfers.def` owns backend identities and drives intrinsic
+schema synchronization. `X86NativeFarTransfer.h` ports the full fork's
+memory-form lowering and explicitly rejects legacy-only records in the pruned backend;
+`sync-x86-far-transfers.py` owns the appended terminal records without
+renumbering old opcodes. Frontend tests cover modes, types, immediate arguments,
+attributes, O0/O2 and ELF/COFF/Mach-O output.
+
+`tests/neverc/X86/verify_far_transfers.py --llvm-bin LLVM_BIN --neverc NEVERC
+--mode 16|32|64 --output DIR` compares native instruction boundaries and complete
+RAM with independently encoded far transfers. It also executes the returning
+compiler continuation after a far entry clobbers caller-saved GPR/vector banks
+and mutates memory, checking live values, return results and exact stack and
+callee-saved register restoration. The fixture covers direct transfers and
+16/32-bit protected call gates with zero parameters. Code16 and
+`--mode 64 --x32` execute the full LLVM profiles. Stack-local targets verify
+that the final SP assignment preserves the target address.
+The comparison includes GPRs, segment/system state, FPU/XMM state, events and
+RAM. It does not claim task switching, CET, nonzero gate parameters, fault
+recovery, asynchronous unwinding or arbitrary original-image machine-context
+restoration. See the LLVM fork's
+`llvm/docs/X86NativeFarTransfers.rst` and the
+[Intel SDM CALL/JMP contracts](https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf).
+
 ## Native frame and SMM transfers
 
 The C23 builtins `__builtin_ia32_iret16/32/64`, `retf16/32/64`, `erets`,

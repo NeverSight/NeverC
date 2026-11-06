@@ -2309,6 +2309,34 @@ void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
     return;
   if (emitSGXTransferContext(MI))
     return;
+  if (MI->getOpcode() == X86::NATIVE_FAR_JUMP32 ||
+      MI->getOpcode() == X86::NATIVE_FAR_JUMP64 ||
+      MI->getOpcode() == X86::NATIVE_FAR_JUMP_IMM32) {
+    const bool Wide = MI->getOpcode() == X86::NATIVE_FAR_JUMP64;
+    const bool Immediate = MI->getOpcode() == X86::NATIVE_FAR_JUMP_IMM32;
+    const unsigned StackIndex = Immediate ? 2 : 1;
+    const unsigned Bits = MI->getOperand(StackIndex + 1).getImm();
+    if ((Bits != 16 && Bits != 32 && Bits != 64) || (Bits == 64 && !Wide))
+      report_fatal_error("invalid native far-jump operand width");
+    SMShadowTracker.emitShadowPadding(*OutStreamer, getSubtargetInfo());
+    NoAutoPaddingScope NoPadScope(*OutStreamer);
+    EmitAndCountInstruction(MCInstBuilder(Wide ? X86::MOV64rr : X86::MOV32rr)
+                                .addReg(Wide ? X86::RSP : X86::ESP)
+                                .addReg(MI->getOperand(StackIndex).getReg()));
+    if (Immediate) {
+      report_fatal_error("immediate far jumps require the full LLVM backend");
+    } else {
+      EmitAndCountInstruction(MCInstBuilder(Bits == 16   ? X86::FARJMP16m
+                                            : Bits == 32 ? X86::FARJMP32m
+                                                         : X86::FARJMP64m)
+                                  .addReg(MI->getOperand(0).getReg())
+                                  .addImm(1)
+                                  .addReg(0)
+                                  .addImm(0)
+                                  .addReg(0));
+    }
+    return;
+  }
   if (MI->getOpcode() == X86::NATIVE_FRAME_RETURN64) {
     const bool Wide = true;
     const auto Info = X86::nativeFrameReturnInfo(MI->getOperand(1).getImm());
