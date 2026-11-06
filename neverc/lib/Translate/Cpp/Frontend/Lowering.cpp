@@ -28665,9 +28665,16 @@ class FunctionLowering {
     // Read after all original argument effects and before writing a possibly
     // aliased destination. A bound pointer or reference-wrapper binding is
     // copied; its referent's value and lifetime remain ordinary source work.
-    auto Callable = snapshot(cast(utilityConstructorArgumentValue(
-        std::move(*Captured[0]), Factory->getParamDecl(0)->getType(), L),
-        type(Source.Storage.CallableType, L), L), L);
+    auto CallableValue = utilityConstructorArgumentValue(
+        std::move(*Captured[0]), Factory->getParamDecl(0)->getType(), L);
+    if (Source.Storage.CallableType->isRecordType()) {
+      const auto *Copy = Source.CallableCopy ? Source.CallableCopy->getConstructor() : nullptr;
+      if (!Copy || !Copy->isImplicit() || !Copy->isDefaulted() || !Copy->isTrivial() ||
+          !Copy->isCopyOrMoveConstructor() || Copy->isDeleted() ||
+          Copy->getParent()->getCanonicalDecl() != Source.Storage.CallableType->getAsCXXRecordDecl()->getCanonicalDecl())
+        reject(L, "bind callable copy", "The completed exact trivial ordinary callable copy is required.");
+    } else CallableValue = cast(std::move(CallableValue), type(Source.Storage.CallableType, L), L);
+    auto Callable = snapshot(std::move(CallableValue), L);
     std::vector<std::optional<Expression>> Values(Source.Storage.Arguments.Elements.size());
     for (unsigned I = 0; I < Source.Storage.Arguments.Elements.size(); ++I) {
       const auto &Element = Source.Storage.Arguments.Elements[I];
@@ -28773,7 +28780,11 @@ class FunctionLowering {
         reject(L, "nested bind owner", "The child must belong to this root, parent and stored slot.");
       Cursor = &Child.Invocation;
     }
-    const auto *Prototype = Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+    const auto *OwnedTarget = Source.Storage.CallableType->isRecordType() && Source.Target
+        ? dyn_cast_or_null<CXXMethodDecl>(Source.Target->getDirectCallee()) : nullptr;
+    const auto *Prototype = OwnedTarget ? OwnedTarget->getType()->getAs<FunctionProtoType>()
+        : Source.Storage.CallableType->isFunctionPointerType()
+            ? Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
     if (Cursor != &Source || !Source.Method || !Source.Object || !Source.SourceCall || !Prototype ||
         Source.SourceCall->getDirectCallee() != Source.Method ||
         Source.SourceCall->getNumArgs() != Source.Method->getNumParams() + 1 ||
@@ -28781,7 +28792,7 @@ class FunctionLowering {
         Prototype->getNumParams() != Source.Arguments.size() ||
         Source.Arguments.size() != Source.Storage.Arguments.Elements.size())
       reject(L, "bind captured invocation", "The authenticated object and exact incoming bindings are required.");
-    if (llvm::none_of(Source.Arguments, [](const auto &Argument) { return bool(Argument.Nested); })) {
+    if (!OwnedTarget && llvm::none_of(Source.Arguments, [](const auto &Argument) { return bool(Argument.Nested); })) {
       Expression CallableField{{"kind", "member"},
           {"type", type(Source.Storage.CallableType, L)}, {"name", "nct_bind_callable"},
           {"args", json::Array{dereference(json::Object(Address), L)}}, {"loc", A.loc(L)}};
@@ -28889,6 +28900,39 @@ class FunctionLowering {
       }
       Bindings.push_back(std::move(Captured));
     }
+    if (OwnedTarget) {
+      const auto *Dispatcher = Source.Invoke ? Source.Invoke->getDirectCallee() : nullptr;
+      if (!ordinaryOperator(OwnedTarget) || OwnedTarget->getOverloadedOperator() != OO_Call ||
+          OwnedTarget->getParent()->getCanonicalDecl() != Source.Storage.CallableType->getAsCXXRecordDecl()->getCanonicalDecl() ||
+          !Dispatcher || Dispatcher->getNumParams() != Bindings.size() + 1 ||
+          Source.Target->getNumArgs() != Bindings.size() + 1)
+        reject(L, "bind owned target", "The completed exact ordinary target and original dispatcher bindings are required.");
+      const auto Stored = Source.Object->getType().isConstQualified()
+          ? A.Context.getConstType(Source.Storage.CallableType) : Source.Storage.CallableType;
+      Expression CallableField{{"kind", "member"}, {"type", type(Stored, L)}, {"name", "nct_bind_callable"},
+          {"args", json::Array{dereference(std::move(Address), L)}}, {"loc", A.loc(L)}};
+      std::vector<Expression> Forwarded;
+      Forwarded.push_back(snapshot(cast(address(std::move(CallableField), Stored, L),
+          type(Dispatcher->getParamDecl(0)->getType(), L), L), L));
+      for (unsigned I = 0; I < Bindings.size(); ++I)
+        Forwarded.push_back(cast(std::move(Bindings[I]), type(Dispatcher->getParamDecl(I + 1)->getType(), L), L));
+      using StorageNode = decltype(Storage)::node_type;
+      std::vector<std::pair<const Decl *, StorageNode>> Saved;
+      auto Restore = llvm::make_scope_exit([&] {
+        for (auto &Entry : Saved) {
+          Storage.erase(Entry.first);
+          if (!Entry.second.empty()) Storage.insert(std::move(Entry.second));
+        }
+      });
+      for (unsigned I = 0; I < Dispatcher->getNumParams(); ++I) {
+        if (!Dispatcher->getParamDecl(I)->getType()->isReferenceType())
+          reject(L, "bind owned forwarding", "Each original dispatcher parameter must retain its reference binding.");
+        const auto *Key = Dispatcher->getParamDecl(I)->getCanonicalDecl();
+        Saved.emplace_back(Key, Storage.extract(Key));
+        Storage.emplace(Key, dereference(std::move(Forwarded[I]), L));
+      }
+      return call(Source.Target);
+    }
     // The callee and callback values are read after all nested effects.
     Expression CallableField{{"kind", "member"},
         {"type", type(Source.Storage.CallableType, L)}, {"name", "nct_bind_callable"},
@@ -28905,7 +28949,11 @@ class FunctionLowering {
       const CallExpr *Call, const FunctionalBindCallSource &Source) {
     const auto L = Call->getExprLoc();
     const auto Verified = A.VerifiedBindCalls.find(Call);
-    const auto *Prototype = Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+    const auto *OwnedTarget = Source.Storage.CallableType->isRecordType() && Source.Target
+        ? dyn_cast_or_null<CXXMethodDecl>(Source.Target->getDirectCallee()) : nullptr;
+    const auto *Prototype = OwnedTarget ? OwnedTarget->getType()->getAs<FunctionProtoType>()
+        : Source.Storage.CallableType->isFunctionPointerType()
+            ? Source.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
     if (Verified == A.VerifiedBindCalls.end() || &Verified->second != &Source ||
         Source.SourceCall != Call || !Source.Object ||
         Source.Method != Call->getDirectCallee() || !Call->getNumArgs() ||

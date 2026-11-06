@@ -15097,6 +15097,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const CXXConstructExpr *, FunctionalBindCopySource> PendingBindCopies;
   std::map<const CXXRecordDecl *, FunctionalBindDestructionSource> PendingBindDestructions;
   std::map<const CXXRecordDecl *, SourceLocation> PendingBindSourceLocations;
+  std::set<const CXXMethodDecl *> BindOwnedQuerySources;
   std::set<const CXXMethodDecl *> CompletedAlgorithmPredicateDefinitions;
   GeneratedOperationSources CompletedGeneratedOperations;
   std::vector<const CXXDestructorDecl *> ConsumedDestructorSignatures;
@@ -23094,19 +23095,23 @@ public:
   }
   bool functionalBindFactorySourceComplete(const FunctionalBindFactorySource &Factory) {
     const auto Inputs = functionalBindSourceInputs();
-    auto AliasSource = [this](const TypedefNameDecl *Alias) {
+    auto AliasSource = [this, &Factory](const TypedefNameDecl *Alias) {
       const auto *Info = Alias ? Alias->getTypeSourceInfo() : nullptr;
       if (!Alias || !Info || !A.S.owns(A.Sources, Alias->getLocation()) ||
           Alias->isInvalidDecl() || Alias->hasAttrs() ||
-          !Alias->getUnderlyingType()->isFunctionPointerType()) return false;
+          (!Alias->getUnderlyingType()->isFunctionPointerType() &&
+           !(Factory.CallableCopy && A.Context.hasSameType(Alias->getUnderlyingType(), Factory.Storage.CallableType)))) return false;
       A.checkTypeOnly(Alias->getUnderlyingType(), Alias->getLocation());
-      const bool Signature = retainFunctionTypeSource(
+      const bool Signature = (Factory.CallableCopy && Alias->getUnderlyingType()->isRecordType()) || retainFunctionTypeSource(
           Alias->getUnderlyingType(), Info, Alias->getLocation());
       return A.S.Diagnostics.empty() && Signature &&
           TraverseTypeLoc(Info->getTypeLoc()) && A.S.Diagnostics.empty();
     };
-    return Inputs && approvedFunctionalBindFactorySource(A.S, A.Sources, Factory, A.Context,
-        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits, AliasSource);
+    return Inputs && (Factory.CallableCopy
+        ? approvedFunctionalBindOwnedFactorySource(A.S, A.Sources, Factory, A.Context,
+            Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits, BindOwnedQuerySources, AliasSource)
+        : approvedFunctionalBindFactorySource(A.S, A.Sources, Factory, A.Context,
+            Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits, AliasSource));
   }
   bool functionalBindCallAuxiliarySourceComplete(const FunctionalBindCallSource &Call) {
     const auto Inputs = functionalBindSourceInputs();
@@ -23142,8 +23147,15 @@ public:
   }
   bool functionalBindCallSourceComplete(const FunctionalBindCallSource &Call) {
     const auto Inputs = functionalBindSourceInputs();
-    return Inputs && approvedFunctionalBindCallCompleteSource(A.S, A.Sources, Call, A.Context,
-        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+    const auto Owned = Call.Storage.CallableType->isRecordType()
+        ? describeFunctionalBindOwnedCallSource(A.S, A.Sources, Call.SourceCall, A.Context) : std::nullopt;
+    return Inputs && (Owned
+        ? Owned->Selected.Method == Call.Method && Owned->Selected.Object == Call.Object &&
+          Owned->Selected.Target == Call.Target && Owned->Selected.Storage.Record == Call.Storage.Record &&
+          approvedFunctionalBindOwnedCallCompleteSource(A.S, A.Sources, *Owned, A.Context,
+              Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits, BindOwnedQuerySources)
+        : approvedFunctionalBindCallCompleteSource(A.S, A.Sources, Call, A.Context,
+              Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits));
   }
   bool functionalBindCallGetSourceComplete(const FunctionalBindCallSource &Call) {
     const auto Inputs = functionalBindSourceInputs();
@@ -23152,15 +23164,21 @@ public:
   }
   bool functionalBindCopySourceComplete(const FunctionalBindCopySource &Copy) {
     const auto Inputs = functionalBindSourceInputs();
-    return Inputs && approvedFunctionalBindCopySource(A.S, A.Sources, Copy, A.Context,
-        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
+    return Inputs && (Copy.Layout.Storage.CallableType->isRecordType()
+        ? approvedFunctionalBindOwnedCopySource(A.S, A.Sources, Copy, A.Context,
+            Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits, BindOwnedQuerySources)
+        : approvedFunctionalBindCopySource(A.S, A.Sources, Copy, A.Context,
+            Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits));
   }
   bool functionalBindDestructionSourceComplete(
       const FunctionalBindDestructionSource &Destruction, SourceLocation Location) {
     const auto Inputs = functionalBindSourceInputs();
-    return Inputs && approvedFunctionalBindDestructionSource(A.S, A.Sources, Destruction,
-        Location, A.Context, Inputs->Dependencies, Inputs->Selections,
-        A.SpecialMembers, A.OperationTraits);
+    return Inputs && (Destruction.Layout.Storage.CallableType->isRecordType()
+        ? approvedFunctionalBindOwnedDestructionSource(A.S, A.Sources, Destruction,
+            Location, A.Context, Inputs->Dependencies, Inputs->Selections,
+            A.SpecialMembers, A.OperationTraits, BindOwnedQuerySources)
+        : approvedFunctionalBindDestructionSource(A.S, A.Sources, Destruction,
+            Location, A.Context, Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits));
   }
   void beginTemplateSourceEvents(std::size_t Uses, std::size_t Calls) {
     TemplateUseCursor = Uses;
@@ -26756,12 +26774,19 @@ public:
       const CXXOperatorCallExpr *Root, unsigned &Nodes) {
     if (!Root || !A.S.owns(A.Sources, Root->getExprLoc()) || ++Nodes > 200000 ||
         Call.OwnedRoot != Root || Call.OwnedPath.size() >= 64) return false;
-    const auto Fresh = describeFunctionalBindCallSourceOccurrence(A.S, A.Sources, Call, A.Context);
-    const auto *Prototype = Call.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+    const auto Owned = Call.Storage.CallableType->isRecordType()
+        ? describeFunctionalBindOwnedCallSource(A.S, A.Sources, Call.SourceCall, A.Context) : std::nullopt;
+    const auto Fresh = Owned ? std::optional<FunctionalBindCallSource>(Owned->Selected)
+        : describeFunctionalBindCallSourceOccurrence(A.S, A.Sources, Call, A.Context);
+    const auto *Prototype = Owned ? Owned->Target->getType()->getAs<FunctionProtoType>()
+        : Call.Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
     const auto Record = Call.Storage.Record->getCanonicalDecl();
     const auto Layout = PendingBindRecords.find(Record);
-    if (!Fresh || !Prototype || !ordinaryCallbackPrototype(Prototype) ||
-        !A.Context.hasSameType(operationCalleePrototype(Fresh->Target), Prototype) ||
+    if (!Fresh || !Prototype || (Owned ? !ordinaryOperator(Owned->Target) ||
+            Call.SourceCall != Root || !Call.OwnedPath.empty() || Fresh->Target != Call.Target ||
+            Fresh->Method != Call.Method || Fresh->Object != Call.Object
+          : !ordinaryCallbackPrototype(Prototype) ||
+            !A.Context.hasSameType(operationCalleePrototype(Fresh->Target), Prototype)) ||
         Layout == PendingBindRecords.end() || !sameBindStorage(Layout->second.Storage, Fresh->Storage) ||
         !bindDestructionSourceComplete(Record)) return false;
     for (unsigned I = 0; I < Fresh->Arguments.size(); ++I) {
@@ -26785,7 +26810,8 @@ public:
         functionalBindDestructionSourceComplete(Found->second, Site->second);
   }
   std::optional<bool> traverseBindFactory(CallExpr *Call) {
-    const auto Source = describeFunctionalBindFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto Owned = describeFunctionalBindOwnedFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto Source = Owned ? Owned : describeFunctionalBindFactorySource(A.S, A.Sources, Call, A.Context);
     if (!Source) return std::nullopt;
     return traverseTypeQuerySource(Call, [&] {
       const auto *Reference = dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
@@ -26796,6 +26822,8 @@ public:
             "The actual deduced factory and complete selected source graph are required.", "TR0203");
         return true;
       }
+      if (Owned && (!Source->CallableCopy ||
+          !checkUtilitySelectedConstruction(Source->CallableCopy, Call->getExprLoc(), 1))) return true;
       A.type(Source->Storage.CallableType, Call->getExprLoc());
       const bool HasPlaceholders = std::any_of(Source->Placeholders.begin(), Source->Placeholders.end(),
           [](const auto &Placeholder) { return Placeholder.has_value(); });
@@ -26829,12 +26857,16 @@ public:
     });
   }
   std::optional<bool> traverseBindCall(CXXOperatorCallExpr *Call) {
-    const auto Source = describeFunctionalBindCallSource(A.S, A.Sources, Call, A.Context);
+    const auto Owned = describeFunctionalBindOwnedCallSource(A.S, A.Sources, Call, A.Context);
+    const auto Source = Owned ? std::optional<FunctionalBindCallSource>(Owned->Selected)
+        : describeFunctionalBindCallSource(A.S, A.Sources, Call, A.Context);
     if (!Source) return std::nullopt;
     return traverseTypeQuerySource(Call, [&] {
-      const auto *Prototype = Source->Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
-      if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
-          !A.Context.hasSameType(operationCalleePrototype(Source->Target), Prototype) ||
+      const auto *Prototype = Owned ? Owned->Target->getType()->getAs<FunctionProtoType>()
+          : Source->Storage.CallableType->getPointeeType()->getAs<FunctionProtoType>();
+      if (!Prototype || (Owned ? !ordinaryOperator(Owned->Target)
+              : !ordinaryCallbackPrototype(Prototype) ||
+                !A.Context.hasSameType(operationCalleePrototype(Source->Target), Prototype)) ||
           !functionalBindCallSourceComplete(*Source)) {
         A.reject(Call->getExprLoc(), "bind invocation source",
             "The complete original and selected invocation and ordinary callback signature are required.", "TR0203");
@@ -26884,11 +26916,79 @@ public:
       return true;
     });
   }
+  bool finishBindOwnedRuntimeSources() {
+    for (const auto *Method : BindOwnedQuerySources) {
+      collectOperationFunctionTypeSource(Method);
+      if (Method->isImplicit() || defaultedDeclaration(Method)) queueGenerated(Method, Method->getLocation());
+    }
+    auto Prepare = [&](const CXXMethodDecl *Method) {
+      if (CompletedSpecialMemberSignatures.count(Method)) return true;
+      queueSpecialMemberSignatures(Method);
+      const bool Saved = A.CheckingSource;
+      A.CheckingSource = true;
+      auto Restore = llvm::make_scope_exit([&] { A.CheckingSource = Saved; });
+      return finishGeneratedMethods();
+    };
+    auto NewCheck = [&] {
+      return OperationSourceChecker(A, &CompletedOperationDefinitions,
+          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+          &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
+          &CompletedOperationDefaults, Prepare);
+    };
+    for (const auto *Method : BindOwnedQuerySources) {
+      const bool Bound = std::any_of(PendingBindRecords.begin(), PendingBindRecords.end(), [&](const auto &Entry) {
+        const auto *Callable = Entry.second.Storage.CallableType->getAsCXXRecordDecl();
+        return Callable && Callable->getCanonicalDecl() == Method->getParent()->getCanonicalDecl();
+      });
+      if (!Bound || !A.S.owns(A.Sources, Method->getLocation())) return false;
+      auto Check = NewCheck();
+      if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method)) {
+        if (!Constructor->isImplicit() || !Constructor->isDefaulted() || !Constructor->isTrivial() ||
+            !Constructor->isCopyOrMoveConstructor() || !Check.generatedOperation(Constructor)) return false;
+      } else if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method)) {
+        if (!Destructor->isImplicit() || !Destructor->isDefaulted() || !Destructor->isTrivial() ||
+            !Check.generatedDestructor(Destructor)) return false;
+      } else {
+        const bool Selected = std::any_of(PendingBindCalls.begin(), PendingBindCalls.end(), [&](const auto &Entry) {
+          return Entry.second.Target && Entry.second.Target->getDirectCallee() == Method;
+        });
+        const auto *Definition = Method->getDefinition();
+        if (!Selected || !Definition || !ordinaryOperator(Method) || !Check.defined(Method) ||
+            std::find(A.Functions.begin(), A.Functions.end(), Definition) == A.Functions.end()) return false;
+      }
+      if (!Check.finish(Method->getLocation())) return false;
+    }
+    for (const auto &[Call, Factory] : PendingBindFactories) {
+      if (!Factory.Storage.CallableType->isRecordType()) continue;
+      const auto *Record = Factory.Storage.CallableType->getAsCXXRecordDecl();
+      const auto *Selected = Factory.CallableCopy;
+      auto Check = NewCheck();
+      if (!Record || !Selected || !Selected->getConstructor() ||
+          Selected->getConstructor()->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+          !Check.generatedOperation(Selected->getConstructor()) || !Check.destruction(Record) ||
+          !Check.finish(Call->getExprLoc())) return false;
+    }
+    for (const auto &[Construction, Copy] : PendingBindCopies) {
+      if (!Copy.Layout.Storage.CallableType->isRecordType()) continue;
+      const auto *Record = Copy.Layout.Storage.CallableType->getAsCXXRecordDecl();
+      auto Check = NewCheck();
+      if (!implicitOperationFamilySource(A, Record, OperationFamily::CopyMove, false) ||
+          !Check.destruction(Record) || !Check.finish(Construction->getExprLoc())) return false;
+    }
+    for (const auto &[Record, Destruction] : PendingBindDestructions) {
+      if (!Destruction.Layout.Storage.CallableType->isRecordType()) continue;
+      auto Check = NewCheck();
+      if (!Check.destruction(Destruction.Layout.Storage.CallableType->getAsCXXRecordDecl()) ||
+          !Check.finish(Record->getLocation())) return false;
+    }
+    return A.S.Diagnostics.empty();
+  }
   bool finishBindRuntimeSources() {
     if (!A.S.Diagnostics.empty() || A.CheckingSource || ActiveBindPlaceholderFactory ||
         !A.VerifiedBindRecords.empty() || !A.VerifiedBindFactories.empty() ||
         !A.VerifiedBindCalls.empty() || !A.VerifiedBindCopies.empty() ||
         !A.VerifiedBindDestructions.empty()) return false;
+    if (!finishBindOwnedRuntimeSources()) return false;
     auto OrdinarySource = [&](const Expr *Expression) {
       OperationSourceChecker Check(A, &CompletedOperationDefinitions,
           &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
