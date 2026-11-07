@@ -11997,7 +11997,8 @@ public:
   }
 
   bool withBindFactoryLeafComparisonSource(const TemplateUseSource &Source,
-      const CXXConstructorDecl *Constructor, const std::function<bool()> &Proof) {
+      const CXXConstructorDecl *Constructor, const std::function<bool()> &Proof,
+      bool Incoming = false) {
     if (!Proof) return false;
     const auto *AliasType = Source.Kind == TemplateSourceKind::Type
         ? dyn_cast_or_null<TemplateSpecializationType>(Source.Type) : nullptr;
@@ -12013,9 +12014,25 @@ public:
         Owned->getTemplateArgs().size() != 3 || Owned->getTemplateArgs()[1].getKind() != TemplateArgument::Type)
       return Proof();
     const auto Scalar = Owned->getTemplateArgs()[1].getAsType();
+    const auto Value = Scalar.getNonReferenceType().getUnqualifiedType();
+    if (Incoming) {
+      if (!BindStandardCall || !BindCallMetadata || !Scalar->isReferenceType() ||
+          !utilityScalar(Context, Value)) return false;
+      const auto Actual = freshBindCallOccurrence(S, SM, *BindCallMetadata, Context);
+      const auto Tuple = Actual
+          ? freshBindCallTupleConstructionSource(S, SM, *Actual, Context) : std::nullopt;
+      if (!Actual || !Tuple || Actual->SourceCall != BindCallMetadata->SourceCall ||
+          Actual->Method != BindCallMetadata->Method || Actual->Object != BindCallMetadata->Object ||
+          Actual->CallArguments != BindCallMetadata->CallArguments ||
+          Tuple->Tuple != Actual->CallArguments || Tuple->Leaves.size() > 2 ||
+          std::none_of(Tuple->Leaves.begin(), Tuple->Leaves.end(), [&](const CXXConstructExpr *Leaf) {
+            return Leaf && Leaf->getConstructor() == Constructor &&
+                Leaf->getConstructor()->getParent() == Owned;
+          })) return false;
+    }
     const auto *Compared = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
         AliasType->template_arguments()[1].getAsType()->getAsCXXRecordDecl());
-    if (!utilityScalar(Context, Scalar) || Scalar.hasQualifiers() || !Compared ||
+    if ((!Incoming && (!utilityScalar(Context, Scalar) || Scalar.hasQualifiers())) || !Compared ||
         !Compared->getIdentifier() || Compared->getName() != "__tuple_leaf" ||
         BindPhysicalRecords.count(Compared->getCanonicalDecl())) return Proof();
     return withBindSourceChild([&] {
@@ -12032,13 +12049,14 @@ public:
       const auto Location = SM.getSpellingLoc(Source.Location);
       const auto *Definition = Compared->getDefinition();
       if (BindFactoryLeafComparisonRecord || !Primary ||
-          !BindPhysicalRecords.count(Owned->getCanonicalDecl()) ||
+          !(Incoming ? BindCallPhysicalRecords.count(Owned->getCanonicalDecl())
+                     : BindPhysicalRecords.count(Owned->getCanonicalDecl())) ||
           Constructor->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
           !family(Constructor) || !family(Method) || !Constraint || !Constraint->hasDefaultArgument() ||
           Constraint->isParameterPack() || Constraint->getIndex() != 1 ||
           !Constraint->getType()->isDependentType() || ConstraintLocation.isNull() ||
           !Selected || Selected->size() != 2 || Selected->get(0).getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Selected->get(0).getAsType().getNonReferenceType().getUnqualifiedType(), Scalar) ||
+          !Context.hasSameType(Selected->get(0).getAsType().getNonReferenceType().getUnqualifiedType(), Value) ||
           Selected->get(1).getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(Selected->get(1).getIntegralType(), Context.IntTy) ||
           !Selected->get(1).getAsIntegral().isZero() ||
@@ -12076,7 +12094,7 @@ public:
       for (const auto *Values : {Source.Canonical, Source.Sugared})
         if (Values->get(0).getKind() != TemplateArgument::Type ||
             Values->get(1).getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Values->get(0).getAsType(), Scalar) ||
+            !Context.hasSameType(Values->get(0).getAsType(), Value) ||
             Values->get(1).getAsType()->getAsCXXRecordDecl() != Compared) return false;
       const auto *Expansion = dyn_cast<ElaboratedType>(AliasType->getAliasedType().getTypePtr());
       const auto *Constant = Expansion ? dyn_cast<TemplateSpecializationType>(Expansion->getNamedType().getTypePtr()) : nullptr;
@@ -27550,7 +27568,8 @@ class BindSourceProof {
       }
       if (Written) return Graph.withBindRetainedTupleProjectionSources(*Written, Proof);
     }
-    if (ActiveFactoryLeafConstructor && Type && Type->isTypeAlias() && Template &&
+    if ((ActiveFactoryLeafConstructor || (StandardCallRoot && ActiveCallTupleConstructor)) &&
+        Type && Type->isTypeAlias() && Template &&
         Template->getIdentifier() && Template->getName() == "_IsNotSame") {
       const TemplateUseSource *Actual = nullptr;
       for (const auto *Use : Sources) {
@@ -27559,7 +27578,9 @@ class BindSourceProof {
         Actual = Use;
       }
       if (!Actual) return false;
-      return Graph.withBindFactoryLeafComparisonSource(*Actual, ActiveFactoryLeafConstructor, Proof);
+      return Graph.withBindFactoryLeafComparisonSource(*Actual,
+          ActiveFactoryLeafConstructor ? ActiveFactoryLeafConstructor : ActiveCallTupleConstructor,
+          Proof, !ActiveFactoryLeafConstructor);
     }
     // Nested children retain the already authenticated enclosing source scope.
     // Their existing type, declaration and argument callbacks still run.
@@ -29343,8 +29364,23 @@ class BindSourceProof {
           const auto *Callee = dyn_cast<DeclRefExpr>(Argument.PlaceholderForward->getCallee()->IgnoreParenImpCasts());
           const auto *Info = Callee && Callee->hasExplicitTemplateArgs() && Callee->getNumTemplateArgs() == 1
               ? Callee->template_arguments()[0].getTypeSourceInfo() : nullptr;
+          const auto *RetainedIndex = [&]() {
+            if (!Standard) return unwrapPlaceholderForwardIndexReference(Argument);
+            // The retained declaration's tuple must be checked against its
+            // actual owner, before selecting that owner for the full proof.
+            const auto *Saved = ActiveUnwrapSource;
+            ActiveUnwrapSource = &*Actual;
+            auto Restore = llvm::make_scope_exit([&] { ActiveUnwrapSource = Saved; });
+            return unwrapPlaceholderForwardIndexReference(Argument);
+          }();
           if (!Info || Info->getType() != Use->Sugared->get(0).getAsType() ||
-              unwrapPlaceholderForwardIndexReference(Argument) != Reference) return false;
+              RetainedIndex != Reference) {
+            // One __mu specialization can serve multiple real calls. A
+            // different retained alias/index occurrence is not this packet's
+            // owner; keep searching for its exact TSI and reference identity.
+            if (Standard) continue;
+            return false;
+          }
           const auto *Saved = ActiveUnwrapSource;
           ActiveUnwrapSource = &*Actual;
           ActiveRetainedPlaceholderForwardSource = true;
