@@ -1558,7 +1558,8 @@ explicit-address APIs keep their separately documented mode contracts.
 `tests/neverc/X86/verify_i386_descriptor_builtins.py --neverc PATH --llvm-bin DIR
 --output DIR` checks all 28 registrations, IR verification and two retained
 native operations per function at O0/O2 in i386 and x64. It rejects accidental
-registration of 64-bit result forms on i386. The query objects additionally
+registration of 64-bit result forms on i386 and retains all seven native wide
+forms on x64. The query objects additionally
 run as real Linux i386/x64 processes, comparing LAR/LSL results and ZF and
 VERR/VERW status against independent original instructions for null, valid and
 invisible selectors, differing prior values, unaligned words and words ending

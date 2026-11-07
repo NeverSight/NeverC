@@ -71,6 +71,20 @@ def main():
         call = f"{builtin}({inputs})"
         text.append(f"{result} probe_{name}({parameters}) {{ {call}; "
                     f"{'return ' if result != 'void' else ''}{call}; }}")
+    wide_entries = [(f"{op}_reg64", "unsigned long long", "void", "", op)
+                    for op in ("sldt", "str", "smsw")]
+    for op in ("lar", "lsl"):
+        for kind, first in (("reg", "unsigned short"), ("mem", "const void *")):
+            wide_entries.append((f"{op}_{kind}64", "unsigned long long",
+                                 f"{first} input, unsigned long long prior, unsigned char *status",
+                                 "input, prior, status", op))
+    text.append("#if defined(__x86_64__)")
+    for name, result, parameters, inputs, _ in wide_entries:
+        builtin = "__builtin_ia32_" + name
+        text.append(f'_Static_assert(__has_builtin({builtin}), "{name}");')
+        call = f"{builtin}({inputs})"
+        text.append(f"{result} probe_{name}({parameters}) {{ {call}; return {call}; }}")
+    text.append("#endif")
     source.write_text("\n".join(text) + "\n")
     negative = out / "long-mode-only.c"
     wide = [f"{op}_reg64" for op in ("sldt", "str", "smsw")]
@@ -97,7 +111,8 @@ def main():
             assert not re.search(r"\bcall[lq]?\b", assembly), assembly
             bodies = dict(re.findall(r"<[.]?(probe_\w+)>:\n(.*?)(?=\n[0-9a-f]+ <|\Z)",
                                      assembly, re.S))
-            for name, _, _, _, opcode in entries:
+            active = entries + (wide_entries if mode == 64 else [])
+            for name, _, _, _, opcode in active:
                 body = bodies["probe_" + name]
                 count = len(re.findall(r"\b" + opcode + r"[wlq]?\s", body))
                 if opcode == "invd":
@@ -112,13 +127,13 @@ def main():
                  "-o", exe], tag + "-link")
             actual = json.loads(run([exe], tag + "-native"))
             assert actual == {"native_query_comparisons": 1320, "native_assertions": 2200}, actual
-            profiles.append(dict(profile=tag, native=actual, codegen_forms=len(entries),
+            profiles.append(dict(profile=tag, native=actual, codegen_forms=len(active),
                                  object_sha256=hashlib.sha256(obj.read_bytes()).hexdigest()))
     report = dict(profiles=profiles, wide_only_forms=wide, commands=records,
                   compiler_sha256=hashlib.sha256(compiler.read_bytes()).hexdigest(),
                   full_llc_sha256=hashlib.sha256((llvm / "llc").read_bytes()).hexdigest())
     (out / "result.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps({"profiles": len(profiles), "codegen_forms": len(entries),
+    print(json.dumps({"profiles": len(profiles), "shared_codegen_forms": len(entries), "wide_codegen_forms": len(wide_entries),
                       "native_query_comparisons": sum(p["native"]["native_query_comparisons"]
                                                         for p in profiles)}, indent=2))
 
