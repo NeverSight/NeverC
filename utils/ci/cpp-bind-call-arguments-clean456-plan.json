@@ -1170,10 +1170,10 @@
   "source_repair_commit": "085a48ae03feed07e0dd57d97fb1c53e45211ca1",
   "clean_source_basis": "085a48ae03feed07e0dd57d97fb1c53e45211ca1",
   "required_requests": 1000,
-  "required_acceptances": 648,
+  "required_acceptances": 704,
   "required_sdk_guard_rejections": 80,
   "required_unimplemented_not_fn_runtime_refusals": 8,
-  "required_failed_substitutions": 24,
+  "required_failed_substitutions": 32,
   "required_owned_body_guard_refusals": 32,
   "required_added_lifetime_refusals": 8,
   "required_original216_requests": 216,
@@ -1224,7 +1224,7 @@
   "preparation_only": false,
   "prepared_owned256_template_sha256": "97da3970cc9f7555ac534a4f559a471fdb5ce41854aa4ba6cbf19642b8c4e796",
   "execution_binding_required": true,
-  "required_pid_records": 928,
+  "required_pid_records": 1000,
   "required_original272_requests": 272,
   "required_original272_acceptances": 128,
   "required_original272_expected_reject": 136,
@@ -1276,9 +1276,9 @@
   "required_bind_call_argument_acceptances": 88,
   "required_bind_call_argument_body_guard_refusals": 8,
   "planned_total_counts": {
-    "accepted": 352,
-    "unsupported": 168,
-    "invalid-source": 8
+    "accepted": 704,
+    "unsupported": 264,
+    "invalid-source": 32
   },
   "published_current_bind_basis": {
     "commit": "043b3f02feb6ec117a18ebbb96ab80ea1f309f5f",
