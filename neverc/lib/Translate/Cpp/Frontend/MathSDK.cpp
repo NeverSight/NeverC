@@ -12744,31 +12744,38 @@ public:
   }
   bool withBindRetainedUnwrapProjectionSource(const TemplateUseSource &Use,
       const std::function<bool()> &Proof,
-      const FunctionalBindCallSource *RetainedMetadata = nullptr) {
+      const FunctionalBindCallSource *RetainedMetadata = nullptr,
+      const FunctionalBindArgumentSource *RetainedForward = nullptr) {
     if (!Proof) return false;
+    const bool ForwardProjection = RetainedMetadata && RetainedForward;
+    if (RetainedForward && !ForwardProjection) return false;
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         BindTupleElementProjections.empty() || Use.Kind != TemplateSourceKind::Function ||
-        !Use.Template || !Use.Template->getIdentifier() || Use.Template->getName() != "__mu")
-      return Proof();
+        !Use.Template || !Use.Template->getIdentifier())
+      return ForwardProjection ? false : Proof();
+    if (Use.Template->getName() != (ForwardProjection ? "forward" : "__mu"))
+      return ForwardProjection ? false : Proof();
     const auto *Function = dyn_cast_or_null<FunctionDecl>(Use.Declaration);
     const auto *Primary = dyn_cast<FunctionTemplateDecl>(Use.Template);
     const auto *Selected = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!Function || !Primary || Function->getPrimaryTemplate() != Primary ||
         Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-        Function->getNumParams() != 2 || !Use.FunctionalBindConstraint ||
+        Function->getNumParams() != (ForwardProjection ? 1U : 2U) || !Use.FunctionalBindConstraint ||
         Use.Type || Use.Underlying || Use.Written || Use.Instantiation || Use.Selection ||
-        !Selected || Selected->size() != 3 || !Use.Canonical || !Use.Sugared ||
-        Use.Canonical->size() != 3 || Use.Sugared->size() != 3 ||
+        !Selected || Selected->size() != (ForwardProjection ? 1U : 3U) || !Use.Canonical || !Use.Sugared ||
+        Use.Canonical->size() != Selected->size() || Use.Sugared->size() != Selected->size() ||
         !cstddefOrigin(S, SM, Use.Location, "libcxx", "__functional/bind.h") ||
         !family(Function) || !family(Primary)) return false;
-    for (unsigned I = 0; I < 3; ++I)
+    for (unsigned I = 0; I < Selected->size(); ++I)
       if (!Use.Canonical->get(I).structurallyEquals(Selected->get(I)) ||
           !Use.Canonical->get(I).structurallyEquals(
               Context.getCanonicalTemplateArgument(Use.Sugared->get(I)))) return false;
     const auto &Input = Use.Sugared->get(0);
     if (Input.getKind() != TemplateArgument::Type) return Proof();
     const auto InputPlaceholder = describeFunctionalBindPlaceholderIdentity(S, SM, Input.getAsType(), Context);
-    if (!utilityScalar(Context, Input.getAsType().getUnqualifiedType()) && !InputPlaceholder) return Proof();
+    if (!utilityScalar(Context, Input.getAsType().getUnqualifiedType()) && !InputPlaceholder &&
+        !(ForwardProjection && Input.getAsType()->isReferenceType() &&
+          utilityScalar(Context, Input.getAsType().getNonReferenceType().getUnqualifiedType()))) return Proof();
     const FunctionalBindCallSource *ProjectionCall = &*BindCallMetadata;
     std::optional<FunctionalBindStandardCallSource> RetainedOccurrence;
     if (RetainedMetadata) {
@@ -12789,11 +12796,34 @@ public:
       ProjectionCall = Fresh;
     }
     bool ActualUnwrap = false;
-    for (const auto &Argument : ProjectionCall->Arguments)
-      ActualUnwrap |= !Argument.Reference && !Argument.Nested && Argument.Unwrap &&
-          (InputPlaceholder ? Argument.PlaceholderRank == InputPlaceholder->Rank : !Argument.PlaceholderRank) &&
-          Argument.Unwrap->getDirectCallee() == Function &&
-          Argument.Unwrap->getExprLoc() == Use.Location;
+    if (ForwardProjection) {
+      if (!BindStandardCall || !RetainedForward->PlaceholderRank ||
+          !RetainedForward->Unwrap || !RetainedForward->PlaceholderForward ||
+          !RetainedForward->PlaceholderGet || !RetainedForward->PlaceholderIndex ||
+          Function->getBuiltinID() != Builtin::BIforward || Function->getDefinition() ||
+          !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "__utility/forward.h")) return false;
+      for (const auto &Argument : ProjectionCall->Arguments) {
+        if (Argument.Unwrap != RetainedForward->Unwrap ||
+            Argument.PlaceholderForward != RetainedForward->PlaceholderForward ||
+            Argument.PlaceholderGet != RetainedForward->PlaceholderGet ||
+            Argument.PlaceholderIndex != RetainedForward->PlaceholderIndex ||
+            Argument.PlaceholderRank != RetainedForward->PlaceholderRank ||
+            Argument.PlaceholderForward->getDirectCallee() != Function ||
+            Argument.PlaceholderForward->getExprLoc() != Use.Location ||
+            !Context.hasSameType(Argument.ForwardedType, Function->getReturnType())) continue;
+        const auto *Callee = dyn_cast<DeclRefExpr>(Argument.PlaceholderForward->getCallee()->IgnoreParenImpCasts());
+        const auto *Info = Callee && Callee->hasExplicitTemplateArgs() && Callee->getNumTemplateArgs() == 1
+            ? Callee->template_arguments()[0].getTypeSourceInfo() : nullptr;
+        if (!Info || Info->getType() != Input.getAsType()) return false;
+        ActualUnwrap = true;
+      }
+    } else {
+      for (const auto &Argument : ProjectionCall->Arguments)
+        ActualUnwrap |= !Argument.Reference && !Argument.Nested && Argument.Unwrap &&
+            (InputPlaceholder ? Argument.PlaceholderRank == InputPlaceholder->Rank : !Argument.PlaceholderRank) &&
+            Argument.Unwrap->getDirectCallee() == Function &&
+            Argument.Unwrap->getExprLoc() == Use.Location;
+    }
     // A shared SDK specialization may retain a packet from another const
     // or mutable __mu occurrence at the same header location. This optional
     // projection scope owns only the exact selected callee. An unmatched
@@ -12825,6 +12855,10 @@ public:
       return false;
     const auto Object = Arguments[1].getAsType();
     const auto *TupleRecord = Object.isNull() ? nullptr : Object->getAsCXXRecordDecl();
+    if (ForwardProjection && (!ProjectionCall->CallArguments ||
+        !Context.hasSameType(Object, ProjectionCall->CallArguments->getType()) ||
+        Arguments[0].getAsIntegral().getLimitedValue(3) != RetainedForward->PlaceholderRank - 1))
+      return false;
     if (TupleRecord && TupleRecord->getCanonicalDecl() == BindMetadata->Arguments.Record->getCanonicalDecl())
       return Proof();
     return withBindSourceChild([&] {
@@ -12839,7 +12873,9 @@ public:
       if (Object.hasQualifiers()) return false;
       if (!TupleRecord) return false;
       if (BindRetainedTupleProjections.size() == 64) return false;
-      auto Storage = approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
+      auto Storage = ForwardProjection
+          ? approvedUtilityReferenceTupleRecord(S, SM, TupleRecord, Context)
+          : approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
       bool OwnedAncestor = false;
       if (!Storage) {
         Storage = bindRetainedOwnedAncestorTupleStorage(TupleRecord);
@@ -12856,6 +12892,8 @@ public:
         return false;
       const auto Slot = unsigned(Arguments[0].getAsIntegral().getZExtValue());
       auto Scalar = [&](QualType Value) {
+        if (ForwardProjection && !Value.isNull() && Value->isReferenceType())
+          Value = Value.getNonReferenceType();
         return !Value.isNull() && !Value->isReferenceType() && !Value.isVolatileQualified() &&
             !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default &&
             utilityScalar(Context, Value.getUnqualifiedType());
@@ -30308,6 +30346,55 @@ class BindSourceProof {
       return Graph.TraverseTemplateArgumentLoc(Reference->template_arguments()[0]) && Graph.bindSourceComplete();
     });
   }
+  bool withRetainedStandardForwardProjectionSource(const TemplateUseSource &Use,
+      const std::function<bool()> &Proof) {
+    if (!StandardCallRoot || !ActivePlaceholderBody || !ActivePlaceholderForwardSource)
+      return Proof();
+    if (ActivePlaceholderForwardSource != &Use || Use.Kind != TemplateSourceKind::Function ||
+        !Use.Sugared || Use.Sugared->size() != 1 ||
+        Use.Sugared->get(0).getKind() != TemplateArgument::Type) return false;
+    QualType Input = Use.Sugared->get(0).getAsType();
+    const TypeAliasDecl *Alias = nullptr;
+    for (unsigned Depth = 0; !Input.isNull() && Depth < 64; ++Depth) {
+      if (const auto *Name = dyn_cast<ElaboratedType>(Input.getTypePtr())) {
+        Input = Name->getNamedType(); continue;
+      }
+      if (const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Input.getTypePtr())) {
+        Input = Substitution->getReplacementType(); continue;
+      }
+      const auto *Name = dyn_cast<TypedefType>(Input.getTypePtr());
+      Alias = Name ? dyn_cast<TypeAliasDecl>(Name->getDecl()) : nullptr;
+      break;
+    }
+    const auto *Owner = Alias ? dyn_cast<ClassTemplateSpecializationDecl>(Alias->getDeclContext()) : nullptr;
+    if (!Owner || !Owner->getIdentifier() || Owner->getName() != "tuple_element") return Proof();
+    const auto Root = freshStandardBindInvocation();
+    if (!Root || !Graph.bindSourceComplete()) return false;
+    std::set<const CXXOperatorCallExpr *> Seen;
+    for (const auto *Selection : Selections) {
+      const auto *Call = Selection ? dyn_cast_or_null<CXXOperatorCallExpr>(Selection->Expression) : nullptr;
+      const auto *Method = Selection ? dyn_cast_or_null<CXXMethodDecl>(Selection->Function) : nullptr;
+      if (!Call || !Method || Method->getOverloadedOperator() != OO_Call ||
+          !S.owns(SM, Call->getExprLoc()) || !Seen.insert(Call).second) continue;
+      if (Seen.size() > 64 || !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
+      const auto Actual = describeFunctionalBindStandardCallSource(S, SM, Call, Context);
+      if (!Actual || Actual->Selected.Method != Method || Actual->Selected.SourceCall != Call ||
+          Actual->Selected.OwnedRoot != Call || !Actual->Selected.OwnedPath.empty()) continue;
+      for (const auto &Argument : Actual->Selected.Arguments) {
+        if (!Argument.PlaceholderRank || !Argument.Unwrap || !Argument.PlaceholderForward ||
+            !Argument.PlaceholderGet || !Argument.PlaceholderIndex ||
+            Argument.PlaceholderForward->getDirectCallee() != Use.Declaration ||
+            Argument.PlaceholderForward->getExprLoc() != Use.Location) continue;
+        const auto *Callee = dyn_cast<DeclRefExpr>(Argument.PlaceholderForward->getCallee()->IgnoreParenImpCasts());
+        const auto *Info = Callee && Callee->hasExplicitTemplateArgs() && Callee->getNumTemplateArgs() == 1
+            ? Callee->template_arguments()[0].getTypeSourceInfo() : nullptr;
+        if (!Info || Info->getType() != Use.Sugared->get(0).getAsType()) continue;
+        return Graph.withBindRetainedUnwrapProjectionSource(Use, Proof, &Actual->Selected, &Argument);
+      }
+    }
+    return false;
+  }
+
   bool builtinForwardSource(const CallExpr *Call, const ParmVarDecl *Parameter) {
     return Graph.withBindSourceChild([&] {
       const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -30401,7 +30488,9 @@ class BindSourceProof {
           ActivePlaceholderForwardSource = Use;
         }
         auto RestoreSource = llvm::make_scope_exit([&] { ActivePlaceholderForwardSource = Saved; });
-        if (!source(*Use, Parameters)) return false;
+        if (!withRetainedStandardForwardProjectionSource(*Use, [&] {
+              return source(*Use, Parameters);
+            })) return false;
         Found = true;
       }
       if (!Found || !Graph.TraverseTemplateArgumentLoc(Reference->template_arguments()[0])) return false;
