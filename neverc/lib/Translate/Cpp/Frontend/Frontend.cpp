@@ -30501,6 +30501,197 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   for (const auto &Directive : MemberClassDirectives)
     Check.checkExplicitMemberClassInstantiation(Directive);
   prepareBorrowedQueryLayouts(*this);
+    // Observation only: these results never enter the runtime/source maps.
+    const auto StandardProbeSources = Check.functionalBindSourceInputs();
+    unsigned StandardProbeNodes = 0, StandardProbeRoots = 0;
+    auto StandardRecord = [&](const CXXRecordDecl *Record) {
+      const auto *Bind = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+      if (!Bind || !Bind->getIdentifier() || Bind->getName() != "__bind" ||
+          Bind->getTemplateArgs().size() != 2 ||
+          Bind->getTemplateArgs()[0].getKind() != TemplateArgument::Type) return false;
+      const auto *Callable = Bind->getTemplateArgs()[0].getAsType().getNonReferenceType()->getAsCXXRecordDecl();
+      return Callable && isa<ClassTemplateSpecializationDecl>(Callable) &&
+          Callable->getIdentifier() && Callable->getName() != "reference_wrapper";
+    };
+    std::map<const CXXRecordDecl *, FunctionalBindFactorySource> StandardFactories;
+    std::function<bool(const Stmt *, unsigned)> StandardProbeStmt;
+    StandardProbeStmt = [&](const Stmt *Statement, unsigned Depth) {
+      if (!Statement) return true;
+      if (Depth >= 64 || ++StandardProbeNodes > 200000) return false;
+      if (const auto *Call = dyn_cast<CallExpr>(Statement)) {
+        const auto *Function = Call->getDirectCallee();
+        if (Function && Function->getIdentifier() && Function->getName() == "bind" &&
+            S.owns(Sources, Call->getExprLoc()) && StandardRecord(Call->getType()->getAsCXXRecordDecl())) {
+          const auto Storage = describeFunctionalBindStandardStorage(S, Sources,
+              Call->getType()->getAsCXXRecordDecl(), Context);
+          const auto Factory = describeFunctionalBindStandardFactorySource(S, Sources, Call, Context);
+          const auto Layout = describeFunctionalBindStandardNaturalLayout(S, Sources,
+              Call->getType()->getAsCXXRecordDecl(), Context);
+          if (Factory) StandardFactories.emplace(Factory->Storage.Record->getCanonicalDecl(), *Factory);
+          unsigned Uses = 0, Selected = 0, Pairs = 0;
+          if (Factory && StandardProbeSources) {
+            for (const auto *Use : StandardProbeSources->Dependencies)
+              if (Use && Use->Kind == TemplateSourceKind::Function && Use->Declaration == Factory->Factory &&
+                  Use->Template == Factory->Factory->getPrimaryTemplate() && Use->Canonical && Use->Sugared &&
+                  Use->Canonical->size() == 2 && Use->Sugared->size() == 2) ++Uses;
+            for (const auto *Source : StandardProbeSources->Selections) {
+              if (!Source || Source->Expression != Factory->SourceCall || Source->Function != Factory->Factory) continue;
+              ++Selected;
+              for (const auto *Use : StandardProbeSources->Dependencies)
+                if (Use && Use->Kind == TemplateSourceKind::Function && Use->Declaration == Source->Function &&
+                    Use->Location == Source->Location && Use->Canonical && Use->Sugared) ++Pairs;
+            }
+          }
+          const auto *Copy = Factory && Factory->CallableCopy ? Factory->CallableCopy->getConstructor() : nullptr;
+          const auto Member = Copy ? SpecialMembers.find(Copy->getCanonicalDecl()) : SpecialMembers.end();
+          const bool FactorySourceComplete = Factory && StandardProbeSources &&
+              approvedFunctionalBindStandardFactorySource(S, Sources, *Factory, Context,
+                  StandardProbeSources->Dependencies, StandardProbeSources->Selections,
+                  SpecialMembers, OperationTraits);
+          llvm::errs() << "BIND-STANDARD-FACTORY-SOURCE complete=" << FactorySourceComplete << "\n";
+          llvm::errs() << "BIND-STANDARD-RETAINED inputs=" << bool(StandardProbeSources)
+              << " uses=" << Uses << " selected=" << Selected << " pairs=" << Pairs
+              << " copy-packet=" << bool(Member != SpecialMembers.end())
+              << " copy-complete=" << bool(Member != SpecialMembers.end() && Member->second.Complete) << "\n";
+          llvm::errs() << "BIND-STANDARD-LAYOUT described=" << bool(Layout)
+              << " padded=" << bool(Layout && Layout->PaddedBase)
+              << " prefix-bits=" << (Layout && !Layout->BaseStorageType.isNull() ? Context.getTypeSize(Layout->BaseStorageType) : 0)
+              << " callable-offset=" << (Layout ? Layout->Storage.CallableOffsetBits : 0)
+              << " bound-offset=" << (Layout ? Layout->Storage.BoundOffsetBits : 0)
+              << " size-bits=" << (Layout ? Layout->Storage.SizeBytes * 8 : 0) << "\n";
+          llvm::errs() << "BIND-STANDARD-FACTORY storage=" << bool(Storage)
+              << " described=" << bool(Factory)
+              << " selected-copy=" << bool(Factory && Factory->CallableCopy)
+              << " callable-bits=" << (Storage ? Context.getTypeSize(Storage->Storage.CallableType) : 0)
+              << " callable-offset=" << (Storage ? Storage->Storage.CallableOffsetBits : 0)
+              << " bound-offset=" << (Storage ? Storage->Storage.BoundOffsetBits : 0)
+              << " size-bits=" << (Storage ? Storage->Storage.SizeBytes * 8 : 0) << "\n";
+        }
+      }
+      if (const auto *Construction = dyn_cast<CXXConstructExpr>(Statement)) {
+        const auto *Constructor = Construction->getConstructor();
+        const auto It = StandardFactories.find(Constructor->getParent()->getCanonicalDecl());
+        if (Constructor->isCopyOrMoveConstructor() && S.owns(Sources, Construction->getExprLoc()) &&
+            It != StandardFactories.end()) {
+          const auto Copy = describeFunctionalBindStandardCopySource(S, Sources, Construction, Context);
+          const bool Complete = Copy && StandardProbeSources &&
+              approvedFunctionalBindStandardCopySource(S, Sources, *Copy, It->second, Context,
+                  StandardProbeSources->Dependencies, StandardProbeSources->Selections,
+                  SpecialMembers, OperationTraits);
+          llvm::errs() << "BIND-STANDARD-LIFECYCLE role=Copy described=" << bool(Copy)
+              << " complete=" << Complete << "\n";
+        }
+      }
+      if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Statement)) {
+        const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+        if (Method && Call->getOperator() == OO_Call && S.owns(Sources, Call->getExprLoc()) &&
+            StandardRecord(Method->getParent())) {
+          const auto Source = describeFunctionalBindStandardCallSource(S, Sources, Call, Context);
+          if (Source) {
+            const auto *Function = Source->Selected.Invoke ? Source->Selected.Invoke->getDirectCallee() : nullptr;
+            const auto Invoke = describeFunctionalBindStandardInvokeSignatureSource(S, Sources, Function, *Source, Context);
+            std::set<const FunctionDecl *> DirectProbes, ValueProbes;
+            if (StandardProbeSources) for (const auto *Use : StandardProbeSources->Dependencies) {
+              if (++StandardProbeNodes > 200000) return false;
+              const auto *Probe = Use && Use->Kind == TemplateSourceKind::Function
+                  ? dyn_cast_or_null<CXXMethodDecl>(Use->Declaration) : nullptr;
+              if (!Probe || !Probe->getIdentifier() || Probe->getName() != "__try_call") continue;
+              if (describeFunctionalBindStandardTryCallSignatureSource(S, Sources, Probe, *Source, Context))
+                DirectProbes.insert(Probe);
+              if (describeFunctionalBindStandardValueQueryTryCallSignatureSource(S, Sources, Probe, *Source, Context))
+                ValueProbes.insert(Probe);
+              if (DirectProbes.size() > 64 || ValueProbes.size() > 64) return false;
+            }
+            const bool Auxiliary = StandardProbeSources &&
+                approvedFunctionalBindStandardCallAuxiliarySource(S, Sources, *Source, Context,
+                    StandardProbeSources->Dependencies, StandardProbeSources->Selections,
+                    SpecialMembers, OperationTraits);
+            llvm::errs() << "BIND-STANDARD-AUXILIARY complete=" << Auxiliary << "\n";
+            const bool StandardGet = StandardProbeSources &&
+                approvedFunctionalBindStandardCallGetSource(S, Sources, *Source, Context,
+                    StandardProbeSources->Dependencies, StandardProbeSources->Selections,
+                    SpecialMembers, OperationTraits);
+            llvm::errs() << "BIND-STANDARD-CONSUMER role=Get complete=" << StandardGet << "\n";
+            const bool StandardUnwrap = StandardProbeSources &&
+                approvedFunctionalBindStandardCallUnwrapSource(S, Sources, *Source, Context,
+                    StandardProbeSources->Dependencies, StandardProbeSources->Selections,
+                    SpecialMembers, OperationTraits);
+            llvm::errs() << "BIND-STANDARD-CONSUMER role=Unwrap complete=" << StandardUnwrap << "\n";
+            const bool StandardInvokeSignature = StandardProbeSources &&
+                approvedFunctionalBindStandardCallInvokeSignatureSource(S, Sources, *Source, Context,
+                    StandardProbeSources->Dependencies, StandardProbeSources->Selections,
+                    SpecialMembers, OperationTraits);
+            llvm::errs() << "BIND-STANDARD-CONSUMER role=InvokeSignature complete=" << StandardInvokeSignature << "\n";
+            const bool StandardInvokeBody = StandardProbeSources &&
+                approvedFunctionalBindStandardCallInvokeBodySource(S, Sources, *Source, Context,
+                    StandardProbeSources->Dependencies, StandardProbeSources->Selections,
+                    SpecialMembers, OperationTraits);
+            llvm::errs() << "BIND-STANDARD-CONSUMER role=InvokeBody complete=" << StandardInvokeBody << "\n";
+            const bool StandardComplete = StandardProbeSources &&
+                approvedFunctionalBindStandardCallCompleteSource(S, Sources, *Source, Context,
+                    StandardProbeSources->Dependencies, StandardProbeSources->Selections,
+                    SpecialMembers, OperationTraits);
+            llvm::errs() << "BIND-STANDARD-CONSUMER role=Complete complete=" << StandardComplete << "\n";
+            llvm::errs() << "BIND-STANDARD-QUERY invoke=" << bool(Invoke)
+                << " primary=" << bool(Invoke && Invoke->Primary)
+                << " signature=" << bool(Invoke && Invoke->SpecializedCall)
+                << " actual-body=" << bool(Invoke && Invoke->ActualReturn)
+                << " actual-exception=" << bool(Invoke && Invoke->ActualException)
+                << " direct-probes=" << DirectProbes.size() << " value-probes=" << ValueProbes.size() << "\n";
+          }
+          llvm::errs() << "BIND-STANDARD-CALL described=" << bool(Source)
+              << " sdk-target=" << bool(Source && approvedStandardSDKDeclaration(S, Sources, Source->Method))
+              << " target-params=" << (Source ? Source->Method->getNumParams() : 0)
+              << " incoming=" << Method->getNumParams()
+              << " const-wrapper=" << Method->isConst() << "\n";
+        }
+      }
+      for (const auto *Child : Statement->children())
+        if (!StandardProbeStmt(Child, Depth + 1)) return false;
+      if (const auto *Declarations = dyn_cast<DeclStmt>(Statement)) {
+        for (const auto *Declaration : Declarations->decls()) {
+          if (++StandardProbeNodes > 200000) return false;
+          const auto *Variable = dyn_cast<VarDecl>(Declaration);
+          const auto *Record = Variable ? Variable->getType()->getAsCXXRecordDecl() : nullptr;
+          if (!Record || !S.owns(Sources, Variable->getLocation())) continue;
+          const auto It = StandardFactories.find(Record->getCanonicalDecl());
+          if (It == StandardFactories.end()) continue;
+          const auto Destruction = describeFunctionalBindStandardDestructionSource(
+              S, Sources, Record->getDestructor(), Context);
+          const bool Complete = Destruction && StandardProbeSources &&
+              approvedFunctionalBindStandardDestructionSource(S, Sources, *Destruction,
+                  Variable->getLocation(), It->second, Context,
+                  StandardProbeSources->Dependencies, StandardProbeSources->Selections,
+                  SpecialMembers, OperationTraits);
+          llvm::errs() << "BIND-STANDARD-LIFECYCLE role=Destruction described=" << bool(Destruction)
+              << " complete=" << Complete << "\n";
+        }
+      }
+      return true;
+    };
+    std::function<bool(const DeclContext *, unsigned)> StandardProbeDecls;
+    StandardProbeDecls = [&](const DeclContext *Declarations, unsigned Depth) {
+      if (!Declarations || Depth >= 64 || ++StandardProbeNodes > 200000) return false;
+      for (const auto *Declaration : Declarations->decls()) {
+        if (++StandardProbeNodes > 200000) return false;
+        if (!S.owns(Sources, Declaration->getLocation())) continue;
+        if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
+          if (Function->getIdentifier() && Function->getName() == "replacement" &&
+              Function->getDefinition() == Function && Function->getBody()) {
+            ++StandardProbeRoots;
+            if (!StandardProbeStmt(Function->getBody(), Depth + 1)) return false;
+          }
+        } else if (const auto *Namespace = dyn_cast<NamespaceDecl>(Declaration)) {
+          if (!StandardProbeDecls(Namespace, Depth + 1)) return false;
+        } else if (const auto *Linkage = dyn_cast<LinkageSpecDecl>(Declaration)) {
+          if (!StandardProbeDecls(Linkage, Depth + 1)) return false;
+        }
+      }
+      return true;
+    };
+    const bool StandardProbeComplete = StandardProbeDecls(Context.getTranslationUnitDecl(), 0) && StandardProbeRoots == 1;
+    llvm::errs() << "BIND-STANDARD-PREPASS complete=" << StandardProbeComplete
+        << " roots=" << StandardProbeRoots << " nodes=" << StandardProbeNodes << "\n";
   bool Traversed = Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (Traversed && S.Diagnostics.empty())
     Traversed = Check.finishTupleConstructorQueries();
