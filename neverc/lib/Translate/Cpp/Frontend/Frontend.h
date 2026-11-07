@@ -1821,6 +1821,9 @@ struct FunctionalBindFactorySource {
   // Only an exact selected ordinary operation; never a runtime certificate.
   const clang::CXXConstructExpr *CallableCopy = nullptr;
 };
+bool sameFunctionalBindPlaceholderOperands(
+    const FunctionalBindFactorySource &Left,
+    const FunctionalBindFactorySource &Right);
 std::optional<FunctionalBindFactorySource>
 describeFunctionalBindFactorySource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
@@ -2104,12 +2107,26 @@ describeFunctionalBindOwnedTryCallFallbackSource(
     const FunctionalBindOwnedCallSource &Owned,
     const FunctionalBindStorage &Storage,
     llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
+std::optional<FunctionalBindTryCallFallbackSource>
+describeFunctionalBindStandardTryCallFallbackSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindTryCallSignatureSource &Probe,
+    const FunctionalBindStandardCallSource &Owned,
+    const FunctionalBindStorage &Storage,
+    llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
 
 std::optional<FunctionalBindTryCallFallbackSource>
 describeFunctionalBindOwnedValueQueryTryCallFallbackSource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindTryCallSignatureSource &Probe,
     const FunctionalBindOwnedCallSource &Owned,
+    const FunctionalBindStorage &Storage,
+    llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
+std::optional<FunctionalBindTryCallFallbackSource>
+describeFunctionalBindStandardValueQueryTryCallFallbackSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindTryCallSignatureSource &Probe,
+    const FunctionalBindStandardCallSource &Owned,
     const FunctionalBindStorage &Storage,
     llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
 
@@ -2122,6 +2139,10 @@ std::optional<FunctionalBindCopySource>
 describeFunctionalBindCopySource(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+std::optional<FunctionalBindCopySource>
+describeFunctionalBindStandardCopySource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
 
 struct FunctionalBindDestructionSource {
   FunctionalBindNaturalLayout Layout;
@@ -2129,6 +2150,10 @@ struct FunctionalBindDestructionSource {
 };
 std::optional<FunctionalBindDestructionSource>
 describeFunctionalBindDestructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
+std::optional<FunctionalBindDestructionSource>
+describeFunctionalBindStandardDestructionSource(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
 
@@ -2247,6 +2272,27 @@ bool approvedFunctionalBindStandardCallCompleteSource(
 
 bool approvedFunctionalBindStandardFactorySource(
     const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
+
+bool approvedFunctionalBindStandardCopySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindCopySource &Copy,
+    const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
+
+bool approvedFunctionalBindStandardDestructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindDestructionSource &Destruction,
+    clang::SourceLocation Location,
     const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,
     llvm::ArrayRef<const TemplateUseSource *> Sources,
     llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
