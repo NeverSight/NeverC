@@ -135,7 +135,11 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
                        'typedef __UINTPTR_TYPE__ word;\nword probe(word a, word b, word c, const void *source, word *ordinary) {\n' +
                        "\n".join(body) + "\n}\n")
         common = [args.compiler, "--target=" + triple, "-" + opt, "-Werror", "-ffreestanding", "-fno-builtin-mimalloc",
-                  "-fno-lto", "-fno-stack-protector", "-mllvm", "-verify-machineinstrs", src]
+                  "-fno-lto", "-fno-stack-protector", src]
+        # The external-backend driver rejects embedded -mllvm options. Its
+        # object and assembly routes must use the driver's supported interface.
+        if not args.backend_llc:
+            common += ["-mllvm", "-verify-machineinstrs"]
         if args.microsoft:
             common += ["-fms-extensions"]
             if "windows" not in triple:
