@@ -19084,6 +19084,8 @@ struct FunctionalBindCallDescriptionWalk {
   bool OwnedCallableMetadata = false;
   bool ReferenceCallableMetadata = false;
   bool StandardCallableMetadata = false;
+  bool MemberCallableMetadata = false;
+  std::optional<FunctionalBindMemberInvokeBodySource> MemberBody;
   unsigned Nodes = 0;
   std::vector<unsigned> Path;
   std::set<const CallExpr *> Active;
@@ -19100,8 +19102,10 @@ describeFunctionalBindCallSourceImpl(
   auto RestoreActive = llvm::make_scope_exit([&] { Walk.Active.erase(Call); });
   NotFnSelectedSource Entry(S, SM, Context);
   const unsigned ObjectModes = unsigned(Walk.OwnedCallableMetadata) +
-      unsigned(Walk.ReferenceCallableMetadata) + unsigned(Walk.StandardCallableMetadata);
-  if (ObjectModes > 1 || (ObjectModes && !Walk.Path.empty())) return std::nullopt;
+      unsigned(Walk.ReferenceCallableMetadata) + unsigned(Walk.StandardCallableMetadata) +
+      unsigned(Walk.MemberCallableMetadata);
+  if (Walk.MemberCallableMetadata != Walk.MemberBody.has_value() ||
+      ObjectModes > 1 || (ObjectModes && !Walk.Path.empty())) return std::nullopt;
   if (Walk.Path.empty()) {
     if (Call != Walk.Root || Parent || Expansion) return std::nullopt;
   } else {
@@ -19129,18 +19133,22 @@ describeFunctionalBindCallSourceImpl(
   const auto StandardStorage = Walk.StandardCallableMetadata
       ? describeFunctionalBindStandardStorage(S, SM,
           Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context) : std::nullopt;
-  const auto Storage = Walk.ReferenceCallableMetadata
-      ? (ReferenceStorage ? std::optional<FunctionalBindStorage>(ReferenceStorage->Storage) : std::nullopt)
+  const auto *MemberDescription = Walk.MemberBody ? &*Walk.MemberBody : nullptr;
+  const auto Storage = Walk.MemberCallableMetadata
+      ? (MemberDescription ? std::optional<FunctionalBindStorage>(MemberDescription->Value.Storage.Storage) : std::nullopt)
+      : Walk.ReferenceCallableMetadata
+          ? (ReferenceStorage ? std::optional<FunctionalBindStorage>(ReferenceStorage->Storage) : std::nullopt)
       : Walk.StandardCallableMetadata
           ? (StandardStorage ? std::optional<FunctionalBindStorage>(StandardStorage->Storage) : std::nullopt)
           : describeFunctionalBindStorage(S, SM,
               Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context);
-  const bool ObjectCallable = ObjectModes != 0;
+  const bool ObjectCallable = ObjectModes != 0 && !Walk.MemberCallableMetadata;
   const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
   const auto *MethodArguments = Method->getTemplateSpecializationArgs();
   if (!Storage ||
-      (ObjectCallable ? !Storage->CallableType->isRecordType()
-                                : !Storage->CallableType->isFunctionPointerType()) ||
+      (Walk.MemberCallableMetadata ? !Storage->CallableType->isMemberPointerType()
+          : ObjectCallable ? !Storage->CallableType->isRecordType()
+                           : !Storage->CallableType->isFunctionPointerType()) ||
       !Object->isGLValue() || !Prototype || Prototype->isNothrow() ||
       Prototype->getNoexceptExpr() || !Method->getPrimaryTemplate() ||
       !MethodArguments || MethodArguments->size() != 1 ||
@@ -19151,6 +19159,10 @@ describeFunctionalBindCallSourceImpl(
       !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
       Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType()) ||
       !Check.family(Method, {"__functional/bind.h"})) return std::nullopt;
+  if (Walk.MemberCallableMetadata &&
+      (!MemberDescription || MemberDescription->SourceCall != Operator ||
+       MemberDescription->Wrapper != Method ||
+       MemberDescription->Value.Storage.Storage.Record != Storage->Record)) return std::nullopt;
   std::vector<QualType> CallTypes;
   unsigned CallIndex = 0;
   for (const auto &Argument : MethodArguments->get(0).pack_elements()) {
@@ -19161,9 +19173,13 @@ describeFunctionalBindCallSourceImpl(
     const auto Forwarded = Input->isLValueReferenceType()
         ? Input : Context.getRValueReferenceType(Value);
     const auto *Operand = Call->getArg(CallIndex + 1);
+    const auto *InputOwner = Value->getAsCXXRecordDecl();
+    const bool MemberReceiverReference = Walk.MemberCallableMetadata && MemberDescription &&
+        Input->isLValueReferenceType() && InputOwner &&
+        InputOwner->getCanonicalDecl() == MemberDescription->Value.Storage.Owner->getCanonicalDecl();
     if (!Operand || Value.isVolatileQualified() || Value.isRestrictQualified() ||
         Value.getAddressSpace() != LangAS::Default ||
-        !utilityScalar(Context, Value.getUnqualifiedType()) ||
+        (!utilityScalar(Context, Value.getUnqualifiedType()) && !MemberReceiverReference) ||
         !Context.hasSameType(Method->getParamDecl(CallIndex)->getType(), Forwarded) ||
         !Context.hasSameType(Operand->getType(), Value) ||
         Operand->isLValue() != Forwarded->isLValueReferenceType()) return std::nullopt;
@@ -19557,6 +19573,19 @@ describeFunctionalBindCallSourceImpl(
     Arguments.push_back(FunctionalBindArgumentSource{Get, Unwrap, Copy, Access, Forwarded,
         PlaceholderRank, PlaceholderIndex, PlaceholderGet, PlaceholderForward, std::move(Nested)});
   }
+  if (Walk.MemberCallableMetadata) {
+    if (!MemberDescription || MemberDescription->Apply != Apply ||
+        MemberDescription->Invoke != Invoke || MemberDescription->Selected != InvokeFunction ||
+        MemberDescription->Wrapper != Method || !MemberDescription->ReceiverForward)
+      return std::nullopt;
+    std::vector<const CXXStaticCastExpr *> Casts{MemberDescription->ReceiverForward};
+    Casts.insert(Casts.end(), MemberDescription->ArgumentForwards.begin(),
+                 MemberDescription->ArgumentForwards.end());
+    if (Casts.size() != Arguments.size()) return std::nullopt;
+    return FunctionalBindCallSource{*Storage, Operator, Method, Object, Apply, Invoke,
+        MemberDescription->MemberCall, Indices, CallArguments, std::move(CallForwards),
+        std::move(Arguments), std::move(Casts), Walk.Root, Walk.Path};
+  }
   const auto *Target = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(InvokeFunction)));
   if (!Target ||
       !Context.hasSameType(Target->getType(), Method->getReturnType().getNonReferenceType()) ||
@@ -19728,6 +19757,25 @@ describeFunctionalBindStandardCallSource(
       S, SM, Source->Target, Context, false) : std::nullopt;
   if (!Source || !Method || !Operation || !Source->Target->getNumArgs()) return std::nullopt;
   return FunctionalBindStandardCallSource{*Source, Method, *Operation};
+}
+
+std::optional<FunctionalBindMemberCommonCallSource>
+describeFunctionalBindMemberCommonCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Root = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  if (!Root || !S.owns(SM, Root->getExprLoc())) return std::nullopt;
+  const auto Member = describeFunctionalBindMemberInvokeBodySource(S, SM, Call, Context);
+  if (!Member) return std::nullopt;
+  FunctionalBindCallDescriptionWalk Walk{Root};
+  Walk.MemberCallableMetadata = true;
+  Walk.MemberBody = *Member;
+  auto Source = describeFunctionalBindCallSourceImpl(S, SM, Call, Context, Walk);
+  if (!Source || Source->SourceCall != Member->SourceCall ||
+      Source->Apply != Member->Apply || Source->Invoke != Member->Invoke ||
+      Source->Target != Member->MemberCall || Source->Method != Member->Wrapper ||
+      !Walk.MemberBody) return std::nullopt;
+  return FunctionalBindMemberCommonCallSource{std::move(*Source), std::move(*Walk.MemberBody)};
 }
 
 // This is a fresh lookup, not an ownership bypass. Neither a canonical type
