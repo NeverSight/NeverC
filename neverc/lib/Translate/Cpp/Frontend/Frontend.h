@@ -1948,6 +1948,27 @@ describeFunctionalBindMemberCommonCallSource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+// Original member __invoke signature nodes. Data access remains an expression,
+// never an invented call. Defaults, traits, function uses and ordinary bodies
+// still require independent closure before runtime admission.
+struct FunctionalBindMemberInvokeSignatureSource {
+  const clang::FunctionDecl *Function, *Primary;
+  const clang::TemplateTypeParmDecl *Constraint;
+  const clang::TypeSourceInfo *ConstraintDefault;
+  const clang::TypeAliasTemplateDecl *ConstraintAlias;
+  const clang::Expr *PrimaryReturn, *PrimaryException, *ActualReturn, *ActualException;
+  const clang::Expr *SignatureExpression, *SpecializedExpression;
+  const clang::BinaryOperator *SignatureAccess, *SpecializedAccess;
+  std::vector<const clang::CallExpr *> Declvals, SpecializedDeclvals;
+  unsigned Bullet;
+};
+std::optional<FunctionalBindMemberInvokeSignatureSource>
+describeFunctionalBindMemberInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM, const clang::FunctionDecl *Function,
+    const FunctionalBindMemberCommonCallSource &Given, const clang::ASTContext &Context);
+
+
+
 // Original AST witnesses only. Root and Path identify the enclosing owned
 // occurrence; a copied descriptor never points into a temporary parent value.
 // A nested result type or selected node supplies no completed SDK permission.

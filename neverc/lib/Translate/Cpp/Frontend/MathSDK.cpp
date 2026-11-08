@@ -21839,6 +21839,235 @@ static const Expr *functionalBindInvokeExceptionSource(
   return Written;
 }
 
+std::optional<FunctionalBindMemberInvokeSignatureSource>
+describeFunctionalBindMemberInvokeSignatureSource(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function,
+    const FunctionalBindMemberCommonCallSource &Given, const ASTContext &Context) {
+  const auto Fresh = describeFunctionalBindMemberCommonCallSource(S, SM, Given.Selected.SourceCall, Context);
+  if (!Fresh || !Function || Fresh->Member.Selected != Function || Given.Member.Selected != Function ||
+      Fresh->Selected.SourceCall != Given.Selected.SourceCall ||
+      Fresh->Selected.OwnedRoot != Fresh->Selected.SourceCall || !Fresh->Selected.OwnedPath.empty() ||
+      Fresh->Selected.Method != Given.Selected.Method || Fresh->Selected.Object != Given.Selected.Object ||
+      Fresh->Selected.Apply != Given.Selected.Apply || Fresh->Selected.Invoke != Given.Selected.Invoke ||
+      Fresh->Selected.Target != Given.Selected.Target || Fresh->Selected.Storage.Record != Given.Selected.Storage.Record ||
+      Fresh->Member.Value.Factory.Member != Given.Member.Value.Factory.Member ||
+      Fresh->Member.Value.Factory.Address != Given.Member.Value.Factory.Address ||
+      Fresh->Member.Access != Given.Member.Access || Fresh->Member.MemberCall != Given.Member.MemberCall ||
+      Fresh->Member.ReceiverIsPointer != Given.Member.ReceiverIsPointer || Fresh->Selected.Arguments.empty() ||
+      Fresh->Selected.Arguments.size() > 8) return std::nullopt;
+  const auto &Call = Fresh->Selected;
+  const auto &Member = Fresh->Member;
+  const bool Method = Member.MemberCall != nullptr;
+  const unsigned Bullet = Method ? Member.ReceiverIsPointer ? 3 : 1 : Member.ReceiverIsPointer ? 6 : 4;
+  const char *ConstraintName = Method
+      ? Member.ReceiverIsPointer ? "__enable_if_bullet3" : "__enable_if_bullet1"
+      : Member.ReceiverIsPointer ? "__enable_if_bullet6" : "__enable_if_bullet4";
+  const auto *Template = Function->getPrimaryTemplate();
+  const auto *Primary = Template ? Template->getTemplatedDecl() : nullptr;
+  const auto *Parameters = Template ? Template->getTemplateParameters() : nullptr;
+  const unsigned ParameterCount = Method ? 4 : 3;
+  const auto *Callable = Parameters && Parameters->size() == ParameterCount
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+  const auto *Receiver = Parameters && Parameters->size() == ParameterCount
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
+  const auto *Arguments = Method && Parameters && Parameters->size() == ParameterCount
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(2)) : nullptr;
+  const auto *Constraint = Parameters && Parameters->size() == ParameterCount
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(ParameterCount - 1)) : nullptr;
+  const auto *Selected = Function->getTemplateSpecializationArgs();
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!S.coreV2() || !Template || !Primary || !Callable || !Receiver || !Constraint ||
+      !Selected || Selected->size() != ParameterCount || !Prototype ||
+      !Function->getIdentifier() || Function->getName() != "__invoke" ||
+      isa<CXXMethodDecl>(Function) || Function->isVariadic() || Function->isDeleted() || Function->isInvalidDecl() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Callable->isParameterPack() || Callable->hasDefaultArgument() ||
+      Receiver->isParameterPack() || Receiver->hasDefaultArgument() ||
+      Constraint->isParameterPack() || !Constraint->hasDefaultArgument() ||
+      (Method && (!Arguments || !Arguments->isParameterPack() || Arguments->hasDefaultArgument())) ||
+      Primary->getNumParams() != (Method ? 3 : 2) || Primary->isVariadic() ||
+      Function->getNumParams() != Call.Arguments.size() + 1 ||
+      Selected->get(0).getKind() != TemplateArgument::Type || Selected->get(1).getKind() != TemplateArgument::Type ||
+      Selected->get(ParameterCount - 1).getKind() != TemplateArgument::Type ||
+      !Selected->get(ParameterCount - 1).getAsType()->isVoidType() ||
+      (Method && (Selected->get(2).getKind() != TemplateArgument::Pack ||
+                  Selected->get(2).pack_size() + 1 != Call.Arguments.size())) ||
+      (!Method && Call.Arguments.size() != 1) ||
+      !Context.hasSameType(Function->getReturnType(), Call.Method->getReturnType()) ||
+      !Check.family(Function, {"__type_traits/invoke.h"})) return std::nullopt;
+  for (unsigned I = 0; I < ParameterCount; ++I)
+    if (!Check.family(Parameters->getParam(I), {"__type_traits/invoke.h"})) return std::nullopt;
+  const auto &Default = Constraint->getDefaultArgument();
+  const auto *DefaultSource = Default.getTypeSourceInfo();
+  const auto *DefaultType = DefaultSource
+      ? dyn_cast<TemplateSpecializationType>(DefaultSource->getType().getTypePtr()) : nullptr;
+  const auto *DefaultAlias = DefaultType
+      ? dyn_cast_or_null<TypeAliasTemplateDecl>(DefaultType->getTemplateName().getAsTemplateDecl()) : nullptr;
+  if (Default.getArgument().getKind() != TemplateArgument::Type || !DefaultSource || !DefaultType ||
+      !DefaultAlias || !DefaultAlias->getIdentifier() || DefaultAlias->getName() != ConstraintName ||
+      DefaultType->template_arguments().size() < 2 || DefaultType->template_arguments().size() > 5 ||
+      !Check.family(DefaultAlias, {"__type_traits/invoke.h"}) ||
+      !Check.location(DefaultSource->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) ||
+      !Check.location(DefaultSource->getTypeLoc().getEndLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+  for (unsigned I = 0; I < 2; ++I) {
+    const auto &Argument = DefaultType->template_arguments()[I];
+    const auto *Type = Argument.getKind() == TemplateArgument::Type
+        ? dyn_cast<TemplateTypeParmType>(Argument.getAsType().getTypePtr()) : nullptr;
+    if (!Type || Type->getDecl() != (I ? Receiver : Callable)) return std::nullopt;
+  }
+  auto Deduced = [](QualType Type) {
+    return !Type.isNull() && Type->isRValueReferenceType() ? Type.getNonReferenceType() : Type;
+  };
+  auto Collapsed = [&](QualType Type) {
+    return Type->isReferenceType() ? Type : Context.getRValueReferenceType(Type);
+  };
+  const auto CallableValue = Call.Method->isConst()
+      ? Context.getConstType(Call.Storage.CallableType) : Call.Storage.CallableType;
+  const auto Input = Context.getLValueReferenceType(CallableValue);
+  if (!Context.hasSameType(Selected->get(0).getAsType(), Input) ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(), Input) ||
+      !Context.hasSameType(Selected->get(1).getAsType(), Deduced(Call.Arguments[0].ForwardedType)))
+    return std::nullopt;
+  for (unsigned I = 0; I < Call.Arguments.size(); ++I) {
+    const auto Type = Call.Arguments[I].ForwardedType;
+    if (Type.isNull() || !Context.hasSameType(Function->getParamDecl(I + 1)->getType(), Collapsed(Type)) ||
+        Function->getParamDecl(I + 1)->hasDefaultArg()) return std::nullopt;
+    if (I) {
+      const auto &Argument = Selected->get(2).pack_elements()[I - 1];
+      if (Argument.getKind() != TemplateArgument::Type || !Context.hasSameType(Argument.getAsType(), Deduced(Type)))
+        return std::nullopt;
+    }
+  }
+  auto PrimaryCast = [&](const Expr *Expression, unsigned I) {
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(Expression));
+    const auto *Reference = Cast ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(Cast->getSubExpr())) : nullptr;
+    const auto *Parameter = Primary->getParamDecl(I);
+    auto Declared = Parameter->getType();
+    if (const auto *Expansion = dyn_cast<PackExpansionType>(Declared.getTypePtr())) Declared = Expansion->getPattern();
+    const auto Type = Cast ? Cast->getTypeAsWritten() : QualType();
+    const auto *Pointee = !Type.isNull() && Type->isRValueReferenceType()
+        ? dyn_cast<TemplateTypeParmType>(Type->getPointeeType().getTypePtr()) : nullptr;
+    return I && Cast && Reference && Reference->getDecl() == Parameter && Pointee &&
+        Pointee->getDecl() == (I == 1 ? Receiver : Arguments) &&
+        Parameter->isParameterPack() == (I == 2) && !Parameter->hasDefaultArg() &&
+        Context.hasSameType(Type, Declared) && Cast->getTypeInfoAsWritten() &&
+        Check.location(Cast->getExprLoc(), {"__type_traits/invoke.h"}) &&
+        Check.location(Cast->getTypeInfoAsWritten()->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) &&
+        Check.location(Cast->getTypeInfoAsWritten()->getTypeLoc().getEndLoc(), {"__type_traits/invoke.h"});
+  };
+  auto Access = [&](const Expr *Expression) -> const BinaryOperator * {
+    const auto *Binary = dyn_cast_or_null<BinaryOperator>(Check.stripped(Expression));
+    return Binary && Binary->getOpcode() == BO_PtrMemD &&
+        Check.location(Binary->getOperatorLoc(), {"__type_traits/invoke.h"}) ? Binary : nullptr;
+  };
+  auto ReceiverCore = [&](const Expr *Expression) -> const Expr * {
+    if (!Member.ReceiverIsPointer) return Expression;
+    const auto *Dereference = dyn_cast_or_null<UnaryOperator>(Check.stripped(Expression));
+    return Dereference && Dereference->getOpcode() == UO_Deref &&
+        Check.location(Dereference->getOperatorLoc(), {"__type_traits/invoke.h"}) ? Dereference->getSubExpr() : nullptr;
+  };
+  auto PrimaryValue = [&](const Expr *Expression) {
+    const auto *Invocation = Method ? dyn_cast_or_null<CallExpr>(Check.stripped(Expression)) : nullptr;
+    const auto *Binary = Access(Method && Invocation ? Invocation->getCallee() : Method ? nullptr : Expression);
+    const auto *Reference = Binary ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(Binary->getRHS())) : nullptr;
+    if (!Binary || !Reference || Reference->getDecl() != Primary->getParamDecl(0) || Reference->hasExplicitTemplateArgs() ||
+        !PrimaryCast(ReceiverCore(Binary->getLHS()), 1)) return false;
+    if (!Method) return true;
+    const auto *Pack = Invocation && Invocation->getNumArgs() == 1 ? dyn_cast<PackExpansionExpr>(Invocation->getArg(0)) : nullptr;
+    return Invocation && !Invocation->getDirectCallee() && Pack && PrimaryCast(Pack->getPattern(), 2) &&
+        Check.location(Pack->getEllipsisLoc(), {"__type_traits/invoke.h"});
+  };
+  const auto *PrimaryReturn = Check.returned(Primary);
+  const auto *PrimaryException = Check.exceptionSource(Primary);
+  const auto *PrimaryNoexcept = dyn_cast_or_null<CXXNoexceptExpr>(PrimaryException);
+  if (!PrimaryValue(PrimaryReturn) || !PrimaryNoexcept || !PrimaryValue(PrimaryNoexcept->getOperand())) return std::nullopt;
+  const auto *PrimaryReturnType = dyn_cast<DecltypeType>(Primary->getReturnType().getTypePtr());
+  const auto *Signature = PrimaryReturnType ? Check.stripped(PrimaryReturnType->getUnderlyingExpr()) : nullptr;
+  const auto *SignatureCall = Method ? dyn_cast_or_null<CallExpr>(Signature) : nullptr;
+  const auto *SignatureAccess = Access(Method && SignatureCall ? SignatureCall->getCallee() : Method ? nullptr : Signature);
+  const auto *SignaturePack = SignatureCall && SignatureCall->getNumArgs() == 1
+      ? dyn_cast<PackExpansionExpr>(SignatureCall->getArg(0)) : nullptr;
+  if (!Signature || !SignatureAccess || (Method && (!SignatureCall || SignatureCall->getDirectCallee() || !SignaturePack)))
+    return std::nullopt;
+  std::vector<const CallExpr *> Declvals;
+  auto Declval = [&](const Expr *Expression, const TemplateTypeParmDecl *Expected) {
+    const auto *Value = dyn_cast_or_null<CallExpr>(Check.stripped(Expression));
+    const auto *Lookup = Value ? dyn_cast<UnresolvedLookupExpr>(Value->getCallee()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Type = Lookup && Lookup->hasExplicitTemplateArgs() && Lookup->getNumTemplateArgs() == 1 &&
+            Lookup->template_arguments()[0].getArgument().getKind() == TemplateArgument::Type
+        ? dyn_cast<TemplateTypeParmType>(Lookup->template_arguments()[0].getArgument().getAsType().getTypePtr()) : nullptr;
+    if (!Value || Value->getNumArgs() || !Lookup || Lookup->requiresADL() || Lookup->getNumDecls() != 1 ||
+        Lookup->getName().getNameKind() != DeclarationName::Identifier ||
+        Lookup->getName().getAsIdentifierInfo()->getName() != "declval" || !Type || Type->getDecl() != Expected ||
+        !Check.family(*Lookup->decls_begin(), {"__utility/declval.h"}) ||
+        !Check.location(Value->getExprLoc(), {"__type_traits/invoke.h"})) return false;
+    Declvals.push_back(Value); return true;
+  };
+  if (!Declval(ReceiverCore(SignatureAccess->getLHS()), Receiver) || !Declval(SignatureAccess->getRHS(), Callable) ||
+      (Method && !Declval(SignaturePack->getPattern(), Arguments))) return std::nullopt;
+  const auto *SpecializedReturn = dyn_cast<DecltypeType>(Function->getReturnType().getTypePtr());
+  const auto *Specialized = SpecializedReturn ? Check.stripped(SpecializedReturn->getUnderlyingExpr()) : nullptr;
+  const auto *SpecializedCall = Method ? dyn_cast_or_null<CallExpr>(Specialized) : nullptr;
+  const auto *SpecializedAccess = Access(Method && SpecializedCall ? SpecializedCall->getCallee() : Method ? nullptr : Specialized);
+  auto Result = [&](const Expr *Expression) {
+    return Expression && !Expression->isTypeDependent() && !Expression->isValueDependent() &&
+        Context.hasSameType(Expression->getType(), Function->getReturnType().getNonLValueExprType(Context)) &&
+        Expression->getValueKind() == Expr::getValueKindForType(Function->getReturnType()) &&
+        Check.location(Expression->getExprLoc(), {"__type_traits/invoke.h"});
+  };
+  if (!Specialized || !SpecializedAccess || !Result(Specialized) ||
+      (Method && (!SpecializedCall || SpecializedCall->getDirectCallee() || SpecializedCall->getNumArgs() + 1 != Call.Arguments.size())))
+    return std::nullopt;
+  std::vector<const CallExpr *> SpecializedDeclvals;
+  auto SpecializedDeclval = [&](const Expr *Expression, QualType Expected, const CallExpr *Original) {
+    const auto *Value = dyn_cast_or_null<CallExpr>(Check.stripped(Expression));
+    const auto Description = Value ? describeFunctionalBindDeclvalSource(S, SM, Value, Expected, Context) : std::nullopt;
+    const auto *Lookup = Original ? dyn_cast<UnresolvedLookupExpr>(Original->getCallee()->IgnoreParenImpCasts()) : nullptr;
+    if (!Description || !Lookup || Lookup->getNumDecls() != 1 ||
+        *Lookup->decls_begin() != Description->Function->getPrimaryTemplate() || Value->getExprLoc() != Original->getExprLoc()) return false;
+    SpecializedDeclvals.push_back(Value); return true;
+  };
+  if (!SpecializedDeclval(ReceiverCore(SpecializedAccess->getLHS()), Selected->get(1).getAsType(), Declvals[0]) ||
+      !SpecializedDeclval(SpecializedAccess->getRHS(), Input, Declvals[1])) return std::nullopt;
+  if (Method)
+    for (unsigned I = 0; I < SpecializedCall->getNumArgs(); ++I)
+      if (!SpecializedDeclval(SpecializedCall->getArg(I), Deduced(Call.Arguments[I + 1].ForwardedType), Declvals[2])) return std::nullopt;
+  auto ActualCast = [&](const Expr *Expression, unsigned I) {
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(Expression));
+    const auto *Reference = Cast ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(Cast->getSubExpr())) : nullptr;
+    const auto *Parameter = Function->getParamDecl(I);
+    return Cast && Reference && Reference->getDecl() == Parameter && !Parameter->hasDefaultArg() &&
+        Parameter->getType()->isReferenceType() && Cast->getCastKind() == CK_NoOp && Cast->getTypeInfoAsWritten() &&
+        Context.hasSameType(Cast->getTypeAsWritten(), Parameter->getType()) &&
+        Context.hasSameType(Cast->getType(), Parameter->getType().getNonReferenceType()) &&
+        Cast->getValueKind() == Expr::getValueKindForType(Parameter->getType()) &&
+        Check.location(Cast->getExprLoc(), {"__type_traits/invoke.h"}) &&
+        Check.location(Cast->getTypeInfoAsWritten()->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) &&
+        Check.location(Cast->getTypeInfoAsWritten()->getTypeLoc().getEndLoc(), {"__type_traits/invoke.h"});
+  };
+  auto ActualValue = [&](const Expr *Expression) {
+    const auto *Invocation = Method ? dyn_cast_or_null<CallExpr>(Check.stripped(Expression)) : nullptr;
+    const auto *Binary = Access(Method && Invocation ? Invocation->getCallee() : Method ? nullptr : Expression);
+    const auto *Reference = Binary ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(Binary->getRHS())) : nullptr;
+    if (!Binary || !Reference || Reference->getDecl() != Function->getParamDecl(0) || Reference->hasExplicitTemplateArgs() ||
+        !ActualCast(ReceiverCore(Binary->getLHS()), 1) || !Result(Check.stripped(Expression))) return false;
+    if (!Method) return true;
+    if (!Invocation || Invocation->getDirectCallee() || Invocation->getNumArgs() + 1 != Call.Arguments.size()) return false;
+    for (unsigned I = 0; I < Invocation->getNumArgs(); ++I)
+      if (!ActualCast(Invocation->getArg(I), I + 2)) return false;
+    return true;
+  };
+  const auto *ActualReturn = Check.returned(Function);
+  const auto *ActualException = functionalBindInvokeExceptionSource(S, SM, Context, Function);
+  const auto *ActualNoexcept = dyn_cast_or_null<CXXNoexceptExpr>(ActualException);
+  if ((ActualReturn && !ActualValue(ActualReturn)) ||
+      (ActualException && (!ActualNoexcept || !ActualValue(ActualNoexcept->getOperand())))) return std::nullopt;
+  return FunctionalBindMemberInvokeSignatureSource{Function, Primary, Constraint, DefaultSource, DefaultAlias,
+      PrimaryReturn, PrimaryException, ActualReturn, ActualException, Signature, Specialized,
+      SignatureAccess, SpecializedAccess, std::move(Declvals), std::move(SpecializedDeclvals), Bullet};
+}
+
 std::optional<FunctionalBindInvokeSignatureSource>
 describeFunctionalBindInvokeSignatureSource(
     const State &S, const SourceManager &SM,
