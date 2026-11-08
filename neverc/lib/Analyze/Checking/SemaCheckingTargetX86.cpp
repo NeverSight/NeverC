@@ -561,6 +561,20 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_writecr32:
   case X86::BI__builtin_ia32_readdr32:
   case X86::BI__builtin_ia32_writedr32:
+  case X86::BI__builtin_ia32_vmread32:
+  case X86::BI__builtin_ia32_vmwrite32:
+  case X86::BI__builtin_ia32_vmread_reg32:
+  case X86::BI__builtin_ia32_vmwrite_mem32:
+  case X86::BI__builtin_ia32_invept32:
+  case X86::BI__builtin_ia32_invvpid32:
+  case X86::BI__builtin_ia32_vmread_address32:
+  case X86::BI__builtin_ia32_vmwrite_mem_address32:
+  case X86::BI__builtin_ia32_invept_address32:
+  case X86::BI__builtin_ia32_invvpid_address32:
+  case X86::BI__builtin_ia32_vmclear_address32:
+  case X86::BI__builtin_ia32_vmptrld_address32:
+  case X86::BI__builtin_ia32_vmptrst_address32:
+  case X86::BI__builtin_ia32_vmxon_address32:
   case X86::BI__builtin_ia32_readeflags_u32:
   case X86::BI__builtin_ia32_writeeflags_u32:
     if (TI.getTriple().getArch() != llvm::Triple::x86) {
@@ -681,8 +695,9 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     if (SemaBuiltinConstantArg(TheCall, WidthArgument, Width) ||
         SemaBuiltinConstantArg(TheCall, WidthArgument + 1, Prefix))
       return true;
-    if (llvm::X86::isNativeMemoryAddressControl(true, Width.getZExtValue(),
-                                                Prefix.getZExtValue()) &&
+    if (llvm::X86::isNativeMemoryAddressControl(
+            TI.getTriple().getArch() == llvm::Triple::x86_64,
+            Width.getZExtValue(), Prefix.getZExtValue()) &&
         (AllowStack ||
          !(Prefix.getZExtValue() & llvm::X86::NativeMemoryStackReference)))
       return false;
@@ -959,6 +974,14 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_lsl_mem32_address:
   case X86::BI__builtin_ia32_lsl_mem64_address:
     return CheckMemoryAddress(1);
+  case X86::BI__builtin_ia32_vmread_address32:
+  case X86::BI__builtin_ia32_vmwrite_mem_address32:
+  case X86::BI__builtin_ia32_invept_address32:
+  case X86::BI__builtin_ia32_invvpid_address32:
+  case X86::BI__builtin_ia32_vmclear_address32:
+  case X86::BI__builtin_ia32_vmptrld_address32:
+  case X86::BI__builtin_ia32_vmptrst_address32:
+  case X86::BI__builtin_ia32_vmxon_address32:
   case X86::BI__builtin_ia32_vmread_address:
   case X86::BI__builtin_ia32_vmwrite_mem_address:
   case X86::BI__builtin_ia32_invept_address:

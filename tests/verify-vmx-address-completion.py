@@ -48,6 +48,9 @@ PAYLOAD = 0x9172536485a6b7c8
 
 def compile_case(args, directory, operation, width, segment, variant, mode, opt,
                  target=COMMON.TRIPLES[0]):
+    if mode == 32 and not args.llc:
+        target = "unknown-linux-gnu"
+    driver = mode == 32 and args.backend_llc and not args.llc
     name = f"{operation}-{width}-{segment:x}-{variant}-{mode}-{opt}-{COMMON.TRIPLES.index(target)}"
     ir, obj = directory / (name + ".ll"), directory / (name + ".o")
     api = "llvm.x86." + operation + ".address" + ("32" if mode == 32 else "")
@@ -88,6 +91,8 @@ def compile_case(args, directory, operation, width, segment, variant, mode, opt,
             ir = optimized
     else:
         src = directory / (name + ".c")
+        c_word = "unsigned" if mode == 32 else "unsigned long long"
+        suffix = "32" if mode == 32 else ""
         body = ["*ordinary = seed;"] if variant == "memory" else []
         terms = ["selector", "offset", "seed"]
         if variant == "condition":
@@ -97,30 +102,38 @@ def compile_case(args, directory, operation, width, segment, variant, mode, opt,
             call = (f"selector ^ {0x5a31 if index else 0}, " if operation in SELECTOR else "")
             call += f"offset ^ {0x40 if index else 0}, {width}, {segment}"
             body.append((f"unsigned char status{index} = " if result != "void" else "") +
-                        f"__builtin_ia32_{operation.replace('.', '_')}_address({call});")
+                        f"__builtin_ia32_{operation.replace('.', '_')}_address{suffix}({call});")
             if result != "void" and variant != "dead":
-                terms.append(f"((unsigned long long)status{index} << {index * 8})")
+                terms.append(f"(({c_word})status{index} << {index * 8})")
         if variant == "memory":
             terms.append("*ordinary")
         body.append("return " + " ^ ".join(terms) + ";")
-        src.write_text("unsigned long long probe(unsigned long long selector, unsigned long long offset, "
-                       "unsigned long long seed, unsigned long long *ordinary) {\n" + "\n".join(body) + "\n}\n")
+        src.write_text(f"{c_word} probe({c_word} selector, {c_word} offset, "
+                       f"{c_word} seed, {c_word} *ordinary) {{\n" + "\n".join(body) + "\n}\n")
         compiler = [args.compiler, "--target=" + triple, "-" + opt, "-Werror", "-ffreestanding",
                     "-fno-builtin-mimalloc", "-fno-lto", "-fno-stack-protector",
-                    "-mllvm", "-verify-machineinstrs", src]
+                    src]
+        if not driver:
+            compiler += ["-mllvm", "-verify-machineinstrs"]
         run(compiler + ["-S", "-emit-llvm", "-o", ir])
         assert " asm " not in ir.read_text() and f"@{api}(" in ir.read_text(), "missing native IR call"
-        if not args.backend_llc:
-            run(compiler + ["-c", "-o", obj])
+        if not args.backend_llc or driver:
+            run(compiler + ["-c", "-o", obj] +
+                (["-fllvm-backend=" + str(args.backend_llc)] if driver else []))
     backend = args.llc or args.backend_llc
     if backend:
         backend_command = [backend, "-mtriple=" + triple, "-" + opt, "-verify-machineinstrs", ir]
-        run(backend_command + ["-filetype=obj", "-o", obj])
+        if not driver:
+            run(backend_command + ["-filetype=obj", "-o", obj])
     if variant == "value" and (width, segment) in ((mode, 0), (mode // 2, 0x64)):
         for dialect in ("att", "intel"):
             asm = directory / (name + "-" + dialect + ".s")
             assembled = asm.with_suffix(".o")
-            if backend:
+            if driver:
+                run(compiler + ["-S", "-masm=" + dialect,
+                                "-fllvm-backend=" + str(backend), "-o", asm])
+                run([Path(backend).parent / "llvm-mc", "-triple=" + triple, "-filetype=obj", asm, "-o", assembled])
+            elif backend:
                 run(backend_command + ["-filetype=asm", "-x86-asm-syntax=" + dialect, "-o", asm])
                 run([Path(backend).parent / "llvm-mc", "-triple=" + triple, "-filetype=obj", asm, "-o", assembled])
             else:
@@ -246,7 +259,7 @@ def execute(code, operation, width, segment, variant, mode, values, statuses, ma
 
 
 def native_fault_oracle(args, directory):
-    if args.llc or platform.system() != "Linux" or platform.machine() != "x86_64":
+    if args.llc or args.bits == 32 or platform.system() != "Linux" or platform.machine() != "x86_64":
         return 0
     count = 0
     libc = ctypes.CDLL(None, use_errno=True)
@@ -306,15 +319,18 @@ def main():
     backend.add_argument("--llc", type=Path)
     backend.add_argument("--backend-llc", type=Path)
     parser.add_argument("--keep", type=Path)
+    parser.add_argument("--bits", type=int, choices=(32, 64))
     args = parser.parse_args()
     for key in ("compiler", "llc", "backend_llc"):
         if getattr(args, key):
             setattr(args, key, getattr(args, key).resolve())
+    if args.bits == 32 and not (args.llc or args.backend_llc):
+        parser.error("i386 source objects require --backend-llc")
     count = 0
     with tempfile.TemporaryDirectory(prefix="vmx-address-") as temporary:
         directory = args.keep or Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
-        for mode in ((32, 64) if args.llc else (64,)):
+        for mode in ((args.bits,) if args.bits else (32, 64) if args.llc else (64,)):
             for operation, width, segment, opt in itertools.product(OPERATIONS, (mode // 2, mode), SEGMENTS, ("O0", "O2")):
                 variants = ("value", "dead", "twice", "memory", "condition") if (width, segment) in ((mode, 0), (mode // 2, 0x64)) else ("value",)
                 for variant in variants:
@@ -328,7 +344,7 @@ def main():
                         count += 1
                     execute(code, operation, width, segment, variant, mode, VALUES[1], (0,) * (2 if variant == "twice" else 1), False)
                     count += 1
-                    if variant == "value":
+                    if variant == "value" and (args.llc or mode == 64):
                         for target in COMMON.TRIPLES[1:]:
                             other = compile_case(args, directory, operation, width, segment, variant, mode, opt, target)
                             accesses(other, operation, width, segment, mode, 1)

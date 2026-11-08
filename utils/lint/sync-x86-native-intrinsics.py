@@ -48,6 +48,12 @@ DECLARATIONS = {
     "wrmsrns": ("Done", "I32", "I64"),
     "rdmsrlist": ("I64", "PTR", "PTR", "I64"),
     "wrmsrlist": ("I64", "PTR", "PTR", "I64"),
+    "vmread32": ("I8", "I32", "PTR"),
+    "vmwrite32": ("I8", "I32", "I32"),
+    "vmread_reg32": ("STRUCT2", "I32", "I8", "I32", "I32"),
+    "vmwrite_mem32": ("I8", "I32", "PTR"),
+    "invept32": ("I8", "I32", "PTR"),
+    "invvpid32": ("I8", "I32", "PTR"),
     "vmread_reg": ("STRUCT2", "I64", "I8", "I64", "I64"),
     "vmwrite_mem": ("I8", "I64", "PTR"),
     "hreset": ("Done", "I32"),
@@ -180,6 +186,11 @@ ADDRESS_SIGNATURES = {
     **{name + "_address": (("I8", "I64", "I32", "I32"), (1, 2))
        for name in ("vmclear", "vmptrld", "vmxon")},
     "vmptrst_address": (("Done", "I64", "I32", "I32"), (1, 2)),
+    **{name + "_address32": (("I8", "I32", "I32", "I32", "I32"), (2, 3))
+       for name in ("vmread", "vmwrite_mem", "invept", "invvpid")},
+    **{name + "_address32": (("I8", "I32", "I32", "I32"), (1, 2))
+       for name in ("vmclear", "vmptrld", "vmxon")},
+    "vmptrst_address32": (("Done", "I32", "I32", "I32"), (1, 2)),
 }
 for operation in ("verr_mem", "verw_mem", "sldt_mem", "str_mem", "smsw_mem",
                   "lldt_mem", "ltr_mem", "lmsw_mem", "sgdt", "sidt", "lgdt",

@@ -1955,6 +1955,40 @@ compiler tests, 81 binary checks, 29 generator tests and 12 plugin checks pass;
 the overload bitmap has no mismatches. The x86 schema retains all 18,495 prior
 opcode records unchanged and appends eight address-size pseudos (18,503 total).
 
+### Native i386 VMX source interfaces
+
+The Linux i386 frontend adds `__builtin_ia32_vmread32`, `vmwrite32`,
+`vmread_reg32`, `vmwrite_mem32`, `invept32` and `invvpid32`. Each selector and
+register value is `unsigned`; VMREAD's memory output is `unsigned *`, the
+register form returns `unsigned` and stores its byte completion status. The
+memory-source and invalidation forms take `const void *`. Existing unsuffixed
+64-bit signatures remain unchanged.
+
+All eight explicit VMX address interfaces above also have `_address32`
+variants. They take unsigned selectors/offsets and constant address widths
+16 or 32. The shared native address validator owns the segment control.
+Using these mode-specific APIs on x64 is an error. VMX management pointer
+interfaces and their Microsoft header declarations work in either code mode;
+their m64 physical-address operands do not shrink to pointer width.
+
+Microsoft `__vmx_vmread` and `__vmx_vmwrite` select the intrinsic by target
+code mode while retaining their `size_t` source signature. Previously their
+i386 calls passed i32 operands to i64 intrinsic declarations and failed LLVM
+verification. The instruction continues to own VMREAD's conditional store and
+VMWRITE's source memory access; no eager C/IR access is introduced.
+
+The full fork already supplies these intrinsics. The pruned backend rejects
+32-bit VMX IDs clearly. Use the existing `-fllvm-backend` driver for i386 ELF
+machine output. `verify-vmcs-completion.py`, `verify-vmcs-forms-completion.py`
+and `verify-vmx-address-completion.py` accept `--bits 32 --backend-llc LLVM_LLC`
+to compile actual NeverC source through that driver. The first script also
+accepts `--portable-builtins`; all three accept `--keep` for evidence. Source
+checks cover live/discarded results, both VMfail outcomes, native operand
+widths, instruction-owned memory, ABI preservation and address controls.
+The address witness's native host-fault comparison remains x64-only; i386
+checks supply controlled completions. These checks do not establish successful
+hardware VM entry, descriptor validation or a Windows/Darwin i386 frontend.
+
 ### Explicit descriptor-memory addresses
 
 `__builtin_ia32_lkgs_address(offset, address_bits, segment_prefix)` keeps the

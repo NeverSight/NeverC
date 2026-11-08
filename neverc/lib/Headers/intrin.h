@@ -92,6 +92,13 @@ void __svm_vmload(size_t);
 void __svm_vmrun(size_t);
 void __svm_vmsave(size_t);
 void __ud2(void);
+unsigned char __vmx_on(unsigned __int64 *);
+unsigned char __vmx_vmclear(unsigned __int64 *);
+unsigned char __vmx_vmlaunch(void);
+unsigned char __vmx_vmptrld(unsigned __int64 *);
+unsigned char __vmx_vmread(size_t, size_t *);
+unsigned char __vmx_vmresume(void);
+unsigned char __vmx_vmwrite(size_t, size_t);
 void __vmx_off(void);
 void __vmx_vmptrst(unsigned __int64 *);
 void __wbinvd(void);
@@ -161,13 +168,6 @@ unsigned __int64 __shiftright128(unsigned __int64 _LowPart,
                                  unsigned __int64 _HighPart,
                                  unsigned char _Shift);
 void __stosq(unsigned __int64 *, unsigned __int64, size_t);
-unsigned char __vmx_on(unsigned __int64 *);
-unsigned char __vmx_vmclear(unsigned __int64 *);
-unsigned char __vmx_vmlaunch(void);
-unsigned char __vmx_vmptrld(unsigned __int64 *);
-unsigned char __vmx_vmread(size_t, size_t *);
-unsigned char __vmx_vmresume(void);
-unsigned char __vmx_vmwrite(size_t, size_t);
 void __writegsbyte(unsigned long, unsigned char);
 void __writegsdword(unsigned long, unsigned long);
 void __writegsqword(unsigned long, unsigned __int64);

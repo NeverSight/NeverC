@@ -14,6 +14,32 @@ BUILTIN(__builtin_ia32_bound32, "vivC*", "n")
 BUILTIN(__builtin_ia32_bound16_address32, "vsUiIUiIUi", "n")
 BUILTIN(__builtin_ia32_bound32_address32, "viUiIUiIUi", "n")
 
+// VMX management retains m64 operands in either code mode.
+BUILTIN(__builtin_ia32_vmclear, "UcvC*", "n")
+BUILTIN(__builtin_ia32_vmptrld, "UcvC*", "n")
+BUILTIN(__builtin_ia32_vmptrst, "vv*", "n")
+BUILTIN(__builtin_ia32_vmxon, "UcvC*", "n")
+BUILTIN(__builtin_ia32_vmlaunch, "Uc", "n")
+BUILTIN(__builtin_ia32_vmresume, "Uc", "n")
+
+// Explicit i386 VMCS and invalidation selectors use native 32-bit words.
+BUILTIN(__builtin_ia32_vmread32, "UcUiUi*", "n")
+BUILTIN(__builtin_ia32_vmwrite32, "UcUiUi", "n")
+BUILTIN(__builtin_ia32_vmread_reg32, "UiUiUiUc*", "n")
+BUILTIN(__builtin_ia32_vmwrite_mem32, "UcUivC*", "n")
+BUILTIN(__builtin_ia32_invept32, "UcUivC*", "n")
+BUILTIN(__builtin_ia32_invvpid32, "UcUivC*", "n")
+
+// Address width and architectural segment prefix are compile-time controls.
+BUILTIN(__builtin_ia32_vmread_address32, "UcUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_vmwrite_mem_address32, "UcUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_invept_address32, "UcUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_invvpid_address32, "UcUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_vmclear_address32, "UcUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_vmptrld_address32, "UcUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_vmptrst_address32, "vUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_vmxon_address32, "UcUiIUiIUi", "n")
+
 // HRESET consumes EAX in both legacy and long mode.
 TARGET_BUILTIN(__builtin_ia32_hreset, "vUi", "n", "hreset")
 

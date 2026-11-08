@@ -28818,6 +28818,22 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_lsl_mem64:
     case Intrinsic::x86_lsl:
       return lowerDescriptorQuery(Op, Subtarget, DAG);
+    case Intrinsic::x86_vmread32:
+    case Intrinsic::x86_vmwrite32:
+    case Intrinsic::x86_vmread_reg32:
+    case Intrinsic::x86_vmwrite_mem32:
+    case Intrinsic::x86_invept32:
+    case Intrinsic::x86_invvpid32:
+    case Intrinsic::x86_vmread_address32:
+    case Intrinsic::x86_vmwrite_mem_address32:
+    case Intrinsic::x86_invept_address32:
+    case Intrinsic::x86_invvpid_address32:
+    case Intrinsic::x86_vmclear_address32:
+    case Intrinsic::x86_vmptrld_address32:
+    case Intrinsic::x86_vmptrst_address32:
+    case Intrinsic::x86_vmxon_address32:
+      report_fatal_error(
+          "32-bit VMX intrinsics require the full i386 LLVM backend");
     case Intrinsic::x86_vmread_address:
     case Intrinsic::x86_vmwrite_mem_address:
     case Intrinsic::x86_invept_address:
