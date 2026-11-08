@@ -75,6 +75,8 @@ BUILTIN(__builtin_ia32_clac, "v", "n")
 BUILTIN(__builtin_ia32_stac, "v", "n")
 BUILTIN(__builtin_ia32_hlt, "v", "n")
 BUILTIN(__builtin_ia32_vmxoff, "v", "n")
+// Preserve VMfail under SMM dual-monitor treatment.
+BUILTIN(__builtin_ia32_vmxoff_status, "Uc", "n")
 BUILTIN(__builtin_ia32_stgi, "v", "n")
 BUILTIN(__builtin_ia32_clgi, "v", "n")
 BUILTIN(__builtin_ia32_lar_reg16, "UsUsUsUc*", "n")

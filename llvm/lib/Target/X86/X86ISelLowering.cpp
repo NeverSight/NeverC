@@ -28845,11 +28845,13 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       return lowerVMXAddress(Op, Subtarget, DAG);
 
     case llvm::Intrinsic::x86_vmlaunch:
+    case llvm::Intrinsic::x86_vmxoff_status:
     case llvm::Intrinsic::x86_vmresume: {
       SDLoc dl(Op);
       SDValue Chain = Op.getOperand(0);
-      unsigned Opc = IntNo == llvm::Intrinsic::x86_vmlaunch
-                         ? X86::VMLAUNCH : X86::VMRESUME;
+      unsigned Opc = IntNo == llvm::Intrinsic::x86_vmlaunch   ? X86::VMLAUNCH
+                     : IntNo == llvm::Intrinsic::x86_vmresume ? X86::VMRESUME
+                                                            : X86::VMXOFF;
       SDVTList VmTys = DAG.getVTList(MVT::Other, MVT::Glue);
       SDNode *VM = DAG.getMachineNode(Opc, dl, VmTys, Chain);
       return getVMXCompletion(VM, dl, DAG);

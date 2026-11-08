@@ -1735,6 +1735,7 @@ enum X86Intrinsics : unsigned {
     x86_vmwrite_mem32,                               // llvm.x86.vmwrite.mem32
     x86_vmwrite32,                                   // llvm.x86.vmwrite32
     x86_vmxoff,                                      // llvm.x86.vmxoff
+    x86_vmxoff_status,                               // llvm.x86.vmxoff.status
     x86_vmxon,                                       // llvm.x86.vmxon
     x86_vmxon_address,                               // llvm.x86.vmxon.address
     x86_vmxon_address32,                             // llvm.x86.vmxon.address32

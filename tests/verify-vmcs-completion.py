@@ -29,7 +29,7 @@ FIELD = 0xF1E2D3C44002A5B6
 VALUE = 0x9172536485A6B7C8
 SENTINEL = 0x18273645AABBCCDD
 MANAGEMENT = ("vmclear", "vmptrld", "vmptrst", "vmxon", "vmxoff",
-              "vmlaunch", "vmresume")
+              "vmlaunch", "vmresume", "vmxoff.status")
 MEMORY_MANAGEMENT = {"vmclear", "vmptrld", "vmptrst", "vmxon"}
 VOID_MANAGEMENT = {"vmptrst", "vmxoff"}
 INVALIDATION = ("invept", "invvpid")
@@ -51,7 +51,8 @@ def compile_case(compiler, directory, operation, dead, opt, backend=None,
         second = "unsigned __int64 *out" if operation == "vmread" else "unsigned __int64 value"
         parameters = f"unsigned __int64 field, {second}"
         arguments = "field, out" if operation == "vmread" else "field, value"
-    builtin = ("__builtin_ia32_" + operation if portable or operation in INVALIDATION else
+    builtin = ("__builtin_ia32_" + operation.replace(".", "_")
+               if portable or operation in INVALIDATION or operation == "vmxoff.status" else
                "__vmx_" + {"vmxon": "on", "vmxoff": "off"}.get(operation, operation))
     word_type = "unsigned" if bits == 32 and operation not in MANAGEMENT else "unsigned long long"
     parameters = parameters.replace("unsigned __int64", word_type)
@@ -177,7 +178,7 @@ def execute(code, operation, dead, status, mapped, bits=64):
     decoder = capstone.Cs(capstone.CS_ARCH_X86,
                           capstone.CS_MODE_64 if bits == 64 else capstone.CS_MODE_32)
     decoder.detail = True
-    accesses = [i for i in decoder.disasm(code, CODE) if i.mnemonic == operation]
+    accesses = [i for i in decoder.disasm(code, CODE) if i.mnemonic == operation.split(".")[0]]
     if len(accesses) != 1:
         raise AssertionError(f"expected one {operation}, found {len(accesses)}")
     instruction = accesses[0]
@@ -266,7 +267,7 @@ def execute_management(code, operation, dead, status, bits):
     decoder = capstone.Cs(capstone.CS_ARCH_X86,
                           capstone.CS_MODE_64 if bits == 64 else capstone.CS_MODE_32)
     decoder.detail = True
-    accesses = [i for i in decoder.disasm(code, CODE) if i.mnemonic == operation]
+    accesses = [i for i in decoder.disasm(code, CODE) if i.mnemonic == operation.split(".")[0]]
     if len(accesses) != 1:
         raise AssertionError(f"expected one {operation}, found {len(accesses)}")
     instruction = accesses[0]

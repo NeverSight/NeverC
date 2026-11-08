@@ -4489,6 +4489,8 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__vmx_vmlaunch: {
     return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmlaunch, {});
   }
+  case X86::BI__builtin_ia32_vmxoff_status:
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmxoff_status));
   case X86::BI__builtin_ia32_vmxoff:
   case X86::BI__vmx_off: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmxoff, {});

@@ -32,6 +32,7 @@ constexpr VMXAPI APIs[] = {
     {"vmptrst", "memory", false, true},
     {"vmxon", "memory", false, false},
     {"vmxoff", "", false, true},
+    {"vmxoff_status", "", false, false},
     {"vmlaunch", "", false, false},
     {"vmresume", "", false, false},
     {"vmread_address", "field, prior, ADDRESS_BITS, 0x64", true, false},

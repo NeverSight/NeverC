@@ -1977,7 +1977,14 @@ i386 calls passed i32 operands to i64 intrinsic declarations and failed LLVM
 verification. The instruction continues to own VMREAD's conditional store and
 VMWRITE's source memory access; no eager C/IR access is introduced.
 
-The full fork already supplies these intrinsics. The pruned backend rejects
+`__builtin_ia32_vmxoff_status()` additionally returns the byte completion in
+both code modes through `llvm.x86.vmxoff.status()`. Unlike the compatible
+void API, it preserves VMfail when dual-monitor SMM treatment is active,
+as specified by [Intel SDM Volume 3C](https://cdrdv2-public.intel.com/825750/326019-sdm-vol-3c.pdf).
+The existing `__vmx_off` and `__builtin_ia32_vmxoff` signatures remain void.
+
+The full fork already supplies the width-specific intrinsics and now adds the
+VMXOFF status result. The pruned backend rejects
 32-bit VMX IDs clearly. Use the existing `-fllvm-backend` driver for i386 ELF
 machine output. `verify-vmcs-completion.py`, `verify-vmcs-forms-completion.py`
 and `verify-vmx-address-completion.py` accept `--bits 32 --backend-llc LLVM_LLC`

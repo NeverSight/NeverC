@@ -48,6 +48,7 @@ DECLARATIONS = {
     "wrmsrns": ("Done", "I32", "I64"),
     "rdmsrlist": ("I64", "PTR", "PTR", "I64"),
     "wrmsrlist": ("I64", "PTR", "PTR", "I64"),
+    "vmxoff_status": ("I8",),
     "vmread32": ("I8", "I32", "PTR"),
     "vmwrite32": ("I8", "I32", "I32"),
     "vmread_reg32": ("STRUCT2", "I32", "I8", "I32", "I32"),
