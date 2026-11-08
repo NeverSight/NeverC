@@ -1936,6 +1936,18 @@ struct FunctionalBindCallSource {
   std::vector<unsigned> OwnedPath;
 };
 
+// Member-only source witnesses. The data-member Selected.Target is null;
+// Member.Access retains its actual lvalue operation. These descriptions do not
+// complete source graphs or authorize ordinary operations, lifetime or lowering.
+struct FunctionalBindMemberCommonCallSource {
+  FunctionalBindCallSource Selected;
+  FunctionalBindMemberInvokeBodySource Member;
+};
+std::optional<FunctionalBindMemberCommonCallSource>
+describeFunctionalBindMemberCommonCallSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 // Original AST witnesses only. Root and Path identify the enclosing owned
 // occurrence; a copied descriptor never points into a temporary parent value.
 // A nested result type or selected node supplies no completed SDK permission.
