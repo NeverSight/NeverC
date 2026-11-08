@@ -974,6 +974,22 @@ controls deliberately corrupt the address and ASID at the stopped instruction
 boundary. This also repairs an earlier witness bug: a memory-mapping loop
 shadowed the operation name and bypassed its SVM operand assertions.
 
+The November 8 qualification passes 184 x86/i386 frontend tests and the
+seventeen-profile SVM matrix: 2,048 checks, 152 real x64 CPL3 fault boundaries,
+136 operand negative controls and 196 returning VMRUN contexts. A separate
+run compiles NeverD's complete VMRUN C export through both compiler routes
+and passes another 196 contexts. The current compiler also passes 9,072
+controlled VMX regressions, 896 VMX CPL3 fault boundaries and 6,291,456 FLAGS
+comparisons. These counts describe distinct witnesses, not hardware VM-entry
+qualification. The synchronized table contains 1,821 x86 intrinsic IDs.
+
+The compiler was built from `fafedf75f`; later commits only correct the
+witness driver options and refresh the reviewed immutable `TargetInfos`
+fingerprint. The strict global-state audit still reports the same 90 baseline
+findings in 29 unchanged files; it is not a clean global gate. Exact tools,
+source revisions, commands and results are retained in NeverD's
+`docs/evidence/x86-svm-widths-2026-11-08.json`.
+
 The QEMU witness accepts `--bits 32 --backend-llc LLVM_LLC` for both default
 and address16 C forms. Its MSR round trips and returning guest paths qualify
 the selected TCG environment, not physical AMD TLB behavior, Windows/Darwin
