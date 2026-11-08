@@ -21652,6 +21652,16 @@ describeFunctionalBindTupleTagSources(
       S, SM, *Tuple, Factory.Storage.Arguments.Elements.size(), Context);
 }
 std::optional<std::vector<FunctionalBindTupleTagSource>>
+describeFunctionalBindMemberTupleTagSources(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindMemberFactorySource &Factory, const ASTContext &Context) {
+  const auto Tuple = describeFunctionalBindMemberTupleConstructionSource(S, SM, Factory, Context);
+  if (!Tuple) return std::nullopt;
+  return describeFunctionalBindTupleTagSourcesImpl(
+      S, SM, *Tuple, Factory.Factory.Storage.Arguments.Elements.size(), Context);
+}
+
+std::optional<std::vector<FunctionalBindTupleTagSource>>
 describeFunctionalBindStandardTupleTagSources(
     const State &S, const SourceManager &SM,
     const FunctionalBindFactorySource &Factory, const ASTContext &Context) {
@@ -32626,7 +32636,8 @@ public:
       for (const auto *Copy : Tuple->Copies)
         if (Copy && !Graph.bindFunctionalBindSpecialMember(Copy->getConstructor())) return false;
       if (Storage.Arguments.Elements.empty()) return Graph.bindSourceComplete();
-      const auto Tags = StandardFactoryRoot ? describeFunctionalBindStandardTupleTagSources(S, SM, Factory, Context)
+      const auto Tags = MemberFactoryRoot ? describeFunctionalBindMemberTupleTagSources(S, SM, *MemberFactoryRoot, Context)
+          : StandardFactoryRoot ? describeFunctionalBindStandardTupleTagSources(S, SM, Factory, Context)
           : ReferenceFactoryRoot ? describeFunctionalBindReferenceTupleTagSources(S, SM, Factory, Context) : describeFunctionalBindTupleTagSources(S, SM, Factory, Context);
       if (!Tags || Tags->size() != 4) return false;
       for (const auto &Tag : *Tags)
@@ -34052,7 +34063,8 @@ public:
   bool copy(const FunctionalBindCopySource &Copy) {
     if (!Ready || Copy.Layout.Storage.Record != Storage.Record ||
         !Copy.Construction || !S.owns(SM, Copy.Construction->getExprLoc())) return false;
-    const auto Actual = StandardFactoryRoot ? describeFunctionalBindStandardCopySource(S, SM, Copy.Construction, Context)
+    const auto Actual = MemberFactoryRoot ? describeFunctionalBindMemberCopySource(S, SM, Copy.Construction, Context)
+        : StandardFactoryRoot ? describeFunctionalBindStandardCopySource(S, SM, Copy.Construction, Context)
         : ReferenceStorageRoot ? describeFunctionalBindReferenceCopySource(S, SM, Copy.Construction, Context)
                                              : describeFunctionalBindCopySource(S, SM, Copy.Construction, Context);
     if (!Actual || Actual->Construction != Copy.Construction || Actual->Object != Copy.Object ||
@@ -34066,7 +34078,8 @@ public:
                    SourceLocation Location) {
     if (!Ready || Destruction.Layout.Storage.Record != Storage.Record ||
         !Destruction.Destructor || !S.owns(SM, Location)) return false;
-    const auto Actual = StandardFactoryRoot ? describeFunctionalBindStandardDestructionSource(S, SM, Destruction.Destructor, Context)
+    const auto Actual = MemberFactoryRoot ? describeFunctionalBindMemberDestructionSource(S, SM, Destruction.Destructor, Context)
+        : StandardFactoryRoot ? describeFunctionalBindStandardDestructionSource(S, SM, Destruction.Destructor, Context)
         : ReferenceStorageRoot ? describeFunctionalBindReferenceDestructionSource(S, SM, Destruction.Destructor, Context)
                                              : describeFunctionalBindDestructionSource(S, SM, Destruction.Destructor, Context);
     if (!Actual || Actual->Destructor != Destruction.Destructor ||
@@ -34237,6 +34250,75 @@ bool approvedFunctionalBindStandardFactorySource(
       !sameFunctionalBindPlaceholderOperands(*Fresh, Factory)) return false;
   return BindSourceProof(S, SM, Context, Factory.Storage, Sources, Selections, Members, Traits,
       SourceAlias, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, false, &Factory).factory(Factory);
+}
+
+bool approvedFunctionalBindMemberCopySource(
+    const State &S, const SourceManager &SM, const FunctionalBindCopySource &Copy,
+    const FunctionalBindMemberFactorySource &Factory, const ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const CXXMethodDecl *> &OwnerQueries,
+    const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
+  const auto FreshFactory = describeFunctionalBindMemberFactorySource(S, SM, Factory.Factory.SourceCall, Context);
+  const auto Fresh = describeFunctionalBindMemberCopySource(S, SM, Copy.Construction, Context);
+  std::set<const CXXMethodDecl *> Selected;
+  if (!(Copy.Construction && S.owns(SM, Copy.Construction->getExprLoc())) || !FreshFactory || !Fresh ||
+      FreshFactory->Member != Factory.Member || FreshFactory->Address != Factory.Address ||
+      FreshFactory->Storage.Owner != Factory.Storage.Owner ||
+      FreshFactory->Factory.Factory != Factory.Factory.Factory ||
+      FreshFactory->Factory.Construction != Factory.Factory.Construction ||
+      FreshFactory->Factory.BoundConstruction != Factory.Factory.BoundConstruction ||
+      FreshFactory->Factory.Storage.Record != Copy.Layout.Storage.Record ||
+      !sameFunctionalBindPlaceholderOperands(FreshFactory->Factory, Factory.Factory) ||
+      Fresh->Construction != Copy.Construction || Fresh->Object != Copy.Object || Fresh->Layout.Storage.Record != Copy.Layout.Storage.Record ||
+      Fresh->Layout.PaddedBase != Copy.Layout.PaddedBase ||
+      !approvedFunctionalBindMemberFactorySource(S, SM, Factory, Context, Sources, Selections,
+          Members, Traits, Selected, SourceAlias)) return false;
+  if (!BindSourceProof(S, SM, Context, Copy.Layout.Storage, Sources, Selections, Members, Traits,
+      SourceAlias, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, false,
+      nullptr, nullptr, &*FreshFactory, &Selected).copy(Copy)) return false;
+  auto Combined = OwnerQueries;
+  Combined.insert(Selected.begin(), Selected.end());
+  if (Combined.size() > 64) return false;
+  OwnerQueries = std::move(Combined);
+  return true;
+}
+
+bool approvedFunctionalBindMemberDestructionSource(
+    const State &S, const SourceManager &SM, const FunctionalBindDestructionSource &Destruction,
+    SourceLocation Location,
+    const FunctionalBindMemberFactorySource &Factory, const ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const CXXMethodDecl *> &OwnerQueries,
+    const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
+  const auto FreshFactory = describeFunctionalBindMemberFactorySource(S, SM, Factory.Factory.SourceCall, Context);
+  const auto Fresh = describeFunctionalBindMemberDestructionSource(S, SM, Destruction.Destructor, Context);
+  std::set<const CXXMethodDecl *> Selected;
+  if (!S.owns(SM, Location) || !FreshFactory || !Fresh ||
+      FreshFactory->Member != Factory.Member || FreshFactory->Address != Factory.Address ||
+      FreshFactory->Storage.Owner != Factory.Storage.Owner ||
+      FreshFactory->Factory.Factory != Factory.Factory.Factory ||
+      FreshFactory->Factory.Construction != Factory.Factory.Construction ||
+      FreshFactory->Factory.BoundConstruction != Factory.Factory.BoundConstruction ||
+      FreshFactory->Factory.Storage.Record != Destruction.Layout.Storage.Record ||
+      !sameFunctionalBindPlaceholderOperands(FreshFactory->Factory, Factory.Factory) ||
+      Fresh->Destructor != Destruction.Destructor || Fresh->Layout.Storage.Record != Destruction.Layout.Storage.Record ||
+      Fresh->Layout.PaddedBase != Destruction.Layout.PaddedBase ||
+      !approvedFunctionalBindMemberFactorySource(S, SM, Factory, Context, Sources, Selections,
+          Members, Traits, Selected, SourceAlias)) return false;
+  if (!BindSourceProof(S, SM, Context, Destruction.Layout.Storage, Sources, Selections, Members, Traits,
+      SourceAlias, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, false,
+      nullptr, nullptr, &*FreshFactory, &Selected).destruction(Destruction, Location)) return false;
+  auto Combined = OwnerQueries;
+  Combined.insert(Selected.begin(), Selected.end());
+  if (Combined.size() > 64) return false;
+  OwnerQueries = std::move(Combined);
+  return true;
 }
 
 bool approvedFunctionalBindStandardCopySource(
