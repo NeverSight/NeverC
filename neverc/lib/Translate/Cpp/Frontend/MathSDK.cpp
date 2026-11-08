@@ -19,6 +19,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include <deque>
+#include <cstdio>
 #include <functional>
 #include <set>
 
@@ -17978,6 +17979,12 @@ describeFunctionalBindPlaceholderOperandSource(
   return FunctionalBindPlaceholderOperandSource{*Identity, Operand, Reference, Variable};
 }
 
+static void functionalBindMemberDescriptionFailure(unsigned Line) {
+  // A bounded diagnostic counter; it never supplies a permission or cache hit.
+  static thread_local unsigned Printed = 0;
+  if (Printed++ < 64) std::fprintf(stderr, "BIND-MEMBER-DESCRIPTION-LINE %u\n", Line);
+}
+
 static const CXXRecordDecl *functionalBindMemberOwnerShape(
     const State &S, const SourceManager &SM, QualType Type,
     const ASTContext &Context) {
@@ -17991,15 +17998,15 @@ static const CXXRecordDecl *functionalBindMemberOwnerShape(
       Definition->isLambda() || Definition->isDynamicClass() ||
       Definition->getNumBases() || !Definition->isStandardLayout() ||
       !Definition->hasTrivialCopyConstructor() || !Definition->hasTrivialDestructor())
-    return nullptr;
+    return (functionalBindMemberDescriptionFailure(__LINE__), nullptr);
   for (const auto *Declaration : Owner->redecls()) {
-    if (!S.owns(SM, Declaration->getLocation())) return nullptr;
+    if (!S.owns(SM, Declaration->getLocation())) return (functionalBindMemberDescriptionFailure(__LINE__), nullptr);
     for (const auto *Attribute : Declaration->attrs()) {
       const auto *Inheritance = dyn_cast<MSInheritanceAttr>(Attribute);
       if (!Context.getTargetInfo().getCXXABI().isMicrosoft() || !Inheritance ||
           !Inheritance->isImplicit() ||
           Inheritance->getInheritanceModel() != MSInheritanceModel::Single)
-        return nullptr;
+        return (functionalBindMemberDescriptionFailure(__LINE__), nullptr);
     }
   }
   unsigned Fields = 0;
@@ -18007,7 +18014,7 @@ static const CXXRecordDecl *functionalBindMemberOwnerShape(
     if (++Fields > 64 || !S.owns(SM, Field->getLocation()) || Field->hasAttrs() ||
         Field->getAccess() != AS_public || Field->isBitField() || Field->isMutable() ||
         Field->hasInClassInitializer() || Field->getType().hasQualifiers() ||
-        !Field->getType()->isArithmeticType()) return nullptr;
+        !Field->getType()->isArithmeticType()) return (functionalBindMemberDescriptionFailure(__LINE__), nullptr);
   return Definition;
 }
 
@@ -18027,7 +18034,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
                                bool StandardCallableMetadata = false,
                                bool MemberCallableMetadata = false) {
   if (!S.coreV2() || !Record || Depth >= 64 || ++Nodes > 200000 ||
-      !Active.insert(Record->getCanonicalDecl()).second) return std::nullopt;
+      !Active.insert(Record->getCanonicalDecl()).second) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   auto Restore = llvm::make_scope_exit([&] { Active.erase(Record->getCanonicalDecl()); });
   // Reuse only the declaration-family locator. Its mode-specific not_fn
   // expression, default and exception routines do not prove any bind source.
@@ -18036,11 +18043,11 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
                                        {"__functional/bind.h"});
   if (!Instance || Instance->getNumBases() != 1 ||
       std::distance(Instance->field_begin(), Instance->field_end()) != 2 ||
-      !Instance->hasTrivialDestructor()) return std::nullopt;
+      !Instance->hasTrivialDestructor()) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto &TemplateArguments = Instance->getTemplateArgs();
   if (TemplateArguments.size() != 2 ||
       TemplateArguments[0].getKind() != TemplateArgument::Type ||
-      TemplateArguments[1].getKind() != TemplateArgument::Pack) return std::nullopt;
+      TemplateArguments[1].getKind() != TemplateArgument::Pack) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
 
   auto DecayedValue = [&](QualType Type) -> QualType {
     if (Type.isNull()) return {};
@@ -18070,17 +18077,17 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
            Check.family(Value, {"__functional/bind.h"});
   };
   if (!StorageField(Callable, "__f_") ||
-      !StorageField(Bound, "__bound_args_")) return std::nullopt;
+      !StorageField(Bound, "__bound_args_")) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto CallableType = Callable->getType();
   const auto OriginalCallable = DecayedValue(TemplateArguments[0].getAsType());
   if (CallableType.isNull() || CallableType.hasQualifiers() ||
       CallableType->isDependentType() ||
       OriginalCallable.isNull() ||
-      !Context.hasSameType(CallableType, OriginalCallable)) return std::nullopt;
+      !Context.hasSameType(CallableType, OriginalCallable)) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const bool FunctionPointer = CallableType->isFunctionPointerType();
   const auto *MemberOwner = MemberCallableMetadata
       ? functionalBindMemberOwnerShape(S, SM, CallableType, Context) : nullptr;
-  if (StandardCallableMetadata && MemberCallableMetadata) return std::nullopt;
+  if (StandardCallableMetadata && MemberCallableMetadata) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   if (MemberCallableMetadata) {
     const auto *Pointer = CallableType->getAs<MemberPointerType>();
     const auto *Prototype = Pointer ? Pointer->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
@@ -18089,7 +18096,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
         (Prototype ? Prototype->isVariadic() ||
                          Prototype->getNumParams() + 1 != TemplateArguments[1].pack_size()
                    : TemplateArguments[1].pack_size() != 1 || !ScalarValue(Pointer->getPointeeType())))
-      return std::nullopt;
+      return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   } else if (StandardCallableMetadata) {
     const auto Object = approvedFunctionalObjectRecord(
         S, SM, CallableType->getAsCXXRecordDecl(), Context);
@@ -18098,7 +18105,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
     // of this scalar operator description.
     if (!Object || Name == "hash" ||
         !Context.hasSameType(Context.getRecordType(Object->Record), CallableType))
-      return std::nullopt;
+      return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   } else if (!FunctionPointer) {
     const auto *CallableRecord = CallableType->getAsCXXRecordDecl();
     const auto *Definition = CallableRecord ? CallableRecord->getDefinition() : nullptr;
@@ -18113,31 +18120,31 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
         Definition->getNumBases() || !Definition->isStandardLayout() ||
         !Definition->hasTrivialCopyConstructor() || !Definition->hasTrivialDestructor() ||
         !Context.hasSameType(Context.getRecordType(Definition), CallableType))
-      return std::nullopt;
+      return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     for (const auto *Declaration : CallableRecord->redecls())
       if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
-        return std::nullopt;
+        return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     unsigned Fields = 0;
     for (const auto *Field : Definition->fields())
       if (++Fields > 64 || ++Nodes > 200000 ||
           !S.owns(SM, Field->getLocation()) || Field->hasAttrs() ||
           Field->getAccess() != AS_public || Field->isBitField() || Field->isMutable() ||
           Field->hasInClassInitializer() || Field->getType().hasQualifiers() ||
-          !Field->getType()->isArithmeticType()) return std::nullopt;
+          !Field->getType()->isArithmeticType()) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
   if (FunctionPointer) {
     const auto *Prototype = CallableType->getPointeeType()->getAs<FunctionProtoType>();
     if (!Prototype || !ordinaryCallbackPrototype(Prototype) ||
         Prototype->getNumParams() != TemplateArguments[1].pack_size())
-      return std::nullopt;
+      return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     const auto Result = Prototype->getReturnType();
     if (!Result->isVoidType() &&
         !ScalarValue(Result->isReferenceType() ? Result->getPointeeType() : Result))
-      return std::nullopt;
+      return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     for (const auto Parameter : Prototype->param_types())
       if (!ScalarValue(Parameter->isReferenceType()
                            ? Parameter->getPointeeType() : Parameter))
-        return std::nullopt;
+        return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
 
   const auto &Base = *Instance->bases_begin();
@@ -18148,7 +18155,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
       Weak->getTemplateArgs().size() != 1 ||
       Weak->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Weak->getTemplateArgs()[0].getAsType(), CallableType))
-    return std::nullopt;
+    return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   // A noexcept callback can select the generic weak-result chain. Its
   // selected partial/default/base sources are independent later obligations.
   // tuple<> is an explicit SDK specialization; the generic implicit-record
@@ -18161,14 +18168,14 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
   auto Arguments = Tuple ? approvedUtilityTupleRecordImpl(
       S, SM, Tuple, Context, Depth, false, false, nullptr, true) : std::nullopt;
   if (!Arguments || Arguments->Elements.size() != TemplateArguments[1].pack_size())
-    return std::nullopt;
+    return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   unsigned Index = 0;
   for (const auto &Argument : TemplateArguments[1].pack_elements()) {
-    if (++Nodes > 200000 || Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+    if (++Nodes > 200000 || Argument.getKind() != TemplateArgument::Type) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     const auto Value = DecayedValue(Argument.getAsType());
     if (Value.isNull() ||
         !Context.hasSameType(Value, Arguments->Elements[Index++].getType()))
-      return std::nullopt;
+      return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     if (ScalarValue(Value)) continue;
     if (MemberOwner && Index == 1) {
       const auto *Owned = Value->getAsCXXRecordDecl();
@@ -18181,7 +18188,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
       const auto &Element = Arguments->Elements[Index - 1];
       if (Element.Field || !Element.EmptyBase ||
           Element.EmptyBase->getCanonicalDecl() != Value->getAsCXXRecordDecl()->getCanonicalDecl())
-        return std::nullopt;
+        return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       continue;
     }
     const auto Reference = approvedFunctionalReferenceRecord(
@@ -18190,7 +18197,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
     const auto *Nested = Value->getAsCXXRecordDecl();
     if (!Nested || !functionalBindInertObjectSourceIdentity(S, SM, Value, Context) ||
         !describeFunctionalBindStorageImpl(S, SM, Nested, Context, Depth + 1, Nodes, Active))
-      return std::nullopt;
+      return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
 
   // Retain the real ABI offsets rather than copying reference_wrapper's
@@ -18204,7 +18211,7 @@ describeFunctionalBindStorageImpl(const State &S, const SourceManager &SM,
       BoundOffset % 8 ||
       CallableOffset + Context.getTypeSize(CallableType) > BoundOffset ||
       BoundOffset + Context.getTypeSize(Bound->getType()) > Size * 8)
-    return std::nullopt;
+    return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   return FunctionalBindStorage{Instance, Weak, Callable, Bound, CallableType,
       std::move(*Arguments), CallableOffset, BoundOffset, Size,
       uint64_t(Layout.getAlignment().getQuantity())};
@@ -18221,7 +18228,7 @@ describeFunctionalBindMemberStorage(
       S, SM, Record, Context, 0, Nodes, Active, false, true);
   const auto *Owner = Storage
       ? functionalBindMemberOwnerShape(S, SM, Storage->CallableType, Context) : nullptr;
-  if (!Storage || !Owner) return std::nullopt;
+  if (!Storage || !Owner) return ((true ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   return FunctionalBindMemberStorage{*Storage, Owner,
       uint64_t(Context.getTypeSizeInChars(Storage->CallableType).getQuantity()),
       uint64_t(Context.getTypeAlignInChars(Storage->CallableType).getQuantity())};
@@ -18414,9 +18421,9 @@ describeFunctionalBindFactorySourceImpl(
     const ASTContext &Context, bool OwnedCallableMetadata,
     bool StandardCallableMetadata = false, bool MemberCallableMetadata = false) {
   if (MemberCallableMetadata && (OwnedCallableMetadata || StandardCallableMetadata))
-    return std::nullopt;
+    return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto *Factory = Call ? Call->getDirectCallee() : nullptr;
-  if (StandardCallableMetadata && !OwnedCallableMetadata) return std::nullopt;
+  if (StandardCallableMetadata && !OwnedCallableMetadata) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto StandardStorage = StandardCallableMetadata
       ? describeFunctionalBindStandardStorage(S, SM,
           Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context) : std::nullopt;
@@ -18439,7 +18446,7 @@ describeFunctionalBindFactorySourceImpl(
       Factory->isVariadic() || Factory->getNumParams() != Call->getNumArgs() ||
       Call->getNumArgs() != Storage->Arguments.Elements.size() + 1 ||
       !Context.hasSameType(Call->getType(), Factory->getReturnType()))
-    return std::nullopt;
+    return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   NotFnSelectedSource Check(S, SM, Context);
   const auto *Primary = Factory->getPrimaryTemplate();
   const auto *Arguments = Factory->getTemplateSpecializationArgs();
@@ -18448,7 +18455,7 @@ describeFunctionalBindFactorySourceImpl(
       Arguments->get(0).getKind() != TemplateArgument::Type ||
       Arguments->get(1).getKind() != TemplateArgument::Pack ||
       Arguments->get(1).pack_size() + 1 != Factory->getNumParams() ||
-      !Check.family(Factory, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Factory, {"__functional/bind.h"})) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   auto DeducedParameter = [&](unsigned Index) -> QualType {
     const auto &Argument = Index ? Arguments->get(1).pack_elements()[Index - 1]
                                  : Arguments->get(0);
@@ -18462,7 +18469,7 @@ describeFunctionalBindFactorySourceImpl(
         !Context.hasSameType(Factory->getParamDecl(Index)->getType(), Expected) ||
         !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
                                         Expected->getPointeeType()))
-      return std::nullopt;
+      return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
   // The pinned bind factory has exactly its local result alias and return.
   // This description retains the alias as part of the original function body;
@@ -18479,7 +18486,7 @@ describeFunctionalBindFactorySourceImpl(
       ResultAlias->getDeclContext() != Factory || !ResultAlias->getTypeSourceInfo() ||
       !Context.hasSameType(ResultAlias->getUnderlyingType(), Factory->getReturnType()) ||
       !Check.family(ResultAlias, {"__functional/bind.h"}))
-    return std::nullopt;
+    return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto *Construction = Check.construction(Return->getRetValue());
   const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
   const auto *Body = Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody())
@@ -18491,12 +18498,12 @@ describeFunctionalBindFactorySourceImpl(
       Constructor->getParent()->getCanonicalDecl() != Storage->Record->getCanonicalDecl() ||
       Constructor->getNumParams() != Factory->getNumParams() ||
       Construction->getNumArgs() != Factory->getNumParams() ||
-      !Check.family(Constructor, {"__functional/bind.h"})) return std::nullopt;
+      !Check.family(Constructor, {"__functional/bind.h"})) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   std::vector<const CallExpr *> FactoryForwards;
   for (unsigned Index = 0; Index < Factory->getNumParams(); ++Index) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(Construction->getArg(Index), Factory->getParamDecl(Index),
-                          "__functional/bind.h", Forward)) return std::nullopt;
+                          "__functional/bind.h", Forward)) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     FactoryForwards.push_back(Forward);
   }
   const CXXConstructExpr *WeakConstruction = nullptr, *BoundConstruction = nullptr;
@@ -18511,17 +18518,17 @@ describeFunctionalBindFactorySourceImpl(
           !Construct || Construct->getNumArgs() || !Selected ||
           !Selected->isDefaultConstructor() || !Selected->isTrivial() ||
           !Check.family(Selected, {"__functional/weak_result_type.h"}))
-        return std::nullopt;
+        return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       WeakConstruction = Construct;
     } else if (Initializer->isMemberInitializer() &&
                Initializer->getMember() == Storage->Callable) {
-      if (CallableInitializer) return std::nullopt;
+      if (CallableInitializer) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       CallableInitializer = Initializer->getInit();
     } else if (Initializer->isMemberInitializer() &&
                Initializer->getMember() == Storage->BoundArguments) {
-      if (BoundConstruction) return std::nullopt;
+      if (BoundConstruction) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       BoundConstruction = Check.construction(Initializer->getInit());
-    } else return std::nullopt;
+    } else return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
   const auto *BoundConstructor = BoundConstruction
       ? BoundConstruction->getConstructor() : nullptr;
@@ -18531,7 +18538,7 @@ describeFunctionalBindFactorySourceImpl(
       BoundConstructor->getNumParams() != Storage->Arguments.Elements.size() ||
       BoundConstructor->getParent()->getCanonicalDecl() !=
           Storage->Arguments.Record->getCanonicalDecl() ||
-      !Check.family(BoundConstructor, {"tuple"})) return std::nullopt;
+      !Check.family(BoundConstructor, {"tuple"})) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const CallExpr *CallableForward = nullptr;
   const Expr *ForwardedCallable = Check.stripped(CallableInitializer);
   const CXXConstructExpr *CallableCopy = nullptr;
@@ -18550,14 +18557,14 @@ describeFunctionalBindFactorySourceImpl(
         Selected->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
         !Context.hasSameType(CallableCopy->getType(), Storage->CallableType) ||
         !Check.location(CallableCopy->getExprLoc(), {"__functional/bind.h"}))
-      return std::nullopt;
+      return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     for (const auto *Declaration : Selected->redecls()) {
       if (StandardCallableMetadata) {
         if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
             !functionalObjectOrigin(S, SM, Declaration, Record->getName()))
-          return std::nullopt;
+          return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       } else if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs())
-        return std::nullopt;
+        return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     }
     // Retain the exact ordinary operation. This description closes neither
     // its query/signature sources nor its runtime constructor/lifetime work.
@@ -18573,17 +18580,17 @@ describeFunctionalBindFactorySourceImpl(
         !Parameter->getPointeeType()->isFunctionType() ||
         !Context.hasSameType(Decay->getSubExpr()->getType(), Parameter->getPointeeType()) ||
         !Context.hasSameType(Decay->getType(), Storage->CallableType))
-      return std::nullopt;
+      return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     ForwardedCallable = Decay->getSubExpr();
   }
   if (!Check.forwarding(ForwardedCallable, Constructor->getParamDecl(0),
-                        "__functional/bind.h", CallableForward)) return std::nullopt;
+                        "__functional/bind.h", CallableForward)) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   std::vector<const CallExpr *> BoundForwards;
   for (unsigned Index = 0; Index < Storage->Arguments.Elements.size(); ++Index) {
     const CallExpr *Forward = nullptr;
     if (!Check.forwarding(BoundConstruction->getArg(Index),
                           Constructor->getParamDecl(Index + 1),
-                          "__functional/bind.h", Forward)) return std::nullopt;
+                          "__functional/bind.h", Forward)) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     BoundForwards.push_back(Forward);
   }
   std::vector<std::optional<FunctionalBindPlaceholderOperandSource>> Placeholders(
@@ -18593,7 +18600,7 @@ describeFunctionalBindFactorySourceImpl(
     if (!Element.EmptyBase) continue;
     Placeholders[Index] = describeFunctionalBindPlaceholderOperandSource(S, SM, Call->getArg(Index + 1), Context);
     if (!Placeholders[Index] || Placeholders[Index]->Identity.Record->getCanonicalDecl() !=
-                                   Element.EmptyBase->getCanonicalDecl()) return std::nullopt;
+                                   Element.EmptyBase->getCanonicalDecl()) return ((MemberCallableMetadata ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   }
   return FunctionalBindFactorySource{*Storage, Call, Factory, Construction,
       WeakConstruction, CallableInitializer, BoundConstruction,
@@ -18811,13 +18818,13 @@ describeFunctionalBindMemberFactorySource(
       S, SM, Call, Context, false, false, true);
   const auto Storage = Factory ? describeFunctionalBindMemberStorage(
       S, SM, Factory->Storage.Record, Context) : std::nullopt;
-  if (!Factory || !Storage || !Call->getNumArgs()) return std::nullopt;
+  if (!Factory || !Storage || !Call->getNumArgs()) return ((true ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto [Address, Member] = functionalStoredMemberExpression(S, SM, Call->getArg(0), Context);
   const auto *Owner = Member ? dyn_cast<CXXRecordDecl>(Member->getDeclContext()) : nullptr;
   if (!Address || !Member || !Owner ||
       Owner->getCanonicalDecl() != Storage->Owner->getCanonicalDecl() ||
       !Context.hasSameType(Address->getType(), Storage->Storage.CallableType) ||
-      !supportedFunctionalStoredMember(S, SM, Context, Member)) return std::nullopt;
+      !supportedFunctionalStoredMember(S, SM, Context, Member)) return ((true ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   return FunctionalBindMemberFactorySource{*Storage, *Factory, Address, Member};
 }
 
@@ -18828,7 +18835,7 @@ describeFunctionalBindMemberValueSource(
   const auto Storage = describeFunctionalBindMemberStorage(
       S, SM, Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context);
   if (!Storage || !Object->isGLValue() || !S.owns(SM, Object->getExprLoc()))
-    return std::nullopt;
+    return ((true ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   const auto *Record = Storage->Storage.Record->getCanonicalDecl();
   unsigned Nodes = 0;
   NotFnSelectedSource Check(S, SM, Context);
@@ -18869,7 +18876,7 @@ describeFunctionalBindMemberValueSource(
   std::optional<FunctionalBindMemberFactorySource> Factory;
   const Expr *Cursor = Object;
   for (unsigned Depth = 0; Cursor && Depth < 64; ++Depth) {
-    if (++Nodes > 200000 || !SameObject(Cursor->getType())) return std::nullopt;
+    if (++Nodes > 200000 || !SameObject(Cursor->getType())) return ((true ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     if (const auto *Next = Transparent(Cursor)) {
       Wrappers.push_back(Cursor);Cursor = Next;continue;
     }
@@ -18884,12 +18891,12 @@ describeFunctionalBindMemberValueSource(
           !SameObject(Variable->getType()) || !S.owns(SM, Variable->getLocation()) ||
           !S.owns(SM, Reference->getExprLoc()) || !Seen.insert(Variable->getCanonicalDecl()).second ||
           !Function->hasBody() || !S.owns(SM, Function->getLocation()) ||
-          (Owner && Owner != Function)) return std::nullopt;
+          (Owner && Owner != Function)) return ((true ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       Owner = Function;Variables.push_back(Variable);Cursor = Variable->getInit();continue;
     }
     if (const auto *Copy = dyn_cast<CXXConstructExpr>(Cursor)) {
       const auto *Source = CopySource(Copy);
-      if (!Source || !S.owns(SM, Copy->getExprLoc())) return std::nullopt;
+      if (!Source || !S.owns(SM, Copy->getExprLoc())) return ((true ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
       Copies.push_back(Copy);Cursor = Source;continue;
     }
     const auto *Call = dyn_cast<CallExpr>(Cursor);
@@ -18899,10 +18906,10 @@ describeFunctionalBindMemberValueSource(
         Factory->Storage.Storage.BoundArguments != Storage->Storage.BoundArguments ||
         Call->getArg(0)->IgnoreParenImpCasts() != Factory->Address ||
         !Context.hasSameType(Factory->Storage.Storage.CallableType, Storage->Storage.CallableType))
-      return std::nullopt;
+      return ((true ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
     break;
   }
-  if (!Factory || !Owner || Variables.empty()) return std::nullopt;
+  if (!Factory || !Owner || Variables.empty()) return ((true ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
 
   // Every source occurrence of a retained local must be a selected bind call
   // receiver or the input of a selected trivial bind copy. Address escape,
@@ -18950,7 +18957,7 @@ describeFunctionalBindMemberValueSource(
       if (!Scan(Child, Depth + 1)) return false;
     return true;
   };
-  if (!Scan(Owner->getBody(), 0) || References.empty()) return std::nullopt;
+  if (!Scan(Owner->getBody(), 0) || References.empty()) return ((true ? (functionalBindMemberDescriptionFailure(__LINE__), 0) : 0), std::nullopt);
   return FunctionalBindMemberValueSource{*Storage, Owner, Object, std::move(Variables),
       std::move(Copies), std::move(Wrappers), *Factory, std::move(References)};
 }
