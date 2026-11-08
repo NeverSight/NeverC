@@ -97,3 +97,57 @@ TEST_F(X86SkinitTest, MalformedArgumentsAreRejectedByTheFrontend) {
     EXPECT_NE(Result.exitCode, 0) << Result.err;
   }
 }
+
+TEST_F(X86SkinitTest, I386KeepsRawInputAndTerminatesBothSourceSpellings) {
+  const auto Source = tmpFile("skinit32.c");
+  writeFile(Source, R"(
+#include <intrin.h>
+#if !__has_builtin(__builtin_ia32_skinit)
+#error "missing i386 native launch builtin"
+#endif
+extern volatile unsigned observed;
+[[noreturn]] void portable(unsigned physical) {
+  observed = 1;
+  __builtin_ia32_skinit(physical);
+  observed = 2;
+}
+[[noreturn]] void microsoft(int physical) {
+  observed = 1;
+  __svm_skinit(physical);
+  observed = 2;
+}
+[[noreturn]] void constant(void) {
+  __builtin_ia32_skinit(0x8765cdefU);
+}
+)");
+  for (const char *Opt : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Opt);
+    const auto Output = tmpFile("skinit32.ll");
+    const auto Result =
+        ncc({"--target=i386-unknown-linux-gnu", "-std=c23", "-ffreestanding",
+             "-fno-builtin-mimalloc", "-fms-extensions", "-D_MSC_VER=1930",
+             "-Werror", Opt, "-S", "-emit-llvm", Source.string(), "-o",
+             Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    const auto IR = readFile(Output);
+    EXPECT_NE(IR.find("call void @llvm.x86.skinit(i32"), std::string::npos)
+        << IR;
+    EXPECT_NE(IR.find("store volatile i32 1"), std::string::npos) << IR;
+    EXPECT_NE(IR.find("convergent noduplicate noreturn nounwind"),
+              std::string::npos)
+        << IR;
+    EXPECT_EQ(IR.find(" asm "), std::string::npos) << IR;
+    EXPECT_EQ(IR.find("call void @__svm_skinit"), std::string::npos) << IR;
+    EXPECT_NE(IR.find("unreachable"), std::string::npos) << IR;
+  }
+  for (const char *Call :
+       {"__builtin_ia32_skinit()", "__builtin_ia32_skinit(1, 2)",
+        "__builtin_ia32_skinit((void *)0)"}) {
+    SCOPED_TRACE(Call);
+    writeFile(Source, "void bad(void) { " + std::string(Call) + "; }\n");
+    const auto Result =
+        ncc({"--target=i386-unknown-linux-gnu", "-std=c23", "-ffreestanding",
+             "-Werror", "-fsyntax-only", Source.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.err;
+  }
+}

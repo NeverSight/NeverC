@@ -54,6 +54,10 @@ TARGET_HEADER_BUILTIN(__svm_invlpga, "vv*i", "nh", INTRIN_H, ALL_MS_LANGUAGES, "
 TARGET_HEADER_BUILTIN(__svm_vmload, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__svm_vmsave, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 
+// SKINIT consumes EAX in either mode and abandons the caller context.
+TARGET_HEADER_BUILTIN(__svm_skinit, "vi", "nrh", INTRIN_H, ALL_MS_LANGUAGES, "")
+BUILTIN(__builtin_ia32_skinit, "vUi", "nr")
+
 // HRESET consumes EAX in both legacy and long mode.
 TARGET_BUILTIN(__builtin_ia32_hreset, "vUi", "n", "hreset")
 

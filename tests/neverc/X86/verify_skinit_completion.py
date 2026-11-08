@@ -19,7 +19,7 @@ STACK = 0x700000
 PAGE = 4096
 
 
-def execute(path, triple, names):
+def execute(path, triple, names, corrupt_eax=False):
     binary = lief.parse(str(path))
     sections = list(binary.sections)
     text_sections = [
@@ -138,13 +138,11 @@ def execute(path, triple, names):
                 seen == expected_native
                 and machine.reg_read(pc) == CODE + expected_native[0]
             ), (path, name, seen)
+            if corrupt_eax:
+                machine.reg_write(R.UC_X86_REG_EAX, machine.reg_read(R.UC_X86_REG_EAX) ^ 1)
             assert machine.reg_read(R.UC_X86_REG_EAX) == expected, (
-                path,
-                name,
-                incoming,
-                hex(machine.reg_read(R.UC_X86_REG_EAX)),
-                hex(expected),
-            )
+                "SKINIT raw EAX mismatch", path, name, incoming,
+                hex(machine.reg_read(R.UC_X86_REG_EAX)), hex(expected))
             checks += 1
     return checks
 
@@ -156,7 +154,11 @@ def main():
     p.add_argument("--neverc", type=Path)
     p.add_argument("--keep", required=True, type=Path)
     p.add_argument("--only-neverc", action="store_true")
+    p.add_argument("--neverc-bits", choices=("32", "64", "all"), default="64",
+                   help="NeverC source modes; i386 uses the full LLVM driver on Linux")
     a = p.parse_args()
+    if a.only_neverc and not a.neverc:
+        p.error("--only-neverc requires --neverc")
     a.keep.mkdir(parents=True, exist_ok=True)
     commands = []
     receipts = []
@@ -212,7 +214,11 @@ def main():
             )
     if a.neverc:
         for triple in TRIPLES:
-            if not triple.startswith("x86_64"):
+            mode32 = not triple.startswith("x86_64")
+            if mode32:
+                if triple != "i386-unknown-linux-gnu" or a.neverc_bits == "64":
+                    continue
+            elif a.neverc_bits == "32":
                 continue
             c = "void __svm_skinit(int);\n"
             native_names = {}
@@ -230,35 +236,40 @@ def main():
             for level in (0, 2):
                 stem = f"neverc-{triple}-O{level}"
                 obj = a.keep / (stem + ".o")
-                run(
-                    [
-                        a.neverc,
-                        f"--target={triple}",
-                        f"-O{level}",
-                        "-std=c23",
-                        "-fms-extensions",
-                        "-ffreestanding",
-                        "-fno-lto",
-                        "-fno-builtin-mimalloc",
-                        "-mllvm",
-                        "-verify-machineinstrs",
-                        "-c",
-                        src,
-                        "-o",
-                        obj,
-                    ],
-                    stem + "-build",
-                )
+                base = [a.neverc, f"--target={triple}", f"-O{level}",
+                        "-std=c23", "-fms-extensions", "-ffreestanding",
+                        "-fno-lto", "-fno-builtin-mimalloc"]
+                ir_path = a.keep / (stem + ".ll")
+                run(base + ["-S", "-emit-llvm", src, "-o", ir_path], stem + "-ir")
+                emitted = ir_path.read_text()
+                assert " asm " not in emitted and "call void @llvm.x86.skinit(i32" in emitted
+                assert "unreachable" in emitted
+                machine_options = (["-fllvm-backend=" + str(a.llc)] if mode32 else
+                                   ["-mllvm", "-verify-machineinstrs"])
+                run(base + machine_options + ["-c", src, "-o", obj], stem + "-build")
+                if mode32:
+                    for dialect in ("att", "intel"):
+                        assembly = a.keep / (stem + "-" + dialect + ".s")
+                        run(base + machine_options + ["-S", "-masm=" + dialect,
+                            src, "-o", assembly], stem + "-" + dialect)
+                try:
+                    execute(obj, triple, native_names, corrupt_eax=True)
+                except AssertionError as error:
+                    assert "SKINIT raw EAX mismatch" in str(error), error
+                else:
+                    raise AssertionError("wrong SKINIT EAX escaped the operand oracle")
                 receipts.append(
                     {
                         "object": str(obj),
                         "sha256": hashlib.sha256(obj.read_bytes()).hexdigest(),
                         "checks": execute(obj, triple, native_names),
+                        "operand_negative_controls": 1,
                     }
                 )
     report = {
         "objects": receipts,
         "total_checks": sum(r["checks"] for r in receipts),
+        "operand_negative_controls": sum(r.get("operand_negative_controls", 0) for r in receipts),
         "actual_skinit_execution": False,
         "successful_launch_qualified": False,
         "oracle": "Capstone byte boundaries, exact 0f01de opcode, Unicorn runs only preceding ordinary instructions; launch bytes replaced with NOPs and stopped at their first byte.",

@@ -936,6 +936,15 @@ also checks original EAX bits at a stopped instruction boundary: 1,080 checks
 for NeverC's six objects and 1,080 for the full fork's twelve i386/x64 objects.
 It never executes SKINIT or qualifies reset, attestation or successful launch.
 
+The Linux i386 frontend also registers both SKINIT spellings. They consume the
+same raw 32-bit EAX input and terminate the original C continuation. The
+Microsoft declaration must lower to the native intrinsic, not an unresolved
+`__svm_skinit` function. i386 machine output uses `-fllvm-backend=LLVM_LLC`.
+The boundary witness accepts `--neverc-bits 32` or `--neverc-bits all`; it
+compiles i386 source through that driver, checks both assembly dialects and
+rejects deliberately corrupted EAX values. Windows/Darwin i386 source ABIs
+and successful secure launch remain outside this source interface.
+
 [tests/verify-bounded-virtualization-qemu.py](tests/verify-bounded-virtualization-qemu.py) executes the generated code in
 disposable i386/x64 CPL0 guests. It checks VMSAVE/VMLOAD MSR round trips,
 INVLPGA fallthrough, AC changes, SWAPGS exchange, GIF masking of an actual
