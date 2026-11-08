@@ -18956,6 +18956,127 @@ describeFunctionalBindMemberValueSource(
 }
 
 
+std::optional<FunctionalBindMemberInvokeBodySource>
+describeFunctionalBindMemberInvokeBodySource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Wrapper = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  if (!Operator || Operator->getOperator() != OO_Call || !Wrapper ||
+      !Call->getNumArgs() || Call->getNumArgs() != Wrapper->getNumParams() + 1 ||
+      Wrapper->getNumParams() > 2 || Wrapper->isStatic() || Wrapper->isVolatile() ||
+      Wrapper->isVariadic() || Wrapper->isDeleted() || Wrapper->getAccess() != AS_public ||
+      Wrapper->getRefQualifier() != RQ_None || !Wrapper->getPrimaryTemplate() ||
+      !S.owns(SM, Call->getExprLoc())) return std::nullopt;
+  const auto Value = describeFunctionalBindMemberValueSource(S, SM, Call->getArg(0), Context);
+  if (!Value || Wrapper->getParent()->getCanonicalDecl() != Value->Storage.Storage.Record->getCanonicalDecl() ||
+      Wrapper->isConst() != Call->getArg(0)->getType().isConstQualified() ||
+      !Context.hasSameType(Call->getType(), Wrapper->getReturnType().getNonReferenceType()) ||
+      Call->getValueKind() != Expr::getValueKindForType(Wrapper->getReturnType()))
+    return std::nullopt;
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!Check.family(Wrapper, {"__functional/bind.h"})) return std::nullopt;
+  const auto *Apply = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(Wrapper)));
+  const auto *ApplyFunction = Apply ? Apply->getDirectCallee() : nullptr;
+  if (!Apply || !ApplyFunction || !ApplyFunction->getIdentifier() ||
+      ApplyFunction->getName() != "__apply_functor" || Apply->getNumArgs() != 4 ||
+      ApplyFunction->getNumParams() != 4 || !ApplyFunction->getPrimaryTemplate() ||
+      ApplyFunction->isVariadic() || !Check.family(ApplyFunction, {"__functional/bind.h"}) ||
+      !Check.location(Apply->getExprLoc(), {"__functional/bind.h"})) return std::nullopt;
+  auto MemberSlot = [&](unsigned Index, const FieldDecl *Field) {
+    const auto *Member = dyn_cast_or_null<MemberExpr>(Check.stripped(Apply->getArg(Index)));
+    const auto *This = Member ? dyn_cast_or_null<CXXThisExpr>(Check.stripped(Member->getBase())) : nullptr;
+    const auto Type = Wrapper->isConst() ? Context.getConstType(Field->getType()) : Field->getType();
+    return Member && Member->isArrow() && Member->getMemberDecl() == Field && Member->isLValue() &&
+        This && Context.hasSameType(This->getType(), Wrapper->getThisType()) &&
+        Context.hasSameType(ApplyFunction->getParamDecl(Index)->getType(), Context.getLValueReferenceType(Type));
+  };
+  if (!MemberSlot(0, Value->Storage.Storage.Callable) ||
+      !MemberSlot(1, Value->Storage.Storage.BoundArguments)) return std::nullopt;
+  const auto *Invoke = dyn_cast_or_null<CallExpr>(Check.core(Check.returned(ApplyFunction)));
+  const auto *Selected = Invoke ? Invoke->getDirectCallee() : nullptr;
+  if (!Invoke || !Selected || !Selected->getIdentifier() || Selected->getName() != "__invoke" ||
+      !Selected->getPrimaryTemplate() || !Selected->isInlined() || !Selected->isConstexpr() ||
+      Selected->isVariadic() || Invoke->getNumArgs() != Selected->getNumParams() ||
+      Invoke->getNumArgs() != Value->Storage.Storage.Arguments.Elements.size() + 1 ||
+      Selected->getNumParams() < 2 || !Check.family(Selected, {"__type_traits/invoke.h"}) ||
+      !Check.location(Invoke->getExprLoc(), {"__functional/bind.h"})) return std::nullopt;
+  const auto *CallableInput = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Invoke->getArg(0)));
+  const auto CallableType = Selected->getParamDecl(0)->getType();
+  if (!CallableInput || CallableInput->getDecl() != ApplyFunction->getParamDecl(0) ||
+      !CallableType->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(CallableType.getNonReferenceType(), Value->Storage.Storage.CallableType) ||
+      CallableType.getNonReferenceType().isConstQualified() != Wrapper->isConst()) return std::nullopt;
+  const auto *Method = dyn_cast<CXXMethodDecl>(Value->Factory.Member);
+  const auto *Field = dyn_cast<FieldDecl>(Value->Factory.Member);
+  if ((!Method && !Field) || !supportedFunctionalStoredMember(S, SM, Context, Value->Factory.Member))
+    return std::nullopt;
+  const Expr *Operation = Check.core(Check.returned(Selected));
+  const auto *MemberCall = Method ? dyn_cast_or_null<CXXMemberCallExpr>(Operation) : nullptr;
+  const auto *Access = Method
+      ? (MemberCall ? dyn_cast<BinaryOperator>(MemberCall->getCallee()->IgnoreParens()) : nullptr)
+      : dyn_cast_or_null<BinaryOperator>(Operation);
+  if (!Access || Access->getOpcode() != BO_PtrMemD ||
+      !Check.location(Access->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+  const auto *Callable = dyn_cast_or_null<DeclRefExpr>(Check.stripped(Access->getRHS()));
+  if (!Callable || Callable->getDecl() != Selected->getParamDecl(0) ||
+      !Context.hasSameType(Callable->getType(), CallableType.getNonReferenceType())) return std::nullopt;
+
+  const auto ReceiverType = Selected->getParamDecl(1)->getType();
+  const auto ReceiverValue = ReceiverType.getNonReferenceType();
+  const bool Pointer = ReceiverValue->isPointerType();
+  const auto ObjectType = Pointer ? ReceiverValue->getPointeeType() : ReceiverValue;
+  const auto *Owner = ObjectType->getAsCXXRecordDecl();
+  if (!ReceiverType->isReferenceType() || !Owner ||
+      Owner->getCanonicalDecl() != Value->Storage.Owner->getCanonicalDecl() ||
+      ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
+      ObjectType.getAddressSpace() != LangAS::Default) return std::nullopt;
+  const Expr *Receiver = Check.stripped(Access->getLHS());
+  if (Pointer) {
+    const auto *Dereference = dyn_cast_or_null<UnaryOperator>(Receiver);
+    if (!Dereference || Dereference->getOpcode() != UO_Deref) return std::nullopt;
+    Receiver = Check.stripped(Dereference->getSubExpr());
+  }
+  auto Forward = [&](const Expr *Expression, const ParmVarDecl *Parameter) -> const CXXStaticCastExpr * {
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(Expression));
+    const auto *Reference = Cast ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(Cast->getSubExpr())) : nullptr;
+    if (!Cast || !Parameter || !Parameter->getType()->isReferenceType() ||
+        Cast->getCastKind() != CK_NoOp || !Cast->getTypeInfoAsWritten() ||
+        !Reference || Reference->getDecl() != Parameter ||
+        !Context.hasSameType(Cast->getTypeAsWritten(), Parameter->getType()) ||
+        !Context.hasSameType(Cast->getType(), Parameter->getType().getNonReferenceType()) ||
+        Cast->getValueKind() != Expr::getValueKindForType(Parameter->getType()) ||
+        !Check.location(Cast->getExprLoc(), {"__type_traits/invoke.h"})) return nullptr;
+    return Cast;
+  };
+  const auto *ReceiverForward = Forward(Receiver, Selected->getParamDecl(1));
+  if (!ReceiverForward) return std::nullopt;
+  std::vector<const CXXStaticCastExpr *> Arguments;
+  if (Method) {
+    if (!MemberCall || Selected->getNumParams() != Method->getNumParams() + 2 ||
+        MemberCall->getNumArgs() != Method->getNumParams() ||
+        (!Method->isConst() && ObjectType.isConstQualified()) ||
+        !Context.hasSameType(Call->getType(), Method->getReturnType().getNonReferenceType()) ||
+        Call->getValueKind() != Expr::getValueKindForType(Method->getReturnType())) return std::nullopt;
+    for (unsigned Index = 0; Index < Method->getNumParams(); ++Index) {
+      const auto *Cast = Forward(MemberCall->getArg(Index), Selected->getParamDecl(Index + 2));
+      if (!Cast || !Context.hasSameUnqualifiedType(Cast->getType(), Method->getParamDecl(Index)->getType().getNonReferenceType()))
+        return std::nullopt;
+      Arguments.push_back(Cast);
+    }
+  } else {
+    const bool Constant = Field->getType().isConstQualified() || ObjectType.isConstQualified();
+    if (Selected->getNumParams() != 2 || !Call->isGLValue() ||
+        !Context.hasSameUnqualifiedType(Call->getType(), Field->getType()) ||
+        Call->getType().isConstQualified() != Constant ||
+        !Context.hasSameType(Access->getType(), Call->getType()) ||
+        Access->getValueKind() != Call->getValueKind()) return std::nullopt;
+  }
+  return FunctionalBindMemberInvokeBodySource{*Value, Operator, Wrapper, Apply, Invoke,
+      Selected, Access, MemberCall, ReceiverForward, std::move(Arguments), Pointer};
+}
+
+
 // One owned call is the only entry point. SDK children can be described only
 // through the exact __mu_expand return selected by their enclosing argument.
 struct FunctionalBindCallDescriptionWalk {

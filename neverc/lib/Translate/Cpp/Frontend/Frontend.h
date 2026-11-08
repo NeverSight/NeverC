@@ -1871,6 +1871,26 @@ describeFunctionalBindMemberValueSource(
     const State &S, const clang::SourceManager &SM, const clang::Expr *Object,
     const clang::ASTContext &Context);
 
+// Only the original selected __invoke body and its exact local member value.
+// Factory/default/query, get/unwrap, copies, ordinary bodies and lifetimes
+// remain separate source obligations before any complete call can run.
+struct FunctionalBindMemberInvokeBodySource {
+  FunctionalBindMemberValueSource Value;
+  const clang::CXXOperatorCallExpr *SourceCall;
+  const clang::CXXMethodDecl *Wrapper;
+  const clang::CallExpr *Apply, *Invoke;
+  const clang::FunctionDecl *Selected;
+  const clang::BinaryOperator *Access;
+  const clang::CXXMemberCallExpr *MemberCall;
+  const clang::CXXStaticCastExpr *ReceiverForward;
+  std::vector<const clang::CXXStaticCastExpr *> ArgumentForwards;
+  bool ReceiverIsPointer;
+};
+std::optional<FunctionalBindMemberInvokeBodySource>
+describeFunctionalBindMemberInvokeBodySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 // Source-only owned-object description. The existing runtime factory entry
 // remains restricted to function pointers until complete source proofs close.
 std::optional<FunctionalBindFactorySource>
