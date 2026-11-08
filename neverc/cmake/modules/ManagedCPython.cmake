@@ -504,11 +504,73 @@ function(_neverc_managed_cpython_validate root system processor)
     "${root}" "${system}" "${_include}" "${_library}" "${_runtime}")
 endfunction()
 
+function(_neverc_managed_cpython_transaction_rename source destination output)
+  # file(RENAME ... RESULT) needs 3.21; keep the project's 3.20 baseline.
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E rename "${source}" "${destination}"
+                  RESULT_VARIABLE _result ERROR_VARIABLE _error)
+  if(_result STREQUAL "0")
+    set(${output} "0" PARENT_SCOPE)
+  else()
+    set(${output} "${_result}: ${_error}" PARENT_SCOPE)
+  endif()
+endfunction()
+
+function(_neverc_managed_cpython_recover_stage_unlocked destination)
+  # Fatal configure errors cannot run a CMake finally block. Recover one owned
+  # transaction slot instead of copying another SDK on every failed attempt.
+  # Keep the owner outside the slot so interrupted removal can be resumed.
+  set(_work "${CMAKE_BINARY_DIR}/_deps/neverc-cpython-stage")
+  set(_owner "${_work}.owner")
+  file(REAL_PATH "${_work}" _work_real)
+  foreach(_input IN LISTS ARGN)
+    if(NOT _input STREQUAL "")
+      file(REAL_PATH "${_input}" _input_real)
+      cmake_path(IS_PREFIX _work_real "${_input_real}" NORMALIZE _input_is_staging)
+      if(_input_is_staging)
+        message(FATAL_ERROR
+          "Managed CPython input is inside the staging transaction; "
+          "preserving it without cleanup: ${_input}")
+      endif()
+    endif()
+  endforeach()
+  if(IS_SYMLINK "${_work}" OR IS_SYMLINK "${_owner}")
+    message(FATAL_ERROR "Refusing a symlinked CPython transaction: ${_work}")
+  endif()
+  if(EXISTS "${_owner}")
+    file(READ "${_owner}" _identity)
+    if(NOT _identity STREQUAL "neverc-managed-cpython-stage-v1\n")
+      message(FATAL_ERROR "Unrecognized CPython transaction owner: ${_owner}")
+    endif()
+  elseif(EXISTS "${_work}")
+    message(FATAL_ERROR "Refusing to adopt an unowned SDK directory: ${_work}")
+  else()
+    file(WRITE "${_owner}" "neverc-managed-cpython-stage-v1\n")
+  endif()
+  if(EXISTS "${_work}/previous" AND NOT EXISTS "${destination}")
+    _neverc_managed_cpython_transaction_rename(
+      "${_work}/previous" "${destination}" _restore)
+    if(NOT _restore STREQUAL "0")
+      message(FATAL_ERROR "Cannot recover previous managed CPython: ${_restore}")
+    endif()
+  endif()
+  file(REMOVE_RECURSE "${_work}")
+endfunction()
+
+function(_neverc_managed_cpython_recover_stage destination)
+  file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/_deps")
+  file(LOCK "${CMAKE_BINARY_DIR}/_deps/neverc-cpython-stage.lock"
+       GUARD FUNCTION TIMEOUT 120)
+  _neverc_managed_cpython_recover_stage_unlocked("${destination}" ${ARGN})
+endfunction()
+
 function(_neverc_managed_cpython_stage
          destination system processor layout archive archive_sha256 source_root
          download_dir)
-  string(RANDOM LENGTH 12 ALPHABET 0123456789abcdef _nonce)
-  set(_work "${CMAKE_BINARY_DIR}/_deps/neverc-cpython-stage-${_nonce}")
+  file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/_deps")
+  file(LOCK "${CMAKE_BINARY_DIR}/_deps/neverc-cpython-stage.lock"
+       GUARD FUNCTION TIMEOUT 120)
+  _neverc_managed_cpython_recover_stage_unlocked("${destination}" "${source_root}")
+  set(_work "${CMAKE_BINARY_DIR}/_deps/neverc-cpython-stage")
   set(_extract "${_work}/extract")
   set(_stage "${_work}/python")
   file(MAKE_DIRECTORY "${_extract}" "${_stage}")
@@ -544,16 +606,28 @@ function(_neverc_managed_cpython_stage
   _neverc_managed_cpython_validate("${_stage}" "${system}" "${processor}")
   _neverc_managed_cpython_fingerprint("${_stage}" "${system}" _fingerprint)
 
-  set(_stale "${CMAKE_BINARY_DIR}/_deps/neverc-cpython-stale-${_nonce}")
-  if(EXISTS "${destination}")
-    file(RENAME "${destination}" "${_stale}")
-  endif()
-  file(RENAME "${_stage}" "${destination}")
-  file(WRITE "${destination}/.neverc-managed-cpython"
+  # Prepare identity before publication. An interruption between the renames
+  # restores previous; after publication only the backup needs retiring.
+  file(WRITE "${_stage}/.neverc-managed-cpython"
     "version=${NEVERC_MANAGED_CPYTHON_VERSION}\n"
     "artifact_sha256=${archive_sha256}\n"
     "fingerprint=${_fingerprint}\n")
-  file(REMOVE_RECURSE "${_work}" "${_stale}")
+  set(_stale "${_work}/previous")
+  if(EXISTS "${destination}")
+    _neverc_managed_cpython_transaction_rename(
+      "${destination}" "${_stale}" _retire)
+    if(NOT _retire STREQUAL "0")
+      file(REMOVE_RECURSE "${_work}")
+      message(FATAL_ERROR "Cannot stage previous managed CPython: ${_retire}")
+    endif()
+  endif()
+  _neverc_managed_cpython_transaction_rename(
+    "${_stage}" "${destination}" _publish)
+  if(NOT _publish STREQUAL "0")
+    _neverc_managed_cpython_recover_stage_unlocked("${destination}")
+    message(FATAL_ERROR "Cannot publish managed CPython: ${_publish}")
+  endif()
+  file(REMOVE_RECURSE "${_work}")
 endfunction()
 
 function(neverc_setup_managed_cpython)
@@ -604,6 +678,7 @@ function(neverc_setup_managed_cpython)
       "${CMAKE_HOST_SYSTEM_NAME}/${CMAKE_HOST_SYSTEM_PROCESSOR} runtime")
   endif()
 
+  _neverc_managed_cpython_recover_stage("${_staged_root}" "${_source_root}")
   set(_reuse FALSE)
   set(_marker "${_staged_root}/.neverc-managed-cpython")
   if(EXISTS "${_marker}")
