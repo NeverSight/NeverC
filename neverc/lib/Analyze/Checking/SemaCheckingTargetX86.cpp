@@ -561,6 +561,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_writecr32:
   case X86::BI__builtin_ia32_readdr32:
   case X86::BI__builtin_ia32_writedr32:
+  case X86::BI__builtin_ia32_readeflags_u32:
+  case X86::BI__builtin_ia32_writeeflags_u32:
     if (TI.getTriple().getArch() != llvm::Triple::x86) {
       unsigned ID = getDiagnostics().getCustomDiagID(
           DiagnosticsEngine::Error,

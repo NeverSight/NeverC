@@ -216,6 +216,33 @@ event state and every mapped RAM byte. XSTATE, CET, NT task returns, fault and
 asynchronous delivery, other CPU models, and successful FRED/UIRET transitions
 remain outside this native fixture's scope.
 
+## Native FLAGS image widths
+
+`__builtin_ia32_readeflags_u32()` and `__builtin_ia32_writeeflags_u32(unsigned)`
+expose the existing full LLVM i386 FLAGS intrinsics. They reject x64 targets,
+where a dword PUSHF/POPF encoding does not exist. The word APIs remain valid in
+both modes, and the explicit u64 APIs remain x64-only. Generic `__readeflags`
+and `__writeeflags` select u32/u64 from the code target, then convert to/from
+their existing source ABI types. They no longer produce a u64 intrinsic call
+with an i32 argument or store an i64 result into an i386 i32 temporary.
+
+All snapshots and writes retain their ordered effects, including unused reads.
+`X86FlagsFrontendTest` checks types, headers, ordering, rejected modes/arguments
+and native word stack width at O0/O2. The intrinsic synchronizer updates the
+pruned tables and selector IDs together; i386 machine emission requires the
+full LLVM backend selected with `-fllvm-backend=LLC`.
+
+`tests/verify-flags16-completion.py --compiler NEVERC --bits 32 --image-bits 32
+--backend-llc LLC --keep DIRECTORY` compares both optimized objects with original
+PUSHFD/POPFD bytes on Linux. `--spelling generic` checks the generic APIs;
+`--bits 64 --image-bits 64` checks x64, and the default image width remains 16.
+The witness tests every TF-clear low word and all old/new AC/ID combinations,
+checks stack guards, restores host flags before returning to C, and rejects
+wrong-width writes and fabricated read snapshots. Arithmetic flags across an
+ordinary compiler ABI, privileged accesses, faults and asynchronous events
+are separate contracts. `--source` retains the unchanged generated-C write
+qualification used by NeverD.
+
 ## i386 intrinsic headers
 
 The explicit `__builtin_ia32_readcr32(index)`, `writecr32(index, value)`,

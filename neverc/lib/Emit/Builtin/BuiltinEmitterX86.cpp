@@ -3463,13 +3463,28 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_writeeflags_u16:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_flags_write_u16,
                                    {Ops[0]});
-  case X86::BI__readeflags: {
-    return Builder.CreateIntrinsic(SizeTy, llvm::Intrinsic::x86_flags_read_u64,
+  case X86::BI__builtin_ia32_readeflags_u32:
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_flags_read_u32,
                                    {});
+  case X86::BI__builtin_ia32_writeeflags_u32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_flags_write_u32,
+                                   {Ops[0]});
+  case X86::BI__readeflags: {
+    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
+    Value *Read =
+        Builder.CreateIntrinsic(Wide ? Int64Ty : Int32Ty,
+                                Wide ? llvm::Intrinsic::x86_flags_read_u64
+                                     : llvm::Intrinsic::x86_flags_read_u32,
+                                {});
+    return Builder.CreateZExtOrTrunc(Read, convertType(E->getType()));
   }
   case X86::BI__writeeflags: {
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_flags_write_u64,
-                                   {Ops[0]});
+    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
+    return Builder.CreateIntrinsic(
+        VoidTy,
+        Wide ? llvm::Intrinsic::x86_flags_write_u64
+             : llvm::Intrinsic::x86_flags_write_u32,
+        {Builder.CreateZExtOrTrunc(Ops[0], Wide ? Int64Ty : Int32Ty)});
   }
   case X86::BI__readmsr: {
     return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_rdmsr,

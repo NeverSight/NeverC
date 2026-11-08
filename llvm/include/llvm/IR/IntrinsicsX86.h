@@ -1096,8 +1096,10 @@ enum X86Intrinsics : unsigned {
     x86_erets,                                       // llvm.x86.erets
     x86_eretu,                                       // llvm.x86.eretu
     x86_flags_read_u16,                              // llvm.x86.flags.read.u16
+    x86_flags_read_u32,                              // llvm.x86.flags.read.u32
     x86_flags_read_u64,                              // llvm.x86.flags.read.u64
     x86_flags_write_u16,                             // llvm.x86.flags.write.u16
+    x86_flags_write_u32,                             // llvm.x86.flags.write.u32
     x86_flags_write_u64,                             // llvm.x86.flags.write.u64
     x86_fldcw,                                       // llvm.x86.fldcw
     x86_fldenv16,                                    // llvm.x86.fldenv16

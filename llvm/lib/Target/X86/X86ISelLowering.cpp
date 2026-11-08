@@ -29046,6 +29046,10 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDNode *N = DAG.getMachineNode(X86::WBINVD, dl, MVT::Other, Chain);
       return SDValue(N, 0);
     }
+    case llvm::Intrinsic::x86_flags_read_u32:
+    case llvm::Intrinsic::x86_flags_write_u32:
+      report_fatal_error(
+          "32-bit FLAGS intrinsics require the full i386 LLVM backend");
     case llvm::Intrinsic::x86_flags_read_u16:
     case llvm::Intrinsic::x86_flags_read_u64: {
       const bool Narrow = IntNo == llvm::Intrinsic::x86_flags_read_u16;

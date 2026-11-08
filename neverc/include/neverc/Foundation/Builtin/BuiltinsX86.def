@@ -2256,6 +2256,8 @@ BUILTIN(__builtin_ia32_writedr32, "vIUiUi", "n")
 
 BUILTIN(__builtin_ia32_readeflags_u16, "Us", "n")
 BUILTIN(__builtin_ia32_writeeflags_u16, "vUs", "n")
+BUILTIN(__builtin_ia32_readeflags_u32, "Ui", "n")
+BUILTIN(__builtin_ia32_writeeflags_u32, "vUi", "n")
 BUILTIN(__readeflags, "z", "n")
 BUILTIN(__writeeflags, "vz", "n")
 
