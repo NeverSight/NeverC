@@ -7849,6 +7849,8 @@ class UtilityTupleQueryGraph
   const CXXRecordDecl *BindOwnedCallableRecord = nullptr;
   const CXXConstructExpr *BindOwnedCallableCopy = nullptr;
   const FunctionalBindFactorySource *BindStandardFactory = nullptr;
+  const FunctionalBindMemberFactorySource *BindMemberFactory = nullptr;
+  std::set<const CXXMethodDecl *> *BindMemberOwnerQueries = nullptr;
   const FunctionalBindStandardCallSource *BindStandardCall = nullptr;
   const TemplateUseSource *BindStandardWrittenSource = nullptr;
   const CXXConstructExpr *BindStandardCallableCopy = nullptr;
@@ -8819,6 +8821,12 @@ class UtilityTupleQueryGraph
       return std::nullopt;
     return Actual;
   }
+  bool bindMemberOwnerRecordSource(const CXXRecordDecl *Record) const {
+    return Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
+        BindMemberFactory && BindMemberOwnerQueries && Record &&
+        Record->getCanonicalDecl() == BindMemberFactory->Storage.Owner->getCanonicalDecl() &&
+        S.owns(SM, Record->getLocation()) && Record->getDefinition() && !Record->isInvalidDecl();
+  }
   bool bindOwnedCallableRecordSource(const CXXRecordDecl *Record) const {
     return Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         BindOwnedCallableRecord && BindOwnedQuerySources && Record &&
@@ -9731,6 +9739,24 @@ class UtilityTupleQueryGraph
     if (!Method || Nesting > 64 || !step() || Method->isInvalidDecl() ||
         Method->isDeleted() || Method->isVariadic() || Method->isVirtual() ||
         Method->getPrimaryTemplate()) return false;
+    if (bindMemberOwnerRecordSource(Method->getParent())) {
+      const auto *Copy = dyn_cast<CXXConstructorDecl>(Method);
+      const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
+      if (!Method->isImplicit() || !Method->isDefaulted() || !Method->isTrivial() ||
+          Method->hasAttrs() || !S.owns(SM, Method->getLocation()) ||
+          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return false;
+      for (const auto *Declaration : Method->redecls())
+        if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return false;
+      if (Copy && (Copy->getNumParams() != 1 ||
+          !Copy->getParamDecl(0)->getType()->isReferenceType() ||
+          Copy->getParamDecl(0)->hasDefaultArg() ||
+          !Context.hasSameUnqualifiedType(Copy->getParamDecl(0)->getType().getNonReferenceType(),
+              Context.getRecordType(BindMemberFactory->Storage.Owner)))) return false;
+      if (Destructor && Destructor->getNumParams()) return false;
+      if (BindMemberOwnerQueries->size() == 64 && !BindMemberOwnerQueries->count(Method)) return false;
+      BindMemberOwnerQueries->insert(Method);
+      return true; // Signature dependency; ordinary source/body/lifetime remain separate.
+    }
     if (bindOwnedCallableRecordSource(Method->getParent())) {
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Method);
       const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
@@ -9966,6 +9992,10 @@ class UtilityTupleQueryGraph
         !NotFnCallableType.isNull() && T->isFunctionPointerType() &&
         Context.hasSameType(T.getUnqualifiedType(), NotFnCallableType))
       return true;
+    if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindMemberFactory &&
+        T->isMemberPointerType() && Context.hasSameUnqualifiedType(T, BindMetadata->CallableType))
+      return true;
+    if (bindMemberOwnerRecordSource(T->getAsCXXRecordDecl())) return true;
     if (utilityScalar(Context, T) || T->isVoidType())
       return true;
     const auto *R = T->getAsCXXRecordDecl();
@@ -11154,7 +11184,7 @@ class UtilityTupleQueryGraph
   }
   bool record(const CXXRecordDecl *R) {
     if (!R || Failed) return false;
-    if (bindOwnedCallableRecordSource(R)) return true;
+    if (bindOwnedCallableRecordSource(R) || bindMemberOwnerRecordSource(R)) return true;
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindFactoryLeafComparisonRecord &&
         R->getCanonicalDecl() == BindFactoryLeafComparisonRecord)
       return family(R); // Only the exact type-comparison operand; no storage or member permission.
@@ -11513,6 +11543,17 @@ class UtilityTupleQueryGraph
 
   std::optional<FunctionalBindFactorySource> freshBindFactorySource(
       const FunctionalBindFactorySource &Factory) const {
+    if (BindMemberFactory) {
+      if (Factory.SourceCall != BindMemberFactory->Factory.SourceCall) return std::nullopt;
+      const auto Fresh = describeFunctionalBindMemberFactorySource(S, SM, Factory.SourceCall, Context);
+      if (!Fresh || Fresh->Member != BindMemberFactory->Member || Fresh->Address != BindMemberFactory->Address ||
+          Fresh->Storage.Owner != BindMemberFactory->Storage.Owner || Fresh->Factory.Storage.Record != BindMetadata->Record ||
+          Fresh->Factory.Factory != BindMemberFactory->Factory.Factory ||
+          Fresh->Factory.Construction != BindMemberFactory->Factory.Construction ||
+          Fresh->Factory.BoundConstruction != BindMemberFactory->Factory.BoundConstruction ||
+          !sameFunctionalBindPlaceholderOperands(Fresh->Factory, Factory)) return std::nullopt;
+      return Fresh->Factory;
+    }
     if (BindStandardFactory) {
       if (!BindMetadata || Factory.SourceCall != BindStandardFactory->SourceCall) return std::nullopt;
       const auto Fresh = describeFunctionalBindStandardFactorySource(S, SM, Factory.SourceCall, Context);
@@ -11560,12 +11601,26 @@ public:
       std::function<bool(const CXXConstructExpr *)> ConstructionSource,
       std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr,
       const FunctionalBindFactorySource *StandardFactory = nullptr,
-      const FunctionalBindStandardCallSource *StandardCall = nullptr) {
+      const FunctionalBindStandardCallSource *StandardCall = nullptr,
+      const FunctionalBindMemberFactorySource *MemberFactory = nullptr,
+      std::set<const CXXMethodDecl *> *MemberOwnerQueries = nullptr) {
     if (Mode != UtilityTupleQueryMode::BindSignature || BindMetadata || !step() ||
         !TypeSource || !RecordSource || !CallSource || !VariableSource || !ConstructionSource) return false;
     const auto Standard = StandardFactory || StandardCall
         ? describeFunctionalBindStandardStorage(S, SM, Storage.Record, Context) : std::nullopt;
-    const auto Actual = StandardFactory || StandardCall
+    const auto Member = MemberFactory
+        ? describeFunctionalBindMemberFactorySource(S, SM, MemberFactory->Factory.SourceCall, Context) : std::nullopt;
+    if (MemberFactory && (!Member || !MemberOwnerQueries || OwnedQuerySources || StandardFactory || StandardCall ||
+        BindReferenceStorage || BindReferenceFactory || BindOwnedCallableRecord ||
+        Member->Member != MemberFactory->Member || Member->Address != MemberFactory->Address ||
+        Member->Storage.Owner != MemberFactory->Storage.Owner ||
+        Member->Factory.Construction != MemberFactory->Factory.Construction ||
+        Member->Factory.BoundConstruction != MemberFactory->Factory.BoundConstruction ||
+        !sameFunctionalBindPlaceholderOperands(Member->Factory, MemberFactory->Factory))) return false;
+    if (MemberOwnerQueries && !MemberFactory) return false;
+    const auto Actual = MemberFactory
+        ? (Member ? std::optional<FunctionalBindStorage>(Member->Factory.Storage) : std::nullopt)
+        : StandardFactory || StandardCall
         ? (Standard ? std::optional<FunctionalBindStorage>(Standard->Storage) : std::nullopt)
         : describeFunctionalBindStorage(S, SM, Storage.Record, Context);
     if (StandardFactory && (!Standard || BindStandardFactory || BindReferenceStorage ||
@@ -11582,6 +11637,9 @@ public:
     BindMetadata = *Actual;
     BindStandardFactory = StandardFactory;
     BindStandardCall = StandardCall;
+    BindMemberFactory = MemberFactory;
+    BindMemberOwnerQueries = MemberOwnerQueries;
+    if (MemberFactory && !freshBindFactorySource(MemberFactory->Factory)) return false;
     if (StandardCall && !freshBindCallSource(S, SM, StandardCall->Selected.SourceCall, Context)) return false;
     if (StandardFactory && !freshBindFactorySource(*StandardFactory)) return false;
     BindTypeSource = std::move(TypeSource);
@@ -11614,6 +11672,7 @@ public:
       if (!Leaf) return false;
       Records.push_back(Leaf);
       if (const auto *Wrapper = Element.getType()->getAsCXXRecordDecl()) {
+        if (bindMemberOwnerRecordSource(Wrapper)) continue;
         if (!approvedFunctionalReferenceRecord(S, SM, Wrapper, Context) &&
             !describeFunctionalBindStorage(S, SM, Wrapper, Context)) return false;
         Records.push_back(Wrapper);
@@ -11624,7 +11683,7 @@ public:
       if (!Record || !step() || Records.size() > 64) return false;
       // The exact ordinary callable is an input signature dependency, never
       // an SDK physical-record family or a runtime member permission.
-      if (bindOwnedCallableRecordSource(Record)) continue;
+      if (bindOwnedCallableRecordSource(Record) || bindMemberOwnerRecordSource(Record)) continue;
       if (!BindPhysicalRecords.insert(Record->getCanonicalDecl()).second) continue;
       const auto *Definition = Record->getDefinition();
       if (!Definition || Definition->isDependentContext() || Definition->isUnion() ||
@@ -14061,7 +14120,8 @@ public:
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Method ||
         Method->getParent()->isDependentContext() ||
         (!BindMetadataRecords.count(Method->getParent()->getCanonicalDecl()) &&
-         !bindOwnedCallableRecordSource(Method->getParent())) ||
+         !bindOwnedCallableRecordSource(Method->getParent()) &&
+         !bindMemberOwnerRecordSource(Method->getParent())) ||
         !Method->isTrivial()) return false;
     if (Default) {
       const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
@@ -20963,7 +21023,7 @@ static std::optional<FunctionalBindTupleConstructionSource>
 describeFunctionalBindTupleConstructionSourceImpl(
     const State &S, const SourceManager &SM, const UtilityTupleRecord &Arguments,
     const CXXConstructExpr *Tuple, const ASTContext &Context,
-    bool CallReferenceInputs = false) {
+    bool CallReferenceInputs = false, const CXXRecordDecl *OrdinaryReceiver = nullptr) {
   const auto Count = Arguments.Elements.size();
   const auto *TupleConstructor = Tuple ? Tuple->getConstructor() : nullptr;
   if (!Arguments.Record || !Tuple || !TupleConstructor ||
@@ -21178,13 +21238,18 @@ describeFunctionalBindTupleConstructionSourceImpl(
             functionalBindInertObjectSourceIdentity(S, SM, Element.getType(), Context)
         ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
         : std::nullopt;
+    const auto *ElementRecord = Element.getType()->getAsCXXRecordDecl();
+    const bool Receiver = !CallReferenceInputs && OrdinaryReceiver && Index == 0 && ElementRecord &&
+        ElementRecord->getCanonicalDecl() == OrdinaryReceiver->getCanonicalDecl();
     const auto *CopiedRecord = Wrapper ? Wrapper->Record : EmptyPlaceholder ? Element.EmptyBase
-        : Nested ? Nested->Record : nullptr;
+        : Nested ? Nested->Record : Receiver ? OrdinaryReceiver : nullptr;
     if (CopiedRecord ? (!Copy || Copy->getNumArgs() != 1 || !SelectedCopy ||
                         !SelectedCopy->isCopyOrMoveConstructor() || !SelectedCopy->isTrivial() ||
                         SelectedCopy->isDeleted() || SelectedCopy->getParent()->getCanonicalDecl() !=
                             CopiedRecord->getCanonicalDecl())
                      : bool(Copy)) return std::nullopt;
+    if (Receiver && (!SelectedCopy->isImplicit() || !SelectedCopy->isDefaulted() ||
+        SelectedCopy->hasAttrs() || !S.owns(SM, SelectedCopy->getLocation()))) return std::nullopt;
     if (EmptyPlaceholder && (!SelectedCopy->isImplicit() || !SelectedCopy->isDefaulted() ||
                             !Check.family(SelectedCopy, {"__functional/bind.h"}))) return std::nullopt;
     if (Nested && (!SelectedCopy->isImplicit() || !SelectedCopy->isDefaulted() ||
@@ -21219,6 +21284,23 @@ describeFunctionalBindTupleConstructionSource(
   return describeFunctionalBindTupleConstructionSourceImpl(
       S, SM, Storage.Arguments, Actual->BoundConstruction, Context);
 }
+std::optional<FunctionalBindTupleConstructionSource>
+describeFunctionalBindMemberTupleConstructionSource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindMemberFactorySource &Factory, const ASTContext &Context) {
+  const auto Fresh = describeFunctionalBindMemberFactorySource(S, SM, Factory.Factory.SourceCall, Context);
+  if (!Fresh || Fresh->Member != Factory.Member || Fresh->Address != Factory.Address ||
+      Fresh->Storage.Owner != Factory.Storage.Owner ||
+      Fresh->Factory.Factory != Factory.Factory.Factory ||
+      Fresh->Factory.Construction != Factory.Factory.Construction ||
+      Fresh->Factory.BoundConstruction != Factory.Factory.BoundConstruction ||
+      Fresh->Factory.Storage.Record != Factory.Factory.Storage.Record ||
+      !sameFunctionalBindPlaceholderOperands(Fresh->Factory, Factory.Factory)) return std::nullopt;
+  return describeFunctionalBindTupleConstructionSourceImpl(
+      S, SM, Fresh->Factory.Storage.Arguments, Fresh->Factory.BoundConstruction,
+      Context, false, Fresh->Storage.Owner);
+}
+
 std::optional<FunctionalBindTupleConstructionSource>
 describeFunctionalBindStandardTupleConstructionSource(
     const State &S, const SourceManager &SM,
@@ -26511,6 +26593,7 @@ class BindSourceProof {
   const FunctionalBindStorage &Storage;
   const FunctionalBindReferenceStorage *ReferenceStorageRoot = nullptr;
   const FunctionalBindFactorySource *StandardFactoryRoot = nullptr;
+  const FunctionalBindMemberFactorySource *MemberFactoryRoot = nullptr;
   const FunctionalBindStandardCallSource *StandardCallRoot = nullptr;
   const FunctionalBindReferenceFactorySource *ReferenceFactoryRoot = nullptr;
   const FunctionalBindReferenceCallSource *ReferenceCallRoot = nullptr;
@@ -26652,6 +26735,17 @@ class BindSourceProof {
 
   std::optional<FunctionalBindFactorySource> freshFactorySource(
       const FunctionalBindFactorySource &Factory) const {
+    if (MemberFactoryRoot) {
+      if (Factory.SourceCall != MemberFactoryRoot->Factory.SourceCall) return std::nullopt;
+      const auto Fresh = describeFunctionalBindMemberFactorySource(S, SM, Factory.SourceCall, Context);
+      if (!Fresh || Fresh->Member != MemberFactoryRoot->Member || Fresh->Address != MemberFactoryRoot->Address ||
+          Fresh->Storage.Owner != MemberFactoryRoot->Storage.Owner || Fresh->Factory.Storage.Record != Storage.Record ||
+          Fresh->Factory.Factory != MemberFactoryRoot->Factory.Factory ||
+          Fresh->Factory.Construction != MemberFactoryRoot->Factory.Construction ||
+          Fresh->Factory.BoundConstruction != MemberFactoryRoot->Factory.BoundConstruction ||
+          !sameFunctionalBindPlaceholderOperands(Fresh->Factory, Factory)) return std::nullopt;
+      return Fresh->Factory;
+    }
     if (StandardFactoryRoot) {
       if (Factory.SourceCall != StandardFactoryRoot->SourceCall) return std::nullopt;
       const auto Fresh = describeFunctionalBindStandardFactorySource(S, SM, Factory.SourceCall, Context);
@@ -32266,9 +32360,11 @@ public:
       const FunctionalBindReferenceCallSource *ReferenceCall = nullptr,
       bool ReferentQueries = false,
       const FunctionalBindFactorySource *StandardFactory = nullptr,
-      const FunctionalBindStandardCallSource *StandardCall = nullptr)
+      const FunctionalBindStandardCallSource *StandardCall = nullptr,
+      const FunctionalBindMemberFactorySource *MemberFactory = nullptr,
+      std::set<const CXXMethodDecl *> *MemberOwnerQueries = nullptr)
       : S(S), SM(SM), Context(Context), Storage(Storage), ReferenceStorageRoot(ReferenceFactory ? &ReferenceFactory->Storage : ReferenceCall ? &ReferenceCall->Storage : ReferenceStorage),
-        StandardFactoryRoot(StandardFactory), StandardCallRoot(StandardCall), ReferenceFactoryRoot(ReferenceFactory), ReferenceCallRoot(ReferenceCall), ReferenceReferentQueries(ReferentQueries), ReferenceQueryOutput(OwnedQuerySources), SpecialMembers(Members),
+        StandardFactoryRoot(StandardFactory), MemberFactoryRoot(MemberFactory), StandardCallRoot(StandardCall), ReferenceFactoryRoot(ReferenceFactory), ReferenceCallRoot(ReferenceCall), ReferenceReferentQueries(ReferentQueries), ReferenceQueryOutput(OwnedQuerySources), SpecialMembers(Members),
         OperationTraits(Traits), Check(S, SM, Context),
         Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::BindSignature, ParentBudget),
         Sources(Sources), Selections(Selections), SharedRootSources(SharedSources),
@@ -32277,7 +32373,16 @@ public:
       OwnedCallableRecord = ReferenceStorageRoot->Reference.ReferentType->getAsCXXRecordDecl();
     else if (OwnedQuerySources && !Storage.CallableType.isNull())
       OwnedCallableRecord = Storage.CallableType->getAsCXXRecordDecl();
-    if (StandardCallRoot) {
+    if (MemberFactoryRoot) {
+      Ready = !StandardFactoryRoot && !StandardCallRoot && !ReferenceStorageRoot && !ReferenceCallRoot &&
+          !OwnedQuerySources && MemberOwnerQueries && Graph.bindFunctionalBindMetadata(Storage,
+              [this](const TemplateSpecializationType *Type) { return typeSource(Type); },
+              [this](const CXXRecordDecl *Record) { return recordSource(Record); },
+              [this](const CallExpr *Call) { return callSource(Call); },
+              [this](const DeclRefExpr *Reference) { return variableSource(Reference); },
+              [this](const CXXConstructExpr *Expression) { return incomingTupleConstructionSource(Expression); },
+              nullptr, nullptr, nullptr, MemberFactoryRoot, MemberOwnerQueries);
+    } else if (StandardCallRoot) {
       Ready = !StandardFactoryRoot && !ReferenceStorageRoot && !ReferenceCallRoot && !OwnedQuerySources &&
           Graph.bindFunctionalBindMetadata(Storage,
               [this](const TemplateSpecializationType *Type) { return typeSource(Type); },
@@ -32342,7 +32447,8 @@ public:
     if (!Ready || Factory.Storage.Record != Storage.Record ||
         !Factory.SourceCall || !S.owns(SM, Factory.SourceCall->getExprLoc())) return false;
     const auto Actual = freshFactorySource(Factory);
-    const auto Tuple = StandardFactoryRoot ? describeFunctionalBindStandardTupleConstructionSource(S, SM, Factory, Context)
+    const auto Tuple = MemberFactoryRoot ? describeFunctionalBindMemberTupleConstructionSource(S, SM, *MemberFactoryRoot, Context)
+        : StandardFactoryRoot ? describeFunctionalBindStandardTupleConstructionSource(S, SM, Factory, Context)
         : ReferenceFactoryRoot ? describeFunctionalBindReferenceTupleConstructionSource(S, SM, Factory, Context) : describeFunctionalBindTupleConstructionSource(S, SM, Factory, Context);
     if (!Actual || !Graph.bindFunctionalBindCallableCopySource(Factory)) return false;
     const auto *Reference = dyn_cast<DeclRefExpr>(Factory.SourceCall->getCallee()->IgnoreParenImpCasts());
@@ -33979,6 +34085,31 @@ bool approvedFunctionalBindStandardCallCompleteSource(
       Fresh->Selected.Storage.Record != Call.Selected.Storage.Record) return false;
   return BindSourceProof(S, SM, Context, Call.Selected.Storage, Sources, Selections, Members, Traits,
       {}, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, false, nullptr, &Call).callCompleteSource(Call.Selected);
+}
+
+bool approvedFunctionalBindMemberFactorySource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindMemberFactorySource &Factory, const ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const CXXMethodDecl *> &OwnerQueries,
+    const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
+  const auto Fresh = describeFunctionalBindMemberFactorySource(S, SM, Factory.Factory.SourceCall, Context);
+  if (!Fresh || Fresh->Member != Factory.Member || Fresh->Address != Factory.Address ||
+      Fresh->Storage.Owner != Factory.Storage.Owner ||
+      Fresh->Factory.Factory != Factory.Factory.Factory ||
+      Fresh->Factory.Construction != Factory.Factory.Construction ||
+      Fresh->Factory.BoundConstruction != Factory.Factory.BoundConstruction ||
+      Fresh->Factory.Storage.Record != Factory.Factory.Storage.Record ||
+      !sameFunctionalBindPlaceholderOperands(Fresh->Factory, Factory.Factory)) return false;
+  std::set<const CXXMethodDecl *> Selected;
+  if (!BindSourceProof(S, SM, Context, Factory.Factory.Storage, Sources, Selections, Members, Traits,
+          SourceAlias, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, false, nullptr, nullptr,
+          &*Fresh, &Selected).factory(Fresh->Factory)) return false;
+  OwnerQueries.insert(Selected.begin(), Selected.end());
+  return true;
 }
 
 bool approvedFunctionalBindStandardFactorySource(

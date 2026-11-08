@@ -2345,6 +2345,23 @@ bool approvedFunctionalBindStandardCallCompleteSource(
     const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
     const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits);
 
+
+// A fresh owned member address binds this one source graph. Ordinary owner
+// copy/destruction signatures remain exported obligations for the caller.
+std::optional<FunctionalBindTupleConstructionSource>
+describeFunctionalBindMemberTupleConstructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindMemberFactorySource &Factory, const clang::ASTContext &Context);
+bool approvedFunctionalBindMemberFactorySource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindMemberFactorySource &Factory, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnerQueries,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
+
 bool approvedFunctionalBindStandardFactorySource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,
