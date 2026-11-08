@@ -21408,6 +21408,64 @@ describeFunctionalBindReferenceCallTupleConstructionSource(
       S, SM, *Arguments, Actual->CallArguments, Context, true);
 }
 
+std::optional<FunctionalBindMemberNaturalLayout>
+describeFunctionalBindMemberNaturalLayout(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  const auto Member = describeFunctionalBindMemberStorage(S, SM, Record, Context);
+  if (!Member || Context.getTypeSize(Context.UnsignedCharTy) != 8) return std::nullopt;
+  const auto &Storage = Member->Storage;
+  const uint64_t CallableBits = Context.getTypeSize(Storage.CallableType);
+  const uint64_t CallableAlign = Context.getTypeAlign(Storage.CallableType);
+  const uint64_t BoundBits = Context.getTypeSize(Storage.BoundArguments->getType());
+  const uint64_t BoundAlign = Context.getTypeAlign(Storage.BoundArguments->getType());
+  if (!Storage.CallableType->isMemberPointerType() ||
+      !CallableBits || !CallableAlign || !BoundBits || !BoundAlign) return std::nullopt;
+  // Reserve the actual native member-pointer extent and alignment. No native
+  // encoding is interpreted, invented, or exposed as a function pointer.
+  QualType CallableStorageType;
+  for (const auto Type : {Context.UnsignedCharTy, Context.UnsignedShortTy, Context.UnsignedIntTy,
+                          Context.UnsignedLongTy, Context.UnsignedLongLongTy, Context.UnsignedInt128Ty}) {
+    const uint64_t Bits = Context.getTypeSize(Type);
+    if (Bits != CallableAlign || Context.getTypeAlign(Type) != CallableAlign ||
+        CallableBits % Bits) continue;
+    const uint64_t Count = CallableBits / Bits;
+    if (!Count || Count > 64) continue;
+    CallableStorageType = Count == 1 ? Type : Context.getConstantArrayType(
+        Type, llvm::APInt(64, Count), nullptr, ArraySizeModifier::Normal, 0);
+    break;
+  }
+  if (CallableStorageType.isNull() || Context.getTypeSize(CallableStorageType) != CallableBits ||
+      Context.getTypeAlign(CallableStorageType) != CallableAlign) return std::nullopt;
+  auto Rounded = [](uint64_t Value, uint64_t Alignment) {
+    return (Value + Alignment - 1) / Alignment * Alignment;
+  };
+  const bool Padded = Storage.CallableOffsetBits != 0;
+  QualType BaseStorageType;
+  if (Padded) {
+    const auto *Weak = Storage.WeakResult ? Storage.WeakResult->getDefinition() : nullptr;
+    if (!Context.getTargetInfo().getCXXABI().isMicrosoft() || !Weak || !Weak->isEmpty() ||
+        !Weak->field_empty() ||
+        Storage.CallableOffsetBits != Rounded(Context.getTypeSize(Context.getRecordType(Weak)), CallableAlign))
+      return std::nullopt;
+    for (const auto Type : {Context.UnsignedCharTy, Context.UnsignedShortTy, Context.UnsignedIntTy,
+                            Context.UnsignedLongTy, Context.UnsignedLongLongTy, Context.UnsignedInt128Ty}) {
+      if (Context.getTypeSize(Type) == Storage.CallableOffsetBits &&
+          Context.getTypeAlign(Type) == CallableAlign) {
+        BaseStorageType = Type;
+        break;
+      }
+    }
+    if (BaseStorageType.isNull()) return std::nullopt;
+  }
+  const uint64_t Alignment = std::max(CallableAlign, BoundAlign);
+  if (Storage.BoundOffsetBits != Rounded(Storage.CallableOffsetBits + CallableBits, BoundAlign) ||
+      Storage.AlignmentBytes * 8 != Alignment ||
+      Storage.SizeBytes * 8 != Rounded(Storage.BoundOffsetBits + BoundBits, Alignment)) return std::nullopt;
+  return FunctionalBindMemberNaturalLayout{
+      FunctionalBindNaturalLayout{Storage, Padded, BaseStorageType}, CallableStorageType};
+}
+
 std::optional<FunctionalBindNaturalLayout>
 describeFunctionalBindStandardNaturalLayout(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
@@ -25641,6 +25699,41 @@ describeFunctionalBindReferenceReferentTryCallFallbackSource(
 
 
 std::optional<FunctionalBindCopySource>
+describeFunctionalBindMemberCopySource(
+    const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const ASTContext &Context) {
+  const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+  const auto Member = Constructor
+      ? describeFunctionalBindMemberNaturalLayout(S, SM, Constructor->getParent(), Context)
+      : std::nullopt;
+  const auto Layout = Member ? std::optional<FunctionalBindNaturalLayout>(Member->Layout) : std::nullopt;
+  if (!Layout || !Constructor || !Constructor->isCopyOrMoveConstructor() ||
+      Constructor->isDeleted() || Constructor->isInvalidDecl() ||
+      !Constructor->isDefaulted() || !Constructor->isTrivial() ||
+      Constructor->isVariadic() || Constructor->getPrimaryTemplate() ||
+      Constructor->getNumParams() != 1 || Construction->getNumArgs() != 1 ||
+      Constructor->getParamDecl(0)->hasDefaultArg() ||
+      Construction->isTypeDependent() || Construction->isValueDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Construction->getType().isVolatileQualified() || Construction->getType().isRestrictQualified() ||
+      Construction->getType().getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(Construction->getType(),
+                                      Context.getRecordType(Layout->Storage.Record))) return std::nullopt;
+  const auto Parameter = Constructor->getParamDecl(0)->getType();
+  const auto Self = Context.getRecordType(Layout->Storage.Record);
+  const auto Expected = Constructor->isMoveConstructor()
+      ? Context.getRValueReferenceType(Self)
+      : Context.getLValueReferenceType(Self.withConst());
+  const auto *Object = Construction->getArg(0);
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!Object || !Context.hasSameType(Parameter, Expected) ||
+      !Context.hasSameType(Object->getType(), Parameter.getNonReferenceType()) ||
+      Object->getValueKind() != Expr::getValueKindForType(Parameter) ||
+      !Check.family(Constructor, {"__functional/bind.h"})) return std::nullopt;
+  return FunctionalBindCopySource{*Layout, Construction, Object};
+}
+
+std::optional<FunctionalBindCopySource>
 describeFunctionalBindCopySource(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const ASTContext &Context) {
@@ -25739,6 +25832,24 @@ describeFunctionalBindReferenceCopySource(
       Object->getValueKind() != Expr::getValueKindForType(Parameter) ||
       !Check.family(Constructor, {"__functional/bind.h"})) return std::nullopt;
   return FunctionalBindCopySource{*Layout, Construction, Object};
+}
+
+std::optional<FunctionalBindDestructionSource>
+describeFunctionalBindMemberDestructionSource(
+    const State &S, const SourceManager &SM,
+    const CXXDestructorDecl *Destructor, const ASTContext &Context) {
+  const auto Member = Destructor
+      ? describeFunctionalBindMemberNaturalLayout(S, SM, Destructor->getParent(), Context)
+      : std::nullopt;
+  const auto Layout = Member ? std::optional<FunctionalBindNaturalLayout>(Member->Layout) : std::nullopt;
+  NotFnSelectedSource Check(S, SM, Context);
+  if (!Layout || !Destructor || Destructor->isDeleted() || Destructor->isInvalidDecl() ||
+      !Destructor->isDefaulted() || !Destructor->isTrivial() || Destructor->isVirtual() ||
+      Destructor->isVariadic() || Destructor->getPrimaryTemplate() ||
+      Destructor->getNumParams() || !Layout->Storage.Record->getDestructor() ||
+      Destructor->getCanonicalDecl() != Layout->Storage.Record->getDestructor()->getCanonicalDecl() ||
+      !Check.family(Destructor, {"__functional/bind.h"})) return std::nullopt;
+  return FunctionalBindDestructionSource{*Layout, Destructor};
 }
 
 std::optional<FunctionalBindDestructionSource>

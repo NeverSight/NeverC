@@ -2352,6 +2352,26 @@ std::optional<FunctionalBindTupleConstructionSource>
 describeFunctionalBindMemberTupleConstructionSource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindMemberFactorySource &Factory, const clang::ASTContext &Context);
+// Native member-pointer encoding is opaque to C23. Only a separately proved
+// closed member value may use this size/alignment-equivalent reserved storage.
+// This description grants no value, body, copy, destruction or lifetime permission.
+struct FunctionalBindMemberNaturalLayout {
+  FunctionalBindNaturalLayout Layout;
+  clang::QualType CallableStorageType;
+};
+std::optional<FunctionalBindMemberNaturalLayout>
+describeFunctionalBindMemberNaturalLayout(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<FunctionalBindCopySource>
+describeFunctionalBindMemberCopySource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+std::optional<FunctionalBindDestructionSource>
+describeFunctionalBindMemberDestructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
+
 bool approvedFunctionalBindMemberFactorySource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindMemberFactorySource &Factory, const clang::ASTContext &Context,
