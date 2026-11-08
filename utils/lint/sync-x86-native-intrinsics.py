@@ -148,6 +148,8 @@ EXISTING_FIRST_IMMEDIATE_SIGNATURES = {
     "xabort": ("Done", "I8"),
 }
 FIRST_IMMEDIATE_SIGNATURES = {
+    "readcr32": ("I32", "I32"), "readdr32": ("I32", "I32"),
+    "writecr32": ("Done", "I32", "I32"), "writedr32": ("Done", "I32", "I32"),
     "readseg": ("I16", "I32"),
     "readseg_mem": ("Done", "I32", "PTR"),
     "writeseg": ("Done", "I32", "I16"),

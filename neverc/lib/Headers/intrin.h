@@ -7,7 +7,7 @@
 #define __INTRIN_H
 
 /* First include the standard intrinsics. */
-#if defined(__x86_64__)
+#if defined(__i386__) || defined(__x86_64__)
 #include <x86intrin.h>
 #endif
 
@@ -23,8 +23,13 @@
 /* Define the default attributes for the functions in this file. */
 #define __DEFAULT_FN_ATTRS __attribute__((__always_inline__, __nodebug__))
 
+#if defined(__i386__)
+#define __LPTRINT_TYPE__ long
+#define __LPTRINT_TYPE__INT int
+#else
 #define __LPTRINT_TYPE__ __int64
 #define __LPTRINT_TYPE__INT __int64
+#endif
 
 #if defined(__MMX__)
 /* And the random ones that aren't in those files. */

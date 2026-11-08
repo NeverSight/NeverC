@@ -548,6 +548,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   switch (BuiltinID) {
   case X86::BI__builtin_ia32_lcall64:
   case X86::BI__builtin_ia32_ljmp64:
+  case X86::BI__readcr8:
+  case X86::BI__writecr8:
     if (TI.getTriple().getArch() != llvm::Triple::x86_64) {
       unsigned ID = getDiagnostics().getCustomDiagID(
           DiagnosticsEngine::Error,
@@ -555,6 +557,17 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
       return bool(Diag(TheCall->getBeginLoc(), ID));
     }
     return false;
+  case X86::BI__builtin_ia32_readcr32:
+  case X86::BI__builtin_ia32_writecr32:
+  case X86::BI__builtin_ia32_readdr32:
+  case X86::BI__builtin_ia32_writedr32:
+    if (TI.getTriple().getArch() != llvm::Triple::x86) {
+      unsigned ID = getDiagnostics().getCustomDiagID(
+          DiagnosticsEngine::Error,
+          "this builtin requires a 32-bit x86 target");
+      return bool(Diag(TheCall->getBeginLoc(), ID));
+    }
+    break;
   case X86::BI__builtin_ia32_lcall16_imm:
   case X86::BI__builtin_ia32_lcall32_imm:
   case X86::BI__builtin_ia32_ljmp16_imm:
@@ -979,6 +992,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__writedr:
   case X86::BI__builtin_ia32_readdr:
   case X86::BI__builtin_ia32_writedr:
+  case X86::BI__builtin_ia32_readdr32:
+  case X86::BI__builtin_ia32_writedr32:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0, 7);
   case X86::BI__builtin_ia32_readseg:
   case X86::BI__builtin_ia32_readseg_mem:
@@ -996,12 +1011,22 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
            << TheCall->getArg(0)->getSourceRange();
   }
   case X86::BI__builtin_ia32_readcr:
-  case X86::BI__builtin_ia32_writecr: {
+  case X86::BI__builtin_ia32_writecr:
+  case X86::BI__builtin_ia32_readcr32:
+  case X86::BI__builtin_ia32_writecr32: {
     llvm::APSInt Index;
     if (SemaBuiltinConstantArg(TheCall, 0, Index))
       return true;
-    if (Index == 0 || Index == 2 || Index == 3 || Index == 4 || Index == 8)
+    if (Index == 0 || Index == 2 || Index == 3 || Index == 4 ||
+        (Index == 8 && TI.getTriple().getArch() == llvm::Triple::x86_64))
       return false;
+    if (TI.getTriple().getArch() == llvm::Triple::x86) {
+      const unsigned ID = getDiagnostics().getCustomDiagID(
+          DiagnosticsEngine::Error,
+          "control register index must be 0, 2, 3 or 4 in 32-bit mode");
+      return bool(Diag(TheCall->getBeginLoc(), ID)
+                  << TheCall->getArg(0)->getSourceRange());
+    }
     return Diag(TheCall->getBeginLoc(),
                 diag::err_x86_builtin_invalid_control_register)
            << TheCall->getArg(0)->getSourceRange();

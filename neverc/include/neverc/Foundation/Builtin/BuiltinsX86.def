@@ -2247,6 +2247,13 @@ TARGET_HEADER_BUILTIN(__writecr8, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__readdr, "zUi", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__writedr, "vUiz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 
+// Explicit non-64-bit control/debug transfers; the full i386 backend owns
+// their native instruction emission. Register indices remain immediate.
+BUILTIN(__builtin_ia32_readcr32, "UiIUi", "n")
+BUILTIN(__builtin_ia32_writecr32, "vIUiUi", "n")
+BUILTIN(__builtin_ia32_readdr32, "UiIUi", "n")
+BUILTIN(__builtin_ia32_writedr32, "vIUiUi", "n")
+
 BUILTIN(__builtin_ia32_readeflags_u16, "Us", "n")
 BUILTIN(__builtin_ia32_writeeflags_u16, "vUs", "n")
 BUILTIN(__readeflags, "z", "n")

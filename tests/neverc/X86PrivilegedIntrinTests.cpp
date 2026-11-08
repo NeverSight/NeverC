@@ -812,6 +812,83 @@ TEST_F(X86PrivilegedIntrinTest, SystemRegisterIndicesAreChecked) {
   }
 }
 
+TEST_F(X86PrivilegedIntrinTest, I386SystemRegisterTypesAndNativeIR) {
+  const auto Source = tmpFile("i386_system_registers.c");
+  writeFile(Source, R"(
+    #if defined(_MSC_VER)
+    #include <intrin.h>
+    _Static_assert(_Generic(__readcr0(), unsigned long: 1, default: 0), "cr0");
+    _Static_assert(_Generic(__readdr(0), unsigned: 1, default: 0), "dr0");
+    unsigned microsoft(unsigned value) {
+      __writecr0(value); __writecr2(value); __writecr3(value); __writecr4(value);
+      __writedr(0, value); __writedr(7, value);
+      return __readcr0() ^ __readcr2() ^ __readcr3() ^ __readcr4() ^ __readdr(7);
+    }
+    #endif
+    _Static_assert(_Generic(__builtin_ia32_readcr32(0), unsigned: 1, default: 0), "native cr");
+    unsigned portable(unsigned value) {
+      __builtin_ia32_writecr32(0, value);
+      __builtin_ia32_writecr32(2, value);
+      __builtin_ia32_writecr32(3, value);
+      __builtin_ia32_writecr32(4, value);
+      __builtin_ia32_writedr32(4, value);
+      __builtin_ia32_writedr32(5, value);
+      __builtin_ia32_readcr32(3);
+      return __builtin_ia32_readcr32(3) ^ __builtin_ia32_readdr32(5);
+    }
+  )");
+  for (const char *Target : {"i686-pc-windows-msvc", "i386-unknown-linux-gnu"})
+    for (const char *Opt : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Target);
+      SCOPED_TRACE(Opt);
+      const auto Output = tmpFile("i386_system_registers.ll");
+      const auto R =
+          ncc({std::string("--target=") + Target, "-ffreestanding",
+               "-fno-builtin-mimalloc", "-fno-lto", "-Werror", Opt, "-S",
+               "-emit-llvm", Source.string(), "-o", Output.string()});
+      ASSERT_EQ(R.exitCode, 0) << R.err;
+      const auto Text = readFile(Output);
+      for (const char *Op : {"readcr32", "writecr32", "readdr32", "writedr32"})
+        EXPECT_NE(Text.find(std::string("@llvm.x86.") + Op + "("),
+                  std::string::npos)
+            << Text;
+      EXPECT_EQ(Text.find(" asm "), std::string::npos) << Text;
+      EXPECT_EQ(Text.find("@llvm.x86.readcr("), std::string::npos) << Text;
+      EXPECT_EQ(Text.find("@llvm.x86.readdr("), std::string::npos) << Text;
+    }
+}
+
+TEST_F(X86PrivilegedIntrinTest, I386SystemRegisterModesAndIndicesAreChecked) {
+  for (const auto &[Target, Call, Diagnostic] :
+       {std::tuple{"x86_64-pc-windows-msvc", "__builtin_ia32_readcr32(0)",
+                   "32-bit x86"},
+        {"x86_64-pc-windows-msvc", "__builtin_ia32_writedr32(0, 0)",
+         "32-bit x86"},
+        {"i686-pc-windows-msvc", "__readcr8()", "64-bit x86"},
+        {"i686-pc-windows-msvc", "__writecr8(0)", "64-bit x86"},
+        {"i686-pc-windows-msvc", "__builtin_ia32_readcr32(8)",
+         "control register"},
+        {"i686-pc-windows-msvc", "__builtin_ia32_writecr32(1, 0)",
+         "control register"},
+        {"i686-pc-windows-msvc", "__builtin_ia32_readdr32(8)", "valid range"},
+        {"i686-pc-windows-msvc", "__builtin_ia32_writedr32(8, 0)",
+         "valid range"},
+        {"i686-pc-windows-msvc", "__builtin_ia32_readcr32(n)",
+         "constant integer"},
+        {"i686-pc-windows-msvc", "__builtin_ia32_writedr32(n, 0)",
+         "constant integer"}}) {
+    SCOPED_TRACE(Call);
+    const auto Source = tmpFile("invalid_i386_system_register.c");
+    writeFile(Source,
+              std::string("#include <intrin.h>\nvoid f(unsigned n) { ") + Call +
+                  "; }\n");
+    const auto R = ncc({std::string("--target=") + Target, "-ffreestanding",
+                        "-fsyntax-only", Source.string()});
+    EXPECT_NE(R.exitCode, 0);
+    EXPECT_NE(R.err.find(Diagnostic), std::string::npos) << R.err;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Port I/O: in/out 8/16/32 — true intrinsic lowering
 // ---------------------------------------------------------------------------

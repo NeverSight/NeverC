@@ -65,9 +65,10 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
                       "\n ".join(body) + f"\n ret {word} %{result}\n}}\n")
     else:
         source = directory / (name + ".c")
+        cword = "unsigned long long" if bits == 64 else "unsigned"
         if args.spelling == "builtin":
-            read_c = f"__builtin_ia32_read{bank}({number})"
-            write_c = lambda value: f"__builtin_ia32_write{bank}({number}, {value});"
+            read_c = f"__builtin_ia32_read{bank}{suffix}({number})"
+            write_c = lambda value: f"__builtin_ia32_write{bank}{suffix}({number}, {value});"
             header = ""
         elif bank == "cr":
             read_c = f"__readcr{number}()"
@@ -81,7 +82,7 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
         if variant.startswith("memory_"):
             body.append("*pointer = a;")
         if variant.startswith("flags_"):
-            body.append("unsigned long long carry = (a + b) < a;")
+            body.append(f"{cword} carry = (a + b) < a;")
         if variant in ("write", "writes", "same_writes", "write_read"):
             body.append(write_c("a"))
         if variant in ("writes", "memory_write", "flags_write"):
@@ -89,7 +90,7 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
         if variant == "same_writes":
             body.append(write_c("a"))
         if variant in ("read", "dead", "twice", "write_read", "memory_read", "flags_read"):
-            body.append(f"unsigned long long first = {read_c};")
+            body.append(f"{cword} first = {read_c};")
         if variant == "twice":
             result = f"first ^ {read_c}"
         elif variant.startswith("memory_"):
@@ -100,10 +101,11 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
             result = "first"
         else:
             result = "a ^ b"
-        source.write_text(header + "unsigned long long probe(unsigned long long a, "
-                          "unsigned long long b, unsigned long long *pointer) {\n " +
+        source.write_text(header + f"{cword} probe({cword} a, "
+                          f"{cword} b, {cword} *pointer) {{\n " +
                           "\n ".join(body) + f"\n return {result};\n}}\n")
-        common = [str(args.compiler), "--target=x86_64-pc-windows-msvc", "-" + opt,
+        arch = "x86_64" if bits == 64 else "i686"
+        common = [str(args.compiler), f"--target={arch}-pc-windows-msvc", "-" + opt,
                   "-ffreestanding", "-fno-lto", "-fno-stack-protector",
                   "-mllvm", "-verify-machineinstrs", str(source)]
         commands = [common + ["-S", "-emit-llvm", "-o", str(ir)]]
@@ -243,7 +245,7 @@ def main():
         directory = args.keep or Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
         count = 0
-        for bits in ((32, 64) if args.llc else (64,)):
+        for bits in ((32, 64) if args.llc or args.backend_llc else (64,)):
             for bank, numbers in (("cr", (0, 2, 3, 4, 8) if bits == 64 else (0, 2, 3, 4)), ("dr", range(8))):
                 for number in numbers:
                     for variant in ((args.variant,) if args.variant else VARIANTS):

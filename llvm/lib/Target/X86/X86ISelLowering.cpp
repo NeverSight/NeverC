@@ -28696,6 +28696,12 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_writeseg_mem:
       return lowerSegmentAccess(Op, Subtarget, DAG);
 
+    case Intrinsic::x86_readcr32:
+    case Intrinsic::x86_writecr32:
+    case Intrinsic::x86_readdr32:
+    case Intrinsic::x86_writedr32:
+      report_fatal_error(
+          "32-bit CR/DR intrinsics require the full i386 LLVM backend");
     case Intrinsic::x86_readcr:
     case Intrinsic::x86_writecr:
     case Intrinsic::x86_readdr:

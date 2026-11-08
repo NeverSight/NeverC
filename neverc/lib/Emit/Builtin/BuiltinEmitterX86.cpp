@@ -3390,8 +3390,12 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     case X86::BI__readcr8: CRNum = 8; break;
     default: llvm_unreachable("invalid CR read builtin");
     }
-    return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_readcr,
-                                   {ConstantInt::get(Int32Ty, CRNum)});
+    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
+    Value *Read = Builder.CreateIntrinsic(Wide ? Int64Ty : Int32Ty,
+                                          Wide ? llvm::Intrinsic::x86_readcr
+                                               : llvm::Intrinsic::x86_readcr32,
+                                          {ConstantInt::get(Int32Ty, CRNum)});
+    return Builder.CreateZExtOrTrunc(Read, ConvertType(E->getType()));
   }
   case X86::BI__writecr0:
   case X86::BI__writecr2:
@@ -3407,9 +3411,25 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     case X86::BI__writecr8: CRNum = 8; break;
     default: llvm_unreachable("invalid CR write builtin");
     }
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writecr,
-                                   {ConstantInt::get(Int32Ty, CRNum), Ops[0]});
+    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
+    return Builder.CreateIntrinsic(
+        VoidTy,
+        Wide ? llvm::Intrinsic::x86_writecr : llvm::Intrinsic::x86_writecr32,
+        {ConstantInt::get(Int32Ty, CRNum),
+         Builder.CreateZExtOrTrunc(Ops[0], Wide ? Int64Ty : Int32Ty)});
   }
+  case X86::BI__builtin_ia32_readcr32:
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_readcr32,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_writecr32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writecr32,
+                                   {Ops[0], Ops[1]});
+  case X86::BI__builtin_ia32_readdr32:
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_readdr32,
+                                   {Ops[0]});
+  case X86::BI__builtin_ia32_writedr32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writedr32,
+                                   {Ops[0], Ops[1]});
   case X86::BI__builtin_ia32_readcr:
     return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_readcr,
                                    {Ops[0]});
@@ -3417,14 +3437,25 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writecr,
                                    {Ops[0], Ops[1]});
   case X86::BI__builtin_ia32_readdr:
-  case X86::BI__readdr: {
     return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_readdr,
                                    {Ops[0]});
+  case X86::BI__readdr: {
+    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
+    Value *Read = Builder.CreateIntrinsic(Wide ? Int64Ty : Int32Ty,
+                                          Wide ? llvm::Intrinsic::x86_readdr
+                                               : llvm::Intrinsic::x86_readdr32,
+                                          {Ops[0]});
+    return Builder.CreateZExtOrTrunc(Read, ConvertType(E->getType()));
   }
   case X86::BI__builtin_ia32_writedr:
-  case X86::BI__writedr: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writedr,
                                    {Ops[0], Ops[1]});
+  case X86::BI__writedr: {
+    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
+    return Builder.CreateIntrinsic(
+        VoidTy,
+        Wide ? llvm::Intrinsic::x86_writedr : llvm::Intrinsic::x86_writedr32,
+        {Ops[0], Builder.CreateZExtOrTrunc(Ops[1], Wide ? Int64Ty : Int32Ty)});
   }
   case X86::BI__builtin_ia32_readeflags_u16:
     return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_flags_read_u16,

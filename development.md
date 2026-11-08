@@ -218,6 +218,26 @@ remain outside this native fixture's scope.
 
 ## i386 intrinsic headers
 
+The explicit `__builtin_ia32_readcr32(index)`, `writecr32(index, value)`,
+`readdr32(index)` and `writedr32(index, value)` APIs use `unsigned` data and
+emit the corresponding native `llvm.x86.*32` intrinsics. They require an i386
+target and the full LLVM machine backend. CR indices are 0/2/3/4; DR indices
+are 0..7, including the environment-dependent DR4/DR5 aliases. Indices must be
+constant. Microsoft `__readcr0/2/3/4`, `__writecr0/2/3/4`, `__readdr` and
+`__writedr` select the instruction width from the code target; their i386
+header types match the 32-bit ABI. CR8 is diagnosed outside x64. Existing
+portable 64-bit API signatures are unchanged.
+
+`tests/verify-system-register-completion.py --compiler NEVERC --backend-llc
+LLC --spelling builtin` and `--spelling microsoft` exercise both code modes,
+all register indices, live/dead/repeated reads and writes, memory ordering,
+undefined-flag clobbers and ABI preservation at O0/O2. These are controlled
+instruction completions in Unicorn; hardware paging/privilege behavior is a
+separate qualification. `X86PrivilegedIntrinTest.I386SystemRegister*` checks
+frontend types, native IR and rejected modes/indices. The native-intrinsic
+schema and sorter maintain the new IDs, signatures, immediate attributes and
+DAG selector references together.
+
 The standard MMX/SSE and umbrella intrinsic headers admit both x86 pointer
 widths. AMX remains guarded by long mode; its builtins are not declared by the
 i386 target. `__SSC_MARK` saves the full EBX or RBX according to that target,
