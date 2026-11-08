@@ -1,0 +1,21 @@
+{
+  "preparation_only": false,
+  "fixture_group": "bind-member-pointer-reference",
+  "target_abis": [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "arm64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "i686-pc-windows-msvc",
+    "i686-unknown-linux-gnu"
+  ],
+  "source_sha256": "943d63ae717b64a2df7c1d966b0a433158e501b17fe2e9ec3d42880731cdc6e9",
+  "required_commands": 9,
+  "required_ir_products": 8,
+  "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
+  "sdk_files": 665,
+  "actual_cpp_compilations": 0,
+  "private_member_bind_support_verified": false
+}
