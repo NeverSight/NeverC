@@ -142,7 +142,7 @@ TEST_F(X86PrivilegedIntrinTest, PortableScalarSystemBuiltinsKeepNativeEffects) {
       SCOPED_TRACE(Target);
       SCOPED_TRACE(Opt);
       for (bool EmitIR : {true, false}) {
-        const bool I386 = std::string(Target).starts_with("i386");
+        const bool I386 = std::string(Target).rfind("i386", 0) == 0;
         // The standalone scalar witness covers actual i386 full-backend output.
         if (I386 && !EmitIR)
           continue;
