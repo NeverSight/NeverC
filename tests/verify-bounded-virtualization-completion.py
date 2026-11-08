@@ -138,7 +138,7 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
                   "-fno-lto", "-fno-stack-protector", src]
         # The external-backend driver rejects embedded -mllvm options. Its
         # object and assembly routes must use the driver's supported interface.
-        if not args.backend_llc:
+        if not (args.backend_llc and mode == 32):
             common += ["-mllvm", "-verify-machineinstrs"]
         if args.microsoft:
             common += ["-fms-extensions"]
@@ -146,17 +146,21 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
                 common += ["-D_MSC_VER=1930"]
         run(common + ["-S", "-emit-llvm", "-o", ir])
         assert " asm " not in ir.read_text() and f"@{api}(" in ir.read_text()
-        driver = ["-fllvm-backend=" + str(args.backend_llc)] if args.backend_llc else []
-        run(common + driver + ["-c", "-o", obj])
+        driver = ["-fllvm-backend=" + str(args.backend_llc)] if args.backend_llc and mode == 32 else []
+        if not args.backend_llc or mode == 32:
+            run(common + driver + ["-c", "-o", obj])
     backend = args.llc or args.backend_llc
-    if args.llc:
+    # The external driver is currently an i386 Linux interface. Other native
+    # source targets use the explicit IR bridge to the full LLVM backend.
+    bridged = args.llc or (args.backend_llc and mode == 64)
+    if bridged:
         common_backend = [backend, "-mtriple=" + triple, "-" + opt, "-verify-machineinstrs", ir]
         run(common_backend + ["-filetype=obj", "-o", obj])
     if variant == "retained":
         for dialect in ("att", "intel"):
             asm = directory / (name + "-" + dialect + ".s")
             assembled = asm.with_suffix(".o")
-            if args.llc:
+            if bridged:
                 run(common_backend + ["-filetype=asm", "-x86-asm-syntax=" + dialect, "-o", asm])
                 run([Path(backend).parent / "llvm-mc", "-triple=" + triple, "-filetype=obj", asm, "-o", assembled])
             else:
