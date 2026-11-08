@@ -3395,7 +3395,7 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
                                           Wide ? llvm::Intrinsic::x86_readcr
                                                : llvm::Intrinsic::x86_readcr32,
                                           {ConstantInt::get(Int32Ty, CRNum)});
-    return Builder.CreateZExtOrTrunc(Read, ConvertType(E->getType()));
+    return Builder.CreateZExtOrTrunc(Read, convertType(E->getType()));
   }
   case X86::BI__writecr0:
   case X86::BI__writecr2:
@@ -3445,7 +3445,7 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
                                           Wide ? llvm::Intrinsic::x86_readdr
                                                : llvm::Intrinsic::x86_readdr32,
                                           {Ops[0]});
-    return Builder.CreateZExtOrTrunc(Read, ConvertType(E->getType()));
+    return Builder.CreateZExtOrTrunc(Read, convertType(E->getType()));
   }
   case X86::BI__builtin_ia32_writedr:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writedr,
