@@ -1147,7 +1147,9 @@ enum X86Intrinsics : unsigned {
     x86_invlpg,                                      // llvm.x86.invlpg
     x86_invlpg_address,                              // llvm.x86.invlpg.address
     x86_invlpga,                                     // llvm.x86.invlpga
+    x86_invlpga_addr16,                              // llvm.x86.invlpga.addr16
     x86_invlpga_addr32,                              // llvm.x86.invlpga.addr32
+    x86_invlpga32,                                   // llvm.x86.invlpga32
     x86_invlpgb,                                     // llvm.x86.invlpgb
     x86_invlpgb_addr32,                              // llvm.x86.invlpgb.addr32
     x86_invpcid,                                     // llvm.x86.invpcid
@@ -1709,7 +1711,9 @@ enum X86Intrinsics : unsigned {
     x86_vmgexit_sev,                                 // llvm.x86.vmgexit.sev
     x86_vmlaunch,                                    // llvm.x86.vmlaunch
     x86_vmload,                                      // llvm.x86.vmload
+    x86_vmload_addr16,                               // llvm.x86.vmload.addr16
     x86_vmload_addr32,                               // llvm.x86.vmload.addr32
+    x86_vmload32,                                    // llvm.x86.vmload32
     x86_vmmcall_kvm,                                 // llvm.x86.vmmcall.kvm
     x86_vmmcall_kvm32,                               // llvm.x86.vmmcall.kvm32
     x86_vmptrld,                                     // llvm.x86.vmptrld
@@ -1727,7 +1731,9 @@ enum X86Intrinsics : unsigned {
     x86_vmresume,                                    // llvm.x86.vmresume
     x86_vmrun_context,                               // llvm.x86.vmrun.context
     x86_vmsave,                                      // llvm.x86.vmsave
+    x86_vmsave_addr16,                               // llvm.x86.vmsave.addr16
     x86_vmsave_addr32,                               // llvm.x86.vmsave.addr32
+    x86_vmsave32,                                    // llvm.x86.vmsave32
     x86_vmwrite,                                     // llvm.x86.vmwrite
     x86_vmwrite_mem,                                 // llvm.x86.vmwrite.mem
     x86_vmwrite_mem_address,                         // llvm.x86.vmwrite.mem.address

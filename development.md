@@ -949,6 +949,36 @@ places a second VMCB in guest RAM below 64 KiB, so i386's AX address refers to
 valid physical storage. Exact-byte and live-input checks separately verify
 prefix retention and narrowing without losing callers' original values.
 
+#### i386 SVM source widths
+
+The Linux i386 frontend exposes `__builtin_ia32_vmload32`, `vmsave32` and
+`invlpga32` with unsigned 32-bit addresses, plus `vmload_addr16`,
+`vmsave_addr16` and `invlpga_addr16` with unsigned 16-bit addresses. INVLPGA
+retains its unsigned 32-bit ASID in both forms. The matching LLVM intrinsics
+already exist in the full fork; NeverC's synchronized intrinsic declarations
+and frontend now reach them directly. Calls on an x64 target fail during
+semantic checking. The embedded backend explicitly rejects these i386 IDs;
+use `-fllvm-backend` for i386 machine output.
+
+Microsoft `__svm_vmload`, `__svm_vmsave` and `__svm_invlpga` select the native
+word width from the source target. The common header registry also exposes
+`__svm_stgi`, `__svm_clgi` and `__halt` on i386. Their existing x64 signatures
+remain unchanged. These interfaces follow the effective-address rule in
+[AMD APM Volume 3, revision 3.26, pages 368, 434 and 442](https://www.sra.uni-hannover.de/Lehre/SS24/V_BSB/doc/amd64_manual_vol3.pdf).
+
+The completion witness accepts `--bits 32 --svm-only --backend-llc LLVM_LLC`
+and optional `--microsoft`. It compiles real C source through NeverC's full
+backend driver, checks AX/EAX addresses separately from full ECX ASIDs, and
+retains caller values, memory ordering and repeated effects. Its negative
+controls deliberately corrupt the address and ASID at the stopped instruction
+boundary. This also repairs an earlier witness bug: a memory-mapping loop
+shadowed the operation name and bypassed its SVM operand assertions.
+
+The QEMU witness accepts `--bits 32 --backend-llc LLVM_LLC` for both default
+and address16 C forms. Its MSR round trips and returning guest paths qualify
+the selected TCG environment, not physical AMD TLB behavior, Windows/Darwin
+i386 source ABIs, arbitrary VMRUN state or real/VM86 transitions.
+
 ### Software interrupt contracts
 
 `__builtin_ia32_int(vector)` emits the shared `llvm.x86.int` intrinsic. The

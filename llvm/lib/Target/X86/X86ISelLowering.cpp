@@ -28420,6 +28420,14 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
           DAG.getMachineNode(X86::VMRUN_CONTEXT64, DL, MVT::Other, Operands),
           0);
     }
+    case Intrinsic::x86_vmload32:
+    case Intrinsic::x86_vmsave32:
+    case Intrinsic::x86_invlpga32:
+    case Intrinsic::x86_vmload_addr16:
+    case Intrinsic::x86_vmsave_addr16:
+    case Intrinsic::x86_invlpga_addr16:
+      report_fatal_error(
+          "32-bit SVM intrinsics require the full i386 LLVM backend");
     case Intrinsic::x86_vmload:
     case Intrinsic::x86_vmsave:
     case Intrinsic::x86_invlpga:

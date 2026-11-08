@@ -83,6 +83,12 @@ class NativeSignaturesTest(unittest.TestCase):
                 self.assertEqual(NATIVE.DECLARATIONS[f"{operation}_kvm{suffix}"],
                                  (f"I{bits}",) * 6)
 
+    def test_svm_address_width_does_not_narrow_the_asid(self):
+        for operation in ("vmload", "vmsave", "invlpga"):
+            for suffix, bits in (("", 64), ("32", 32), ("_addr32", 32), ("_addr16", 16)):
+                self.assertEqual(NATIVE.DECLARATIONS[operation + suffix],
+                                 ("Done", f"I{bits}") + (("I32",) if operation == "invlpga" else ()))
+
     def test_address_controls_have_distinct_immediate_positions(self):
         first, initial = NATIVE.immediate_arguments_attribute(self.impl, (1, 2))
         second, updated = NATIVE.immediate_arguments_attribute(initial, (2, 3))

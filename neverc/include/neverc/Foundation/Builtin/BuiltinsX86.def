@@ -40,6 +40,20 @@ BUILTIN(__builtin_ia32_vmptrld_address32, "UcUiIUiIUi", "n")
 BUILTIN(__builtin_ia32_vmptrst_address32, "vUiIUiIUi", "n")
 BUILTIN(__builtin_ia32_vmxon_address32, "UcUiIUiIUi", "n")
 
+// SVM implicit addresses retain their code-mode width; ASID stays in ECX.
+BUILTIN(__builtin_ia32_vmload32, "vUi", "n")
+BUILTIN(__builtin_ia32_vmsave32, "vUi", "n")
+BUILTIN(__builtin_ia32_invlpga32, "vUiUi", "n")
+BUILTIN(__builtin_ia32_vmload_addr16, "vUs", "n")
+BUILTIN(__builtin_ia32_vmsave_addr16, "vUs", "n")
+BUILTIN(__builtin_ia32_invlpga_addr16, "vUsUi", "n")
+TARGET_HEADER_BUILTIN(__halt, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_clgi, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_stgi, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_invlpga, "vv*i", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_vmload, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_vmsave, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+
 // HRESET consumes EAX in both legacy and long mode.
 TARGET_BUILTIN(__builtin_ia32_hreset, "vUi", "n", "hreset")
 

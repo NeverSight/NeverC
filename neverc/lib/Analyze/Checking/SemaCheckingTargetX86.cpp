@@ -575,6 +575,12 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_vmptrld_address32:
   case X86::BI__builtin_ia32_vmptrst_address32:
   case X86::BI__builtin_ia32_vmxon_address32:
+  case X86::BI__builtin_ia32_vmload32:
+  case X86::BI__builtin_ia32_vmsave32:
+  case X86::BI__builtin_ia32_invlpga32:
+  case X86::BI__builtin_ia32_vmload_addr16:
+  case X86::BI__builtin_ia32_vmsave_addr16:
+  case X86::BI__builtin_ia32_invlpga_addr16:
   case X86::BI__builtin_ia32_readeflags_u32:
   case X86::BI__builtin_ia32_writeeflags_u32:
     if (TI.getTriple().getArch() != llvm::Triple::x86) {

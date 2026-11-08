@@ -191,12 +191,6 @@ BUILTIN(__builtin_ia32_lkgs_reg, "vUs", "n")
 BUILTIN(__builtin_ia32_lkgs_mem, "vvC*", "n")
 
 // Native bounded SVM and supervisor state. Addresses remain integer operands.
-TARGET_HEADER_BUILTIN(__halt, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(__svm_clgi, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(__svm_stgi, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(__svm_invlpga, "vv*i", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(__svm_vmload, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(__svm_vmsave, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__svm_skinit, "vi", "nrh", INTRIN_H, ALL_MS_LANGUAGES, "")
 BUILTIN(__builtin_ia32_skinit, "vUi", "nr")
 #define X86_NATIVE_BIT_TEST(Name, Type) \

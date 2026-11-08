@@ -3670,20 +3670,51 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_vmmcall_kvm:
     return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_vmmcall_kvm, Ops);
   case X86::BI__svm_vmload:
+    return Builder.CreateIntrinsic(
+        VoidTy,
+        getContext().getTargetInfo().getTriple().getArch() == llvm::Triple::x86
+            ? llvm::Intrinsic::x86_vmload32
+            : llvm::Intrinsic::x86_vmload,
+        {Ops[0]});
   case X86::BI__builtin_ia32_vmload:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload,
                                    {Ops[0]});
   case X86::BI__svm_vmsave:
+    return Builder.CreateIntrinsic(
+        VoidTy,
+        getContext().getTargetInfo().getTriple().getArch() == llvm::Triple::x86
+            ? llvm::Intrinsic::x86_vmsave32
+            : llvm::Intrinsic::x86_vmsave,
+        {Ops[0]});
   case X86::BI__builtin_ia32_vmsave:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmsave,
                                    {Ops[0]});
-  case X86::BI__svm_invlpga:
+  case X86::BI__svm_invlpga: {
+    const bool Mode32 =
+        getContext().getTargetInfo().getTriple().getArch() == llvm::Triple::x86;
     return Builder.CreateIntrinsic(
-        VoidTy, llvm::Intrinsic::x86_invlpga,
-        {Builder.CreatePtrToInt(Ops[0], Int64Ty), Ops[1]});
+        VoidTy,
+        Mode32 ? llvm::Intrinsic::x86_invlpga32 : llvm::Intrinsic::x86_invlpga,
+        {Builder.CreatePtrToInt(Ops[0], Mode32 ? Int32Ty : Int64Ty), Ops[1]});
+  }
   case X86::BI__builtin_ia32_invlpga:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpga,
                                    {Ops[0], Ops[1]});
+  case X86::BI__builtin_ia32_vmload32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload32, Ops);
+  case X86::BI__builtin_ia32_vmsave32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmsave32, Ops);
+  case X86::BI__builtin_ia32_invlpga32:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpga32, Ops);
+  case X86::BI__builtin_ia32_vmload_addr16:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload_addr16,
+                                   Ops);
+  case X86::BI__builtin_ia32_vmsave_addr16:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmsave_addr16,
+                                   Ops);
+  case X86::BI__builtin_ia32_invlpga_addr16:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpga_addr16,
+                                   Ops);
   case X86::BI__builtin_ia32_vmload_addr32:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload_addr32,
                                    {Ops[0]});
