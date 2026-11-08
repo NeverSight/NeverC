@@ -71,7 +71,9 @@ def compile_case(compiler, directory, operation, dead, opt, backend=None,
                "-" + opt, "-ffreestanding", "-fno-lto", "-fno-stack-protector",
                "-fno-builtin-mimalloc", "-Werror", str(source)]
     if not portable:
-        command += ["-fms-extensions", "-D_MSC_VER=1930"]
+        command += ["-fms-extensions"]
+        if bits == 32:
+            command += ["-D_MSC_VER=1930"]
     if not driver:
         command += ["-mllvm", "-verify-machineinstrs"]
     outputs = [(["-S", "-emit-llvm"], ir)]

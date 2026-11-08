@@ -143,12 +143,23 @@ TEST_F(X86VMXFrontendTest,
                    __vmx_vmlaunch() ^ __vmx_vmresume();
           }
         )");
-        const auto R =
-            ncc({Wide ? "--target=x86_64-pc-windows-msvc"
-                      : "--target=i386-unknown-linux-gnu",
-                 "-fms-extensions", "-D_MSC_VER=1930", Opt, "-ffreestanding",
-                 "-fno-builtin-mimalloc", "-fno-lto", "-Werror", "-S",
-                 "-emit-llvm", Input.string(), "-o", Output.string()});
+        std::vector<std::string> Arguments = {
+            Wide ? "--target=x86_64-pc-windows-msvc"
+                 : "--target=i386-unknown-linux-gnu",
+            "-fms-extensions",
+            Opt,
+            "-ffreestanding",
+            "-fno-builtin-mimalloc",
+            "-fno-lto",
+            "-Werror",
+            "-S",
+            "-emit-llvm",
+            Input.string(),
+            "-o",
+            Output.string()};
+        if (!Wide)
+          Arguments.emplace_back("-D_MSC_VER=1930");
+        const auto R = ncc(Arguments);
         ASSERT_EQ(R.exitCode, 0) << R.err;
         const auto IR = readFile(Output);
         EXPECT_EQ(IR.find(" asm "), std::string::npos);
