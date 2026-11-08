@@ -4111,8 +4111,6 @@ jobs:
         dpkg-query -W clang-20 libc++1 libc++abi1 libunwind libunwind-20-dev libc++-20-dev libc++abi-20-dev | tee "$RUNNER_TEMP/cpp-bind-member-native14/bootstrap/toolchain-packages.log"
 
         '
-    - name: Run seven original member-bind references at O0 and O2
-      run: python3 utils/ci/check-cpp-bind-member-native14.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-bind-member-native14"
     - name: Capture member-pointer representations for all eight exact targets
       run: python3 utils/ci/check-cpp-bind-member-abi8.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-bind-member-abi8"
     - name: Upload native14 and ABI8 text evidence

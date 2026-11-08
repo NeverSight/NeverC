@@ -3,7 +3,10 @@ from pathlib import Path
 import argparse, hashlib, json, os, platform, re, signal, subprocess, traceback
 
 def sha(path):
-    with Path(path).open('rb')as f:return hashlib.file_digest(f,'sha256').hexdigest()
+    digest=hashlib.sha256()
+    with Path(path).open('rb')as f:
+        for chunk in iter(lambda:f.read(1024*1024),b''):digest.update(chunk)
+    return digest.hexdigest()
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--repo',type=Path,required=True)
