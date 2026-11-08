@@ -3055,8 +3055,9 @@ not provide a complete architectural flag-state API.
 `__builtin_ia32_writeeflags_u16(unsigned short)` writes exactly that word.
 Both lower to native `llvm.x86.flags.{read,write}.u16`, with no inline assembly.
 The word write preserves AC/ID; extending it to `__writeeflags` would change
-those upper flags. Existing `__readeflags`/`__writeeflags` retain their natural
-x64 width. Native privilege restrictions and faults still apply.
+those upper flags. `__readeflags`/`__writeeflags` select their natural i386/x64
+instruction width as described in [Native FLAGS image widths](#native-flags-image-widths).
+Native privilege restrictions and faults still apply.
 
 `RDFLAGS16`/`WRFLAGS16` use a GR16 carrier and a two-byte push/pop pair,
 with the same frame and red-zone ownership as the qword APIs. The compiler
@@ -3074,10 +3075,10 @@ argument lists. [tests/verify-flags16-completion.py](tests/verify-flags16-comple
 with original word POPF, including every safe FLAGS word and all AC/ID images.
 Its default x64 driver checks NeverC, full LLVM/Clang and unchanged emitted C;
 `--bits 32` uses a separate cdecl assembly witness for full LLVM/Clang and
-i386 emitted C. Both drivers restore the host flags before returning to C,
+i386 emitted C, including NeverC with `--backend-llc`. Both drivers restore the host flags before returning to C,
 preserve callee-saved registers, and require a widened-write negative control
-to fail. The i386 driver needs the host's multilib C runtime; it does not
-qualify a NeverC i386 frontend or arbitrary original machine-state execution.
+to fail. The i386 driver needs the host's multilib C runtime and qualifies the
+Linux compiler ABI; arbitrary original machine-state execution remains separate.
 
 ## Legacy BOUND qualification in the full LLVM fork
 
