@@ -171,7 +171,7 @@ TEST_F(X86VMXFrontendTest, RejectsWrongCodeModeAndInvalidAddressControls) {
                   nativeName(API, false) + "(" + API.Arguments + "); }");
     const auto R = ncc(
         {"--target=x86_64-unknown-linux-gnu", "-fsyntax-only", Input.string()});
-    EXPECT_NE(R.exitCode, 0);
+    EXPECT_EQ(R.exitCode, 1) << R.err;
     EXPECT_NE(R.err.find("requires a 32-bit x86 target"), std::string::npos)
         << R.err;
   }
@@ -180,19 +180,17 @@ TEST_F(X86VMXFrontendTest, RejectsWrongCodeModeAndInvalidAddressControls) {
     writeFile(Input, "void probe(unsigned width, unsigned prefix) { "
                      "__builtin_ia32_vmread_address32(0, 0, " +
                          std::string(Controls) + "); }");
-    EXPECT_NE(ncc({"--target=i386-unknown-linux-gnu", "-fsyntax-only",
-                   Input.string()})
-                  .exitCode,
-              0);
+    const auto R = ncc(
+        {"--target=i386-unknown-linux-gnu", "-fsyntax-only", Input.string()});
+    EXPECT_EQ(R.exitCode, 1) << R.err;
   }
   for (const char *Call :
        {"__builtin_ia32_vmread32(0)", "__builtin_ia32_vmwrite32(0, 0, 0)",
         "__builtin_ia32_vmread_reg32(0, 0)",
         "__builtin_ia32_vmptrst_address32(0, 32)"}) {
     writeFile(Input, "void probe(void) { " + std::string(Call) + "; }");
-    EXPECT_NE(ncc({"--target=i386-unknown-linux-gnu", "-fsyntax-only",
-                   Input.string()})
-                  .exitCode,
-              0);
+    const auto R = ncc(
+        {"--target=i386-unknown-linux-gnu", "-fsyntax-only", Input.string()});
+    EXPECT_EQ(R.exitCode, 1) << R.err;
   }
 }
