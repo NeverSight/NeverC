@@ -54,6 +54,15 @@ TARGET_HEADER_BUILTIN(__svm_invlpga, "vv*i", "nh", INTRIN_H, ALL_MS_LANGUAGES, "
 TARGET_HEADER_BUILTIN(__svm_vmload, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__svm_vmsave, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 
+// Native scalar port I/O and MSR writes, independent of platform headers.
+BUILTIN(__builtin_ia32_inbyte, "UcUs", "n")
+BUILTIN(__builtin_ia32_inword, "UsUs", "n")
+BUILTIN(__builtin_ia32_indword, "UiUs", "n")
+BUILTIN(__builtin_ia32_outbyte, "vUsUc", "n")
+BUILTIN(__builtin_ia32_outword, "vUsUs", "n")
+BUILTIN(__builtin_ia32_outdword, "vUsUi", "n")
+BUILTIN(__builtin_ia32_wrmsr, "vUiULLi", "n")
+
 // SKINIT consumes EAX in either mode and abandons the caller context.
 TARGET_HEADER_BUILTIN(__svm_skinit, "vi", "nrh", INTRIN_H, ALL_MS_LANGUAGES, "")
 BUILTIN(__builtin_ia32_skinit, "vUi", "nr")

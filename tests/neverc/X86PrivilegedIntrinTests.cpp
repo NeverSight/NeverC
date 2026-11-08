@@ -135,25 +135,30 @@ TEST_F(X86PrivilegedIntrinTest, PortableScalarSystemBuiltinsKeepNativeEffects) {
       __builtin_ia32_inbyte(0x1234);
     }
   )");
-  for (const char *Target : {"x86_64-unknown-linux-gnu",
-                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+  for (const char *Target :
+       {"i386-unknown-linux-gnu", "x86_64-unknown-linux-gnu",
+        "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
     for (const char *Opt : {"-O0", "-O2"}) {
       SCOPED_TRACE(Target);
       SCOPED_TRACE(Opt);
       for (bool EmitIR : {true, false}) {
+        const bool I386 = std::string(Target).starts_with("i386");
+        // The standalone scalar witness covers actual i386 full-backend output.
+        if (I386 && !EmitIR)
+          continue;
         auto Output = tmpFile(EmitIR ? "scalar_system.ll" : "scalar_system.s");
         std::vector<std::string> Args = {std::string("--target=") + Target,
                                          "-std=c23",
                                          "-ffreestanding",
                                          "-fno-builtin-mimalloc",
                                          "-fno-lto",
-                                         "-mllvm",
-                                         "-verify-machineinstrs",
                                          Opt,
                                          "-S",
                                          Source.string(),
                                          "-o",
                                          Output.string()};
+        if (!I386)
+          Args.insert(Args.end(), {"-mllvm", "-verify-machineinstrs"});
         if (EmitIR)
           Args.push_back("-emit-llvm");
         auto Result = ncc(Args);
