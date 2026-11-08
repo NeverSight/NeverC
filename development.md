@@ -50,6 +50,20 @@ also applies the Microsoft-name register/return checks to all eight portable
 names: 89 binary cases pass. These transport checks do not authorize or qualify
 successful privileged accesses on physical hardware.
 
+All eight interfaces are also available to the Linux i386 frontend. WRMSR
+retains its 64-bit EDX:EAX value; the port selector stays 16 bits and the port
+value stays 8/16/32 bits. Machine output uses the explicit full LLVM driver,
+`-fllvm-backend=LLVM_LLC`; the embedded backend still rejects i386 output.
+`tests/verify-i386-scalar-system.py --compiler NEVERC --backend-llc LLVM_LLC
+--keep OUT` compiles both portable and Microsoft source spellings at O0/O2.
+Its 48 objects pass 156 controlled original-byte comparisons, including dead
+reads, and reject 80 deliberately corrupted selector/value/result controls.
+The qualification reruns all 185 x86/i386 tests, 2,048 SVM checks, 196 VMRUN
+contexts, 9,072 VMX checks, 6,291,456 FLAGS comparisons and 1,440 SKINIT EAX
+boundary checks. The existing source-global audit remains at 90 findings.
+Windows/Darwin i386 source ABIs and physical privileged success are outside
+this interface qualification.
+
 ## Native system-return transfers
 
 The four C23 builtins below return `void` and terminate the current function.
