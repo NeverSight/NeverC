@@ -18821,6 +18821,141 @@ describeFunctionalBindMemberFactorySource(
   return FunctionalBindMemberFactorySource{*Storage, *Factory, Address, Member};
 }
 
+std::optional<FunctionalBindMemberValueSource>
+describeFunctionalBindMemberValueSource(
+    const State &S, const SourceManager &SM, const Expr *Object,
+    const ASTContext &Context) {
+  const auto Storage = describeFunctionalBindMemberStorage(
+      S, SM, Object ? Object->getType()->getAsCXXRecordDecl() : nullptr, Context);
+  if (!Storage || !Object->isGLValue() || !S.owns(SM, Object->getExprLoc()))
+    return std::nullopt;
+  const auto *Record = Storage->Storage.Record->getCanonicalDecl();
+  unsigned Nodes = 0;
+  NotFnSelectedSource Check(S, SM, Context);
+  std::vector<const VarDecl *> Variables;
+  std::vector<const CXXConstructExpr *> Copies;
+  std::vector<const Expr *> Wrappers;
+  std::set<const VarDecl *> Seen;
+  const FunctionDecl *Owner = nullptr;
+  auto SameObject = [&](QualType Type) {
+    const auto *Actual = Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
+    return Actual && Actual->getCanonicalDecl() == Record &&
+        !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+        Type.getAddressSpace() == LangAS::Default;
+  };
+  auto Transparent = [&](const Expr *Expression) -> const Expr * {
+    if (const auto *P = dyn_cast<ParenExpr>(Expression)) return P->getSubExpr();
+    if (const auto *C = dyn_cast<ExprWithCleanups>(Expression)) return C->getSubExpr();
+    if (const auto *T = dyn_cast<MaterializeTemporaryExpr>(Expression)) return T->getSubExpr();
+    if (const auto *T = dyn_cast<CXXBindTemporaryExpr>(Expression)) return T->getSubExpr();
+    if (const auto *C = dyn_cast<ImplicitCastExpr>(Expression)) {
+      const auto From = C->getSubExpr()->getType(), To = C->getType();
+      if (C->getCastKind() == CK_NoOp && SameObject(From) && SameObject(To) &&
+          C->getValueKind() == C->getSubExpr()->getValueKind() &&
+          (To.isConstQualified() || !From.isConstQualified())) return C->getSubExpr();
+    }
+    return nullptr;
+  };
+  auto CopySource = [&](const CXXConstructExpr *Copy) -> const Expr * {
+    const auto *Constructor = Copy ? Copy->getConstructor() : nullptr;
+    if (!Constructor || !SameObject(Copy->getType()) || Copy->getNumArgs() != 1 ||
+        Constructor->getNumParams() != 1 || !Constructor->isCopyOrMoveConstructor() ||
+        !Constructor->isImplicit() || !Constructor->isDefaulted() || !Constructor->isTrivial() ||
+        Constructor->isDeleted() || Constructor->isUserProvided() || Constructor->hasAttrs() ||
+        Constructor->getParent()->getCanonicalDecl() != Record ||
+        !Check.family(Constructor, {"__functional/bind.h"})) return nullptr;
+    return Copy->getArg(0);
+  };
+  std::optional<FunctionalBindMemberFactorySource> Factory;
+  const Expr *Cursor = Object;
+  for (unsigned Depth = 0; Cursor && Depth < 64; ++Depth) {
+    if (++Nodes > 200000 || !SameObject(Cursor->getType())) return std::nullopt;
+    if (const auto *Next = Transparent(Cursor)) {
+      Wrappers.push_back(Cursor);Cursor = Next;continue;
+    }
+    if (const auto *Reference = dyn_cast<DeclRefExpr>(Cursor)) {
+      const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+      const auto *Function = Variable ? dyn_cast<FunctionDecl>(Variable->getDeclContext()) : nullptr;
+      if (!Variable || !Function || Variable->getKind() != Decl::Var || Variable->isImplicit() ||
+          Variable->hasAttrs() || Variable->getStorageClass() != SC_None ||
+          !Variable->isLocalVarDecl() || !Variable->hasLocalStorage() || Variable->isStaticLocal() ||
+          Variable->hasExternalStorage() || Variable->getTLSKind() != VarDecl::TLS_None ||
+          Variable->getType()->isReferenceType() || !Variable->hasInit() ||
+          !SameObject(Variable->getType()) || !S.owns(SM, Variable->getLocation()) ||
+          !S.owns(SM, Reference->getExprLoc()) || !Seen.insert(Variable->getCanonicalDecl()).second ||
+          !Function->hasBody() || !S.owns(SM, Function->getLocation()) ||
+          (Owner && Owner != Function)) return std::nullopt;
+      Owner = Function;Variables.push_back(Variable);Cursor = Variable->getInit();continue;
+    }
+    if (const auto *Copy = dyn_cast<CXXConstructExpr>(Cursor)) {
+      const auto *Source = CopySource(Copy);
+      if (!Source || !S.owns(SM, Copy->getExprLoc())) return std::nullopt;
+      Copies.push_back(Copy);Cursor = Source;continue;
+    }
+    const auto *Call = dyn_cast<CallExpr>(Cursor);
+    Factory = describeFunctionalBindMemberFactorySource(S, SM, Call, Context);
+    if (!Factory || Factory->Storage.Storage.Record->getCanonicalDecl() != Record ||
+        Factory->Storage.Storage.Callable != Storage->Storage.Callable ||
+        Factory->Storage.Storage.BoundArguments != Storage->Storage.BoundArguments ||
+        Call->getArg(0)->IgnoreParenImpCasts() != Factory->Address ||
+        !Context.hasSameType(Factory->Storage.Storage.CallableType, Storage->Storage.CallableType))
+      return std::nullopt;
+    break;
+  }
+  if (!Factory || !Owner || Variables.empty()) return std::nullopt;
+
+  // Every source occurrence of a retained local must be a selected bind call
+  // receiver or the input of a selected trivial bind copy. Address escape,
+  // assignment, passing it to an ordinary function, or an unknown use refuses
+  // this description. Ordinary traversal must still check every such call and
+  // copy independently; this closed value path grants no runtime permission.
+  std::vector<const DeclRefExpr *> References;
+  std::vector<const Stmt *> Parents;
+  auto ReadOnlyUse = [&](const DeclRefExpr *Reference) {
+    const Expr *Current = Reference;
+    for (auto It = Parents.rbegin(); It != Parents.rend(); ++It) {
+      const auto *Parent = *It;
+      if (const auto *Expression = dyn_cast<Expr>(Parent)) {
+        if (Transparent(Expression) == Current) {Current = Expression;continue;}
+        if (const auto *Copy = dyn_cast<CXXConstructExpr>(Expression))
+          return CopySource(Copy) == Current && S.owns(SM, Copy->getExprLoc());
+        if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Expression)) {
+          const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+          return Call->getOperator() == OO_Call && Call->getNumArgs() && Call->getArg(0) == Current &&
+              Method && Method->getParent()->getCanonicalDecl() == Record &&
+              Method->getPrimaryTemplate() && !Method->isStatic() && !Method->isVolatile() &&
+              !Method->isDeleted() && !Method->isVariadic() && Method->getAccess() == AS_public &&
+              Call->getNumArgs() == Method->getNumParams() + 1 &&
+              Check.family(Method, {"__functional/bind.h"}) && S.owns(SM, Call->getExprLoc());
+        }
+      }
+      return false;
+    }
+    return false;
+  };
+  std::function<bool(const Stmt *, unsigned)> Scan;
+  Scan = [&](const Stmt *Statement, unsigned Depth) {
+    if (!Statement) return true;
+    if (Depth >= 64 || ++Nodes > 200000) return false;
+    if (const auto *Reference = dyn_cast<DeclRefExpr>(Statement)) {
+      const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+      if (Variable && Seen.count(Variable->getCanonicalDecl())) {
+        if (!S.owns(SM, Reference->getExprLoc()) || !ReadOnlyUse(Reference)) return false;
+        References.push_back(Reference);
+      }
+    }
+    Parents.push_back(Statement);
+    auto Restore = llvm::make_scope_exit([&] { Parents.pop_back(); });
+    for (const auto *Child : Statement->children())
+      if (!Scan(Child, Depth + 1)) return false;
+    return true;
+  };
+  if (!Scan(Owner->getBody(), 0) || References.empty()) return std::nullopt;
+  return FunctionalBindMemberValueSource{*Storage, Owner, Object, std::move(Variables),
+      std::move(Copies), std::move(Wrappers), *Factory, std::move(References)};
+}
+
+
 // One owned call is the only entry point. SDK children can be described only
 // through the exact __mu_expand return selected by their enclosing argument.
 struct FunctionalBindCallDescriptionWalk {

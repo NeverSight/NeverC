@@ -1854,6 +1854,23 @@ describeFunctionalBindMemberFactorySource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+// Original local value path only. Each factory address remains attached to
+// this object's selected copies and source occurrences, never its binder type.
+struct FunctionalBindMemberValueSource {
+  FunctionalBindMemberStorage Storage;
+  const clang::FunctionDecl *Owner;
+  const clang::Expr *Object;
+  std::vector<const clang::VarDecl *> Variables;
+  std::vector<const clang::CXXConstructExpr *> Copies;
+  std::vector<const clang::Expr *> Wrappers;
+  FunctionalBindMemberFactorySource Factory;
+  std::vector<const clang::DeclRefExpr *> References;
+};
+std::optional<FunctionalBindMemberValueSource>
+describeFunctionalBindMemberValueSource(
+    const State &S, const clang::SourceManager &SM, const clang::Expr *Object,
+    const clang::ASTContext &Context);
+
 // Source-only owned-object description. The existing runtime factory entry
 // remains restricted to function pointers until complete source proofs close.
 std::optional<FunctionalBindFactorySource>
