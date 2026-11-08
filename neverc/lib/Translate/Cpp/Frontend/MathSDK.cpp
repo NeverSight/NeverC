@@ -14048,7 +14048,8 @@ public:
         Factory.BoundConstruction != Tuple.Tuple || !Tuple.Implementation ||
         Tuple.Implementation->getNumArgs() != BindMetadata->Arguments.Elements.size() + 4)
       return false;
-    const auto Tags = BindStandardFactory ? describeFunctionalBindStandardTupleTagSources(S, SM, Factory, Context)
+    const auto Tags = BindMemberFactory ? describeFunctionalBindMemberTupleTagSources(S, SM, *BindMemberFactory, Context)
+        : BindStandardFactory ? describeFunctionalBindStandardTupleTagSources(S, SM, Factory, Context)
         : BindReferenceFactory ? describeFunctionalBindReferenceTupleTagSources(S, SM, Factory, Context) : describeFunctionalBindTupleTagSources(S, SM, Factory, Context);
     if (!Tags || Tags->size() != 4) return false;
     return bindFunctionalBindTupleTagGraph(BindMetadata->Arguments, Tuple, *Tags);
@@ -21900,12 +21901,19 @@ describeFunctionalBindMemberInvokeSignatureSource(
     if (!Check.family(Parameters->getParam(I), {"__type_traits/invoke.h"})) return std::nullopt;
   const auto &Default = Constraint->getDefaultArgument();
   const auto *DefaultSource = Default.getTypeSourceInfo();
-  const auto *DefaultType = DefaultSource
-      ? dyn_cast<TemplateSpecializationType>(DefaultSource->getType().getTypePtr()) : nullptr;
+  // Read the written alias occurrence through its original TypeLoc.
+  // Elaborated sugar is not the alias node, and desugaring the alias
+  // itself would lose the independent default-source obligation.
+  const auto DefaultLocation = DefaultSource
+      ? DefaultSource->getTypeLoc().getAsAdjusted<TemplateSpecializationTypeLoc>()
+      : TemplateSpecializationTypeLoc();
+  const auto *DefaultType = DefaultLocation ? DefaultLocation.getTypePtr() : nullptr;
   const auto *DefaultAlias = DefaultType
       ? dyn_cast_or_null<TypeAliasTemplateDecl>(DefaultType->getTemplateName().getAsTemplateDecl()) : nullptr;
   if (Default.getArgument().getKind() != TemplateArgument::Type || !DefaultSource || !DefaultType ||
       !DefaultAlias || !DefaultAlias->getIdentifier() || DefaultAlias->getName() != ConstraintName ||
+      DefaultLocation.getNumArgs() != 2 ||
+      !Context.hasSameType(DefaultSource->getType(), DefaultLocation.getType()) ||
       DefaultType->template_arguments().size() < 2 || DefaultType->template_arguments().size() > 5 ||
       !Check.family(DefaultAlias, {"__type_traits/invoke.h"}) ||
       !Check.location(DefaultSource->getTypeLoc().getBeginLoc(), {"__type_traits/invoke.h"}) ||
@@ -21914,7 +21922,13 @@ describeFunctionalBindMemberInvokeSignatureSource(
     const auto &Argument = DefaultType->template_arguments()[I];
     const auto *Type = Argument.getKind() == TemplateArgument::Type
         ? dyn_cast<TemplateTypeParmType>(Argument.getAsType().getTypePtr()) : nullptr;
-    if (!Type || Type->getDecl() != (I ? Receiver : Callable)) return std::nullopt;
+    const auto Written = DefaultLocation.getArgLoc(I);
+    const auto *WrittenSource = Written.getArgument().getKind() == TemplateArgument::Type
+        ? Written.getTypeSourceInfo() : nullptr;
+    if (!Type || Type->getDecl() != (I ? Receiver : Callable) || !WrittenSource ||
+        !Context.hasSameType(Written.getArgument().getAsType(), Argument.getAsType()) ||
+        !Check.location(Written.getSourceRange().getBegin(), {"__type_traits/invoke.h"}) ||
+        !Check.location(Written.getSourceRange().getEnd(), {"__type_traits/invoke.h"})) return std::nullopt;
   }
   auto Deduced = [](QualType Type) {
     return !Type.isNull() && Type->isRValueReferenceType() ? Type.getNonReferenceType() : Type;
