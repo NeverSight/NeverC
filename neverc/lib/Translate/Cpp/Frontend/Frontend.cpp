@@ -30592,6 +30592,152 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   for (const auto &Directive : MemberClassDirectives)
     Check.checkExplicitMemberClassInstantiation(Directive);
   prepareBorrowedQueryLayouts(*this);
+    // Observation only. No result below enters an admission or runtime map.
+    const auto MemberProbeSources = Check.functionalBindSourceInputs();
+    unsigned MemberProbeNodes = 0, MemberProbeRoots = 0;
+    unsigned MemberProbeFactories = 0, MemberProbeCalls = 0;
+    std::set<const FunctionDecl *> MemberProbeDumpedInvokes;
+    auto MemberProbeRecord = [&](const CXXRecordDecl *Record) {
+      const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+      return Instance && Instance->getIdentifier() && Instance->getName() == "__bind" &&
+          Instance->getTemplateArgs().size() == 2 &&
+          Instance->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
+          Instance->getTemplateArgs()[0].getAsType().getNonReferenceType()->isMemberPointerType();
+    };
+    auto MemberProbeExpression = [&](const Expr *Expression) -> const Expr * {
+      for (unsigned Depth = 0; Expression && Depth < 32; ++Depth) {
+        if (const auto *P = dyn_cast<ParenExpr>(Expression)) Expression = P->getSubExpr();
+        else if (const auto *C = dyn_cast<ImplicitCastExpr>(Expression)) Expression = C->getSubExpr();
+        else if (const auto *C = dyn_cast<ExprWithCleanups>(Expression)) Expression = C->getSubExpr();
+        else if (const auto *T = dyn_cast<MaterializeTemporaryExpr>(Expression)) Expression = T->getSubExpr();
+        else return Expression;
+      }
+      return nullptr;
+    };
+    auto MemberProbeReturned = [&](const FunctionDecl *Function) -> const Expr * {
+      const auto *Body = Function ? dyn_cast_or_null<CompoundStmt>(Function->getBody()) : nullptr;
+      const auto *Return = Body && Body->size() == 1
+          ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
+      return Return ? MemberProbeExpression(Return->getRetValue()) : nullptr;
+    };
+    std::function<bool(const Stmt *, unsigned)> MemberProbeStmt;
+    MemberProbeStmt = [&](const Stmt *Statement, unsigned Depth) {
+      if (!Statement) return true;
+      if (Depth >= 64 || ++MemberProbeNodes > 200000) return false;
+      if (const auto *Call = dyn_cast<CallExpr>(Statement)) {
+        const auto *Function = Call->getDirectCallee();
+        if (Function && Function->getIdentifier() && Function->getName() == "bind" &&
+            S.owns(Sources, Call->getExprLoc()) && MemberProbeRecord(Call->getType()->getAsCXXRecordDecl())) {
+          ++MemberProbeFactories;
+          const auto Storage = describeFunctionalBindMemberStorage(
+              S, Sources, Call->getType()->getAsCXXRecordDecl(), Context);
+          const auto Factory = describeFunctionalBindMemberFactorySource(S, Sources, Call, Context);
+          unsigned Uses = 0, Selections = 0, Pairs = 0;
+          if (Factory && MemberProbeSources) {
+            for (const auto *Use : MemberProbeSources->Dependencies) {
+              if (++MemberProbeNodes > 200000) return false;
+              if (Use && Use->Kind == TemplateSourceKind::Function &&
+                  Use->Declaration == Factory->Factory.Factory &&
+                  Use->Template == Factory->Factory.Factory->getPrimaryTemplate() &&
+                  Use->Canonical && Use->Sugared) ++Uses;
+            }
+            for (const auto *Source : MemberProbeSources->Selections) {
+              if (++MemberProbeNodes > 200000) return false;
+              if (!Source || Source->Expression != Call || Source->Function != Factory->Factory.Factory) continue;
+              ++Selections;
+              for (const auto *Use : MemberProbeSources->Dependencies) {
+                if (++MemberProbeNodes > 200000) return false;
+                if (Use && Use->Kind == TemplateSourceKind::Function && Use->Declaration == Source->Function &&
+                    Use->Location == Source->Location && Use->Canonical && Use->Sugared) ++Pairs;
+              }
+            }
+          }
+          llvm::errs() << "BIND-MEMBER-FACTORY offset="
+              << Sources.getFileOffset(Sources.getSpellingLoc(Call->getExprLoc()))
+              << " storage=" << bool(Storage) << " described=" << bool(Factory)
+              << " callable-bytes=" << (Storage ? Storage->CallableSizeBytes : 0)
+              << " callable-align=" << (Storage ? Storage->CallableAlignmentBytes : 0)
+              << " callable-offset-bits=" << (Storage ? Storage->Storage.CallableOffsetBits : 0)
+              << " bound-offset-bits=" << (Storage ? Storage->Storage.BoundOffsetBits : 0)
+              << " size=" << (Storage ? Storage->Storage.SizeBytes : 0)
+              << " align=" << (Storage ? Storage->Storage.AlignmentBytes : 0)
+              << " uses=" << Uses << " selected=" << Selections << " pairs=" << Pairs
+              << " member=" << (Factory ? Factory->Member->getQualifiedNameAsString() : "none") << "\n";
+        }
+      }
+      if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Statement)) {
+        const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+        if (Method && Call->getOperator() == OO_Call && S.owns(Sources, Call->getExprLoc()) &&
+            MemberProbeRecord(Method->getParent())) {
+          ++MemberProbeCalls;
+          const auto Value = Call->getNumArgs() ? describeFunctionalBindMemberValueSource(
+              S, Sources, Call->getArg(0), Context) : std::nullopt;
+          llvm::errs() << "BIND-MEMBER-VALUE offset="
+              << Sources.getFileOffset(Sources.getSpellingLoc(Call->getExprLoc()))
+              << " described=" << bool(Value)
+              << " factory-offset=" << (Value ? Sources.getFileOffset(Sources.getSpellingLoc(Value->Factory.Factory.SourceCall->getExprLoc())) : 0)
+              << " copies=" << (Value ? Value->Copies.size() : 0)
+              << " variables=" << (Value ? Value->Variables.size() : 0)
+              << " references=" << (Value ? Value->References.size() : 0)
+              << " member=" << (Value ? Value->Factory.Member->getQualifiedNameAsString() : "none") << "\n";
+          const auto Body = describeFunctionalBindMemberInvokeBodySource(S, Sources, Call, Context);
+          llvm::errs() << "BIND-MEMBER-BODY offset="
+              << Sources.getFileOffset(Sources.getSpellingLoc(Call->getExprLoc()))
+              << " described=" << bool(Body)
+              << " method=" << bool(Body && Body->MemberCall)
+              << " pointer=" << bool(Body && Body->ReceiverIsPointer)
+              << " arguments=" << (Body ? Body->ArgumentForwards.size() : 0)
+              << " member=" << (Body ? Body->Value.Factory.Member->getQualifiedNameAsString() : "none") << "\n";
+          const auto *Apply = dyn_cast_or_null<CallExpr>(MemberProbeReturned(Method));
+          const auto *Invoke = Apply ? dyn_cast_or_null<CallExpr>(MemberProbeReturned(Apply->getDirectCallee())) : nullptr;
+          const auto *Selected = Invoke ? Invoke->getDirectCallee() : nullptr;
+          unsigned Uses = 0;
+          if (Selected && MemberProbeSources)
+            for (const auto *Use : MemberProbeSources->Dependencies) {
+              if (++MemberProbeNodes > 200000) return false;
+              if (Use && Use->Kind == TemplateSourceKind::Function && Use->Declaration == Selected &&
+                  Use->Canonical && Use->Sugared) ++Uses;
+            }
+          llvm::errs() << "BIND-MEMBER-CALL offset="
+              << Sources.getFileOffset(Sources.getSpellingLoc(Call->getExprLoc()))
+              << " incoming=" << Method->getNumParams() << " const=" << Method->isConst()
+              << " apply=" << bool(Apply) << " invoke=" << bool(Selected) << " uses=" << Uses
+              << " result=" << Method->getReturnType().getAsString().substr(0, 1024) << "\n";
+          if (Selected && MemberProbeDumpedInvokes.size() < 16 && MemberProbeDumpedInvokes.insert(Selected).second) {
+            llvm::errs() << "BIND-MEMBER-ACTUAL-INVOKE-AST-BEGIN\n";
+            Selected->dump(llvm::errs());
+            llvm::errs() << "BIND-MEMBER-ACTUAL-INVOKE-AST-END\n";
+          }
+        }
+      }
+      for (const auto *Child : Statement->children())
+        if (!MemberProbeStmt(Child, Depth + 1)) return false;
+      return true;
+    };
+    std::function<bool(const DeclContext *, unsigned)> MemberProbeDecls;
+    MemberProbeDecls = [&](const DeclContext *Declarations, unsigned Depth) {
+      if (!Declarations || Depth >= 64 || ++MemberProbeNodes > 200000) return false;
+      for (const auto *Declaration : Declarations->decls()) {
+        if (++MemberProbeNodes > 200000) return false;
+        if (!S.owns(Sources, Declaration->getLocation())) continue;
+        if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
+          if (Function->getIdentifier() && Function->getName() == "replacement" &&
+              Function->getDefinition() == Function && Function->getBody()) {
+            ++MemberProbeRoots;
+            if (!MemberProbeStmt(Function->getBody(), Depth + 1)) return false;
+          }
+        } else if (const auto *Namespace = dyn_cast<NamespaceDecl>(Declaration)) {
+          if (!MemberProbeDecls(Namespace, Depth + 1)) return false;
+        } else if (const auto *Linkage = dyn_cast<LinkageSpecDecl>(Declaration)) {
+          if (!MemberProbeDecls(Linkage, Depth + 1)) return false;
+        }
+      }
+      return true;
+    };
+    const bool MemberProbeComplete = MemberProbeDecls(Context.getTranslationUnitDecl(), 0) && MemberProbeRoots == 1;
+    llvm::errs() << "BIND-MEMBER-PREPASS complete=" << MemberProbeComplete << " roots=" << MemberProbeRoots
+        << " nodes=" << MemberProbeNodes << " factories=" << MemberProbeFactories
+        << " calls=" << MemberProbeCalls << " runtime-permission=0\n";
   bool Traversed = Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (Traversed && S.Diagnostics.empty())
     Traversed = Check.finishTupleConstructorQueries();
