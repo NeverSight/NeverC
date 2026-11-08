@@ -34,6 +34,7 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
     suffix = "" if bits == 64 else "32"
     read, write = f"llvm.x86.read{bank}{suffix}", f"llvm.x86.write{bank}{suffix}"
     word = f"i{bits}"
+    triple = "x86_64-pc-windows-msvc" if bits == 64 else "i386-unknown-linux-gnu"
     if args.llc:
         read_call = lambda value: f"%{value} = call {word} @{read}(i32 {number})"
         write_call = lambda value: f"call void @{write}(i32 {number}, {word} %{value})"
@@ -104,10 +105,11 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
         source.write_text(header + f"{cword} probe({cword} a, "
                           f"{cword} b, {cword} *pointer) {{\n " +
                           "\n ".join(body) + f"\n return {result};\n}}\n")
-        arch = "x86_64" if bits == 64 else "i686"
-        common = [str(args.compiler), f"--target={arch}-pc-windows-msvc", "-" + opt,
+        common = [str(args.compiler), f"--target={triple}", "-" + opt,
                   "-ffreestanding", "-fno-lto", "-fno-stack-protector",
                   "-mllvm", "-verify-machineinstrs", str(source)]
+        if bits == 32 and args.spelling == "microsoft":
+            common += ["-fms-extensions", "-D_MSC_VER=1930"]
         commands = [common + ["-S", "-emit-llvm", "-o", str(ir)]]
         if not args.backend_llc:
             commands.append(common + ["-c", "-o", str(output)])
@@ -120,15 +122,14 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
             raise AssertionError(f"{name}: expected native LLVM register intrinsics")
     backend = args.llc or args.backend_llc
     if backend:
-        arch = "x86_64" if bits == 64 else "i686"
-        run = subprocess.run([str(backend), "-mtriple=" + arch + "-pc-windows-msvc",
+        run = subprocess.run([str(backend), "-mtriple=" + triple,
                               "-" + opt, "-verify-machineinstrs", "-filetype=obj",
                               str(ir), "-o", str(output)], capture_output=True, text=True)
         if run.returncode:
             raise AssertionError(f"{name}: backend failed:\n{run.stderr}")
     image = lief.parse(str(output))
     if image is None:
-        raise AssertionError(f"{name}: expected a COFF object")
+        raise AssertionError(f"{name}: expected a native object file")
     return name, bytes(next(s for s in image.sections if s.name == ".text" and len(s.content)).content)
 
 

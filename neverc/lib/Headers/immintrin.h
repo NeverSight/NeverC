@@ -8,18 +8,19 @@
 #include <x86gprintrin.h>
 #include <amxintrin.h>
 
+/* NeverC's AVX headers below also need these types without global features. */
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__MMX__)
+    defined(__MMX__) || defined(__neverc__)
 #include <mmintrin.h>
 #endif
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__SSE__)
+    defined(__SSE__) || defined(__neverc__)
 #include <xmmintrin.h>
 #endif
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__SSE2__)
+    defined(__SSE2__) || defined(__neverc__)
 #include <emmintrin.h>
 #endif
 

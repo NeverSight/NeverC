@@ -6,6 +6,8 @@
 #ifndef __INTRIN_H
 #define __INTRIN_H
 
+#include <stddef.h>
+
 /* First include the standard intrinsics. */
 #if defined(__i386__) || defined(__x86_64__)
 #include <x86intrin.h>

@@ -837,15 +837,25 @@ TEST_F(X86PrivilegedIntrinTest, I386SystemRegisterTypesAndNativeIR) {
       return __builtin_ia32_readcr32(3) ^ __builtin_ia32_readdr32(5);
     }
   )");
-  for (const char *Target : {"i686-pc-windows-msvc", "i386-unknown-linux-gnu"})
+  for (bool Microsoft : {false, true})
     for (const char *Opt : {"-O0", "-O2"}) {
-      SCOPED_TRACE(Target);
+      SCOPED_TRACE(Microsoft);
       SCOPED_TRACE(Opt);
       const auto Output = tmpFile("i386_system_registers.ll");
-      const auto R =
-          ncc({std::string("--target=") + Target, "-ffreestanding",
-               "-fno-builtin-mimalloc", "-fno-lto", "-Werror", Opt, "-S",
-               "-emit-llvm", Source.string(), "-o", Output.string()});
+      std::vector<std::string> Args = {"--target=i386-unknown-linux-gnu",
+                                       "-ffreestanding",
+                                       "-fno-builtin-mimalloc",
+                                       "-fno-lto",
+                                       "-Werror",
+                                       Opt,
+                                       "-S",
+                                       "-emit-llvm",
+                                       Source.string(),
+                                       "-o",
+                                       Output.string()};
+      if (Microsoft)
+        Args.insert(Args.end(), {"-fms-extensions", "-D_MSC_VER=1930"});
+      const auto R = ncc(Args);
       ASSERT_EQ(R.exitCode, 0) << R.err;
       const auto Text = readFile(Output);
       for (const char *Op : {"readcr32", "writecr32", "readdr32", "writedr32"})
@@ -864,26 +874,30 @@ TEST_F(X86PrivilegedIntrinTest, I386SystemRegisterModesAndIndicesAreChecked) {
                    "32-bit x86"},
         {"x86_64-pc-windows-msvc", "__builtin_ia32_writedr32(0, 0)",
          "32-bit x86"},
-        {"i686-pc-windows-msvc", "__readcr8()", "64-bit x86"},
-        {"i686-pc-windows-msvc", "__writecr8(0)", "64-bit x86"},
-        {"i686-pc-windows-msvc", "__builtin_ia32_readcr32(8)",
+        {"i386-unknown-linux-gnu", "__readcr8()", "64-bit x86"},
+        {"i386-unknown-linux-gnu", "__writecr8(0)", "64-bit x86"},
+        {"i386-unknown-linux-gnu", "__builtin_ia32_readcr32(8)",
          "control register"},
-        {"i686-pc-windows-msvc", "__builtin_ia32_writecr32(1, 0)",
+        {"i386-unknown-linux-gnu", "__builtin_ia32_writecr32(1, 0)",
          "control register"},
-        {"i686-pc-windows-msvc", "__builtin_ia32_readdr32(8)", "valid range"},
-        {"i686-pc-windows-msvc", "__builtin_ia32_writedr32(8, 0)",
+        {"i386-unknown-linux-gnu", "__builtin_ia32_readdr32(8)", "valid range"},
+        {"i386-unknown-linux-gnu", "__builtin_ia32_writedr32(8, 0)",
          "valid range"},
-        {"i686-pc-windows-msvc", "__builtin_ia32_readcr32(n)",
+        {"i386-unknown-linux-gnu", "__builtin_ia32_readcr32(n)",
          "constant integer"},
-        {"i686-pc-windows-msvc", "__builtin_ia32_writedr32(n, 0)",
+        {"i386-unknown-linux-gnu", "__builtin_ia32_writedr32(n, 0)",
          "constant integer"}}) {
     SCOPED_TRACE(Call);
     const auto Source = tmpFile("invalid_i386_system_register.c");
     writeFile(Source,
               std::string("#include <intrin.h>\nvoid f(unsigned n) { ") + Call +
                   "; }\n");
-    const auto R = ncc({std::string("--target=") + Target, "-ffreestanding",
-                        "-fsyntax-only", Source.string()});
+    std::vector<std::string> Args = {std::string("--target=") + Target,
+                                     "-ffreestanding", "-fsyntax-only",
+                                     Source.string()};
+    if (std::string(Target).rfind("i386", 0) == 0)
+      Args.insert(Args.end(), {"-fms-extensions", "-D_MSC_VER=1930"});
+    const auto R = ncc(Args);
     EXPECT_NE(R.exitCode, 0);
     EXPECT_NE(R.err.find(Diagnostic), std::string::npos) << R.err;
   }

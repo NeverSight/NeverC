@@ -228,6 +228,12 @@ constant. Microsoft `__readcr0/2/3/4`, `__writecr0/2/3/4`, `__readdr` and
 header types match the 32-bit ABI. CR8 is diagnosed outside x64. Existing
 portable 64-bit API signatures are unchanged.
 
+The i386 source target is Linux. Microsoft spellings are also checked there
+with `-fms-extensions -D_MSC_VER=1930`; this is not a Windows i386 ABI route.
+`intrin.h` owns its `size_t` include, and NeverC's unconditionally exposed AVX
+headers keep their MMX/SSE type prerequisites visible without enabling those
+CPU features for generated code.
+
 `tests/verify-system-register-completion.py --compiler NEVERC --backend-llc
 LLC --spelling builtin` and `--spelling microsoft` exercise both code modes,
 all register indices, live/dead/repeated reads and writes, memory ordering,
