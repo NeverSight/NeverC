@@ -932,8 +932,9 @@ and system-effect synchronizers retain the pruned enum, attributes, matcher IDs
 and terminating machine descriptor together. `X86SkinitTest` checks both
 spellings, ordered stores, removed continuation, malformed inputs and O0/O2
 ELF/COFF/Mach-O output. The [binary oracle](tests/neverc/X86/verify_skinit_completion.py)
-also checks original EAX bits at a stopped instruction boundary: 1,080 checks
-for NeverC's six objects and 1,080 for the full fork's twelve i386/x64 objects.
+also checks original EAX bits at a stopped instruction boundary: 1,440 checks
+for NeverC's eight i386/x64 objects and 1,080 for the full fork's twelve objects.
+All eight deliberately corrupted EAX controls are rejected.
 It never executes SKINIT or qualifies reset, attestation or successful launch.
 
 The Linux i386 frontend also registers both SKINIT spellings. They consume the
@@ -944,6 +945,13 @@ The boundary witness accepts `--neverc-bits 32` or `--neverc-bits all`; it
 compiles i386 source through that driver, checks both assembly dialects and
 rejects deliberately corrupted EAX values. Windows/Darwin i386 source ABIs
 and successful secure launch remain outside this source interface.
+
+The 2026-11-08 i386 qualification passes all 185 x86/i386 frontend tests.
+Regression checks also retain 2,048 SVM cases, 152 real CPL3 fault boundaries,
+136 operand negative controls, 196 returning VMRUN contexts, 9,072 VMX
+controlled completions, 896 VMX CPL3 faults and 6,291,456 FLAGS comparisons.
+The source-global audit remains identical to its 90-finding baseline; this
+qualification does not close that independent global gate.
 
 [tests/verify-bounded-virtualization-qemu.py](tests/verify-bounded-virtualization-qemu.py) executes the generated code in
 disposable i386/x64 CPL0 guests. It checks VMSAVE/VMLOAD MSR round trips,
