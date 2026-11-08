@@ -1778,6 +1778,19 @@ describeFunctionalBindStorage(const State &S, const clang::SourceManager &SM,
                               const clang::ASTContext &Context);
 
 
+// Original member-pointer storage shape only. Actual selected source graphs,
+// member bodies, capture/lifetime operations and lowering remain independent.
+struct FunctionalBindMemberStorage {
+  FunctionalBindStorage Storage;
+  const clang::CXXRecordDecl *Owner;
+  uint64_t CallableSizeBytes, CallableAlignmentBytes;
+};
+std::optional<FunctionalBindMemberStorage>
+describeFunctionalBindMemberStorage(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+
 // Original standard functional-object descriptions only. These carry no
 // completed bind source, lifecycle or lowering permission.
 struct FunctionalBindStandardStorage {
@@ -1828,6 +1841,19 @@ std::optional<FunctionalBindFactorySource>
 describeFunctionalBindFactorySource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+// The member address belongs to this exact factory operand. Canonical binder
+// type equality never supplies the stored value's member identity.
+struct FunctionalBindMemberFactorySource {
+  FunctionalBindMemberStorage Storage;
+  FunctionalBindFactorySource Factory;
+  const clang::UnaryOperator *Address;
+  const clang::ValueDecl *Member;
+};
+std::optional<FunctionalBindMemberFactorySource>
+describeFunctionalBindMemberFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 // Source-only owned-object description. The existing runtime factory entry
 // remains restricted to function pointers until complete source proofs close.
 std::optional<FunctionalBindFactorySource>
