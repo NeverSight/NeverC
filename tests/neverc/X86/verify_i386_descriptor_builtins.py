@@ -33,7 +33,8 @@ def forms():
                 yield (f"{op}_{source}{width}", ty,
                        f"{first} input, {ty} prior, unsigned char *status",
                        "input, prior, status", op)
-    yield "invd", "void", "void", "", "invd"
+    for op in ("invd", "clts", "clac", "stac", "hlt", "vmxoff", "stgi", "clgi"):
+        yield op, "void", "void", "", op
 
 
 def main():
@@ -62,7 +63,7 @@ def main():
         return p.stdout.decode()
 
     entries = list(forms())
-    assert len(entries) == 28
+    assert len(entries) == 35
     source = out / "builtins.c"
     text = []
     for name, result, parameters, inputs, _ in entries:
@@ -91,7 +92,7 @@ def main():
     wide += [f"{op}_{kind}64" for op in ("lar", "lsl") for kind in ("reg", "mem")]
     negative.write_text("\n".join(
         f'_Static_assert(!__has_builtin(__builtin_ia32_{name}), "{name}");'
-        for name in wide) + "\n")
+        for name in wide + ["swapgs"]) + "\n")
     for mode in (32, 64):
         target = "i386" if mode == 32 else "x86_64"
         base = [compiler, f"--target={target}-unknown-linux-gnu", "-Werror",
@@ -115,8 +116,8 @@ def main():
             for name, _, _, _, opcode in active:
                 body = bodies["probe_" + name]
                 count = len(re.findall(r"\b" + opcode + r"[wlq]?\s", body))
-                if opcode == "invd":
-                    count = len(re.findall(r"\binvd\b", body))
+                if opcode in ("invd", "clts", "clac", "stac", "hlt", "vmxoff", "stgi", "clgi"):
+                    count = len(re.findall(r"\b" + opcode + r"\b", body))
                 assert count == 2, (tag, name, body)
             query_obj = out / (tag + "-queries.o")
             run(base + ["-" + level, "-c", ROOT / "i386_descriptor_queries.c",

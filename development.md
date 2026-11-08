@@ -1548,23 +1548,27 @@ while all prior instructions, registers and features remain unchanged.
 
 ### Shared i386 descriptor and machine-state builtins
 
-The 28 pointer/register builtins for VERR, VERW, SLDT, STR, SMSW, LLDT, LTR,
-LMSW, INVD, and the 16/32-bit LAR/LSL results are registered in the common
-x86 builtin table. Their LLVM lowering and signatures are unchanged. Linux
+The 35 builtins for VERR, VERW, SLDT, STR, SMSW, LLDT, LTR, LMSW, CLTS,
+CLAC/STAC, HLT, VMXOFF, STGI/CLGI, INVD, and the 16/32-bit LAR/LSL results are
+registered in the common x86 builtin table. Their LLVM lowering and signatures
+are unchanged. Linux
 i386 C23 source can emit IR or use `-fllvm-backend=/path/to/full/llc` for native
 objects. The seven 64-bit result forms remain available only in x86-64;
 explicit-address APIs keep their separately documented mode contracts.
 
 `tests/neverc/X86/verify_i386_descriptor_builtins.py --neverc PATH --llvm-bin DIR
---output DIR` checks all 28 registrations, IR verification and two retained
+--output DIR` checks all 35 registrations, IR verification and two retained
 native operations per function at O0/O2 in i386 and x64. It rejects accidental
 registration of 64-bit result forms on i386 and retains all seven native wide
-forms on x64. The query objects additionally
+forms on x64. SWAPGS remains unavailable on i386. The query objects additionally
 run as real Linux i386/x64 processes, comparing LAR/LSL results and ZF and
 VERR/VERW status against independent original instructions for null, valid and
 invisible selectors, differing prior values, unaligned words and words ending
 at an inaccessible page. Privileged state operations have code-generation
-coverage here; these checks do not execute LLDT/LTR/LMSW/INVD in user mode.
+coverage here; they do not run successfully in user mode. Runtime privilege,
+feature availability and VMX/SVM state remain owned by the processor. These
+registrations reuse the LLVM fork's existing 32-bit and 64-bit instructions;
+no inline assembly or runtime helper implements them.
 
 ### Descriptor queries (LAR / LSL)
 

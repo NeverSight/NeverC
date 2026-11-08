@@ -235,12 +235,7 @@ BUILTIN(__builtin_ia32_invlpga, "vULLiUi", "n")
 BUILTIN(__builtin_ia32_vmload_addr32, "vUi", "n")
 BUILTIN(__builtin_ia32_vmsave_addr32, "vUi", "n")
 BUILTIN(__builtin_ia32_invlpga_addr32, "vUiUi", "n")
-BUILTIN(__builtin_ia32_stgi, "v", "n")
-BUILTIN(__builtin_ia32_clgi, "v", "n")
 BUILTIN(__builtin_ia32_swapgs, "v", "n")
-BUILTIN(__builtin_ia32_clac, "v", "n")
-BUILTIN(__builtin_ia32_stac, "v", "n")
-BUILTIN(__builtin_ia32_hlt, "v", "n")
 BUILTIN(__builtin_ia32_vmfunc_eptp_switch, "vUi", "n")
 
 // GETSEC fallthrough leaves: full GPR transport, constant EAX leaf 0 or 6..8.
@@ -271,7 +266,6 @@ BUILTIN(__builtin_ia32_vmclear, "UcvC*", "n")
 BUILTIN(__builtin_ia32_vmptrld, "UcvC*", "n")
 BUILTIN(__builtin_ia32_vmptrst, "vv*", "n")
 BUILTIN(__builtin_ia32_vmxon, "UcvC*", "n")
-BUILTIN(__builtin_ia32_vmxoff, "v", "n")
 BUILTIN(__builtin_ia32_vmlaunch, "Uc", "n")
 BUILTIN(__builtin_ia32_vmresume, "Uc", "n")
 
@@ -391,7 +385,6 @@ BUILTIN(__builtin_ia32_rep_outs_state, "vULLiULLiUsUcIUiIUiIUiULLi*", "n")
 
 // Native processor-state effects. The list operations own their memory tables
 // and return the actual RCX completion mask.
-BUILTIN(__builtin_ia32_clts, "v", "n")
 BUILTIN(__builtin_ia32_readcr, "ULLiIUi", "n")
 BUILTIN(__builtin_ia32_writecr, "vIUiULLi", "n")
 BUILTIN(__builtin_ia32_readdr, "ULLiIUi", "n")
