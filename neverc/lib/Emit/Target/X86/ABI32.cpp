@@ -161,9 +161,12 @@ class X86_32ABIInfo final : public ABIInfo {
       }
       if (Windows && Required) {
         auto Info = getContext().getTypeInfo(Ty);
-        unsigned RequiredAlign = RT ? getContext().toBits(
-            getContext().getStructRecordLayout(RT->getDecl()).getRequiredAlignment())
-            : Info.isAlignRequired() ? Info.Align : 0;
+        unsigned RequiredAlign =
+            RT ? getContext().toBits(getContext()
+                                         .getStructRecordLayout(RT->getDecl())
+                                         .getRequiredAlignment())
+            : Info.isAlignRequired() ? Info.Align
+                                     : 0;
         if (RequiredAlign > RegisterBits)
           return indirect(Ty, FreeRegs);
       }
@@ -197,8 +200,10 @@ class X86_32ABIInfo final : public ABIInfo {
       Ty = ET->getDecl()->getIntegerType();
     // Match the register-parameter ABI before deciding whether a wide scalar
     // needs an indirect temporary. Its full size can exhaust the register bank.
-    bool Eligible = !FastCall || (getContext().getTypeSize(Ty) <= RegisterBits &&
-                     (Ty->isIntegralOrEnumerationType() || Ty->isPointerType()));
+    bool Eligible =
+        !FastCall ||
+        (getContext().getTypeSize(Ty) <= RegisterBits &&
+         (Ty->isIntegralOrEnumerationType() || Ty->isPointerType()));
     bool InReg = Eligible && consumeRegisters(Ty, FreeRegs);
     if (const auto *BT = Ty->getAs<BitIntType>(); BT && BT->getNumBits() > 64)
       return indirect(Ty, FreeRegs);
@@ -215,10 +220,12 @@ public:
         Windows(getTarget().getTriple().isWindowsMSVCEnvironment()) {}
 
   void computeInfo(ABIFunctionInfo &FI) const override {
-    const bool FastCall = FI.getEffectiveCallingConvention() ==
-                          llvm::CallingConv::X86_FastCall;
-    unsigned FreeRegs = FastCall ? 2 :
-        !FI.isVariadic() && FI.getHasRegParm() ? FI.getRegParm() : 0;
+    const bool FastCall =
+        FI.getEffectiveCallingConvention() == llvm::CallingConv::X86_FastCall;
+    unsigned FreeRegs = FastCall ? 2
+                        : !FI.isVariadic() && FI.getHasRegParm()
+                            ? FI.getRegParm()
+                            : 0;
     // Fastcall's hidden result pointer stays on the stack, leaving ECX/EDX
     // available for ordinary integer arguments.
     unsigned ReturnRegs = FastCall ? 0 : FreeRegs;
