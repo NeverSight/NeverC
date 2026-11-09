@@ -183,7 +183,7 @@ BUILTIN(__builtin_ia32_invvpid, "UcULLivC*", "n")
 // Bounded native processor-state effects; INVLPGB uses rAX, EDX, ECX in order.
 BUILTIN(__builtin_ia32_invlpgb, "vULLiUiUi", "n")
 BUILTIN(__builtin_ia32_invlpgb_addr32, "vUiUiUi", "n")
-BUILTIN(__builtin_ia32_tlbsync, "v", "n")
+BUILTIN(__builtin_ia32_tlbsync_control64, "vULLi", "n")
 BUILTIN(__builtin_ia32_lkgs_reg, "vUs", "n")
 BUILTIN(__builtin_ia32_lkgs_mem, "vvC*", "n")
 
@@ -224,7 +224,6 @@ BUILTIN(__builtin_ia32_vmload_addr32, "vUi", "n")
 BUILTIN(__builtin_ia32_vmsave_addr32, "vUi", "n")
 BUILTIN(__builtin_ia32_invlpga_addr32, "vUiUi", "n")
 BUILTIN(__builtin_ia32_swapgs, "v", "n")
-BUILTIN(__builtin_ia32_vmfunc_eptp_switch, "vUi", "n")
 
 // GETSEC fallthrough leaves: full GPR transport, constant EAX leaf 0 or 6..8.
 BUILTIN(__builtin_ia32_getsec_bounded, "ULLiIULLiULLiULLiULLiULLi*", "n")

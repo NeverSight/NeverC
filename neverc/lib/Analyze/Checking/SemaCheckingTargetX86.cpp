@@ -578,6 +578,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_vmload32:
   case X86::BI__builtin_ia32_vmsave32:
   case X86::BI__builtin_ia32_invlpga32:
+  case X86::BI__builtin_ia32_invlpgb32:
+  case X86::BI__builtin_ia32_tlbsync_control32:
   case X86::BI__builtin_ia32_vmload_addr16:
   case X86::BI__builtin_ia32_vmsave_addr16:
   case X86::BI__builtin_ia32_invlpga_addr16:

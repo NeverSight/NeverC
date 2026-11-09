@@ -1152,6 +1152,7 @@ enum X86Intrinsics : unsigned {
     x86_invlpga32,                                   // llvm.x86.invlpga32
     x86_invlpgb,                                     // llvm.x86.invlpgb
     x86_invlpgb_addr32,                              // llvm.x86.invlpgb.addr32
+    x86_invlpgb32,                                   // llvm.x86.invlpgb32
     x86_invpcid,                                     // llvm.x86.invpcid
     x86_invvpid,                                     // llvm.x86.invvpid
     x86_invvpid_address,                             // llvm.x86.invvpid.address
@@ -1660,6 +1661,8 @@ enum X86Intrinsics : unsigned {
     x86_tilezero,                                    // llvm.x86.tilezero
     x86_tilezero_internal,                           // llvm.x86.tilezero.internal
     x86_tlbsync,                                     // llvm.x86.tlbsync
+    x86_tlbsync_control32,                           // llvm.x86.tlbsync.control32
+    x86_tlbsync_control64,                           // llvm.x86.tlbsync.control64
     x86_tmmultf32ps,                                 // llvm.x86.tmmultf32ps
     x86_tpause,                                      // llvm.x86.tpause
     x86_udivrem16,                                   // llvm.x86.udivrem16

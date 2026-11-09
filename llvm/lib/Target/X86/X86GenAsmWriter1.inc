@@ -20177,6 +20177,7 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// NATIVE_FAR_JUMP32
     0U,	// NATIVE_FAR_JUMP64
     0U,	// NATIVE_FAR_JUMP_IMM32
+    0U,	// TLBSYNC_CONTROL64
 };
 
   static const uint32_t OpInfo1[] = {
@@ -38792,6 +38793,7 @@ std::pair<const char *, uint64_t> X86IntelInstPrinter::getMnemonic(const MCInst 
     0U,	// NATIVE_FAR_JUMP32
     0U,	// NATIVE_FAR_JUMP64
     0U,	// NATIVE_FAR_JUMP_IMM32
+    0U,	// TLBSYNC_CONTROL64
 };
 
   // Emit the opcode for the instruction.

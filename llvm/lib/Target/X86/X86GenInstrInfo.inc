@@ -18624,7 +18624,8 @@ namespace X86 {
     NATIVE_FAR_JUMP32	= 18609,
     NATIVE_FAR_JUMP64	= 18610,
     NATIVE_FAR_JUMP_IMM32	= 18611,
-    INSTRUCTION_LIST_END = 18612
+    TLBSYNC_CONTROL64	= 18612,
+    INSTRUCTION_LIST_END = 18613
   };
 
 } // end namespace X86
@@ -21015,7 +21016,7 @@ namespace Sched {
 namespace llvm {
 
 struct X86InstrTable {
-  MCInstrDesc Insts[18612];
+  MCInstrDesc Insts[18613];
   static_assert(alignof(MCInstrDesc) >= alignof(MCOperandInfo), "Unwanted padding between Insts and OperandInfo");
   MCOperandInfo OperandInfo[5536];
   static_assert(alignof(MCOperandInfo) >= alignof(MCPhysReg), "Unwanted padding between OperandInfo and ImplicitOps");
@@ -21034,6 +21035,7 @@ static constexpr unsigned X86ImpOpBase = sizeof X86InstrTable::OperandInfo / (si
 
 extern const X86InstrTable X86Descs = {
   {
+    { 18612,	0,	0,	0,	8,	1,	0,	X86ImpOpBase + 3,	1,	0|(1ULL<<MCID::Pseudo)|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore), 0x0ULL },  // Inst #18612 = TLBSYNC_CONTROL64
     { 18611,	4,	0,	0,	8,	0,	15,	X86ImpOpBase + 1048,	5532,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18611 = NATIVE_FAR_JUMP_IMM32
     { 18610,	3,	0,	0,	8,	0,	15,	X86ImpOpBase + 901,	5529,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18610 = NATIVE_FAR_JUMP64
     { 18609,	3,	0,	0,	8,	0,	15,	X86ImpOpBase + 1048,	5526,	0|(1ULL<<MCID::UnmodeledSideEffects)|(1ULL<<MCID::MayLoad)|(1ULL<<MCID::MayStore)|(1ULL<<MCID::Terminator)|(1ULL<<MCID::Barrier)|(1ULL<<MCID::Pseudo), 0x0ULL },  // Inst #18609 = NATIVE_FAR_JUMP32
@@ -58679,6 +58681,7 @@ extern const char X86InstrNameData[] = {
   /* 260736 */ "NATIVE_FAR_JUMP32\0"
   /* 260754 */ "NATIVE_FAR_JUMP64\0"
   /* 260772 */ "NATIVE_FAR_JUMP_IMM32\0"
+  /* 260794 */ "TLBSYNC_CONTROL64\0"
 };
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -61155,10 +61158,11 @@ extern const unsigned X86InstrNameIndices[] = {
     260736U,
     260754U,
     260772U,
+    260794U,
 };
 
 static inline void InitX86MCInstrInfo(MCInstrInfo *II) {
-  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18612);
+  II->InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18613);
 }
 
 } // end namespace llvm
@@ -61218,7 +61222,7 @@ extern const unsigned X86InstrNameIndices[];
 extern const char X86InstrNameData[];
 X86GenInstrInfo::X86GenInstrInfo(unsigned CFSetupOpcode, unsigned CFDestroyOpcode, unsigned CatchRetOpcode, unsigned ReturnOpcode)
   : TargetInstrInfo(CFSetupOpcode, CFDestroyOpcode, CatchRetOpcode, ReturnOpcode) {
-  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18612);
+  InitMCInstrInfo(X86Descs.Insts, X86InstrNameIndices, X86InstrNameData, nullptr, nullptr, 18613);
 }
 } // end namespace llvm
 #endif // GET_INSTRINFO_CTOR_DTOR
@@ -98668,6 +98672,8 @@ static int getOperandType(uint16_t Opcode, uint16_t OpIdx) {
     64523,
     /* NATIVE_FAR_JUMP_IMM32 */
     64526,
+    /* TLBSYNC_CONTROL64 */
+    8202,
   };
 
   using namespace OpTypes;
@@ -154151,9 +154157,10 @@ inline FeatureBitset computeRequiredFeatures(unsigned Opcode) {
     CEFBS_In64BitMode, // NATIVE_FAR_JUMP32 = 18609
     CEFBS_In64BitMode, // NATIVE_FAR_JUMP64 = 18610
     CEFBS_In64BitMode, // NATIVE_FAR_JUMP_IMM32 = 18611
+    CEFBS_In64BitMode, // TLBSYNC_CONTROL64 = 18612
   };
 
-  assert(Opcode < 18612);
+  assert(Opcode < 18613);
   return FeatureBitsets[RequiredFeaturesRefs[Opcode]];
 }
 

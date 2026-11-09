@@ -88,6 +88,14 @@ BUILTIN(__builtin_ia32_skinit, "vUi", "nr")
 // HRESET consumes EAX in both legacy and long mode.
 TARGET_BUILTIN(__builtin_ia32_hreset, "vUi", "n", "hreset")
 
+// Preserve raw EAX control/address, EDX identifiers and ECX count in code32.
+BUILTIN(__builtin_ia32_invlpgb32, "vUiUiUi", "n")
+// The compatibility form selects CPU-only synchronization with rAX = 0.
+BUILTIN(__builtin_ia32_tlbsync, "v", "n")
+BUILTIN(__builtin_ia32_tlbsync_control32, "vUi", "n")
+// EPTP switching selects VM function zero; the complete ECX remains native.
+BUILTIN(__builtin_ia32_vmfunc_eptp_switch, "vUi", "n")
+
 // Native ARPL; the CPU owns m16 read and conditional write.
 BUILTIN(__builtin_ia32_arpl_reg, "UsUsUsUc*", "n")
 BUILTIN(__builtin_ia32_arpl_mem, "Ucv*Us", "n")

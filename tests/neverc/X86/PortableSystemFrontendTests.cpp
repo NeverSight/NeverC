@@ -2,9 +2,90 @@
 
 #include <iterator>
 #include <regex>
+#include <utility>
 #include <vector>
 
 class X86PortableSystemTest : public X86NativeBuiltinTest {};
+
+TEST_F(X86PortableSystemTest, BoundedTranslationInterfacesRetainNativeEffects) {
+  const auto Source = tmpFile("translation-control.c");
+  const auto IR = tmpFile("translation-control.ll");
+  for (const bool Wide : {false, true}) {
+    const std::string Word = Wide ? "unsigned long long" : "unsigned";
+    const std::string Bits = Wide ? "64" : "32";
+    writeFile(Source, Word + " probe(" + Word +
+                          " control, unsigned ids, "
+                          "unsigned count, " +
+                          Word +
+                          " *memory) {\n"
+                          "  *memory = control;\n"
+                          "  __builtin_ia32_tlbsync();\n"
+                          "  __builtin_ia32_tlbsync_control" +
+                          Bits +
+                          "(control);\n"
+                          "  __builtin_ia32_tlbsync_control" +
+                          Bits +
+                          "(control);\n"
+                          "  __builtin_ia32_invlpgb" +
+                          (Wide ? "" : "32") +
+                          "(control, ids, count);\n"
+                          "  __builtin_ia32_vmfunc_eptp_switch(count);\n"
+                          "  return *memory;\n}\n");
+    for (const char *Opt : {"-O0", "-O2"}) {
+      const auto Result = ncc(
+          {std::string("--target=") +
+               (Wide ? "x86_64-unknown-linux-gnu" : "i386-unknown-linux-gnu"),
+           Opt, "-ffreestanding", "-fno-lto", "-fno-builtin-mimalloc",
+           "-Werror", "-S", "-emit-llvm", Source.string(), "-o", IR.string()});
+      ASSERT_EQ(Result.exitCode, 0) << Result.err;
+      const auto Text = readFile(IR);
+      const std::regex Call("call void @llvm\\.x86\\.tlbsync\\.control" + Bits +
+                            "\\(");
+      EXPECT_EQ(
+          std::distance(std::sregex_iterator(Text.begin(), Text.end(), Call),
+                        std::sregex_iterator()),
+          2)
+          << Text;
+      EXPECT_NE(Text.find("declare void @llvm.x86.tlbsync.control" + Bits +
+                          "(i" + Bits + ")"),
+                std::string::npos)
+          << Text;
+      EXPECT_NE(Text.find("@llvm.x86.invlpgb" + std::string(Wide ? "" : "32") +
+                          "(i" + Bits),
+                std::string::npos)
+          << Text;
+      EXPECT_NE(Text.find("@llvm.x86.vmfunc.eptp.switch(i32"),
+                std::string::npos);
+      EXPECT_NE(Text.find("load i" + Bits), std::string::npos) << Text;
+      for (const char *Invalid :
+           {" asm ", "memory(none)", "noreturn", "unreachable"})
+        EXPECT_EQ(Text.find(Invalid), std::string::npos) << Text;
+    }
+  }
+}
+
+TEST_F(X86PortableSystemTest, TranslationControlRejectsWrongCodeMode) {
+  const auto Source = tmpFile("translation-mode.c");
+  for (const auto &[Triple, Call] :
+       std::vector<std::pair<const char *, const char *>>{
+           {"x86_64-unknown-linux-gnu", "__builtin_ia32_tlbsync_control32(1)"},
+           {"x86_64-unknown-linux-gnu", "__builtin_ia32_invlpgb32(1,2,3)"},
+           {"i386-unknown-linux-gnu", "__builtin_ia32_tlbsync_control64(1)"},
+           {"i386-unknown-linux-gnu", "__builtin_ia32_invlpgb(1,2,3)"},
+           {"i386-unknown-linux-gnu",
+            "__builtin_ia32_invlpgb_addr32(1,2,3)"}}) {
+    SCOPED_TRACE(Triple);
+    SCOPED_TRACE(Call);
+    writeFile(Source, "void probe(void) { " + std::string(Call) + "; }\n");
+    const auto Result = ncc(
+        {std::string("--target=") + Triple, "-fsyntax-only", Source.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.err;
+    EXPECT_NE(Result.err.find(Triple[0] == 'x' ? "requires a 32-bit x86 target"
+                                               : "unknown builtin"),
+              std::string::npos)
+        << Result.err;
+  }
+}
 
 TEST_F(X86PortableSystemTest, I386CpuidHeaderUsesNativeAvailabilityProbe) {
   const auto Source = tmpFile("cpuid-availability.c");
