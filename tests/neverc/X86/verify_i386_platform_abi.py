@@ -38,6 +38,7 @@ CASES = [
     ("bits17", "unsigned _BitInt(17)", "BITS17", False),
     ("bits33", "unsigned _BitInt(33)", "BITS33", False),
     ("bits65", "unsigned _BitInt(65)", "BITS65", True),
+    ("bits65_signed", "_BitInt(65)", "BITS65", True),
     ("bits97", "unsigned _BitInt(97)", "BITS97", True),
     ("record1", "struct { char x; }", "ALL", False),
     ("record2", "struct { short x; }", "ALL", False),
@@ -84,6 +85,11 @@ def sources():
             mark = f"{t} tmp; volatile unsigned char *raw=(volatile unsigned char*)&tmp; for(unsigned i=0;i<sizeof(tmp);++i)raw[i]=0;{assignments}for(unsigned i=0;i<sizeof(tmp);++i)m[i]=raw[i];"
         mark = re.sub(r"FIELD\((\w+)\)", lambda m:
             f"for(unsigned i=0;i<sizeof((({t}*)0)->{m[1]});++i) m[__builtin_offsetof({t},{m[1]})+i]=255;", mark)
+        if mask.startswith("BITS"):
+            bits = int(mask[4:])
+            high = f"((unsigned _BitInt({bits}))1<<{bits-1})"
+            producer.append(f"static const {t} global_{name}[4]={{3,({t})-1,({t}){high},({t})({high}/2+5)}};\n"
+                            f"void constants_{name}({t} *out){{for(unsigned i=0;i<4;++i)out[i]=global_{name}[i];}}\n")
         producer.append(f"void layout_{name}(unsigned *p, volatile unsigned char *m) {{"
                         f"p[0]=sizeof({t});p[1]=_Alignof({t});{mark}}}\n")
         for cc in ("cdecl", "stdcall", "regparm", "fastcall", "variadic"):
@@ -148,7 +154,7 @@ def object_code(path, base):
     symbols = {}
     for symbol in image.symbols:
         name = re.sub(r"^[_@]|@\d+$", "", symbol.name)
-        if name.startswith(("callee_", "caller_", "layout_")):
+        if name.startswith(("callee_", "caller_", "layout_", "constants_")):
             symbols[name] = symbol_offset(symbol)
 
     for index, section in enumerate(sections):
@@ -273,6 +279,24 @@ def main():
                     else:
                         run(common+["-c",a.output/(role+".c"),"-o",path],stem)
                     objects[compiler,role]=object_code(path, PEER if role=="producer" else CODE)
+            for name, _, mask_kind, _ in CASES:
+                if not mask_kind.startswith("BITS") or (a.case and name not in a.case):
+                    continue
+                bits = int(mask_kind[4:])
+                values = (3, (1<<bits)-1, 1<<(bits-1), (1<<(bits-2))+5)
+                for compiler in (("clang",) if a.reference_only else ("clang", "neverc")):
+                    obj = objects[compiler,"producer"]
+                    size, align, mask = layout(obj,name)
+                    u = machine((b"",{}),obj)
+                    call(u, PEER+obj[1]["constants_"+name], [DATA])
+                    got = bytes(u.mem_read(DATA,size*4))
+                    expected = b"".join(v.to_bytes(size,"little") for v in values)
+                    masked = lambda b: bytes(v&m for v,m in zip(b,mask*4))
+                    assert masked(got)==masked(expected),(platform,opt,name,compiler,"constant array storage")
+                    assert masked(bytes([got[0]^1])+got[1:])!=masked(expected)
+                    controls += 1
+                    results.append(dict(platform=platform,optimization=opt,case="constants_"+name,
+                                        caller=compiler,callee=compiler,size=size,align=align,comparisons=4))
             for name,cc,key in sources_text[2]:
                 if a.case and name not in a.case:continue
                 if cc=="fastcall" and platform!="windows":continue

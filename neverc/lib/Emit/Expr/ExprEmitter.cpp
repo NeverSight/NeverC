@@ -760,6 +760,8 @@ FunctionEmitter::genLoadOfScalar(Address Addr, bool Volatile, QualType Ty,
     return genAtomicLoad(AtomicLValue, Loc).getScalarVal();
   }
 
+  if (Ty->isBitIntType())
+    Addr = Addr.withElementType(getTypes().convertTypeForLoadStore(Ty));
   llvm::LoadInst *Load = Builder.CreateLoad(Addr, Volatile);
   if (isNontemporal) {
     llvm::MDNode *Node = llvm::MDNode::get(
@@ -780,6 +782,9 @@ FunctionEmitter::genLoadOfScalar(Address Addr, bool Volatile, QualType Ty,
 }
 
 llvm::Value *FunctionEmitter::genToMemory(llvm::Value *Value, QualType Ty) {
+  if (Ty->isBitIntType())
+    return Builder.CreateIntCast(Value, getTypes().convertTypeForLoadStore(Ty),
+                                 Ty->isSignedIntegerType(), "storedv");
   // Bool has a different representation in memory than in registers.
   if (hasBooleanRepresentation(Ty)) {
     // This should really always be an i1, but sometimes it's already
@@ -794,6 +799,8 @@ llvm::Value *FunctionEmitter::genToMemory(llvm::Value *Value, QualType Ty) {
 }
 
 llvm::Value *FunctionEmitter::genFromMemory(llvm::Value *Value, QualType Ty) {
+  if (Ty->isBitIntType())
+    return Builder.CreateTrunc(Value, convertType(Ty), "loadedv");
   // Bool has a different representation in memory than in registers.
   if (hasBooleanRepresentation(Ty)) {
     assert(Value->getType()->isIntegerTy(getContext().getTypeSize(Ty)) &&
@@ -895,6 +902,8 @@ NEVERC_HOT void FunctionEmitter::genStoreOfScalar(
     return;
   }
 
+  if (Ty->isBitIntType())
+    Addr = Addr.withElementType(getTypes().convertTypeForLoadStore(Ty));
   llvm::StoreInst *Store = Builder.CreateStore(Value, Addr, Volatile);
   if (isNontemporal) {
     llvm::MDNode *Node =

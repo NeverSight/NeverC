@@ -83,14 +83,27 @@ llvm::Type *TypeEmitter::convertTypeForMem(QualType T, bool ForBitField) {
     return llvm::IntegerType::get(FixedVT->getContext(), BytePadded);
   }
 
-  // If this is a bool type, or a bit-precise integer type in a bitfield
-  // representation, map this integer to the target-specified size.
-  if ((ForBitField && T->isBitIntType()) ||
-      (!T->isBitIntType() && R->isIntegerTy(1)))
+  if (T->isBitIntType()) {
+    // LLVM integer allocation size can exceed the C object size (i65 is
+    // 16 bytes in LLVM but _BitInt(65) is 12 bytes in the i386 SysV ABI).
+    // Array strides and record storage must follow the C layout authority.
+    const auto Size = Context.getTypeSizeInChars(T).getQuantity();
+    if (!ForBitField && getDataLayout().getTypeAllocSize(R) != Size)
+      return llvm::ArrayType::get(llvm::Type::getInt8Ty(getLLVMContext()),
+                                  Size);
+    return convertTypeForLoadStore(T);
+  }
+  if (R->isIntegerTy(1))
     return llvm::IntegerType::get(getLLVMContext(),
                                   (unsigned)Context.getTypeSize(T));
 
   return R;
+}
+
+llvm::Type *TypeEmitter::convertTypeForLoadStore(QualType T) {
+  if (T->isBitIntType())
+    return llvm::IntegerType::get(getLLVMContext(), Context.getTypeSize(T));
+  return convertTypeForMem(T);
 }
 
 bool TypeEmitter::isRecordLayoutComplete(const Type *Ty) const {

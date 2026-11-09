@@ -92,6 +92,8 @@ public:
 
   llvm::Type *convertTypeForMem(QualType T, bool ForBitField = false);
 
+  llvm::Type *convertTypeForLoadStore(QualType T);
+
   llvm::FunctionType *GetFunctionType(const ABIFunctionInfo &Info);
 
   llvm::FunctionType *GetFunctionType(GlobalDecl GD);

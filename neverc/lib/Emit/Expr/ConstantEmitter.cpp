@@ -1489,6 +1489,22 @@ llvm::Constant *ConstantEmitter::emitForMemory(ModuleEmitter &ME,
     return Res;
   }
 
+  if (destType->isBitIntType()) {
+    auto *MemTy = ME.getTypes().convertTypeForMem(destType);
+    auto *StoreTy = ME.getTypes().convertTypeForLoadStore(destType);
+    auto *CI = cast<llvm::ConstantInt>(C);
+    const auto Value =
+        destType->isSignedIntegerType()
+            ? CI->getValue().sextOrTrunc(StoreTy->getIntegerBitWidth())
+            : CI->getValue().zextOrTrunc(StoreTy->getIntegerBitWidth());
+    if (MemTy->isArrayTy()) {
+      ConstantAggregateBuilder Builder(ME);
+      Builder.addBits(Value, 0, /*AllowOverwrite=*/false);
+      return Builder.build(MemTy, /*AllowOversized=*/false);
+    }
+    return llvm::ConstantInt::get(StoreTy, Value);
+  }
+
   return C;
 }
 

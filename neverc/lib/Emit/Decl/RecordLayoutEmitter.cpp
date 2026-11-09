@@ -59,7 +59,7 @@ struct RecordLowering {
                                               Type, NumChars.getQuantity());
   }
   llvm::Type *getStorageType(const FieldDecl *FD) {
-    llvm::Type *Type = Types.convertTypeForMem(FD->getType());
+    llvm::Type *Type = Types.convertTypeForMem(FD->getType(), FD->isBitField());
     if (!FD->isBitField())
       return Type;
     if (isDiscreteBitFieldABI())
