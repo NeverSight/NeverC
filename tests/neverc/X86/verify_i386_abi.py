@@ -168,7 +168,7 @@ def main():
             expected=None,
         )
         assert "full LLVM fork" in text and not (out / "unsupported.o").exists(), text
-    for triple in ("i386-pc-windows-msvc", "i386-apple-macosx", "i386-linux-android29"):
+    for triple in ("i386-pc-windows-gnu", "i386-apple-ios", "i386-linux-android29"):
         text = run(
             [
                 args.neverc,

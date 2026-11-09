@@ -41,6 +41,17 @@ void native(unsigned x, void *bounds) {
             assert not r.returncode, (name, r.stderr)
         return r.stdout
 
+    aliases = []
+    for arch in ('i386', 'i486', 'i586', 'i686'):
+        triple = arch + '-apple-darwin'
+        obj = a.output / (arch + '-darwin.o')
+        run([a.neverc, '--target=' + triple, '-ffreestanding',
+             '-fno-builtin-mimalloc', '-fllvm-backend=' + str(llc), '-c',
+             source, '-o', obj], arch + '-darwin')
+        info = run([readobj, '--file-headers', obj], arch + '-darwin-headers')
+        assert b'Arch: i386' in info and b'Format: Mach-O 32-bit i386' in info
+        aliases.append(triple)
+
     for i, triple in enumerate(TRIPLES):
         base = [a.neverc, '--target=' + triple, '-std=gnu23', '-ffreestanding',
                 '-fno-builtin-mimalloc', '-fno-lto', '-fllvm-backend=' + str(llc)]
@@ -98,7 +109,7 @@ else:
             f'link-{i}', 'requires -c or -S')
         assert not obj.exists()
         negatives.append(f'link-{i}')
-    report = dict(profiles=profiles, negative_controls=negatives, commands=commands,
+    report = dict(profiles=profiles, aliases=aliases, negative_controls=negatives, commands=commands,
                   artifacts={f.name: hashlib.sha256(f.read_bytes()).hexdigest()
                              for f in a.output.iterdir() if f.is_file()},
                   tools={str(f): hashlib.sha256(f.read_bytes()).hexdigest()

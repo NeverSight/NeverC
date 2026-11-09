@@ -134,10 +134,15 @@ def object_code(path, base):
             continue
         if not section.size and not section.content:
             continue
-        offset = cursor if elf or coff else section.virtual_address
+        if elf or coff:
+            alignment = section.alignment if elf else 1 << max(0, ((section.characteristics>>20)&15)-1)
+            alignment = max(16, alignment)
+            offset = (cursor+alignment-1)&-alignment
+        else:
+            offset = section.virtual_address
         offsets[index if elf else index+1] = offset
         blob[offset:offset+len(section.content)] = bytes(section.content)
-        cursor = (offset+max(section.size,len(section.content))+PAGE-1)&-PAGE
+        cursor = offset+max(section.size,len(section.content))
     assert cursor < REGION-PAGE
     # Independent cdecl byte-copy helper for compiler-emitted memcpy calls.
     memcpy = REGION-PAGE
