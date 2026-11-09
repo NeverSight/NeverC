@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify native HRESET, INVLPGB, TLBSYNC and LKGS compiler transport.
+"""Qualify native HRESET, INVLPGB, TLBSYNC, VMFUNC and LKGS transport.
 
 Executes surrounding scalar code and intercepts privileged instructions. The
 oracle checks exact operands, memory ordering, retention and saved registers;
@@ -9,8 +9,10 @@ Requires capstone, lief and unicorn. --llc covers both LLVM code modes;
 """
 
 import argparse
+import hashlib
 import importlib.util
 import itertools
+import json
 import struct
 import tempfile
 from pathlib import Path
@@ -28,7 +30,8 @@ SPEC.loader.exec_module(COMMON)
 run, text_section = COMMON.run, COMMON.text_section
 CODE, STACK, DATA, PAGE = COMMON.CODE, COMMON.STACK, COMMON.DATA, COMMON.PAGE
 STOP, SOURCE, ORDINARY = COMMON.STOP, COMMON.SOURCE, COMMON.ORDINARY
-VALUES = ((0, 0, 0), (0xd012345689ab002b, 0xaabbccdd12345678, 0x91726354aabbccdd),
+VALUES = ((0, 0, 0), (1, 511, 0x80000000), (2, 512, 0xffffffff),
+          (0xd012345689ab002b, 0xaabbccdd12345678, 0x91726354aabbccdd),
           (0xffffffffffffffff, 0xffffffffffffffff, 0x8000000080000000))
 DELTA = (0x1234, 0x55667788, 0xdeadbeef)
 
@@ -41,7 +44,8 @@ def instructions(code, mode):
         remaining = code[position:]
         for encoding, mnemonic in ((b"\xf3\x0f\x3a\xf0\xc0\x00", "hreset"),
                                     (b"\x67\x0f\x01\xfe", "invlpgb"),
-                                    (b"\x0f\x01\xfe", "invlpgb"), (b"\x0f\x01\xff", "tlbsync")):
+                                    (b"\x0f\x01\xfe", "invlpgb"), (b"\x0f\x01\xff", "tlbsync"),
+                                    (b"\x0f\x01\xd4", "vmfunc")):
             if remaining.startswith(encoding):
                 instruction = SimpleNamespace(address=CODE + position, size=len(encoding), mnemonic=mnemonic)
                 break
@@ -71,7 +75,10 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
     ir, obj = directory / (name + ".ll"), directory / (name + ".o")
     word = f"i{mode}"
     triple = ("x86_64" if mode == 64 else "i686") + "-" + target
-    api = "llvm.x86." + operation + ("32" if operation == "invlpgb" and mode == 32 else "")
+    suffix = ("vmfunc.eptp.switch" if operation == "vmfunc" else
+              "tlbsync.control" + str(mode) if operation == "tlbsync.control" else
+              operation + ("32" if operation == "invlpgb" and mode == 32 else ""))
+    api = "llvm.x86." + suffix
     count = 2 if variant == "twice" else 1
     if args.llc:
         body = [f"%pointer = ptrtoint ptr %source to {word}"]
@@ -96,10 +103,13 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
             body.append(f"%selector{i} = trunc {word} {inputs[0]} to i16")
             parameters = {"hreset": "i32", "invlpgb": f"{word}, i32, i32",
                           "invlpgb.addr32": "i32, i32, i32", "tlbsync": "",
+                          "tlbsync.control": word, "vmfunc": "i32",
                           "lkgs.reg": "i16", "lkgs.mem": "ptr"}[operation]
             call = {"hreset": f"i32 {narrow[0]}", "invlpgb": f"{word} {inputs[0]}, i32 {narrow[1]}, i32 {narrow[2]}",
                     "invlpgb.addr32": f"i32 {narrow[0]}, i32 {narrow[1]}, i32 {narrow[2]}",
-                    "tlbsync": "", "lkgs.reg": f"i16 %selector{i}", "lkgs.mem": "ptr %source"}[operation]
+                    "tlbsync": "", "tlbsync.control": f"{word} {inputs[0]}",
+                    "vmfunc": f"i32 {narrow[0]}",
+                    "lkgs.reg": f"i16 %selector{i}", "lkgs.mem": "ptr %source"}[operation]
             body.append(f"call void @{api}({call})")
         terms = ["%a", "%b", "%c", "%pointer"]
         if variant == "memory":
@@ -116,32 +126,35 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
                       "\n".join(body) + "\n}\n")
     else:
         src = directory / (name + ".c")
+        cword = "unsigned long long" if mode == 64 else "unsigned"
         body = ["*ordinary = a;"] if variant == "memory" else []
         if variant == "condition":
             body.append("unsigned condition = a < b;")
         for i in range(count):
             a, b, c = (p + (f" ^ {delta}ULL" if i else "") for p, delta in zip(("a", "b", "c"), DELTA))
             call = {"hreset": a, "invlpgb": f"{a}, {b}, {c}", "invlpgb.addr32": f"{a}, {b}, {c}",
-                    "tlbsync": "", "lkgs.reg": a, "lkgs.mem": "source"}[operation]
-            body.append(f"__builtin_ia32_{operation.replace('.', '_')}({call});")
-        result = "a ^ b ^ c ^ (unsigned long long)source"
+                    "tlbsync": "", "tlbsync.control": a, "vmfunc": a,
+                    "lkgs.reg": a, "lkgs.mem": "source"}[operation]
+            body.append(f"__builtin_ia32_{suffix.replace('.', '_')}({call});")
+        result = f"a ^ b ^ c ^ ({cword})source"
         if variant == "memory":
             result += " ^ *ordinary"
         if variant == "condition":
             result += " ^ condition"
         body.append("return " + result + ";")
-        src.write_text('__attribute__((target("hreset"))) unsigned long long probe(unsigned long long a, unsigned long long b, unsigned long long c, const void *source, unsigned long long *ordinary) {\n' +
+        src.write_text(f'__attribute__((target("hreset"))) {cword} probe({cword} a, {cword} b, {cword} c, const void *source, {cword} *ordinary) {{\n' +
                        "\n".join(body) + "\n}\n")
         common = [args.compiler, "--target=" + triple, "-" + opt, "-Werror", "-ffreestanding", "-fno-builtin-mimalloc",
                   "-fno-lto", "-fno-stack-protector", "-mllvm", "-verify-machineinstrs", src]
         run(common + ["-S", "-emit-llvm", "-o", ir])
         assert " asm " not in ir.read_text() and f"@{api}(" in ir.read_text()
-        if not args.backend_llc:
-            run(common + ["-c", "-o", obj])
+        run(common + ["-c", "-o", obj] +
+            (["-fllvm-backend=" + str(args.backend_llc)] if args.backend_llc else []))
     backend = args.llc or args.backend_llc
     if backend:
         common_backend = [backend, "-mtriple=" + triple, "-mattr=+hreset", "-" + opt, "-verify-machineinstrs", ir]
-        run(common_backend + ["-filetype=obj", "-o", obj])
+        if args.llc:
+            run(common_backend + ["-filetype=obj", "-o", obj])
     if variant == "retained":
         for dialect in ("att", "intel"):
             asm = directory / (name + "-" + dialect + ".s")
@@ -156,7 +169,7 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
     return text_section(obj)
 
 
-def execute(code, operation, variant, mode, values, mapped=True):
+def execute(code, operation, variant, mode, values, mapped=True, corrupt=None):
     mask = (1 << mode) - 1
     a, b, c = (v & mask for v in values)
     source = SOURCE if mapped else ((1 << (mode - 1)) | (c & mask) | 13)
@@ -170,6 +183,7 @@ def execute(code, operation, variant, mode, values, mapped=True):
     machine.mem_write(ORDINARY, pack(COMMON.SENTINEL))
     sp = STACK + PAGE - 64 - mode // 8
     machine.reg_write(reg("SP"), sp)
+    machine.reg_write(reg("AX"), mask ^ 0x1234)
     machine.mem_write(sp, pack(STOP))
     arguments = (a, b, c, source, ORDINARY)
     if mode == 64:
@@ -189,15 +203,24 @@ def execute(code, operation, variant, mode, values, mapped=True):
         machine.emu_start(start, instruction.address, count=1000)
         assert machine.reg_read(reg("IP")) == instruction.address
         av, bv, cv = (v ^ (d if index else 0) for v, d in zip((a, b, c), DELTA))
+        if corrupt and index == 0:
+            register = reg("AX") if corrupt == "control" else regs.UC_X86_REG_EDX \
+                if corrupt == "ids" else regs.UC_X86_REG_ECX
+            machine.reg_write(register, machine.reg_read(register) ^ 1)
         if operation == "hreset":
             assert machine.reg_read(regs.UC_X86_REG_EAX) == av & 0xffffffff
         elif operation.startswith("invlpgb"):
             override = operation.endswith("addr32")
             assert instruction.size == (4 if override else 3), "address-size prefix changed"
             address_register = regs.UC_X86_REG_EAX if override else reg("AX")
-            assert machine.reg_read(address_register) == av & (0xffffffff if override else mask)
-            assert machine.reg_read(regs.UC_X86_REG_EDX) == bv & 0xffffffff
-            assert machine.reg_read(regs.UC_X86_REG_ECX) == cv & 0xffffffff
+            assert machine.reg_read(address_register) == av & (0xffffffff if override else mask), "control mismatch"
+            assert machine.reg_read(regs.UC_X86_REG_EDX) == bv & 0xffffffff, "ids mismatch"
+            assert machine.reg_read(regs.UC_X86_REG_ECX) == cv & 0xffffffff, "count mismatch"
+        elif operation.startswith("tlbsync"):
+            assert machine.reg_read(reg("AX")) == (av if operation == "tlbsync.control" else 0), "control mismatch"
+        elif operation == "vmfunc":
+            assert machine.reg_read(regs.UC_X86_REG_EAX) == 0, "control mismatch"
+            assert machine.reg_read(regs.UC_X86_REG_ECX) == av & 0xffffffff, "count mismatch"
         elif operation.startswith("lkgs"):
             operand, = instruction.operands
             value = lambda r: machine.reg_read(getattr(regs, "UC_X86_REG_" + instruction.reg_name(r).upper())) if r else 0
@@ -223,6 +246,7 @@ def execute(code, operation, variant, mode, values, mapped=True):
         result ^= int(a < b)
     assert machine.reg_read(reg("IP")) == STOP and machine.reg_read(reg("AX")) == result, "live inputs or ordinary memory changed"
     assert all(machine.reg_read(r) == value for r, value in saved.items()), "callee-saved register corrupted"
+    assert machine.reg_read(reg("SP")) == sp + mode // 8, "stack was not restored"
 
 
 def lkgs_encoding_matrix(args, directory):
@@ -270,27 +294,43 @@ def main():
         if getattr(args, key):
             setattr(args, key, getattr(args, key).resolve())
     count = 0
+    profiles, controls = [], []
     with tempfile.TemporaryDirectory(prefix="bounded-system-") as temp:
         directory = args.keep or Path(temp)
         directory.mkdir(parents=True, exist_ok=True)
-        for mode in ((32, 64) if args.llc else (64,)):
-            operations = ("hreset", "invlpgb", "invlpgb.addr32", "tlbsync", "lkgs.reg", "lkgs.mem") if mode == 64 else ("hreset", "invlpgb", "tlbsync")
+        for mode in ((32, 64) if args.llc or args.backend_llc else (64,)):
+            operations = ("hreset", "invlpgb", "invlpgb.addr32", "tlbsync", "tlbsync.control", "vmfunc", "lkgs.reg", "lkgs.mem") if mode == 64 else ("hreset", "invlpgb", "tlbsync", "tlbsync.control", "vmfunc")
+            target = COMMON.TRIPLES[1] if mode == 32 and not args.llc else COMMON.TRIPLES[0]
             for operation, opt, variant in itertools.product(operations, ("O0", "O2"), ("retained", "twice", "memory", "condition")):
-                code = compile_case(args, directory, operation, variant, mode, opt)
+                code = compile_case(args, directory, operation, variant, mode, opt, target)
                 for values in VALUES:
                     try:
                         execute(code, operation, variant, mode, values)
                     except Exception as error:
                         raise AssertionError(f"{operation}, {variant}, {mode}, {opt}, {values}: {error}") from error
                     count += 1
+                profiles.append(dict(operation=operation,mode=mode,optimization=opt,variant=variant,
+                                     code_sha256=hashlib.sha256(code).hexdigest(),comparisons=len(VALUES)))
+                if variant == "retained" and (operation.startswith(("invlpgb", "tlbsync")) or operation == "vmfunc"):
+                    fields = ("control", "ids", "count") if operation.startswith("invlpgb") else ("control", "count") if operation == "vmfunc" else ("control",)
+                    for field in fields:
+                        try:
+                            execute(code, operation, variant, mode, VALUES[3], corrupt=field)
+                        except AssertionError as error:
+                            assert str(error) == field + " mismatch", error
+                        else:
+                            raise AssertionError(field + " corruption escaped the oracle")
+                        controls.append(dict(operation=operation,mode=mode,optimization=opt,field=field))
                 if operation == "lkgs.mem":
                     execute(code, operation, variant, mode, VALUES[1], False)
                     count += 1
-                if variant == "retained":
+                if variant == "retained" and (mode == 64 or args.llc):
                     for triple in COMMON.TRIPLES[1:]:
                         compile_case(args, directory, operation, variant, mode, opt, triple)
                         count += 1
         count += lkgs_encoding_matrix(args, directory)
+        (directory / 'results.json').write_text(json.dumps(dict(profiles=profiles,checks=count,
+            negative_controls=controls,privileged_hardware_execution=False),indent=2)+'\n')
     print(f"PASS: {count} bounded system encoding/completion checks")
 
 
