@@ -33,6 +33,7 @@ add_neverc_library(nevercTree
   Type/TypeLoc.cpp
   Type/TypePrinter.cpp
   Type/StructLayoutBuilder.cpp
+  Type/MicrosoftStructLayout.cpp
 
   Format/FormatString.cpp
   Format/PrintfFormatString.cpp

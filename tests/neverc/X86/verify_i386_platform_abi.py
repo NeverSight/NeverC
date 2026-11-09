@@ -25,6 +25,9 @@ SEEDS = (0, 1, 0x800001ff, 0xffffffff)
 SAVED = (reg.UC_X86_REG_EBX, reg.UC_X86_REG_ESI, reg.UC_X86_REG_EDI, reg.UC_X86_REG_EBP)
 # Each mask names defined bytes, never aggregate/x87 padding.
 CASES = [
+    ("bitfields", "struct { unsigned a:3; unsigned short b:9; unsigned c:13; }", "BITFIELDS", True),
+    ("bitunion", "union { unsigned a:3; unsigned short b:9; unsigned c:13; }", "BITUNION", True),
+    ("zero_bitfield", "struct { unsigned a:3; unsigned :0; unsigned b:9; unsigned c:13; }", "BITFIELDS", True),
     ("u8", "unsigned char", "ALL", False),
     ("i16", "short", "ALL", False),
     ("u32", "unsigned", "ALL", False),
@@ -74,6 +77,11 @@ def sources():
         if mask.startswith("BITS"):
             bits = int(mask[4:])
             mark = f"for(unsigned i=0;i<{bits//8};++i) m[i]=255; m[{bits//8}]={(1<<(bits%8))-1};"
+        if mask in ("BITFIELDS", "BITUNION"):
+            assignments = "tmp.a=7;tmp.b=511;tmp.c=8191;"
+            if mask == "BITUNION":
+                assignments = "tmp.c=8191;"
+            mark = f"{t} tmp; volatile unsigned char *raw=(volatile unsigned char*)&tmp; for(unsigned i=0;i<sizeof(tmp);++i)raw[i]=0;{assignments}for(unsigned i=0;i<sizeof(tmp);++i)m[i]=raw[i];"
         mark = re.sub(r"FIELD\((\w+)\)", lambda m:
             f"for(unsigned i=0;i<sizeof((({t}*)0)->{m[1]});++i) m[__builtin_offsetof({t},{m[1]})+i]=255;", mark)
         producer.append(f"void layout_{name}(unsigned *p, volatile unsigned char *m) {{"
@@ -238,6 +246,7 @@ def main():
         ap.add_argument("--"+x, required=True, type=Path)
     ap.add_argument("--platform", choices=tuple(TRIPLES), action="append")
     ap.add_argument("--reference-only", action="store_true")
+    ap.add_argument("--case", action="append")
     a=ap.parse_args(); a.output.mkdir(parents=True, exist_ok=True)
     sources_text = sources(); records=[]; results=[]; controls=0
     for role, text in zip(("producer", "consumer"), sources_text[:2]):
@@ -257,9 +266,15 @@ def main():
                 for role in ("producer","consumer"):
                     stem=f"{platform}-{compiler}-{role}-{opt}"
                     path=a.output/(stem+".o")
-                    run(common+["-c",a.output/(role+".c"),"-o",path],stem)
+                    if compiler == "clang":
+                        ir = path.with_suffix(".ll")
+                        run(common+["-S","-emit-llvm",a.output/(role+".c"),"-o",ir],stem+"-frontend")
+                        run([a.llc,"--neversight-codegen","-"+opt,"-verify-machineinstrs","-relocation-model=static","-filetype=obj",ir,"-o",path],stem)
+                    else:
+                        run(common+["-c",a.output/(role+".c"),"-o",path],stem)
                     objects[compiler,role]=object_code(path, PEER if role=="producer" else CODE)
             for name,cc,key in sources_text[2]:
+                if a.case and name not in a.case:continue
                 if cc=="fastcall" and platform!="windows":continue
                 expected_layout=layout(objects["clang","producer"],name)
                 if not a.reference_only:

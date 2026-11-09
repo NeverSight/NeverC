@@ -293,7 +293,11 @@ def main():
     backend.add_argument("--llc", type=Path)
     backend.add_argument("--backend-llc", type=Path)
     parser.add_argument("--keep", type=Path)
+    parser.add_argument("--all-i386-platforms", action="store_true",
+                        help="execute native i386 source on ELF, COFF and Mach-O")
     args = parser.parse_args()
+    if args.all_i386_platforms and not args.backend_llc:
+        parser.error("--all-i386-platforms requires --backend-llc")
     for key in ("compiler", "llc", "backend_llc"):
         if getattr(args, key):
             setattr(args, key, getattr(args, key).resolve())
@@ -305,34 +309,36 @@ def main():
         for mode in ((32, 64) if args.llc or args.backend_llc else (64,)):
             operations = ("hreset", "invlpgb", "invlpgb.addr32", "tlbsync", "tlbsync.control", "vmfunc", "lkgs.reg", "lkgs.mem") if mode == 64 else ("hreset", "invlpgb", "tlbsync", "tlbsync.control", "vmfunc")
             target = COMMON.TRIPLES[1] if mode == 32 and not args.llc else COMMON.TRIPLES[0]
-            for operation, opt, variant in itertools.product(operations, ("O0", "O2"), ("retained", "twice", "memory", "condition")):
-                code = compile_case(args, directory, operation, variant, mode, opt, target)
-                for values in VALUES:
-                    try:
-                        execute(code, operation, variant, mode, values)
-                    except Exception as error:
-                        raise AssertionError(f"{operation}, {variant}, {mode}, {opt}, {values}: {error}") from error
-                    count += 1
-                object_route = "llvm" if args.llc else "neverc-driver" if not args.backend_llc or mode == 32 else "neverc-ir-to-llvm"
-                profiles.append(dict(operation=operation,mode=mode,optimization=opt,variant=variant,object_route=object_route,
-                                     code_sha256=hashlib.sha256(code).hexdigest(),comparisons=len(VALUES)))
-                if variant == "retained" and (operation.startswith(("invlpgb", "tlbsync")) or operation == "vmfunc"):
-                    fields = ("control", "ids", "count") if operation.startswith("invlpgb") else ("control", "count") if operation == "vmfunc" else ("control",)
-                    for field in fields:
+            targets = COMMON.TRIPLES if mode == 32 and args.all_i386_platforms else (target,)
+            for target in targets:
+                for operation, opt, variant in itertools.product(operations, ("O0", "O2"), ("retained", "twice", "memory", "condition")):
+                    code = compile_case(args, directory, operation, variant, mode, opt, target)
+                    for values in VALUES:
                         try:
-                            execute(code, operation, variant, mode, VALUES[3], corrupt=field)
-                        except AssertionError as error:
-                            assert str(error) == field + " mismatch", error
-                        else:
-                            raise AssertionError(field + " corruption escaped the oracle")
-                        controls.append(dict(operation=operation,mode=mode,optimization=opt,field=field))
-                if operation == "lkgs.mem":
-                    execute(code, operation, variant, mode, VALUES[1], False)
-                    count += 1
-                if variant == "retained" and (mode == 64 or args.llc):
-                    for triple in COMMON.TRIPLES[1:]:
-                        compile_case(args, directory, operation, variant, mode, opt, triple)
+                            execute(code, operation, variant, mode, values)
+                        except Exception as error:
+                            raise AssertionError(f"{operation}, {variant}, {mode}, {opt}, {values}: {error}") from error
                         count += 1
+                    object_route = "llvm" if args.llc else "neverc-driver" if not args.backend_llc or mode == 32 else "neverc-ir-to-llvm"
+                    profiles.append(dict(operation=operation,mode=mode,target=target,optimization=opt,variant=variant,object_route=object_route,
+                                         code_sha256=hashlib.sha256(code).hexdigest(),comparisons=len(VALUES)))
+                    if variant == "retained" and (operation.startswith(("invlpgb", "tlbsync")) or operation == "vmfunc"):
+                        fields = ("control", "ids", "count") if operation.startswith("invlpgb") else ("control", "count") if operation == "vmfunc" else ("control",)
+                        for field in fields:
+                            try:
+                                execute(code, operation, variant, mode, VALUES[3], corrupt=field)
+                            except AssertionError as error:
+                                assert str(error) == field + " mismatch", error
+                            else:
+                                raise AssertionError(field + " corruption escaped the oracle")
+                            controls.append(dict(operation=operation,mode=mode,target=target,optimization=opt,field=field))
+                    if operation == "lkgs.mem":
+                        execute(code, operation, variant, mode, VALUES[1], False)
+                        count += 1
+                    if variant == "retained" and (mode == 64 or args.llc):
+                        for triple in COMMON.TRIPLES[1:]:
+                            compile_case(args, directory, operation, variant, mode, opt, triple)
+                            count += 1
         count += lkgs_encoding_matrix(args, directory)
         (directory / 'results.json').write_text(json.dumps(dict(profiles=profiles,checks=count,
             negative_controls=controls,privileged_hardware_execution=False),indent=2)+'\n')

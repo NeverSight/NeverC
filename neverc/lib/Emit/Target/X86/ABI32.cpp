@@ -119,7 +119,7 @@ class X86_32ABIInfo final : public ABIInfo {
       if ((!Darwin && !Windows) ||
           (RT && RT->getDecl()->hasFlexibleArrayMember()))
         return indirect(Ty, FreeRegs);
-      if (isEmptyRecord(getContext(), Ty, true))
+      if (!Windows && isEmptyRecord(getContext(), Ty, true))
         return ABIArgInfo::getIgnore();
       if (returnsInRegisters(Ty)) {
         if (const Type *Single = isSingleElementStruct(Ty, getContext()))
@@ -144,7 +144,7 @@ class X86_32ABIInfo final : public ABIInfo {
                               bool FastCall) const {
     Ty = useFirstFieldIfTransparentUnion(Ty);
     if (isAggregateTypeForABI(Ty)) {
-      if (isEmptyRecord(getContext(), Ty, true) ||
+      if ((!Windows && isEmptyRecord(getContext(), Ty, true)) ||
           !getContext().getTypeSize(Ty))
         return ABIArgInfo::getIgnore();
       const auto *RT = Ty->getAs<RecordType>();
@@ -178,7 +178,7 @@ class X86_32ABIInfo final : public ABIInfo {
     if (const auto *VT = Ty->getAs<VectorType>()) {
       unsigned Bits = getContext().getTypeSize(Ty);
       if (Windows) {
-        if (Bits <= 512 && FreeSSE) {
+        if (Bits <= 512 && FreeSSE && Required) {
           --FreeSSE;
           ABIArgInfo AI = ABIArgInfo::getDirect();
           AI.setInReg(true);
@@ -232,7 +232,7 @@ public:
     FI.getReturnInfo() = classifyReturn(FI.getReturnType(), ReturnRegs);
     if (!FastCall)
       FreeRegs = ReturnRegs;
-    unsigned FreeSSE = Windows ? 3 : 0;
+    unsigned FreeSSE = Windows && (FastCall || !FI.getHasRegParm()) ? 3 : 0;
     unsigned Index = 0;
     for (auto &Arg : FI.arguments())
       Arg.info = classifyArgument(Arg.type, FreeRegs, FreeSSE,

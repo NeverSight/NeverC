@@ -351,3 +351,34 @@ int read(struct Nested n, struct Field f) { return n.a.x + f.x; }
     EXPECT_EQ(R.exitCode, 0) << R.err;
   }
 }
+
+TEST_F(I386FrontendTest, MicrosoftCRecordsOwnBitfieldUnitsAndZeroWidthRules) {
+  const auto Source = tmpFile("ms-bitfield.c");
+  writeFile(Source, R"(
+struct Units { unsigned a:3; unsigned short b:9; unsigned c:13; };
+union Bits { unsigned a:3; unsigned short b:9; unsigned c:13; };
+struct Zero { short a:3; unsigned :0; short b:2; char tail; };
+struct Leading { unsigned :0; char a; unsigned :0; char b; };
+#pragma pack(push, 1)
+struct Packed { unsigned a:3; unsigned short b:9; unsigned c:13; };
+struct PackedZero { short a:3; unsigned :0; short b:2; char tail; };
+#pragma pack(pop)
+struct Empty {};
+_Static_assert(sizeof(struct Units) == 12, "separate units");
+_Static_assert(sizeof(union Bits) == 4, "union storage");
+_Static_assert(_Alignof(union Bits) == 1, "union bitfield alignment");
+_Static_assert(sizeof(struct Zero) == 8, "zero-width separator");
+_Static_assert(__builtin_offsetof(struct Zero, tail) == 6, "complete units");
+_Static_assert(sizeof(struct Leading) == 2, "ignore leading zero-width fields");
+_Static_assert(sizeof(struct Packed) == 10, "packed separate units");
+_Static_assert(sizeof(struct PackedZero) == 5, "packed zero-width alignment");
+_Static_assert(sizeof(struct Empty) == 4, "C empty record");
+unsigned read(struct Units *p) { p->b = 257; return p->a + p->b + p->c; }
+)");
+  for (const char *Arch : {"i386", "x86_64"}) {
+    const auto R = ncc({std::string("--target=") + Arch + "-pc-windows-msvc",
+                        "-S", "-emit-llvm", Source.string(), "-o",
+                        tmpFile("ms-bitfield.ll").string()});
+    EXPECT_EQ(R.exitCode, 0) << R.err;
+  }
+}

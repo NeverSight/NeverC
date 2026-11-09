@@ -322,6 +322,9 @@ void CompilerInvocationBase::GenerateLangArgs(const LangOptions &Opts,
 #include "neverc/Invoke/Options.td.h"
 #undef LANG_OPTION_WITH_MARSHALLING
 
+  if (!Opts.MSBitfields && T.isWindowsMSVCEnvironment())
+    emitArg(Consumer, OPT_mno_ms_bitfields);
+
   if (Opts.GNUCVersion != 0) {
     unsigned Major = Opts.GNUCVersion / 100 / 100;
     unsigned Minor = (Opts.GNUCVersion / 100) % 100;
@@ -472,6 +475,9 @@ bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
   PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
 #include "neverc/Invoke/Options.td.h"
 #undef LANG_OPTION_WITH_MARSHALLING
+
+  Opts.MSBitfields = Args.hasFlag(OPT_mms_bitfields, OPT_mno_ms_bitfields,
+                                  T.isWindowsMSVCEnvironment());
 
   if (const Arg *A = Args.getLastArg(OPT_fcf_protection_EQ)) {
     llvm::StringRef Name = A->getValue();

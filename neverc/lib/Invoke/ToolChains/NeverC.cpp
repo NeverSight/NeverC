@@ -1130,8 +1130,11 @@ void NeverC::AddX86TargetArgs(const ArgList &Args,
           << A->getSpelling() << Value;
     }
   } else if (getToolChain().getTriple().isWindowsMSVCEnvironment()) {
-    CmdArgs.push_back("-mllvm");
-    CmdArgs.push_back("-x86-asm-syntax=intel");
+    if (!Args.hasArg(options::OPT_fllvm_backend_EQ)) {
+      CmdArgs.push_back("-mllvm");
+      CmdArgs.push_back("-x86-asm-syntax=intel");
+    }
+    CmdArgs.push_back("-inline-asm=intel");
   }
 
   if (Arg *A = Args.getLastArg(options::OPT_mskip_rax_setup,
@@ -3172,10 +3175,8 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
           << A->getValue() << A->getOption().getName();
   }
 
-  if (Args.hasFlag(options::OPT_mms_bitfields, options::OPT_mno_ms_bitfields,
-                   false)) {
-    CmdArgs.push_back("-mms-bitfields");
-  }
+  Args.AddLastArg(CmdArgs, options::OPT_mms_bitfields,
+                  options::OPT_mno_ms_bitfields);
 
   if (Args.hasFlag(options::OPT_fms_volatile, options::OPT_fno_ms_volatile,
                    Triple.isX86() && IsWindowsMSVC))

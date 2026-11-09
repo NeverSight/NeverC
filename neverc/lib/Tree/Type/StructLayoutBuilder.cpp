@@ -1,3 +1,4 @@
+#include "MicrosoftStructLayout.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Tree/Core/Attr.h"
 #include "neverc/Tree/Core/TreeContext.h"
@@ -730,7 +731,13 @@ TreeContext::getStructRecordLayout(const RecordDecl *D) const {
 
   const StructRecordLayout *NewEntry = nullptr;
 
-  {
+  if (getTargetInfo().getTriple().isWindowsMSVCEnvironment() &&
+      D->isMsStruct(*this)) {
+    const auto Layout = detail::computeMicrosoftStructLayout(*this, D);
+    NewEntry = new (*this) StructRecordLayout(
+        *this, Layout.Size, Layout.Alignment, Layout.RequiredAlignment,
+        Layout.UnadjustedAlignment, Layout.Size, Layout.FieldOffsets);
+  } else {
     ItaniumRecordLayoutBuilder Builder(*this);
     Builder.Layout(D);
 
