@@ -4021,6 +4021,12 @@ public:
   std::map<const clang::CallExpr *, FunctionalBindFactorySource> VerifiedBindFactories;
   std::map<const clang::CallExpr *, FunctionalBindCallSource> VerifiedBindCalls;
   std::map<const clang::CallExpr *, FunctionalBindReferenceCallSource> VerifiedBindReferenceCalls;
+  // Published only with each exact factory/value/call and its complete SDK,
+  // ordinary body, copy and lifetime proofs. Record/type equality never picks
+  // a stored member; the native member-pointer bytes remain opaque padding.
+  std::map<const clang::CXXRecordDecl *, FunctionalBindMemberNaturalLayout> VerifiedBindMemberRecords;
+  std::map<const clang::CallExpr *, FunctionalBindMemberFactorySource> VerifiedBindMemberFactories;
+  std::map<const clang::CallExpr *, FunctionalBindMemberCommonCallSource> VerifiedBindMemberCalls;
   std::map<const clang::CXXConstructExpr *, FunctionalBindCopySource> VerifiedBindCopies;
   std::map<const clang::CXXRecordDecl *, FunctionalBindDestructionSource> VerifiedBindDestructions;
   std::map<const clang::CallExpr *, FunctionalNotFnFactorySource> VerifiedNotFnFactories;
@@ -4068,6 +4074,7 @@ public:
       clang::SourceLocation Location, unsigned Depth = 0);
   std::string functionalBindTupleStorageType(const FunctionalBindStorage &Storage,
       clang::SourceLocation Location);
+  std::optional<FunctionalBindNaturalLayout> verifiedFunctionalBindLayout(const clang::CXXRecordDecl *Record);
   std::optional<UtilityTupleRecord> verifiedFunctionalBindTupleLayout(const clang::CXXRecordDecl *Record);
   json::Object zeroFunctionalBindTupleStorage(const FunctionalBindStorage &Storage,
       clang::SourceLocation Location);

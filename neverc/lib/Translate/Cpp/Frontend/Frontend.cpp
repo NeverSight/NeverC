@@ -63,6 +63,18 @@ static std::optional<FunctionalNotFnStorage> functionalNotFnLayout(
   return std::nullopt;
 }
 
+// Physical storage metadata only. Every required record still needs its
+// independently completed operation and lifecycle certificates before emission.
+static std::optional<FunctionalBindNaturalLayout> functionalBindTranslationLayout(
+    const State &S, const SourceManager &Sources, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  if (const auto Runtime = describeFunctionalBindRuntimeLayout(S, Sources, Record, Context))
+    return Runtime;
+  if (const auto Member = describeFunctionalBindMemberNaturalLayout(S, Sources, Record, Context))
+    return Member->Layout;
+  return std::nullopt;
+}
+
 static bool standardExceptionSpecification(const FunctionProtoType *Prototype) {
   if (!Prototype)
     return false;
@@ -13628,9 +13640,11 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
           if (type(NotFn->CallableType, L, false, Depth + 1).empty()) return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
-      } else if (const auto Bind = describeFunctionalBindRuntimeLayout(S, Sources, D, Context)) {
+      } else if (const auto Bind = functionalBindTranslationLayout(S, Sources, D, Context)) {
         if (RequiredFunctionalBindRecords.insert(D->getCanonicalDecl()).second) {
-          if (type(Bind->Storage.CallableType, L, false, Depth + 1).empty() ||
+          const auto Member = describeFunctionalBindMemberNaturalLayout(S, Sources, D, Context);
+          const auto Carrier = Member ? Member->CallableStorageType : Bind->Storage.CallableType;
+          if (type(Carrier, L, false, Depth + 1).empty() ||
               !requireFunctionalBindTupleStorage(Bind->Storage, L, Depth + 1)) return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
@@ -13739,10 +13753,12 @@ bool Adapter::requireUtilityPair(const CXXRecordDecl *Record,
 // add nested bind elements to ordinary tuple operations or constructors.
 static bool functionalBindNeedsOwnedTupleStorage(const State &S, const SourceManager &SM,
     const FunctionalBindStorage &Storage, const ASTContext &Context) {
+  const auto Member = describeFunctionalBindMemberStorage(S, SM, Storage.Record, Context);
   return llvm::any_of(Storage.Arguments.Elements, [&](const UtilityTupleElement &Element) {
     if (Element.EmptyBase) return true;
     const auto *Record = Element.Field ? Element.getType()->getAsCXXRecordDecl() : nullptr;
-    return Record && describeFunctionalBindStorage(S, SM, Record, Context).has_value();
+    return Record && ((Member && Record->getCanonicalDecl() == Member->Owner->getCanonicalDecl()) ||
+        describeFunctionalBindStorage(S, SM, Record, Context).has_value());
   });
 }
 
@@ -13766,6 +13782,29 @@ static bool sameFunctionalBindTupleStorage(const FunctionalBindStorage &Left,
   return true;
 }
 
+std::optional<FunctionalBindNaturalLayout> Adapter::verifiedFunctionalBindLayout(const CXXRecordDecl *Record) {
+  const auto *Key = Record ? Record->getCanonicalDecl() : nullptr;
+  const auto Found = Key ? VerifiedBindRecords.find(Key) : VerifiedBindRecords.end();
+  if (Found == VerifiedBindRecords.end()) return std::nullopt;
+  const auto Fresh = functionalBindTranslationLayout(S, Sources, Record, Context);
+  if (!Fresh || !sameFunctionalBindTupleStorage(Found->second.Storage, Fresh->Storage, Context) ||
+      Found->second.PaddedBase != Fresh->PaddedBase ||
+      (!Fresh->BaseStorageType.isNull() && !Context.hasSameType(Found->second.BaseStorageType, Fresh->BaseStorageType)))
+    return std::nullopt;
+  const auto Member = describeFunctionalBindMemberNaturalLayout(S, Sources, Record, Context);
+  const auto Completed = VerifiedBindMemberRecords.find(Key);
+  if (Member) {
+    if (Completed == VerifiedBindMemberRecords.end() ||
+        !sameFunctionalBindTupleStorage(Completed->second.Layout.Storage, Fresh->Storage, Context) ||
+        Completed->second.Layout.PaddedBase != Fresh->PaddedBase ||
+        !Context.hasSameType(Completed->second.CallableStorageType, Member->CallableStorageType) ||
+        Context.getTypeSize(Member->CallableStorageType) != Context.getTypeSize(Fresh->Storage.CallableType) ||
+        Context.getTypeAlign(Member->CallableStorageType) != Context.getTypeAlign(Fresh->Storage.CallableType))
+      return std::nullopt;
+  } else if (Completed != VerifiedBindMemberRecords.end()) return std::nullopt;
+  return Fresh;
+}
+
 bool Adapter::requireFunctionalBindTupleStorage(const FunctionalBindStorage &Storage,
     SourceLocation Location, unsigned Depth) {
   if (Depth > 64 || !Storage.Record || !Storage.BoundArguments ||
@@ -13776,7 +13815,7 @@ bool Adapter::requireFunctionalBindTupleStorage(const FunctionalBindStorage &Sto
   const bool HasOwnedElements = functionalBindNeedsOwnedTupleStorage(S, Sources, Storage, Context);
   if (!HasOwnedElements)
     return !type(Storage.BoundArguments->getType(), Location, false, Depth).empty();
-  const auto Actual = describeFunctionalBindRuntimeLayout(S, Sources, Storage.Record, Context);
+  const auto Actual = functionalBindTranslationLayout(S, Sources, Storage.Record, Context);
   if (!Actual || !sameFunctionalBindTupleStorage(Storage, Actual->Storage, Context)) {
     reject(Location, "bind tuple layout", "The current target tuple must match its exact owning storage.", "TR0203");
     return false;
@@ -13807,7 +13846,7 @@ std::string Adapter::functionalBindTupleStorageType(const FunctionalBindStorage 
     SourceLocation Location) {
   const bool HasOwnedElements = functionalBindNeedsOwnedTupleStorage(S, Sources, Storage, Context);
   if (!HasOwnedElements) return type(Storage.BoundArguments->getType(), Location);
-  const auto Actual = describeFunctionalBindRuntimeLayout(S, Sources, Storage.Record, Context);
+  const auto Actual = verifiedFunctionalBindLayout(Storage.Record);
   const auto Found = RequiredFunctionalBindTuples.find(Storage.Arguments.Record->getCanonicalDecl());
   if (!Actual || !sameFunctionalBindTupleStorage(Storage, Actual->Storage, Context) ||
       Found == RequiredFunctionalBindTuples.end() ||
@@ -13825,7 +13864,7 @@ std::optional<UtilityTupleRecord> Adapter::verifiedFunctionalBindTupleLayout(con
   std::optional<UtilityTupleRecord> Tuple;
   for (const auto *Owner : Found->second) {
     const auto Verified = VerifiedBindRecords.find(Owner);
-    const auto Actual = describeFunctionalBindRuntimeLayout(S, Sources, Owner, Context);
+    const auto Actual = verifiedFunctionalBindLayout(Owner);
     if (Verified == VerifiedBindRecords.end() || !Actual ||
         !sameFunctionalBindTupleStorage(Verified->second.Storage, Actual->Storage, Context) ||
         Actual->Storage.Arguments.Record->getCanonicalDecl() != Record->getCanonicalDecl()) {
@@ -14329,10 +14368,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(NotFn->CallableType, L));
     } else if (const auto Found = VerifiedBindRecords.find(R->getCanonicalDecl());
                Found != VerifiedBindRecords.end()) {
-      const auto Bind = describeFunctionalBindRuntimeLayout(S, Sources, R, Context);
+      const auto Bind = verifiedFunctionalBindLayout(R);
       if (!Bind || Found->second.PaddedBase != Bind->PaddedBase) throw Failure{};
       if (Bind->PaddedBase) Args.push_back(zero(Bind->BaseStorageType, L));
-      Args.push_back(zero(Bind->Storage.CallableType, L));
+      const auto Member = VerifiedBindMemberRecords.find(R->getCanonicalDecl());
+      Args.push_back(zero(Member == VerifiedBindMemberRecords.end()
+          ? Bind->Storage.CallableType : Member->second.CallableStorageType, L));
       Args.push_back(zeroFunctionalBindTupleStorage(Bind->Storage, L));
     } else if (auto Wrapper =
                    approvedFunctionalReferenceRecord(S, Sources, R, Context)) {
@@ -30388,7 +30429,7 @@ static void orderCoreV2Records(Adapter &A) {
     const auto NotFn = functionalNotFnLayout(A.S, A.Sources, R, A.Context);
     const auto BindEntry = A.VerifiedBindRecords.find(R->getCanonicalDecl());
     const auto Bind = BindEntry != A.VerifiedBindRecords.end()
-        ? describeFunctionalBindRuntimeLayout(A.S, A.Sources, R, A.Context)
+        ? A.verifiedFunctionalBindLayout(R)
         : std::optional<FunctionalBindNaturalLayout>();
     if (BindEntry != A.VerifiedBindRecords.end()) {
       const auto &Checked = BindEntry->second;
@@ -30686,7 +30727,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
         : std::optional<FunctionalNotFnStorage>();
     const auto BindEntry = VerifiedBindRecords.find(R->getCanonicalDecl());
     const auto Bind = S.coreV2() && BindEntry != VerifiedBindRecords.end()
-        ? describeFunctionalBindRuntimeLayout(S, Sources, R, Context)
+        ? verifiedFunctionalBindLayout(R)
         : std::optional<FunctionalBindNaturalLayout>();
     if (BindEntry != VerifiedBindRecords.end()) {
       const auto &Checked = BindEntry->second;
@@ -30730,8 +30771,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       if (Bind->PaddedBase)
         Fields.push_back(json::Object{{"name", "nct_bind_base_storage"},
             {"type", type(Bind->BaseStorageType, R->getLocation())}});
+      const auto Member = VerifiedBindMemberRecords.find(R->getCanonicalDecl());
+      const auto Carrier = Member == VerifiedBindMemberRecords.end()
+          ? Bind->Storage.CallableType : Member->second.CallableStorageType;
       Fields.push_back(json::Object{{"name", "nct_bind_callable"},
-          {"type", type(Bind->Storage.CallableType, R->getLocation())}});
+          {"type", type(Carrier, R->getLocation())}});
       Fields.push_back(json::Object{{"name", "nct_bind_bound"},
           {"type", functionalBindTupleStorageType(Bind->Storage, R->getLocation())}});
     } else if (FunctionalReference) {
