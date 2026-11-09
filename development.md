@@ -561,6 +561,14 @@ ordering or inter-function alignment. `--keep DIR` retains sources, command
 logs, object hashes and machine-readable results. The current NeverC i386
 qualification covers ELF; Windows/Darwin i386 source ABIs remain unqualified.
 
+The 2026-11-08 source batch passes all 196 selected x86/i386 frontend tests.
+The i386 MPX C profiles pass 3,216 operand/ABI comparisons and reject 298
+corruption controls. Including x64 embedded/full-backend regression profiles,
+the totals are 17,136 comparisons and 2,302 controls. Independent full-LLVM
+baselines cover both code modes and all three object formats. These are
+encoding and transport results; native bounds algorithms are not executed by
+this witness.
+
 [tests/verify-mpx-state.py](tests/verify-mpx-state.py) supplies a freestanding CPL0 QEMU guest with its own
 page tables, XCR0, BNDCFG and exception gates. It executes native enable/disable,
 bounds-check, bounds-table hit/miss/fault, repeated-fault and CFG tests. Example:
@@ -3004,9 +3012,9 @@ from an explicit abort. One machine pseudo owns both instructions and the
 local fallback, so no spill, call, padding or C return splits the checkpoint.
 This does not execute a general transaction body or restore an external one.
 
-The generic x64 `__builtin_ia32_cpuidex(int *, unsigned, unsigned)` spelling
-uses the existing native CPUID interface, including RBX preservation. Callers
-can check RTM availability without inline assembly or Microsoft language mode.
+The generic `__builtin_ia32_cpuidex(int *, unsigned, unsigned)` spelling
+uses the native CPUID interface in both modes, including EBX/RBX preservation.
+Callers can check RTM availability without inline assembly or Microsoft language mode.
 The pair uses `llvm.x86.rtm.abort.pair`, with an immediate argument and
 conservative memory, convergence and no-duplication effects. Its lowering is
 shared with the LLVM fork. `sync-x86-rtm-abort-pair.py` appends its opcode and
@@ -3029,6 +3037,13 @@ Forced abort checks omit it and require exact statuses 0, 2, 6 and 8. This mode
 also clears CPUID.RTM, so only the fixture's explicit `sde-abort-N` entry
 bypasses discovery under SDE. Production providers retain their CPUID guard.
 Emulator results do not establish physical RTM behavior or general rollback.
+
+The 2026-11-08 i386 driver passes 81,920 candidate/reference pair comparisons
+and rejects 70 corrupted results under SDE. Together with the three x64
+embedded/LLVM regression routes, 327,680 pairs and 280 corruption controls pass.
+The generated intrinsic-ID update also passes the REP state and bounded-system
+regressions and strict linked-artifact global-state auditing with no findings
+or unscannable inputs.
 
 ## Native HLE operation contexts
 
