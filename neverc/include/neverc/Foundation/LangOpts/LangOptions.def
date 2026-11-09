@@ -98,7 +98,6 @@ VALUE_LANGOPT(AlignDouble            , 1, 0, "Controls if doubles should be alig
 VALUE_LANGOPT(DoubleSize            , 32, 0, "width of double")
 VALUE_LANGOPT(LongDoubleSize        , 32, 0, "width of long double")
 COMPATIBLE_VALUE_LANGOPT(PIE         , 1, 0, "is pie")
-COMPATIBLE_VALUE_LANGOPT(I386PICLevel, 2, 2, "i386 position independent code level")
 COMPATIBLE_LANGOPT(GNUInline         , 1, 0, "GNU inline semantics")
 COMPATIBLE_LANGOPT(NoInlineDefine    , 1, 0, "__NO_INLINE__ predefined macro")
 COMPATIBLE_LANGOPT(Deprecated        , 1, 0, "__DEPRECATED predefined macro")

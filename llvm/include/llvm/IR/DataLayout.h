@@ -129,7 +129,6 @@ private:
     MM_ELF,
     MM_MachO,
     MM_WinCOFF,
-    MM_WinCOFFX86,
     MM_GOFF,
     MM_Mips,
     MM_XCOFF
@@ -292,12 +291,8 @@ public:
 
   /// Returns true if symbols with leading question marks should not receive IR
   /// mangling. True for Windows mangling modes.
-  bool hasMicrosoftFastStdCallMangling() const {
-    return ManglingMode == MM_WinCOFFX86;
-  }
-
   bool doNotMangleLeadingQuestionMark() const {
-    return ManglingMode == MM_WinCOFF || ManglingMode == MM_WinCOFFX86;
+    return ManglingMode == MM_WinCOFF;
   }
 
   bool hasLinkerPrivateGlobalPrefix() const { return ManglingMode == MM_MachO; }
@@ -318,7 +313,6 @@ public:
     case MM_XCOFF:
       return '\0';
     case MM_MachO:
-    case MM_WinCOFFX86:
       return '_';
     }
     llvm_unreachable("invalid mangling mode");
@@ -330,7 +324,6 @@ public:
       return "";
     case MM_ELF:
     case MM_WinCOFF:
-    case MM_WinCOFFX86:
       return ".L";
     case MM_GOFF:
       return "@";

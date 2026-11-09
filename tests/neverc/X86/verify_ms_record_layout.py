@@ -12,10 +12,11 @@ import re
 import subprocess
 
 TRIPLES = (
-    "i386-pc-windows-msvc", "x86_64-pc-windows-msvc",
-    "aarch64-pc-windows-msvc", "i386-unknown-linux-gnu",
-    "i386-apple-macosx10.13",
+    "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+    "x86_64-apple-macosx10.13", "aarch64-apple-macosx11.0",
 )
+
 BODIES = (
     "unsigned a:3; unsigned short b:9; unsigned c:13;",
     "unsigned a:31; unsigned b:2; unsigned c:17;",

@@ -13,17 +13,11 @@
 #include <prfchiintrin.h>
 #endif
 
-#ifdef __x86_64__
 // On x86_64 the 32-bit operand "mov x %ebx" zero-extends and clobbers the
 // upper half of rbx, so we save/restore the full 64-bit register.
 #define __SAVE_GPRBX "mov {%%rbx, %%rax |rax, rbx};"
 #define __RESTORE_GPRBX "mov {%%rax, %%rbx |rbx, rax};"
 #define __TMPGPR "rax"
-#else
-#define __SAVE_GPRBX "mov {%%ebx, %%eax |eax, ebx};"
-#define __RESTORE_GPRBX "mov {%%eax, %%ebx |ebx, eax};"
-#define __TMPGPR "eax"
-#endif
 
 #define __SSC_MARK(__Tag)                                                      \
   __asm__ __volatile__(__SAVE_GPRBX                                            \

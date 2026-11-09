@@ -34,8 +34,6 @@ std::string Linux::getMultiarchTriple(const Driver &D,
     }
   }
   switch (TargetTriple.getArch()) {
-  case llvm::Triple::x86:
-    return "i386-linux-gnu";
   case llvm::Triple::x86_64:
     return "x86_64-linux-gnu";
   case llvm::Triple::aarch64:

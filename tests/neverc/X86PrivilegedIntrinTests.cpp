@@ -135,30 +135,25 @@ TEST_F(X86PrivilegedIntrinTest, PortableScalarSystemBuiltinsKeepNativeEffects) {
       __builtin_ia32_inbyte(0x1234);
     }
   )");
-  for (const char *Target :
-       {"i386-unknown-linux-gnu", "x86_64-unknown-linux-gnu",
-        "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
+  for (const char *Target : {"x86_64-unknown-linux-gnu",
+                             "x86_64-pc-windows-msvc", "x86_64-apple-darwin"})
     for (const char *Opt : {"-O0", "-O2"}) {
       SCOPED_TRACE(Target);
       SCOPED_TRACE(Opt);
       for (bool EmitIR : {true, false}) {
-        const bool I386 = std::string(Target).rfind("i386", 0) == 0;
-        // The standalone scalar witness covers actual i386 full-backend output.
-        if (I386 && !EmitIR)
-          continue;
         auto Output = tmpFile(EmitIR ? "scalar_system.ll" : "scalar_system.s");
         std::vector<std::string> Args = {std::string("--target=") + Target,
                                          "-std=c23",
                                          "-ffreestanding",
                                          "-fno-builtin-mimalloc",
                                          "-fno-lto",
+                                         "-mllvm",
+                                         "-verify-machineinstrs",
                                          Opt,
                                          "-S",
                                          Source.string(),
                                          "-o",
                                          Output.string()};
-        if (!I386)
-          Args.insert(Args.end(), {"-mllvm", "-verify-machineinstrs"});
         if (EmitIR)
           Args.push_back("-emit-llvm");
         auto Result = ncc(Args);
@@ -814,97 +809,6 @@ TEST_F(X86PrivilegedIntrinTest, SystemRegisterIndicesAreChecked) {
                 Error.find("outside the valid range") != std::string::npos ||
                 Error.find("constant integer") != std::string::npos)
         << Error;
-  }
-}
-
-TEST_F(X86PrivilegedIntrinTest, I386SystemRegisterTypesAndNativeIR) {
-  const auto Source = tmpFile("i386_system_registers.c");
-  writeFile(Source, R"(
-    #if defined(_MSC_VER)
-    #include <intrin.h>
-    _Static_assert(_Generic(__readcr0(), unsigned long: 1, default: 0), "cr0");
-    _Static_assert(_Generic(__readdr(0), unsigned: 1, default: 0), "dr0");
-    unsigned microsoft(unsigned value) {
-      __writecr0(value); __writecr2(value); __writecr3(value); __writecr4(value);
-      __writedr(0, value); __writedr(7, value);
-      return __readcr0() ^ __readcr2() ^ __readcr3() ^ __readcr4() ^ __readdr(7);
-    }
-    #endif
-    _Static_assert(_Generic(__builtin_ia32_readcr32(0), unsigned: 1, default: 0), "native cr");
-    unsigned portable(unsigned value) {
-      __builtin_ia32_writecr32(0, value);
-      __builtin_ia32_writecr32(2, value);
-      __builtin_ia32_writecr32(3, value);
-      __builtin_ia32_writecr32(4, value);
-      __builtin_ia32_writedr32(4, value);
-      __builtin_ia32_writedr32(5, value);
-      __builtin_ia32_readcr32(3);
-      return __builtin_ia32_readcr32(3) ^ __builtin_ia32_readdr32(5);
-    }
-  )");
-  for (bool Microsoft : {false, true})
-    for (const char *Opt : {"-O0", "-O2"}) {
-      SCOPED_TRACE(Microsoft);
-      SCOPED_TRACE(Opt);
-      const auto Output = tmpFile("i386_system_registers.ll");
-      std::vector<std::string> Args = {"--target=i386-unknown-linux-gnu",
-                                       "-ffreestanding",
-                                       "-fno-builtin-mimalloc",
-                                       "-fno-lto",
-                                       "-Werror",
-                                       Opt,
-                                       "-S",
-                                       "-emit-llvm",
-                                       Source.string(),
-                                       "-o",
-                                       Output.string()};
-      if (Microsoft)
-        Args.insert(Args.end(), {"-fms-extensions", "-D_MSC_VER=1930"});
-      const auto R = ncc(Args);
-      ASSERT_EQ(R.exitCode, 0) << R.err;
-      const auto Text = readFile(Output);
-      for (const char *Op : {"readcr32", "writecr32", "readdr32", "writedr32"})
-        EXPECT_NE(Text.find(std::string("@llvm.x86.") + Op + "("),
-                  std::string::npos)
-            << Text;
-      EXPECT_EQ(Text.find(" asm "), std::string::npos) << Text;
-      EXPECT_EQ(Text.find("@llvm.x86.readcr("), std::string::npos) << Text;
-      EXPECT_EQ(Text.find("@llvm.x86.readdr("), std::string::npos) << Text;
-    }
-}
-
-TEST_F(X86PrivilegedIntrinTest, I386SystemRegisterModesAndIndicesAreChecked) {
-  for (const auto &[Target, Call, Diagnostic] :
-       {std::tuple{"x86_64-pc-windows-msvc", "__builtin_ia32_readcr32(0)",
-                   "32-bit x86"},
-        {"x86_64-pc-windows-msvc", "__builtin_ia32_writedr32(0, 0)",
-         "32-bit x86"},
-        {"i386-unknown-linux-gnu", "__readcr8()", "64-bit x86"},
-        {"i386-unknown-linux-gnu", "__writecr8(0)", "64-bit x86"},
-        {"i386-unknown-linux-gnu", "__builtin_ia32_readcr32(8)",
-         "control register"},
-        {"i386-unknown-linux-gnu", "__builtin_ia32_writecr32(1, 0)",
-         "control register"},
-        {"i386-unknown-linux-gnu", "__builtin_ia32_readdr32(8)", "valid range"},
-        {"i386-unknown-linux-gnu", "__builtin_ia32_writedr32(8, 0)",
-         "valid range"},
-        {"i386-unknown-linux-gnu", "__builtin_ia32_readcr32(n)",
-         "constant integer"},
-        {"i386-unknown-linux-gnu", "__builtin_ia32_writedr32(n, 0)",
-         "constant integer"}}) {
-    SCOPED_TRACE(Call);
-    const auto Source = tmpFile("invalid_i386_system_register.c");
-    writeFile(Source,
-              std::string("#include <intrin.h>\nvoid f(unsigned n) { ") + Call +
-                  "; }\n");
-    std::vector<std::string> Args = {std::string("--target=") + Target,
-                                     "-ffreestanding", "-fsyntax-only",
-                                     Source.string()};
-    if (std::string(Target).rfind("i386", 0) == 0)
-      Args.insert(Args.end(), {"-fms-extensions", "-D_MSC_VER=1930"});
-    const auto R = ncc(Args);
-    EXPECT_NE(R.exitCode, 0);
-    EXPECT_NE(R.err.find(Diagnostic), std::string::npos) << R.err;
   }
 }
 

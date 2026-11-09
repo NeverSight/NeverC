@@ -20,11 +20,9 @@ PROFILES = tuple(f"{compiler}-O{level}" for compiler in
                  ("llvm", "neverc", "neverc-ir") for level in (0, 2))
 
 
-def sources(protected_mode=False):
+def sources():
     ir, c = "", ""
     for kind, operation in enumerate(OPERATIONS):
-        if protected_mode and operation != "sysexit32":
-            continue
         bits = 64 if kind & 1 else 32
         sysret = kind < 2
         args = f"i{bits}, i{bits}, i64" if sysret else f"i{bits}, i{bits}"
@@ -110,13 +108,7 @@ def main():
     parser.add_argument("--neverc", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--profile", choices=PROFILES, action="append")
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--i386", action="store_true",
-                      help="qualify LLVM SYSEXIT32 in protected 32-bit code")
-    mode.add_argument("--code16", action="store_true",
-                      help="qualify LLVM SYSEXIT32 in protected 16-bit code")
     args = parser.parse_args()
-    protected_mode = args.i386 or args.code16
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, TMPDIR=str(output))
@@ -143,13 +135,11 @@ def main():
     for name in ("llc", "opt", "llvm-objdump"):
         tools[name] = str((args.llvm_bin / name).resolve())
     tools["neverc"] = str(args.neverc.resolve())
-    profiles = args.profile or (PROFILES[:2] if protected_mode else PROFILES)
-    if protected_mode and any(not profile.startswith("llvm-") for profile in profiles):
-        parser.error("NeverC's native target is x86-64")
-    ir, c = sources(protected_mode)
+    profiles = args.profile or PROFILES
+    ir, c = sources()
     (output / "input.ll").write_text(ir)
     (output / "input.c").write_text(c)
-    entry = "generated_sysexit32_plain" if protected_mode else "generated_sysret32_plain"
+    entry = "generated_sysret32_plain"
     (output / "guest.ld").write_text(f"ENTRY({entry})\n" + """
 SECTIONS {
   . = 0x10000;
@@ -186,24 +176,20 @@ SECTIONS {
                 run([tools["opt"], "-S", "-passes=default<O2>", source,
                      "-o", optimized], profile + "-opt")
                 source = optimized
-            triple = ("i386-unknown-linux-code16" if args.code16 else
-                      "i386-unknown-linux-gnu" if protected_mode else
-                      "x86_64-unknown-linux-gnu")
+            triple = "x86_64-unknown-linux-gnu"
             run([tools["llc"], f"-mtriple={triple}", f"-{level}",
                  "-verify-machineinstrs", "-filetype=obj", source, "-o", obj],
                 profile + "-compile")
         elf, binary = output / f"{profile}.elf", output / f"{profile}.bin"
-        run([tools["ld.lld"], "-m", "elf_i386" if protected_mode else "elf_x86_64",
+        run([tools["ld.lld"], "-m", "elf_x86_64",
              "-T", output / "guest.ld", obj, "-o", elf], profile + "-link")
         run([tools["objcopy"], "-O", "binary", elf, binary], profile + "-image")
-        disassembly_mode = ["--mattr=+16bit-mode,-32bit-mode"] if args.code16 else []
-        assembly = run([tools["llvm-objdump"], "-d", *disassembly_mode, elf],
+        assembly = run([tools["llvm-objdump"], "-d", elf],
                        profile + "-disassembly")
         functions = re.findall(r"^([0-9a-f]+) <(generated_\w+)>:\n(.*?)(?=\n[0-9a-f]+ <|\Z)",
                                assembly, re.M | re.S)
-        assert len(functions) == (4 if protected_mode else 16), assembly
+        assert len(functions) == 16, assembly
         manifest = []
-        narrow_move = None
         for address, name, body in functions:
             operation = next(op for op in OPERATIONS if name.startswith("generated_" + op + "_"))
             mnemonic = operation[:-2] + ("q" if operation.endswith("64") else "l")
@@ -216,52 +202,36 @@ SECTIONS {
                          if int(pc, 16) == terminals[0][0])
             if operation.startswith("sysret"):
                 assert re.match(r"movq\s+%\w+, %rsp\b", instructions[index - 1][1]), body
-            if protected_mode and name == "generated_sysexit32_plain":
-                move_index = next(i for i, (_, text) in enumerate(instructions[:index])
-                                  if re.match(r"movl\s+.*, %ecx\b", text))
-                narrow_move = (int(instructions[move_index][0], 16),
-                               int(instructions[move_index + 1][0], 16))
             # Padding after a terminal is allowed; no executable frame cleanup.
-            assert all(re.match(r"(?:nop\w*|int3|data16|cs nop)\b", text) or
-                       (args.code16 and re.fullmatch(r"leaw\s+\(%si\), %si", text))
+            assert all(re.match(r"(?:nop\w*|int3|data16|cs nop)\b", text)
                        for _, text in instructions[index + 1:]), body
             manifest.append(f"{name} {address} {terminals[0][0]:x} {OPERATIONS.index(operation)}")
         manifest_path = output / f"{profile}.manifest"
         manifest_path.write_text("\n".join(manifest) + "\n")
-        mode = "16" if args.code16 else "32" if protected_mode else "64"
+        mode = "64"
         native = json.loads(run([runner, binary, manifest_path, mode], profile + "-native"))
-        assert native["complete_state_pairs"] == (21760 if protected_mode else 87040), native
+        assert native["complete_state_pairs"] == 87040, native
         # Keep the instruction identity and move adjacency, but feed SYSRET's
         # PC into RSP. The independent operand check must reject this candidate
         # before allowing a comparison against the captured boundary state.
         corrupted = bytearray(binary.read_bytes())
-        if protected_mode:
-            start, stop = narrow_move
-            # Operand-size override is required to corrupt the full ECX in
-            # code16, independently of its original high bits.
-            xor_ecx = bytes.fromhex("66 31 c9" if args.code16 else "31 c9")
-            assert stop - start >= len(xor_ecx)
-            corrupted[start - 0x10000:stop - 0x10000] = (
-                xor_ecx + b"\x90" * (stop - start - len(xor_ecx)))
-        else:
-            plain = next(line.split() for line in manifest
-                         if line.startswith("generated_sysret32_plain "))
-            switch_offset = int(plain[2], 16) - 0x10000 - 3
-            move = corrupted[switch_offset:switch_offset + 3]
-            assert move[0] in (0x48, 0x4c) and move[1] == 0x89 and move[2] & 0xc7 == 0xc4
-            corrupted[switch_offset:switch_offset + 3] = bytes.fromhex("48 89 cc")
+        plain = next(line.split() for line in manifest
+                     if line.startswith("generated_sysret32_plain "))
+        switch_offset = int(plain[2], 16) - 0x10000 - 3
+        move = corrupted[switch_offset:switch_offset + 3]
+        assert move[0] in (0x48, 0x4c) and move[1] == 0x89 and move[2] & 0xc7 == 0xc4
+        corrupted[switch_offset:switch_offset + 3] = bytes.fromhex("48 89 cc")
         negative = output / f"{profile}-wrong-stack.bin"
         negative.write_bytes(corrupted)
         run([runner, negative, manifest_path, mode], profile + "-negative", expected=1)
         diagnostic = (output / f"{profile}-negative.stderr").read_text()
-        assert ("boundary.rcx" in diagnostic or "boundary_pc" in diagnostic
-                if protected_mode else "boundary.rsp == stacks[pi]" in diagnostic)
+        assert "boundary.rsp == stacks[pi]" in diagnostic
         results.append(dict(profile=profile, **native, elf_sha256=sha256(elf),
                             wrong_stack_negative_control="rejected"))
         print(f"{profile}: {native['complete_state_pairs']} complete state pairs", flush=True)
     report = dict(
         scope="Native compiler input transport and successful transfers; ambient CPL/MSRs, CET disabled",
-        host=platform.platform(), code_bits=16 if args.code16 else 32 if protected_mode else 64, profiles=results,
+        host=platform.platform(), code_bits=64, profiles=results,
         source_sha256={p.name: sha256(p) for p in (Path(__file__), ROOT / "system_return_kvm.c", ROOT / "KvmTransferFixture.h")},
         tools={name: dict(path=path, sha256=sha256(path)) for name, path in tools.items()},
         reference="Intel SDM 325462-085US, Vol. 2B SYSRET/SYSEXIT; Vol. 1 3.4.1.1",

@@ -1,8 +1,8 @@
 #ifndef __AMMINTRIN_H
 #define __AMMINTRIN_H
 
-#if !defined(__i386__) && !defined(__x86_64__)
-#error "This header is only meant to be used on x86 targets"
+#if !defined(__x86_64__)
+#error "This header is only meant to be used on x86_64"
 #endif
 
 #include <pmmintrin.h>

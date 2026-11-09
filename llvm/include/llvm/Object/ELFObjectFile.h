@@ -1161,8 +1161,6 @@ template <class ELFT> StringRef ELFObjectFile<ELFT>::getFileFormatName() const {
 template <class ELFT> Triple::ArchType ELFObjectFile<ELFT>::getArch() const {
   bool IsLittleEndian = ELFT::TargetEndianness == llvm::endianness::little;
   switch (EF.getHeader().e_machine) {
-  case ELF::EM_386:
-    return IsLittleEndian ? Triple::x86 : Triple::UnknownArch;
   case ELF::EM_X86_64:
     return Triple::x86_64;
   case ELF::EM_AARCH64:

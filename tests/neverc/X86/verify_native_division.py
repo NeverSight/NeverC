@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare full-dividend LLVM/NeverC division with original i386/x64 instructions."""
+"""Compare full-dividend LLVM/NeverC division with original x64 instructions."""
 
 import argparse
 import hashlib
@@ -18,9 +18,10 @@ def digest(path):
 
 
 def sources(mode):
+    assert mode == 64
     ir, c, cases = [], [], []
     c.append("typedef unsigned long long u64;\n")
-    for bits in (8, 16, 32, 64) if mode == 64 else (8, 16, 32):
+    for bits in (8, 16, 32, 64):
         ty = f"i{bits}"
         cty = {8: "unsigned char", 16: "unsigned short", 32: "unsigned int", 64: "u64"}[bits]
         pair = "{ " + ty + ", " + ty + " }"
@@ -65,7 +66,7 @@ def main():
     parser.add_argument("--llvm-bin", type=Path, required=True)
     parser.add_argument("--neverc", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--mode", type=int, choices=(32, 64), action="append")
+    parser.add_argument("--mode", type=int, choices=(64,), action="append")
     parser.add_argument("--backend", choices=("llvm-legacy", "llvm-new", "neverc", "neverc-ir-legacy", "neverc-ir-new"), action="append")
     args = parser.parse_args()
     output = args.output.resolve()
@@ -89,7 +90,7 @@ def main():
             raise RuntimeError(f"{name}: exit {result.returncode}\n{result.stderr}")
         return result.stdout
 
-    for mode in args.mode or (32, 64):
+    for mode in args.mode or (64,):
         directory = output / str(mode)
         directory.mkdir(exist_ok=True)
         ir, c, cases = sources(mode)
@@ -102,8 +103,6 @@ def main():
              "-fno-pie", "-I", directory, "-c", ROOT / "native_division_harness.c", "-o", oracle], f"{mode}-oracle")
         backends = args.backend or ("llvm-legacy", "llvm-new", "neverc", "neverc-ir-legacy", "neverc-ir-new")
         for backend in backends:
-            if mode == 32 and backend.startswith("neverc"):
-                continue  # NeverC's frontend targets x64; this is a declared matrix.
             for level in ("O0", "O2"):
                 name = f"{mode}-{backend}-{level}"
                 obj, exe = (directory / (name + suffix) for suffix in (".o", ".exe"))
@@ -123,12 +122,12 @@ def main():
                         optimized = directory / (name + "-optimized.ll")
                         run([tools["opt"], "-S", "-passes=default<O2>", lowered, "-o", optimized], name + "-opt")
                         lowered = optimized
-                    run([tools["llc"], "-mtriple=" + ("i386" if mode == 32 else "x86_64") + "-unknown-linux-gnu",
+                    run([tools["llc"], "-mtriple=" + "x86_64" + "-unknown-linux-gnu",
                          "-" + level, "-filetype=obj", "-verify-machineinstrs",
                          *(["-enable-new-pm"] if backend.endswith("new") else []), lowered, "-o", obj], name + "-compile")
                 assembly = run([tools["llvm-objdump"], "-d", obj], name + "-assembly")
                 instructions = re.findall(r"\b(?:i?div)[bwlq]?\s", assembly)
-                expected_functions = 24 if mode == 32 else 32
+                expected_functions = 32
                 if len(instructions) != expected_functions:
                     raise RuntimeError(f"{name}: expected exactly one divide in each function")
                 run([tools["clang"], f"-m{mode}", "-no-pie", oracle, obj, "-o", exe], name + "-link")

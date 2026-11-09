@@ -22,13 +22,13 @@ MPX = module("mpx", "sync-x86-mpx-instructions.py")
 TABLES, EFFECTS = MPX.TABLES, MPX.EFFECTS
 OPERATIONS = ("MOVS", "STOS", "LODS", "CMPS", "SCAS", "INS", "OUTS")
 INSTRUCTIONS = tuple((f"REP_{op}_STATE{bits}", "WRITE_SYSREG64", None, None)
-                     for bits in (64, 32) for op in OPERATIONS)
+                     for bits in (64,) for op in OPERATIONS)
 
 
 def synchronize_table(text):
     overrides, offsets = {}, {}
-    for bits in (64, 32):
-        prefix = "R" if bits == 64 else "E"
+    for bits in (64,):
+        prefix = "R"
         si, di, cx, ax, dx = (prefix + r for r in ("SI", "DI", "CX", "AX", "DX"))
         for operation in OPERATIONS:
             name = f"REP_{operation}_STATE{bits}"

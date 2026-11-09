@@ -1,26 +1,25 @@
 #ifndef __IMMINTRIN_H
 #define __IMMINTRIN_H
 
-#if !defined(__i386__) && !defined(__x86_64__)
-#error "This header is only meant to be used on x86 targets"
+#if !defined(__x86_64__)
+#error "This header is only meant to be used on x86_64"
 #endif
 
 #include <x86gprintrin.h>
 #include <amxintrin.h>
 
-/* NeverC's AVX headers below also need these types without global features. */
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__MMX__) || defined(__neverc__)
+    defined(__MMX__)
 #include <mmintrin.h>
 #endif
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__SSE__) || defined(__neverc__)
+    defined(__SSE__)
 #include <xmmintrin.h>
 #endif
 
 #if !(defined(_MSC_VER) || defined(__SCE__)) || __has_feature(modules) ||      \
-    defined(__SSE2__) || defined(__neverc__)
+    defined(__SSE2__)
 #include <emmintrin.h>
 #endif
 

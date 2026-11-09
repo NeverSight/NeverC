@@ -11,15 +11,14 @@ MPX = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MPX)
 TABLES, EFFECTS = MPX.TABLES, MPX.EFFECTS
 INSTRUCTIONS = tuple((f"{op}_KVM{bits}", op, None, None)
-                     for op in ("VMCALL", "VMMCALL") for bits in (32, 64))
+                     for op in ("VMCALL", "VMMCALL") for bits in (64,))
 
 
 def synchronize_table(text):
     descriptors = {}
     for name, prototype, _, _ in INSTRUCTIONS:
-        prefix = "R" if name.endswith("64") else "E"
-        uses = tuple(prefix + reg for reg in ("AX", "BX", "CX", "DX", "SI"))
-        definitions = (prefix + "AX", "EFLAGS")
+        uses = tuple("R" + reg for reg in ("AX", "BX", "CX", "DX", "SI"))
+        definitions = ("RAX", "EFLAGS")
         text, implicit = EFFECTS.implicit_sequence(text, uses + definitions)
         fields = TABLES.descriptor(text, prototype)
         fields[1:4] = ["0", "0", "0"]

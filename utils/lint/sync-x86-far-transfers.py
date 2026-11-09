@@ -14,9 +14,7 @@ MPX = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MPX)
 TABLES, EFFECTS = MPX.TABLES, MPX.EFFECTS
 SCHEMA = (
-    ("NATIVE_FAR_JUMP32", ("GR32_NOSP", "GR32", "i32imm")),
     ("NATIVE_FAR_JUMP64", ("GR64_NOSP", "GR64", "i32imm")),
-    ("NATIVE_FAR_JUMP_IMM32", ("i32imm", "i32imm", "GR32", "i32imm")),
 )
 INSTRUCTIONS = tuple((name, "NATIVE_FRAME_RETURN64", None, None)
                      for name, _ in SCHEMA)
@@ -28,9 +26,8 @@ def synchronize():
     overrides, offsets = {}, {}
     for name, kinds in SCHEMA:
         text, operand_offset, offsets[name] = MPX.operands(text, kinds)
-        prefix = "R" if name.endswith("64") else "E"
         definitions = ("CS", "SS", "DS", "ES", "FS", "GS", "EFLAGS") + tuple(
-            prefix + reg for reg in ("AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI"))
+            "R" + reg for reg in ("AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI"))
         text, implicit = EFFECTS.implicit_sequence(text, definitions)
         fields = TABLES.descriptor(text, "NATIVE_FRAME_RETURN64")
         fields[1:4] = [str(len(kinds)), "0", "0"]

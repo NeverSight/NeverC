@@ -26,7 +26,7 @@ def main():
     parser.add_argument("--llvm-bin", type=Path, required=True)
     parser.add_argument("--neverc", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--mode", choices=("64", "32", "x32"), action="append")
+    parser.add_argument("--mode", choices=("64",), action="append")
     parser.add_argument("--backend", choices=("llvm-legacy", "llvm-new", "neverc", "neverc-ir-legacy", "neverc-ir-new"), action="append")
     parser.add_argument("--original-site", action="store_true",
                         help="restore state then enter immutable ENCLU at 0x1000")
@@ -70,10 +70,10 @@ SECTIONS {
  /DISCARD/ : { *(.eh_frame*) *(.comment*) *(.note*) }
 }
 ''')
-    for mode in args.mode or ("64", "32", "x32"):
-        bits = 32 if mode == "32" else 64
-        triple = {"64": "x86_64-unknown-linux-gnu", "32": "i386-unknown-linux-gnu", "x32": "x86_64-unknown-linux-gnux32"}[mode]
-        ir, c = FRAMES.sources(bits == 32, {"enclu_transfer_context": (0, bits, 0, "enclu")})
+    for mode in args.mode or ("64",):
+        bits = 64
+        triple = "x86_64-unknown-linux-gnu"
+        ir, c = FRAMES.sources( {"enclu_transfer_context": (0, bits, 0, "enclu")})
         intrinsic = "llvm.x86.enclu.transfer.context"
         if args.original_site:
             intrinsic = "llvm.x86.enclu.transfer.at.context"
@@ -112,7 +112,7 @@ SECTIONS {
                     run([tools["llc"], "-mtriple=" + triple, "-" + level, "-filetype=obj", "-verify-machineinstrs",
                          *(["-enable-new-pm"] if backend.endswith("new") else []), lowered, "-o", obj], name + "-compile")
                 elf, binary = output / (name + ".elf"), output / (name + ".bin")
-                run([tools["ld.lld"], "-m", {"64": "elf_x86_64", "32": "elf_i386", "x32": "elf32_x86_64"}[mode], "-T", linker, obj, "-o", elf], name + "-link")
+                run([tools["ld.lld"], "-m", "elf_x86_64", "-T", linker, obj, "-o", elf], name + "-link")
                 run([tools["objcopy"], "-O", "binary", elf, binary], name + "-image")
                 assembly = run([tools["llvm-objdump"], "-d", elf], name + "-assembly")
                 functions = re.findall(r"^([0-9a-f]+) <(generated_\w+)>:\n(.*?)(?=\n[0-9a-f]+ <|\Z)", assembly, re.M | re.S)

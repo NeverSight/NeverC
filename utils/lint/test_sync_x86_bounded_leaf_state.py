@@ -30,9 +30,9 @@ class BoundedLeafStateTest(unittest.TestCase):
     def test_old_opcodes_are_stable(self):
         ids = STATE.TABLES.enums(self.text)
         self.assertEqual(ids["REP_MOVS_STATE64"], 18540)
-        self.assertEqual(ids["REP_OUTS_STATE32"], 18553)
-        self.assertEqual(ids["ENCLU_STATE64"], 18554)
-        self.assertEqual(ids["GETSEC_STATE64"], 18555)
+        self.assertEqual(ids["REP_OUTS_STATE64"], 18546)
+        self.assertEqual(ids["ENCLU_STATE64"], 18547)
+        self.assertEqual(ids["GETSEC_STATE64"], 18548)
 
     def test_whole_register_and_arithmetic_flag_effects(self):
         start = self.text.index("    /* 0 */ X86::EFLAGS,")

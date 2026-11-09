@@ -37,12 +37,8 @@ unsigned TypeEmitter::neverCCallConvToLLVMCallConv(CallingConv CC) {
   default:
     return llvm::CallingConv::C;
   case CC_X86StdCall:
-    return getTarget().getTriple().getArch() == llvm::Triple::x86
-               ? llvm::CallingConv::X86_StdCall : llvm::CallingConv::C;
   case CC_X86FastCall:
-    return getTarget().getTriple().getArch() == llvm::Triple::x86
-               ? llvm::CallingConv::X86_FastCall
-               : llvm::CallingConv::C;
+    return llvm::CallingConv::C;
   case CC_X86RegCall:
     return llvm::CallingConv::X86_RegCall;
   case CC_Win64:

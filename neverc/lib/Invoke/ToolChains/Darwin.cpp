@@ -35,7 +35,6 @@ darwin::getArchTypeForMachOArchName(llvm::StringRef Str) {
   // translation.
 
   return llvm::StringSwitch<llvm::Triple::ArchType>(Str)
-      .Cases("i386", "i486", "i586", "i686", llvm::Triple::x86)
       .Case("x86_64", llvm::Triple::x86_64)
       .Case("arm64", llvm::Triple::aarch64)
       .Default(llvm::Triple::UnknownArch);
@@ -478,9 +477,6 @@ llvm::StringRef MachO::getMachOArchName(const ArgList &Args) const {
   switch (getTriple().getArch()) {
   default:
     return getDefaultUniversalArchName();
-
-  case llvm::Triple::x86:
-    return "i386";
 
   case llvm::Triple::aarch64:
     return "arm64";

@@ -34,7 +34,6 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
     suffix = "" if bits == 64 else "32"
     read, write = f"llvm.x86.read{bank}{suffix}", f"llvm.x86.write{bank}{suffix}"
     word = f"i{bits}"
-    triple = "x86_64-pc-windows-msvc" if bits == 64 else "i386-unknown-linux-gnu"
     if args.llc:
         read_call = lambda value: f"%{value} = call {word} @{read}(i32 {number})"
         write_call = lambda value: f"call void @{write}(i32 {number}, {word} %{value})"
@@ -66,10 +65,9 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
                       "\n ".join(body) + f"\n ret {word} %{result}\n}}\n")
     else:
         source = directory / (name + ".c")
-        cword = "unsigned long long" if bits == 64 else "unsigned"
         if args.spelling == "builtin":
-            read_c = f"__builtin_ia32_read{bank}{suffix}({number})"
-            write_c = lambda value: f"__builtin_ia32_write{bank}{suffix}({number}, {value});"
+            read_c = f"__builtin_ia32_read{bank}({number})"
+            write_c = lambda value: f"__builtin_ia32_write{bank}({number}, {value});"
             header = ""
         elif bank == "cr":
             read_c = f"__readcr{number}()"
@@ -83,7 +81,7 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
         if variant.startswith("memory_"):
             body.append("*pointer = a;")
         if variant.startswith("flags_"):
-            body.append(f"{cword} carry = (a + b) < a;")
+            body.append("unsigned long long carry = (a + b) < a;")
         if variant in ("write", "writes", "same_writes", "write_read"):
             body.append(write_c("a"))
         if variant in ("writes", "memory_write", "flags_write"):
@@ -91,7 +89,7 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
         if variant == "same_writes":
             body.append(write_c("a"))
         if variant in ("read", "dead", "twice", "write_read", "memory_read", "flags_read"):
-            body.append(f"{cword} first = {read_c};")
+            body.append(f"unsigned long long first = {read_c};")
         if variant == "twice":
             result = f"first ^ {read_c}"
         elif variant.startswith("memory_"):
@@ -102,14 +100,12 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
             result = "first"
         else:
             result = "a ^ b"
-        source.write_text(header + f"{cword} probe({cword} a, "
-                          f"{cword} b, {cword} *pointer) {{\n " +
+        source.write_text(header + "unsigned long long probe(unsigned long long a, "
+                          "unsigned long long b, unsigned long long *pointer) {\n " +
                           "\n ".join(body) + f"\n return {result};\n}}\n")
-        common = [str(args.compiler), f"--target={triple}", "-" + opt,
+        common = [str(args.compiler), "--target=x86_64-pc-windows-msvc", "-" + opt,
                   "-ffreestanding", "-fno-lto", "-fno-stack-protector",
                   "-mllvm", "-verify-machineinstrs", str(source)]
-        if bits == 32 and args.spelling == "microsoft":
-            common += ["-fms-extensions", "-D_MSC_VER=1930"]
         commands = [common + ["-S", "-emit-llvm", "-o", str(ir)]]
         if not args.backend_llc:
             commands.append(common + ["-c", "-o", str(output)])
@@ -122,14 +118,15 @@ def compile_case(args, directory, bank, number, variant, opt, bits):
             raise AssertionError(f"{name}: expected native LLVM register intrinsics")
     backend = args.llc or args.backend_llc
     if backend:
-        run = subprocess.run([str(backend), "-mtriple=" + triple,
+        arch = "x86_64" if bits == 64 else "i686"
+        run = subprocess.run([str(backend), "-mtriple=" + arch + "-pc-windows-msvc",
                               "-" + opt, "-verify-machineinstrs", "-filetype=obj",
                               str(ir), "-o", str(output)], capture_output=True, text=True)
         if run.returncode:
             raise AssertionError(f"{name}: backend failed:\n{run.stderr}")
     image = lief.parse(str(output))
     if image is None:
-        raise AssertionError(f"{name}: expected a native object file")
+        raise AssertionError(f"{name}: expected a COFF object")
     return name, bytes(next(s for s in image.sections if s.name == ".text" and len(s.content)).content)
 
 
@@ -246,7 +243,7 @@ def main():
         directory = args.keep or Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
         count = 0
-        for bits in ((32, 64) if args.llc or args.backend_llc else (64,)):
+        for bits in ((32, 64) if args.llc else (64,)):
             for bank, numbers in (("cr", (0, 2, 3, 4, 8) if bits == 64 else (0, 2, 3, 4)), ("dr", range(8))):
                 for number in numbers:
                     for variant in ((args.variant,) if args.variant else VARIANTS):

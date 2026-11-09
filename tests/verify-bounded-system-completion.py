@@ -5,9 +5,8 @@ Executes surrounding scalar code and intercepts privileged instructions. The
 oracle checks exact operands, memory ordering, retention and saved registers;
 it does not emulate processor history, descriptor loading or TLB broadcasts.
 Requires capstone, lief and unicorn. --llc covers both LLVM code modes;
---backend-llc uses the external driver for i386 and NeverC IR through llc
-for x64; --all-i386-platforms also executes ELF32, COFF32 and Mach-O32
-through the explicit external backend.
+--backend-llc compiles x64 NeverC IR through llc. Legacy-mode machine
+witnesses use --llc directly and do not enable a NeverC source target.
 """
 
 import argparse
@@ -152,14 +151,12 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
             common += ["-mllvm", "-verify-machineinstrs"]
         run(common + ["-S", "-emit-llvm", "-o", ir])
         assert " asm " not in ir.read_text() and f"@{api}(" in ir.read_text()
-        if not args.backend_llc or mode == 32:
-            run(common + ["-c", "-o", obj] +
-                (["-fllvm-backend=" + str(args.backend_llc)] if args.backend_llc else []))
+        if not args.backend_llc:
+            run(common + ["-c", "-o", obj])
     backend = args.llc or args.backend_llc
     if backend:
         common_backend = [backend, "-mtriple=" + triple, "-mattr=+hreset", "-" + opt, "-verify-machineinstrs", ir]
-        if args.llc or mode == 64:
-            run(common_backend + ["-filetype=obj", "-o", obj])
+        run(common_backend + ["-filetype=obj", "-o", obj])
     if variant == "retained":
         for dialect in ("att", "intel"):
             asm = directory / (name + "-" + dialect + ".s")
@@ -294,11 +291,7 @@ def main():
     backend.add_argument("--llc", type=Path)
     backend.add_argument("--backend-llc", type=Path)
     parser.add_argument("--keep", type=Path)
-    parser.add_argument("--all-i386-platforms", action="store_true",
-                        help="execute native i386 source on ELF, COFF and Mach-O")
     args = parser.parse_args()
-    if args.all_i386_platforms and not args.backend_llc:
-        parser.error("--all-i386-platforms requires --backend-llc")
     for key in ("compiler", "llc", "backend_llc"):
         if getattr(args, key):
             setattr(args, key, getattr(args, key).resolve())
@@ -307,11 +300,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix="bounded-system-") as temp:
         directory = args.keep or Path(temp)
         directory.mkdir(parents=True, exist_ok=True)
-        for mode in ((32, 64) if args.llc or args.backend_llc else (64,)):
+        for mode in ((32, 64) if args.llc else (64,)):
             operations = ("hreset", "invlpgb", "invlpgb.addr32", "tlbsync", "tlbsync.control", "vmfunc", "lkgs.reg", "lkgs.mem") if mode == 64 else ("hreset", "invlpgb", "tlbsync", "tlbsync.control", "vmfunc")
-            target = COMMON.TRIPLES[1] if mode == 32 and not args.llc else COMMON.TRIPLES[0]
-            targets = COMMON.TRIPLES if mode == 32 and args.all_i386_platforms else (target,)
-            for target in targets:
+            for target in (COMMON.TRIPLES[0],):
                 for operation, opt, variant in itertools.product(operations, ("O0", "O2"), ("retained", "twice", "memory", "condition")):
                     code = compile_case(args, directory, operation, variant, mode, opt, target)
                     for values in VALUES:
@@ -320,7 +311,7 @@ def main():
                         except Exception as error:
                             raise AssertionError(f"{operation}, {variant}, {mode}, {opt}, {values}: {error}") from error
                         count += 1
-                    object_route = "llvm" if args.llc else "neverc-driver" if not args.backend_llc or mode == 32 else "neverc-ir-to-llvm"
+                    object_route = "llvm" if args.llc else "neverc-driver" if not args.backend_llc else "neverc-ir-to-llvm"
                     profiles.append(dict(operation=operation,mode=mode,target=target,optimization=opt,variant=variant,object_route=object_route,
                                          code_sha256=hashlib.sha256(code).hexdigest(),comparisons=len(VALUES)))
                     if variant == "retained" and (operation.startswith(("invlpgb", "tlbsync")) or operation == "vmfunc"):

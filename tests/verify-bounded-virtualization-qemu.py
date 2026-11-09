@@ -124,12 +124,7 @@ unsigned probe(void) {
              '  __asm__ volatile("cli" : : : "memory");']
     check("timer_ticks > before")
     body += ["  return 16;", "}"]
-    code = "\n".join(body) + "\n"
-    if mode == 32 and not llvm_route:
-        for operation in ("vmload", "vmsave", "invlpga"):
-            code = code.replace(f"__builtin_ia32_{operation}(",
-                                f"__builtin_ia32_{operation}32(")
-    return code, checks + 1
+    return "\n".join(body) + "\n", checks + 1
 
 
 def address_source(mode, llvm_route):
@@ -140,8 +135,7 @@ def address_source(mode, llvm_route):
                         "static unsigned char *const vmcb = (unsigned char *)0x8000;")
     bits = 32 if mode == 64 else 16
     for operation in ("vmload", "vmsave", "invlpga"):
-        suffix = "32" if mode == 32 and not llvm_route else ""
-        code = code.replace(f"__builtin_ia32_{operation}{suffix}(", f"__builtin_ia32_{operation}_addr{bits}(")
+        code = code.replace(f"__builtin_ia32_{operation}(", f"__builtin_ia32_{operation}_addr{bits}(")
         if llvm_route:
             old = operation + ("32" if mode == 32 else "")
             code = code.replace(f'"llvm.x86.{old}"', f'"llvm.x86.{operation}.addr{bits}"')
@@ -177,10 +171,7 @@ def main():
     for option, tool in (("clang", "clang"), ("linker", "ld.lld"), ("objcopy", "objcopy"), ("qemu", "qemu-system-x86_64")):
         parser.add_argument("--" + option, default=shutil.which(tool))
     parser.add_argument("--keep", type=Path)
-    parser.add_argument("--bits", type=int, choices=(32, 64))
     args = parser.parse_args()
-    if args.bits == 32 and not (args.llc or args.backend_llc):
-        parser.error("i386 requires a full LLVM backend")
     if not all((args.clang, args.linker, args.objcopy, args.qemu)):
         parser.error("QEMU, clang, ld.lld and GNU objcopy are required")
     for key in ("compiler", "llc", "backend_llc"):
@@ -194,7 +185,7 @@ def main():
             case_dir = directory / name
             case_dir.mkdir(exist_ok=True)
             count += sum(GUEST.check_guest(args, case_dir, mode, opt, builder, boot)
-                         for mode in ((args.bits,) if args.bits else (32, 64) if args.llc else (64,)) for opt in ("O0", "O2"))
+                         for mode in ((32, 64) if args.llc else (64,)) for opt in ("O0", "O2"))
     print(f"PASS: {count} CPL0 bounded virtualization/state checks in QEMU TCG")
 
 

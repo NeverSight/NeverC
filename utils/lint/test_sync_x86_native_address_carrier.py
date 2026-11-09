@@ -28,7 +28,7 @@ class NativeAddressCarrierTest(unittest.TestCase):
         self.assertIn("X86::GR64RegClassID", operands)
         ids = CARRIER.TABLES.enums(text)
         self.assertEqual(ids["AMX_MEMORY_NATIVE"], 18538)
-        self.assertEqual(ids["NATIVE_ADDRESS64"], 18572)
+        self.assertEqual(ids["NATIVE_ADDRESS64"], 18565)
 
 
 if __name__ == "__main__":

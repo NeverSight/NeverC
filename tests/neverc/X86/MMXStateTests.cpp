@@ -62,8 +62,7 @@ TEST(X86MMXState, FemmsInvalidatesTheCompleteRegisterBank) {
   LLVMInitializeX86TargetInfo();
   LLVMInitializeX86Target();
   LLVMInitializeX86TargetMC();
-  // The pruned target registry exposes x64; full-fork codegen tests cover
-  // i386 separately.
+  // The pruned target registry exposes x64.
   {
     const char *Triple = "x86_64-unknown-linux-gnu";
     SCOPED_TRACE(Triple);

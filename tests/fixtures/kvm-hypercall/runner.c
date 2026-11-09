@@ -20,7 +20,7 @@
 int main(int argc, char **argv) {
   CHECK(argc == 3);
   int bits = atoi(argv[2]);
-  CHECK(bits == 32 || bits == 64);
+  CHECK(bits == 64);
   int kvm = open("/dev/kvm", O_RDWR | O_CLOEXEC);
   if (kvm < 0)
     return 77;
@@ -78,14 +78,6 @@ int main(int argc, char **argv) {
                                                .s = 1,
                                                .g = 1,
                                                .db = 1};
-  if (bits == 32) {
-    sr.cr0 = 0x33;
-    sr.cr3 = 0;
-    sr.cr4 = 0x600;
-    sr.efer = 0;
-    sr.cs.l = 0;
-    sr.cs.db = 1;
-  }
   sr.ldt.unusable = 1;
   CHECK(ioctl(cpu, KVM_SET_SREGS, &sr) == 0);
   FILE *file = fopen(argv[1], "rb");
@@ -108,11 +100,7 @@ int main(int argc, char **argv) {
     // A userspace KVM service gives every input an independently observable
     // contribution, including RSI, while leaving all other CPU state alone.
     run->hypercall.ret = r.rax + 3 * r.rbx + 5 * r.rcx + 7 * r.rdx + 11 * r.rsi;
-    if (bits == 64)
-      *(uint64_t *)(mem + 0x180000) = r.rax ^ r.rbx ^ r.rcx ^ r.rdx ^ r.rsi;
-    else
-      *(uint32_t *)(mem + 0x180000) =
-          (uint32_t)(r.rax ^ r.rbx ^ r.rcx ^ r.rdx ^ r.rsi);
+    *(uint64_t *)(mem + 0x180000) = r.rax ^ r.rbx ^ r.rcx ^ r.rdx ^ r.rsi;
     ++calls;
   }
   if (run->exit_reason != KVM_EXIT_HLT || r.rax) {

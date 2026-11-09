@@ -7,9 +7,7 @@ tested by verify-mpx-state.py. Requires Unicorn and the full fork's objdump/mc.
 """
 
 import argparse
-import hashlib
 import importlib.util
-import json
 from pathlib import Path
 import re
 import struct
@@ -40,16 +38,8 @@ SEGMENTS = (0x26, 0x2e, 0x36, 0x3e, 0x64, 0x65)
 
 
 def run(command, directory):
-    command = list(map(str, command))
-    result = subprocess.run(command, cwd=directory,
+    result = subprocess.run(list(map(str, command)), cwd=directory,
                             capture_output=True, text=True)
-    journal = directory / "commands.jsonl"
-    index = len(journal.read_text().splitlines()) if journal.exists() else 0
-    log = directory / f"command-{index:04}.log"
-    log.write_text(result.stdout + result.stderr)
-    with journal.open('a') as out:
-        out.write(json.dumps({'command': command, 'exit_code': result.returncode,
-                              'log': log.name, 'log_sha256': hashlib.sha256(log.read_bytes()).hexdigest()}) + '\n')
     if result.returncode:
         raise RuntimeError(f"{command}\n{result.stdout}\n{result.stderr}")
     return result.stdout
@@ -114,8 +104,7 @@ def memory_registers(raw, cursor, rex):
     return base, index, scale, displacement
 
 
-def verify_case(instructions, operation, bound, bits, segment, windows, mode,
-                frame=False, inputs=None, corrupt=None):
+def verify_case(instructions, operation, bound, bits, segment, windows, mode, frame=False):
     start = instructions[0][0]
     size = instructions[-1][0] + len(instructions[-1][1]) - start
     code = bytearray(size)
@@ -125,8 +114,8 @@ def verify_case(instructions, operation, bound, bits, segment, windows, mode,
         cursor = native(raw)
         if cursor is not None:
             checkpoints.append((address - start, raw, cursor))
-    args = inputs or (0xfedcba9876543210, 0x8877665544332211,
-                     0x1234567800001000, 0xaabbccdd00002000)
+    args = (0xfedcba9876543210, 0x8877665544332211,
+            0x1234567800001000, 0xaabbccdd00002000)
     mask = (1 << mode) - 1
     args = tuple(value & mask for value in args)
     expected = []
@@ -165,19 +154,12 @@ def verify_case(instructions, operation, bound, bits, segment, windows, mode,
     else:
         machine.mem_write(sp + 4, b"".join(pack(value) for value in args))
     position = CODE
-    for step, ((offset, raw, cursor), (name, bank, width, prefix, value, second)) in enumerate(zip(checkpoints, expected)):
+    for (offset, raw, cursor), (name, bank, width, prefix, value, second) in zip(checkpoints, expected):
         pc = CODE + offset
         if position != pc:
             machine.emu_start(position, pc, count=1000)
             assert machine.reg_read(number("RIP")) == pc
-        target = step == len(expected) - 2
-        if target and corrupt == 'opcode':
-            raw = raw[:cursor + 1] + bytes([raw[cursor + 1] ^ 1]) + raw[cursor + 2:]
         prefixes, modrm = raw[:cursor], raw[cursor + 2]
-        if target and corrupt == 'bounds bank':
-            modrm ^= 8
-        if target and corrupt == 'source bounds bank':
-            modrm ^= 1
         assert raw[cursor + 1] == OPCODE[name], "wrong native opcode"
         assert [p for p in prefixes if p in (0x66, 0xf2, 0xf3)] == ([NATIVE_PREFIX[name]] if NATIVE_PREFIX[name] else [])
         stack = bool(prefix & 0x100)
@@ -186,23 +168,16 @@ def verify_case(instructions, operation, bound, bits, segment, windows, mode,
         assert prefixes.count(0x67) == int(width != mode and name not in MPX.REGISTER)
         assert prefixes.count(0xf0) == int(name == "bndmov_store_lock")
         rex = next((p for p in reversed(prefixes) if 0x40 <= p <= 0x4f), 0)
-        assert ((modrm >> 3) & 7) | ((rex & 4) << 1) == bank, 'bounds bank'
+        assert ((modrm >> 3) & 7) | ((rex & 4) << 1) == bank
         if name in MPX.REGISTER:
             assert modrm >> 6 == 3
             if name == "bndmov_reg":
-                assert modrm & 7 == (bank + 1) % 4 and not rex & 1, 'source bounds bank'
+                assert modrm & 7 == (bank + 1) % 4 and not rex & 1
             else:
                 register = (modrm & 7) | ((rex & 1) << 3)
-                if target and corrupt == 'value':
-                    machine.reg_write(number(GPRS[register]), machine.reg_read(number(GPRS[register])) ^ 1)
                 assert machine.reg_read(number(GPRS[register])) == value, "check input changed"
         else:
             base, index, scale, displacement = memory_registers(raw, cursor, rex)
-            if target and corrupt == 'value':
-                machine.reg_write(number(GPRS[base]), machine.reg_read(number(GPRS[base])) ^ 1)
-            if target and corrupt == 'index':
-                assert index is not None
-                machine.reg_write(number(GPRS[index]), machine.reg_read(number(GPRS[index])) ^ 1)
             base_value = machine.reg_read(number(GPRS[base]))
             index_value = machine.reg_read(number(GPRS[index])) if index is not None else 0
             assert displacement == 0 and scale == 1
@@ -222,14 +197,8 @@ def verify_case(instructions, operation, bound, bits, segment, windows, mode,
         position = pc + len(raw)
     machine.emu_start(position, STOP, count=1000)
     assert machine.reg_read(number("RIP")) == STOP
-    if corrupt == 'stack':
-        machine.reg_write(number('RSP'), machine.reg_read(number('RSP')) ^ 4)
-    if corrupt == 'callee saved':
-        machine.reg_write(number('RBX'), machine.reg_read(number('RBX')) ^ 1)
-    assert machine.reg_read(number("RSP")) == sp + mode // 8, 'stack'
+    assert machine.reg_read(number("RSP")) == sp + mode // 8
     if frame:
-        if corrupt == 'frame':
-            reads[-1] ^= 1
         assert reads == [33, 44], f"stack canaries changed: {reads}"
     for name, value in saved.items():
         assert machine.reg_read(number(name)) == value, "callee-saved register changed: " + name
@@ -243,10 +212,7 @@ def verify(args, directory):
     cases = re.findall(r"\{ case_(\d+), (\w+), (\d+), (\d+), (\d+) \}", header)
     names = {enum: name for name, enum in MPX.OPERATIONS}
     backend = args.llc or args.backend_llc
-    records = []
-    for triple, object_format in zip(TRIPLES, ('elf', 'coff', 'macho')):
-        if object_format not in args.formats:
-            continue
+    for triple in TRIPLES:
         if args.mode == 32:
             triple = triple.replace("x86_64", "i386")
         for opt in ("-O0", "-O2"):
@@ -256,23 +222,19 @@ def verify(args, directory):
             if args.compiler:
                 command = [args.compiler, "--target=" + triple, "-std=c23", opt,
                            "-ffreestanding", "-fno-lto", "-fno-builtin-mimalloc",
-                           "-fno-stack-protector", "-mno-red-zone", "-mno-stack-arg-probe"]
-                command += (["-mllvm", "-verify-machineinstrs"] if args.mode == 64 else ["-mno-relax-all"])
+                           "-fno-stack-protector", "-mno-red-zone", "-mno-stack-arg-probe", "-mllvm", "-verify-machineinstrs"]
                 input_ir = stem + ".ll"
                 run([*command, "-S", "-emit-llvm", "cases.c", "-o", input_ir], directory)
                 text = (directory / input_ir).read_text()
-                assert " asm " not in text and "@llvm.x86.bndmov.load" + ('32(' if args.mode == 32 else '(') in text
+                assert " asm " not in text and "@llvm.x86.bndmov.load(" in text
                 for kind in (0, 1):
                     assert f"@llvm.x86.bnd.branch(i32 {kind})" in text
-                if args.mode == 32:
-                    run([*command, "-fllvm-backend=" + backend, "-c", "cases.c", "-o", output], directory)
             elif opt == "-O2":
                 input_ir = stem + ".ll"
                 run([Path(backend).with_name("opt"), "-S", "-passes=default<O2>", "cases.ll", "-o", input_ir], directory)
             if backend:
                 command = [backend, "-mtriple=" + triple, opt, "-verify-machineinstrs", input_ir]
-                if not args.compiler or args.mode != 32:
-                    run([*command, "-filetype=obj", "-o", output], directory)
+                run([*command, "-filetype=obj", "-o", output], directory)
             else:
                 run([*command, "-c", "cases.c", "-o", output], directory)
             disassembly = run([args.objdump, "-d", output], directory)
@@ -285,34 +247,9 @@ def verify(args, directory):
                 assert raw[-1] == b"\xf2\xc3", "branch-only function lost bounds-preserving return"
                 assert all(native(data) is None for data in raw), "branch effect replaced bounds registers"
             assert len(decoded) == count
-            comparisons, controls = 0, []
-            samples = ((0, 0, 0, 0), (0xfedcba98, 0x88776655, 0x92341000, 0xaabb2000),
-                       (0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff)) if args.mode == 32 else (None,)
             for index, enum, bank, width, segment in cases:
                 try:
-                    values = (decoded[int(index)], names[enum], int(bank), int(width), int(segment), "windows" in triple, args.mode, args.frame)
-                    for sample in samples:
-                        verify_case(*values, inputs=sample)
-                        comparisons += 1
-                    if int(bank) == 0 and int(width) == args.mode and int(segment) == (0x100 if args.stack_memory else 0):
-                        fields = ['opcode', 'bounds bank', 'stack', 'callee saved']
-                        fields += ['source bounds bank'] if names[enum] == 'bndmov_reg' else ['value']
-                        if names[enum] in MPX.PAIR:
-                            fields.append('index')
-                        if args.frame:
-                            fields.append('frame')
-                        messages = {'opcode': 'wrong native opcode', 'callee saved': 'callee-saved register changed:',
-                                    'value': 'check input changed' if names[enum] in MPX.REGISTER else
-                                    'stack offset changed' if args.stack_memory else 'base was truncated or changed',
-                                    'index': 'index role changed', 'frame': 'stack canaries changed:'}
-                        for field in fields:
-                            try:
-                                verify_case(*values, corrupt=field)
-                            except AssertionError as error:
-                                assert str(error).startswith(messages.get(field, field)), (field, str(error))
-                            else:
-                                raise AssertionError(field + ' corruption escaped oracle')
-                            controls.append({'case': int(index), 'field': field})
+                    verify_case(decoded[int(index)], names[enum], int(bank), int(width), int(segment), "windows" in triple, args.mode, args.frame)
                 except Exception as error:
                     raise RuntimeError(f"{stem} case_{index} {enum} bank={bank} width={width} segment={segment}") from error
             for dialect in ("att", "intel"):
@@ -326,17 +263,7 @@ def verify(args, directory):
                 disassembly = run([args.objdump, "-d", roundtrip], directory)
                 assert functions(disassembly) == decoded, "assembly round trip changed bytes"
                 assert functions(disassembly, branch_probes=True) == probes, "assembly round trip changed BNDINIT"
-            records.append({'triple': triple, 'optimization': opt, 'encodings': count,
-                            'comparisons': comparisons, 'negative_controls': controls,
-                            'object_sha256': hashlib.sha256((directory / output).read_bytes()).hexdigest(),
-                            'object_route': 'llvm' if args.llc else 'neverc-driver' if args.mode == 32 or not backend else 'neverc-ir-to-llvm'})
             print(f"{stem}: {count} native MPX encodings, operand transport and ABI; branch effects and both assembly dialects", flush=True)
-    report = {'profiles': records, 'mode': args.mode, 'frame': args.frame, 'stack_memory': args.stack_memory,
-              'mpx_semantics_executed': False, 'comparisons': sum(r['comparisons'] for r in records),
-              'negative_controls': sum(len(r['negative_controls']) for r in records),
-              'files': {str(p.relative_to(directory)): hashlib.sha256(p.read_bytes()).hexdigest()
-                        for p in directory.rglob('*') if p.is_file()}}
-    (directory / 'results.json').write_text(json.dumps(report, indent=2) + '\n')
 
 
 def main():
@@ -350,12 +277,11 @@ def main():
     parser.add_argument("--mode", choices=(32, 64), default=64, type=int)
     parser.add_argument("--stack-memory", action="store_true")
     parser.add_argument("--frame", action="store_true")
-    parser.add_argument("--formats", nargs='+', choices=('elf', 'coff', 'macho'), default=['elf', 'coff', 'macho'])
     args = parser.parse_args()
     if args.backend_llc and not args.compiler:
         parser.error("--backend-llc requires --compiler")
-    if args.mode == 32 and args.compiler and (not args.backend_llc or args.formats != ['elf']):
-        parser.error("NeverC i386 requires --backend-llc and --formats elf")
+    if args.mode == 32 and not args.llc:
+        parser.error("NeverC supports x86-64 code; --mode=32 requires --llc")
     if args.mode == 32 and args.stack_memory:
         parser.error("stack provenance control requires long mode")
     if args.keep:

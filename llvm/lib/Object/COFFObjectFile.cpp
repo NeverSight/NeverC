@@ -980,8 +980,6 @@ uint8_t COFFObjectFile::getBytesInAddress() const {
 
 StringRef COFFObjectFile::getFileFormatName() const {
   switch (getMachine()) {
-  case COFF::IMAGE_FILE_MACHINE_I386:
-    return "COFF-i386";
   case COFF::IMAGE_FILE_MACHINE_AMD64:
     return "COFF-x86-64";
   case COFF::IMAGE_FILE_MACHINE_ARM64:
@@ -993,8 +991,6 @@ StringRef COFFObjectFile::getFileFormatName() const {
 
 Triple::ArchType COFFObjectFile::getArch() const {
   switch (getMachine()) {
-  case COFF::IMAGE_FILE_MACHINE_I386:
-    return Triple::x86;
   case COFF::IMAGE_FILE_MACHINE_AMD64:
     return Triple::x86_64;
   case COFF::IMAGE_FILE_MACHINE_ARM64:

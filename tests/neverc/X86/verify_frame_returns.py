@@ -26,11 +26,9 @@ PROFILES = tuple(f"{compiler}-O{level}" for compiler in
                  ("llvm", "neverc", "neverc-ir") for level in (0, 2))
 
 
-def sources(protected_mode=False, operations=OPERATIONS):
+def sources(operations=OPERATIONS):
     ir, c = "", ""
     for operation, (kind, width, adjustment, _) in operations.items():
-        if protected_mode and width == 64 and kind != 3:
-            continue
         intrinsic = operation.replace("_", ".")
         args = "" if kind >= 3 else "ptr" + (", i16" if kind == 2 else "")
         ir += f"declare void @llvm.x86.{intrinsic}({args})\n"
@@ -85,12 +83,7 @@ def main():
     modes.add_argument("--smm", action="store_true", help="qualify RSM using KVM SMM save state")
     modes.add_argument("--smm-context", action="store_true",
                         help="qualify software SMM state and atomic XRSTOR/RSM")
-    modes.add_argument("--i386", action="store_true",
-                        help="qualify the code32 LLVM frame transfers")
-    modes.add_argument("--code16", action="store_true",
-                        help="qualify LLVM frame transfers from protected 16-bit code")
     args = parser.parse_args()
-    protected_mode = args.i386 or args.code16
     smm = args.smm or args.smm_context
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -118,15 +111,13 @@ def main():
     for name in ("llc", "opt", "llvm-objdump"):
         tools[name] = str((args.llvm_bin / name).resolve())
     tools["neverc"] = str(args.neverc.resolve())
-    profiles = args.profile or (PROFILES[:2] if protected_mode else PROFILES)
-    if protected_mode and any(not profile.startswith("llvm-") for profile in profiles):
-        parser.error("NeverC's native target is x86-64")
+    profiles = args.profile or PROFILES
     operations = {"rsm": (4, 64, 0, "rsm")} if args.smm else OPERATIONS
     if args.smm_context:
         # Kind zero generates the one-pointer API; the oracle manifest uses
         # RSM's native kind after source generation.
         operations = {"rsm_context": (0, 64, 0, "rsm")}
-    ir, c = sources(protected_mode, operations)
+    ir, c = sources(operations)
     if args.smm_context:
         operations = {"rsm_context": (4, 64, 0, "rsm")}
         ir = ir.replace('"frame-pointer"="all"',
@@ -172,22 +163,19 @@ SECTIONS {
                 run([tools["opt"], "-S", "-passes=default<O2>", source,
                      "-o", optimized], profile + "-opt")
                 source = optimized
-            triple = ("i386-unknown-linux-code16" if args.code16 else
-                      "i386-unknown-linux-gnu" if protected_mode else
-                      "x86_64-unknown-linux-gnu")
+            triple = "x86_64-unknown-linux-gnu"
             run([tools["llc"], f"-mtriple={triple}", f"-{level}",
                  "-verify-machineinstrs", "-filetype=obj", source, "-o", obj],
                 profile + "-compile")
         elf, binary = output / f"{profile}.elf", output / f"{profile}.bin"
-        run([tools["ld.lld"], "-m", "elf_i386" if protected_mode else "elf_x86_64",
+        run([tools["ld.lld"], "-m", "elf_x86_64",
              "-T", output / "guest.ld", obj, "-o", elf], profile + "-link")
         run([tools["objcopy"], "-O", "binary", elf, binary], profile + "-image")
-        disassembly_mode = ["--mattr=+16bit-mode,-32bit-mode"] if args.code16 else []
-        assembly = run([tools["llvm-objdump"], "-d", *disassembly_mode, elf],
+        assembly = run([tools["llvm-objdump"], "-d", elf],
                        profile + "-disassembly")
         functions = re.findall(r"^([0-9a-f]+) <(generated_\w+)>:\n(.*?)(?=\n[0-9a-f]+ <|\Z)",
                                assembly, re.M | re.S)
-        expected_functions = 4 if smm else 28 if protected_mode else 40
+        expected_functions = 4 if smm else 40
         assert len(functions) == expected_functions, assembly
         manifest = []
         first_switch = None
@@ -195,7 +183,7 @@ SECTIONS {
             operation = name.removeprefix("generated_").rsplit("_", 1)[0]
             kind, width, adjustment, mnemonic = operations[operation]
             if operation == "sysenter":
-                width = 32 if protected_mode else 64
+                width = 64
             instructions = re.findall(r"^\s*([0-9a-f]+):\s+(?:[0-9a-f]{2}[ \t]+)+\s*([^\n]+)", body, re.M)
             terminals = [(int(pc, 16), text) for pc, text in instructions
                          if re.match(r"(?:iret[wql]|lret[wql]|sysenter|rsm)\b", text)]
@@ -203,17 +191,16 @@ SECTIONS {
             assert not any(re.match(r"(?:call|ret)[lwq]?\b", text) for _, text in instructions), body
             index = next(i for i, (pc, _) in enumerate(instructions) if int(pc, 16) == terminals[0][0])
             if kind < 3:
-                pattern = r"movl\s+%\w+, %esp\b" if protected_mode else r"movq\s+%\w+, %rsp\b"
+                pattern = r"movq\s+%\w+, %rsp\b"
                 assert re.match(pattern, instructions[index - 1][1]), body
                 if name == "generated_iret16_plain":
                     first_switch = int(instructions[index - 1][0], 16)
-            assert all(re.match(r"(?:nop\w*|int3|data16|cs nop)\b", text) or
-                       (args.code16 and re.fullmatch(r"leaw\s+\(%si\), %si", text))
+            assert all(re.match(r"(?:nop\w*|int3|data16|cs nop)\b", text)
                        for _, text in instructions[index + 1:]), body
             manifest.append(f"{name} {address} {terminals[0][0]:x} {kind} {width} {adjustment}")
         manifest_path = output / f"{profile}.manifest"
         manifest_path.write_text("\n".join(manifest) + "\n")
-        mode = "16" if args.code16 else "32" if protected_mode else "64"
+        mode = "64"
         native = json.loads(run([runner, binary, manifest_path, mode,
                                  *(["context"] if args.smm_context else [])], profile + "-native"))
         assert native["complete_state_pairs"] == expected_functions * (768 if args.smm_context else 96 if args.smm else 192), native
@@ -226,8 +213,7 @@ SECTIONS {
             corrupted[offset:offset + 2] = bytes.fromhex("0f 0b")
         else:
             offset = first_switch - 0x10000
-            wrong_stack = bytes.fromhex("66 89 cc" if args.code16 else
-                                        "89 cc" if protected_mode else "48 89 cc")
+            wrong_stack = bytes.fromhex("48 89 cc")
             corrupted[offset:offset + len(wrong_stack)] = wrong_stack
         negative = output / f"{profile}-corrupted.bin"
         negative.write_bytes(corrupted)
@@ -254,7 +240,7 @@ SECTIONS {
     report = dict(
         scope="KVM-mediated SMM save/restore through native RSM" if smm else
               "Native frame input transport and successful IRET/RETF/SYSENTER transfers; CET disabled",
-        host=platform.platform(), code_bits=16 if args.code16 else 32 if protected_mode else 64, profiles=results,
+        host=platform.platform(), code_bits=64, profiles=results,
         smm_software_context=args.smm_context,
         source_sha256={p.name: sha256(p) for p in (Path(__file__), ROOT / "frame_return_kvm.c", ROOT / "smm_return_kvm.c", ROOT / "KvmTransferFixture.h", ROOT / "NativeXStateFixture.h")},
         tools={name: dict(path=path, sha256=sha256(path)) for name, path in tools.items()},

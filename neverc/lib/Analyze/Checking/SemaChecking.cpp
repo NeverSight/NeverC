@@ -153,7 +153,6 @@ bool Sema::CheckTSBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     return false;
   case llvm::Triple::aarch64:
     return CheckAArch64BuiltinFunctionCall(TI, BuiltinID, TheCall);
-  case llvm::Triple::x86:
   case llvm::Triple::x86_64:
     return CheckX86BuiltinFunctionCall(TI, BuiltinID, TheCall);
   }

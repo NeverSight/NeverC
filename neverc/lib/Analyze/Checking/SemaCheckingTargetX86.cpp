@@ -545,119 +545,6 @@ bool Sema::CheckX86BuiltinTileArguments(unsigned BuiltinID, CallExpr *TheCall) {
 }
 bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
                                        CallExpr *TheCall) {
-  switch (BuiltinID) {
-  case X86::BI__builtin_ia32_lcall64:
-  case X86::BI__builtin_ia32_ljmp64:
-  case X86::BI__readcr8:
-  case X86::BI__writecr8:
-  case X86::BI__movsq:
-  case X86::BI__stosq:
-    if (TI.getTriple().getArch() != llvm::Triple::x86_64) {
-      unsigned ID = getDiagnostics().getCustomDiagID(
-          DiagnosticsEngine::Error,
-          "this builtin requires a 64-bit x86 target");
-      return bool(Diag(TheCall->getBeginLoc(), ID));
-    }
-    return false;
-  case X86::BI__builtin_ia32_readcr32:
-  case X86::BI__builtin_ia32_writecr32:
-  case X86::BI__builtin_ia32_readdr32:
-  case X86::BI__builtin_ia32_writedr32:
-  case X86::BI__builtin_ia32_vmread32:
-  case X86::BI__builtin_ia32_vmwrite32:
-  case X86::BI__builtin_ia32_vmread_reg32:
-  case X86::BI__builtin_ia32_vmwrite_mem32:
-  case X86::BI__builtin_ia32_invept32:
-  case X86::BI__builtin_ia32_invvpid32:
-  case X86::BI__builtin_ia32_vmread_address32:
-  case X86::BI__builtin_ia32_vmwrite_mem_address32:
-  case X86::BI__builtin_ia32_invept_address32:
-  case X86::BI__builtin_ia32_invvpid_address32:
-  case X86::BI__builtin_ia32_vmclear_address32:
-  case X86::BI__builtin_ia32_vmptrld_address32:
-  case X86::BI__builtin_ia32_vmptrst_address32:
-  case X86::BI__builtin_ia32_vmxon_address32:
-  case X86::BI__builtin_ia32_vmload32:
-  case X86::BI__builtin_ia32_vmsave32:
-  case X86::BI__builtin_ia32_invlpga32:
-  case X86::BI__builtin_ia32_invlpgb32:
-  case X86::BI__builtin_ia32_tlbsync_control32:
-  case X86::BI__builtin_ia32_bndcl_reg32:
-  case X86::BI__builtin_ia32_bndcu_reg32:
-  case X86::BI__builtin_ia32_bndcn_reg32:
-  case X86::BI__builtin_ia32_bndmov_load32:
-  case X86::BI__builtin_ia32_bndmov_store32:
-  case X86::BI__builtin_ia32_bndmov_store_lock32:
-  case X86::BI__builtin_ia32_bndcl_address32:
-  case X86::BI__builtin_ia32_bndcu_address32:
-  case X86::BI__builtin_ia32_bndcn_address32:
-  case X86::BI__builtin_ia32_bndmk32:
-  case X86::BI__builtin_ia32_bndldx32:
-  case X86::BI__builtin_ia32_bndstx32:
-  case X86::BI__builtin_ia32_movsb32:
-  case X86::BI__builtin_ia32_movsw32:
-  case X86::BI__builtin_ia32_movsd_rep32:
-  case X86::BI__builtin_ia32_stosb32:
-  case X86::BI__builtin_ia32_stosw32:
-  case X86::BI__builtin_ia32_stosd32:
-  case X86::BI__builtin_ia32_rep_movs_state32:
-  case X86::BI__builtin_ia32_rep_stos_state32:
-  case X86::BI__builtin_ia32_rep_lods_state32:
-  case X86::BI__builtin_ia32_rep_cmps_state32:
-  case X86::BI__builtin_ia32_rep_scas_state32:
-  case X86::BI__builtin_ia32_rep_ins_state32:
-  case X86::BI__builtin_ia32_rep_outs_state32:
-  case X86::BI__builtin_ia32_vmload_addr16:
-  case X86::BI__builtin_ia32_vmsave_addr16:
-  case X86::BI__builtin_ia32_invlpga_addr16:
-  case X86::BI__builtin_ia32_readeflags_u32:
-  case X86::BI__builtin_ia32_writeeflags_u32:
-    if (TI.getTriple().getArch() != llvm::Triple::x86) {
-      unsigned ID = getDiagnostics().getCustomDiagID(
-          DiagnosticsEngine::Error,
-          "this builtin requires a 32-bit x86 target");
-      return bool(Diag(TheCall->getBeginLoc(), ID));
-    }
-    break;
-  case X86::BI__builtin_ia32_lcall16_imm:
-  case X86::BI__builtin_ia32_lcall32_imm:
-  case X86::BI__builtin_ia32_ljmp16_imm:
-  case X86::BI__builtin_ia32_ljmp32_imm:
-  case X86::BI__builtin_ia32_lds16:
-  case X86::BI__builtin_ia32_lds32:
-  case X86::BI__builtin_ia32_les16:
-  case X86::BI__builtin_ia32_les32:
-  case X86::BI__builtin_ia32_arpl_reg:
-  case X86::BI__builtin_ia32_arpl_mem:
-  case X86::BI__builtin_ia32_arpl_mem_address32:
-  case X86::BI__builtin_ia32_bound16:
-  case X86::BI__builtin_ia32_bound32:
-  case X86::BI__builtin_ia32_bound16_address32:
-  case X86::BI__builtin_ia32_bound32_address32: {
-    if (TI.getTriple().getArch() != llvm::Triple::x86) {
-      unsigned ID = getDiagnostics().getCustomDiagID(
-          DiagnosticsEngine::Error,
-          "this builtin requires a 32-bit x86 target");
-      return bool(Diag(TheCall->getBeginLoc(), ID));
-    }
-    if (TheCall->getNumArgs() < 4)
-      return false;
-    llvm::APSInt Width, Prefix;
-    if (SemaBuiltinConstantArg(TheCall, 2, Width) ||
-        SemaBuiltinConstantArg(TheCall, 3, Prefix))
-      return true;
-    if (llvm::X86::isNativeMemoryAddressControl(false, Width.getZExtValue(),
-                                               Prefix.getZExtValue()) &&
-        !(Prefix.getZExtValue() & llvm::X86::NativeMemoryStackReference))
-      return false;
-    return bool(Diag(TheCall->getBeginLoc(),
-                     diag::err_x86_builtin_invalid_memory_address)
-                << TheCall->getArg(2)->getSourceRange()
-                << TheCall->getArg(3)->getSourceRange());
-  }
-  default:
-    break;
-  }
   if (BuiltinID == X86::BI__builtin_ia32_rtm_abort_pair)
     return SemaBuiltinConstantArgRange(TheCall, 0, 0, 255);
   if (BuiltinID == X86::BI__builtin_ia32_hle_context) {
@@ -730,9 +617,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     if (SemaBuiltinConstantArg(TheCall, WidthArgument, Width) ||
         SemaBuiltinConstantArg(TheCall, WidthArgument + 1, Prefix))
       return true;
-    if (llvm::X86::isNativeMemoryAddressControl(
-            TI.getTriple().getArch() == llvm::Triple::x86_64,
-            Width.getZExtValue(), Prefix.getZExtValue()) &&
+    if (llvm::X86::isNativeMemoryAddressControl(true, Width.getZExtValue(),
+                                                Prefix.getZExtValue()) &&
         (AllowStack ||
          !(Prefix.getZExtValue() & llvm::X86::NativeMemoryStackReference)))
       return false;
@@ -746,47 +632,33 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_rorx_u64:
     return SemaBuiltinConstantArgRange(TheCall, 1, 0, 255);
   case X86::BI__builtin_ia32_rep_movs_state:
-  case X86::BI__builtin_ia32_rep_movs_state32:
   case X86::BI__builtin_ia32_rep_stos_state:
-  case X86::BI__builtin_ia32_rep_stos_state32:
   case X86::BI__builtin_ia32_rep_lods_state:
-  case X86::BI__builtin_ia32_rep_lods_state32:
   case X86::BI__builtin_ia32_rep_cmps_state:
-  case X86::BI__builtin_ia32_rep_cmps_state32:
   case X86::BI__builtin_ia32_rep_scas_state:
-  case X86::BI__builtin_ia32_rep_scas_state32:
   case X86::BI__builtin_ia32_rep_ins_state:
-  case X86::BI__builtin_ia32_rep_ins_state32:
-  case X86::BI__builtin_ia32_rep_outs_state:
-  case X86::BI__builtin_ia32_rep_outs_state32: {
+  case X86::BI__builtin_ia32_rep_outs_state: {
     llvm::X86::RepStringKind Kind;
     switch (BuiltinID) {
     case X86::BI__builtin_ia32_rep_movs_state:
-    case X86::BI__builtin_ia32_rep_movs_state32:
       Kind = llvm::X86::RepStringKind::Move;
       break;
     case X86::BI__builtin_ia32_rep_stos_state:
-    case X86::BI__builtin_ia32_rep_stos_state32:
       Kind = llvm::X86::RepStringKind::Store;
       break;
     case X86::BI__builtin_ia32_rep_lods_state:
-    case X86::BI__builtin_ia32_rep_lods_state32:
       Kind = llvm::X86::RepStringKind::Load;
       break;
     case X86::BI__builtin_ia32_rep_cmps_state:
-    case X86::BI__builtin_ia32_rep_cmps_state32:
       Kind = llvm::X86::RepStringKind::Compare;
       break;
     case X86::BI__builtin_ia32_rep_scas_state:
-    case X86::BI__builtin_ia32_rep_scas_state32:
       Kind = llvm::X86::RepStringKind::Scan;
       break;
     case X86::BI__builtin_ia32_rep_ins_state:
-    case X86::BI__builtin_ia32_rep_ins_state32:
       Kind = llvm::X86::RepStringKind::Input;
       break;
     case X86::BI__builtin_ia32_rep_outs_state:
-    case X86::BI__builtin_ia32_rep_outs_state32:
       Kind = llvm::X86::RepStringKind::Output;
       break;
     default:
@@ -807,8 +679,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
         (llvm::X86::repStringHasSource(Kind) && Control(Segment)) ||
         (Compare && Control(NotEqual)))
       return true;
-    if (!llvm::X86::isRepStringControl(Kind, TI.getTriple().isArch64Bit(),
-                                       Element, Address, Segment, NotEqual))
+    if (!llvm::X86::isRepStringControl(Kind, Element, Address, Segment,
+                                       NotEqual))
       return bool(Diag(TheCall->getBeginLoc(),
                        diag::err_x86_builtin_invalid_rep_control)
                   << TheCall->getArg(First)->getSourceRange()
@@ -846,31 +718,19 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
            SemaBuiltinConstantArgRange(TheCall, 1, 0,
                                        llvm::X86::MpxRegisterCount - 1);
   case X86::BI__builtin_ia32_bndcl_reg:
-  case X86::BI__builtin_ia32_bndcl_reg32:
   case X86::BI__builtin_ia32_bndcu_reg:
-  case X86::BI__builtin_ia32_bndcu_reg32:
   case X86::BI__builtin_ia32_bndcn_reg:
-  case X86::BI__builtin_ia32_bndcn_reg32:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0,
                                        llvm::X86::MpxRegisterCount - 1);
   case X86::BI__builtin_ia32_bndmov_load:
-  case X86::BI__builtin_ia32_bndmov_load32:
   case X86::BI__builtin_ia32_bndmov_store:
-  case X86::BI__builtin_ia32_bndmov_store32:
   case X86::BI__builtin_ia32_bndmov_store_lock:
-  case X86::BI__builtin_ia32_bndmov_store_lock32:
   case X86::BI__builtin_ia32_bndcl_address:
-  case X86::BI__builtin_ia32_bndcl_address32:
   case X86::BI__builtin_ia32_bndcu_address:
-  case X86::BI__builtin_ia32_bndcu_address32:
   case X86::BI__builtin_ia32_bndcn_address:
-  case X86::BI__builtin_ia32_bndcn_address32:
   case X86::BI__builtin_ia32_bndmk:
-  case X86::BI__builtin_ia32_bndmk32:
   case X86::BI__builtin_ia32_bndldx:
-  case X86::BI__builtin_ia32_bndldx32:
-  case X86::BI__builtin_ia32_bndstx:
-  case X86::BI__builtin_ia32_bndstx32: {
+  case X86::BI__builtin_ia32_bndstx: {
     if (SemaBuiltinConstantArgRange(TheCall, 0, 0,
                                     llvm::X86::MpxRegisterCount - 1))
       return true;
@@ -878,28 +738,20 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     const auto Operation = [&] {
       switch (BuiltinID) {
       case X86::BI__builtin_ia32_bndmov_load:
-      case X86::BI__builtin_ia32_bndmov_load32:
         return MpxOperation::Load;
       case X86::BI__builtin_ia32_bndmov_store:
-      case X86::BI__builtin_ia32_bndmov_store32:
         return MpxOperation::Store;
       case X86::BI__builtin_ia32_bndmov_store_lock:
-      case X86::BI__builtin_ia32_bndmov_store_lock32:
         return MpxOperation::StoreLocked;
       case X86::BI__builtin_ia32_bndcl_address:
-      case X86::BI__builtin_ia32_bndcl_address32:
         return MpxOperation::CheckLowerAddress;
       case X86::BI__builtin_ia32_bndcu_address:
-      case X86::BI__builtin_ia32_bndcu_address32:
         return MpxOperation::CheckUpperAddress;
       case X86::BI__builtin_ia32_bndcn_address:
-      case X86::BI__builtin_ia32_bndcn_address32:
         return MpxOperation::CheckUpperRawAddress;
       case X86::BI__builtin_ia32_bndmk:
-      case X86::BI__builtin_ia32_bndmk32:
         return MpxOperation::Make;
       case X86::BI__builtin_ia32_bndldx:
-      case X86::BI__builtin_ia32_bndldx32:
         return MpxOperation::LoadTable;
       default:
         return MpxOperation::StoreTable;
@@ -910,9 +762,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     if (SemaBuiltinConstantArg(TheCall, WidthArgument, Width) ||
         SemaBuiltinConstantArg(TheCall, WidthArgument + 1, Control))
       return true;
-    if (llvm::X86::isMpxMemoryAddressControl(TI.getTriple().isArch64Bit(),
-                                             Operation, Width.getZExtValue(),
-                                             Control.getZExtValue()))
+    if (llvm::X86::isMpxMemoryAddressControl(
+            true, Operation, Width.getZExtValue(), Control.getZExtValue()))
       return false;
     return bool(Diag(TheCall->getBeginLoc(),
                      diag::err_x86_builtin_invalid_memory_address)
@@ -1044,14 +895,6 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_lsl_mem32_address:
   case X86::BI__builtin_ia32_lsl_mem64_address:
     return CheckMemoryAddress(1);
-  case X86::BI__builtin_ia32_vmread_address32:
-  case X86::BI__builtin_ia32_vmwrite_mem_address32:
-  case X86::BI__builtin_ia32_invept_address32:
-  case X86::BI__builtin_ia32_invvpid_address32:
-  case X86::BI__builtin_ia32_vmclear_address32:
-  case X86::BI__builtin_ia32_vmptrld_address32:
-  case X86::BI__builtin_ia32_vmptrst_address32:
-  case X86::BI__builtin_ia32_vmxon_address32:
   case X86::BI__builtin_ia32_vmread_address:
   case X86::BI__builtin_ia32_vmwrite_mem_address:
   case X86::BI__builtin_ia32_invept_address:
@@ -1087,8 +930,6 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__writedr:
   case X86::BI__builtin_ia32_readdr:
   case X86::BI__builtin_ia32_writedr:
-  case X86::BI__builtin_ia32_readdr32:
-  case X86::BI__builtin_ia32_writedr32:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0, 7);
   case X86::BI__builtin_ia32_readseg:
   case X86::BI__builtin_ia32_readseg_mem:
@@ -1106,22 +947,12 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
            << TheCall->getArg(0)->getSourceRange();
   }
   case X86::BI__builtin_ia32_readcr:
-  case X86::BI__builtin_ia32_writecr:
-  case X86::BI__builtin_ia32_readcr32:
-  case X86::BI__builtin_ia32_writecr32: {
+  case X86::BI__builtin_ia32_writecr: {
     llvm::APSInt Index;
     if (SemaBuiltinConstantArg(TheCall, 0, Index))
       return true;
-    if (Index == 0 || Index == 2 || Index == 3 || Index == 4 ||
-        (Index == 8 && TI.getTriple().getArch() == llvm::Triple::x86_64))
+    if (Index == 0 || Index == 2 || Index == 3 || Index == 4 || Index == 8)
       return false;
-    if (TI.getTriple().getArch() == llvm::Triple::x86) {
-      const unsigned ID = getDiagnostics().getCustomDiagID(
-          DiagnosticsEngine::Error,
-          "control register index must be 0, 2, 3 or 4 in 32-bit mode");
-      return bool(Diag(TheCall->getBeginLoc(), ID)
-                  << TheCall->getArg(0)->getSourceRange());
-    }
     return Diag(TheCall->getBeginLoc(),
                 diag::err_x86_builtin_invalid_control_register)
            << TheCall->getArg(0)->getSourceRange();

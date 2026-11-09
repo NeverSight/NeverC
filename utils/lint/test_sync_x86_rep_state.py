@@ -53,8 +53,8 @@ class RepStateTest(unittest.TestCase):
     def test_narrow_addressing_does_not_narrow_the_register_contract(self):
         self.assertEqual(self.registers("REP_LODS_STATE64"),
                          (["RSI", "RCX", "RAX"], ["RSI", "RCX", "RAX", "EFLAGS", "DF"]))
-        self.assertEqual(self.registers("REP_MOVS_STATE32"),
-                         (["ESI", "EDI", "ECX"], ["ESI", "EDI", "ECX", "EFLAGS", "DF"]))
+        self.assertEqual(self.registers("REP_MOVS_STATE64"),
+                         (["RSI", "RDI", "RCX"], ["RSI", "RDI", "RCX", "EFLAGS", "DF"]))
 
     def test_all_pseudos_own_direction_and_unknown_memory_effects(self):
         for name, _, _, _ in REP.INSTRUCTIONS:

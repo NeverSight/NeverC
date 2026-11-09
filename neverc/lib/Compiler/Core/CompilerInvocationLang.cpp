@@ -302,11 +302,6 @@ void CompilerInvocationBase::GenerateLangArgs(const LangOptions &Opts,
                                               ArgumentConsumer Consumer,
                                               const llvm::Triple &T,
                                               InputKind IK) {
-  if (T.getArch() == llvm::Triple::x86)
-    emitArg(Consumer, Opts.I386PICLevel == 0 ? OPT_fno_pic
-                      : Opts.PIE
-                          ? (Opts.I386PICLevel == 1 ? OPT_fpie : OPT_fPIE)
-                          : (Opts.I386PICLevel == 1 ? OPT_fpic : OPT_fPIC));
   if (IK.getLanguage() == Language::LLVM_IR) {
     generateIRBackendLangArgs(Opts, Consumer);
     return;
@@ -411,18 +406,6 @@ bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
   unsigned NumErrorsBefore = Diags.getNumErrors();
 
   Opts.PIE = T.isOSLinux();
-  if (T.getArch() == llvm::Triple::x86) {
-    Opts.I386PICLevel = Opts.PIE || T.isMacOSX() ? 2 : 0;
-    if (const Arg *A =
-            Args.getLastArg(OPT_fPIC, OPT_fpic, OPT_fPIE, OPT_fpie, OPT_fno_PIC,
-                            OPT_fno_pic, OPT_fno_PIE, OPT_fno_pie)) {
-      const auto &O = A->getOption();
-      Opts.PIE = O.matches(OPT_fPIE) || O.matches(OPT_fpie);
-      Opts.I386PICLevel = O.matches(OPT_fPIC) || O.matches(OPT_fPIE)   ? 2
-                          : O.matches(OPT_fpic) || O.matches(OPT_fpie) ? 1
-                                                                       : 0;
-    }
-  }
 
   if (IK.getLanguage() == Language::LLVM_IR) {
     parseIRBackendLangArgs(Opts, Args, Diags);

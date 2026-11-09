@@ -42,9 +42,20 @@ class NativeSignaturesTest(unittest.TestCase):
     def test_checked_in_native_schema_is_synchronized(self):
         NATIVE.synchronize(False)
 
+    def test_legacy_target_intrinsics_are_not_registered(self):
+        names = set(NATIVE.SORTER.parse_name_table(self.impl))
+        removed = {f"{op}{bits}" for op in ("lds", "les") for bits in (16, 32)}
+        removed |= {f"{op}.kvm32" for op in ("vmcall", "vmmcall")}
+        removed |= {f"rep.{op}.state32" for op in
+                    ("movs", "stos", "lods", "cmps", "scas", "ins", "outs")}
+        removed |= {f"{op}32.legacy.address32" for op in
+                    ("aadd", "aand", "aor", "axor")}
+        for name in removed:
+            self.assertNotIn("llvm.x86." + name, names)
+
     def test_far_pointer_images_are_single_pointer_operands(self):
-        for operation in ("lds", "les", "lss", "lfs", "lgs"):
-            for bits in ((16, 32) if operation in ("lds", "les") else (16, 32, 64)):
+        for operation in ("lss", "lfs", "lgs"):
+            for bits in (16, 32, 64):
                 self.assertEqual(NATIVE.DECLARATIONS[f"{operation}{bits}"],
                                  (f"I{bits}", "PTR"))
 
@@ -79,13 +90,12 @@ class NativeSignaturesTest(unittest.TestCase):
 
     def test_kvm_hypercalls_have_five_matching_inputs_and_one_result(self):
         for operation in ("vmcall", "vmmcall"):
-            for suffix, bits in (("", 64), ("32", 32)):
-                self.assertEqual(NATIVE.DECLARATIONS[f"{operation}_kvm{suffix}"],
-                                 (f"I{bits}",) * 6)
+            self.assertEqual(NATIVE.DECLARATIONS[f"{operation}_kvm"],
+                             ("I64",) * 6)
 
     def test_svm_address_width_does_not_narrow_the_asid(self):
         for operation in ("vmload", "vmsave", "invlpga"):
-            for suffix, bits in (("", 64), ("32", 32), ("_addr32", 32), ("_addr16", 16)):
+            for suffix, bits in (("", 64), ("_addr32", 32)):
                 self.assertEqual(NATIVE.DECLARATIONS[operation + suffix],
                                  ("Done", f"I{bits}") + (("I32",) if operation == "invlpga" else ()))
 

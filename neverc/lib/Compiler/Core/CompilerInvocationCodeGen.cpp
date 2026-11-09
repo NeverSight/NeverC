@@ -1,5 +1,4 @@
 #include "Core/CompilerInvocationArg.h"
-#include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/Frontend/Debug/Options.h"
 #include "llvm/IR/DebugInfoMetadata.h"
@@ -74,9 +73,6 @@ void CompilerInvocationBase::GenerateCodeGenArgs(const CodeGenOptions &Opts,
                                                  const std::string &OutputFile,
                                                  const LangOptions *LangOpts) {
   const CodeGenOptions &CodeGenOpts = Opts;
-
-  if (!Opts.FullLLVMBackend.empty())
-    emitArg(Consumer, OPT_fllvm_backend_EQ, Opts.FullLLVMBackend);
 
   if (Opts.OptimizationLevel == 0)
     emitArg(Consumer, OPT_O0);
@@ -260,15 +256,6 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
     OptimizationLevel = MaxOptLevel;
   }
   Opts.OptimizationLevel = OptimizationLevel;
-  if (const Arg *A = Args.getLastArg(OPT_fllvm_backend_EQ)) {
-    Opts.FullLLVMBackend = A->getValue();
-    if (Opts.FullLLVMBackend.empty() || T.getArch() != llvm::Triple::x86 ||
-        !plugin::findBuiltinTargetRoute(T.str())) {
-      Diags.Report(diag::err_drv_invalid_value)
-          << A->getAsString(Args)
-          << "requires a nonempty llc path and a supported i386 target";
-    }
-  }
 
   CodeGenOptions &CodeGenOpts = Opts;
   const LangOptions *LangOpts = &LangOptsRef;
@@ -513,12 +500,5 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
       Opts.ParallelCodeGen = Val;
   }
 
-  if (!Opts.FullLLVMBackend.empty() &&
-      (Opts.PrepareForLTO || Args.hasArg(OPT_mllvm))) {
-    const unsigned ID = Diags.getCustomDiagID(
-        DiagnosticsEngine::Error,
-        "-fllvm-backend cannot be combined with LTO or -mllvm options");
-    Diags.Report(ID);
-  }
   return Diags.getNumErrors() == NumErrorsBefore;
 }

@@ -8,176 +8,6 @@
 #  define TARGET_HEADER_BUILTIN(ID, TYPE, ATTRS, HEADER, LANG, FEATURE) BUILTIN(ID, TYPE, ATTRS)
 #endif
 
-// BOUND exists only in legacy mode. Memory may fault; it is never pure.
-BUILTIN(__builtin_ia32_bound16, "vsvC*", "n")
-BUILTIN(__builtin_ia32_bound32, "vivC*", "n")
-BUILTIN(__builtin_ia32_bound16_address32, "vsUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_bound32_address32, "viUiIUiIUi", "n")
-
-// VMX management retains m64 operands in either code mode.
-BUILTIN(__builtin_ia32_vmclear, "UcvC*", "n")
-BUILTIN(__builtin_ia32_vmptrld, "UcvC*", "n")
-BUILTIN(__builtin_ia32_vmptrst, "vv*", "n")
-BUILTIN(__builtin_ia32_vmxon, "UcvC*", "n")
-BUILTIN(__builtin_ia32_vmlaunch, "Uc", "n")
-BUILTIN(__builtin_ia32_vmresume, "Uc", "n")
-
-// Explicit i386 VMCS and invalidation selectors use native 32-bit words.
-BUILTIN(__builtin_ia32_vmread32, "UcUiUi*", "n")
-BUILTIN(__builtin_ia32_vmwrite32, "UcUiUi", "n")
-BUILTIN(__builtin_ia32_vmread_reg32, "UiUiUiUc*", "n")
-BUILTIN(__builtin_ia32_vmwrite_mem32, "UcUivC*", "n")
-BUILTIN(__builtin_ia32_invept32, "UcUivC*", "n")
-BUILTIN(__builtin_ia32_invvpid32, "UcUivC*", "n")
-
-// Address width and architectural segment prefix are compile-time controls.
-BUILTIN(__builtin_ia32_vmread_address32, "UcUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_vmwrite_mem_address32, "UcUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_invept_address32, "UcUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_invvpid_address32, "UcUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_vmclear_address32, "UcUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_vmptrld_address32, "UcUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_vmptrst_address32, "vUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_vmxon_address32, "UcUiIUiIUi", "n")
-
-// SVM implicit addresses retain their code-mode width; ASID stays in ECX.
-BUILTIN(__builtin_ia32_vmload32, "vUi", "n")
-BUILTIN(__builtin_ia32_vmsave32, "vUi", "n")
-BUILTIN(__builtin_ia32_invlpga32, "vUiUi", "n")
-BUILTIN(__builtin_ia32_vmload_addr16, "vUs", "n")
-BUILTIN(__builtin_ia32_vmsave_addr16, "vUs", "n")
-BUILTIN(__builtin_ia32_invlpga_addr16, "vUsUi", "n")
-TARGET_HEADER_BUILTIN(__halt, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(__svm_clgi, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(__svm_stgi, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(__svm_invlpga, "vv*i", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(__svm_vmload, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-TARGET_HEADER_BUILTIN(__svm_vmsave, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
-
-// Native scalar port I/O and MSR writes, independent of platform headers.
-BUILTIN(__builtin_ia32_inbyte, "UcUs", "n")
-BUILTIN(__builtin_ia32_inword, "UsUs", "n")
-BUILTIN(__builtin_ia32_indword, "UiUs", "n")
-BUILTIN(__builtin_ia32_outbyte, "vUsUc", "n")
-BUILTIN(__builtin_ia32_outword, "vUsUs", "n")
-BUILTIN(__builtin_ia32_outdword, "vUsUi", "n")
-BUILTIN(__builtin_ia32_wrmsr, "vUiULLi", "n")
-
-// Native nonserializing MSR write uses ECX and the full EDX:EAX pair.
-BUILTIN(__builtin_ia32_wrmsrns, "vUiULLi", "n")
-
-// CPUID writes four 32-bit words in EAX, EBX, ECX, EDX order.
-BUILTIN(__builtin_ia32_cpuidex, "vi*UiUi", "n")
-
-// Raw resumable software interrupt; the vector is an immediate in 0..255.
-BUILTIN(__builtin_ia32_int, "vIUi", "n")
-
-// These native region/bank effects have the same ABI in both code modes.
-BUILTIN(__builtin_ia32_rtm_abort_pair, "UiIUi", "n")
-BUILTIN(__builtin_ia32_bnd_branch, "vIUi", "n")
-BUILTIN(__builtin_ia32_bndmov_reg, "vIUiIUi", "n")
-
-// Native i386 MPX keeps full 32-bit register values and explicit controls.
-BUILTIN(__builtin_ia32_bndcl_reg32, "vIUiUi", "n")
-BUILTIN(__builtin_ia32_bndcu_reg32, "vIUiUi", "n")
-BUILTIN(__builtin_ia32_bndcn_reg32, "vIUiUi", "n")
-BUILTIN(__builtin_ia32_bndmov_load32, "vIUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_bndmov_store32, "vIUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_bndmov_store_lock32, "vIUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_bndcl_address32, "vIUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_bndcu_address32, "vIUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_bndcn_address32, "vIUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_bndmk32, "vIUiUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_bndldx32, "vIUiUiUiIUiIUi", "n")
-BUILTIN(__builtin_ia32_bndstx32, "vIUiUiUiIUiIUi", "n")
-
-// Native legacy REP pointers and counts use 32-bit code-mode words.
-BUILTIN(__builtin_ia32_movsb32, "vv*vC*Ui", "n")
-BUILTIN(__builtin_ia32_movsw32, "vv*vC*Ui", "n")
-BUILTIN(__builtin_ia32_movsd_rep32, "vv*vC*Ui", "n")
-BUILTIN(__builtin_ia32_stosb32, "vv*UcUi", "n")
-BUILTIN(__builtin_ia32_stosw32, "vv*UsUi", "n")
-BUILTIN(__builtin_ia32_stosd32, "vv*UiUi", "n")
-
-// Full legacy GPR results remain 32 bits even with 16-bit address controls.
-// LAHF/SETO comparison flags do not require the long-mode SAHF feature.
-BUILTIN(__builtin_ia32_rep_movs_state32, "vUiUiUiUcIUiIUiIUiUi*", "n")
-BUILTIN(__builtin_ia32_rep_stos_state32, "vUiUiUiUcIUiIUiUi*", "n")
-BUILTIN(__builtin_ia32_rep_lods_state32, "vUiUiUiUcIUiIUiIUiUi*", "n")
-BUILTIN(__builtin_ia32_rep_cmps_state32, "vUiUiUiUcUsIUiIUiIUiIUiUi*Us*", "n")
-BUILTIN(__builtin_ia32_rep_scas_state32, "vUiUiUiUcUsIUiIUiIUiUi*Us*", "n")
-BUILTIN(__builtin_ia32_rep_ins_state32, "vUiUiUsUcIUiIUiUi*", "n")
-BUILTIN(__builtin_ia32_rep_outs_state32, "vUiUiUsUcIUiIUiIUiUi*", "n")
-
-// Native REP port I/O uses 32-bit element counts in either code mode.
-// DF and the instruction-owned DS/ES memory access retain their CPU meaning.
-BUILTIN(__builtin_ia32_inbytestring, "vUsv*Ui", "n")
-BUILTIN(__builtin_ia32_inwordstring, "vUsv*Ui", "n")
-BUILTIN(__builtin_ia32_indwordstring, "vUsv*Ui", "n")
-BUILTIN(__builtin_ia32_outbytestring, "vUsvC*Ui", "n")
-BUILTIN(__builtin_ia32_outwordstring, "vUsvC*Ui", "n")
-BUILTIN(__builtin_ia32_outdwordstring, "vUsvC*Ui", "n")
-
-// SKINIT consumes EAX in either mode and abandons the caller context.
-TARGET_HEADER_BUILTIN(__svm_skinit, "vi", "nrh", INTRIN_H, ALL_MS_LANGUAGES, "")
-BUILTIN(__builtin_ia32_skinit, "vUi", "nr")
-
-// HRESET consumes EAX in both legacy and long mode.
-TARGET_BUILTIN(__builtin_ia32_hreset, "vUi", "n", "hreset")
-
-// Preserve raw EAX control/address, EDX identifiers and ECX count in code32.
-BUILTIN(__builtin_ia32_invlpgb32, "vUiUiUi", "n")
-// The compatibility form selects CPU-only synchronization with rAX = 0.
-BUILTIN(__builtin_ia32_tlbsync, "v", "n")
-BUILTIN(__builtin_ia32_tlbsync_control32, "vUi", "n")
-// EPTP switching selects VM function zero; the complete ECX remains native.
-BUILTIN(__builtin_ia32_vmfunc_eptp_switch, "vUi", "n")
-
-// Native ARPL; the CPU owns m16 read and conditional write.
-BUILTIN(__builtin_ia32_arpl_reg, "UsUsUsUc*", "n")
-BUILTIN(__builtin_ia32_arpl_mem, "Ucv*Us", "n")
-BUILTIN(__builtin_ia32_arpl_mem_address32, "UcUiUsIUiIUi", "n")
-
-// Native descriptor and machine state in legacy and long mode. Memory
-// operands remain instruction-owned; 64-bit result forms stay x86-64-only.
-BUILTIN(__builtin_ia32_verr_reg, "UcUs", "n")
-BUILTIN(__builtin_ia32_verr_mem, "UcvC*", "n")
-BUILTIN(__builtin_ia32_verw_reg, "UcUs", "n")
-BUILTIN(__builtin_ia32_verw_mem, "UcvC*", "n")
-BUILTIN(__builtin_ia32_sldt_reg16, "Us", "n")
-BUILTIN(__builtin_ia32_sldt_reg32, "Ui", "n")
-BUILTIN(__builtin_ia32_sldt_mem, "vv*", "n")
-BUILTIN(__builtin_ia32_str_reg16, "Us", "n")
-BUILTIN(__builtin_ia32_str_reg32, "Ui", "n")
-BUILTIN(__builtin_ia32_str_mem, "vv*", "n")
-BUILTIN(__builtin_ia32_smsw_reg16, "Us", "n")
-BUILTIN(__builtin_ia32_smsw_reg32, "Ui", "n")
-BUILTIN(__builtin_ia32_smsw_mem, "vv*", "n")
-BUILTIN(__builtin_ia32_lldt_reg, "vUs", "n")
-BUILTIN(__builtin_ia32_lldt_mem, "vvC*", "n")
-BUILTIN(__builtin_ia32_ltr_reg, "vUs", "n")
-BUILTIN(__builtin_ia32_ltr_mem, "vvC*", "n")
-BUILTIN(__builtin_ia32_lmsw_reg, "vUs", "n")
-BUILTIN(__builtin_ia32_lmsw_mem, "vvC*", "n")
-BUILTIN(__builtin_ia32_clts, "v", "n")
-BUILTIN(__builtin_ia32_invd, "v", "n")
-BUILTIN(__builtin_ia32_clac, "v", "n")
-BUILTIN(__builtin_ia32_stac, "v", "n")
-BUILTIN(__builtin_ia32_hlt, "v", "n")
-BUILTIN(__builtin_ia32_vmxoff, "v", "n")
-// Preserve VMfail under SMM dual-monitor treatment.
-BUILTIN(__builtin_ia32_vmxoff_status, "Uc", "n")
-BUILTIN(__builtin_ia32_stgi, "v", "n")
-BUILTIN(__builtin_ia32_clgi, "v", "n")
-BUILTIN(__builtin_ia32_lar_reg16, "UsUsUsUc*", "n")
-BUILTIN(__builtin_ia32_lar_mem16, "UsvC*UsUc*", "n")
-BUILTIN(__builtin_ia32_lar_reg32, "UiUsUiUc*", "n")
-BUILTIN(__builtin_ia32_lar_mem32, "UivC*UiUc*", "n")
-BUILTIN(__builtin_ia32_lsl_reg16, "UsUsUsUc*", "n")
-BUILTIN(__builtin_ia32_lsl_mem16, "UsvC*UsUc*", "n")
-BUILTIN(__builtin_ia32_lsl_reg32, "UiUsUiUc*", "n")
-BUILTIN(__builtin_ia32_lsl_mem32, "UivC*UiUc*", "n")
-
 // Native MOV segment selectors (ES=0, CS=1, SS=2, DS=3, FS=4, GS=5).
 // CS is read-only. Memory forms own a two-byte access inside the instruction.
 BUILTIN(__builtin_ia32_readseg, "UsIUi", "n")
@@ -185,16 +15,7 @@ BUILTIN(__builtin_ia32_readseg_mem, "vIUiv*", "n")
 BUILTIN(__builtin_ia32_writeseg, "vIUiUs", "n")
 BUILTIN(__builtin_ia32_writeseg_mem, "vIUivC*", "n")
 
-#define X86_NATIVE_FAR_TRANSFER(Name, Type, Bits, Attributes) \
-  BUILTIN(__builtin_ia32_##Name, Type, Attributes)
-#include "X86NativeFarTransfers.def"
-#undef X86_NATIVE_FAR_TRANSFER
-
 // Native packed far-pointer loads; selector validation stays instruction-owned.
-BUILTIN(__builtin_ia32_lds16, "UsvC*", "n")
-BUILTIN(__builtin_ia32_lds32, "UivC*", "n")
-BUILTIN(__builtin_ia32_les16, "UsvC*", "n")
-BUILTIN(__builtin_ia32_les32, "UivC*", "n")
 BUILTIN(__builtin_ia32_lss16, "UsvC*", "n")
 BUILTIN(__builtin_ia32_lss32, "UivC*", "n")
 BUILTIN(__builtin_ia32_lfs16, "UsvC*", "n")
@@ -2365,17 +2186,8 @@ TARGET_HEADER_BUILTIN(__writecr8, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__readdr, "zUi", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 TARGET_HEADER_BUILTIN(__writedr, "vUiz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
 
-// Explicit non-64-bit control/debug transfers; the full i386 backend owns
-// their native instruction emission. Register indices remain immediate.
-BUILTIN(__builtin_ia32_readcr32, "UiIUi", "n")
-BUILTIN(__builtin_ia32_writecr32, "vIUiUi", "n")
-BUILTIN(__builtin_ia32_readdr32, "UiIUi", "n")
-BUILTIN(__builtin_ia32_writedr32, "vIUiUi", "n")
-
 BUILTIN(__builtin_ia32_readeflags_u16, "Us", "n")
 BUILTIN(__builtin_ia32_writeeflags_u16, "vUs", "n")
-BUILTIN(__builtin_ia32_readeflags_u32, "Ui", "n")
-BUILTIN(__builtin_ia32_writeeflags_u32, "vUi", "n")
 BUILTIN(__readeflags, "z", "n")
 BUILTIN(__writeeflags, "vz", "n")
 

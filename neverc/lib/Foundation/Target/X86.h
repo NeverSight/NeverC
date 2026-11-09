@@ -308,16 +308,14 @@ public:
   bool supportsTargetAttributeTune() const override { return true; }
 
   bool isValidCPUName(llvm::StringRef Name) const override {
-    return llvm::X86::parseArchX86(
-               Name, getTriple().getArch() == llvm::Triple::x86_64) !=
-           llvm::X86::CK_None;
+    return llvm::X86::parseArchX86(Name) != llvm::X86::CK_None;
   }
 
   bool isValidTuneCPUName(llvm::StringRef Name) const override {
     if (Name == "generic")
       return true;
 
-    return llvm::X86::parseTuneCPU(Name) != llvm::X86::CK_None;
+    return isValidCPUName(Name);
   }
 
   void fillValidCPUList(
@@ -326,8 +324,7 @@ public:
       llvm::SmallVectorImpl<llvm::StringRef> &Values) const override;
 
   bool setCPU(const std::string &Name) override {
-    CPU = llvm::X86::parseArchX86(
-        Name, getTriple().getArch() == llvm::Triple::x86_64);
+    CPU = llvm::X86::parseArchX86(Name);
     return CPU != llvm::X86::CK_None;
   }
 
@@ -370,116 +367,6 @@ public:
 
   uint64_t getPointerAlignV(LangAS AddrSpace) const override {
     return getPointerWidthV(AddrSpace);
-  }
-};
-
-// Base i386 System V data model. Instruction selection is supplied by the
-// full LLVM fork until the embedded backend regains 32-bit support.
-class LLVM_LIBRARY_VISIBILITY X86_32TargetInfo : public X86TargetInfo {
-public:
-  X86_32TargetInfo(const llvm::Triple &Triple, const TargetOptions &Opts)
-      : X86TargetInfo(Triple, Opts) {
-    PointerWidth = PointerAlign = LongWidth = LongAlign = 32;
-    DoubleAlign = LongLongAlign = 32;
-    LongDoubleWidth = 96;
-    LongDoubleAlign = 32;
-    SuitableAlign = 128;
-    SizeType = UnsignedInt;
-    PtrDiffType = IntPtrType = SignedInt;
-    RegParmMax = 3;
-    MaxAtomicPromoteWidth = 64;
-    MaxAtomicInlineWidth = 32;
-    resetDataLayout("e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-"
-                    "i128:128-f64:32:64-f80:32-n8:16:32-S128");
-  }
-
-  BuiltinVaListKind getBuiltinVaListKind() const override {
-    return CharPtrBuiltinVaList;
-  }
-  int getEHDataRegisterNumber(unsigned RegNo) const override {
-    return RegNo == 0 ? 0 : RegNo == 1 ? 2 : -1;
-  }
-  unsigned getRegisterWidth() const override { return 32; }
-  unsigned getUnwindWordWidth() const override { return 32; }
-  void setMaxAtomicWidth() override {
-    if (hasFeature("cx8"))
-      MaxAtomicInlineWidth = 64;
-  }
-  CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
-    // The initial source ABI supports cdecl and callee stack cleanup. Do not
-    // silently accept register conventions using a different classification.
-    return CC == CC_C || CC == CC_X86StdCall ? CCCR_OK : CCCR_Error;
-  }
-  bool validateOperandSize(const llvm::StringMap<bool> &Features,
-                           llvm::StringRef Constraint,
-                           unsigned Size) const override {
-    switch (Constraint[0]) {
-    case 'R': case 'q': case 'Q': case 'a': case 'b': case 'c': case 'd':
-    case 'S': case 'D':
-      return Size <= 32;
-    case 'A':
-      return Size <= 64;
-    default:
-      return X86TargetInfo::validateOperandSize(Features, Constraint, Size);
-    }
-  }
-  llvm::ArrayRef<Builtin::Info> getTargetBuiltins() const override;
-  bool hasBitIntType() const override { return true; }
-  size_t getMaxBitIntWidth() const override {
-    return llvm::IntegerType::MAX_INT_BITS;
-  }
-};
-
-// Platform data models share the i386 builtin and register-width authority.
-class LLVM_LIBRARY_VISIBILITY DarwinI386TargetInfo
-    : public DarwinTargetInfo<X86_32TargetInfo> {
-public:
-  DarwinI386TargetInfo(const llvm::Triple &Triple, const TargetOptions &Opts)
-      : DarwinTargetInfo<X86_32TargetInfo>(Triple, Opts) {
-    LongDoubleWidth = LongDoubleAlign = 128;
-    SizeType = UnsignedLong;
-    IntPtrType = SignedLong;
-    resetDataLayout("e-m:o-p:32:32-p270:32:32-p271:32:32-p272:64:64-"
-                    "i128:128-f64:32:64-f80:128-n8:16:32-S128",
-                    "_");
-  }
-
-  bool handleTargetFeatures(std::vector<std::string> &Features,
-                            DiagnosticsEngine &Diags) override {
-    if (!DarwinTargetInfo<X86_32TargetInfo>::handleTargetFeatures(Features,
-                                                                  Diags))
-      return false;
-    MaxVectorAlign = hasFeature("avx512f") ? 512
-                     : hasFeature("avx")   ? 256
-                                           : 128;
-    return true;
-  }
-};
-
-class LLVM_LIBRARY_VISIBILITY MicrosoftX86_32TargetInfo
-    : public WindowsTargetInfo<X86_32TargetInfo> {
-public:
-  MicrosoftX86_32TargetInfo(const llvm::Triple &Triple,
-                            const TargetOptions &Opts)
-      : WindowsTargetInfo<X86_32TargetInfo>(Triple, Opts) {
-    DoubleAlign = LongLongAlign = 64;
-    LongDoubleWidth = LongDoubleAlign = 64;
-    LongDoubleFormat = &llvm::APFloat::IEEEdouble();
-    resetDataLayout("e-m:x-p:32:32-p270:32:32-p271:32:32-p272:64:64-"
-                    "i64:64-i128:128-f80:128-n8:16:32-a:0:32-S32",
-                    "_");
-  }
-
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    WindowsTargetInfo<X86_32TargetInfo>::getTargetDefines(Opts, Builder);
-    Builder.defineMacro("_M_IX86", "600");
-  }
-
-  CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
-    if (CC == CC_X86FastCall)
-      return CCCR_OK;
-    return X86_32TargetInfo::checkCallingConvention(CC);
   }
 };
 

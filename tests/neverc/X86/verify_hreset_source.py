@@ -91,6 +91,8 @@ def main():
         assert match, path
         bits = int(match[1])
         object_input = path.suffix == ".o"
+        if bits != 64 and "neverc" in tools["frontend"] and not object_input:
+            continue  # Legacy source belongs to the full LLVM/Clang frontend.
         exports[path.name] = sha256(path)
         for opt in ("O0", "O2"):
             checks = [False]

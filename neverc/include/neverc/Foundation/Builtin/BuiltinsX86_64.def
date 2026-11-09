@@ -175,19 +175,31 @@ TARGET_BUILTIN(__builtin_ia32_aand64, "vv*SOi", "n", "raoint")
 TARGET_BUILTIN(__builtin_ia32_aor64, "vv*SOi", "n", "raoint")
 TARGET_BUILTIN(__builtin_ia32_axor64, "vv*SOi", "n", "raoint")
 
+// Raw resumable software interrupt; the vector is an immediate in 0..255.
+BUILTIN(__builtin_ia32_int, "vIUi", "n")
+
 // VMX translation invalidation uses the full 64-bit type selector and an m128
 // descriptor. These are side effects, including when their status is unused.
 BUILTIN(__builtin_ia32_invept, "UcULLivC*", "n")
 BUILTIN(__builtin_ia32_invvpid, "UcULLivC*", "n")
 
 // Bounded native processor-state effects; INVLPGB uses rAX, EDX, ECX in order.
+TARGET_BUILTIN(__builtin_ia32_hreset, "vUi", "n", "hreset")
 BUILTIN(__builtin_ia32_invlpgb, "vULLiUiUi", "n")
 BUILTIN(__builtin_ia32_invlpgb_addr32, "vUiUiUi", "n")
-BUILTIN(__builtin_ia32_tlbsync_control64, "vULLi", "n")
+BUILTIN(__builtin_ia32_tlbsync, "v", "n")
 BUILTIN(__builtin_ia32_lkgs_reg, "vUs", "n")
 BUILTIN(__builtin_ia32_lkgs_mem, "vvC*", "n")
 
 // Native bounded SVM and supervisor state. Addresses remain integer operands.
+TARGET_HEADER_BUILTIN(__halt, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_clgi, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_stgi, "v", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_invlpga, "vv*i", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_vmload, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_vmsave, "vz", "nh", INTRIN_H, ALL_MS_LANGUAGES, "")
+TARGET_HEADER_BUILTIN(__svm_skinit, "vi", "nrh", INTRIN_H, ALL_MS_LANGUAGES, "")
+BUILTIN(__builtin_ia32_skinit, "vUi", "nr")
 #define X86_NATIVE_BIT_TEST(Name, Type) \
   BUILTIN(__builtin_ia32_##Name, Type, "n")
 #include "X86NativeBitTest.def"
@@ -207,6 +219,8 @@ BUILTIN(__builtin_ia32_vmrun_context, "vv*IUi", "n")
 BUILTIN(__builtin_ia32_hyperv_call, "vv*v*v*IUi", "n")
 BUILTIN(__builtin_ia32_psmash_context, "vv*v*IUi", "n")
 BUILTIN(__builtin_ia32_hle_context, "vv*v*v*IUiIUi", "n")
+BUILTIN(__builtin_ia32_rtm_abort_pair, "UiIUi", "n")
+BUILTIN(__builtin_ia32_cpuidex, "vi*UiUi", "n")
 BUILTIN(__builtin_ia32_pvalidate_context, "vv*v*IUi", "n")
 BUILTIN(__builtin_ia32_rmpadjust_context, "vv*v*IUi", "n")
 BUILTIN(__builtin_ia32_rmpupdate_context, "vv*v*IUi", "n")
@@ -222,7 +236,13 @@ BUILTIN(__builtin_ia32_invlpga, "vULLiUi", "n")
 BUILTIN(__builtin_ia32_vmload_addr32, "vUi", "n")
 BUILTIN(__builtin_ia32_vmsave_addr32, "vUi", "n")
 BUILTIN(__builtin_ia32_invlpga_addr32, "vUiUi", "n")
+BUILTIN(__builtin_ia32_stgi, "v", "n")
+BUILTIN(__builtin_ia32_clgi, "v", "n")
 BUILTIN(__builtin_ia32_swapgs, "v", "n")
+BUILTIN(__builtin_ia32_clac, "v", "n")
+BUILTIN(__builtin_ia32_stac, "v", "n")
+BUILTIN(__builtin_ia32_hlt, "v", "n")
+BUILTIN(__builtin_ia32_vmfunc_eptp_switch, "vUi", "n")
 
 // GETSEC fallthrough leaves: full GPR transport, constant EAX leaf 0 or 6..8.
 BUILTIN(__builtin_ia32_getsec_bounded, "ULLiIULLiULLiULLiULLiULLi*", "n")
@@ -235,24 +255,62 @@ TARGET_BUILTIN(__builtin_ia32_enclu_bounded, "ULLiIULLiULLiULLiULLiULLi*Uc*", "n
 TARGET_BUILTIN(__builtin_ia32_enclu_bounded_state, "vIULLiULLiULLiULLiUsULLi*Us*", "n", "sgx,sahf")
 TARGET_BUILTIN(__builtin_ia32_getsec_bounded_state, "vIULLiULLiULLiULLiUsULLi*Us*", "n", "sahf")
 
-// Native descriptor/machine state with a long-mode-only register result.
+// Native descriptor/machine state. Memory forms own exactly one m16 operand.
+BUILTIN(__builtin_ia32_verr_reg, "UcUs", "n")
+BUILTIN(__builtin_ia32_verr_mem, "UcvC*", "n")
+BUILTIN(__builtin_ia32_verw_reg, "UcUs", "n")
+BUILTIN(__builtin_ia32_verw_mem, "UcvC*", "n")
+BUILTIN(__builtin_ia32_sldt_reg16, "Us", "n")
+BUILTIN(__builtin_ia32_sldt_reg32, "Ui", "n")
 BUILTIN(__builtin_ia32_sldt_reg64, "ULLi", "n")
+BUILTIN(__builtin_ia32_sldt_mem, "vv*", "n")
+BUILTIN(__builtin_ia32_str_reg16, "Us", "n")
+BUILTIN(__builtin_ia32_str_reg32, "Ui", "n")
 BUILTIN(__builtin_ia32_str_reg64, "ULLi", "n")
+BUILTIN(__builtin_ia32_str_mem, "vv*", "n")
+BUILTIN(__builtin_ia32_smsw_reg16, "Us", "n")
+BUILTIN(__builtin_ia32_smsw_reg32, "Ui", "n")
 BUILTIN(__builtin_ia32_smsw_reg64, "ULLi", "n")
+BUILTIN(__builtin_ia32_smsw_mem, "vv*", "n")
+BUILTIN(__builtin_ia32_lldt_reg, "vUs", "n")
+BUILTIN(__builtin_ia32_lldt_mem, "vvC*", "n")
+BUILTIN(__builtin_ia32_ltr_reg, "vUs", "n")
+BUILTIN(__builtin_ia32_ltr_mem, "vvC*", "n")
+BUILTIN(__builtin_ia32_lmsw_reg, "vUs", "n")
+BUILTIN(__builtin_ia32_lmsw_mem, "vvC*", "n")
+BUILTIN(__builtin_ia32_invd, "v", "n")
 
 // Descriptor queries return the native value (or prior on failure) and store ZF.
+BUILTIN(__builtin_ia32_lar_reg16, "UsUsUsUc*", "n")
+BUILTIN(__builtin_ia32_lar_mem16, "UsvC*UsUc*", "n")
+BUILTIN(__builtin_ia32_lar_reg32, "UiUsUiUc*", "n")
+BUILTIN(__builtin_ia32_lar_mem32, "UivC*UiUc*", "n")
 BUILTIN(__builtin_ia32_lar_reg64, "ULLiUsULLiUc*", "n")
 BUILTIN(__builtin_ia32_lar_mem64, "ULLivC*ULLiUc*", "n")
+BUILTIN(__builtin_ia32_lsl_reg16, "UsUsUsUc*", "n")
+BUILTIN(__builtin_ia32_lsl_mem16, "UsvC*UsUc*", "n")
+BUILTIN(__builtin_ia32_lsl_reg32, "UiUsUiUc*", "n")
+BUILTIN(__builtin_ia32_lsl_mem32, "UivC*UiUc*", "n")
 BUILTIN(__builtin_ia32_lsl_reg64, "ULLiUsULLiUc*", "n")
 BUILTIN(__builtin_ia32_lsl_mem64, "ULLivC*ULLiUc*", "n")
 // Portable VMX interfaces do not depend on Microsoft headers or language modes.
 BUILTIN(__builtin_ia32_vmread, "UcULLiULLi*", "n")
 BUILTIN(__builtin_ia32_vmwrite, "UcULLiULLi", "n")
+BUILTIN(__builtin_ia32_vmclear, "UcvC*", "n")
+BUILTIN(__builtin_ia32_vmptrld, "UcvC*", "n")
+BUILTIN(__builtin_ia32_vmptrst, "vv*", "n")
+BUILTIN(__builtin_ia32_vmxon, "UcvC*", "n")
+BUILTIN(__builtin_ia32_vmxoff, "v", "n")
+BUILTIN(__builtin_ia32_vmlaunch, "Uc", "n")
+BUILTIN(__builtin_ia32_vmresume, "Uc", "n")
 
 // Register VMREAD returns the prior value on VMfail and writes i8 status.
 BUILTIN(__builtin_ia32_vmread_reg, "ULLiULLiULLiUc*", "n")
 // VMWRITE owns the source memory access, including privilege/fault ordering.
 BUILTIN(__builtin_ia32_vmwrite_mem, "UcULLivC*", "n")
+
+// Native MPX uses the physical bounds bank. All controls are constants.
+BUILTIN(__builtin_ia32_bnd_branch, "vIUi", "n")
 
 // Encoding-preserving APX atomic transactions. Addresses are segment offsets.
 BUILTIN(__builtin_ia32_aadd32_address, "vULLiUiIUiIUi", "n")
@@ -278,7 +336,7 @@ BUILTIN(__builtin_ia32_axor64_legacy_address, "vULLiULLiIUiIUi", "n")
 BUILTIN(__builtin_ia32_cmpccxadd32_legacy_address, "UiULLiUiUiIUiIUiIUi", "n")
 BUILTIN(__builtin_ia32_cmpccxadd64_legacy_address, "ULLiULLiULLiULLiIUiIUiIUi", "n")
 
-// Native long-mode MPX values retain the complete 64-bit register.
+BUILTIN(__builtin_ia32_bndmov_reg, "vIUiIUi", "n")
 BUILTIN(__builtin_ia32_bndcl_reg, "vIUiULLi", "n")
 BUILTIN(__builtin_ia32_bndcu_reg, "vIUiULLi", "n")
 BUILTIN(__builtin_ia32_bndcn_reg, "vIUiULLi", "n")
@@ -325,6 +383,15 @@ BUILTIN(__builtin_ia32_vmptrst_address, "vULLiIUiIUi", "n")
 BUILTIN(__builtin_ia32_vmxon_address, "UcULLiIUiIUi", "n")
 
 
+// Native scalar port I/O and MSR writes, independent of platform headers.
+BUILTIN(__builtin_ia32_inbyte, "UcUs", "n")
+BUILTIN(__builtin_ia32_inword, "UsUs", "n")
+BUILTIN(__builtin_ia32_indword, "UiUs", "n")
+BUILTIN(__builtin_ia32_outbyte, "vUsUc", "n")
+BUILTIN(__builtin_ia32_outword, "vUsUs", "n")
+BUILTIN(__builtin_ia32_outdword, "vUsUi", "n")
+BUILTIN(__builtin_ia32_wrmsr, "vUiULLi", "n")
+
 // Native REP operations; counts are element counts, not byte lengths.
 BUILTIN(__builtin_ia32_movsb, "vv*vC*ULLi", "n")
 BUILTIN(__builtin_ia32_movsw, "vv*vC*ULLi", "n")
@@ -334,6 +401,12 @@ BUILTIN(__builtin_ia32_stosb, "vv*UcULLi", "n")
 BUILTIN(__builtin_ia32_stosw, "vv*UsULLi", "n")
 BUILTIN(__builtin_ia32_stosd, "vv*UiULLi", "n")
 BUILTIN(__builtin_ia32_stosq, "vv*ULLiULLi", "n")
+BUILTIN(__builtin_ia32_inbytestring, "vUsv*Ui", "n")
+BUILTIN(__builtin_ia32_inwordstring, "vUsv*Ui", "n")
+BUILTIN(__builtin_ia32_indwordstring, "vUsv*Ui", "n")
+BUILTIN(__builtin_ia32_outbytestring, "vUsvC*Ui", "n")
+BUILTIN(__builtin_ia32_outwordstring, "vUsvC*Ui", "n")
+BUILTIN(__builtin_ia32_outdwordstring, "vUsvC*Ui", "n")
 
 // Explicit REP state: natural-width GPR results go to the final word array.
 // Comparisons additionally store canonical LAHF/SETO flags in unsigned short.
@@ -347,10 +420,12 @@ BUILTIN(__builtin_ia32_rep_outs_state, "vULLiULLiUsUcIUiIUiIUiULLi*", "n")
 
 // Native processor-state effects. The list operations own their memory tables
 // and return the actual RCX completion mask.
+BUILTIN(__builtin_ia32_clts, "v", "n")
 BUILTIN(__builtin_ia32_readcr, "ULLiIUi", "n")
 BUILTIN(__builtin_ia32_writecr, "vIUiULLi", "n")
 BUILTIN(__builtin_ia32_readdr, "ULLiIUi", "n")
 BUILTIN(__builtin_ia32_writedr, "vIUiULLi", "n")
+BUILTIN(__builtin_ia32_wrmsrns, "vUiULLi", "n")
 BUILTIN(__builtin_ia32_rdmsrlist, "ULLivC*v*ULLi", "n")
 BUILTIN(__builtin_ia32_wrmsrlist, "ULLivC*vC*ULLi", "n")
 
@@ -368,6 +443,15 @@ TARGET_BUILTIN(__builtin_ia32_tcvtrowps2bf16l_reg, "V32yIUcUiIUi", "nV:512:", "a
 TARGET_BUILTIN(__builtin_ia32_tcvtrowps2phh_reg, "V32xIUcUiIUi", "nV:512:", "amx-avx512,avx10.2")
 TARGET_BUILTIN(__builtin_ia32_tcvtrowps2phl_reg, "V32xIUcUiIUi", "nV:512:", "amx-avx512,avx10.2")
 TARGET_BUILTIN(__builtin_ia32_tilemovrow_reg, "V16iIUcUiIUi", "nV:512:", "amx-avx512,avx10.2")
+
+// Native far memory transfers from 64-bit code.
+#define X86_NATIVE_FAR_TRANSFER(Name, Type, Bits, Attributes) \
+  BUILTIN(__builtin_ia32_##Name, Type, Attributes)
+#include "X86NativeFarTransfers.def"
+#undef X86_NATIVE_FAR_TRANSFER
+
+BUILTIN(__builtin_ia32_vmxoff_status, "Uc", "n")
+BUILTIN(__builtin_ia32_tlbsync_control64, "vULLi", "n")
 
 #undef BUILTIN
 #undef TARGET_BUILTIN

@@ -530,16 +530,9 @@ void neverc::initializePredefinedMacros(const TargetInfo &TI,
   if (LangOpts.NoInlineDefine)
     Builder.defineMacro("__NO_INLINE__");
 
-  const bool IsI386 = TI.getTriple().getArch() == llvm::Triple::x86;
-  if (IsI386 && LangOpts.I386PICLevel) {
-    Builder.defineMacro("__PIC__", llvm::Twine(LangOpts.I386PICLevel));
-    Builder.defineMacro("__pic__", llvm::Twine(LangOpts.I386PICLevel));
-  }
   if (LangOpts.PIE) {
-    const unsigned Level =
-        IsI386 ? LangOpts.I386PICLevel : llvm::PIELevel::Large;
-    Builder.defineMacro("__PIE__", llvm::Twine(Level));
-    Builder.defineMacro("__pie__", llvm::Twine(Level));
+    Builder.defineMacro("__PIE__", llvm::Twine(llvm::PIELevel::Large));
+    Builder.defineMacro("__pie__", llvm::Twine(llvm::PIELevel::Large));
   }
 
   // Macros to control C99 numerics and <float.h>

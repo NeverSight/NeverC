@@ -790,7 +790,7 @@ TEST_F(DriverTest, RejectUnsupportedTargets) {
       {"armv7", "armv7-unknown-linux-gnueabi"},
       {"riscv64", "riscv64-unknown-linux-gnu"},
       {"mips64", "mips64-unknown-linux-gnu"},
-      {"i386_mingw", "i386-pc-windows-gnu"},
+      {"i386", "i386-pc-linux-gnu"},
       {"arm64ec", "arm64ec-windows-msvc"},
       {"arm64e", "arm64e-apple-darwin"},
       {"aarch64_be", "aarch64_be-linux-gnu"},
@@ -802,6 +802,55 @@ TEST_F(DriverTest, RejectUnsupportedTargets) {
     expectCommandFail(std::string("reject_target_") + c.name,
                       "unsupported target architecture",
                       {"-target", c.triple, "-c", src, "-o", "/dev/null"});
+  }
+}
+
+TEST_F(DriverTest, RejectLegacyX86TargetsForEveryOutput) {
+  const auto Source = tmpFile("unsupported-x86.c");
+  writeFile(Source, "int value;\n");
+  for (const char *Triple :
+       {"i386-unknown-linux-gnu", "i486-unknown-linux-gnu",
+        "i586-unknown-linux-gnu", "i686-unknown-linux-gnu",
+        "i386-pc-windows-msvc", "i686-pc-windows-gnu", "i386-apple-macosx10.13",
+        "i386-unknown-linux-code16", "x86_64-unknown-linux-gnux32"}) {
+    for (const auto &Mode : std::vector<std::vector<std::string>>{
+             {"-E"}, {"-fsyntax-only"}, {"-S", "-emit-llvm"}, {"-S"}, {"-c"}}) {
+      SCOPED_TRACE(Triple);
+      SCOPED_TRACE(Mode.front());
+      const auto Output = tmpFile("unsupported-output");
+      std::vector<std::string> Args = {std::string("--target=") + Triple,
+                                       Source.string(), "-o", Output.string()};
+      Args.insert(Args.end(), Mode.begin(), Mode.end());
+      const auto Result = ncc(Args);
+      EXPECT_NE(Result.exitCode, 0) << Result.err;
+      EXPECT_NE(Result.err.find("unsupported target architecture"),
+                std::string::npos)
+          << Result.err;
+      EXPECT_FALSE(fs::exists(Output));
+    }
+  }
+}
+
+TEST_F(DriverTest, RejectLegacyX86OptionsWithoutFallingBackToX64) {
+  const auto Source = tmpFile("unsupported-option.c");
+  writeFile(Source, "int value;\n");
+  for (const char *Option :
+       {"-m32", "-m16", "-mx32", "-fllvm-backend=/nonexistent/llc"}) {
+    SCOPED_TRACE(Option);
+    const auto Output = tmpFile("unsupported-option.o");
+    const auto Result = ncc({"--target=x86_64-unknown-linux-gnu", Option, "-c",
+                             Source.string(), "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.err;
+    EXPECT_NE(Result.err.find("error:"), std::string::npos) << Result.err;
+    EXPECT_FALSE(fs::exists(Output));
+  }
+  for (const char *Arch : {"i386", "i486", "i586", "i686"}) {
+    SCOPED_TRACE(Arch);
+    const auto Result = ncc({"--target=x86_64-apple-macosx10.13", "-arch", Arch,
+                             "-fsyntax-only", Source.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.err;
+    EXPECT_NE(Result.err.find("invalid arch name"), std::string::npos)
+        << Result.err;
   }
 }
 

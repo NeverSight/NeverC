@@ -22,7 +22,7 @@ class NativeRegisterWindowTest(unittest.TestCase):
         text = (WINDOWS.TABLES.TARGET / "X86GenInstrInfo.inc").read_text()
         ids = WINDOWS.TABLES.enums(text)
         for i, (name, _, _, _) in enumerate(WINDOWS.INSTRUCTIONS):
-            self.assertEqual(ids[name], 18573 + i)
+            self.assertEqual(ids[name], 18566 + i)
             fields = WINDOWS.TABLES.descriptor(text, name)
             self.assertEqual(fields[1:3], ["2", "1"])
             operands = re.search(r"/\* " + fields[8] + r" \*/ ([^\n]+)", text)[1]
@@ -31,7 +31,7 @@ class NativeRegisterWindowTest(unittest.TestCase):
             self.assertIn("MCID::Pseudo", fields[9])
             self.assertNotIn("MCID::MoveReg", fields[9])
             self.assertIn("MCID::UnmodeledSideEffects", fields[9])
-        self.assertEqual(ids["NATIVE_ADDRESS64"], 18572)
+        self.assertEqual(ids["NATIVE_ADDRESS64"], 18565)
 
 
 if __name__ == "__main__":

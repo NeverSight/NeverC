@@ -29,15 +29,15 @@ FIELD = 0xF1E2D3C44002A5B6
 VALUE = 0x9172536485A6B7C8
 SENTINEL = 0x18273645AABBCCDD
 MANAGEMENT = ("vmclear", "vmptrld", "vmptrst", "vmxon", "vmxoff",
-              "vmlaunch", "vmresume", "vmxoff.status")
+              "vmlaunch", "vmresume")
 MEMORY_MANAGEMENT = {"vmclear", "vmptrld", "vmptrst", "vmxon"}
 VOID_MANAGEMENT = {"vmptrst", "vmxoff"}
 INVALIDATION = ("invept", "invvpid")
 
 
 def compile_case(compiler, directory, operation, dead, opt, backend=None,
-                 portable=False, bits=64):
-    name = operation + ("_dead" if dead else "") + f"_{bits}_" + opt
+                 portable=False):
+    name = operation + ("_dead" if dead else "") + "_" + opt
     source = directory / (name + ".c")
     output = directory / (name + ".obj")
     ir = directory / (name + ".ll")
@@ -51,13 +51,9 @@ def compile_case(compiler, directory, operation, dead, opt, backend=None,
         second = "unsigned __int64 *out" if operation == "vmread" else "unsigned __int64 value"
         parameters = f"unsigned __int64 field, {second}"
         arguments = "field, out" if operation == "vmread" else "field, value"
-    builtin = ("__builtin_ia32_" + operation.replace(".", "_")
-               if portable or operation in INVALIDATION or operation == "vmxoff.status" else
+    builtin = ("__builtin_ia32_" + operation if portable or operation in INVALIDATION else
                "__vmx_" + {"vmxon": "on", "vmxoff": "off"}.get(operation, operation))
-    word_type = "unsigned" if bits == 32 and operation not in MANAGEMENT else "unsigned long long"
-    parameters = parameters.replace("unsigned __int64", word_type)
-    if bits == 32 and (portable or operation in INVALIDATION) and operation not in MANAGEMENT:
-        builtin += "32"
+    parameters = parameters.replace("unsigned __int64", "unsigned long long")
     returns_void = dead or operation in VOID_MANAGEMENT
     result = "void" if returns_void else "unsigned char"
     prefix = "" if returns_void else "return "
@@ -65,30 +61,21 @@ def compile_case(compiler, directory, operation, dead, opt, backend=None,
         ('' if portable else '#include <intrin.h>\n') +
         f'{result} probe({parameters}) {{\n'
         f'  {prefix}{builtin}({arguments});\n}}\n')
-    driver = bits == 32 and backend
-    command = [str(compiler), "-target",
-               "i386-unknown-linux-gnu" if bits == 32 else "x86_64-pc-windows-msvc",
-               "-" + opt, "-ffreestanding", "-fno-lto", "-fno-stack-protector",
-               "-fno-builtin-mimalloc", "-Werror", str(source)]
-    if not portable:
-        command += ["-fms-extensions"]
-        if bits == 32:
-            command += ["-D_MSC_VER=1930"]
-    if not driver:
-        command += ["-mllvm", "-verify-machineinstrs"]
+    command = [str(compiler), "-target", "x86_64-pc-windows-msvc", "-" + opt,
+               "-ffreestanding", "-fno-lto", "-fno-stack-protector",
+                  "-mllvm", "-verify-machineinstrs", str(source)]
     outputs = [(["-S", "-emit-llvm"], ir)]
-    if not backend or driver:
-        outputs.append((["-c"] + (["-fllvm-backend=" + str(backend)] if driver else []), output))
+    if not backend:
+        outputs.append((["-c"], output))
     for flags, path in outputs:
         compiled = subprocess.run(command + flags + ["-o", str(path)],
                                   capture_output=True, text=True)
         if compiled.returncode:
             raise AssertionError(f"{name}: compilation failed:\n{compiled.stderr}")
     text = ir.read_text()
-    api = operation + ("32" if bits == 32 and operation not in MANAGEMENT else "")
-    if not re.search(r"\bcall\b[^@\n]*@llvm\.x86\." + api + r"\(", text) or " asm " in text:
+    if not re.search(r"\bcall\b[^@\n]*@llvm\.x86\." + operation + r"\(", text) or " asm " in text:
         raise AssertionError(f"{name}: expected a native LLVM intrinsic call")
-    if backend and not driver:
+    if backend:
         compiled = subprocess.run(
             [str(backend), "-" + opt, "-verify-machineinstrs", "-filetype=obj",
              str(ir), "-o", str(output)], capture_output=True, text=True)
@@ -96,7 +83,7 @@ def compile_case(compiler, directory, operation, dead, opt, backend=None,
             raise AssertionError(f"{name}: fork could not compile NeverC IR:\n{compiled.stderr}")
     image = lief.parse(str(output))
     if image is None:
-        raise AssertionError(f"{name}: compiler did not produce an object")
+        raise AssertionError(f"{name}: compiler did not produce a COFF object")
     section = next(s for s in image.sections if s.name == ".text" and len(s.content))
     return name, bytes(section.content)
 
@@ -180,7 +167,7 @@ def execute(code, operation, dead, status, mapped, bits=64):
     decoder = capstone.Cs(capstone.CS_ARCH_X86,
                           capstone.CS_MODE_64 if bits == 64 else capstone.CS_MODE_32)
     decoder.detail = True
-    accesses = [i for i in decoder.disasm(code, CODE) if i.mnemonic == operation.split(".")[0]]
+    accesses = [i for i in decoder.disasm(code, CODE) if i.mnemonic == operation]
     if len(accesses) != 1:
         raise AssertionError(f"expected one {operation}, found {len(accesses)}")
     instruction = accesses[0]
@@ -207,8 +194,6 @@ def execute(code, operation, dead, status, mapped, bits=64):
     else:
         destination_operand = operands[0]
         if destination_operand.type == capstone.x86.X86_OP_MEM:
-            if destination_operand.size != word_bytes:
-                raise AssertionError("VMREAD memory word width changed")
             actual_address = address(machine, instruction, destination_operand)
             if actual_address != destination:
                 raise AssertionError("VMREAD destination address changed")
@@ -269,7 +254,7 @@ def execute_management(code, operation, dead, status, bits):
     decoder = capstone.Cs(capstone.CS_ARCH_X86,
                           capstone.CS_MODE_64 if bits == 64 else capstone.CS_MODE_32)
     decoder.detail = True
-    accesses = [i for i in decoder.disasm(code, CODE) if i.mnemonic == operation.split(".")[0]]
+    accesses = [i for i in decoder.disasm(code, CODE) if i.mnemonic == operation]
     if len(accesses) != 1:
         raise AssertionError(f"expected one {operation}, found {len(accesses)}")
     instruction = accesses[0]
@@ -309,9 +294,6 @@ def main():
     mode.add_argument("--llc", type=Path, help="test the LLVM fork directly in both word sizes")
     parser.add_argument("--backend-llc", type=Path,
                         help="compile NeverC's emitted IR using this LLVM fork")
-    parser.add_argument("--bits", type=int, choices=(32, 64),
-                        help="select a source code mode; i386 requires --backend-llc")
-    parser.add_argument("--keep", type=Path)
     parser.add_argument("--portable-builtins", action="store_true",
                         help="use header-free __builtin_ia32_* VMX interfaces")
     parser.add_argument("--family", choices=("access", "management", "invalidation", "all"),
@@ -321,8 +303,6 @@ def main():
         parser.error("--backend-llc tests frontend IR and cannot be combined with --llc")
     if args.llc and args.portable_builtins:
         parser.error("--portable-builtins tests frontend APIs and cannot be combined with --llc")
-    if args.bits == 32 and not (args.llc or args.backend_llc):
-        parser.error("i386 source objects require --backend-llc")
     count = 0
     operations = ("vmread", "vmwrite") if args.family in ("access", "all") else ()
     if args.family in ("management", "all"):
@@ -330,17 +310,15 @@ def main():
     if args.family in ("invalidation", "all"):
         operations += INVALIDATION
     with tempfile.TemporaryDirectory(prefix="neverc-vmcs-") as temp:
-        directory = args.keep or Path(temp)
-        directory.mkdir(parents=True, exist_ok=True)
-        for bits in ((args.bits,) if args.bits else (32, 64) if args.llc else (64,)):
+        for bits in ((32, 64) if args.llc else (64,)):
             for opt in ("O0", "O2"):
                 for operation in operations:
                     for dead in ((False,) if operation in VOID_MANAGEMENT else (False, True)):
                         if args.llc:
-                            name, code = compile_ir(args.llc, directory, operation, dead, opt, bits)
+                            name, code = compile_ir(args.llc, Path(temp), operation, dead, opt, bits)
                         else:
-                            name, code = compile_case(args.compiler, directory, operation, dead, opt,
-                                                      args.backend_llc, args.portable_builtins, bits)
+                            name, code = compile_case(args.compiler, Path(temp), operation, dead, opt,
+                                                      args.backend_llc, args.portable_builtins)
                         if operation in MANAGEMENT:
                             statuses = (1, 2) if operation in ("vmlaunch", "vmresume") else (0, 1, 2)
                             if operation in VOID_MANAGEMENT:

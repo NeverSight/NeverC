@@ -45,13 +45,13 @@ inline constexpr bool repStringHasDestination(RepStringKind Kind) {
 inline constexpr bool repStringHasPort(RepStringKind Kind) {
   return Kind == RepStringKind::Input || Kind == RepStringKind::Output;
 }
-inline constexpr bool isRepStringControl(RepStringKind Kind, bool Is64,
-                                         uint64_t Element, uint64_t Address,
-                                         uint64_t Segment, uint64_t NotEqual) {
+inline constexpr bool isRepStringControl(RepStringKind Kind, uint64_t Element,
+                                         uint64_t Address, uint64_t Segment,
+                                         uint64_t NotEqual) {
   return Kind < RepStringKind::Count &&
          (Element == 1 || Element == 2 || Element == 4 ||
-          (Element == 8 && Is64 && !repStringHasPort(Kind))) &&
-         isNativeMemoryAddressWidth(Is64, Address) &&
+          (Element == 8 && !repStringHasPort(Kind))) &&
+         isNativeMemoryAddressWidth(true, Address) &&
          isNativeMemorySegmentPrefix(Segment) &&
          (repStringHasSource(Kind) || Segment == 0) && NotEqual <= 1 &&
          (repStringCompares(Kind) || NotEqual == 0);

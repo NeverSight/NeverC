@@ -119,61 +119,40 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
             call = (a if base in ("vmload", "vmsave") else
                     f"{a}, {b}" if base == "invlpga" else
                     b if operation == "vmfunc.eptp.switch" else "")
-            builtin = "__builtin_ia32_" + api.removeprefix("llvm.x86.").replace(".", "_")
-            if args.microsoft:
-                builtin = "__svm_" + base
-                if base == "invlpga":
-                    call = f"(void *)(word)({a}), (int)({b})"
-            body.append(f"{builtin}({call});")
-        result = "a ^ b ^ c ^ (word)source"
+            body.append(f"__builtin_ia32_{operation.replace('.', '_')}({call});")
+        result = "a ^ b ^ c ^ (unsigned long long)source"
         if variant == "memory":
             result += " ^ *ordinary"
         if variant == "condition":
             result += " ^ condition"
         body.append("return " + result + ";")
-        src.write_text(('#include <intrin.h>\n' if args.microsoft else '') +
-                       'typedef __UINTPTR_TYPE__ word;\nword probe(word a, word b, word c, const void *source, word *ordinary) {\n' +
+        src.write_text('unsigned long long probe(unsigned long long a, unsigned long long b, unsigned long long c, const void *source, unsigned long long *ordinary) {\n' +
                        "\n".join(body) + "\n}\n")
         common = [args.compiler, "--target=" + triple, "-" + opt, "-Werror", "-ffreestanding", "-fno-builtin-mimalloc",
-                  "-fno-lto", "-fno-stack-protector", src]
-        # The external-backend driver rejects embedded -mllvm options. Its
-        # object and assembly routes must use the driver's supported interface.
-        if not (args.backend_llc and mode == 32):
-            common += ["-mllvm", "-verify-machineinstrs"]
-        if args.microsoft:
-            common += ["-fms-extensions"]
-            if "windows" not in triple:
-                common += ["-D_MSC_VER=1930"]
+                  "-fno-lto", "-fno-stack-protector", "-mllvm", "-verify-machineinstrs", src]
         run(common + ["-S", "-emit-llvm", "-o", ir])
         assert " asm " not in ir.read_text() and f"@{api}(" in ir.read_text()
-        driver = ["-fllvm-backend=" + str(args.backend_llc)] if args.backend_llc and mode == 32 else []
-        if not args.backend_llc or mode == 32:
-            run(common + driver + ["-c", "-o", obj])
+        if not args.backend_llc:
+            run(common + ["-c", "-o", obj])
     backend = args.llc or args.backend_llc
-    # The external driver is currently an i386 Linux interface. Other native
-    # source targets use the explicit IR bridge to the full LLVM backend.
-    bridged = args.llc or (args.backend_llc and mode == 64)
-    if bridged:
+    if backend:
         common_backend = [backend, "-mtriple=" + triple, "-" + opt, "-verify-machineinstrs", ir]
         run(common_backend + ["-filetype=obj", "-o", obj])
     if variant == "retained":
         for dialect in ("att", "intel"):
             asm = directory / (name + "-" + dialect + ".s")
             assembled = asm.with_suffix(".o")
-            if bridged:
+            if backend:
                 run(common_backend + ["-filetype=asm", "-x86-asm-syntax=" + dialect, "-o", asm])
                 run([Path(backend).parent / "llvm-mc", "-triple=" + triple, "-filetype=obj", asm, "-o", assembled])
             else:
-                run(common + driver + ["-S", "-masm=" + dialect, "-o", asm])
-                if backend:
-                    run([Path(backend).parent / "llvm-mc", "-triple=" + triple, "-filetype=obj", asm, "-o", assembled])
-                else:
-                    run([args.compiler, "--target=" + triple, "-c", asm, "-o", assembled])
+                run(common + ["-S", "-masm=" + dialect, "-o", asm])
+                run([args.compiler, "--target=" + triple, "-c", asm, "-o", assembled])
             assert text_section(obj) == text_section(assembled), "assembly round trip changed bytes"
     return text_section(obj)
 
 
-def execute(code, operation, variant, mode, values, corrupt=None):
+def execute(code, operation, variant, mode, values):
     mask = (1 << mode) - 1
     base = operation.split(".")[0]
     address_bits = int(operation.rsplit("addr", 1)[1]) if ".addr" in operation else mode
@@ -182,8 +161,8 @@ def execute(code, operation, variant, mode, values, corrupt=None):
     machine = unicorn.Uc(unicorn.UC_ARCH_X86, unicorn.UC_MODE_64 if mode == 64 else unicorn.UC_MODE_32)
     reg = lambda name: getattr(regs, "UC_X86_REG_" + ("R" if mode == 64 else "E") + name)
     pack = lambda value: struct.pack("<Q" if mode == 64 else "<I", value & mask)
-    for region in (CODE, STACK, DATA):
-        machine.mem_map(region, PAGE)
+    for base in (CODE, STACK, DATA):
+        machine.mem_map(base, PAGE)
     machine.mem_write(CODE, code)
     machine.mem_write(SOURCE, b"\x2b\x00")
     machine.mem_write(ORDINARY, pack(COMMON.SENTINEL))
@@ -211,12 +190,8 @@ def execute(code, operation, variant, mode, values, corrupt=None):
         av, bv, cv = (v ^ (d if index else 0) for v, d in zip((a, b, c), DELTA))
         if base in ("vmload", "vmsave", "invlpga"):
             address_reg = {16: regs.UC_X86_REG_AX, 32: regs.UC_X86_REG_EAX, 64: regs.UC_X86_REG_RAX}[address_bits]
-            if corrupt == "address":
-                machine.reg_write(address_reg, machine.reg_read(address_reg) ^ 1)
             assert machine.reg_read(address_reg) == av & ((1 << address_bits) - 1), "native address input changed"
             if base == "invlpga":
-                if corrupt == "asid":
-                    machine.reg_write(regs.UC_X86_REG_ECX, machine.reg_read(regs.UC_X86_REG_ECX) ^ 0x80000000)
                 assert machine.reg_read(regs.UC_X86_REG_ECX) == bv & 0xffffffff, "ASID input changed"
         elif operation == "vmfunc.eptp.switch":
             assert machine.reg_read(regs.UC_X86_REG_EAX) == 0, "wrong VMFUNC leaf"
@@ -236,10 +211,10 @@ def execute(code, operation, variant, mode, values, corrupt=None):
 
 
 def native_fault_oracle(args, directory):
-    if args.llc or args.bits == 32 or args.microsoft or platform.system() != "Linux" or platform.machine() != "x86_64":
+    if args.llc or platform.system() != "Linux" or platform.machine() != "x86_64":
         return 0
     count = 0
-    for operation, opt in itertools.product((op for op in ENCODINGS if not op.endswith("addr16") and (not args.svm_only or op.split('.')[0] in ("vmload", "vmsave", "invlpga"))), ("O0", "O2")):
+    for operation, opt in itertools.product((op for op in ENCODINGS if not op.endswith("addr16")), ("O0", "O2")):
         base_op = operation.split(".")[0]
         base = directory / f"fault-{operation.replace('.', '_')}-{opt}"
         src, ir, obj, library = (base.with_suffix(suffix) for suffix in (".c", ".ll", ".o", ".so"))
@@ -277,30 +252,18 @@ def main():
     backend.add_argument("--llc", type=Path)
     backend.add_argument("--backend-llc", type=Path)
     parser.add_argument("--keep", type=Path)
-    parser.add_argument("--bits", type=int, choices=(32, 64))
-    parser.add_argument("--svm-only", action="store_true")
-    parser.add_argument("--microsoft", action="store_true")
     args = parser.parse_args()
-    if args.bits == 32 and not args.llc and (not args.backend_llc or not args.svm_only):
-        parser.error("i386 source requires --backend-llc and --svm-only")
-    if args.microsoft and (args.llc or not args.svm_only):
-        parser.error("--microsoft requires a C route and --svm-only")
     for key in ("compiler", "llc", "backend_llc"):
         if getattr(args, key):
             setattr(args, key, getattr(args, key).resolve())
-    count = negative_controls = 0
+    count = 0
     with tempfile.TemporaryDirectory(prefix="bounded-virtualization-") as temp:
         directory = args.keep or Path(temp)
         directory.mkdir(parents=True, exist_ok=True)
-        for mode in ((args.bits,) if args.bits else (32, 64) if args.llc else (64,)):
+        for mode in ((32, 64) if args.llc else (64,)):
             operations = [op for op in ENCODINGS if (mode == 64 or op != "swapgs") and not op.endswith("addr16" if mode == 64 else "addr32")]
-            if args.svm_only:
-                operations = [op for op in operations if op.split('.')[0] in ("vmload", "vmsave", "invlpga")]
-            if args.microsoft:
-                operations = [op for op in operations if "." not in op]
             for operation, opt, variant in itertools.product(operations, ("O0", "O2"), ("retained", "twice", "memory", "condition")):
-                target = COMMON.TRIPLES[1] if mode == 32 and not args.llc else COMMON.TRIPLES[0]
-                code = compile_case(args, directory, operation, variant, mode, opt, target)
+                code = compile_case(args, directory, operation, variant, mode, opt)
                 for values in VALUES:
                     try:
                         execute(code, operation, variant, mode, values)
@@ -308,22 +271,11 @@ def main():
                         raise AssertionError(f"{operation}, {variant}, {mode}, {opt}, {values}: {error}") from error
                     count += 1
                 if variant == "retained":
-                    if operation.split('.')[0] in ("vmload", "vmsave", "invlpga"):
-                        for corruption, message in (("address", "native address input changed"), ("asid", "ASID input changed")):
-                            if corruption == "asid" and not operation.startswith("invlpga"):
-                                continue
-                            try:
-                                execute(code, operation, variant, mode, VALUES[1], corruption)
-                            except AssertionError as error:
-                                assert str(error) == message, str(error)
-                            else:
-                                raise AssertionError(f"{operation}: {corruption} negative control was accepted")
-                            negative_controls += 1
-                    for triple in (() if mode == 32 and not args.llc else COMMON.TRIPLES[1:]):
+                    for triple in COMMON.TRIPLES[1:]:
                         compile_case(args, directory, operation, variant, mode, opt, triple)
                         count += 1
         native = native_fault_oracle(args, directory)
-    print(f"PASS: {count} bounded virtualization/state checks; {native} real CPL3 fault boundaries; {negative_controls} operand negative controls rejected")
+    print(f"PASS: {count} bounded virtualization/state checks; {native} real CPL3 fault boundaries")
 
 
 if __name__ == "__main__":

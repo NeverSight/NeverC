@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare native LLVM/NeverC bit-string APIs with original i386/x64 instructions."""
+"""Compare native LLVM/NeverC bit-string APIs with original x64 instructions."""
 import argparse
 import hashlib
 import json
@@ -17,8 +17,9 @@ def digest(path):
 
 
 def sources(mode):
+    assert mode == 64
     ir, c, cases = [], [], []
-    for bits in (16, 32, 64) if mode == 64 else (16, 32):
+    for bits in (16, 32, 64):
         ty = f"i{bits}"
         cty = {16: "short", 32: "int", 64: "long long"}[bits]
         for action, op in enumerate(("bt", "bts", "btr", "btc")):
@@ -47,7 +48,7 @@ def main():
     parser.add_argument("--llvm-bin", type=Path, required=True)
     parser.add_argument("--neverc", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--mode", type=int, choices=(32, 64), action="append")
+    parser.add_argument("--mode", type=int, choices=(64,), action="append")
     parser.add_argument("--backend", choices=("llvm-legacy", "llvm-new", "neverc", "neverc-ir-legacy", "neverc-ir-new"), action="append")
     args = parser.parse_args()
     output = args.output.resolve()
@@ -73,7 +74,7 @@ def main():
             raise RuntimeError(f"{name}: exit {result.returncode}\n{result.stderr}")
         return result.stdout
 
-    for mode in args.mode or (32, 64):
+    for mode in args.mode or (64,):
         directory = output / str(mode)
         directory.mkdir(exist_ok=True)
         ir, c, cases = sources(mode)
@@ -86,8 +87,6 @@ def main():
              "-fno-pie", "-I", directory, "-c", ROOT / "native_bit_test_harness.c", "-o", oracle], f"{mode}-oracle")
         backends = args.backend or ("llvm-legacy", "llvm-new", "neverc", "neverc-ir-legacy", "neverc-ir-new")
         for backend in backends:
-            if mode == 32 and backend.startswith("neverc"):
-                continue  # NeverC's frontend targets x64; do not imply i386 coverage.
             for level in ("O0", "O2"):
                 name = f"{mode}-{backend}-{level}"
                 obj, exe = (directory / (name + suffix) for suffix in (".o", ".exe"))
@@ -107,17 +106,17 @@ def main():
                         optimized = directory / (name + "-optimized.ll")
                         run([tools["opt"], "-S", "-passes=default<O2>", lowered, "-o", optimized], name + "-opt")
                         lowered = optimized
-                    run([tools["llc"], "-mtriple=" + ("i386" if mode == 32 else "x86_64") + "-unknown-linux-gnu",
+                    run([tools["llc"], "-mtriple=" + "x86_64" + "-unknown-linux-gnu",
                          "-" + level, "-filetype=obj", "-verify-machineinstrs",
                          *(["-enable-new-pm"] if backend.endswith("new") else []), lowered, "-o", obj], name + "-compile")
                 assembly = run([tools["llvm-objdump"], "-d", obj], name + "-assembly")
                 instructions = re.findall(r"\bbt[csr]?[wlq]?\s", assembly)
-                expected_functions = 16 if mode == 32 else 24
+                expected_functions = 24
                 if len(instructions) != expected_functions:
                     raise RuntimeError(f"{name}: expected exactly one bit operation per function")
                 run([tools["clang"], f"-m{mode}", "-no-pie", oracle, obj, "-o", exe], name + "-link")
                 observations = json.loads(run([exe], name + "-run"))
-                expected = expected_functions * 4 * (8 * 515 + 8) + (8 * (2 + 4 + (8 if mode == 64 else 0))) * 16
+                expected = expected_functions * 4 * (8 * 515 + 8) + (8 * (2 + 4 + 8)) * 16
                 if observations["functions"] != expected_functions or observations["comparisons"] != expected or not observations["faults"]:
                     raise RuntimeError(f"{name}: incomplete native matrix {observations}")
                 profiles.append(dict(name=name, mode=mode, backend=backend, optimization=level,
@@ -128,7 +127,7 @@ def main():
         bad = directory / "wrong-store.ll"
         bad.write_text(ir.replace("call i8 @llvm.x86.bts.mem16", "call i8 @llvm.x86.bt.mem16", 1))
         obj, exe = directory / "wrong-store.o", directory / "wrong-store.exe"
-        run([tools["llc"], "-mtriple=" + ("i386" if mode == 32 else "x86_64"), "-O2",
+        run([tools["llc"], "-mtriple=" + "x86_64", "-O2",
              "-verify-machineinstrs", "-filetype=obj", bad, "-o", obj], f"{mode}-control-compile")
         run([tools["clang"], f"-m{mode}", "-no-pie", oracle, obj, "-o", exe], f"{mode}-control-link")
         run([exe], f"{mode}-control-run", expected=1)

@@ -22,7 +22,7 @@ class FarTransferTests(unittest.TestCase):
             self.assertNotIn('MCID::Call', fields[9], name)
             if 'IMM' not in name:
                 self.assertTrue(kinds[0].endswith('_NOSP'), name)
-        self.assertEqual(FAR.TABLES.enums(text)['NATIVE_ADDRESS64'], 18572)
+        self.assertEqual(FAR.TABLES.enums(text)['NATIVE_ADDRESS64'], 18565)
 
 
 if __name__ == '__main__': unittest.main()

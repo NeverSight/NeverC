@@ -82,43 +82,10 @@ TEST_F(X86FarTransferTest, CallsReturnAndJumpsAbandonTheCompilerFrame) {
   }
 }
 
-TEST_F(X86FarTransferTest,
-       LegacyImmediateAndMemoryFormsKeepTheirNativeIdentity) {
-  const auto Source = tmpFile("legacy.c"), IR = tmpFile("legacy.ll");
-  writeFile(Source, R"(
-unsigned short a(const void *p) { return __builtin_ia32_lcall16(p); }
-unsigned b(const void *p) { return __builtin_ia32_lcall32(p); }
-unsigned short c(void) { return __builtin_ia32_lcall16_imm(6144, 48); }
-unsigned d(void) { return __builtin_ia32_lcall32_imm(6144, 48); }
-void e(const void *p, void *sp) { __builtin_ia32_ljmp16(p, sp); }
-void f(const void *p, void *sp) { __builtin_ia32_ljmp32(p, sp); }
-void g(void *sp) { __builtin_ia32_ljmp16_imm(6144, 48, sp); }
-void h(void *sp) { __builtin_ia32_ljmp32_imm(6144, 48, sp); }
-)");
-  for (const char *Opt : {"-O0", "-O2"}) {
-    const auto R =
-        ncc({"--target=i386-unknown-linux-gnu", Opt, "-ffreestanding",
-             "-fno-lto", "-fno-builtin-mimalloc", "-Werror", "-S", "-emit-llvm",
-             Source.string(), "-o", IR.string()});
-    ASSERT_EQ(R.exitCode, 0) << R.err;
-    const auto Text = readFile(IR);
-    for (const char *Name : {"lcall16", "lcall32", "lcall16.imm", "lcall32.imm",
-                             "ljmp16", "ljmp32", "ljmp16.imm", "ljmp32.imm"})
-      EXPECT_NE(Text.find(std::string("@llvm.x86.") + Name + "("),
-                std::string::npos);
-    EXPECT_NE(Text.find("i16 immarg, i16 immarg"), std::string::npos);
-    EXPECT_NE(Text.find("i32 immarg, i16 immarg"), std::string::npos);
-  }
-}
-
 TEST_F(X86FarTransferTest, RejectsWrongModeTypesAndDynamicImmediateTargets) {
   for (const auto &Case : std::vector<std::pair<std::string, std::string>>{
            {"x86_64", "__builtin_ia32_lcall16_imm(1, 8)"},
            {"x86_64", "__builtin_ia32_ljmp32_imm(1, 8, p)"},
-           {"i386", "__builtin_ia32_lcall64(p)"},
-           {"i386", "__builtin_ia32_ljmp64(p, p)"},
-           {"i386", "__builtin_ia32_lcall32_imm(value, 8)"},
-           {"i386", "__builtin_ia32_ljmp16_imm(1, value, p)"},
            {"x86_64", "__builtin_ia32_lcall32()"},
            {"x86_64", "__builtin_ia32_lcall16(1)"},
            {"x86_64", "__builtin_ia32_ljmp64(p)"}}) {

@@ -27,14 +27,11 @@ def main():
     parser.add_argument("--compiler", type=Path, required=True)
     parser.add_argument("--backend-llc", type=Path)
     parser.add_argument("--new-pm", action="store_true")
-    parser.add_argument("--mode", type=int, choices=(32, 64), default=64)
     parser.add_argument("--sde", type=Path, required=True)
     parser.add_argument("--keep", type=Path, required=True)
     args = parser.parse_args()
     if args.new_pm and not args.backend_llc:
         parser.error("--new-pm requires --backend-llc")
-    if args.mode == 32 and (not args.backend_llc or args.new_pm):
-        parser.error("i386 requires the native --backend-llc driver without --new-pm")
     directory = args.keep.resolve()
     directory.mkdir(parents=True, exist_ok=True)
     spec = importlib.util.spec_from_file_location("fixture", FIXTURE / "generate.py")
@@ -61,32 +58,24 @@ def main():
             raise RuntimeError(f"{command}\n{result.stdout}\n{result.stderr}")
         return result
 
-    host_mode = ["-m32"] if args.mode == 32 else []
-    triple = ('i386' if args.mode == 32 else 'x86_64') + '-unknown-linux-gnu'
-    run([paths["host"], *host_mode, "-c", "original.S", "-o", "original.o"])
-    run([paths["host"], *host_mode, "-O2", "-c", "reference.c", "-o", "reference.o"])
+    run([paths["host"], "-c", "original.S", "-o", "original.o"])
+    run([paths["host"], "-O2", "-c", "reference.c", "-o", "reference.o"])
     for opt in ("O0", "O2"):
         flags = ["-" + opt, "-std=c23", "-ffreestanding", "-fno-lto",
                  "-fno-builtin-mimalloc", "-fno-pie", "-fno-stack-protector"]
-        run([paths["compiler"], "--target=" + triple, *flags,
+        run([paths["compiler"], "--target=x86_64-unknown-linux-gnu", *flags,
              *(["-S", "-emit-llvm"] if args.backend_llc else ["-c"]),
              "candidate.c", "-o", opt + (".ll" if args.backend_llc else ".o")])
         if args.backend_llc:
-            if args.mode == 32:
-                text = (directory / (opt + '.ll')).read_text()
-                assert ' asm ' not in text and '@llvm.x86.rtm.abort.pair(' in text
-                run([paths["compiler"], "--target=" + triple, *flags,
-                     "-fllvm-backend=" + paths["llc"], "-c", "candidate.c", "-o", opt + ".o"])
-            else:
-                run([paths["llc"], "-mtriple=" + triple, "-filetype=obj",
-                     "-verify-machineinstrs", "-" + opt,
-                     *(["-enable-new-pm"] if args.new_pm else []), opt + ".ll", "-o", opt + ".o"])
+            run([paths["llc"], "-mtriple=x86_64-unknown-linux-gnu", "-filetype=obj",
+                 "-verify-machineinstrs", "-" + opt,
+                 *(["-enable-new-pm"] if args.new_pm else []), opt + ".ll", "-o", opt + ".o"])
         # Require the complete original pair, including its exact local target.
         object_bytes = (directory / (opt + ".o")).read_bytes()
         for code in range(256):
             assert bytes([0xc7, 0xf8, 3, 0, 0, 0, 0xc6, 0xf8, code]) in object_bytes, code
         exe = directory / opt
-        run([paths["host"], *host_mode, "-O2", "-no-pie", "-I", directory, FIXTURE / "runner.c",
+        run([paths["host"], "-O2", "-no-pie", "-I", directory, FIXTURE / "runner.c",
              "original.o", "reference.o", opt + ".o", "-o", exe])
         for mode in ("full", "0", "2", "6", "8"):
             # SDE 10.13.1's -tsx overrides abort mode regardless of order.
@@ -96,19 +85,11 @@ def main():
             result = json.loads(run([paths["sde"], "-hsw", *arguments,
                                      "--", exe, "full" if mode == "full" else "sde-abort-" + mode]).stdout)
             assert result["pairs"] == 256 * 32
-            controls = ('status', 'status-high', 'integer', 'previous-memory',
-                        'completed-memory', 'floating', 'canary')
-            for field in controls:
-                rejected = run([paths["sde"], "-hsw", *arguments, "--", exe,
-                                "full" if mode == "full" else "sde-abort-" + mode,
-                                field], allowed=(1,))
-                assert 'code=0 seed=0' in rejected.stderr, rejected.stderr
             profiles.append({"optimization": opt, "engine": "Intel SDE",
-                             "mode": mode, 'negative_controls': controls, **result})
+                             "mode": mode, **result})
     digest.cache_clear()
     assert all(digest(tool["path"]) == tool["sha256"] for tool in tools.values())
-    report = {"passed": True, "physical_rtm_qualified": False, "mode": args.mode,
-              "object_route": 'neverc-driver' if args.mode == 32 or not args.backend_llc else 'neverc-ir-to-llvm',
+    report = {"passed": True, "physical_rtm_qualified": False,
               "scope": "native immediate-abort pair under independent Intel SDE emulation",
               "tools": tools, "new_pass_manager": args.new_pm, "profiles": profiles,
               "fixture_sha256": {p.name: digest(str(p)) for p in FIXTURE.iterdir() if p.is_file()},

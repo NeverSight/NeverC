@@ -27233,11 +27233,7 @@ static SDValue lowerFourSourceNative(SDValue Op, const X86Subtarget &Subtarget,
 static SDValue lowerAPXAtomicNative(SDValue Op, const X86Subtarget &Subtarget,
                                     SelectionDAG &DAG) {
   const unsigned ID = Op.getConstantOperandVal(1);
-  const bool I386 = ID == Intrinsic::x86_aadd32_legacy_address32 ||
-                    ID == Intrinsic::x86_aand32_legacy_address32 ||
-                    ID == Intrinsic::x86_aor32_legacy_address32 ||
-                    ID == Intrinsic::x86_axor32_legacy_address32;
-  const bool Legacy = I386 || ID == Intrinsic::x86_aadd32_legacy_address ||
+  const bool Legacy = ID == Intrinsic::x86_aadd32_legacy_address ||
                       ID == Intrinsic::x86_aadd64_legacy_address ||
                       ID == Intrinsic::x86_aand32_legacy_address ||
                       ID == Intrinsic::x86_aand64_legacy_address ||
@@ -27247,9 +27243,8 @@ static SDValue lowerAPXAtomicNative(SDValue Op, const X86Subtarget &Subtarget,
                       ID == Intrinsic::x86_axor64_legacy_address ||
                       ID == Intrinsic::x86_cmpccxadd32_legacy_address ||
                       ID == Intrinsic::x86_cmpccxadd64_legacy_address;
-  if (I386 ? Subtarget.is64Bit() : !Subtarget.is64Bit())
-    report_fatal_error(I386 ? "legacy RAO address32 requires 32-bit mode"
-                            : "APX atomic intrinsic requires 64-bit mode");
+  if (!Subtarget.is64Bit())
+    report_fatal_error("APX atomic intrinsic requires 64-bit mode");
   const bool Compare = ID == Intrinsic::x86_cmpccxadd32_address ||
                        ID == Intrinsic::x86_cmpccxadd64_address ||
                        ID == Intrinsic::x86_cmpccxadd32_legacy_address ||
@@ -27257,7 +27252,7 @@ static SDValue lowerAPXAtomicNative(SDValue Op, const X86Subtarget &Subtarget,
   const unsigned WidthOperand = Compare ? 6 : 4;
   SDValue Chain, Glue;
   auto Address = lowerNativeAddressOperands(Op, Subtarget, 2, DAG, Chain, Glue,
-                                           WidthOperand);
+                                            WidthOperand);
   unsigned Descriptor = 0;
   if (Compare) {
     const auto *CC = dyn_cast<ConstantSDNode>(Op.getOperand(5));
@@ -27272,36 +27267,30 @@ static SDValue lowerAPXAtomicNative(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_aadd64_address:
     case Intrinsic::x86_aadd32_legacy_address:
     case Intrinsic::x86_aadd64_legacy_address:
-    case Intrinsic::x86_aadd32_legacy_address32:
       Descriptor = 0;
       break;
     case Intrinsic::x86_aand32_address:
     case Intrinsic::x86_aand64_address:
     case Intrinsic::x86_aand32_legacy_address:
     case Intrinsic::x86_aand64_legacy_address:
-    case Intrinsic::x86_aand32_legacy_address32:
       Descriptor = 1;
       break;
     case Intrinsic::x86_aor32_address:
     case Intrinsic::x86_aor64_address:
     case Intrinsic::x86_aor32_legacy_address:
     case Intrinsic::x86_aor64_legacy_address:
-    case Intrinsic::x86_aor32_legacy_address32:
       Descriptor = 2;
       break;
     case Intrinsic::x86_axor32_address:
     case Intrinsic::x86_axor64_address:
     case Intrinsic::x86_axor32_legacy_address:
     case Intrinsic::x86_axor64_legacy_address:
-    case Intrinsic::x86_axor32_legacy_address32:
       Descriptor = 3;
       break;
     }
   }
   if (Op.getConstantOperandVal(WidthOperand) == 32)
     Descriptor |= X86::APXAtomicAddress32;
-  if (Op.getConstantOperandVal(WidthOperand) == 16)
-    Descriptor |= X86::AtomicAddress16;
   const bool Wide = Op.getOperand(3).getValueType() == MVT::i64;
   const unsigned Opcode =
       Legacy
@@ -27899,82 +27888,39 @@ static SDValue lowerRepStringState(SDValue Op, const X86Subtarget &Subtarget,
   using X86::RepStringKind;
   RepStringKind Kind;
   unsigned Opcode;
-  bool Wide;
   switch (Op.getConstantOperandVal(1)) {
   case Intrinsic::x86_rep_movs_state:
     Kind = RepStringKind::Move;
     Opcode = X86::REP_MOVS_STATE64;
-    Wide = true;
     break;
   case Intrinsic::x86_rep_stos_state:
     Kind = RepStringKind::Store;
     Opcode = X86::REP_STOS_STATE64;
-    Wide = true;
     break;
   case Intrinsic::x86_rep_lods_state:
     Kind = RepStringKind::Load;
     Opcode = X86::REP_LODS_STATE64;
-    Wide = true;
     break;
   case Intrinsic::x86_rep_cmps_state:
     Kind = RepStringKind::Compare;
     Opcode = X86::REP_CMPS_STATE64;
-    Wide = true;
     break;
   case Intrinsic::x86_rep_scas_state:
     Kind = RepStringKind::Scan;
     Opcode = X86::REP_SCAS_STATE64;
-    Wide = true;
     break;
   case Intrinsic::x86_rep_ins_state:
     Kind = RepStringKind::Input;
     Opcode = X86::REP_INS_STATE64;
-    Wide = true;
     break;
   case Intrinsic::x86_rep_outs_state:
     Kind = RepStringKind::Output;
     Opcode = X86::REP_OUTS_STATE64;
-    Wide = true;
-    break;
-  case Intrinsic::x86_rep_movs_state32:
-    Kind = RepStringKind::Move;
-    Opcode = X86::REP_MOVS_STATE32;
-    Wide = false;
-    break;
-  case Intrinsic::x86_rep_stos_state32:
-    Kind = RepStringKind::Store;
-    Opcode = X86::REP_STOS_STATE32;
-    Wide = false;
-    break;
-  case Intrinsic::x86_rep_lods_state32:
-    Kind = RepStringKind::Load;
-    Opcode = X86::REP_LODS_STATE32;
-    Wide = false;
-    break;
-  case Intrinsic::x86_rep_cmps_state32:
-    Kind = RepStringKind::Compare;
-    Opcode = X86::REP_CMPS_STATE32;
-    Wide = false;
-    break;
-  case Intrinsic::x86_rep_scas_state32:
-    Kind = RepStringKind::Scan;
-    Opcode = X86::REP_SCAS_STATE32;
-    Wide = false;
-    break;
-  case Intrinsic::x86_rep_ins_state32:
-    Kind = RepStringKind::Input;
-    Opcode = X86::REP_INS_STATE32;
-    Wide = false;
-    break;
-  case Intrinsic::x86_rep_outs_state32:
-    Kind = RepStringKind::Output;
-    Opcode = X86::REP_OUTS_STATE32;
-    Wide = false;
     break;
   default:
     llvm_unreachable("unexpected explicit REP intrinsic");
   }
-  if (Wide != Subtarget.is64Bit() || !Wide)
+  if (!Subtarget.is64Bit())
     report_fatal_error(
         "explicit REP intrinsic does not match the target code mode");
   const bool Compare = X86::repStringCompares(Kind);
@@ -27992,7 +27938,7 @@ static SDValue lowerRepStringState(SDValue Op, const X86Subtarget &Subtarget,
   const auto Address = Control();
   const auto Segment = X86::repStringHasSource(Kind) ? Control() : 0;
   const auto NotEqual = Compare ? Control() : 0;
-  if (!X86::isRepStringControl(Kind, Wide, Element, Address, Segment, NotEqual))
+  if (!X86::isRepStringControl(Kind, Element, Address, Segment, NotEqual))
     report_fatal_error(
         "invalid explicit REP element, address, segment or repeat control");
   const unsigned ElementLog = Element == 8   ? 3
@@ -28002,15 +27948,15 @@ static SDValue lowerRepStringState(SDValue Op, const X86Subtarget &Subtarget,
   const unsigned Descriptor =
       unsigned(Kind) | (ElementLog << X86::RepStringElementShift) |
       (NotEqual ? X86::RepStringNotEqual : 0) |
-      (Address != (Wide ? 64 : 32) ? X86::RepStringAddressOverride : 0) |
+      (Address != 64 ? X86::RepStringAddressOverride : 0) |
       (Segment << X86::RepStringSegmentShift);
   const SDLoc DL(Op);
-  const MVT Word = Wide ? MVT::i64 : MVT::i32;
-  const unsigned SI = Wide ? X86::RSI : X86::ESI;
-  const unsigned DI = Wide ? X86::RDI : X86::EDI;
-  const unsigned CX = Wide ? X86::RCX : X86::ECX;
-  const unsigned AX = Wide ? X86::RAX : X86::EAX;
-  const unsigned DX = Wide ? X86::RDX : X86::EDX;
+  const MVT Word = MVT::i64;
+  const unsigned SI = X86::RSI;
+  const unsigned DI = X86::RDI;
+  const unsigned CX = X86::RCX;
+  const unsigned AX = X86::RAX;
+  const unsigned DX = X86::RDX;
   SmallVector<unsigned, 3> Registers;
   if (Kind == RepStringKind::Move || Kind == RepStringKind::Compare)
     Registers = {SI, DI, CX};
@@ -28109,9 +28055,7 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_hyperv_call:
       return X86::lowerHyperVCall(Op, Subtarget, DAG);
     case Intrinsic::x86_vmcall_kvm:
-    case Intrinsic::x86_vmcall_kvm32:
     case Intrinsic::x86_vmmcall_kvm:
-    case Intrinsic::x86_vmmcall_kvm32:
       return X86::lowerKVMHypercall(Op, Subtarget, DAG);
     case Intrinsic::x86_rep_movs_state:
     case Intrinsic::x86_rep_stos_state:
@@ -28120,13 +28064,6 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_rep_scas_state:
     case Intrinsic::x86_rep_ins_state:
     case Intrinsic::x86_rep_outs_state:
-    case Intrinsic::x86_rep_movs_state32:
-    case Intrinsic::x86_rep_stos_state32:
-    case Intrinsic::x86_rep_lods_state32:
-    case Intrinsic::x86_rep_cmps_state32:
-    case Intrinsic::x86_rep_scas_state32:
-    case Intrinsic::x86_rep_ins_state32:
-    case Intrinsic::x86_rep_outs_state32:
       return lowerRepStringState(Op, Subtarget, DAG);
     case Intrinsic::x86_ldtilecfg_address:
     case Intrinsic::x86_sttilecfg_address:
@@ -28169,10 +28106,6 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_axor64_legacy_address:
     case Intrinsic::x86_cmpccxadd32_legacy_address:
     case Intrinsic::x86_cmpccxadd64_legacy_address:
-    case Intrinsic::x86_aadd32_legacy_address32:
-    case Intrinsic::x86_aand32_legacy_address32:
-    case Intrinsic::x86_aor32_legacy_address32:
-    case Intrinsic::x86_axor32_legacy_address32:
     case Intrinsic::x86_aadd32_address:
     case Intrinsic::x86_aadd64_address:
     case Intrinsic::x86_aand32_address:
@@ -28329,12 +28262,6 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_getsec_bounded_state:
       return lowerBoundedLeafState(Op, Subtarget, DAG);
 
-    case Intrinsic::x86_lds16:
-    case Intrinsic::x86_lds32:
-    case Intrinsic::x86_les16:
-    case Intrinsic::x86_les32:
-      report_fatal_error("LDS/LES intrinsic requires 32-bit code mode");
-
 #define X86_FAR_POINTER_LOAD(Name, Opcode, Bits, Segment, Legacy)              \
   case Intrinsic::x86_##Name:
 #include "X86FarPointerLoads.def"
@@ -28430,14 +28357,6 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
           DAG.getMachineNode(X86::VMRUN_CONTEXT64, DL, MVT::Other, Operands),
           0);
     }
-    case Intrinsic::x86_vmload32:
-    case Intrinsic::x86_vmsave32:
-    case Intrinsic::x86_invlpga32:
-    case Intrinsic::x86_vmload_addr16:
-    case Intrinsic::x86_vmsave_addr16:
-    case Intrinsic::x86_invlpga_addr16:
-      report_fatal_error(
-          "32-bit SVM intrinsics require the full i386 LLVM backend");
     case Intrinsic::x86_vmload:
     case Intrinsic::x86_vmsave:
     case Intrinsic::x86_invlpga:
@@ -28715,12 +28634,6 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_writeseg_mem:
       return lowerSegmentAccess(Op, Subtarget, DAG);
 
-    case Intrinsic::x86_readcr32:
-    case Intrinsic::x86_writecr32:
-    case Intrinsic::x86_readdr32:
-    case Intrinsic::x86_writedr32:
-      report_fatal_error(
-          "32-bit CR/DR intrinsics require the full i386 LLVM backend");
     case Intrinsic::x86_readcr:
     case Intrinsic::x86_writecr:
     case Intrinsic::x86_readdr:
@@ -28837,22 +28750,6 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
     case Intrinsic::x86_lsl_mem64:
     case Intrinsic::x86_lsl:
       return lowerDescriptorQuery(Op, Subtarget, DAG);
-    case Intrinsic::x86_vmread32:
-    case Intrinsic::x86_vmwrite32:
-    case Intrinsic::x86_vmread_reg32:
-    case Intrinsic::x86_vmwrite_mem32:
-    case Intrinsic::x86_invept32:
-    case Intrinsic::x86_invvpid32:
-    case Intrinsic::x86_vmread_address32:
-    case Intrinsic::x86_vmwrite_mem_address32:
-    case Intrinsic::x86_invept_address32:
-    case Intrinsic::x86_invvpid_address32:
-    case Intrinsic::x86_vmclear_address32:
-    case Intrinsic::x86_vmptrld_address32:
-    case Intrinsic::x86_vmptrst_address32:
-    case Intrinsic::x86_vmxon_address32:
-      report_fatal_error(
-          "32-bit VMX intrinsics require the full i386 LLVM backend");
     case Intrinsic::x86_vmread_address:
     case Intrinsic::x86_vmwrite_mem_address:
     case Intrinsic::x86_invept_address:
@@ -29083,10 +28980,6 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       SDNode *N = DAG.getMachineNode(X86::WBINVD, dl, MVT::Other, Chain);
       return SDValue(N, 0);
     }
-    case llvm::Intrinsic::x86_flags_read_u32:
-    case llvm::Intrinsic::x86_flags_write_u32:
-      report_fatal_error(
-          "32-bit FLAGS intrinsics require the full i386 LLVM backend");
     case llvm::Intrinsic::x86_flags_read_u16:
     case llvm::Intrinsic::x86_flags_read_u64: {
       const bool Narrow = IntNo == llvm::Intrinsic::x86_flags_read_u16;

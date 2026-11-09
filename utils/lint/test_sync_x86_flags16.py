@@ -19,9 +19,9 @@ class Flags16Test(unittest.TestCase):
     def test_word_pseudos_append_without_renumbering_old_opcodes(self):
         text = (FLAGS.TABLES.TARGET / "X86GenInstrInfo.inc").read_text()
         ids = FLAGS.TABLES.enums(text)
-        self.assertEqual(ids["NATIVE_ADDRESS64"], 18572)
-        self.assertEqual(ids["RDFLAGS16"], 18607)
-        self.assertEqual(ids["WRFLAGS16"], 18608)
+        self.assertEqual(ids["NATIVE_ADDRESS64"], 18565)
+        self.assertEqual(ids["RDFLAGS16"], 18598)
+        self.assertEqual(ids["WRFLAGS16"], 18599)
         for name, writes in (("RDFLAGS16", False), ("WRFLAGS16", True)):
             fields = FLAGS.TABLES.descriptor(text, name)
             self.assertEqual(fields[1:3], ["1", "0" if writes else "1"])

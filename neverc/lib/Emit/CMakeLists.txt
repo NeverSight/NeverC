@@ -40,7 +40,6 @@ endif()
 set(NEVERC_EMIT_TARGET_SOURCES
   Target/AArch64.cpp
   Target/X86.cpp
-  Target/X86/ABI32.cpp
   )
 
 add_neverc_library(nevercEmit
@@ -92,7 +91,6 @@ add_neverc_library(nevercEmit
   Debug/DebugEmitter.cpp
 
   Backend/BackendUtil.cpp
-  Backend/FullLLVMBackend.cpp
   Backend/ParallelCodeGenMerge.cpp
   Backend/LinkInModulesPass.cpp
 

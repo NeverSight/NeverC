@@ -9,6 +9,33 @@ optimization, whereas InlineAsm was an opaque black box.
 
 **Result:** 0 InlineAsm (`#APP`/`#NOAPP`) markers remain in the emitter.
 
+## Supported source targets
+
+NeverC supports 64-bit source targets only: x86-64 and AArch64 on their
+registered platforms. i386/i486/i586/i686, code16 and x32 are unsupported.
+The experimental i386 Linux, Windows and Darwin source ABIs, external
+`-fllvm-backend` driver, legacy-only builtins and their qualification fixtures
+were removed. These targets fail before preprocessing, IR or machine output.
+
+Operand widths are independent of the source target: x64 retains valid
+8/16/32-bit operations, 32-bit address overrides, 16-bit FLAGS and 16/32/64-bit
+far memory transfers.
+
+The shared C `_BitInt` storage fixes and Microsoft C record-layout fixes remain
+in place for supported 64-bit targets. `verify_ms_record_layout.py` compares
+record sizes, alignment and offsets against Clang on six x64/AArch64 platforms.
+
+`__builtin_ia32_vmxoff_status()` returns VMX completion status on x64; the
+existing void VMXOFF spellings remain unchanged. Native far memory calls and
+jumps use `__builtin_ia32_lcall16/32/64` and `ljmp16/32/64`; immediate legacy
+far-transfer APIs are unavailable. `__builtin_ia32_tlbsync_control64` preserves
+the complete RAX control; `__builtin_ia32_tlbsync()` uses zero for CPU-only
+synchronization. HRESET continues to advertise `__NEVERSIGHT_X86_HRESET__`.
+
+Removing legacy-only records also remaps internal opcode IDs. The checked-in
+target schemas and their digests must be regenerated with the compiler; target
+plugins continue to require a matching build and schema.
+
 ## Architecture
 
 ```
@@ -34,46 +61,6 @@ Frontend (BuiltinEmitterX86.cpp)
 | [`llvm/lib/Target/X86/X86InstrInfo.cpp`](llvm/lib/Target/X86/X86InstrInfo.cpp) | Physical register copy support |
 | [`neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp`](neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp) | Frontend intrinsic emission |
 
-## Portable i386 system APIs and CPUID headers
-
-WRMSRNS, raw INT, CPUIDEX and all six portable string-port interfaces are
-registered in `BuiltinsX86.def` for both code modes. The existing LLVM intrinsic
-signatures and lowering remain unchanged. WRMSRNS takes an unsigned index and
-unsigned long long value. String-port wrappers take an unsigned short port,
-a pointer (const for output) and unsigned element count; DF and instruction-owned
-DS/ES accesses retain their CPU semantics. Raw INT keeps its existing immediate
-byte validation and returning interface, distinct from Microsoft's non-returning
-`__int2c` assertion. A register-changing interrupt handler needs its own explicit
-ABI/state contract.
-
-`cpuid.h` now admits i386. Its native path uses CPUID/FLAGS builtins, probes
-EFLAGS.ID on legacy CPUs, restores the original image, and avoids CPUID and
-signature writes when unavailable. Its i386 fallback supports PIC and AT&T/Intel
-syntax. Argument and output-lvalue evaluation remains single. Linux i386 machine
-output still uses `-fllvm-backend=LLVM_LLC`; this does not enable the Windows or
-Darwin i386 C ABI or the embedded i386 backend.
-
-Qualification passes all 188 x86/i386 frontend tests. Run
-`tests/verify-i386-portable-system.py --compiler NEVERC --backend-llc LLVM_LLC
---keep OUT` for 58 objects, 1,190 controlled completions, 768 large-count boundary
-checks and 210 operand/continuation negative controls. REP cases include dynamic
-realigned frames; DF=1 is a raw lowering probe, not a valid C ABI entry. Run
-`tests/verify-i386-cpuid-header.py --compiler NEVERC --backend-llc LLVM_LLC
---clang CLANG --linker LD_LLD --keep OUT` for 32 linked native/fallback/PIC/dialect
-objects, 512 availability/ABI comparisons and 32 ID-restoration negative controls.
-Both NeverC and stock Clang run with automatic and forced-fallback feature
-selection. The merged dev compiler repeats all 188 frontend tests, both machine
-witnesses and the artifact global-state audit.
-No privileged instruction or port I/O executes in these witnesses.
-
-`python3 utils/plugin-api/check-global-state.py --build-dir build-neverc
---strict --json` passes for the qualified local ELF compiler: no forbidden,
-header, source-global, binary or unscannable findings. The source-only preflight
-still reports its 90 conservative lexical findings; it lacks the linked-symbol
-proof used by release mode. These are distinct audit modes, and no allowlist
-change was needed. This local artifact result does not qualify other release
-platforms or close the broader machine-state/hardware release gates.
-
 ## Portable scalar MSR and port I/O
 
 `__builtin_ia32_wrmsr(unsigned, unsigned long long)` and the existing
@@ -89,20 +76,6 @@ COFF and Mach-O, with no inline assembly or platform headers. The binary oracle
 also applies the Microsoft-name register/return checks to all eight portable
 names: 89 binary cases pass. These transport checks do not authorize or qualify
 successful privileged accesses on physical hardware.
-
-All eight interfaces are also available to the Linux i386 frontend. WRMSR
-retains its 64-bit EDX:EAX value; the port selector stays 16 bits and the port
-value stays 8/16/32 bits. Machine output uses the explicit full LLVM driver,
-`-fllvm-backend=LLVM_LLC`; the embedded backend still rejects i386 output.
-`tests/verify-i386-scalar-system.py --compiler NEVERC --backend-llc LLVM_LLC
---keep OUT` compiles both portable and Microsoft source spellings at O0/O2.
-Its 48 objects pass 156 controlled original-byte comparisons, including dead
-reads, and reject 80 deliberately corrupted selector/value/result controls.
-The qualification reruns all 185 x86/i386 tests, 2,048 SVM checks, 196 VMRUN
-contexts, 9,072 VMX checks, 6,291,456 FLAGS comparisons and 1,440 SKINIT EAX
-boundary checks. The existing source-global audit remains at 90 findings.
-Windows/Darwin i386 source ABIs and physical privileged success are outside
-this interface qualification.
 
 ## Native system-return transfers
 
@@ -139,9 +112,6 @@ effects; source after a builtin is unreachable.
 dynamic frames and malformed arguments at O0/O2 on ELF, COFF and Mach-O.
 `sync-x86-system-returns.py` owns the pruned stack-carrier records; its checks
 also reject accidental ordinary-return metadata and retain existing opcode IDs.
-The full LLVM fork additionally supports SYSEXIT32 in protected 16/32-bit
-code and rejects SYSRET/SYSEXIT64 outside 64-bit code. Code16 retains the
-32-bit compiler stack ABI; it is not real-mode support.
 
 Run the independent Linux x64 privileged oracle with:
 
@@ -160,69 +130,8 @@ memory byte with an independent original-byte vCPU. A deliberately corrupted
 stack move must fail the operand check. Canonical high PC aliases and stacks,
 unaligned stacks and narrow argument high halves are included. KVM access is
 required; unavailable hardware is not a pass. This fixture disables CET and
-does not qualify faults, asynchronous events or other CPU models. Add `--i386`
-to run the two LLVM profiles in native protected 32-bit mode: four SYSEXIT32
-functions and 21,760 complete state pairs per profile, with an independently
-corrupted ECX move rejected. Add `--code16` instead to run the same LLVM
-profiles from a 16-bit code segment, retaining a 32-bit stack segment and ABI.
-The disassembler and negative control use the selected code width. Neither
-option enables an i386/code16 frontend in NeverC; its builtins retain their
-x86-64 target. The contract follows [Intel SDM SYSRET/SYSEXIT and section
+does not qualify faults, asynchronous events or other CPU models. The contract follows [Intel SDM SYSRET/SYSEXIT and section
 3.4.1.1](https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf).
-
-## Native far calls and terminal jumps
-
-Ten C23 builtins now expose the LLVM fork's native far-transfer interfaces.
-`__builtin_ia32_lcall16/32/64(const void *target)` returns an unsigned short,
-unsigned int or unsigned long long from AX/EAX/RAX. The target is a packed
-native-width offset followed by a u16 selector. The two `lcall16/32_imm`
-forms instead take constant offset and selector arguments and retain the 9A
-encoding. The memory forms retain FF /3; all pointer reads, descriptor checks
-and faults remain inside the native instruction.
-
-These are zero-argument returning far entries. The destination must preserve
-the platform C callee-saved registers, return with RETF, and restore the exact
-caller CS/SS/SP and ordinary C ABI environment. Call gates must copy zero
-parameters. Their frame width comes from the gate rather than the intrinsic
-suffix. The actual native return frame must be able to represent the
-generated continuation offset, including narrow direct calls in code64. The
-backend uses a real call sequence, a platform call-preserved mask and Win64
-outgoing home space, and forbids leaf red-zone allocation. It does not silently
-promise preservation of arbitrary original-image registers.
-
-`__builtin_ia32_ljmp16/32/64(const void *target, const void *stack)` is
-nonreturning. `ljmp16/32_imm(offset, selector, stack)` supplies constant target
-fields. A terminal carrier sets ESP/RSP immediately before the native far
-jump, after all compiler-frame accesses; its target-address operand excludes
-the stack register. No ordinary epilogue follows. The compiler does not
-promise values for other registers or an asynchronous unwind contract.
-
-Immediate forms require a legacy target, while 64-bit operands require a
-long-mode target. Memory 16/32-bit operands are available in both. Linux i386
-source uses `-fllvm-backend=/path/to/full-fork/llc`; x64 uses the embedded
-backend. No inline assembly or runtime helper implements these APIs.
-`X86NativeFarTransfers.def` owns backend identities and drives intrinsic
-schema synchronization. `X86NativeFarTransfer.h` ports the full fork's
-memory-form lowering and explicitly rejects legacy-only records in the pruned backend;
-`sync-x86-far-transfers.py` owns the appended terminal records without
-renumbering old opcodes. Frontend tests cover modes, types, immediate arguments,
-attributes, O0/O2 and ELF/COFF/Mach-O output.
-
-`tests/neverc/X86/verify_far_transfers.py --llvm-bin LLVM_BIN --neverc NEVERC
---mode 16|32|64 --output DIR` compares native instruction boundaries and complete
-RAM with independently encoded far transfers. It also executes the returning
-compiler continuation after a far entry clobbers caller-saved GPR/vector banks
-and mutates memory, checking live values, return results and exact stack and
-callee-saved register restoration. The fixture covers direct transfers and
-16/32-bit protected call gates with zero parameters. Code16 and
-`--mode 64 --x32` execute the full LLVM profiles. Stack-local targets verify
-that the final SP assignment preserves the target address.
-The comparison includes GPRs, segment/system state, FPU/XMM state, events and
-RAM. It does not claim task switching, CET, nonzero gate parameters, fault
-recovery, asynchronous unwinding or arbitrary original-image machine-context
-restoration. See the LLVM fork's
-`llvm/docs/X86NativeFarTransfers.rst` and the
-[Intel SDM CALL/JMP contracts](https://cdrdv2-public.intel.com/835781/325462-sdm-vol-1-2abcd-3abcd-4.pdf).
 
 ## Native frame and SMM transfers
 
@@ -257,12 +166,7 @@ dynamic frames, argument errors, nonconstant adjustments and UIRET features.
 paths against independent original-byte KVM executions. Its default tests
 IRET/RETF operand sizes and SYSENTER, with plain/fixed/dynamic/pressure compiler
 frames, CPL0/CPL3 transitions, aligned/unaligned and canonical high frame aliases,
-flag samples and immediate cleanup. `--i386` selects the two full LLVM code32
-profiles; `--code16` selects those profiles with a 16-bit code segment and the
-same 32-bit stack ABI. Both run 16/32-bit IRET/RETF and SYSENTER. Code16 checks
-the opposite operand-size-prefix polarity and corrupts the full ESP carrier in
-its negative control. This is a full LLVM capability; NeverC's frontend target
-remains x86-64. `--smm` tests RSM with separate normal/SMM memory spaces and SMI-created
+flag samples and immediate cleanup. `--smm` tests RSM with separate normal/SMM memory spaces and SMI-created
 save images, then establishes code64 execution inside SMM for the compiler
 wrapper. This is KVM-mediated SMM qualification, not bare-metal firmware evidence.
 The comparison covers all represented GPRs, PC, flags, segment/system state,
@@ -270,137 +174,8 @@ event state and every mapped RAM byte. XSTATE, CET, NT task returns, fault and
 asynchronous delivery, other CPU models, and successful FRED/UIRET transitions
 remain outside this native fixture's scope.
 
-## Native FLAGS image widths
-
-`__builtin_ia32_readeflags_u32()` and `__builtin_ia32_writeeflags_u32(unsigned)`
-expose the existing full LLVM i386 FLAGS intrinsics. They reject x64 targets,
-where a dword PUSHF/POPF encoding does not exist. The word APIs remain valid in
-both modes, and the explicit u64 APIs remain x64-only. Generic `__readeflags`
-and `__writeeflags` select u32/u64 from the code target, then convert to/from
-their existing source ABI types. They no longer produce a u64 intrinsic call
-with an i32 argument or store an i64 result into an i386 i32 temporary.
-
-All snapshots and writes retain their ordered effects, including unused reads.
-`X86FlagsFrontendTest` checks types, headers, ordering, rejected modes/arguments
-and native word stack width at O0/O2. The intrinsic synchronizer updates the
-pruned tables and selector IDs together; i386 machine emission requires the
-full LLVM backend selected with `-fllvm-backend=LLC`.
-
-`tests/verify-flags16-completion.py --compiler NEVERC --bits 32 --image-bits 32
---backend-llc LLC --keep DIRECTORY` compares both optimized objects with original
-PUSHFD/POPFD bytes on Linux. `--spelling generic` checks the generic APIs;
-`--bits 64 --image-bits 64` checks x64, and the default image width remains 16.
-The witness tests every TF-clear low word and all old/new AC/ID combinations,
-checks stack guards, restores host flags before returning to C, and rejects
-wrong-width writes and fabricated read snapshots. Arithmetic flags across an
-ordinary compiler ABI, privileged accesses, faults and asynchronous events
-are separate contracts. `--source` retains the unchanged generated-C write
-qualification used by NeverD.
-
-## i386 intrinsic headers
-
-The explicit `__builtin_ia32_readcr32(index)`, `writecr32(index, value)`,
-`readdr32(index)` and `writedr32(index, value)` APIs use `unsigned` data and
-emit the corresponding native `llvm.x86.*32` intrinsics. They require an i386
-target and the full LLVM machine backend. CR indices are 0/2/3/4; DR indices
-are 0..7, including the environment-dependent DR4/DR5 aliases. Indices must be
-constant. Microsoft `__readcr0/2/3/4`, `__writecr0/2/3/4`, `__readdr` and
-`__writedr` select the instruction width from the code target; their i386
-header types match the 32-bit ABI. CR8 is diagnosed outside x64. Existing
-portable 64-bit API signatures are unchanged.
-
-The i386 source target is Linux. Microsoft spellings are also checked there
-with `-fms-extensions -D_MSC_VER=1930`; this is not a Windows i386 ABI route.
-`intrin.h` owns its `size_t` include, and NeverC's unconditionally exposed AVX
-headers keep their MMX/SSE type prerequisites visible without enabling those
-CPU features for generated code.
-
-`tests/verify-system-register-completion.py --compiler NEVERC --backend-llc
-LLC --spelling builtin` and `--spelling microsoft` exercise both code modes,
-all register indices, live/dead/repeated reads and writes, memory ordering,
-undefined-flag clobbers and ABI preservation at O0/O2. These are controlled
-instruction completions in Unicorn; hardware paging/privilege behavior is a
-separate qualification. `X86PrivilegedIntrinTest.I386SystemRegister*` checks
-frontend types, native IR and rejected modes/indices. The native-intrinsic
-schema and sorter maintain the new IDs, signatures, immediate attributes and
-DAG selector references together.
-
-The standard MMX/SSE and umbrella intrinsic headers admit both x86 pointer
-widths. AMX remains guarded by long mode; its builtins are not declared by the
-i386 target. `__SSC_MARK` saves the full EBX or RBX according to that target,
-including PIC code. Linux i386 source still emits IR for the full LLVM fork;
-these headers do not restore NeverC's embedded machine backend.
-
-`__builtin_ia32_hreset` is available in both modes. The shared compiler macro
-`__NEVERSIGHT_X86_HRESET__=1` declares this API independently of global CPU
-options. It does not assert a processor feature. Callers still need
-`target("hreset")` or `-mhreset`; this distinction lets NeverD's generated
-functions select the native call without requiring a global target option.
-The LLVM fork's Clang exposes the same builtin, capability macro and native
-`_hreset` header wrapper.
-
-`tests/neverc/X86/verify_i386_intrinsic_headers.py --neverc NEVERC --llvm-bin
-LLVM_BIN --output OUT` executes O0/O2 static/PIC code in both widths. It checks
-MMX/SSE/AVX2 values, carry/borrow, CRC32C, x87 after EMMS and full EBX/RBX
-preservation. HRESET and AVX-512 are emitted without execution. The fixture
-requires Linux multilib and a CPU with SSE4.2/AVX2/ADX.
-
-`verify_hreset_source.py --exports EXPORTS --frontend COMPILER --llvm-bin
-LLVM_BIN --output OUT` consumes actual NeverD `X86HresetSource` exports.
-Patched Clang/NeverC must select native calls; stock Clang uses `--fallback`.
-The verifier decodes HRESET, replaces it with a trap, observes EAX and resumes
-to check the compiled return. Wrong-control mutations preserve the call but
-must fail. These observations do not qualify physical prediction-history
-effects or original-machine fault/event routing.
-
-## Native protected ARPL
-
-The LLVM fork provides `llvm.x86.arpl.reg(i16, i16)` returning the
-adjusted selector and actual ZF, and `llvm.x86.arpl.mem(ptr, i16)` returning
-ZF while the native instruction owns the word read and conditional write.
-`llvm.x86.arpl.mem.address32(i32, i16, i32, i32)` additionally carries constant
-16/32-bit address width and segment prefix. Ordinary pointers use DS through a
-register class excluding BP/SP; explicit offsets wrap before segment addition.
-All forms remain ordered and survive unused results. Long mode is rejected.
-
-Clang and NeverC expose `__builtin_ia32_arpl_reg(unsigned short, unsigned short,
-unsigned char *)`, returning the adjusted word and storing ZF after the native
-operation; `__builtin_ia32_arpl_mem(void *, unsigned short)` returns ZF directly.
-`__builtin_ia32_arpl_mem_address32(unsigned, unsigned short, constant width,
-constant prefix)` returns ZF with explicit addressing. NeverC's Linux i386
-frontend emits these native calls with `-S -emit-llvm`; object generation still
-uses the full LLVM fork. This does not restore its pruned embedded i386 backend.
-Clang additionally supports code16 with the 32-bit pointer/stack ABI.
-
-Run `tests/neverc/X86/verify_protected_arpl.py --llvm-bin LLVM_BIN --mode 16
---output ARTIFACTS` for O0 and optimized O2 KVM profiles; `--mode 32` checks
-protected code32. `--frontend PATH` compiles actual builtin C through patched
-Clang or NeverC (NeverC currently admits mode 32). Each profile compares 19,968
-pairs against independently encoded ARPL, including every RPL pair, high
-selector bits, aliased inputs, used/unused results, CPL0/CPL3, arithmetic flags,
-aligned/unaligned/cross-page and read-only/missing operands. Pointer DS and
-explicit 16/32-bit FS addresses cover read-only, limited, null, expand-down and
-nonflat segment caches. Original #GP/#PF/#AC handlers retain the original
-fault frames and vector. All GPRs, flags, system/event state and RAM participate;
-ABI-compatible successes also verify the compiled result and return frame.
-Corrupting a declared source before intact ARPL or inverting its returned ZF
-must fail independently.
-
-`verify_arpl_source.py` consumes actual NeverD `X86ArplSource` exports, compiles
-both C routes at O0/O2, and compares original state through the same KVM owner.
-It admits a patched `--frontend` or stock Clang with `--fallback`. ELF, COFF and
-MachO source exports are recompiled for SysV32; ordinary DS and nonflat FS/GS
-are exercised, with an intact-instruction returned-ZF negative control.
-
-`KvmProtectedFaultFixture.h` shares completed-OUT fault observation and inactive
-exception-record handling with the protected far-pointer oracle. These tests
-do not qualify real/VM86 mode, asynchronous events, device memory or an entire
-i386 source dispatcher. The instruction contract follows
-[Intel SDM ARPL](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html).
-
 ## Native far-pointer segment loads
 
-`__builtin_ia32_lds16/32`, `__builtin_ia32_les16/32`,
 `__builtin_ia32_lfs16/32/64`, `__builtin_ia32_lgs16/32/64` and
 `__builtin_ia32_lss16/32/64` each take one `const void *`. The result is an
 `unsigned short`, `unsigned int` or `unsigned long long`, respectively. The
@@ -423,26 +198,6 @@ boundary. Native arithmetic flags are unchanged.
 The pointer follows compiler-selected addressing. The API does not retain an
 original instruction's source segment, address-size prefix or default-stack
 fault provenance.
-
-NeverC's Linux i386 frontend exposes all ten word/dword forms, emitting IR for
-the full LLVM fork. The four LDS/LES calls diagnose long-mode use at the frontend;
-all 64-bit result forms require long mode. The full fork's Clang exposes the same
-thirteen builtins and maps them directly to the existing effectful intrinsics.
-Its protected code16 target uses the 32-bit stack/pointer ABI. These APIs do not
-restore NeverC's pruned embedded i386 backend or add a NeverC code16 frontend.
-Invalid code modes fail rather than substituting another instruction.
-`__has_builtin` reports registration; it does not override the call's code-mode
-checks, just as for the existing legacy BOUND and ARPL interfaces.
-
-`verify_protected_far_pointer.py --llvm-bin LLVM_BIN --mode 32 --frontend
-NEVERC --output ARTIFACTS` compiles actual C for the protected-mode KVM oracle.
-Use `--frontend CLANG` with `--mode 16` or `32` for the full fork's frontend;
-omitting `--frontend` retains the direct-IR baseline. Every profile checks used
-and unused results, ordinary-memory ordering, complete represented CPU state,
-descriptor effects and original #GP/#NP/#SS/#PF frames. Its wrong-pointer
-negative control retains the native instruction. `verify_far_pointer.py` also
-accepts `--frontend CLANG` to check direct native Clang and Clang IR through the
-full LLVM backend on x64, alongside the existing NeverC and LLVM profiles.
 
 `FarPointerFrontendTests.cpp` checks native identity, unused effects, exact C
 types, malformed operands and both assembly dialects at O0/O2 on ELF/COFF/Mach-O.
@@ -475,11 +230,10 @@ is an additional prerequisite for these observations.
 
 ## Native MPX bounds state
 
-NeverC exposes 14 MPX operations in each x86 code mode for the architectural
-BND0--BND3 bank. Each returns `void` and emits a native LLVM intrinsic, without
-platform headers or inline assembly. Bank indices and address controls are
-constant `unsigned`. The long-mode interfaces below use `unsigned long long`
-addresses and values.
+NeverC exposes 14 C23 builtins for the architectural BND0--BND3 bank. Each
+returns `void` and emits a native LLVM intrinsic, without platform headers or
+inline assembly. Bank indices and address controls are constant `unsigned`;
+addresses and values are `unsigned long long`.
 
 | Builtin suffix after `__builtin_ia32_` | Arguments |
 | --- | --- |
@@ -491,13 +245,6 @@ addresses and values.
 | `bndmk` | `bank, lower, inclusive_upper, address_bits, segment_prefix` |
 | `bndldx`, `bndstx` | `bank, translation_base, pointer_value, address_bits, segment_prefix` |
 
-`bnd_branch` and `bndmov_reg` are shared by i386 and x64. Append `32` to each
-other name for i386, where addresses and values are `unsigned` and the only
-admitted address encoding is 32 bits. Explicit interfaces reject the wrong
-code mode. Linux i386 object emission uses NeverC's
-`-fllvm-backend=/path/to/llc` driver with the full LLVM fork; no source-level
-assembly is required.
-
 Bank indices are 0..3. Address bits select a 32- or 64-bit encoding. Segment
 prefixes are 0, 0x26, 0x2e, 0x36, 0x3e, 0x64 or 0x65. MPX ignores 67H in long
 mode, so a 32-bit encoding still uses the entire 64-bit base and index. BNDMK
@@ -507,8 +254,8 @@ bases. BNDLDX/STX use base+displacement for table translation and a separate,
 unscaled pointer-comparison value. With no encoded base, supply zero, ignoring
 the displacement as required by the instruction.
 
-In x64 code, `__NEVERC_X86_MPX_STACK_MEMORY__=1` advertises stack-default
-addresses for the three BNDMOV memory builtins. OR `0x100` into a non-FS/GS segment control to
+`__NEVERC_X86_MPX_STACK_MEMORY__=1` advertises stack-default addresses for the
+three BNDMOV memory builtins. OR `0x100` into a non-FS/GS segment control to
 retain the SS default using the unmodified frame pointer and a computed index.
 This accepts both 32- and 64-bit encodings, since MPX ignores 67H. Native bounds
 memory is never probed by ordinary compiler loads. MIB table operations,
@@ -545,29 +292,13 @@ the generated-table CI job checks all three authorities and drift regressions.
 [tests/verify-mpx-encoding.py](tests/verify-mpx-encoding.py) validates independent bytes, full input values,
 callee-saved registers and both assembly dialects for 520 combinations at
 O0/O2 across ELF, COFF and Mach-O. It accepts NeverC, full LLVM, or NeverC IR
-with the full LLVM backend. `--mode=32 --llc=...` checks 268 i386 combinations
-against the full LLVM fork. Use `--mode 32 --compiler NEVERC
---backend-llc LLVM_LLC --formats elf` for actual i386 C through NeverC's
-external-backend driver. The i386 matrix uses three full-register input sets,
-including zero, high bits and all bits set. Selected forms reject deliberate
-corruptions of opcode, bounds-bank selection, operand values, stack and
-callee-saved registers; frame profiles also reject damaged local canaries.
+with the full LLVM backend.
 These controlled boundaries do not simulate successful MPX operations.
 `--frame` additionally checks aligned fixed locals, dynamic allocations and
 both stack canaries in every function. `--stack-memory` checks 120 BNDMOV
 combinations; it composes with `--frame`. Per-function instruction bytes and
 relative offsets must match both assembly dialects, independently of section
-ordering or inter-function alignment. `--keep DIR` retains sources, command
-logs, object hashes and machine-readable results. The current NeverC i386
-qualification covers ELF; Windows/Darwin i386 source ABIs remain unqualified.
-
-The 2026-11-08 source batch passes all 196 selected x86/i386 frontend tests.
-The i386 MPX C profiles pass 3,216 operand/ABI comparisons and reject 298
-corruption controls. Including x64 embedded/full-backend regression profiles,
-the totals are 17,136 comparisons and 2,302 controls. Independent full-LLVM
-baselines cover both code modes and all three object formats. These are
-encoding and transport results; native bounds algorithms are not executed by
-this witness.
+ordering or inter-function alignment.
 
 [tests/verify-mpx-state.py](tests/verify-mpx-state.py) supplies a freestanding CPL0 QEMU guest with its own
 page tables, XCR0, BNDCFG and exception gates. It executes native enable/disable,
@@ -816,7 +547,7 @@ do not execute privileged I/O or change host interrupt/descriptor state.
 `__svm_vmrun_context64` / `__svm_vmrun_context32`. Both call the native
 `__builtin_ia32_vmrun_context(void *, unsigned immediate_width)` and emit
 `llvm.x86.vmrun.context(ptr, i32)`. Both require x64 code; 32 selects an addr32
-physical VMCB address, not an i386 calling convention.
+physical VMCB address.
 
 The context contains four u64 fields (VMCB physical address, guest XSAVE linear
 address, host XSAVE scratch linear address, XCR0 mask), followed by fourteen
@@ -889,13 +620,11 @@ Services with extra outputs, nonlocal transfers or unrepresented caller-state
 dependencies require a different interface. The opcode does not identify a
 hypervisor and this API does not implement Hyper-V's different convention.
 
-The shared `X86KVMHypercall.h` lowering comes from NeverSight LLVM commit
-`7eb7c0ffbe9e`, retaining Apache-2.0 WITH LLVM-exception licensing. The full
-fork provides code32 and code64; NeverC retains only its existing x64 codegen
-domain and rejects other modes. `sync-x86-native-intrinsics.py` owns the four
-IR declarations, while `sync-x86-kvm-hypercalls.py` owns machine descriptors
-and both printers without renumbering existing instruction IDs. Their tests
-verify exact register order and detect lost inputs or memory effects.
+`X86KVMHypercall.h` derives from NeverSight LLVM commit `7eb7c0ffbe9e`,
+retaining Apache-2.0 WITH LLVM-exception licensing. NeverC's lowering requires
+x64 code. `sync-x86-native-intrinsics.py` owns the two IR declarations;
+`sync-x86-kvm-hypercalls.py` owns their machine descriptors and printers.
+Their tests verify exact register order and detect lost inputs or memory effects.
 
 `X86KVMHypercallTest` exercises the public header, retained unused calls and
 memory accesses, invalid inputs, and O0/O2 ELF/COFF/Mach-O emission.
@@ -907,8 +636,7 @@ pairs and executes 512 hypercalls. This qualifies ABI transport, not all KVM
 services. Missing KVM fails explicitly instead of counting as passed.
 
 Use `--backend-llc /path/to/llc` for NeverC IR through the full fork; add
-`--new-pm` for its other codegen pipeline. `--llvm-only --bits 32` or
-`--llvm-only --bits 64` independently tests the full fork without NeverC.
+`--new-pm` for its other codegen pipeline. `--llvm-only --bits 64` independently tests the full fork without NeverC.
 `--source FILE --manifest FILE` compiles actual NeverD continuation C after
 checking the manifest's source hash and explicit KVM binding. The run retains
 commands, tool and fixture hashes, generated objects and runtime logs.
@@ -922,24 +650,12 @@ The standard `_hreset(int)` wrapper in `<x86gprintrin.h>` now calls this native
 builtin. Its installed `hresetintrin.h` retains the LLVM source license.
 
 `__builtin_ia32_invlpgb(unsigned long long address_control, unsigned ids,
-unsigned count)` transports RAX, EDX and ECX in that order. The shared i386
-entry `__builtin_ia32_invlpgb32(unsigned address_control, unsigned ids,
-unsigned count)` instead carries EAX, EDX and ECX; both reject the wrong code
-mode. The control/address word remains an integer, including its low control
-bits; the compiler does not dereference it. `invlpgb_addr32` remains a separate
-long-mode address-size override. All forms retain ECX as a machine input.
-
-`__builtin_ia32_tlbsync_control32(unsigned control)` and
-`__builtin_ia32_tlbsync_control64(unsigned long long control)` preserve the
-complete mode-sized rAX value through `llvm.x86.tlbsync.control32/64`.
-AMD APM volume 3 revision 3.38, page 496 specifies rAX bit 0 as the IOMMU
-completion control when EnhancedTlbi is enabled, with reserved bits retaining
-their native fault behavior. Neither interface masks that input. The legacy
-`__builtin_ia32_tlbsync()` / `llvm.x86.tlbsync()` explicitly sets rAX to zero
-for CPU-only synchronization in either code mode. It no longer inherits an
-unbound register value. Both APIs preserve memory ordering and arithmetic
-flags. `sync-x86-tlbsync.py` owns the pruned backend's implicit-RAX pseudo,
-memory effects and both printers; MC lowering emits the ordinary instruction.
+unsigned count)` transports rAX, EDX and ECX in that order. The control/address
+word remains an integer, including its low control bits; it is not dereferenced
+by the compiler. `__builtin_ia32_tlbsync()` emits the actual synchronization
+instruction. The shared IR names are `llvm.x86.invlpgb` and `llvm.x86.tlbsync`.
+Both backends retain all three implicit INVLPGB inputs.
+Address-size overrides remain separate from these default-mode APIs.
 
 `__builtin_ia32_lkgs_reg(unsigned short selector)` and
 `__builtin_ia32_lkgs_mem(const void *selector)` map to `llvm.x86.lkgs.reg(i16)`
@@ -954,9 +670,7 @@ both printers and both assembler dialects. Existing opcode numbers stay fixed.
 
 All four instructions remain ordered effects and preserve arithmetic flags.
 [tests/verify-bounded-system-completion.py](tests/verify-bounded-system-completion.py) supports the usual compiler, full
-LLVM and NeverC-to-fork modes. The external compiler driver is used for Linux
-i386; x64 NeverC IR is passed to the full backend explicitly. It checks actual
-input operands, full live input
+LLVM and NeverC-to-fork modes. It checks actual input operands, full live input
 values, repeated effects, memory ordering, saved registers and unmapped LKGS
 selector boundaries at O0/O2. ELF/COFF/Mach-O output round-trips through both
 assembly dialects. It executes surrounding scalar code while intercepting
@@ -969,15 +683,13 @@ reset, descriptor loading, interprocessor invalidation or synchronization.
 physical VMCB address in RAX. `__builtin_ia32_invlpga` takes an unsigned i64
 linear address and an unsigned i32 ASID in ECX. These integer operands never
 become compiler memory accesses. Matching `llvm.x86.vmload`, `vmsave` and
-`invlpga` APIs require 64-bit mode; the full fork also provides `vmload32`,
-`vmsave32` and `invlpga32` for i386. These APIs select default address width.
+`invlpga` APIs require 64-bit mode. These APIs select the default address width.
 
 `__builtin_ia32_{vmload,vmsave,invlpga}_addr32` instead selects the long-mode
 address-size override, taking an unsigned i32 address. The matching LLVM
-`llvm.x86.{vmload,vmsave,invlpga}.addr32` APIs reject non-long mode; the full
-fork also supplies `.addr16` with i16 addresses for i386. INVLPGA's ASID
+`llvm.x86.{vmload,vmsave,invlpga}.addr32` APIs reject non-long mode. INVLPGA's ASID
 remains a complete i32 ECX value in every form. These interfaces preserve the
-native `67` prefix through late MC lowering. Pseudos retain exact AX/EAX/ECX
+native `67` prefix through late MC lowering. Pseudos retain exact EAX/ECX
 uses and VMCB memory effects during machine optimization, then emit the real
 instruction and explicit address-size prefix in both assembly dialects.
 `sync-x86-svm-address-instructions.py` owns the three appended NeverC pseudos;
@@ -991,9 +703,7 @@ and the IR call has neither `noreturn` nor `willreturn`. All APIs retain
 conservative IR memory effects and native privilege/feature validation.
 
 `__builtin_ia32_vmfunc_eptp_switch(unsigned index)` selects only VMFUNC leaf 0
-with EAX=0 and the full ECX index in either code mode, through
-`llvm.x86.vmfunc.eptp.switch`. The compiler does not truncate the index to
-9 bits; native VMX validation owns unavailable or out-of-range selections.
+with EAX=0 and the full ECX index, through `llvm.x86.vmfunc.eptp.switch`.
 It does not synthesize VMfail status or define register behavior for other
 VMFUNC leaves. Entry/exit continuations, hypercall protocols and arbitrary
 VMRUN machine-state transport remain separate work.
@@ -1023,85 +733,20 @@ and system-effect synchronizers retain the pruned enum, attributes, matcher IDs
 and terminating machine descriptor together. `X86SkinitTest` checks both
 spellings, ordered stores, removed continuation, malformed inputs and O0/O2
 ELF/COFF/Mach-O output. The [binary oracle](tests/neverc/X86/verify_skinit_completion.py)
-also checks original EAX bits at a stopped instruction boundary: 1,440 checks
-for NeverC's eight i386/x64 objects and 1,080 for the full fork's twelve objects.
-All eight deliberately corrupted EAX controls are rejected.
+also checks original EAX bits at a stopped instruction boundary.
 It never executes SKINIT or qualifies reset, attestation or successful launch.
 
-The Linux i386 frontend also registers both SKINIT spellings. They consume the
-same raw 32-bit EAX input and terminate the original C continuation. The
-Microsoft declaration must lower to the native intrinsic, not an unresolved
-`__svm_skinit` function. i386 machine output uses `-fllvm-backend=LLVM_LLC`.
-The boundary witness accepts `--neverc-bits 32` or `--neverc-bits all`; it
-compiles i386 source through that driver, checks both assembly dialects and
-rejects deliberately corrupted EAX values. Windows/Darwin i386 source ABIs
-and successful secure launch remain outside this source interface.
-
-The 2026-11-08 i386 qualification passes all 185 x86/i386 frontend tests.
-Regression checks also retain 2,048 SVM cases, 152 real CPL3 fault boundaries,
-136 operand negative controls, 196 returning VMRUN contexts, 9,072 VMX
-controlled completions, 896 VMX CPL3 faults and 6,291,456 FLAGS comparisons.
-The source-global audit remains identical to its 90-finding baseline; this
-qualification does not close that independent global gate.
-
 [tests/verify-bounded-virtualization-qemu.py](tests/verify-bounded-virtualization-qemu.py) executes the generated code in
-disposable i386/x64 CPL0 guests. It checks VMSAVE/VMLOAD MSR round trips,
+disposable x64 CPL0 guests. It checks VMSAVE/VMLOAD MSR round trips,
 INVLPGA fallthrough, AC changes, SWAPGS exchange, GIF masking of an actual
 pending PIC interrupt, and HLT continuation after a timer interrupt. It shares
 the descriptor-state guest build/boot runner, including the bitcode bridge.
 TCG results do not qualify physical TLB invalidation or successful VMFUNC in
 VMX non-root operation.
 
-Both harnesses include explicit address-width overrides. The CPL0 fixture
-places a second VMCB in guest RAM below 64 KiB, so i386's AX address refers to
-valid physical storage. Exact-byte and live-input checks separately verify
-prefix retention and narrowing without losing callers' original values.
-
-#### i386 SVM source widths
-
-The Linux i386 frontend exposes `__builtin_ia32_vmload32`, `vmsave32` and
-`invlpga32` with unsigned 32-bit addresses, plus `vmload_addr16`,
-`vmsave_addr16` and `invlpga_addr16` with unsigned 16-bit addresses. INVLPGA
-retains its unsigned 32-bit ASID in both forms. The matching LLVM intrinsics
-already exist in the full fork; NeverC's synchronized intrinsic declarations
-and frontend now reach them directly. Calls on an x64 target fail during
-semantic checking. The embedded backend explicitly rejects these i386 IDs;
-use `-fllvm-backend` for i386 machine output.
-
-Microsoft `__svm_vmload`, `__svm_vmsave` and `__svm_invlpga` select the native
-word width from the source target. The common header registry also exposes
-`__svm_stgi`, `__svm_clgi` and `__halt` on i386. Their existing x64 signatures
-remain unchanged. These interfaces follow the effective-address rule in
-[AMD APM Volume 3, revision 3.26, pages 368, 434 and 442](https://www.sra.uni-hannover.de/Lehre/SS24/V_BSB/doc/amd64_manual_vol3.pdf).
-
-The completion witness accepts `--bits 32 --svm-only --backend-llc LLVM_LLC`
-and optional `--microsoft`. It compiles real C source through NeverC's full
-backend driver, checks AX/EAX addresses separately from full ECX ASIDs, and
-retains caller values, memory ordering and repeated effects. Its negative
-controls deliberately corrupt the address and ASID at the stopped instruction
-boundary. This also repairs an earlier witness bug: a memory-mapping loop
-shadowed the operation name and bypassed its SVM operand assertions.
-
-The November 8 qualification passes 184 x86/i386 frontend tests and the
-seventeen-profile SVM matrix: 2,048 checks, 152 real x64 CPL3 fault boundaries,
-136 operand negative controls and 196 returning VMRUN contexts. A separate
-run compiles NeverD's complete VMRUN C export through both compiler routes
-and passes another 196 contexts. The current compiler also passes 9,072
-controlled VMX regressions, 896 VMX CPL3 fault boundaries and 6,291,456 FLAGS
-comparisons. These counts describe distinct witnesses, not hardware VM-entry
-qualification. The synchronized table contains 1,821 x86 intrinsic IDs.
-
-The compiler was built from `fafedf75f`; later commits only correct the
-witness driver options and refresh the reviewed immutable `TargetInfos`
-fingerprint. The strict global-state audit still reports the same 90 baseline
-findings in 29 unchanged files; it is not a clean global gate. Exact tools,
-source revisions, commands and results are retained in NeverD's
-`docs/evidence/x86-svm-widths-2026-11-08.json`.
-
-The QEMU witness accepts `--bits 32 --backend-llc LLVM_LLC` for both default
-and address16 C forms. Its MSR round trips and returning guest paths qualify
-the selected TCG environment, not physical AMD TLB behavior, Windows/Darwin
-i386 source ABIs, arbitrary VMRUN state or real/VM86 transitions.
+Both harnesses include long-mode address-width overrides. Exact-byte and
+live-input checks verify prefix retention and narrowing without losing the
+caller's original values.
 
 ### Software interrupt contracts
 
@@ -1115,7 +760,7 @@ bitcode pass through the full LLVM fork without an unresolved private call.
 Previously produced NeverC intrinsic IDs remain available.
 
 [tests/verify-interrupt-completion.py](tests/verify-interrupt-completion.py) checks live inputs, repeated interrupts,
-ordered stores/loads and the continuation in i386 and x64 ELF/COFF/Mach-O.
+ordered stores/loads and the continuation in x64 ELF/COFF/Mach-O.
 The native Linux x64 fixture compares independently encoded INT 2C bytes
 with the raw builtin through each compiler route, both with an unhandled fault
 and with a handler that advances the fault PC and returns through sigreturn.
@@ -1228,8 +873,7 @@ and retains conservative memory ordering. It does not invalidate x87 or MMX
 payloads. The frontend accepts no arguments and returns void.
 
 The MMX state test targets cover intrinsic attributes, descriptor effects and
-O0/O2 IR/assembly on ELF, COFF and Mach-O. The full LLVM fork additionally
-covers i386 and rejects malformed intrinsic declarations. Run
+O0/O2 IR/assembly on ELF, COFF and Mach-O. Run
 `tests/neverc/X86/verify_fnop_state.py --llc /path/to/llc --neverc /path/to/neverc
 --clang /path/to/clang --output-dir /path/to/new-directory` on native Intel
 Linux x64 to retain independent byte-oracle and generated-code observations.
@@ -1268,7 +912,7 @@ observations, four page-boundary accesses and 26 fault/nonfault cases, including
 opcode and saved control/status state. Children exit in their signal handler;
 generated code is never resumed by guessing an instruction length. Supplying
 both tools also checks NeverC text IR through the full LLVM fork. Other CPUs,
-i386 execution, privileged #NM and alignment-check exceptions are outside this
+Privileged #NM and alignment-check exceptions are outside this
 harness's qualification.
 
 The full LLVM O2 profile first runs `opt -passes=default<O2>`; `--opt` defaults
@@ -1348,8 +992,7 @@ driver with [x87_environment_harness.c](tests/neverc/X86/x87_environment_harness
 instructions, independently reconstructed full tags, all TOP values, mixed
 80-bit payload classes, save/reset/restore behavior, exact protected-page
 boundaries, pending and newly loaded exceptions, and live x87/MMX values.
-Physical qualification covers the recorded Linux x64 CPU; i386 runtime,
-privileged faults and historical processors remain outside that evidence.
+Physical qualification covers the recorded Linux x64 CPU; privileged faults and historical processors remain outside that evidence.
 
 The 2026-10-28 qualification uses full LLVM
 [`f35c3ce214cd`](https://github.com/NeverSight/llvm-project/commit/f35c3ce214cd0bb12849ea46fdb826864444786b).
@@ -1427,8 +1070,7 @@ plus control/status/tags and input canaries. Native processor approximations
 are compared within the same CPU model; this is not a mathematical oracle
 for all processors or a physical hardware/fault qualification.
 
-Run it with `--compiler /path/to/neverc` or `--llc /path/to/llc`. The latter
-also supports `--mode 32`; NeverC uses its supported x64 target. Add
+Run it with `--compiler /path/to/neverc` or `--llc /path/to/llc` on x64. Add
 `--backend-llc /path/to/llc` to send NeverC text IR through the full fork,
 or additionally `--bitcode` to exercise the bitcode reader. `--keep DIRECTORY`
 retains inputs, generated objects, guest images and qualification records.
@@ -1484,12 +1126,6 @@ CMPccXADD's comparator is tied to its result. The ordinary RAO/VEX opcodes
 already exist in the embedded backend, so no duplicate encoding tables are
 introduced. Existing opcode identities remain stable.
 
-The embedded intrinsic metadata and lowering also share the full fork's four
-`llvm.x86.{aadd,aand,aor,axor}32.legacy.address32` interfaces for i386 IR.
-These use an i32 offset and constant address width 16 or 32. NeverC's C
-frontend remains x86-64-only; these i386 IR declarations are not frontend
-builtins. Code mode, data width and address width are separate contracts.
-
 Pass `--legacy` to the completion oracle for the legacy/VEX matrix. Each
 compiler route covers 13,680 functions and 164,160 controlled completions
 across O0/O2 and ELF/COFF/Mach-O, plus twelve assembly round trips. This
@@ -1511,7 +1147,7 @@ effects; native alignment and permission checks remain inside the instruction.
 `neverc-x86-backend-tests` checks 48 signatures against the actual x86 target
 lowering interface. Its source lives in `tests/neverc/X86/`, and
 `check-neverc` builds this target when X86 is enabled. NeverC's target registry
-is x86-64-only; the full LLVM fork additionally tests 32-bit code generation.
+exposes these operations on x86-64.
 
 ### Bounded leaf state with incoming arithmetic flags
 
@@ -1530,12 +1166,10 @@ CF/PF/AF/ZF/SF in bits 8/10/12/14/15 and OF in bit zero, with mask `0xd501`.
 Other input bits are ignored and other result bits are zero. One machine
 pseudo restores these six flags, executes the native leaf, and captures its
 actual flags before compiler arithmetic. AX/DI exchanges preserve the complete
-AX while LAHF/SAHF use AH; DI transports the flag word. This also avoids
-clobbering i386's reserved ESI realignment base in the full fork. DI, EFLAGS
+AX while LAHF/SAHF use AH; DI transports the flag word. DI, EFLAGS
 and unknown memory effects are declared. The MC window excludes
 compiler spills, stackmap shadow padding and automatic assembler padding.
-The full LLVM fork provides matching `.state` and `.state32` interfaces;
-NeverC's frontend continues to target x64.
+NeverC exposes these interfaces on x64.
 
 `sync-x86-bounded-leaf-state.py` retains the original two pseudo descriptors;
 new lowering uses the register-window descriptors described below. All previous
@@ -1555,8 +1189,7 @@ AEX, VM exits or nonlocal continuations. NeverD still needs an incoming CFG
 proof of a bounded leaf before consuming these interfaces.
 
 The recorded matrix passes 66,872 encoding/controlled-completion checks on
-each NeverC route and 133,744 on the full LLVM fork's two code modes. Each
-route compares 9,984 physical CPL3 boundaries. All physical observations on
+each NeverC route. Each route compares 9,984 physical CPL3 boundaries. All physical observations on
 this host were faults; successful enclave/SMX completion was not observed.
 With `--keep`, `native-observations.json` records the fault and normal counts
 for each leaf and optimization level. A deliberately corrupted incoming OF
@@ -1577,8 +1210,7 @@ IR signatures; replace the builtin's underscores with dots after `llvm.x86.`:
 | `{lldt,ltr,lmsw}_mem` | `void (const void *)` | Instruction-owned m16 input |
 | `invd` | `void (void)` | Native cache invalidation without writeback |
 
-Each suffix is prefixed with `__builtin_ia32_`. The full LLVM fork supports
-both code modes and rejects 64-bit register results on i386. Memory APIs use
+Each suffix is prefixed with `__builtin_ia32_`. Memory APIs use
 AS0 and the default address width, without imposing C alignment. Wider SMSW
 register forms are never synthesized by extending a 16-bit read: native upper
 bits depend on mode and processor. The other instructions' privilege, UMIP,
@@ -1631,9 +1263,8 @@ and uses `[RBP + index]` without replacing RBP or probing memory. CFI/SEH and
 dynamic stack realignment remain under the normal frame-lowering owner.
 Data-default addresses use allocator-owned registers excluding SP/BP; a
 carrier pseudo preserves that constraint through coalescing and post-RA copy
-propagation until MC lowering. Full LLVM also uses SI/DI for i386 address16,
-so neither the PIC GOT register nor a reserved realignment base is overwritten.
-NeverC remains x64-only. The append-only table authority is
+propagation until MC lowering.
+The append-only table authority is
 [utils/lint/sync-x86-native-address-carrier.py](utils/lint/sync-x86-native-address-carrier.py); no intrinsic IDs change.
 The address-carrier update established 18,573 instructions: it also caught up
 32 previously implemented REP, bounded-state and atomic pseudos that were
@@ -1676,26 +1307,7 @@ The register-window qualification passes 156,640 SGX/SMX encoding and controlled
 completion checks on full LLVM and 78,936 on each NeverC route. Separate CPL3
 checks cover 9,984 native boundaries for LLVM and 10,044 for each NeverC route.
 The REP regression passes 45,152 memory/flag cases, 112 hardware fault restarts
-and 192 controlled port completions per x64 route; the full fork additionally
-passes 8,928 i386 memory cases and 2,304 controlled port cases in emulation.
-
-The full fork also preserves the i386 ESI realignment base for explicit
-MOVS/LODS/CMPS/OUTS state and raw MOVS/OUTS intrinsics. Their tied, early-clobber
-carrier excludes the other native operands; final MC emission exchanges ESI
-only inside the indivisible operation. Raw intrinsics retain ambient DF and
-arithmetic flags. Explicit-state intrinsics restore DF=0 on normal completion.
-NeverC remains x64-only, so it does not acquire the six i386 machine records.
-Both backends use the canonical accumulator ADD encoding for REP comparison
-flag restoration as well as for bounded SGX/SMX leaves.
-
-[tests/verify-rep-frame.py](tests/verify-rep-frame.py), run with
-`--llc /path/to/full-fork/llc --keep /path/to/results`, checks 180 i386 objects
-and 2,160 controlled completions across ELF/COFF/Mach-O, O0/O2, address16/32,
-element sizes and both directions. Unmapped native operands expose any
-compiler spill or canary access through a borrowed frame base. The checks cover
-native inputs/results, comparison flags, stack canaries and callee-saved
-registers, with byte-identical object/assembly round trips in both dialects.
-They do not execute port I/O or qualify physical REP fault restart.
+and 192 controlled port completions per x64 route.
 
 ### Explicit descriptor-state addresses
 
@@ -1708,14 +1320,9 @@ return `unsigned char` ZF and the other interfaces return `void`. All retain
 instruction-owned accesses and unknown memory effects, including dead checks.
 The same width/prefix validation as the descriptor-query APIs applies.
 
-Full LLVM supplies the corresponding `.address` and protected `.address32` APIs,
-plus `llvm.x86.{sgdt16,sidt16,lgdt16,lidt16}.address32` for the legacy 16-bit
-descriptor-table operand size. These are distinct from a 16-bit address.
-The `.address32` forms accept code16 and code32 with the 32-bit stack/pointer
-ABI. NeverC's x86 frontend remains x64-only. Existing pointer and register
-builtins are unchanged.
-The instruction generator appends thirteen address-size pseudos while
-preserving every existing opcode identity.
+The matching `.address` IR APIs use i64 offsets with long-mode address
+controls. Existing pointer and register builtins remain unchanged. The instruction
+generator owns thirteen address-size pseudos.
 
 [tests/verify-descriptor-state-address-completion.py](tests/verify-descriptor-state-address-completion.py) checks complete native
 bytes, all seven segment controls and both address widths, O0/O2, three object
@@ -1723,27 +1330,9 @@ formats, ATT/Intel assembly round trips, wrapping high offsets, ZF, live inputs,
 repeated/dead calls, memory ordering and saved registers. Its controlled
 instruction boundaries do not model descriptor permissions or native faults.
 `tests/verify-descriptor-state-qemu.py --address-bits 32` additionally runs
-CPL0 selector, CR0 and descriptor-table transfers on TCG; full LLVM includes
-i386 16-bit table loads/stores against independent original bytes. The
+CPL0 selector, CR0 and descriptor-table transfers on TCG. The
 `--address-bits 64` run covers natural long-mode addressing. Physical hardware
 qualification is separate.
-
-`tests/neverc/X86/verify_protected_descriptor_state.py --llvm-bin DIR
---mode 16 --output DIR` executes all 17 full-LLVM address32 APIs against
-independent original bytes in KVM; `--mode 32` selects the code32 regression.
-Its 266 functions cover both address sizes, all segment prefixes, both table
-operand widths and live/dead verification results at O0/O2. CPL0/CPL3 cases
-include UMIP, CR0 input changes, null/invalid/nonpresent selectors, LTR busy
-writes, source and descriptor paging, read-only pages and alignment faults.
-The oracle compares represented GPRs/flags, segment/system state, active
-events and RAM, then checks successful compiler returns and saved registers.
-Offset-transport and returned-ZF corruption must each be rejected.
-
-Code resides in a nonflat CS with separate relative RIP and linear debug
-addresses. INVLPG's bytes, operand transport, exception behavior and retained
-effects are checked; this is not an experiment observing stale physical TLB
-entries. These tests do not supply a NeverC i386 frontend, real/VM86, arbitrary
-segment caches, asynchronous events or device memory semantics.
 
 The full fork passes 3,144 object/encoding checks; NeverC and its bitcode-to-fork
 route each pass 1,404. Explicit-address CPL0 runs pass 210 checks for full LLVM
@@ -1752,30 +1341,6 @@ route at either width. The compiler suite passes 65 tests, the independent
 binary suite 89, generator/sort regressions 36, and target/MC plugin tests 221.
 Both schemas regenerate successfully: x86 adds thirteen instructions to 18,538,
 while all prior instructions, registers and features remain unchanged.
-
-### Shared i386 descriptor and machine-state builtins
-
-The 35 builtins for VERR, VERW, SLDT, STR, SMSW, LLDT, LTR, LMSW, CLTS,
-CLAC/STAC, HLT, VMXOFF, STGI/CLGI, INVD, and the 16/32-bit LAR/LSL results are
-registered in the common x86 builtin table. Their LLVM lowering and signatures
-are unchanged. Linux
-i386 C23 source can emit IR or use `-fllvm-backend=/path/to/full/llc` for native
-objects. The seven 64-bit result forms remain available only in x86-64;
-explicit-address APIs keep their separately documented mode contracts.
-
-`tests/neverc/X86/verify_i386_descriptor_builtins.py --neverc PATH --llvm-bin DIR
---output DIR` checks all 35 registrations, IR verification and two retained
-native operations per function at O0/O2 in i386 and x64. It rejects accidental
-registration of 64-bit result forms on i386 and retains all seven native wide
-forms on x64. SWAPGS remains unavailable on i386. The query objects additionally
-run as real Linux i386/x64 processes, comparing LAR/LSL results and ZF and
-VERR/VERW status against independent original instructions for null, valid and
-invisible selectors, differing prior values, unaligned words and words ending
-at an inaccessible page. Privileged state operations have code-generation
-coverage here; they do not run successfully in user mode. Runtime privilege,
-feature availability and VMX/SVM state remain owned by the processor. These
-registrations reuse the LLVM fork's existing 32-bit and 64-bit instructions;
-no inline assembly or runtime helper implements them.
 
 ### Descriptor queries (LAR / LSL)
 
@@ -1837,9 +1402,7 @@ Both read and write MOV descriptions define EFLAGS, as required by Intel's
 operand and feature tables; it preserves all existing opcode numbers.
 `sync-x86-system-effects.py` owns the native MOV effects, and
 `sync-x86-native-intrinsics.py` owns the immediate signature attributes.
-The LLVM fork exposes matching 64-bit APIs and separate `readcr32/readdr32`
-and `writecr32/writedr32` APIs. Wrong-mode calls and CR8 in 32-bit mode fail
-explicitly.
+The LLVM fork exposes matching 64-bit APIs.
 
 [tests/verify-system-register-completion.py](tests/verify-system-register-completion.py) accepts `--compiler`, `--llc`,
 or `--backend-llc`, and `--spelling builtin|microsoft`. It intercepts every
@@ -1865,9 +1428,7 @@ SS=2, DS=3, FS=4, GS=5. Writing CS is rejected. The matching LLVM interfaces
 are `i16 @llvm.x86.readseg(i32 immarg)`,
 `void @llvm.x86.readseg.mem(i32 immarg, ptr)`,
 `void @llvm.x86.writeseg(i32 immarg, i16)` and
-`void @llvm.x86.writeseg.mem(i32 immarg, ptr)`. The full fork supports 16-, 32-
-and 64-bit code. Protected code16 uses the 32-bit stack/pointer ABI;
-NeverC's pruned backend supports x64 and does not expose an i386 frontend.
+`void @llvm.x86.writeseg.mem(i32 immarg, ptr)`. NeverC's pruned backend supports x64.
 
 Memory forms access exactly two bytes inside the MOV. Segment writes also own
 descriptor validation, hidden-cache installation and conditional descriptor
@@ -1898,30 +1459,11 @@ P-core and E-core runs each passed six LLVM/NeverC/combined O0/O2 profiles:
 two-byte end-of-page operands, invalid selectors, missing pages, read-only
 destinations and low-word truncation. Fault checks retain the original marker,
 selectors and bases and authenticate the faulting MOV form. These tests do not
-qualify i386 execution, other processor models, CPL0..2 descriptor faults,
+qualify other processor models, CPL0..2 descriptor faults,
 alignment checking, asynchronous events, or complete original GPR/flags restart
 state. Null selectors 1..3 are excluded because Linux normalizes them on signal
 return. The frontend/backend regressions separately check native IR, repeated
 calls, diagnostics and ELF/COFF/Mach-O object emission.
-
-[verify_protected_segment_moves.py](tests/neverc/X86/verify_protected_segment_moves.py)
-adds native protected execution through `--llvm-bin LLVM_BIN --mode 16
---output ARTIFACTS`; `--mode 32` checks the existing 32-bit path. Each O0/O2
-profile compares 4,824 complete state pairs from 28 functions, including used
-and unused reads. The CPL0/CPL3 matrix covers all segment registers, null and
-invalid selectors, read-only/nonpresent/code/nonflat/word-stack descriptors,
-aligned/unaligned/cross-page/missing/read-only operands, and descriptor-page
-faults. Original #NP/#SS/#GP/#PF/#AC handlers expose the vector; all GPRs,
-flags, system/segment state, active events and RAM are compared. Successful
-ABI-compatible cases also return through the compiler frame. Negative controls
-corrupt the declared pointer or selector before an intact MOV and must fail.
-
-Each generated MOV is followed immediately by an explicit LFENCE. The oracle
-authenticates both opcodes and compares the same two-instruction span, ending
-MOV-SS inhibition before the debugger stop. This fixture does not observe
-events inside that window, qualify real/VM86 execution or supply a coupled
-stack-switch API. It shares completed-OUT fault handling with the protected
-ARPL and far-pointer fixtures.
 
 ### EFLAGS (pushfq / popfq)
 
@@ -1995,7 +1537,7 @@ machine code. Failed reads include unchanged and unmapped destinations. This
 qualifies compiler transport and native intrinsic emission; successful privileged
 execution still requires a VMX environment. NeverC's pruned X86 backend currently
 targets x86-64. Run the same test with `--llc /path/to/fork/llc` to cover the LLVM
-fork's x86-64 and i386 intrinsic lowering, including its separate 32-bit forms.
+fork's x86-64 lowering.
 The frontend test uses freestanding headers, so it needs no Windows SDK.
 Add `--portable-builtins` to check the header-free names, also with
 `--backend-llc` for the full LLVM fork. The frontend regression suite separately
@@ -2005,7 +1547,7 @@ Use `--family access`, `--family management`, or `--family invalidation` for a
 focused run. Invalidation coverage checks the complete type selector, the
 unchanged m128 descriptor, all three completion statuses, and the unmapped
 descriptor boundary before supplying completion. Management
-coverage keeps the explicit memory operand at 64 bits in both code modes and
+coverage keeps the explicit memory operand at 64 bits and
 checks that an unmapped operand is not accessed before the VMX instruction.
 VMLAUNCH/VMRESUME are tested only on their falling-through VMfail paths; guest
 entry or late entry failure transfers control through the VMCS and is not a
@@ -2077,20 +1619,18 @@ apply, including ignored CS/DS/ES/SS bases in long mode. The integer offset is
 truncated before segment-base addition; lowering fixes the base to BX/EBX/RBX
 so the zero-prefix form cannot accidentally select SS through BP/SP allocation.
 The instruction owns memory access, privilege checks, VMfail and fault order.
-VMREAD still writes only on success. VMPTRST writes m64 in both code modes;
+VMREAD still writes only on success. VMPTRST writes m64;
 VMCLEAR/VMPTRLD/VMXON read m64, and INVEPT/INVVPID read m128. Other than VMPTRST,
 the APIs return the same 0/1/2 completion status above.
 
 Native IR names use `.address`, for example `llvm.x86.vmread.address` and
-`llvm.x86.vmwrite.mem.address`. The full LLVM fork also provides `.address32`
-forms with natural i32 selector/offset arguments and address width 16 or 32.
-Wrong-code-mode and code16 use fail explicitly. These APIs emit legacy VMX
+`llvm.x86.vmwrite.mem.address`.. These APIs emit legacy VMX
 encodings; forcing EVEX/APX remains a separate encoding contract.
 `X86NativeMemoryAddress.h` owns the width/prefix validation in both LLVM trees,
 and the native-intrinsic synchronizer owns the signatures and per-argument
 `immarg` attributes. Narrow addressing uses dedicated machine pseudos with
 normal pointer register classes and native memory/EFLAGS effects. MC lowering
-selects EBX (or BX in the full fork's i386 route) for the actual address.
+selects EBX for the actual address.
 `sync-x86-system-address-instructions.py` appends these eight NeverC opcodes
 without renumbering existing IDs. Repeated or discarded calls retain effects.
 
@@ -2109,47 +1649,6 @@ compiler tests, 81 binary checks, 29 generator tests and 12 plugin checks pass;
 the overload bitmap has no mismatches. The x86 schema retains all 18,495 prior
 opcode records unchanged and appends eight address-size pseudos (18,503 total).
 
-### Native i386 VMX source interfaces
-
-The Linux i386 frontend adds `__builtin_ia32_vmread32`, `vmwrite32`,
-`vmread_reg32`, `vmwrite_mem32`, `invept32` and `invvpid32`. Each selector and
-register value is `unsigned`; VMREAD's memory output is `unsigned *`, the
-register form returns `unsigned` and stores its byte completion status. The
-memory-source and invalidation forms take `const void *`. Existing unsuffixed
-64-bit signatures remain unchanged.
-
-All eight explicit VMX address interfaces above also have `_address32`
-variants. They take unsigned selectors/offsets and constant address widths
-16 or 32. The shared native address validator owns the segment control.
-Using these mode-specific APIs on x64 is an error. VMX management pointer
-interfaces and their Microsoft header declarations work in either code mode;
-their m64 physical-address operands do not shrink to pointer width.
-
-Microsoft `__vmx_vmread` and `__vmx_vmwrite` select the intrinsic by target
-code mode while retaining their `size_t` source signature. Previously their
-i386 calls passed i32 operands to i64 intrinsic declarations and failed LLVM
-verification. The instruction continues to own VMREAD's conditional store and
-VMWRITE's source memory access; no eager C/IR access is introduced.
-
-`__builtin_ia32_vmxoff_status()` additionally returns the byte completion in
-both code modes through `llvm.x86.vmxoff.status()`. Unlike the compatible
-void API, it preserves VMfail when dual-monitor SMM treatment is active,
-as specified by [Intel SDM Volume 3C](https://cdrdv2-public.intel.com/825750/326019-sdm-vol-3c.pdf).
-The existing `__vmx_off` and `__builtin_ia32_vmxoff` signatures remain void.
-
-The full fork already supplies the width-specific intrinsics and now adds the
-VMXOFF status result. The pruned backend rejects
-32-bit VMX IDs clearly. Use the existing `-fllvm-backend` driver for i386 ELF
-machine output. `verify-vmcs-completion.py`, `verify-vmcs-forms-completion.py`
-and `verify-vmx-address-completion.py` accept `--bits 32 --backend-llc LLVM_LLC`
-to compile actual NeverC source through that driver. The first script also
-accepts `--portable-builtins`; all three accept `--keep` for evidence. Source
-checks cover live/discarded results, both VMfail outcomes, native operand
-widths, instruction-owned memory, ABI preservation and address controls.
-The address witness's native host-fault comparison remains x64-only; i386
-checks supply controlled completions. These checks do not establish successful
-hardware VM entry, descriptor validation or a Windows/Darwin i386 frontend.
-
 ### Explicit descriptor-memory addresses
 
 `__builtin_ia32_lkgs_address(offset, address_bits, segment_prefix)` keeps the
@@ -2162,13 +1661,8 @@ Offsets are `unsigned long long`; width and segment controls are constants
 with the same validation and native ordering as the VMX address APIs above.
 
 The matching native IR names are `llvm.x86.lkgs.address` and
-`llvm.x86.{lar,lsl}.mem{16,32,64}.address`. The full LLVM fork additionally
-provides `.address32` query forms for 16/32-bit results in protected code16
-and code32, using the 32-bit pointer/stack ABI, an i32 offset and address width
-16 or 32. Mismatched code modes still fail explicitly. The system-address
-generator appends seven NeverC pseudos while
-retaining the earlier opcode identities; the full fork also owns the i386
-address-size pseudos.
+`llvm.x86.{lar,lsl}.mem{16,32,64}.address`. The system-address generator owns
+seven NeverC pseudos with long-mode pointer and stack contracts.
 
 [tests/verify-descriptor-address-completion.py](tests/verify-descriptor-address-completion.py) checks all segment/width
 combinations, native operand bytes, register and memory ownership, independent
@@ -2179,26 +1673,6 @@ Linux C routes compare real default/GS queries against raw-byte oracles,
 including nonzero GS bases and narrow offsets with different high bits.
 LKGS CPL3 faults are compared separately; these do not qualify successful
 privileged descriptor loading.
-
-`tests/neverc/X86/verify_protected_descriptor_queries.py --llvm-bin DIR
---mode 16 --output DIR` executes the full LLVM query APIs in KVM; use
-`--mode 32` for the protected code32 regression. Each O0/O2 image contains
-224 functions covering both queries, result/address widths, every segment
-prefix, and independent live/dead value/ZF results. The original-byte oracle
-compares represented GPRs/flags, segment/system state, active events and RAM
-at the native instruction boundary. Successful and rejected queries also
-check the compiled return, prior selection and callee-saved registers.
-Cases cover CPL0/CPL3, descriptor types/privileges/limits, nonflat CS/FS/GS,
-unaligned/cross-page/read-only/missing operands and descriptor-page faults.
-Wrong offset transport and inverted returned ZF must fail independently.
-
-The KVM breakpoint helper distinguishes CS-relative RIP from the linear debug
-address. This keeps code16 branches within their 64 KiB offset range while
-placing the image above the fixture tables. Original fault handlers retain
-their flat code segments; both restart PCs are authenticated before comparing
-the relocated fault frames. These LLVM tests do not enable a NeverC i386
-frontend, qualify real/VM86 or asynchronous events, or grant a general ABI for
-arbitrary segment caches.
 
 Generated C containing flag snapshots can use header-free `__readeflags` and
 `__writeeflags` on all three x64 object formats. NeverC's C23 parser also
@@ -2244,12 +1718,8 @@ one REP instruction. The dword move spelling is
 scalar floating-point MOVSD. MOVS accepts a const source pointer; its builtin
 type must qualify the source element, not the preceding destination pointer.
 
-The unsuffixed portable memory-string APIs use 64-bit counts in x64 code.
-The six `__builtin_ia32_{movsb,movsw,movsd_rep,stosb,stosw,stosd}32` APIs
-use 32-bit pointers and counts in i386 code. Microsoft byte/word/dword
-MOVS/STOS names select the code-mode width; `__movsq` and `__stosq` require
-x64. String port I/O uses an unsigned 32-bit count, zero-extended into RCX
-in x64 code. These operations consume ambient DF;
+Memory-string counts are 64-bit in NeverC. String port I/O uses an unsigned
+32-bit count, zero-extended into RCX. These operations consume ambient DF;
 they do not introduce CLD/STD or change the platform ABI's DF requirements.
 The hardware instruction owns zero-count behavior, element order, overlapping
 accesses and fault/restart behavior. The API does not implement memcpy or
@@ -2259,9 +1729,8 @@ memset, and does not expose partially completed machine state as a C return.
 accumulator width and memory effects in the pruned instruction table. DF is a
 reserved architectural register, so the machine verifier can represent its
 ambient input. Port operations additionally have unmodeled I/O side effects.
-The full LLVM fork supplies the matching 64-bit and `32` interfaces;
-a mismatched explicit code mode is rejected. Linux i386 machine-code emission
-uses NeverC's `-fllvm-backend=/path/to/llc` driver with that fork.
+The full LLVM fork supplies the matching 64-bit APIs plus 32-bit-code-mode
+memory-string APIs with a `32` suffix; a mismatched code mode is rejected.
 
 [tests/verify-string-completion.py](tests/verify-string-completion.py) runs MOVS/STOS in Unicorn against an
 independent sequential byte oracle. It covers O0/O2, every element width,
@@ -2276,17 +1745,6 @@ Run the script normally for NeverC, with `--spelling microsoft` for the
 Microsoft names, with `--llc /path/to/llc` for full-fork 32/64-bit IR, or with
 `--backend-llc /path/to/llc` for NeverC IR through the full fork. The current
 matrix has 544 cases per 64-bit route and 1,000 for the full fork.
-
-[tests/neverc/X86/verify_i386_rep_pointers.py](tests/neverc/X86/verify_i386_rep_pointers.py)
-compares actual i386 C compilation against independent MOVS/STOS bytes.
-It covers portable and Microsoft names, O0/O2, aligned dynamic frames,
-overlap, both directions, zero/one/seven completed elements and full-width
-counts stopped at the REP boundary. It also rejects deliberate corruptions
-of inputs, result, memory, stack and callee-saved registers. The DF=1 entry
-is a raw lowering probe, not a valid platform C ABI entry claim. Run it with
-`--compiler NEVERC --backend-llc LLVM_LLC --keep OUT`; it requires Capstone,
-LIEF and Unicorn. On a Linux target, Microsoft header probes also define
-`_MSC_VER` to select the bundled compatibility declarations.
 
 ### Explicit REP state
 
@@ -2317,16 +1775,8 @@ repeat selector if applicable. Element bytes are 1/2/4/8 (INS/OUTS: 1/2/4);
 address bits are 32/64; source segment is 0 or the architectural prefix byte;
 repeat is 0 for REPE or 1 for REPNE. All controls must be compile-time constants.
 
-In i386 code, `__NEVERC_X86_REP_STATE32__ == 1` advertises the seven
-corresponding `__builtin_ia32_rep_<family>_state32` APIs. GPR inputs and the
-state array use `unsigned`, including with 16-bit address controls. The DF,
-port and comparison-flag types are unchanged. Element bytes are 1/2/4 and
-address bits are 16/32. Comparison completion needs no long-mode SAHF
-feature. The frontend validates controls at their shared LLVM owner and
-emits native `.state32` calls with 32-bit output strides.
-
 Comparison flags use SF/ZF/AF/PF/CF in the LAHF high byte and OF in bit zero,
-masked by `0xd501`. In x64 code CMPS/SCAS require `target("sahf")`; the capability macro
+masked by `0xd501`. CMPS/SCAS require `target("sahf")`; the capability macro
 does not enable CPU features. Input flags are restored before the instruction,
 including for zero count and architectural fault restart. The actual hardware
 instruction owns accesses and partial-register updates; do not pre-truncate
@@ -2337,8 +1787,7 @@ These APIs expose completed registers, not a complete guest exception ABI:
 non-string registers can be compiler scratch, and no result-array stores take
 place until the operation returns. An OS fault handler may resume the native
 instruction. Port I/O still requires the architectural privilege/permission.
-NeverC's Linux i386 driver uses the full LLVM backend for the `state32`
-interfaces. This does not qualify Windows or Darwin i386 source ABIs.
+NeverC exposes these interfaces on x64, including 32-bit address overrides.
 
 `sync-x86-rep-state.py` owns the pseudo operands, implicit GPR/DF definitions
 and unknown memory effects; `sync-x86-native-intrinsics.py` owns signatures
@@ -2356,28 +1805,14 @@ high-register write behavior.
 
 Run with `--llc /path/to/llc` for full-fork IR, without it for NeverC, or with
 `--backend-llc /path/to/llc` for NeverC IR through the full fork. Add
-`--emulate-32` with either `--llc /path/to/llc` or
-`--compiler NEVERC --backend-llc /path/to/llc` to check 8,928 memory cases and
-2,304 controlled port cases in 32-bit Unicorn, including 16-bit addresses,
-preserved high register halves, complete input/output state, ABI restoration
-and rejected corruption controls. The NeverC route compiles actual C through
-its external-backend driver. Add `--keep OUT` to retain sources, original
-bytes, objects and result hashes. That 32-bit result is emulator coverage, not hardware fault
+`--llc /path/to/llc --emulate-32` to check 8,928 memory cases and 2,304 controlled
+port cases in 32-bit Unicorn, including 16-bit addresses and preserved high
+register halves. That 32-bit result is emulator coverage, not hardware fault
 restart qualification. Dependencies are `capstone`, `lief`, and `unicorn` for
 the emulator route, plus a host C compiler for native execution.
 All routes also reassemble both syntax dialects and compare function bodies
 with direct object emission. The comparison matches the compile driver's
 branch-relaxation policy and excludes inter-function alignment padding.
-
-The 2026-11-08 i386 source qualification passes all 193 selected x86/i386
-frontend tests. Its state matrix passes 11,232 comparisons and rejects 260
-corruption controls; the 48 pointer objects pass 3,456 completed comparisons,
-2,304 large-count boundaries and 384 corruption controls. Both x64 compiler
-routes retain 45,152 memory/flags comparisons, 112 real page-fault restarts and
-192 controlled port completions each. The six new intrinsic signatures also
-pass the generator/sorter checks and strict linked-artifact global-state
-audit with no findings or unscannable inputs. These results do not qualify
-i386 hardware restart, physical port I/O or additional platform ABIs.
 
 Port I/O string operations (`__inbytestring`, `__outbytestring`, etc.) are
 implemented via REP pseudo-instructions: `REP_INSB_64`, `REP_INSW_64`,
@@ -2748,8 +2183,7 @@ U32x4 expand(const void *offset, unsigned long long mask, U32x4 prior) {
 Six fixed-signature LLVM native interfaces carry these operations; constant
 kind selectors preserve PS/PD versus D/Q opcodes. Native calls conservatively
 retain memory effects, including zero-mask calls and unused load results.
-They do not use inline assembly or generic masked loads/stores. The full LLVM
-fork also supports i386; NeverC's builtin registry remains x86-64 only.
+They do not use inline assembly or generic masked loads/stores. NeverC's builtin registry exposes these APIs on x86-64.
 `X86CompressExpandTest.*` checks frontend controls and O0/O2 output in
 ELF/COFF/Mach-O and both assembly dialects. Hardware AVX-512/fault execution
 requires separate qualification.
@@ -2795,8 +2229,7 @@ The matching NeverSight LLVM intrinsics are `llvm.x86.adcx.32/.64` and
 `llvm.x86.adox.32/.64`, with the fixed signature
 `{i8, iN} (i8 carry, iN a, iN b)`. They have no memory effects. The native
 lowering seeds the selected flag, emits ADCX or ADOX, and captures its carry
-in one scheduling group. It requires ADX, supports 32-bit operands in i386
-and x86-64 and 64-bit operands in x86-64, and uses no inline assembly or
+in one scheduling group. It requires ADX, supports 32-bit and 64-bit operands in x86-64, and uses no inline assembly or
 external helpers. Carry chains are explicit SSA values; callers do not own
 ambient EFLAGS across C expressions or calls. Scheduling simultaneous live
 hardware CF/OF chains without reseeding is a separate optimization.
@@ -2814,10 +2247,7 @@ input carry bytes, aliases, single argument evaluation and interleaved CF/OF
 chains against independent bit addition. Native execution requires an ADX CPU;
 NeverC itself still supports only x86-64/AArch64 targets. Independent execution
 through both NeverC and the full LLVM fork passed 1,187,840 value/chain cases
-at O0/O2, with six ELF/COFF/Mach-O compilation profiles. The full fork's
-standalone value APIs additionally passed 740,352 x86-64 cases and 65,536
-native i386 cases; its source change is
-[`5b7938a7dea3`](https://github.com/NeverSight/llvm-project/commit/5b7938a7dea34d00a705a44c6dad43321e11f3e9).
+at O0/O2, with six ELF/COFF/Mach-O compilation profiles.
 These APIs are present in the fork source; this change does not publish a new
 NeverD LLVM SDK release.
 
@@ -2851,11 +2281,9 @@ checks all 256 abort bytes at O0/O2 in
 ELF, COFF and Mach-O. It checks each native IR call, exact `C6 F8 imm8` object
 encoding, absence of helper calls/assembly, and the optimized store/abort/load
 order. Select `--compiler build-neverc/bin/neverc`, or the full fork with
-`--llc /path/to/llc`; both require `--objdump /path/to/llvm-objdump`. The full
-fork also supports `--mode 32`. `--backend-llc /path/to/llc` sends NeverC's IR
+`--llc /path/to/llc`; both require `--objdump /path/to/llvm-objdump`. `--backend-llc /path/to/llc` sends NeverC's IR
 through the full backend, and `--keep DIRECTORY` retains the inputs, outputs
-and JSON results. The qualified matrix has 40 profiles and 10,240 functions:
-14 NeverC, 14 NeverC-to-full-LLVM, and six full-LLVM profiles per code mode.
+and JSON results. The x64 matrix compares NeverC, NeverC-to-full-LLVM, and full-LLVM profiles.
 It does not execute physical RTM regions.
 
 Transaction frontend tests live in
@@ -3005,16 +2433,15 @@ qualify physical AMD RMP algorithms or actual SEV-ES services.
 
 `__builtin_ia32_rtm_abort_pair(code)` and `<immintrin.h>`'s
 `__rtm_abort_pair(code)` return the actual abort status of a single XBEGIN /
-XABORT pair in both i386 and x64 code. The constant code must be in 0..255.
-Entry requires RTM support
+XABORT pair. The constant code must be in 0..255. Entry requires RTM support
 outside an existing RTM/HLE region; an early abort may have a different status
 from an explicit abort. One machine pseudo owns both instructions and the
 local fallback, so no spill, call, padding or C return splits the checkpoint.
 This does not execute a general transaction body or restore an external one.
 
-The generic `__builtin_ia32_cpuidex(int *, unsigned, unsigned)` spelling
-uses the native CPUID interface in both modes, including EBX/RBX preservation.
-Callers can check RTM availability without inline assembly or Microsoft language mode.
+The generic x64 `__builtin_ia32_cpuidex(int *, unsigned, unsigned)` spelling
+uses the existing native CPUID interface, including RBX preservation. Callers
+can check RTM availability without inline assembly or Microsoft language mode.
 The pair uses `llvm.x86.rtm.abort.pair`, with an immediate argument and
 conservative memory, convergence and no-duplication effects. Its lowering is
 shared with the LLVM fork. `sync-x86-rtm-abort-pair.py` appends its opcode and
@@ -3026,24 +2453,11 @@ with an independent raw-byte reference. It exercises integer/SIMD values live
 across the pair, memory order and exact status at O0/O2 through NeverC or the
 LLVM fork's legacy/new backend pass managers. Pass `--compiler`, `--sde` and
 `--keep`; add `--backend-llc` and optionally `--new-pm` for the LLVM fork.
-For Linux i386, add `--mode 32 --backend-llc LLVM_LLC` and use the kit's
-`sde` launcher. This compiles actual C through the native external-backend
-driver and links the 32-bit independent oracle. It requires host i386 libc
-development files. Each optimization/abort-mode profile also requires
-deliberately corrupted status, integer/FP results, memory snapshots and
-canaries to fail; those failures are recorded separately from passing pairs.
 SDE 10.13.1 requires `-tsx` only in full mode: that option overrides abort mode.
 Forced abort checks omit it and require exact statuses 0, 2, 6 and 8. This mode
 also clears CPUID.RTM, so only the fixture's explicit `sde-abort-N` entry
 bypasses discovery under SDE. Production providers retain their CPUID guard.
 Emulator results do not establish physical RTM behavior or general rollback.
-
-The 2026-11-08 i386 driver passes 81,920 candidate/reference pair comparisons
-and rejects 70 corrupted results under SDE. Together with the three x64
-embedded/LLVM regression routes, 327,680 pairs and 280 corruption controls pass.
-The generated intrinsic-ID update also passes the REP state and bounded-system
-regressions and strict linked-artifact global-state auditing with no findings
-or unscannable inputs.
 
 ## Native HLE operation contexts
 
@@ -3118,7 +2532,7 @@ frame is abandoned; there is no ordinary C return. The intrinsic retains
 convergent, noduplicate, noreturn, nounwind and conservative memory effects.
 `sync-x86-smm-context.py` appends its opcode without renumbering earlier IDs;
 the native-intrinsic generator owns its signature and effects. The emitter
-is shared with the LLVM fork, including zero extension of x32 pointers.
+uses the native x64 pointer contract.
 
 `X86SMMContextTest.*` checks the installed header, native IR, terminal sequence,
 three x64 object formats and invalid signatures/features. Run
@@ -3162,8 +2576,7 @@ disjoint accessible storage, no concurrent mutation, CPL3-realizable POPF
 flags and disabled CET. Input transport is not atomic and supplies no
 original-PC fault recovery midway through its instructions. FS/GS caches,
 EPC/TCS/SSA and other untransported state belong to the native environment.
-These NeverC SGX interfaces remain x64-only; the full LLVM fork also provides code32
-and x32 lowering, including their original-site branch encodings.
+NeverC's frontend exposes these APIs on x64.
 
 `sync-x86-sgx-transfer-context.py` owns the pseudos' complete GPR/FS/GS/flags
 definitions, incoming compiler RSP use, conservative memory effects and
@@ -3180,38 +2593,6 @@ and x87/SSE/AVX against independent original XRSTOR bytes; missing-XRSTOR and
 wrong-original-site mutations must fail. CR0.AM stays enabled throughout,
 including inputs with AC set. It does not certify successful
 enclave entry, exit, resume or AEX on a machine without SGX.
-
-The November 1 qualification passes 36 compiler/mode/optimization profiles
-across the two interfaces: 331,776 input-state observations and 864 rejected
-invalid leaves. This includes code32/code64/x32 through full LLVM, code64
-through NeverC and both LLVM backend pass managers. All 13 adjacent frontend
-tests and 26 generator tests pass. The shared XSAVE fixture also passes six
-SMM compiler profiles with 18,432 complete native state pairs. These counts
-retain the instruction-boundary scope above: zero enclave instructions ran.
-
-## Protected far-pointer compiler qualification
-
-`tests/neverc/X86/verify_protected_far_pointer.py --llvm-bin LLVM_BIN
---mode 16 --output OUTPUT` (or `--mode 32`) compares all ten LDS/LES/LSS/LFS/LGS
-word/dword intrinsics with independent original bytes in KVM. Used and unused
-results run at O0 and optimized IR/O2. The matrix covers null and non-null
-selectors, RPL/DPL/type/present checks, flat/nonflat caches, word stacks,
-unaligned/cross-page/read-only pointer images, descriptor reads and hardware
-#GP/#NP/#SS/#PF entry. Native offset publication, GPRs, flags, caches, CR2,
-active event state and RAM are compared at the instruction or fault handler.
-Only successful cases preserving the compiler ABI's segment invariants continue
-to verify result projection, stack balance and callee-saved registers.
-
-Original fault handlers identify their vector through OUT; the runner completes
-KVM's pending I/O before observing or replacing state. Inactive exception records
-are excluded only after checking that neither a pending nor injected exception
-exists. KVM retains old payload fields after delivery; this is not guest-visible
-fault state. The remaining event state and authenticated restart frames still
-compare exactly. See the [KVM API](https://www.kernel.org/doc/html/latest/virt/kvm/api.html#kvm-get-vcpu-events)
-and its [I/O completion contract](https://www.kernel.org/doc/html/latest/virt/kvm/api.html#the-kvm-run-structure).
-The oracle rejects a wrong pointer loaded before an unchanged far-load opcode.
-It does not qualify a NeverC i386 frontend, real/VM86, CPL3 alignment checking,
-MOV-SS inhibition or asynchronous events.
 
 ## Native full-dividend division
 
@@ -3239,28 +2620,7 @@ pair signatures and updates intrinsic identities and DAG references together.
 and Microsoft overflow on ELF/COFF/Mach-O at O0/O2. Run
 `tests/neverc/X86/verify_native_division.py --llvm-bin LLVM_BIN --neverc NEVERC
 --output OUTPUT` for original-instruction comparisons through direct LLVM,
-NeverC and NeverC IR through both LLVM backends. The declared i386 matrix uses
-full LLVM; the NeverC division APIs remain in its x64 builtin registry. A 32-bit libc development
-installation is required to run the native i386 signal oracle.
-
-The full LLVM fork also lowers the 8/16/32-bit pairs in protected code16,
-using its 32-bit stack ABI and mode-correct operand-size prefixes. The 64-bit
-pairs remain long-mode-only. This does not provide code16 source support or
-i386/code16 machine code in NeverC's trimmed backend.
-
-Run `tests/neverc/X86/verify_protected_division.py --llvm-bin LLVM_BIN
---mode 16 --output OUTPUT` (or `--mode 32`) on Linux with KVM for native
-protected-mode qualification. It checks argument transport at the instruction,
-then compares GPRs, flags, system registers/caches, event state and RAM with an
-independently encoded DIV/IDIV on another vCPU. The oracle authenticates both
-restart PCs before normalizing their intentional difference in #DE frames.
-Successful calls also verify quotient/remainder stores, callee-saved registers
-and stack balance; unused results retain division and its faults. Erased DIV
-and a wrong divisor loaded before an intact DIV are rejected controls.
-The matrix covers CPL0, byte/word/dword operands, signed/unsigned full dividends,
-all four result-use combinations, O0 and optimized IR/O2. It does not qualify
-operand-memory faults, asynchronous events, other privilege levels or physical
-processors beyond those recorded in the qualification.
+NeverC and NeverC IR through both LLVM backends.
 
 ## Native memory bit strings
 
@@ -3288,9 +2648,6 @@ compares return carry, complete fixture RAM, signed/extreme indices, alignment,
 real memory faults and marker order with independent original instructions.
 It checks LLVM's legacy/new pass managers, NeverC, and NeverC IR through both
 LLVM paths, and rejects a control that keeps CF but erases one BTS store.
-The i386 runtime matrix uses full LLVM; these NeverC APIs remain in its x64 builtin registry.
-The full LLVM code16 route is checked by compiler regressions, not claimed as
-protected KVM execution of compiler-generated bit-string functions.
 
 `_BitScanForward` and `_BitScanReverse` continue to use native `cttz/ctlz`
 code generation, with their C API's zero-source output preservation. They do
@@ -3302,17 +2659,14 @@ not provide a complete architectural flag-state API.
 `__builtin_ia32_writeeflags_u16(unsigned short)` writes exactly that word.
 Both lower to native `llvm.x86.flags.{read,write}.u16`, with no inline assembly.
 The word write preserves AC/ID; extending it to `__writeeflags` would change
-those upper flags. `__readeflags`/`__writeeflags` select their natural i386/x64
-instruction width as described in [Native FLAGS image widths](#native-flags-image-widths).
-Native privilege restrictions and faults still apply.
+those upper flags. Existing `__readeflags`/`__writeeflags` retain their natural
+x64 width. Native privilege restrictions and faults still apply.
 
 `RDFLAGS16`/`WRFLAGS16` use a GR16 carrier and a two-byte push/pop pair,
 with the same frame and red-zone ownership as the qword APIs. The compiler
 continues to own its ABI and stack; flag images do not establish arbitrary
 original-image continuations or make arithmetic flags live across other C
-operations. The initial NeverC qualification used its x64 frontend; the full
-LLVM fork additionally supports i386/code16. The i386 source route below now
-exposes the shared word FLAGS builtins through LLVM IR.
+operations. NeverC exposes these APIs on x64.
 
 [utils/lint/sync-x86-flags16.py](utils/lint/sync-x86-flags16.py) owns the appended machine descriptors and
 printers. The shared native-intrinsic synchronizer owns signatures and
@@ -3320,194 +2674,7 @@ DAGISel ID remapping. `X86FlagsFrontendTest.*` checks both optimization levels,
 ELF/COFF/Mach-O, native assembly, unused reads, memory ordering and malformed
 argument lists. [tests/verify-flags16-completion.py](tests/verify-flags16-completion.py) compares compiled writes
 with original word POPF, including every safe FLAGS word and all AC/ID images.
-Its default x64 driver checks NeverC, full LLVM/Clang and unchanged emitted C;
-`--bits 32` uses a separate cdecl assembly witness for full LLVM/Clang and
-i386 emitted C, including NeverC with `--backend-llc`. Both drivers restore the host flags before returning to C,
-preserve callee-saved registers, and require a widened-write negative control
-to fail. The i386 driver needs the host's multilib C runtime and qualifies the
-Linux compiler ABI; arbitrary original machine-state execution remains separate.
-
-## Legacy BOUND qualification in the full LLVM fork
-
-The full LLVM/Clang fork supports `__builtin_ia32_bound16(short, const void *)`
-and `__builtin_ia32_bound32(int, const void *)`. The `_address32` variants take
-an index, unsigned offset, constant address width (16/32), and constant segment
-prefix (0, 26h, 2Eh, 36h, 3Eh, 64h or 65h). All return void and retain native
-conditional memory accesses, faults and ordering, including unused calls.
-The native LLVM instruction descriptors read the index without writing it or
-EFLAGS. The pointer interface always uses a 32-bit DS offset, including code16;
-explicit interfaces can select address16 and a nonflat segment.
-
-BOUND has no long-mode encoding. These APIs belong to the full fork's i386 and
-code16 targets. The initial qualification did not enable NeverC i386; the
-source ABI work below adds that frontend route. NeverC's pruned x64 machine
-tables still do not provide i386 code generation.
-
-`tests/neverc/X86/verify_bound.py --llvm-bin LLVM_BIN --clang FULL_CLANG
---output OUT` executes original-byte ELF32 witnesses at O0/O2, with live,
-unused and repeated native calls. It checks inclusive signed limits, untouched
-full-width return values, nonflat FS, address16 wrap, read-only/missing pages,
-segment limits and lower-before-upper faults. A changed index with an intact
-BOUND must be rejected. Multilib libc and Linux modify_ldt are required.
-
-`verify_bound_source.py --exports NEVERD_EXPORTS --llvm-bin LLVM_BIN
---clang CLANG --output OUT` compiles all 336 actual HighC/LLVM-to-C outputs from
-`X86BoundSource.*`, across three object-format contexts and both pipeline
-optimization settings. It executes the 72 flat-DS/nonflat-FS C cases plus twelve actual exported ELF
-objects and rejects
-an intact-BOUND control with a truncated return. Run once with stock Clang's
-assembly path and once with the full fork's builtins.
-
-`verify_protected_bound.py --llvm-bin LLVM_BIN --mode 16|32 --output OUT`
-executes the complete compiler-generated functions in KVM and compares native
-BOUND boundaries, all GPRs, flags, caches, event state, RAM and #BR/#GP/#PF/#AC
-frames with independent original bytes. ABI-compatible successful checks return
-through the compiler frame. Non-ABI DS changes stop at the instruction boundary.
-The witness rejects changed input transport and truncated returned values.
-These tests do not qualify real/VM86 mode, asynchronous delivery, device memory
-or physical MPX; the NeverD software MPX owner is tested separately.
-
-## i386 source ABI and BOUND builtins
-
-NeverC now has an i386 Linux source target with an ILP32 data model, 12-byte
-x87 `long double`, four-byte alignment for `double` and `long long`, and a
-pointer `va_list`. [ABI32.cpp](neverc/lib/Emit/Target/X86/ABI32.cpp) owns its argument and return
-classification, including hidden record returns, by-value stack records,
-register parameters and callee stack cleanup. Legacy CPU defaults no longer
-inherit long-mode macros or mandatory SSE2. The built-in target route records
-32-bit pointers and distinguishes source support from machine-code support.
-The C ABI implementation adapts
-[Clang's X86_32ABIInfo](https://github.com/NeverSight/llvm-project/blob/0460a3fbb99808235c24003613eebd495f6c62d7/clang/lib/CodeGen/Targets/X86.cpp)
-to NeverC's C23 interfaces and retains its Apache-2.0-with-LLVM-exception notice.
-
-The four BOUND builtins described above now work in NeverC's i386 source
-frontend, emitting the same native LLVM intrinsics without inline assembly.
-Long-mode calls and invalid constant address controls fail during semantic
-checking. The generated intrinsic signatures and immediate attributes are
-maintained by [the intrinsic synchronizer](utils/lint/sync-x86-native-intrinsics.py).
-
-NeverC can emit i386 ELF, COFF and Mach-O objects and assembly when an explicit full
-NeverSight LLVM backend is selected. Its normal frontend and optimization
-pipeline runs first; the backend receives verified LLVM IR in a private
-workspace. No LLVM C++ objects cross the process boundary:
-
-```sh
-neverc --target=i386-unknown-linux-gnu -O2 -c input.c -o input.o \
-  -fllvm-backend=/path/to/neversight-llvm/bin/llc
-```
-
-The full fork must answer `--neversight-codegen-protocol` with
-`neversight-codegen-v1 x86`. Its strict `--neversight-codegen` mode rejects
-unknown reserved `llvm.*` names instead of lowering them to external calls.
-The adapter enables machine verification and validates a complete little-endian
-32-bit i386 relocatable object in the requested format before publishing it. Bitcode
-input, `-S`, AT&T/Intel assembly, optimization level, CPU/features, code model,
-section options and ordinary DWARF use the same route. The full fork also assembles complete
-Intel OFFSET expressions while retaining i386 GOTPC relocations, so PIC
-assembly can be assembled and linked again. Textual IR input remains
-unsupported by the embedded IR reader; textual IR output remains available. Source PIC/PIE flags use
-the last specified option to own i386 macros, IR module flags and relocation;
-the Linux default remains large PIE. Imported IR retains its own module flags.
-
-The embedded backend remains pruned to x86-64. Without the explicit full
-backend, i386 machine output still fails. This route disables implicit LTO;
-explicit LTO, `-mllvm`, split DWARF, integrated linking and custom target/MIR/MC
-or DynCode machine hooks are rejected. IR-only output remains available without
-an external backend. Link emitted objects with a separate i386 toolchain. This
-interface does not restore the embedded register/frame/MC/linker implementation
-or install a new production LLVM SDK.
-
-`verify_i386_machine_backend.py --neverc NEVERC --llvm-bin LLVM_BIN --output OUT`
-checks direct objects and assembly, static/PIC/PIE executable and shared-library
-relocations, TLS, sections, debug info, bitcode input, stdout, paths containing
-spaces, protocol/output failures and workspace cleanup. The ABI, intrinsic-header,
-protected far-pointer, ARPL-source and BOUND-source qualification scripts accept
-`--machine-backend` to exercise actual NeverC C-to-object compilation through
-this entry point before their independent runtime/state oracles. The far-pointer
-fixture also qualifies protected code16 with its existing 32-bit stack/pointer
-ABI; this is not a 16-bit C data model or real/VM86 execution contract.
-
-The source route covers Linux ELF, Windows MSVC COFF and Darwin Mach-O.
-The common i386 classifier keeps their data models and calling conventions
-separate: Windows uses an eight-byte `long double` and integer returns for
-small floating records, while Darwin uses 16-byte x87 storage and its vector
-return/stack rules. Windows fastcall is supported; vectorcall remains rejected.
-The frontend's builtin target routes own platform admission, and the explicit
-backend validates the returned object's architecture, address size and exact
-format. There is no bundled i386 runtime or sysroot; integrated linking and
-the embedded 32-bit machine backend remain unavailable.
-
-[MicrosoftStructLayout.cpp](neverc/lib/Tree/Type/MicrosoftStructLayout.cpp)
-owns Microsoft C record layout, including separate bitfield allocation units,
-zero-width fields, union alignment and explicit alignment through packing.
-The same tree layout supplies record IR emission. Wide `_BitInt` memory types
-follow the tree's size, including 12-byte i386 arrays whose LLVM integer type
-would otherwise have a 16-byte allocation size. Loads, stores, constants and
-variadic reads share the scalar storage conversion.
-
-`verify_i386_platform_abi.py --neverc NEVERC --clang FULL_CLANG --llc LLVM_LLC
---output OUT` executes actual ELF32, COFF32 and Mach-O32 objects at O0/O2 with
-Clang/NeverC callers and callees, checks register and stack preservation, and
-compares signed/unsigned wide integer constant arrays. It runs surrounding C
-code in Unicorn, without claiming platform OS or hardware event execution.
-`verify_i386_platform_driver.py --neverc NEVERC --llvm-bin LLVM_BIN --output OUT`
-checks objects, both assembly dialects, bitcode imports and rejection of missing
-backends, mismatched object formats and integrated linking.
-`verify_ms_record_layout.py --neverc NEVERC --clang FULL_CLANG --output OUT`
-compares record size, alignment and trailing-field offset against Clang across
-packing, explicit alignment, bitfields, nesting and platform data models.
-
-The full LLVM fork also fixes i386 callee cleanup counting: the callee pops
-actual argument bytes, while the caller owns alignment padding. Both the DAG
-and fast selectors follow the same count. Clang's Windows `va_arg` classifier
-now treats unnamed over-aligned records as stack values and unnamed vectors as
-pointers, matching the corresponding call arguments.
-
-`tests/neverc/X86/verify_i386_abi.py --neverc NEVERC --llvm-bin LLVM_BIN
---clang FULL_CLANG --output OUT` cross-links NeverC and Clang callers/callees
-at O0/O2. It checks scalar, record, packed/aligned, complex, vector, x87,
-`_BitInt`, variadic, register-parameter and callback transport. Wide scalars
-also check exhaustion of the register-parameter bank before indirect passing;
-variadic calls and `va_arg` reuse the ordinary argument classifier. It also verifies
-bitcode and rejects an intact call graph whose 64-bit return is truncated.
-`verify_bound.py --neverc NEVERC --llvm-bin LLVM_BIN --output OUT` adds actual
-NeverC-generated BOUND functions to the original-byte CPU comparison matrix.
-`verify_bound_source.py --exports NEVERD_EXPORTS --neverc NEVERC
---llvm-bin LLVM_BIN --clang HOST_CLANG --output OUT` also compiles all 336
-unchanged HighC/LLVM-to-C exports through native builtin IR, checks the full
-LLVM machine verifier, and executes 72 source cases plus twelve exported ELF
-objects. No BOUND assembly fallback may appear in the NeverC-generated IR.
-
-This ABI work also exposed a Clang i386 `va_arg` bug: wide `_BitInt` arguments
-were passed by address but read as values directly from the argument slot.
-The full fork now uses the ABI classifier's indirect/byval distinction and
-advances the slot by pointer size. The interoperation witness includes 65- and
-97-bit variadic values, `va_copy`, and trailing scalar arguments; it requires
-that Clang fix, not a stock Clang with the incorrect reader. Clang's focused
-regression also checks Windows i386 and preserves direct integer/record slots.
-
-### i386 platform qualification (2026-11-09)
-
-The three-format mixed-call witness passes 12,624 value/ABI comparisons and
-9,348 corruption controls at O0/O2. The record-layout witness passes 6,480
-size/alignment/trailing-offset comparisons across 432 records and five target
-triples, including Windows x64/AArch64 regression coverage. The driver witness
-passes six target/optimization profiles, all four i386/i486/i586/i686 Darwin
-aliases and 15 rejection controls. The required full LLVM fork is
-[`e7c81b978b44`](https://github.com/NeverSight/llvm-project/commit/e7c81b978b440561583eeb43771cb9d486e3f8ff),
-which includes both callee-pop selectors and the Clang variadic fixes above.
-
-Native Linux checks pass 2,560,000 mixed-ABI comparisons, 884,736 intrinsic-header
-checks and 100,000 backend checks. The expanded bounded-system witness passes
-1,152 checks over 184 profiles with 62 negative controls. Recompiling NeverD's
-unchanged VMFUNC exports through all three formats produces 848 objects,
-2,544 controlled comparisons and 4,728 rejected corruptions. These last two
-witnesses intercept privileged instructions; they do not execute their physical
-system effects or qualify operating-system services.
-
-The selected x86/type regression suite passes 205 tests, with three DynCode
-tests skipped because this Linux host lacks their loader. All four builtin
-target-provider tests pass. The strict linked-compiler global-state audit has
-zero findings and zero unscannable inputs. These results qualify the stated
-source and ABI routes; vectorcall, the embedded i386 backend, bundled runtime,
-integrated linking and full-machine event/state completion remain separate.
+Its default x64 driver checks NeverC, full LLVM/Clang and unchanged emitted C.
+The driver restores host flags before returning to C, preserves callee-saved
+registers and requires a widened-write negative control to fail. It does not
+qualify arbitrary original machine-state execution.

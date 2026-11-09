@@ -20434,13 +20434,6 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// REP_SCAS_STATE64
     0U,	// REP_INS_STATE64
     0U,	// REP_OUTS_STATE64
-    0U,	// REP_MOVS_STATE32
-    0U,	// REP_STOS_STATE32
-    0U,	// REP_LODS_STATE32
-    0U,	// REP_CMPS_STATE32
-    0U,	// REP_SCAS_STATE32
-    0U,	// REP_INS_STATE32
-    0U,	// REP_OUTS_STATE32
     0U,	// ENCLU_STATE64
     0U,	// GETSEC_STATE64
     545377081U,	// AADD32mr_EVEX
@@ -20477,9 +20470,7 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     19324U,	// ERETU
     0U,	// NATIVE_FRAME_RETURN64
     0U,	// VMRUN_CONTEXT64
-    0U,	// VMCALL_KVM32
     0U,	// VMCALL_KVM64
-    0U,	// VMMCALL_KVM32
     0U,	// VMMCALL_KVM64
     0U,	// HYPERV_CALL64
     19331U,	// RMPREAD
@@ -20496,9 +20487,7 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// WRITE_SEGMENT_MEM
     0U,	// RDFLAGS16
     0U,	// WRFLAGS16
-    0U,	// NATIVE_FAR_JUMP32
     0U,	// NATIVE_FAR_JUMP64
-    0U,	// NATIVE_FAR_JUMP_IMM32
     0U,	// TLBSYNC_CONTROL64
 };
 
@@ -39050,13 +39039,6 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// REP_SCAS_STATE64
     0U,	// REP_INS_STATE64
     0U,	// REP_OUTS_STATE64
-    0U,	// REP_MOVS_STATE32
-    0U,	// REP_STOS_STATE32
-    0U,	// REP_LODS_STATE32
-    0U,	// REP_CMPS_STATE32
-    0U,	// REP_SCAS_STATE32
-    0U,	// REP_INS_STATE32
-    0U,	// REP_OUTS_STATE32
     0U,	// ENCLU_STATE64
     0U,	// GETSEC_STATE64
     0U,	// AADD32mr_EVEX
@@ -39093,9 +39075,7 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// ERETU
     0U,	// NATIVE_FRAME_RETURN64
     0U,	// VMRUN_CONTEXT64
-    0U,	// VMCALL_KVM32
     0U,	// VMCALL_KVM64
-    0U,	// VMMCALL_KVM32
     0U,	// VMMCALL_KVM64
     0U,	// HYPERV_CALL64
     0U,	// RMPREAD
@@ -39112,9 +39092,7 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// WRITE_SEGMENT_MEM
     0U,	// RDFLAGS16
     0U,	// WRFLAGS16
-    0U,	// NATIVE_FAR_JUMP32
     0U,	// NATIVE_FAR_JUMP64
-    0U,	// NATIVE_FAR_JUMP_IMM32
     0U,	// TLBSYNC_CONTROL64
 };
 
@@ -57666,13 +57644,6 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// REP_SCAS_STATE64
     0U,	// REP_INS_STATE64
     0U,	// REP_OUTS_STATE64
-    0U,	// REP_MOVS_STATE32
-    0U,	// REP_STOS_STATE32
-    0U,	// REP_LODS_STATE32
-    0U,	// REP_CMPS_STATE32
-    0U,	// REP_SCAS_STATE32
-    0U,	// REP_INS_STATE32
-    0U,	// REP_OUTS_STATE32
     0U,	// ENCLU_STATE64
     0U,	// GETSEC_STATE64
     0U,	// AADD32mr_EVEX
@@ -57709,9 +57680,7 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// ERETU
     0U,	// NATIVE_FRAME_RETURN64
     0U,	// VMRUN_CONTEXT64
-    0U,	// VMCALL_KVM32
     0U,	// VMCALL_KVM64
-    0U,	// VMMCALL_KVM32
     0U,	// VMMCALL_KVM64
     0U,	// HYPERV_CALL64
     0U,	// RMPREAD
@@ -57728,9 +57697,7 @@ std::pair<const char *, uint64_t> X86ATTInstPrinter::getMnemonic(const MCInst *M
     0U,	// WRITE_SEGMENT_MEM
     0U,	// RDFLAGS16
     0U,	// WRFLAGS16
-    0U,	// NATIVE_FAR_JUMP32
     0U,	// NATIVE_FAR_JUMP64
-    0U,	// NATIVE_FAR_JUMP_IMM32
     0U,	// TLBSYNC_CONTROL64
 };
 

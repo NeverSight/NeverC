@@ -1011,15 +1011,6 @@ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
   default:
     return nullptr;
 
-  case llvm::Triple::x86:
-    if (Triple.isMacOSX())
-      return std::make_unique<DarwinI386TargetInfo>(Triple, Opts);
-    if (os == llvm::Triple::Win32 && Triple.isWindowsMSVCEnvironment())
-      return std::make_unique<MicrosoftX86_32TargetInfo>(Triple, Opts);
-    if (os == llvm::Triple::Linux && !Triple.isAndroid())
-      return std::make_unique<LinuxTargetInfo<X86_32TargetInfo>>(Triple, Opts);
-    return nullptr;
-
   case llvm::Triple::aarch64:
     if (Triple.isOSDarwin())
       return std::make_unique<DarwinAArch64TargetInfo>(Triple, Opts);

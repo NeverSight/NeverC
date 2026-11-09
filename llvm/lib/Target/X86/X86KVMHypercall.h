@@ -23,30 +23,21 @@ namespace llvm::X86 {
 inline SDValue lowerKVMHypercall(SDValue Op, const X86Subtarget &Subtarget,
                                  SelectionDAG &DAG) {
   const unsigned ID = Op.getConstantOperandVal(1);
-  const bool Wide =
-      ID == Intrinsic::x86_vmcall_kvm || ID == Intrinsic::x86_vmmcall_kvm;
-  const bool AMD =
-      ID == Intrinsic::x86_vmmcall_kvm || ID == Intrinsic::x86_vmmcall_kvm32;
-  // NeverC's pruned native backend admits only 64-bit X86 code generation.
-  if (!Subtarget.is64Bit() || !Wide)
-    report_fatal_error(
-        "KVM hypercall intrinsic does not match target code mode");
-  const unsigned Regs64[] = {RAX, RBX, RCX, RDX, RSI};
-  const unsigned Regs32[] = {EAX, EBX, ECX, EDX, ESI};
-  const auto *Regs = Wide ? Regs64 : Regs32;
+  const bool AMD = ID == Intrinsic::x86_vmmcall_kvm;
+  if (!Subtarget.is64Bit())
+    report_fatal_error("KVM hypercall intrinsic requires 64-bit mode");
+  const unsigned Regs[] = {RAX, RBX, RCX, RDX, RSI};
   const SDLoc DL(Op);
   SDValue Chain = Op.getOperand(0), Glue;
   for (unsigned I = 0; I != 5; ++I) {
     Chain = DAG.getCopyToReg(Chain, DL, Regs[I], Op.getOperand(I + 2), Glue);
     Glue = Chain.getValue(1);
   }
-  const unsigned Opcode = AMD ? (Wide ? VMMCALL_KVM64 : VMMCALL_KVM32)
-                              : (Wide ? VMCALL_KVM64 : VMCALL_KVM32);
+  const unsigned Opcode = AMD ? VMMCALL_KVM64 : VMCALL_KVM64;
   auto *Call = DAG.getMachineNode(
       Opcode, DL, DAG.getVTList(MVT::Other, MVT::Glue), {Chain, Glue});
-  const auto Result =
-      DAG.getCopyFromReg(SDValue(Call, 0), DL, Regs[0],
-                         Wide ? MVT::i64 : MVT::i32, SDValue(Call, 1));
+  const auto Result = DAG.getCopyFromReg(SDValue(Call, 0), DL, Regs[0],
+                                         MVT::i64, SDValue(Call, 1));
   return DAG.getMergeValues({Result, Result.getValue(1)}, DL);
 }
 

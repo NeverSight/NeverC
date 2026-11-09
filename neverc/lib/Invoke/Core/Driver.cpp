@@ -25,7 +25,6 @@
 #include "neverc/Invoke/Tool.h"
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Invoke/Types.h"
-#include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/FrontendPluginBridge.h"
 #include "neverc/Plugin/Host/IRGenProvider.h"
 #include "neverc/Plugin/Host/LinkPluginInterfaces.h"
@@ -412,7 +411,6 @@ void Driver::setLTOMode(const llvm::opt::ArgList &Args) {
       parseLTOMode(*this, Args, options::OPT_flto_EQ, options::OPT_fno_lto);
 
   if (LTOMode == LTOK_None && !Args.hasArg(options::OPT_fno_lto) &&
-      !Args.hasArg(options::OPT_fllvm_backend_EQ) &&
       !Args.hasArg(options::OPT_S) && !Args.hasArg(options::OPT_E) &&
       !Args.hasArg(options::OPT_fsyntax_only)) {
     LTOMode = LTOK_Full;
@@ -591,8 +589,6 @@ bool Driver::loadDefaultConfigFiles(llvm::cl::ExpansionContext &ExpCtx) {
 namespace {
 bool isTargetArchSupported(const llvm::Triple &T) {
   switch (T.getArch()) {
-  case llvm::Triple::x86:
-    return plugin::findBuiltinTargetRoute(T.str()) != nullptr;
   case llvm::Triple::x86_64:
     // X32 ABI is not supported.
     if (T.isX32())
@@ -620,9 +616,6 @@ bool isTargetArchSupported(const llvm::Triple &T) {
 bool isArchLinkedInLLVM(const llvm::Triple &T,
                         llvm::StringRef &TargetNameForCMake) {
   switch (T.getArch()) {
-  case llvm::Triple::x86:
-    TargetNameForCMake = "X86 (32-bit code generation requires the full LLVM fork)";
-    return false;
   case llvm::Triple::x86_64:
     TargetNameForCMake = "X86";
     break;
@@ -698,9 +691,7 @@ llvm::Error verifyToolChainSelection(
         "unknown or unsupported toolchain target triple '%s'",
         Selection.TargetTriple.c_str());
   llvm::StringRef CMakeTargetName;
-  const auto *BuiltinRoute = plugin::findBuiltinTargetRoute(Target.str());
-  if ((!BuiltinRoute || BuiltinRoute->SupportsObject) &&
-      !isArchLinkedInLLVM(Target, CMakeTargetName))
+  if (!isArchLinkedInLLVM(Target, CMakeTargetName))
     return llvm::createStringError(
         llvm::inconvertibleErrorCode(),
         "toolchain target backend '%s' is not linked",
@@ -2100,23 +2091,7 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
     }
     ContainsError = true;
   }
-  const bool I386SourceOnly =
-      ComputedTarget.getArch() == llvm::Triple::x86 &&
-      (UArgs->hasArg(options::OPT_emit_llvm) ||
-       UArgs->hasArg(options::OPT_fsyntax_only) || UArgs->hasArg(options::OPT_E));
-  const bool I386FullLLVM = ComputedTarget.getArch() == llvm::Triple::x86 &&
-                            UArgs->hasArg(options::OPT_fllvm_backend_EQ);
-  if (I386FullLLVM && !I386SourceOnly &&
-      !UArgs->hasArg(options::OPT_c, options::OPT_S)) {
-    const unsigned ID = Diags.getCustomDiagID(
-        DiagnosticsEngine::Error,
-        "full LLVM backend requires -c or -S; link the resulting objects "
-        "with an i386 toolchain");
-    Diag(ID);
-    ContainsError = true;
-  }
-  if (!PluginInvocationTask && !ContainsError && !I386SourceOnly &&
-      !I386FullLLVM) {
+  if (!PluginInvocationTask && !ContainsError) {
     llvm::StringRef CMakeTargetName;
     if (!isArchLinkedInLLVM(ComputedTarget, CMakeTargetName)) {
       Diag(diag::err_drv_target_backend_not_built)

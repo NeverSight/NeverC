@@ -84,8 +84,7 @@ llvm::Type *TypeEmitter::convertTypeForMem(QualType T, bool ForBitField) {
   }
 
   if (T->isBitIntType()) {
-    // LLVM integer allocation size can exceed the C object size (i65 is
-    // 16 bytes in LLVM but _BitInt(65) is 12 bytes in the i386 SysV ABI).
+    // LLVM integer allocation size can exceed the C object size.
     // Array strides and record storage must follow the C layout authority.
     const auto Size = Context.getTypeSizeInChars(T).getQuantity();
     if (!ForBitField && getDataLayout().getTypeAllocSize(R) != Size)

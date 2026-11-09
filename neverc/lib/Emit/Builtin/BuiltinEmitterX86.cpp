@@ -3053,27 +3053,6 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return genX86Select(*this, Ops[2], Res, Ops[1]);
   }
 
-  case X86::BI__builtin_ia32_arpl_reg:
-    return getValueAndStatusIntrinsicCall(Intrinsic::x86_arpl_reg);
-  case X86::BI__builtin_ia32_arpl_mem:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_arpl_mem), Ops);
-  case X86::BI__builtin_ia32_arpl_mem_address32:
-    return Builder.CreateCall(
-        ME.getIntrinsic(Intrinsic::x86_arpl_mem_address32), Ops);
-  case X86::BI__builtin_ia32_bound16:
-  case X86::BI__builtin_ia32_bound32:
-  case X86::BI__builtin_ia32_bound16_address32:
-  case X86::BI__builtin_ia32_bound32_address32: {
-    Intrinsic::ID ID = Intrinsic::x86_bound16;
-    if (BuiltinID == X86::BI__builtin_ia32_bound32)
-      ID = Intrinsic::x86_bound32;
-    else if (BuiltinID == X86::BI__builtin_ia32_bound16_address32)
-      ID = Intrinsic::x86_bound16_address32;
-    else if (BuiltinID == X86::BI__builtin_ia32_bound32_address32)
-      ID = Intrinsic::x86_bound32_address32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
-
   case X86::BI__cpuid:
   case X86::BI__builtin_ia32_cpuidex:
   case X86::BI__cpuidex: {
@@ -3175,29 +3154,19 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateCall(F);
   }
   case X86::BI__builtin_ia32_movsb:
-  case X86::BI__builtin_ia32_movsb32:
   case X86::BI__movsb: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    const auto ID = Wide ? Intrinsic::x86_movsb : Intrinsic::x86_movsb32;
-    auto *Count = Builder.CreateZExtOrTrunc(Ops[2], Wide ? Int64Ty : Int32Ty);
-    return Builder.CreateIntrinsic(VoidTy, ID, {Ops[0], Ops[1], Count});
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_movsb,
+                                   {Ops[0], Ops[1], Ops[2]});
   }
   case X86::BI__builtin_ia32_movsw:
-  case X86::BI__builtin_ia32_movsw32:
   case X86::BI__movsw: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    const auto ID = Wide ? Intrinsic::x86_movsw : Intrinsic::x86_movsw32;
-    auto *Count = Builder.CreateZExtOrTrunc(Ops[2], Wide ? Int64Ty : Int32Ty);
-    return Builder.CreateIntrinsic(VoidTy, ID, {Ops[0], Ops[1], Count});
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_movsw,
+                                   {Ops[0], Ops[1], Ops[2]});
   }
   case X86::BI__builtin_ia32_movsd_rep:
-  case X86::BI__builtin_ia32_movsd_rep32:
   case X86::BI__movsd: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    const auto ID =
-        Wide ? Intrinsic::x86_movsd_rep : Intrinsic::x86_movsd_rep32;
-    auto *Count = Builder.CreateZExtOrTrunc(Ops[2], Wide ? Int64Ty : Int32Ty);
-    return Builder.CreateIntrinsic(VoidTy, ID, {Ops[0], Ops[1], Count});
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_movsd_rep,
+                                   {Ops[0], Ops[1], Ops[2]});
   }
   case X86::BI__builtin_ia32_movsq:
   case X86::BI__movsq: {
@@ -3205,28 +3174,19 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
                                    {Ops[0], Ops[1], Ops[2]});
   }
   case X86::BI__builtin_ia32_stosb:
-  case X86::BI__builtin_ia32_stosb32:
   case X86::BI__stosb: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    const auto ID = Wide ? Intrinsic::x86_stosb : Intrinsic::x86_stosb32;
-    auto *Count = Builder.CreateZExtOrTrunc(Ops[2], Wide ? Int64Ty : Int32Ty);
-    return Builder.CreateIntrinsic(VoidTy, ID, {Ops[0], Ops[1], Count});
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_stosb,
+                                   {Ops[0], Ops[1], Ops[2]});
   }
   case X86::BI__builtin_ia32_stosw:
-  case X86::BI__builtin_ia32_stosw32:
   case X86::BI__stosw: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    const auto ID = Wide ? Intrinsic::x86_stosw : Intrinsic::x86_stosw32;
-    auto *Count = Builder.CreateZExtOrTrunc(Ops[2], Wide ? Int64Ty : Int32Ty);
-    return Builder.CreateIntrinsic(VoidTy, ID, {Ops[0], Ops[1], Count});
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_stosw,
+                                   {Ops[0], Ops[1], Ops[2]});
   }
   case X86::BI__builtin_ia32_stosd:
-  case X86::BI__builtin_ia32_stosd32:
   case X86::BI__stosd: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    const auto ID = Wide ? Intrinsic::x86_stosd : Intrinsic::x86_stosd32;
-    auto *Count = Builder.CreateZExtOrTrunc(Ops[2], Wide ? Int64Ty : Int32Ty);
-    return Builder.CreateIntrinsic(VoidTy, ID, {Ops[0], Ops[1], Count});
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_stosd,
+                                   {Ops[0], Ops[1], Ops[2]});
   }
   case X86::BI__builtin_ia32_stosq:
   case X86::BI__stosq: {
@@ -3409,12 +3369,8 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     case X86::BI__readcr8: CRNum = 8; break;
     default: llvm_unreachable("invalid CR read builtin");
     }
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    Value *Read = Builder.CreateIntrinsic(Wide ? Int64Ty : Int32Ty,
-                                          Wide ? llvm::Intrinsic::x86_readcr
-                                               : llvm::Intrinsic::x86_readcr32,
-                                          {ConstantInt::get(Int32Ty, CRNum)});
-    return Builder.CreateZExtOrTrunc(Read, convertType(E->getType()));
+    return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_readcr,
+                                   {ConstantInt::get(Int32Ty, CRNum)});
   }
   case X86::BI__writecr0:
   case X86::BI__writecr2:
@@ -3430,25 +3386,9 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     case X86::BI__writecr8: CRNum = 8; break;
     default: llvm_unreachable("invalid CR write builtin");
     }
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    return Builder.CreateIntrinsic(
-        VoidTy,
-        Wide ? llvm::Intrinsic::x86_writecr : llvm::Intrinsic::x86_writecr32,
-        {ConstantInt::get(Int32Ty, CRNum),
-         Builder.CreateZExtOrTrunc(Ops[0], Wide ? Int64Ty : Int32Ty)});
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writecr,
+                                   {ConstantInt::get(Int32Ty, CRNum), Ops[0]});
   }
-  case X86::BI__builtin_ia32_readcr32:
-    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_readcr32,
-                                   {Ops[0]});
-  case X86::BI__builtin_ia32_writecr32:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writecr32,
-                                   {Ops[0], Ops[1]});
-  case X86::BI__builtin_ia32_readdr32:
-    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_readdr32,
-                                   {Ops[0]});
-  case X86::BI__builtin_ia32_writedr32:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writedr32,
-                                   {Ops[0], Ops[1]});
   case X86::BI__builtin_ia32_readcr:
     return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_readcr,
                                    {Ops[0]});
@@ -3456,25 +3396,14 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writecr,
                                    {Ops[0], Ops[1]});
   case X86::BI__builtin_ia32_readdr:
+  case X86::BI__readdr: {
     return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_readdr,
                                    {Ops[0]});
-  case X86::BI__readdr: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    Value *Read = Builder.CreateIntrinsic(Wide ? Int64Ty : Int32Ty,
-                                          Wide ? llvm::Intrinsic::x86_readdr
-                                               : llvm::Intrinsic::x86_readdr32,
-                                          {Ops[0]});
-    return Builder.CreateZExtOrTrunc(Read, convertType(E->getType()));
   }
   case X86::BI__builtin_ia32_writedr:
+  case X86::BI__writedr: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writedr,
                                    {Ops[0], Ops[1]});
-  case X86::BI__writedr: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    return Builder.CreateIntrinsic(
-        VoidTy,
-        Wide ? llvm::Intrinsic::x86_writedr : llvm::Intrinsic::x86_writedr32,
-        {Ops[0], Builder.CreateZExtOrTrunc(Ops[1], Wide ? Int64Ty : Int32Ty)});
   }
   case X86::BI__builtin_ia32_readeflags_u16:
     return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_flags_read_u16,
@@ -3482,28 +3411,13 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_writeeflags_u16:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_flags_write_u16,
                                    {Ops[0]});
-  case X86::BI__builtin_ia32_readeflags_u32:
-    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_flags_read_u32,
-                                   {});
-  case X86::BI__builtin_ia32_writeeflags_u32:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_flags_write_u32,
-                                   {Ops[0]});
   case X86::BI__readeflags: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    Value *Read =
-        Builder.CreateIntrinsic(Wide ? Int64Ty : Int32Ty,
-                                Wide ? llvm::Intrinsic::x86_flags_read_u64
-                                     : llvm::Intrinsic::x86_flags_read_u32,
-                                {});
-    return Builder.CreateZExtOrTrunc(Read, convertType(E->getType()));
+    return Builder.CreateIntrinsic(SizeTy, llvm::Intrinsic::x86_flags_read_u64,
+                                   {});
   }
   case X86::BI__writeeflags: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
-    return Builder.CreateIntrinsic(
-        VoidTy,
-        Wide ? llvm::Intrinsic::x86_flags_write_u64
-             : llvm::Intrinsic::x86_flags_write_u32,
-        {Builder.CreateZExtOrTrunc(Ops[0], Wide ? Int64Ty : Int32Ty)});
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_flags_write_u64,
+                                   {Ops[0]});
   }
   case X86::BI__readmsr: {
     return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_rdmsr,
@@ -3548,18 +3462,6 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_writeseg_mem:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_writeseg_mem,
                                    {Ops[0], Ops[1]});
-  case X86::BI__builtin_ia32_lds16:
-    return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_lds16,
-                                   {Ops[0]});
-  case X86::BI__builtin_ia32_lds32:
-    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_lds32,
-                                   {Ops[0]});
-  case X86::BI__builtin_ia32_les16:
-    return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_les16,
-                                   {Ops[0]});
-  case X86::BI__builtin_ia32_les32:
-    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_les32,
-                                   {Ops[0]});
   case X86::BI__builtin_ia32_lss16:
     return Builder.CreateIntrinsic(Int16Ty, llvm::Intrinsic::x86_lss16,
                                    {Ops[0]});
@@ -3689,51 +3591,20 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_vmmcall_kvm:
     return Builder.CreateIntrinsic(Int64Ty, llvm::Intrinsic::x86_vmmcall_kvm, Ops);
   case X86::BI__svm_vmload:
-    return Builder.CreateIntrinsic(
-        VoidTy,
-        getContext().getTargetInfo().getTriple().getArch() == llvm::Triple::x86
-            ? llvm::Intrinsic::x86_vmload32
-            : llvm::Intrinsic::x86_vmload,
-        {Ops[0]});
   case X86::BI__builtin_ia32_vmload:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload,
                                    {Ops[0]});
   case X86::BI__svm_vmsave:
-    return Builder.CreateIntrinsic(
-        VoidTy,
-        getContext().getTargetInfo().getTriple().getArch() == llvm::Triple::x86
-            ? llvm::Intrinsic::x86_vmsave32
-            : llvm::Intrinsic::x86_vmsave,
-        {Ops[0]});
   case X86::BI__builtin_ia32_vmsave:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmsave,
                                    {Ops[0]});
-  case X86::BI__svm_invlpga: {
-    const bool Mode32 =
-        getContext().getTargetInfo().getTriple().getArch() == llvm::Triple::x86;
+  case X86::BI__svm_invlpga:
     return Builder.CreateIntrinsic(
-        VoidTy,
-        Mode32 ? llvm::Intrinsic::x86_invlpga32 : llvm::Intrinsic::x86_invlpga,
-        {Builder.CreatePtrToInt(Ops[0], Mode32 ? Int32Ty : Int64Ty), Ops[1]});
-  }
+        VoidTy, llvm::Intrinsic::x86_invlpga,
+        {Builder.CreatePtrToInt(Ops[0], Int64Ty), Ops[1]});
   case X86::BI__builtin_ia32_invlpga:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpga,
                                    {Ops[0], Ops[1]});
-  case X86::BI__builtin_ia32_vmload32:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload32, Ops);
-  case X86::BI__builtin_ia32_vmsave32:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmsave32, Ops);
-  case X86::BI__builtin_ia32_invlpga32:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpga32, Ops);
-  case X86::BI__builtin_ia32_vmload_addr16:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload_addr16,
-                                   Ops);
-  case X86::BI__builtin_ia32_vmsave_addr16:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmsave_addr16,
-                                   Ops);
-  case X86::BI__builtin_ia32_invlpga_addr16:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpga_addr16,
-                                   Ops);
   case X86::BI__builtin_ia32_vmload_addr32:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_vmload_addr32,
                                    {Ops[0]});
@@ -3762,69 +3633,48 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntrinsic(
         VoidTy, llvm::Intrinsic::x86_vmfunc_eptp_switch, {Ops[0]});
   case X86::BI__builtin_ia32_rep_movs_state:
-  case X86::BI__builtin_ia32_rep_movs_state32:
   case X86::BI__builtin_ia32_rep_stos_state:
-  case X86::BI__builtin_ia32_rep_stos_state32:
   case X86::BI__builtin_ia32_rep_lods_state:
-  case X86::BI__builtin_ia32_rep_lods_state32:
   case X86::BI__builtin_ia32_rep_cmps_state:
-  case X86::BI__builtin_ia32_rep_cmps_state32:
   case X86::BI__builtin_ia32_rep_scas_state:
-  case X86::BI__builtin_ia32_rep_scas_state32:
   case X86::BI__builtin_ia32_rep_ins_state:
-  case X86::BI__builtin_ia32_rep_ins_state32:
-  case X86::BI__builtin_ia32_rep_outs_state:
-  case X86::BI__builtin_ia32_rep_outs_state32: {
-    const bool Wide = getContext().getTargetInfo().getTriple().isArch64Bit();
+  case X86::BI__builtin_ia32_rep_outs_state: {
     Intrinsic::ID ID;
     unsigned Words;
     bool Compare;
     switch (BuiltinID) {
     case X86::BI__builtin_ia32_rep_movs_state:
-    case X86::BI__builtin_ia32_rep_movs_state32:
-      ID = Wide ? Intrinsic::x86_rep_movs_state
-                : Intrinsic::x86_rep_movs_state32;
+      ID = Intrinsic::x86_rep_movs_state;
       Words = 3;
       Compare = false;
       break;
     case X86::BI__builtin_ia32_rep_stos_state:
-    case X86::BI__builtin_ia32_rep_stos_state32:
-      ID = Wide ? Intrinsic::x86_rep_stos_state
-                : Intrinsic::x86_rep_stos_state32;
+      ID = Intrinsic::x86_rep_stos_state;
       Words = 2;
       Compare = false;
       break;
     case X86::BI__builtin_ia32_rep_lods_state:
-    case X86::BI__builtin_ia32_rep_lods_state32:
-      ID = Wide ? Intrinsic::x86_rep_lods_state
-                : Intrinsic::x86_rep_lods_state32;
+      ID = Intrinsic::x86_rep_lods_state;
       Words = 3;
       Compare = false;
       break;
     case X86::BI__builtin_ia32_rep_cmps_state:
-    case X86::BI__builtin_ia32_rep_cmps_state32:
-      ID = Wide ? Intrinsic::x86_rep_cmps_state
-                : Intrinsic::x86_rep_cmps_state32;
+      ID = Intrinsic::x86_rep_cmps_state;
       Words = 3;
       Compare = true;
       break;
     case X86::BI__builtin_ia32_rep_scas_state:
-    case X86::BI__builtin_ia32_rep_scas_state32:
-      ID = Wide ? Intrinsic::x86_rep_scas_state
-                : Intrinsic::x86_rep_scas_state32;
+      ID = Intrinsic::x86_rep_scas_state;
       Words = 2;
       Compare = true;
       break;
     case X86::BI__builtin_ia32_rep_ins_state:
-    case X86::BI__builtin_ia32_rep_ins_state32:
-      ID = Wide ? Intrinsic::x86_rep_ins_state : Intrinsic::x86_rep_ins_state32;
+      ID = Intrinsic::x86_rep_ins_state;
       Words = 2;
       Compare = false;
       break;
     case X86::BI__builtin_ia32_rep_outs_state:
-    case X86::BI__builtin_ia32_rep_outs_state32:
-      ID = Wide ? Intrinsic::x86_rep_outs_state
-                : Intrinsic::x86_rep_outs_state32;
+      ID = Intrinsic::x86_rep_outs_state;
       Words = 2;
       Compare = false;
       break;
@@ -3839,7 +3689,7 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     for (unsigned I = 0; I != Words; ++I)
       Result = Builder.CreateDefaultAlignedStore(
           Builder.CreateExtractValue(Call, I),
-          Builder.CreateConstGEP1_32(Wide ? Int64Ty : Int32Ty, Ops[Inputs], I));
+          Builder.CreateConstGEP1_32(Int64Ty, Ops[Inputs], I));
     if (Compare)
       Result = Builder.CreateDefaultAlignedStore(
           Builder.CreateExtractValue(Call, Words), Ops[Inputs + 1]);
@@ -3952,20 +3802,14 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_invlpgb:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpgb,
                                    {Ops[0], Ops[1], Ops[2]});
-  case X86::BI__builtin_ia32_invlpgb32:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpgb32,
-                                   {Ops[0], Ops[1], Ops[2]});
   case X86::BI__builtin_ia32_invlpgb_addr32:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_invlpgb_addr32,
                                    {Ops[0], Ops[1], Ops[2]});
-  case X86::BI__builtin_ia32_tlbsync:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_tlbsync, {});
-  case X86::BI__builtin_ia32_tlbsync_control32:
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_tlbsync_control32,
-                                   {Ops[0]});
   case X86::BI__builtin_ia32_tlbsync_control64:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_tlbsync_control64,
                                    {Ops[0]});
+  case X86::BI__builtin_ia32_tlbsync:
+    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_tlbsync, {});
   case X86::BI__builtin_ia32_lkgs_reg:
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_lkgs_reg,
                                    {Ops[0]});
@@ -4075,89 +3919,34 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_bndmov_reg:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_reg), Ops);
   case X86::BI__builtin_ia32_bndcl_reg:
-  case X86::BI__builtin_ia32_bndcl_reg32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndcl_reg
-                        : Intrinsic::x86_bndcl_reg32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcl_reg), Ops);
   case X86::BI__builtin_ia32_bndcu_reg:
-  case X86::BI__builtin_ia32_bndcu_reg32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndcu_reg
-                        : Intrinsic::x86_bndcu_reg32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcu_reg), Ops);
   case X86::BI__builtin_ia32_bndcn_reg:
-  case X86::BI__builtin_ia32_bndcn_reg32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndcn_reg
-                        : Intrinsic::x86_bndcn_reg32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcn_reg), Ops);
   case X86::BI__builtin_ia32_bndmov_load:
-  case X86::BI__builtin_ia32_bndmov_load32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndmov_load
-                        : Intrinsic::x86_bndmov_load32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_load), Ops);
   case X86::BI__builtin_ia32_bndmov_store:
-  case X86::BI__builtin_ia32_bndmov_store32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndmov_store
-                        : Intrinsic::x86_bndmov_store32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_store),
+                              Ops);
   case X86::BI__builtin_ia32_bndmov_store_lock:
-  case X86::BI__builtin_ia32_bndmov_store_lock32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndmov_store_lock
-                        : Intrinsic::x86_bndmov_store_lock32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_store_lock),
+                              Ops);
   case X86::BI__builtin_ia32_bndcl_address:
-  case X86::BI__builtin_ia32_bndcl_address32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndcl_address
-                        : Intrinsic::x86_bndcl_address32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcl_address),
+                              Ops);
   case X86::BI__builtin_ia32_bndcu_address:
-  case X86::BI__builtin_ia32_bndcu_address32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndcu_address
-                        : Intrinsic::x86_bndcu_address32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcu_address),
+                              Ops);
   case X86::BI__builtin_ia32_bndcn_address:
-  case X86::BI__builtin_ia32_bndcn_address32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndcn_address
-                        : Intrinsic::x86_bndcn_address32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcn_address),
+                              Ops);
   case X86::BI__builtin_ia32_bndmk:
-  case X86::BI__builtin_ia32_bndmk32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndmk
-                        : Intrinsic::x86_bndmk32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmk), Ops);
   case X86::BI__builtin_ia32_bndldx:
-  case X86::BI__builtin_ia32_bndldx32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndldx
-                        : Intrinsic::x86_bndldx32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndldx), Ops);
   case X86::BI__builtin_ia32_bndstx:
-  case X86::BI__builtin_ia32_bndstx32: {
-    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
-                        ? Intrinsic::x86_bndstx
-                        : Intrinsic::x86_bndstx32;
-    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
-  }
+    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndstx), Ops);
   case X86::BI__builtin_ia32_v4fmaddps_native:
     return Builder.CreateCall(
         ME.getIntrinsic(Intrinsic::x86_avx512_v4fmaddps_native), Ops);
@@ -4443,43 +4232,6 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_mem32_address);
   case X86::BI__builtin_ia32_lsl_mem64_address:
     return getValueAndStatusIntrinsicCall(Intrinsic::x86_lsl_mem64_address);
-  case X86::BI__builtin_ia32_vmread32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmread32), Ops);
-  case X86::BI__builtin_ia32_vmwrite32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmwrite32), Ops);
-  case X86::BI__builtin_ia32_vmread_reg32:
-    return getValueAndStatusIntrinsicCall(Intrinsic::x86_vmread_reg32);
-  case X86::BI__builtin_ia32_vmwrite_mem32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmwrite_mem32),
-                              Ops);
-  case X86::BI__builtin_ia32_invept32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_invept32), Ops);
-  case X86::BI__builtin_ia32_invvpid32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_invvpid32), Ops);
-  case X86::BI__builtin_ia32_vmread_address32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmread_address32),
-                              Ops);
-  case X86::BI__builtin_ia32_vmwrite_mem_address32:
-    return Builder.CreateCall(
-        ME.getIntrinsic(Intrinsic::x86_vmwrite_mem_address32), Ops);
-  case X86::BI__builtin_ia32_invept_address32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_invept_address32),
-                              Ops);
-  case X86::BI__builtin_ia32_invvpid_address32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_invvpid_address32),
-                              Ops);
-  case X86::BI__builtin_ia32_vmclear_address32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmclear_address32),
-                              Ops);
-  case X86::BI__builtin_ia32_vmptrld_address32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmptrld_address32),
-                              Ops);
-  case X86::BI__builtin_ia32_vmptrst_address32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmptrst_address32),
-                              Ops);
-  case X86::BI__builtin_ia32_vmxon_address32:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmxon_address32),
-                              Ops);
   case X86::BI__builtin_ia32_vmread_address:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_vmread_address),
                               Ops);
@@ -4599,11 +4351,8 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
                               Ops);
   case X86::BI__builtin_ia32_vmwrite:
   case X86::BI__vmx_vmwrite: {
-    const auto IID =
-        getContext().getTargetInfo().getTriple().getArch() == llvm::Triple::x86
-            ? Intrinsic::x86_vmwrite32
-            : Intrinsic::x86_vmwrite;
-    return Builder.CreateCall(ME.getIntrinsic(IID), Ops);
+    return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmwrite,
+                                   {Ops[0], Ops[1]});
   }
   case X86::BI__builtin_ia32_invept:
   case X86::BI__builtin_ia32_invvpid: {
@@ -4614,11 +4363,8 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   }
   case X86::BI__builtin_ia32_vmread:
   case X86::BI__vmx_vmread: {
-    const auto IID =
-        getContext().getTargetInfo().getTriple().getArch() == llvm::Triple::x86
-            ? Intrinsic::x86_vmread32
-            : Intrinsic::x86_vmread;
-    return Builder.CreateCall(ME.getIntrinsic(IID), Ops);
+    return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_vmread,
+                                   {Ops[0], Ops[1]});
   }
   case X86::BI__builtin_ia32_vmlaunch:
   case X86::BI__vmx_vmlaunch: {

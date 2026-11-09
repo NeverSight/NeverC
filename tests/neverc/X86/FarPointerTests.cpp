@@ -58,11 +58,9 @@ TEST(X86FarPointer, SegmentDefinitionsAndDescriptorEffectsAreRetained) {
   LLVMContext C;
   Module M("far-pointer", C);
   for (auto ID :
-       {Intrinsic::x86_lds16, Intrinsic::x86_lds32, Intrinsic::x86_les16,
-        Intrinsic::x86_les32, Intrinsic::x86_lfs16, Intrinsic::x86_lfs32,
-        Intrinsic::x86_lfs64, Intrinsic::x86_lgs16, Intrinsic::x86_lgs32,
-        Intrinsic::x86_lgs64, Intrinsic::x86_lss16, Intrinsic::x86_lss32,
-        Intrinsic::x86_lss64}) {
+       {Intrinsic::x86_lfs16, Intrinsic::x86_lfs32, Intrinsic::x86_lfs64,
+        Intrinsic::x86_lgs16, Intrinsic::x86_lgs32, Intrinsic::x86_lgs64,
+        Intrinsic::x86_lss16, Intrinsic::x86_lss32, Intrinsic::x86_lss64}) {
     auto *F = Intrinsic::getDeclaration(&M, ID);
     EXPECT_TRUE(F->getReturnType()->isIntegerTy());
     ASSERT_EQ(F->arg_size(), 1U);

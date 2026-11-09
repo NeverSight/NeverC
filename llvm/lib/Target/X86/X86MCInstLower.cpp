@@ -829,11 +829,9 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
   case X86::VMXON_ADDR32:
     lowerNativeAddressOverride(OutMI, X86::VMXON, 0, 32);
     break;
-  case X86::VMCALL_KVM32:
   case X86::VMCALL_KVM64:
     OutMI.setOpcode(X86::VMCALL);
     break;
-  case X86::VMMCALL_KVM32:
   case X86::VMMCALL_KVM64:
     OutMI.setOpcode(X86::VMMCALL);
     break;
@@ -2157,16 +2155,10 @@ bool X86AsmPrinter::emitBoundedLeafState(const MachineInstr *MI) {
 bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
   using X86::RepStringKind;
   RepStringKind Kind;
-  bool Wide;
   switch (MI->getOpcode()) {
 #define REP_STATE(OP, KIND)                                                    \
   case X86::REP_##OP##_STATE64:                                                \
     Kind = RepStringKind::KIND;                                                \
-    Wide = true;                                                               \
-    break;                                                                     \
-  case X86::REP_##OP##_STATE32:                                                \
-    Kind = RepStringKind::KIND;                                                \
-    Wide = false;                                                              \
     break;
     REP_STATE(MOVS, Move)
     REP_STATE(STOS, Store)
@@ -2187,14 +2179,11 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
   const unsigned ElementLog = (Control >> X86::RepStringElementShift) & 3;
   const unsigned Prefix = (Control >> X86::RepStringSegmentShift) & 0xff;
   const bool NotEqual = Control & X86::RepStringNotEqual;
-  const unsigned Address = Control & X86::RepStringAddressOverride
-                               ? (Wide ? 32 : 16)
-                               : (Wide ? 64 : 32);
+  const unsigned Address = Control & X86::RepStringAddressOverride ? 32 : 64;
   const bool Compare = X86::repStringCompares(Kind);
   if ((Control & ~uint64_t(X86::RepStringDescriptorMask)) ||
-      (Control & 7) != unsigned(Kind) || Wide != Subtarget->is64Bit() ||
-      !Wide ||
-      !X86::isRepStringControl(Kind, Wide, 1u << ElementLog, Address, Prefix,
+      (Control & 7) != unsigned(Kind) || !Subtarget->is64Bit() ||
+      !X86::isRepStringControl(Kind, 1u << ElementLog, Address, Prefix,
                                NotEqual) ||
       (Compare && !Subtarget->hasLAHFSAHF64()))
     report_fatal_error("invalid REP machine-state descriptor or target mode");
@@ -2229,14 +2218,10 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
       {X86::INSB, X86::INSW, X86::INSL, 0},
       {X86::OUTSB, X86::OUTSW, X86::OUTSL, 0},
   };
-  const unsigned SI = Address == 64   ? X86::RSI
-                      : Address == 32 ? X86::ESI
-                                      : X86::SI;
-  const unsigned DI = Address == 64   ? X86::RDI
-                      : Address == 32 ? X86::EDI
-                                      : X86::DI;
-  const unsigned AX = Wide ? X86::RAX : X86::EAX;
-  const unsigned DX = Wide ? X86::RDX : X86::EDX;
+  const unsigned SI = Address == 64 ? X86::RSI : X86::ESI;
+  const unsigned DI = Address == 64 ? X86::RDI : X86::EDI;
+  const unsigned AX = X86::RAX;
+  const unsigned DX = X86::RDX;
 
   // This local branch cannot live in a patchable stackmap shadow. Keep the
   // entire DF window opaque to scheduling, spilling and assembler padding.
@@ -2258,13 +2243,12 @@ bool X86AsmPrinter::emitRepStringState(const MachineInstr *MI) {
     // AL bit zero. ADD restores OF; SAHF restores the other five flags.
     // SCAS needs its full accumulator restored before the actual access.
     if (Kind == RepStringKind::Scan)
-      EmitAndCountInstruction(nativeRegisterExchange(AX, DX, Wide));
+      EmitAndCountInstruction(nativeRegisterExchange(AX, DX, true));
     EmitAndCountInstruction(MCInstBuilder(X86::ADD8i8).addImm(127));
     EmitAndCountInstruction(MCInstBuilder(X86::SAHF));
     if (Kind == RepStringKind::Scan)
-      EmitAndCountInstruction(MCInstBuilder(Wide ? X86::MOV64rr : X86::MOV32rr)
-                                  .addReg(AX)
-                                  .addReg(DX));
+      EmitAndCountInstruction(
+          MCInstBuilder(X86::MOV64rr).addReg(AX).addReg(DX));
   }
   MCInst Native;
   Native.setOpcode(Opcodes[unsigned(Kind)][ElementLog]);
@@ -2312,32 +2296,23 @@ void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
     return;
   if (emitSGXTransferContext(MI))
     return;
-  if (MI->getOpcode() == X86::NATIVE_FAR_JUMP32 ||
-      MI->getOpcode() == X86::NATIVE_FAR_JUMP64 ||
-      MI->getOpcode() == X86::NATIVE_FAR_JUMP_IMM32) {
-    const bool Wide = MI->getOpcode() == X86::NATIVE_FAR_JUMP64;
-    const bool Immediate = MI->getOpcode() == X86::NATIVE_FAR_JUMP_IMM32;
-    const unsigned StackIndex = Immediate ? 2 : 1;
-    const unsigned Bits = MI->getOperand(StackIndex + 1).getImm();
-    if ((Bits != 16 && Bits != 32 && Bits != 64) || (Bits == 64 && !Wide))
+  if (MI->getOpcode() == X86::NATIVE_FAR_JUMP64) {
+    const unsigned Bits = MI->getOperand(2).getImm();
+    if (Bits != 16 && Bits != 32 && Bits != 64)
       report_fatal_error("invalid native far-jump operand width");
     SMShadowTracker.emitShadowPadding(*OutStreamer, getSubtargetInfo());
     NoAutoPaddingScope NoPadScope(*OutStreamer);
-    EmitAndCountInstruction(MCInstBuilder(Wide ? X86::MOV64rr : X86::MOV32rr)
-                                .addReg(Wide ? X86::RSP : X86::ESP)
-                                .addReg(MI->getOperand(StackIndex).getReg()));
-    if (Immediate) {
-      report_fatal_error("immediate far jumps require the full LLVM backend");
-    } else {
-      EmitAndCountInstruction(MCInstBuilder(Bits == 16   ? X86::FARJMP16m
-                                            : Bits == 32 ? X86::FARJMP32m
-                                                         : X86::FARJMP64m)
-                                  .addReg(MI->getOperand(0).getReg())
-                                  .addImm(1)
-                                  .addReg(0)
-                                  .addImm(0)
-                                  .addReg(0));
-    }
+    EmitAndCountInstruction(MCInstBuilder(X86::MOV64rr)
+                                .addReg(X86::RSP)
+                                .addReg(MI->getOperand(1).getReg()));
+    EmitAndCountInstruction(MCInstBuilder(Bits == 16   ? X86::FARJMP16m
+                                          : Bits == 32 ? X86::FARJMP32m
+                                                       : X86::FARJMP64m)
+                                .addReg(MI->getOperand(0).getReg())
+                                .addImm(1)
+                                .addReg(0)
+                                .addImm(0)
+                                .addReg(0));
     return;
   }
   if (MI->getOpcode() == X86::NATIVE_FRAME_RETURN64) {

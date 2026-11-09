@@ -21,23 +21,19 @@ SPEC.loader.exec_module(SORTER)
 ENUMS = ROOT / "llvm/include/llvm/IR/IntrinsicEnums.inc"
 # Result followed by parameters, in LLVM's fixed IIT scalar/pointer vocabulary.
 DECLARATIONS = {
-    "arpl_reg": ("STRUCT2", "I16", "I8", "I16", "I16"),
-    "arpl_mem": ("I8", "PTR", "I16"),
-    "bound16": ("Done", "I16", "PTR"),
-    "bound32": ("Done", "I32", "PTR"),
     "vmrun_context": ("Done", "PTR", "I32"),
     "hyperv_call": ("Done", "PTR", "PTR", "PTR", "I32"),
     "vmgexit_sev": ("Done", "I64"),
     "hle_context": ("Done", "PTR", "PTR", "PTR", "I32", "I32"),
     "rtm_abort_pair": ("I32", "I32"),
+    "vmxoff_status": ("I8",),
+    "tlbsync_control64": ("Done", "I64"),
     "invept": ("I8", "I64", "PTR"),
     "invvpid": ("I8", "I64", "PTR"),
     "clts": ("Done",),
     "fnop": ("Done",),
     "flags_read_u16": ("I16",),
-    "flags_read_u32": ("I32",),
     "flags_write_u16": ("Done", "I16"),
-    "flags_write_u32": ("Done", "I32"),
     "fnstcw": ("Done", "PTR"),
     "fldcw": ("Done", "PTR"),
     "fnstsw": ("I16",),
@@ -48,28 +44,12 @@ DECLARATIONS = {
     "wrmsrns": ("Done", "I32", "I64"),
     "rdmsrlist": ("I64", "PTR", "PTR", "I64"),
     "wrmsrlist": ("I64", "PTR", "PTR", "I64"),
-    "vmxoff_status": ("I8",),
-    "vmread32": ("I8", "I32", "PTR"),
-    "vmwrite32": ("I8", "I32", "I32"),
-    "vmread_reg32": ("STRUCT2", "I32", "I8", "I32", "I32"),
-    "vmwrite_mem32": ("I8", "I32", "PTR"),
-    "invept32": ("I8", "I32", "PTR"),
-    "invvpid32": ("I8", "I32", "PTR"),
     "vmread_reg": ("STRUCT2", "I64", "I8", "I64", "I64"),
     "vmwrite_mem": ("I8", "I64", "PTR"),
     "hreset": ("Done", "I32"),
     "invlpgb": ("Done", "I64", "I32", "I32"),
-    "invlpgb32": ("Done", "I32", "I32", "I32"),
     "invlpgb_addr32": ("Done", "I32", "I32", "I32"),
-    "movsb32": ("Done", "PTR", "PTR", "I32"),
-    "movsw32": ("Done", "PTR", "PTR", "I32"),
-    "movsd_rep32": ("Done", "PTR", "PTR", "I32"),
-    "stosb32": ("Done", "PTR", "I8", "I32"),
-    "stosw32": ("Done", "PTR", "I16", "I32"),
-    "stosd32": ("Done", "PTR", "I32", "I32"),
     "tlbsync": ("Done",),
-    "tlbsync_control32": ("Done", "I32"),
-    "tlbsync_control64": ("Done", "I64"),
     "skinit": ("Done", "I32"),
     "sysret32": ("Done", "I32", "I32", "I64"),
     "sysret64": ("Done", "I64", "I64", "I64"),
@@ -93,15 +73,14 @@ for name in sorted(SNP_CONTEXTS):
     DECLARATIONS[name] = ("Done", "PTR", "PTR", "I32")
 for operation in ("vmload", "vmsave"):
     DECLARATIONS[operation] = ("Done", "I64")
-KVM_HYPERCALLS = {name + suffix for name in ("vmcall", "vmmcall")
-                 for suffix in ("_kvm", "_kvm32")}
+KVM_HYPERCALLS = {name + "_kvm" for name in ("vmcall", "vmmcall")}
 for name in sorted(KVM_HYPERCALLS):
-    DECLARATIONS[name] = ("I32" if name.endswith("32") else "I64",) * 6
+    DECLARATIONS[name] = ("I64",) * 6
 for operation in ("fnstenv", "fldenv", "fnsave", "frstor"):
     for bits in (16, 32):
         DECLARATIONS[f"{operation}{bits}"] = ("Done", "PTR")
-for operation in ("lds", "les", "lss", "lfs", "lgs"):
-    for bits in ((16, 32) if operation in ("lds", "les") else (16, 32, 64)):
+for operation in ("lss", "lfs", "lgs"):
+    for bits in (16, 32, 64):
         DECLARATIONS[f"{operation}{bits}"] = (f"I{bits}", "PTR")
 # The backend registry owns native frame operation identities and immediates.
 FRAME_RETURNS = {}
@@ -131,9 +110,6 @@ DECLARATIONS["invlpga"] = ("Done", "I64", "I32")
 for operation in ("vmload", "vmsave"):
     DECLARATIONS[operation + "_addr32"] = ("Done", "I32")
 DECLARATIONS["invlpga_addr32"] = ("Done", "I32", "I32")
-for operation in ("vmload", "vmsave", "invlpga"):
-    for suffix, bits in (("32", 32), ("_addr16", 16)):
-        DECLARATIONS[operation + suffix] = ("Done", f"I{bits}") + (("I32",) if operation == "invlpga" else ())
 DECLARATIONS["vmfunc_eptp_switch"] = ("Done", "I32")
 for operation in ("stgi", "clgi", "swapgs", "clac", "stac", "hlt"):
     DECLARATIONS[operation] = ("Done",)
@@ -169,8 +145,6 @@ EXISTING_FIRST_IMMEDIATE_SIGNATURES = {
     "xabort": ("Done", "I8"),
 }
 FIRST_IMMEDIATE_SIGNATURES = {
-    "readcr32": ("I32", "I32"), "readdr32": ("I32", "I32"),
-    "writecr32": ("Done", "I32", "I32"), "writedr32": ("Done", "I32", "I32"),
     "readseg": ("I16", "I32"),
     "readseg_mem": ("Done", "I32", "PTR"),
     "writeseg": ("Done", "I32", "I16"),
@@ -184,9 +158,6 @@ FIRST_IMMEDIATE_SIGNATURES = {
                        "I64", "I64", "I64", "I64"),
 }
 ADDRESS_SIGNATURES = {
-    "arpl_mem_address32": (("I8", "I32", "I16", "I32", "I32"), (2, 3)),
-    "bound16_address32": (("Done", "I16", "I32", "I32", "I32"), (2, 3)),
-    "bound32_address32": (("Done", "I32", "I32", "I32", "I32"), (2, 3)),
     "lkgs_address": (("Done", "I64", "I32", "I32"), (1, 2)),
     "lar_mem16_address": (("STRUCT2", "I16", "I8", "I64", "I32", "I32", "I16"), (1, 2)),
     "lar_mem32_address": (("STRUCT2", "I32", "I8", "I64", "I32", "I32", "I32"), (1, 2)),
@@ -199,11 +170,6 @@ ADDRESS_SIGNATURES = {
     **{name + "_address": (("I8", "I64", "I32", "I32"), (1, 2))
        for name in ("vmclear", "vmptrld", "vmxon")},
     "vmptrst_address": (("Done", "I64", "I32", "I32"), (1, 2)),
-    **{name + "_address32": (("I8", "I32", "I32", "I32", "I32"), (2, 3))
-       for name in ("vmread", "vmwrite_mem", "invept", "invvpid")},
-    **{name + "_address32": (("I8", "I32", "I32", "I32"), (1, 2))
-       for name in ("vmclear", "vmptrld", "vmxon")},
-    "vmptrst_address32": (("Done", "I32", "I32", "I32"), (1, 2)),
 }
 for operation in ("verr_mem", "verw_mem", "sldt_mem", "str_mem", "smsw_mem",
                   "lldt_mem", "ltr_mem", "lmsw_mem", "sgdt", "sidt", "lgdt",
@@ -219,12 +185,10 @@ for bits in (32, 64):
         ADDRESS_SIGNATURES[f"{operation}{bits}_address"] = (("Done", "I64", word, "I32", "I32"), (2, 3))
     ADDRESS_SIGNATURES[f"cmpccxadd{bits}_address"] = ((word, "I64", word, word, "I32", "I32", "I32"), (3, 4, 5))
 
-# Exact legacy/VEX transactions; 32-bit code mode has a natural-width offset.
+# Exact legacy/VEX transactions retain the operand width in long mode.
 for bits in (32, 64):
     for operation in ("aadd", "aand", "aor", "axor", "cmpccxadd"):
         ADDRESS_SIGNATURES[f"{operation}{bits}_legacy_address"] = ADDRESS_SIGNATURES[f"{operation}{bits}_address"]
-for operation in ("aadd", "aand", "aor", "axor"):
-    ADDRESS_SIGNATURES[f"{operation}32_legacy_address32"] = (("Done", "I32", "I32", "I32", "I32"), (2, 3))
 
 # Native compact-memory vector carriers preserve all six opcode families.
 for bits in (128, 256, 512):
@@ -253,13 +217,6 @@ ADDRESS_SIGNATURES.update({
        for name in ("bndmk", "bndldx", "bndstx")},
 })
 
-# Legacy MPX shares the same bank/control arguments with natural-width words.
-for name in tuple(ADDRESS_SIGNATURES):
-    if name.startswith("bnd") and name not in ("bnd_branch", "bndmov_reg"):
-        signature, immediates = ADDRESS_SIGNATURES[name]
-        ADDRESS_SIGNATURES[name + "32"] = (
-            tuple("I32" if kind == "I64" else kind for kind in signature), immediates)
-
 # Explicit AMX addressing and row-register class controls.
 for operation in ("ldtilecfg", "sttilecfg"):
     ADDRESS_SIGNATURES[operation + "_address"] = (("Done", "I64", "I32", "I32", "I32"), (1, 2, 3))
@@ -275,23 +232,22 @@ for operation, result in (("tcvtrowd2ps", ("V16", "F32")),
 
 # Complete natural-width REP state. Address widths are controls, not operand
 # truncations; the original instruction owns partial-register completion.
-for bits in (64, 32):
-    word = f"I{bits}"
-    for operation in ("movs", "stos", "lods", "cmps", "scas", "ins", "outs"):
-        compare = operation in ("cmps", "scas")
-        source = operation in ("movs", "lods", "cmps", "outs")
-        port = operation in ("ins", "outs")
-        words = 3 if operation in ("movs", "lods", "cmps") else 2
-        results = (word,) * words + (("I16",) if compare else ())
-        inputs = (word, word, "I16" if port else word, "I8")
-        if compare:
-            inputs += ("I16",)
-        first = len(inputs)
-        controls = 2 + int(source) + int(compare)
-        inputs += ("I32",) * controls
-        name = "rep_" + operation + "_state" + ("32" if bits == 32 else "")
-        ADDRESS_SIGNATURES[name] = ((f"STRUCT{len(results)}",) + results + inputs,
-                                    tuple(range(first, first + controls)))
+word = "I64"
+for operation in ("movs", "stos", "lods", "cmps", "scas", "ins", "outs"):
+    compare = operation in ("cmps", "scas")
+    source = operation in ("movs", "lods", "cmps", "outs")
+    port = operation in ("ins", "outs")
+    words = 3 if operation in ("movs", "lods", "cmps") else 2
+    results = (word,) * words + (("I16",) if compare else ())
+    inputs = (word, word, "I16" if port else word, "I8")
+    if compare:
+        inputs += ("I16",)
+    first = len(inputs)
+    controls = 2 + int(source) + int(compare)
+    inputs += ("I32",) * controls
+    name = "rep_" + operation + "_state"
+    ADDRESS_SIGNATURES[name] = ((f"STRUCT{len(results)}",) + results + inputs,
+                                tuple(range(first, first + controls)))
 
 AMX_SIGNATURES = {
     **{name: (("Done", "I8", "I8", "I8"), "llvm.x86.tdpbssd")

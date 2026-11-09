@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--backend-llc", type=Path)
     parser.add_argument("--llvm-only", action="store_true")
     parser.add_argument("--new-pm", action="store_true")
-    parser.add_argument("--bits", type=int, choices=(32, 64), default=64)
+    parser.add_argument("--bits", type=int, choices=(64,), default=64)
     parser.add_argument("--source", type=Path)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--keep", type=Path, required=True)
@@ -31,8 +31,6 @@ def main():
         parser.error("--new-pm and --llvm-only require --backend-llc")
     if bool(args.source) != bool(args.manifest) or (args.source and args.llvm_only):
         parser.error("source requires manifest and the NeverC frontend")
-    if args.bits == 32 and not args.llvm_only:
-        parser.error("32-bit qualification requires --llvm-only; NeverC's backend is x64")
     if args.source:
         manifest = json.loads(args.manifest.read_text())
         assert manifest["source_sha256"] == digest(args.source)
@@ -60,12 +58,11 @@ def main():
         return result
 
     run([paths["clang"], "-O2", FIXTURE / "runner.c", "-o", directory / "runner"])
-    suffix = "32" if args.bits == 32 else ""
-    triple = "i386" if args.bits == 32 else "x86_64"
-    run([paths["as"], f"--{args.bits}", FIXTURE / f"original{suffix}.S", "-o", "original.o"])
+    triple = "x86_64"
+    run([paths["as"], f"--{args.bits}", FIXTURE / "original.S", "-o", "original.o"])
     (directory / "guest.c").write_text(
         ((args.source.read_text() + "\n#define NEVERD_KVM_CONTINUATION 1\n") if args.source else "") +
-        (FIXTURE / f"guest{suffix}.c").read_text())
+        (FIXTURE / "guest.c").read_text())
     (directory / "link.ld").write_text("ENTRY(_start)\nSECTIONS { . = 0x10000; .text : { *(.start) *(.text*) } .rodata : { *(.rodata*) } .data : { *(.data*) } .bss : { *(.bss*) *(COMMON) } /DISCARD/ : { *(.eh_frame*) *(.comment) *(.note*) } }\n")
     profiles = []
     for opt in ("O0", "O2"):
@@ -75,7 +72,7 @@ def main():
             ir = []
             word = f"i{args.bits}"
             for name in ("vmcall", "vmmcall"):
-                ir.append(f"declare {word} @llvm.x86.{name}.kvm{suffix}({','.join([word]*5)})\ndefine {word} @native_{name}({','.join(word+' %'+v for v in 'nabcd')}) {{\n%r=call {word} @llvm.x86.{name}.kvm{suffix}({','.join(word+' %'+v for v in 'nabcd')})\nret {word} %r\n}}\n")
+                ir.append(f"declare {word} @llvm.x86.{name}.kvm({','.join([word]*5)})\ndefine {word} @native_{name}({','.join(word+' %'+v for v in 'nabcd')}) {{\n%r=call {word} @llvm.x86.{name}.kvm({','.join(word+' %'+v for v in 'nabcd')})\nret {word} %r\n}}\n")
             (directory / (opt + ".ll")).write_text("".join(ir))
             run([paths["clang"], f"--target={triple}-unknown-none-elf", *flags, "-DEXTERNAL_NATIVE", "-c", "guest.c", "-o", "main.o"])
             objects.append("main.o")
@@ -86,7 +83,7 @@ def main():
         if args.backend_llc:
             run([paths["llc"], f"-mtriple={triple}", "-filetype=obj", "-verify-machineinstrs", "-" + opt,
                  *(["--enable-new-pm"] if args.new_pm else []), opt + ".ll", "-o", opt + ".o"])
-        run([paths["ld"], "-m", "elf_i386" if args.bits == 32 else "elf_x86_64", "-T", "link.ld", *objects, "-o", opt + ".elf"])
+        run([paths["ld"], "-m", "elf_x86_64", "-T", "link.ld", *objects, "-o", opt + ".elf"])
         run([paths["objcopy"], "-O", "binary", opt + ".elf", opt + ".bin"])
         result = run([directory / "runner", opt + ".bin", args.bits], 30)
         (directory / (opt + ".log")).write_text(result.stdout + result.stderr)

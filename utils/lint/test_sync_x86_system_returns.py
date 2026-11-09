@@ -27,7 +27,7 @@ class SystemReturnsTest(unittest.TestCase):
                 self.assertIn(f"MCID::{flag}", fields[9], name)
             self.assertNotIn("MCID::Return", fields[9], name)
         ids = RETURNS.TABLES.enums(text)
-        self.assertEqual(ids["NATIVE_ADDRESS64"], 18572)
+        self.assertEqual(ids["NATIVE_ADDRESS64"], 18565)
 
 
 if __name__ == "__main__":

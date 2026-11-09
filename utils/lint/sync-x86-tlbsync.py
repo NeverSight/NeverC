@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Retain the EnhancedTlbi control in the pruned x64 TLBSYNC machine tables.
 
-The full fork owns TLBSYNC_CONTROL32/64 in X86InstrMisc.td. NeverC's embedded
-backend is x64-only; code32 uses the explicit external LLVM backend.
+NeverC supports x64 code generation; RAX carries the complete control value.
 """
 
 import argparse

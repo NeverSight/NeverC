@@ -121,9 +121,8 @@ bool X86TargetInfo::setFPMath(llvm::StringRef Name) {
 bool X86TargetInfo::initFeatureMap(
     llvm::StringMap<bool> &Features, DiagnosticsEngine &Diags,
     llvm::StringRef CPU, const std::vector<std::string> &FeaturesVec) const {
-  // SSE2 is mandatory only in long mode.
-  if (getTriple().getArch() == llvm::Triple::x86_64)
-    setFeatureEnabled(Features, "sse2", true);
+  // Only x86-64 is supported for this target; SSE2 is always present.
+  setFeatureEnabled(Features, "sse2", true);
 
   using namespace llvm::X86;
 
@@ -537,14 +536,10 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   Builder.defineMacro("__code_model_" + CodeModel + "__");
 
   // Target identification.
-  if (getTriple().getArch() == llvm::Triple::x86_64) {
-    Builder.defineMacro("__amd64__");
-    Builder.defineMacro("__amd64");
-    Builder.defineMacro("__x86_64");
-    Builder.defineMacro("__x86_64__");
-  } else {
-    DefineStd(Builder, "i386", Opts);
-  }
+  Builder.defineMacro("__amd64__");
+  Builder.defineMacro("__amd64");
+  Builder.defineMacro("__x86_64");
+  Builder.defineMacro("__x86_64__");
 
   Builder.defineMacro("__SEG_GS");
   Builder.defineMacro("__SEG_FS");
@@ -554,20 +549,6 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   // Subtarget options.
   using namespace llvm::X86;
   switch (CPU) {
-  case CK_i386:
-    Builder.defineMacro("__tune_i386__");
-    break;
-  case CK_i486:
-    defineCPUMacros(Builder, "i486");
-    break;
-  case CK_Pentium:
-    defineCPUMacros(Builder, "i586");
-    defineCPUMacros(Builder, "pentium");
-    break;
-  case CK_PentiumPro:
-    defineCPUMacros(Builder, "i686");
-    defineCPUMacros(Builder, "pentiumpro");
-    break;
   case CK_None:
     break;
   case CK_Nocona:
@@ -868,8 +849,6 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__ENQCMD__");
   if (HasHRESET)
     Builder.defineMacro("__HRESET__");
-  // This declares the native API, not the ambient processor feature. A source
-  // function can use target("hreset") without enabling it for the entire TU.
   Builder.defineMacro("__NEVERSIGHT_X86_HRESET__", "1");
   // Compiler API availability is independent of the current CPU feature set.
   // Consumers can select the builtins first and attach per-function features.
@@ -886,8 +865,6 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__NEVERC_X86_COMPRESS_EXPAND__", "1");
     Builder.defineMacro("__NEVERC_X86_FOUR_SOURCE__", "1");
   }
-  if (getTriple().getArch() == llvm::Triple::x86)
-    Builder.defineMacro("__NEVERC_X86_REP_STATE32__", "1");
   if (HasAMXTILE)
     Builder.defineMacro("__AMX_TILE__");
   if (HasAMXINT8)
@@ -1584,13 +1561,12 @@ std::string X86TargetInfo::convertConstraint(const char *&Constraint) const {
 
 void X86TargetInfo::fillValidCPUList(
     llvm::SmallVectorImpl<llvm::StringRef> &Values) const {
-  llvm::X86::fillValidCPUArchList(
-      Values, getTriple().getArch() == llvm::Triple::x86_64);
+  llvm::X86::fillValidCPUArchList(Values);
 }
 
 void X86TargetInfo::fillValidTuneCPUList(
     llvm::SmallVectorImpl<llvm::StringRef> &Values) const {
-  llvm::X86::fillValidTuneCPUList(Values);
+  fillValidCPUList(Values);
 }
 
 llvm::ArrayRef<const char *> X86TargetInfo::getGCCRegNames() const {
@@ -1600,11 +1576,6 @@ llvm::ArrayRef<const char *> X86TargetInfo::getGCCRegNames() const {
 llvm::ArrayRef<TargetInfo::AddlRegName>
 X86TargetInfo::getGCCAddlRegNames() const {
   return llvm::ArrayRef(AddlRegNames);
-}
-
-llvm::ArrayRef<Builtin::Info> X86_32TargetInfo::getTargetBuiltins() const {
-  return llvm::ArrayRef(BuiltinInfoX86,
-                       X86::FirstX86_64Builtin - Builtin::FirstTSBuiltin);
 }
 
 llvm::ArrayRef<Builtin::Info> X86_64TargetInfo::getTargetBuiltins() const {

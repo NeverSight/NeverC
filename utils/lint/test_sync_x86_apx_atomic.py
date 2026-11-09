@@ -29,10 +29,10 @@ class APXAtomicTablesTest(unittest.TestCase):
     def test_old_identities_and_new_appended_opcodes(self):
         ids = APX.TABLES.enums(self.text)
         for name, value in (("AADD32mr", 351), ("CMPCCXADDmr32_EVEX", 1085),
-                            ("ENCLU_STATE64", 18554), ("GETSEC_STATE64", 18555)):
+                            ("ENCLU_STATE64", 18547), ("GETSEC_STATE64", 18548)):
             self.assertEqual(ids[name], value)
         self.assertEqual(len({ids[n] for n, *_ in APX.INSTRUCTIONS}), 16)
-        self.assertTrue(all(ids[n] > 18555 for n, *_ in APX.INSTRUCTIONS))
+        self.assertTrue(all(ids[n] > 18548 for n, *_ in APX.INSTRUCTIONS))
 
     def test_atomic_transactions_have_both_memory_effects(self):
         for name, prototype, *_ in APX.INSTRUCTIONS:

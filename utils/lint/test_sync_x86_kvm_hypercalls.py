@@ -24,7 +24,7 @@ class KVMHypercallTableTest(unittest.TestCase):
             offset = fields[7].removeprefix("X86ImpOpBase + ")
             sequence = re.search(rf"/\* {offset} \*/ (X86::[^\n]+)", text).group(1)
             registers = re.findall(r"X86::(\w+)", sequence)
-            prefix = "R" if opcode.endswith("64") else "E"
+            prefix = "R"
             self.assertEqual(registers,
                              [prefix + r for r in ("AX", "BX", "CX", "DX", "SI", "AX")] + ["EFLAGS"])
             for flag in ("MayLoad", "MayStore", "UnmodeledSideEffects"):

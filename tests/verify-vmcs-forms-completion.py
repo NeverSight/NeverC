@@ -69,18 +69,17 @@ def compile_case(args, directory, operation, variant, bits, opt):
                       + "\n".join(body) + "\n}\n")
     else:
         source = directory / (name + ".c")
-        c_word = "unsigned" if bits == 32 else "unsigned long long"
-        suffix = "32" if bits == 32 else ""
+        c_word = "unsigned long long"
         body = ["*ordinary = seed;"] if variant == "memory" else []
         terms = ["field", "prior" if read else f"({c_word})prior", "seed"]
         for index in range(count):
             if read:
                 body += [f"unsigned char status{index};",
-                         f"{c_word} value{index} = __builtin_ia32_vmread_reg{suffix}(field, prior, &status{index});"]
+                         f"{c_word} value{index} = __builtin_ia32_vmread_reg(field, prior, &status{index});"]
                 if keep_value:
                     terms.append(f"value{index}")
             else:
-                body.append(f"unsigned char status{index} = __builtin_ia32_vmwrite_mem{suffix}(field, prior);")
+                body.append(f"unsigned char status{index} = __builtin_ia32_vmwrite_mem(field, prior);")
             if keep_status:
                 terms.append(f"(({c_word})status{index} << {8 + index * 8})")
         if variant == "memory":
@@ -88,16 +87,12 @@ def compile_case(args, directory, operation, variant, bits, opt):
         body.append("return " + " ^ ".join(terms) + ";")
         source.write_text(f"{c_word} probe({c_word} field, {c_word if read else 'const void *'} prior, "
                           f"{c_word} *ordinary, {c_word} seed) {{\n" + "\n".join(body) + "\n}\n")
-        common = [str(args.compiler),
-                  "--target=i386-unknown-linux-gnu" if bits == 32 else "--target=x86_64-pc-windows-msvc",
-                  "-" + opt, "-Werror", "-ffreestanding", "-fno-lto",
-                  "-fno-builtin-mimalloc", "-fno-stack-protector", str(source)]
-        if bits == 64:
-            common += ["-mllvm", "-verify-machineinstrs"]
+        common = [str(args.compiler), "--target=x86_64-pc-windows-msvc", "-" + opt,
+                  "-Werror", "-ffreestanding", "-fno-lto", "-fno-stack-protector",
+                  "-mllvm", "-verify-machineinstrs", str(source)]
         commands = [common + ["-S", "-emit-llvm", "-o", str(ir)]]
-        if not args.backend_llc or bits == 32:
-            commands.append(common + ["-c", "-o", str(obj)] +
-                            (["-fllvm-backend=" + str(args.backend_llc)] if bits == 32 else []))
+        if not args.backend_llc:
+            commands.append(common + ["-c", "-o", str(obj)])
         for command in commands:
             run = subprocess.run(command, capture_output=True, text=True)
             if run.returncode:
@@ -106,7 +101,7 @@ def compile_case(args, directory, operation, variant, bits, opt):
         if " asm " in text or not re.search(r"\bcall\b[^@\n]*@" + re.escape(api) + r"\(", text):
             raise AssertionError(f"{name}: expected a native intrinsic")
     backend = args.llc or args.backend_llc
-    if backend and (args.llc or bits == 64):
+    if backend:
         arch = "x86_64" if bits == 64 else "i686"
         run = subprocess.run([str(backend), "-mtriple=" + arch + "-pc-windows-msvc", "-" + opt,
                               "-verify-machineinstrs", "-filetype=obj", str(ir), "-o", str(obj)],
@@ -211,17 +206,14 @@ def main():
     mode.add_argument("--llc", type=Path)
     parser.add_argument("--backend-llc", type=Path)
     parser.add_argument("--keep", type=Path)
-    parser.add_argument("--bits", type=int, choices=(32, 64))
     args = parser.parse_args()
     if args.llc and args.backend_llc:
         parser.error("--backend-llc applies only to NeverC IR")
-    if args.bits == 32 and not (args.llc or args.backend_llc):
-        parser.error("i386 source objects require --backend-llc")
     total = 0
     with tempfile.TemporaryDirectory(prefix="vmcs-forms-") as temporary:
         directory = args.keep or Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
-        for bits in ((args.bits,) if args.bits else (32, 64) if args.llc else (64,)):
+        for bits in ((32, 64) if args.llc else (64,)):
             for operation in ("vmread.reg", "vmwrite.mem"):
                 variants = ("value", "status", "both", "dead", "twice", "memory") if operation == "vmread.reg" else ("status", "dead", "twice", "memory")
                 for variant in variants:

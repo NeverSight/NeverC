@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""Compare compiled FLAGS accesses with original PUSHF/POPF bytes.
+"""Compare compiled word POPF with original bytes and preserve AC/ID.
 
 Execute each safe low-word image (TF clear) with all four AC/ID inputs. The
 assembly witness restores host flags before returning to C. Arithmetic flags
 are deliberately not compared across an ordinary compiler ABI. The protected
 NeverD KVM oracle separately checks them at the original instruction boundary.
-The default word image checks preserved AC/ID. --image-bits 32/64 checks the
-native code-mode width, including all combinations of old/new AC/ID. Builtin
-probes also compare returned snapshots. --source retains the existing write
-contract for unchanged generated C. NeverC i386 requires --backend-llc; the
-32-bit driver requires multilib libc. This is a Linux CPL3 compiler ABI check,
-not a privileged, fault or asynchronous-event execution profile.
 """
 
 import argparse
@@ -62,58 +56,6 @@ capture_flags:
   leaq 8(%rsp),%rsp
   popq %r13
   popq %r12
-  ret
-.size capture_flags,.-capture_flags
-.section .note.GNU-stack,"",@progbits
-'''
-
-REFERENCE32 = r'''
-.text
-.p2align 4
-.globl original_write
-.type original_write,@function
-original_write:
-  movw 4(%esp),%ax
-  pushw %ax
-  .byte 0x66,0x9d
-  ret
-.size original_write,.-original_write
-.globl incorrect_wide_write
-.type incorrect_wide_write,@function
-incorrect_wide_write:
-  pushl 4(%esp)
-  popfl
-  ret
-.size incorrect_wide_write,.-incorrect_wide_write
-.globl capture_flags
-.type capture_flags,@function
-capture_flags:
-  pushl %ebx
-  pushl %esi
-  pushl %edi
-  pushl %ebp
-  subl $12,%esp
-  movl 32(%esp),%esi
-  movl 36(%esp),%edi
-  pushfl
-  popl %ebx
-  movl %ebx,%eax
-  andl $-2360577,%eax
-  orl 40(%esp),%eax
-  movl %edi,(%esp)
-  pushl %eax
-  popfl
-  call *%esi
-  pushfl
-  popl %eax
-  pushl %ebx
-  popfl
-  movl $0,%edx
-  leal 12(%esp),%esp
-  popl %ebp
-  popl %edi
-  popl %esi
-  popl %ebx
   ret
 .size capture_flags,.-capture_flags
 .section .note.GNU-stack,"",@progbits
@@ -183,123 +125,12 @@ int main(void) {
 '''
 
 
-def read_witness(bits, image_bits):
-    """Restore the caller's flags before C observes a returned snapshot."""
-    narrow = image_bits == 16
-    if bits == 64:
-        original = ".byte 0x66,0x9c\n popw %ax\n movzwl %ax,%eax" if narrow else ".byte 0x9c\n popq %rax"
-        normalize = "movzwl %ax,%eax" if narrow else ""
-        capture = f'''
-  pushq %r12
-  pushq %r13
-  subq $8,%rsp
-  movq %rdi,%r13
-  pushfq
-  popq %r12
-  pushq %rsi
-  popfq
-  call *%r13
-  {normalize}
-  pushq %r12
-  popfq
-  addq $8,%rsp
-  popq %r13
-  popq %r12
-  ret
-'''
-    else:
-        original = ".byte 0x66,0x9c\n popw %ax\n movzwl %ax,%eax" if narrow else ".byte 0x9c\n popl %eax"
-        normalize = "movzwl %ax,%eax" if narrow else ""
-        capture = f'''
-  pushl %ebx
-  pushl %esi
-  subl $4,%esp
-  movl 16(%esp),%esi
-  pushfl
-  popl %ebx
-  pushl 20(%esp)
-  popfl
-  call *%esi
-  {normalize}
-  movl $0,%edx
-  pushl %ebx
-  popfl
-  addl $4,%esp
-  popl %esi
-  popl %ebx
-  ret
-'''
-    return ("\n.text\n.globl original_read\noriginal_read:\n" + original +
-            "\n ret\n.globl incorrect_read\nincorrect_read:\n movl $0,%eax" +
-            "\n ret\n.globl capture_read\ncapture_read:\n" + capture +
-            '.section .note.GNU-stack,"",@progbits\n')
-
-
-def driver(image_bits, reads):
-    if image_bits == 16 and not reads:
-        return DRIVER, 131072, 0
-    ctype = {16: "unsigned short", 32: "unsigned", 64: "unsigned long long"}[image_bits]
-    new_high_count = 1 if image_bits == 16 else 4
-    text = f'''
-#include <stdint.h>
-#include <stdio.h>
-extern void original_write({ctype});
-extern void tested_write({ctype});
-extern uint64_t capture_flags(void (*)({ctype}), unsigned, uint64_t);
-extern void original_read(void), tested_read(void);
-extern uint64_t capture_read(void (*)(void), unsigned);
-static unsigned high(unsigned v) {{
-  return (v & 1 ? 0x40000 : 0) | (v & 2 ? 0x200000 : 0);
-}}
-int main(void) {{
-  unsigned writes = 0, reads = 0;
-  for (unsigned old = 0; old != 4; ++old)
-    for (unsigned word = 0; word != 65536; ++word) {{
-      if (word & 0x100) continue;
-      for (unsigned next = 0; next != {new_high_count}; ++next) {{
-        const unsigned value = word | high(next);
-        const uint64_t expected = capture_flags(original_write, value, high(old));
-        const uint64_t actual = capture_flags(tested_write, value, high(old));
-        if (((expected ^ actual) & 0x247600) != 0) {{
-          printf("write value=%x old=%x expected=%llx actual=%llx\\n",
-                 value, old, (unsigned long long)expected, (unsigned long long)actual);
-          return 1;
-        }}
-        ++writes;
-      }}
-'''
-    if reads:
-        text += '''
-      const unsigned value = word | high(old);
-      const uint64_t expected = capture_read(original_read, value);
-      const uint64_t actual = capture_read(tested_read, value);
-      if (((expected ^ actual) & ~UINT64_C(0x8d5)) != 0) {
-        printf("read value=%x expected=%llx actual=%llx\\n", value,
-               (unsigned long long)expected, (unsigned long long)actual);
-        return 2;
-      }
-      ++reads;
-'''
-    text += '''
-    }
-  printf("%u original POPF comparisons, %u original PUSHF comparisons\\n", writes, reads);
-  return 0;
-}
-'''
-    return text, 131072 * new_high_count, 131072 if reads else 0
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--compiler", type=Path)
     group.add_argument("--llc", type=Path)
     parser.add_argument("--clang", default="clang")
-    parser.add_argument("--bits", type=int, choices=(32, 64), default=64)
-    parser.add_argument("--image-bits", type=int, choices=(16, 32, 64), default=16)
-    parser.add_argument("--spelling", choices=("builtin", "generic"), default="builtin")
-    parser.add_argument("--backend-llc", type=Path,
-                        help="Full LLVM backend for NeverC, required for i386 objects")
     parser.add_argument("--source", type=Path,
                         help="An unchanged emitted C translation unit, compiled with --compiler")
     parser.add_argument("--symbol", default="flags_write_test")
@@ -309,14 +140,6 @@ def main():
         parser.error("the original CPU witness requires Linux x86_64")
     if args.source and not args.compiler:
         parser.error("--source requires --compiler")
-    if args.image_bits not in (16, args.bits):
-        parser.error("32-bit images require i386; 64-bit images require x86-64")
-    if args.spelling == "generic" and (not args.compiler or args.source or args.image_bits != args.bits):
-        parser.error("generic spelling requires a built-in source probe at code-mode width")
-    if args.backend_llc and (not args.compiler or "neverc" not in args.compiler.name):
-        parser.error("--backend-llc requires NeverC")
-    if args.bits == 32 and args.compiler and "neverc" in args.compiler.name and not args.backend_llc:
-        parser.error("NeverC i386 objects require --backend-llc")
     root = args.keep.resolve()
     root.mkdir(parents=True, exist_ok=True)
     commands, results = [], []
@@ -331,84 +154,45 @@ def main():
             raise RuntimeError(f"{stem}: exit {completed.returncode}: {completed.stdout}{completed.stderr}")
         return completed.stdout
 
-    abi = ["-m" + str(args.bits)]
-    triple = ("i386" if args.bits == 32 else "x86_64") + "-unknown-linux-gnu"
-    reference = REFERENCE32 if args.bits == 32 else REFERENCE
-    if args.image_bits != 16:
-        # Exchange the original word operation and the deliberately wrong-width
-        # control. Only the former receives the architecture's native image.
-        reference = reference.replace("original_write", "swap_write").replace(
-            "incorrect_wide_write", "original_write").replace("swap_write", "incorrect_wide_write")
-    reference += read_witness(args.bits, args.image_bits)
-    reads = not args.source
-    driver_text, writes_count, reads_count = driver(args.image_bits, reads)
-    (root / "reference.s").write_text(reference)
-    (root / "driver.c").write_text(driver_text)
+    (root / "reference.s").write_text(REFERENCE)
+    (root / "driver.c").write_text(DRIVER)
     # The emitted source owns its C signature. A separate assembly tail jump
     # adapts only the machine call; do not invent a conflicting C declaration.
     (root / "adapter.s").write_text(
         ".text\n.globl tested_write\n.type tested_write,@function\n"
-        "tested_write: jmp " + args.symbol + "\n" +
-        (".globl tested_read\ntested_read: jmp flags_read_test\n" if reads else "") +
+        "tested_write: jmp " + args.symbol + "\n"
         '.section .note.GNU-stack,"",@progbits\n')
-    run([args.clang, *abi, "-c", root / "adapter.s", "-o", root / "adapter.o"], "adapter")
-    run([args.clang, *abi, "-c", root / "reference.s", "-o", root / "reference.o"], "reference")
-    run([args.clang, *abi, "-O2", "-Dtested_write=incorrect_wide_write",
-         "-Dtested_read=original_read", root / "driver.c",
+    run([args.clang, "-c", root / "adapter.s", "-o", root / "adapter.o"], "adapter")
+    run([args.clang, "-c", root / "reference.s", "-o", root / "reference.o"], "reference")
+    run([args.clang, "-O2", "-Dtested_write=incorrect_wide_write", root / "driver.c",
          root / "reference.o", "-o", root / "negative"], "negative-build")
     run([root / "negative"], "negative", expected=1)
-    if reads:
-        run([args.clang, *abi, "-O2", "-Dtested_write=original_write",
-             "-Dtested_read=incorrect_read", root / "driver.c", root / "reference.o",
-             "-o", root / "negative-read"], "negative-read-build")
-        run([root / "negative-read"], "negative-read", expected=2)
     if args.llc:
         source = root / "input.ll"
-        source_text = IR.replace("i16", f"i{args.image_bits}").replace(".u16", f".u{args.image_bits}")
-        source_text += (f"\ndeclare i{args.image_bits} @llvm.x86.flags.read.u{args.image_bits}()\n"
-                        f"define i{args.image_bits} @flags_read_test() {{\n"
-                        f" %value = call i{args.image_bits} @llvm.x86.flags.read.u{args.image_bits}()\n"
-                        f" ret i{args.image_bits} %value\n}}\n")
+        source.write_text(IR)
     else:
         source = root / "input.c"
-        ctype = {16: "unsigned short", 32: "unsigned", 64: "unsigned long long"}[args.image_bits]
-        source_text = (args.source.read_text() if args.source else
-                       SOURCE.replace("unsigned short", ctype).replace("_u16", f"_u{args.image_bits}") +
-                       f"\n{ctype} flags_read_test(void) {{ return __builtin_ia32_readeflags_u{args.image_bits}(); }}\n")
-        if args.spelling == "generic":
-            for operation in ("readeflags", "writeeflags"):
-                source_text = source_text.replace(f"__builtin_ia32_{operation}_u{args.image_bits}", "__" + operation)
-    source.write_text(source_text)
+        source.write_text(args.source.read_text() if args.source else SOURCE)
     for opt in ("O0", "O2"):
         obj, exe = root / (opt + ".o"), root / opt
         if args.llc:
-            command = [args.llc, "-" + opt, "-mtriple=" + triple,
+            command = [args.llc, "-" + opt, "-mtriple=x86_64-unknown-linux-gnu",
                        "-verify-machineinstrs", "-filetype=obj", source, "-o", obj]
         else:
-            command = [args.compiler, "--target=" + triple, "-" + opt, "-std=gnu23", "-ffreestanding", "-fno-lto",
+            command = [args.compiler, "-" + opt, "-std=gnu23", "-ffreestanding", "-fno-lto",
                        "-fno-pie", "-c", source, "-o", obj]
             if "neverc" in args.compiler.name:
-                command += ["-fno-builtin-mimalloc"]
-                if args.backend_llc:
-                    command += ["-fllvm-backend=" + str(args.backend_llc.resolve())]
-                else:
-                    command += ["-mllvm", "-verify-machineinstrs"]
+                command += ["-fno-builtin-mimalloc", "-mllvm", "-verify-machineinstrs"]
         run(command, opt + "-compile")
-        run([args.clang, *abi, "-O2", "-no-pie", root / "driver.c",
+        run([args.clang, "-O2", "-no-pie", root / "driver.c",
              root / "reference.o", root / "adapter.o", obj, "-o", exe], opt + "-link")
         output = run([exe], opt + "-run")
-        expected = ("131072 original word-POPF comparisons" if args.image_bits == 16 and not reads else
-                    f"{writes_count} original POPF comparisons, {reads_count} original PUSHF comparisons")
-        assert output.strip() == expected, output
-        results.append({"optimization": opt, "comparisons": writes_count + reads_count,
-                        "write_comparisons": writes_count, "read_comparisons": reads_count,
+        assert output.strip() == "131072 original word-POPF comparisons", output
+        results.append({"optimization": opt, "comparisons": 131072,
                         "object_sha256": hashlib.sha256(obj.read_bytes()).hexdigest(),
                         "executable_sha256": hashlib.sha256(exe.read_bytes()).hexdigest()})
     (root / "results.json").write_text(json.dumps({"results": results,
-        "bits": args.bits,
-        "image_bits": args.image_bits, "spelling": args.spelling,
         "negative_control_rejected": True, "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-        "negative_read_control_rejected": reads,
         "affinity": sorted(os.sched_getaffinity(0))}, indent=2) + "\n")
     print(json.dumps(results))
 

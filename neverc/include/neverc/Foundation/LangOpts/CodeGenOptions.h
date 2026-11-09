@@ -119,9 +119,6 @@ public:
 
   std::string CodeModel;
 
-  /// Explicit full LLVM fork executable for the i386 native backend.
-  std::string FullLLVMBackend;
-
   uint64_t LargeDataThreshold;
 
   std::string DebugPass;
