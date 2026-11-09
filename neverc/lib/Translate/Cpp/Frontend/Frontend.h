@@ -2062,6 +2062,11 @@ describeFunctionalBindOwnedCallTupleConstructionSource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
 std::optional<FunctionalBindTupleConstructionSource>
+describeFunctionalBindMemberCallTupleConstructionSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindMemberCommonCallSource &Call, const clang::ASTContext &Context);
+
+std::optional<FunctionalBindTupleConstructionSource>
 describeFunctionalBindStandardCallTupleConstructionSource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
@@ -2297,6 +2302,11 @@ std::optional<std::vector<FunctionalBindTupleTagSource>>
 describeFunctionalBindOwnedCallTupleTagSources(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindCallSource &Call, const clang::ASTContext &Context);
+std::optional<std::vector<FunctionalBindTupleTagSource>>
+describeFunctionalBindMemberCallTupleTagSources(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindMemberCommonCallSource &Call, const clang::ASTContext &Context);
+
 std::optional<std::vector<FunctionalBindTupleTagSource>>
 describeFunctionalBindStandardCallTupleTagSources(
     const State &S, const clang::SourceManager &SM,
