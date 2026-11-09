@@ -175,9 +175,6 @@ TARGET_BUILTIN(__builtin_ia32_aand64, "vv*SOi", "n", "raoint")
 TARGET_BUILTIN(__builtin_ia32_aor64, "vv*SOi", "n", "raoint")
 TARGET_BUILTIN(__builtin_ia32_axor64, "vv*SOi", "n", "raoint")
 
-// Raw resumable software interrupt; the vector is an immediate in 0..255.
-BUILTIN(__builtin_ia32_int, "vIUi", "n")
-
 // VMX translation invalidation uses the full 64-bit type selector and an m128
 // descriptor. These are side effects, including when their status is unused.
 BUILTIN(__builtin_ia32_invept, "UcULLivC*", "n")
@@ -211,7 +208,6 @@ BUILTIN(__builtin_ia32_hyperv_call, "vv*v*v*IUi", "n")
 BUILTIN(__builtin_ia32_psmash_context, "vv*v*IUi", "n")
 BUILTIN(__builtin_ia32_hle_context, "vv*v*v*IUiIUi", "n")
 BUILTIN(__builtin_ia32_rtm_abort_pair, "UiIUi", "n")
-BUILTIN(__builtin_ia32_cpuidex, "vi*UiUi", "n")
 BUILTIN(__builtin_ia32_pvalidate_context, "vv*v*IUi", "n")
 BUILTIN(__builtin_ia32_rmpadjust_context, "vv*v*IUi", "n")
 BUILTIN(__builtin_ia32_rmpupdate_context, "vv*v*IUi", "n")
@@ -343,12 +339,6 @@ BUILTIN(__builtin_ia32_stosb, "vv*UcULLi", "n")
 BUILTIN(__builtin_ia32_stosw, "vv*UsULLi", "n")
 BUILTIN(__builtin_ia32_stosd, "vv*UiULLi", "n")
 BUILTIN(__builtin_ia32_stosq, "vv*ULLiULLi", "n")
-BUILTIN(__builtin_ia32_inbytestring, "vUsv*Ui", "n")
-BUILTIN(__builtin_ia32_inwordstring, "vUsv*Ui", "n")
-BUILTIN(__builtin_ia32_indwordstring, "vUsv*Ui", "n")
-BUILTIN(__builtin_ia32_outbytestring, "vUsvC*Ui", "n")
-BUILTIN(__builtin_ia32_outwordstring, "vUsvC*Ui", "n")
-BUILTIN(__builtin_ia32_outdwordstring, "vUsvC*Ui", "n")
 
 // Explicit REP state: natural-width GPR results go to the final word array.
 // Comparisons additionally store canonical LAHF/SETO flags in unsigned short.
@@ -366,7 +356,6 @@ BUILTIN(__builtin_ia32_readcr, "ULLiIUi", "n")
 BUILTIN(__builtin_ia32_writecr, "vIUiULLi", "n")
 BUILTIN(__builtin_ia32_readdr, "ULLiIUi", "n")
 BUILTIN(__builtin_ia32_writedr, "vIUiULLi", "n")
-BUILTIN(__builtin_ia32_wrmsrns, "vUiULLi", "n")
 BUILTIN(__builtin_ia32_rdmsrlist, "ULLivC*v*ULLi", "n")
 BUILTIN(__builtin_ia32_wrmsrlist, "ULLivC*vC*ULLi", "n")
 

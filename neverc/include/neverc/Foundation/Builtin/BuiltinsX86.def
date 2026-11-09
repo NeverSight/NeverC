@@ -63,6 +63,24 @@ BUILTIN(__builtin_ia32_outword, "vUsUs", "n")
 BUILTIN(__builtin_ia32_outdword, "vUsUi", "n")
 BUILTIN(__builtin_ia32_wrmsr, "vUiULLi", "n")
 
+// Native nonserializing MSR write uses ECX and the full EDX:EAX pair.
+BUILTIN(__builtin_ia32_wrmsrns, "vUiULLi", "n")
+
+// CPUID writes four 32-bit words in EAX, EBX, ECX, EDX order.
+BUILTIN(__builtin_ia32_cpuidex, "vi*UiUi", "n")
+
+// Raw resumable software interrupt; the vector is an immediate in 0..255.
+BUILTIN(__builtin_ia32_int, "vIUi", "n")
+
+// Native REP port I/O uses 32-bit element counts in either code mode.
+// DF and the instruction-owned DS/ES memory access retain their CPU meaning.
+BUILTIN(__builtin_ia32_inbytestring, "vUsv*Ui", "n")
+BUILTIN(__builtin_ia32_inwordstring, "vUsv*Ui", "n")
+BUILTIN(__builtin_ia32_indwordstring, "vUsv*Ui", "n")
+BUILTIN(__builtin_ia32_outbytestring, "vUsvC*Ui", "n")
+BUILTIN(__builtin_ia32_outwordstring, "vUsvC*Ui", "n")
+BUILTIN(__builtin_ia32_outdwordstring, "vUsvC*Ui", "n")
+
 // SKINIT consumes EAX in either mode and abandons the caller context.
 TARGET_HEADER_BUILTIN(__svm_skinit, "vi", "nrh", INTRIN_H, ALL_MS_LANGUAGES, "")
 BUILTIN(__builtin_ia32_skinit, "vUi", "nr")
