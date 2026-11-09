@@ -2427,6 +2427,28 @@ bool approvedFunctionalBindMemberFactorySource(
     std::set<const clang::CXXMethodDecl *> &OwnerQueries,
     const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
 
+// Independent factory/get and factory/get/unwrap proofs. Exact local member
+// values own these roots; full invoke/default/query, ordinary body/lifetime and
+// C23 lowering remain separate obligations before runtime admission.
+bool approvedFunctionalBindMemberCallGetSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindMemberCommonCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnerQueries,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
+bool approvedFunctionalBindMemberCallUnwrapSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindMemberCommonCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnerQueries,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
+
 bool approvedFunctionalBindStandardFactorySource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,

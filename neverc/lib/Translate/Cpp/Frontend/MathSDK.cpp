@@ -7797,6 +7797,51 @@ static bool functionalBindStandardCallDeclarationSource(
       !Parameter->getIndex() && !Parameter->getDepth() && !Parameter->isParameterPack();
 }
 
+// A member source occurrence is bound to its exact closed local value,
+// factory address and selected SDK nodes. Equal binder/member-pointer types
+// cannot substitute another call or a different target.
+static std::optional<FunctionalBindMemberCommonCallSource>
+freshFunctionalBindMemberCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const FunctionalBindMemberCommonCallSource &Given, const ASTContext &Context) {
+  if (!Call || Call != Given.Selected.SourceCall ||
+      Given.Selected.SourceCall != Given.Selected.OwnedRoot ||
+      !Given.Selected.OwnedPath.empty() || !S.owns(SM, Call->getExprLoc())) return std::nullopt;
+  const auto Fresh = describeFunctionalBindMemberCommonCallSource(S, SM, Call, Context);
+  if (!Fresh) return std::nullopt;
+  const auto &Actual = Fresh->Selected;
+  const auto &Expected = Given.Selected;
+  const auto &Factory = Fresh->Member.Value.Factory;
+  const auto &OriginalFactory = Given.Member.Value.Factory;
+  if (Actual.SourceCall != Expected.SourceCall || Actual.OwnedRoot != Expected.OwnedRoot ||
+      Actual.OwnedPath != Expected.OwnedPath || Actual.Method != Expected.Method ||
+      Actual.Object != Expected.Object || Actual.Apply != Expected.Apply ||
+      Actual.Invoke != Expected.Invoke || Actual.Target != Expected.Target ||
+      Actual.Indices != Expected.Indices || Actual.CallArguments != Expected.CallArguments ||
+      Actual.CallForwards != Expected.CallForwards || Actual.InvokeCasts != Expected.InvokeCasts ||
+      Actual.Storage.Record != Expected.Storage.Record || Actual.Storage.Callable != Expected.Storage.Callable ||
+      Actual.Storage.BoundArguments != Expected.Storage.BoundArguments ||
+      !Context.hasSameType(Actual.Storage.CallableType, Expected.Storage.CallableType) ||
+      Actual.Arguments.size() != Expected.Arguments.size() ||
+      Factory.Factory.SourceCall != OriginalFactory.Factory.SourceCall ||
+      Factory.Factory.Factory != OriginalFactory.Factory.Factory ||
+      Factory.Factory.Construction != OriginalFactory.Factory.Construction ||
+      Factory.Factory.BoundConstruction != OriginalFactory.Factory.BoundConstruction ||
+      Factory.Member != OriginalFactory.Member || Factory.Address != OriginalFactory.Address ||
+      Factory.Storage.Owner != OriginalFactory.Storage.Owner ||
+      Fresh->Member.Access != Given.Member.Access || Fresh->Member.MemberCall != Given.Member.MemberCall ||
+      Fresh->Member.ReceiverIsPointer != Given.Member.ReceiverIsPointer) return std::nullopt;
+  for (unsigned I = 0; I < Actual.Arguments.size(); ++I) {
+    const auto &A = Actual.Arguments[I];
+    const auto &B = Expected.Arguments[I];
+    if (A.Get != B.Get || A.Unwrap != B.Unwrap || A.WrapperCopy != B.WrapperCopy ||
+        A.PlaceholderRank != B.PlaceholderRank || A.PlaceholderIndex != B.PlaceholderIndex ||
+        A.PlaceholderGet != B.PlaceholderGet || A.PlaceholderForward != B.PlaceholderForward ||
+        !Context.hasSameType(A.ForwardedType, B.ForwardedType)) return std::nullopt;
+  }
+  return Fresh;
+}
+
 class UtilityTupleQueryGraph
     : public RecursiveASTVisitor<UtilityTupleQueryGraph> {
   const State &S;
@@ -7850,6 +7895,7 @@ class UtilityTupleQueryGraph
   const CXXConstructExpr *BindOwnedCallableCopy = nullptr;
   const FunctionalBindFactorySource *BindStandardFactory = nullptr;
   const FunctionalBindMemberFactorySource *BindMemberFactory = nullptr;
+  const FunctionalBindMemberCommonCallSource *BindMemberCall = nullptr;
   std::set<const CXXMethodDecl *> *BindMemberOwnerQueries = nullptr;
   const FunctionalBindStandardCallSource *BindStandardCall = nullptr;
   const TemplateUseSource *BindStandardWrittenSource = nullptr;
@@ -8769,6 +8815,10 @@ class UtilityTupleQueryGraph
   std::optional<FunctionalBindCallSource> freshBindCallSource(
       const State &GivenState, const SourceManager &GivenSources,
       const CallExpr *Call, const ASTContext &GivenContext) const {
+    if (BindMemberCall) {
+      const auto Fresh = freshFunctionalBindMemberCallSource(GivenState, GivenSources, Call, *BindMemberCall, GivenContext);
+      return Fresh ? std::optional<FunctionalBindCallSource>(Fresh->Selected) : std::nullopt;
+    }
     if (BindStandardCall) {
       if (Call != BindStandardCall->Selected.SourceCall) return std::nullopt;
       const auto Fresh = describeFunctionalBindStandardCallSource(GivenState, GivenSources, Call, GivenContext);
@@ -8810,7 +8860,7 @@ class UtilityTupleQueryGraph
   std::optional<FunctionalBindCallSource> freshBindCallOccurrence(
       const State &GivenState, const SourceManager &GivenSources,
       const FunctionalBindCallSource &Call, const ASTContext &GivenContext) const {
-    if (!BindOwnedCallableRecord && !BindStandardCall)
+    if (!BindOwnedCallableRecord && !BindStandardCall && !BindMemberCall)
       return describeFunctionalBindCallSourceOccurrence(GivenState, GivenSources, Call, GivenContext);
     if (!Call.SourceCall || Call.SourceCall != Call.OwnedRoot || !Call.OwnedPath.empty()) return std::nullopt;
     const auto Actual = freshBindCallSource(GivenState, GivenSources, Call.OwnedRoot, GivenContext);
@@ -11603,7 +11653,10 @@ public:
       const FunctionalBindFactorySource *StandardFactory = nullptr,
       const FunctionalBindStandardCallSource *StandardCall = nullptr,
       const FunctionalBindMemberFactorySource *MemberFactory = nullptr,
-      std::set<const CXXMethodDecl *> *MemberOwnerQueries = nullptr) {
+      std::set<const CXXMethodDecl *> *MemberOwnerQueries = nullptr,
+      const FunctionalBindMemberCommonCallSource *MemberCall = nullptr) {
+    if (MemberCall && (!MemberFactory || MemberFactory != &MemberCall->Member.Value.Factory ||
+        MemberCall->Selected.Storage.Record != Storage.Record)) return false;
     if (Mode != UtilityTupleQueryMode::BindSignature || BindMetadata || !step() ||
         !TypeSource || !RecordSource || !CallSource || !VariableSource || !ConstructionSource) return false;
     const auto Standard = StandardFactory || StandardCall
@@ -11638,8 +11691,10 @@ public:
     BindStandardFactory = StandardFactory;
     BindStandardCall = StandardCall;
     BindMemberFactory = MemberFactory;
+    BindMemberCall = MemberCall;
     BindMemberOwnerQueries = MemberOwnerQueries;
     if (MemberFactory && !freshBindFactorySource(MemberFactory->Factory)) return false;
+    if (MemberCall && !freshBindCallSource(S, SM, MemberCall->Selected.SourceCall, Context)) return false;
     if (StandardCall && !freshBindCallSource(S, SM, StandardCall->Selected.SourceCall, Context)) return false;
     if (StandardFactory && !freshBindFactorySource(*StandardFactory)) return false;
     BindTypeSource = std::move(TypeSource);
@@ -27055,6 +27110,7 @@ class BindSourceProof {
   const FunctionalBindReferenceStorage *ReferenceStorageRoot = nullptr;
   const FunctionalBindFactorySource *StandardFactoryRoot = nullptr;
   const FunctionalBindMemberFactorySource *MemberFactoryRoot = nullptr;
+  const FunctionalBindMemberCommonCallSource *MemberCallRoot = nullptr;
   const FunctionalBindStandardCallSource *StandardCallRoot = nullptr;
   const FunctionalBindReferenceFactorySource *ReferenceFactoryRoot = nullptr;
   const FunctionalBindReferenceCallSource *ReferenceCallRoot = nullptr;
@@ -27549,6 +27605,10 @@ class BindSourceProof {
   std::optional<FunctionalBindCallSource> freshBindCallSource(
       const State &GivenState, const SourceManager &GivenSources,
       const CallExpr *Call, const ASTContext &GivenContext) const {
+    if (MemberCallRoot) {
+      const auto Fresh = freshFunctionalBindMemberCallSource(GivenState, GivenSources, Call, *MemberCallRoot, GivenContext);
+      return Fresh ? std::optional<FunctionalBindCallSource>(Fresh->Selected) : std::nullopt;
+    }
     if (StandardCallRoot) {
       const auto Fresh = describeFunctionalBindStandardCallSource(GivenState, GivenSources, Call, GivenContext);
       if (!Fresh || !Fresh->Selected.SourceCall || Fresh->Selected.SourceCall != Call ||
@@ -27593,7 +27653,7 @@ class BindSourceProof {
   std::optional<FunctionalBindCallSource> freshBindCallOccurrence(
       const State &GivenState, const SourceManager &GivenSources,
       const FunctionalBindCallSource &Call, const ASTContext &GivenContext) const {
-    if (!OwnedCallableRecord && !StandardCallRoot)
+    if (!OwnedCallableRecord && !StandardCallRoot && !MemberCallRoot)
       return describeFunctionalBindCallSourceOccurrence(GivenState, GivenSources, Call, GivenContext);
     if (!Call.SourceCall || Call.SourceCall != Call.OwnedRoot || !Call.OwnedPath.empty()) return std::nullopt;
     const auto Actual = freshBindCallSource(GivenState, GivenSources, Call.OwnedRoot, GivenContext);
@@ -32832,9 +32892,10 @@ public:
       const FunctionalBindFactorySource *StandardFactory = nullptr,
       const FunctionalBindStandardCallSource *StandardCall = nullptr,
       const FunctionalBindMemberFactorySource *MemberFactory = nullptr,
-      std::set<const CXXMethodDecl *> *MemberOwnerQueries = nullptr)
+      std::set<const CXXMethodDecl *> *MemberOwnerQueries = nullptr,
+      const FunctionalBindMemberCommonCallSource *MemberCall = nullptr)
       : S(S), SM(SM), Context(Context), Storage(Storage), ReferenceStorageRoot(ReferenceFactory ? &ReferenceFactory->Storage : ReferenceCall ? &ReferenceCall->Storage : ReferenceStorage),
-        StandardFactoryRoot(StandardFactory), MemberFactoryRoot(MemberFactory), StandardCallRoot(StandardCall), ReferenceFactoryRoot(ReferenceFactory), ReferenceCallRoot(ReferenceCall), ReferenceReferentQueries(ReferentQueries), ReferenceQueryOutput(OwnedQuerySources), SpecialMembers(Members),
+        StandardFactoryRoot(StandardFactory), MemberFactoryRoot(MemberFactory), MemberCallRoot(MemberCall), StandardCallRoot(StandardCall), ReferenceFactoryRoot(ReferenceFactory), ReferenceCallRoot(ReferenceCall), ReferenceReferentQueries(ReferentQueries), ReferenceQueryOutput(OwnedQuerySources), SpecialMembers(Members),
         OperationTraits(Traits), Check(S, SM, Context),
         Graph(S, SM, Context, Members, Traits, UtilityTupleQueryMode::BindSignature, ParentBudget),
         Sources(Sources), Selections(Selections), SharedRootSources(SharedSources),
@@ -32843,6 +32904,7 @@ public:
       OwnedCallableRecord = ReferenceStorageRoot->Reference.ReferentType->getAsCXXRecordDecl();
     else if (OwnedQuerySources && !Storage.CallableType.isNull())
       OwnedCallableRecord = Storage.CallableType->getAsCXXRecordDecl();
+    if (MemberCallRoot && (!MemberFactoryRoot || MemberFactoryRoot != &MemberCallRoot->Member.Value.Factory)) return;
     if (MemberFactoryRoot) {
       Ready = !StandardFactoryRoot && !StandardCallRoot && !ReferenceStorageRoot && !ReferenceCallRoot &&
           !OwnedQuerySources && MemberOwnerQueries && Graph.bindFunctionalBindMetadata(Storage,
@@ -32851,7 +32913,7 @@ public:
               [this](const CallExpr *Call) { return callSource(Call); },
               [this](const DeclRefExpr *Reference) { return variableSource(Reference); },
               [this](const CXXConstructExpr *Expression) { return incomingTupleConstructionSource(Expression); },
-              nullptr, nullptr, nullptr, MemberFactoryRoot, MemberOwnerQueries);
+              nullptr, nullptr, nullptr, MemberFactoryRoot, MemberOwnerQueries, MemberCallRoot);
     } else if (StandardCallRoot) {
       Ready = !StandardFactoryRoot && !ReferenceStorageRoot && !ReferenceCallRoot && !OwnedQuerySources &&
           Graph.bindFunctionalBindMetadata(Storage,
@@ -34583,6 +34645,58 @@ bool approvedFunctionalBindMemberFactorySource(
           &*Fresh, &Selected).factory(Fresh->Factory)) return false;
   OwnerQueries.insert(Selected.begin(), Selected.end());
   return true;
+}
+
+// Complete the original factory and argument source in one bounded graph.
+// This never certifies the dispatcher, ordinary body, lifetime or runtime call.
+static bool functionalBindMemberArgumentSource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindMemberCommonCallSource &Call, const ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const CXXMethodDecl *> &OwnerQueries,
+    const std::function<bool(const TypedefNameDecl *)> &SourceAlias, bool Unwrap) {
+  const auto Fresh = freshFunctionalBindMemberCallSource(S, SM, Call.Selected.SourceCall, Call, Context);
+  if (!Fresh) return false;
+  std::set<const CXXMethodDecl *> Selected;
+  BindSourceProof Proof(S, SM, Context, Fresh->Selected.Storage, Sources, Selections, Members, Traits,
+      SourceAlias, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, false, nullptr, nullptr,
+      &Fresh->Member.Value.Factory, &Selected, &*Fresh);
+  if (!Proof.factory(Fresh->Member.Value.Factory.Factory) ||
+      !Proof.callGetSource(Fresh->Selected) || (Unwrap && !Proof.callUnwrapSource(Fresh->Selected))) return false;
+  auto Combined = OwnerQueries;
+  Combined.insert(Selected.begin(), Selected.end());
+  if (Combined.size() > 64) return false;
+  OwnerQueries = std::move(Combined);
+  return true;
+}
+
+bool approvedFunctionalBindMemberCallGetSource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindMemberCommonCallSource &Call, const ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const CXXMethodDecl *> &OwnerQueries,
+    const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
+  return functionalBindMemberArgumentSource(S, SM, Call, Context, Sources, Selections,
+      Members, Traits, OwnerQueries, SourceAlias, false);
+}
+
+bool approvedFunctionalBindMemberCallUnwrapSource(
+    const State &S, const SourceManager &SM,
+    const FunctionalBindMemberCommonCallSource &Call, const ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const CXXMethodDecl *> &OwnerQueries,
+    const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
+  return functionalBindMemberArgumentSource(S, SM, Call, Context, Sources, Selections,
+      Members, Traits, OwnerQueries, SourceAlias, true);
 }
 
 bool approvedFunctionalBindStandardFactorySource(
