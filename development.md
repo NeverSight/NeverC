@@ -59,8 +59,11 @@ Qualification passes all 188 x86/i386 frontend tests. Run
 checks and 210 operand/continuation negative controls. REP cases include dynamic
 realigned frames; DF=1 is a raw lowering probe, not a valid C ABI entry. Run
 `tests/verify-i386-cpuid-header.py --compiler NEVERC --backend-llc LLVM_LLC
---clang CLANG --linker LD_LLD --keep OUT` for 24 linked native/fallback/PIC/dialect
-objects, 384 availability/ABI comparisons and 24 ID-restoration negative controls.
+--clang CLANG --linker LD_LLD --keep OUT` for 32 linked native/fallback/PIC/dialect
+objects, 512 availability/ABI comparisons and 32 ID-restoration negative controls.
+Both NeverC and stock Clang run with automatic and forced-fallback feature
+selection. The merged dev compiler repeats all 188 frontend tests, both machine
+witnesses and the artifact global-state audit.
 No privileged instruction or port I/O executes in these witnesses.
 
 `python3 utils/plugin-api/check-global-state.py --build-dir build-neverc
