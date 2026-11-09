@@ -3371,7 +3371,7 @@ or physical MPX; the NeverD software MPX owner is tested separately.
 
 NeverC now has an i386 Linux source target with an ILP32 data model, 12-byte
 x87 `long double`, four-byte alignment for `double` and `long long`, and a
-pointer `va_list`. [SysV32.cpp](neverc/lib/Emit/Target/X86/SysV32.cpp) owns its argument and return
+pointer `va_list`. [ABI32.cpp](neverc/lib/Emit/Target/X86/ABI32.cpp) owns its argument and return
 classification, including hidden record returns, by-value stack records,
 register parameters and callee stack cleanup. Legacy CPU defaults no longer
 inherit long-mode macros or mandatory SSE2. The built-in target route records
@@ -3386,7 +3386,7 @@ Long-mode calls and invalid constant address controls fail during semantic
 checking. The generated intrinsic signatures and immediate attributes are
 maintained by [the intrinsic synchronizer](utils/lint/sync-x86-native-intrinsics.py).
 
-NeverC can emit i386 ELF objects and assembly directly when an explicit full
+NeverC can emit i386 ELF, COFF and Mach-O objects and assembly when an explicit full
 NeverSight LLVM backend is selected. Its normal frontend and optimization
 pipeline runs first; the backend receives verified LLVM IR in a private
 workspace. No LLVM C++ objects cross the process boundary:
@@ -3400,7 +3400,7 @@ The full fork must answer `--neversight-codegen-protocol` with
 `neversight-codegen-v1 x86`. Its strict `--neversight-codegen` mode rejects
 unknown reserved `llvm.*` names instead of lowering them to external calls.
 The adapter enables machine verification and validates a complete little-endian
-ELF32 `EM_386` relocatable object before publishing it. Bitcode
+32-bit i386 relocatable object in the requested format before publishing it. Bitcode
 input, `-S`, AT&T/Intel assembly, optimization level, CPU/features, code model,
 section options and ordinary DWARF use the same route. The full fork also assembles complete
 Intel OFFSET expressions while retaining i386 GOTPC relocations, so PIC
@@ -3427,9 +3427,41 @@ this entry point before their independent runtime/state oracles. The far-pointer
 fixture also qualifies protected code16 with its existing 32-bit stack/pointer
 ABI; this is not a 16-bit C data model or real/VM86 execution contract.
 
-The source route covers Linux ELF. Other 32-bit platforms and register
-conventions such as fastcall/vectorcall are not enabled. There is no bundled
-i386 runtime or sysroot; this is not a claim of a complete 32-bit toolchain.
+The source route covers Linux ELF, Windows MSVC COFF and Darwin Mach-O.
+The common i386 classifier keeps their data models and calling conventions
+separate: Windows uses an eight-byte `long double` and integer returns for
+small floating records, while Darwin uses 16-byte x87 storage and its vector
+return/stack rules. Windows fastcall is supported; vectorcall remains rejected.
+The frontend's builtin target routes own platform admission, and the explicit
+backend validates the returned object's architecture, address size and exact
+format. There is no bundled i386 runtime or sysroot; integrated linking and
+the embedded 32-bit machine backend remain unavailable.
+
+[MicrosoftStructLayout.cpp](neverc/lib/Tree/Type/MicrosoftStructLayout.cpp)
+owns Microsoft C record layout, including separate bitfield allocation units,
+zero-width fields, union alignment and explicit alignment through packing.
+The same tree layout supplies record IR emission. Wide `_BitInt` memory types
+follow the tree's size, including 12-byte i386 arrays whose LLVM integer type
+would otherwise have a 16-byte allocation size. Loads, stores, constants and
+variadic reads share the scalar storage conversion.
+
+`verify_i386_platform_abi.py --neverc NEVERC --clang FULL_CLANG --llc LLVM_LLC
+--output OUT` executes actual ELF32, COFF32 and Mach-O32 objects at O0/O2 with
+Clang/NeverC callers and callees, checks register and stack preservation, and
+compares signed/unsigned wide integer constant arrays. It runs surrounding C
+code in Unicorn, without claiming platform OS or hardware event execution.
+`verify_i386_platform_driver.py --neverc NEVERC --llvm-bin LLVM_BIN --output OUT`
+checks objects, both assembly dialects, bitcode imports and rejection of missing
+backends, mismatched object formats and integrated linking.
+`verify_ms_record_layout.py --neverc NEVERC --clang FULL_CLANG --output OUT`
+compares record size, alignment and trailing-field offset against Clang across
+packing, explicit alignment, bitfields, nesting and platform data models.
+
+The full LLVM fork also fixes i386 callee cleanup counting: the callee pops
+actual argument bytes, while the caller owns alignment padding. Both the DAG
+and fast selectors follow the same count. Clang's Windows `va_arg` classifier
+now treats unnamed over-aligned records as stack values and unnamed vectors as
+pointers, matching the corresponding call arguments.
 
 `tests/neverc/X86/verify_i386_abi.py --neverc NEVERC --llvm-bin LLVM_BIN
 --clang FULL_CLANG --output OUT` cross-links NeverC and Clang callers/callees

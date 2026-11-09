@@ -6,7 +6,8 @@ oracle checks exact operands, memory ordering, retention and saved registers;
 it does not emulate processor history, descriptor loading or TLB broadcasts.
 Requires capstone, lief and unicorn. --llc covers both LLVM code modes;
 --backend-llc uses the external driver for i386 and NeverC IR through llc
-for x64; the external driver intentionally accepts Linux i386 targets only.
+for x64; --all-i386-platforms also executes ELF32, COFF32 and Mach-O32
+through the explicit external backend.
 """
 
 import argparse

@@ -161,11 +161,35 @@ def object_code(path, base):
         slot=index if elf else index+1
         if slot not in offsets:
             continue
+        if not elf and not coff:
+            # Decode relocation sites from their owning section's table.
+            # LIEF's address accessor uses the referenced section's file
+            # offset for local VANILLA entries, which is not the fixup site.
+            raw = path.read_bytes()
+            symbols_by_index = list(image.symbols)
+            for i in range(section.numberof_relocations):
+                first, second = struct.unpack_from("<II",raw,section.relocation_offset+8*i)
+                scattered = bool(first & 0x80000000)
+                address = first & 0xffffff if scattered else first
+                pc_relative = bool(first & 0x40000000) if scattered else bool(second & 0x1000000)
+                length = (first>>28)&3 if scattered else (second>>25)&3
+                kind = (first>>24)&15 if scattered else second>>28
+                external = not scattered and bool(second & 0x8000000)
+                assert kind == 0 and length == 2 and address+4 <= section.size,(path,kind,length,address)
+                offset = offsets[slot]+address
+                value = struct.unpack_from("<I",blob,offset)[0]
+                if external:
+                    value += base+symbol_offset(symbols_by_index[second & 0xffffff])
+                    if pc_relative:value -= base
+                elif not pc_relative:
+                    # Sections retain their relative VAs, including scattered
+                    # references with an addend inside a local symbol.
+                    value += base
+                struct.pack_into("<I",blob,offset,value&0xffffffff)
+            continue
         relocs = [r for r in image.relocations if r.has_section and r.section == section] if elf else section.relocations
         for relocation in relocs:
             offset=offsets[slot]+relocation.address
-            if not elf and not coff:
-                offset=offsets[slot]+relocation.address-section.offset
             value=struct.unpack_from("<I",blob,offset)[0]
             if elf:
                 target=base+symbol_offset(relocation.symbol)
@@ -177,18 +201,6 @@ def object_code(path, base):
                 if relocation.type==lief.COFF.Relocation.TYPE.I386_DIR32:value+=target
                 elif relocation.type==lief.COFF.Relocation.TYPE.I386_REL32:value+=target-base-offset-4
                 else:raise AssertionError((path,"unbound COFF relocation",relocation))
-            else:
-                assert int(relocation.type)==0 and relocation.size==32,(path,relocation)
-                if relocation.is_scattered:
-                    # All Mach-O sections retain their original relative VAs.
-                    # Scattered VANILLA references therefore move by the same
-                    # load bias; an intra-image PC-relative delta is unchanged.
-                    assert 0 <= relocation.value < REGION
-                    if not relocation.pc_relative:value+=base
-                elif relocation.has_symbol:
-                    value+=base+symbol_offset(relocation.symbol)
-                    if relocation.pc_relative:value-=base
-                elif not relocation.pc_relative:value+=base
             struct.pack_into("<I",blob,offset,value&0xffffffff)
     return bytes(blob), symbols
 
