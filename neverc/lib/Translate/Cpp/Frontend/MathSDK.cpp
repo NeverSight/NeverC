@@ -21729,6 +21729,61 @@ static bool functionalBindInertReferenceCallableIdentity(
 static bool functionalBindInertStandardCallableSourceIdentity(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record);
 
+// Inert producer identities only. These functions must never request a
+// definition, layout, special member or body. Consumers close those separately.
+static bool functionalBindInertMemberOwnerSourceIdentity(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Owner,
+    const ASTContext &Context) {
+  if (!Owner || Owner->isInvalidDecl() || Owner->isDependentContext() ||
+      !S.owns(SM, Owner->getLocation()) || Owner->isUnion() || Owner->isLambda() ||
+      isa<ClassTemplateSpecializationDecl>(Owner) || Owner->getDescribedClassTemplate()) return false;
+  unsigned Attributes = 0;
+  for (const auto *Attribute : Owner->attrs()) {
+    const auto *Inheritance = dyn_cast<MSInheritanceAttr>(Attribute);
+    if (++Attributes > 64 || !Context.getTargetInfo().getCXXABI().isMicrosoft() ||
+        !Inheritance || !Inheritance->isImplicit() ||
+        Inheritance->getInheritanceModel() != MSInheritanceModel::Single) return false;
+  }
+  return true;
+}
+static bool functionalBindInertMemberReceiverSourceIdentity(
+    const State &S, const SourceManager &SM, QualType Type,
+    const ASTContext &Context) {
+  if (Type.isNull()) return false;
+  Type = Type.getNonReferenceType();
+  return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+      Type.getAddressSpace() == LangAS::Default && !Type->isDependentType() &&
+      functionalBindInertMemberOwnerSourceIdentity(S, SM, Type->getAsCXXRecordDecl(), Context);
+}
+static bool functionalBindInertMemberCallableSourceIdentity(
+    const State &S, const SourceManager &SM, QualType Type,
+    const ASTContext &Context) {
+  if (Type.isNull()) return false;
+  Type = Type.getNonReferenceType();
+  if (Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default || Type->isDependentType()) return false;
+  const auto *Member = Type->getAs<MemberPointerType>();
+  if (!Member || !functionalBindInertMemberOwnerSourceIdentity(
+          S, SM, Member->getClass()->getAsCXXRecordDecl(), Context)) return false;
+  auto Scalar = [](QualType T) {
+    if (T.isNull()) return false;
+    T = T.getNonReferenceType();
+    return !T.isVolatileQualified() && !T.isRestrictQualified() &&
+        T.getAddressSpace() == LangAS::Default && !T->isDependentType() && !T->isArrayType() &&
+        (T->isIntegralOrEnumerationType() || T->isSpecificBuiltinType(BuiltinType::Float) ||
+         T->isSpecificBuiltinType(BuiltinType::Double) || T->isNullPtrType() ||
+         (T->isPointerType() && T->getPointeeType()->isObjectType()));
+  };
+  const auto Pointee = Member->getPointeeType();
+  const auto *Prototype = Pointee->getAs<FunctionProtoType>();
+  if (!Prototype) return Scalar(Pointee);
+  if (Prototype->isVariadic() || Prototype->getNumParams() > 7 ||
+      (!Prototype->getReturnType()->isVoidType() && !Scalar(Prototype->getReturnType()))) return false;
+  for (const auto Parameter : Prototype->param_types())
+    if (!Scalar(Parameter)) return false;
+  return true;
+}
+
 bool shouldRetainFunctionalBindSpecialMemberSource(
     const State &S, const SourceManager &SM, const CXXMethodDecl *Method) {
   if (!S.coreV2() || !Method || S.owns(SM, Method->getLocation()) ||
@@ -21791,7 +21846,9 @@ bool shouldRetainFunctionalBindSpecialMemberSource(
         !Input.isVolatileQualified() && !Input.isRestrictQualified() &&
         Input.getAddressSpace() == LangAS::Default && Owned &&
         functionalBindInertStandardCallableSourceIdentity(S, SM, Owned);
-    return (Input->isFunctionPointerType() || Input->isFunctionType() ||
+    const bool MemberIdentity = functionalBindInertMemberCallableSourceIdentity(
+        S, SM, Input, Method->getASTContext());
+    return (Input->isFunctionPointerType() || Input->isFunctionType() || MemberIdentity ||
             OwnedIdentity || BorrowedIdentity || StandardIdentity) &&
         (!Constructor || Constructor->isCopyOrMoveConstructor());
   }
@@ -26643,11 +26700,19 @@ bool retainFunctionalBindConstraintRoot(
     return R && R->getIdentifier() && R->getName() == "reference_wrapper" &&
         R->getTemplateArgs().size() == 1 &&
         R->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
-        Scalar(R->getTemplateArgs()[0].getAsType()) &&
+        (Scalar(R->getTemplateArgs()[0].getAsType()) ||
+         functionalBindInertMemberReceiverSourceIdentity(S, SM, R->getTemplateArgs()[0].getAsType(),
+                                                        Template->getASTContext())) &&
         Check.family(R, {"__functional/reference_wrapper.h", "__fwd/functional.h"});
   };
+  // Evidence retention only: no definition, layout, special-member or body
+  // request is allowed from this producer callback. The consuming member bind
+  // proof must still identify its exact owner, field, operation and lifetime.
+  auto MemberReceiverIdentity = [&](QualType T) {
+    return functionalBindInertMemberReceiverSourceIdentity(S, SM, T, Template->getASTContext());
+  };
   auto Capture = [&](QualType T) {
-    return Scalar(T) || Reference(T) ||
+    return Scalar(T) || Reference(T) || MemberReceiverIdentity(T) ||
         describeFunctionalBindPlaceholderIdentity(S, SM, T, Template->getASTContext()).has_value() ||
         (functionalBindInertObjectSourceIdentity(S, SM, T, Template->getASTContext()) ||
         functionalBindInertReferenceObjectSourceIdentity(S, SM, T, Template->getASTContext()) ||
@@ -26680,6 +26745,8 @@ bool retainFunctionalBindConstraintRoot(
     // layout or special member while its queries are being computed. The
     // consuming bind graph must bind the exact original source occurrence,
     // admitted storage, selected operations and ordinary body/lifetime.
+    if (functionalBindInertMemberCallableSourceIdentity(
+            S, SM, T, Template->getASTContext())) return true;
     const auto *Owned = T->getAsCXXRecordDecl();
     if (Owned && !Owned->isInvalidDecl() && !Owned->isUnion() && !Owned->isLambda() &&
         !Owned->hasAttrs() && !isa<ClassTemplateSpecializationDecl>(Owned) &&
@@ -31133,7 +31200,9 @@ class BindSourceProof {
                 Check.family(Function, {"__functional/bind.h"})) {
               const auto *Call = dyn_cast<CallExpr>(Expression);
               const auto Factory = Call
-                  ? (StandardFactoryRoot && Call == StandardFactoryRoot->SourceCall
+                  ? (MemberFactoryRoot && Call == MemberFactoryRoot->Factory.SourceCall
+                      ? freshFactorySource(MemberFactoryRoot->Factory)
+                      : StandardFactoryRoot && Call == StandardFactoryRoot->SourceCall
                       ? freshFactorySource(*StandardFactoryRoot)
                       : ReferenceFactoryRoot && Call == ReferenceFactoryRoot->Factory.SourceCall
                           ? freshFactorySource(ReferenceFactoryRoot->Factory)
@@ -31400,7 +31469,8 @@ class BindSourceProof {
         !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
     const auto Actual = freshFactorySource(Factory);
     const auto Construction = Actual
-        ? (StandardFactoryRoot ? describeFunctionalBindStandardTupleConstructionSource(S, SM, *Actual, Context)
+        ? (MemberFactoryRoot ? describeFunctionalBindMemberTupleConstructionSource(S, SM, *MemberFactoryRoot, Context)
+            : StandardFactoryRoot ? describeFunctionalBindStandardTupleConstructionSource(S, SM, *Actual, Context)
             : ReferenceFactoryRoot ? describeFunctionalBindReferenceTupleConstructionSource(S, SM, *Actual, Context)
                                    : describeFunctionalBindTupleConstructionSource(S, SM, *Actual, Context)) : std::nullopt;
     if (!Actual || !Construction || !sameFunctionalBindPlaceholderOperands(*Actual, Factory) ||
