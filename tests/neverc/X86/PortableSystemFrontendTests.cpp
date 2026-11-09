@@ -81,7 +81,7 @@ TEST_F(X86PortableSystemTest, TranslationControlRejectsWrongCodeMode) {
         {std::string("--target=") + Triple, "-fsyntax-only", Source.string()});
     EXPECT_NE(Result.exitCode, 0) << Result.err;
     EXPECT_NE(Result.err.find(Triple[0] == 'x' ? "requires a 32-bit x86 target"
-                                               : "unknown builtin"),
+                                               : "use of undeclared identifier"),
               std::string::npos)
         << Result.err;
   }
