@@ -237,6 +237,7 @@ def main():
     for x in ("neverc", "clang", "llc", "output"):
         ap.add_argument("--"+x, required=True, type=Path)
     ap.add_argument("--platform", choices=tuple(TRIPLES), action="append")
+    ap.add_argument("--reference-only", action="store_true")
     a=ap.parse_args(); a.output.mkdir(parents=True, exist_ok=True)
     sources_text = sources(); records=[]; results=[]; controls=0
     for role, text in zip(("producer", "consumer"), sources_text[:2]):
@@ -250,7 +251,7 @@ def main():
         triple=TRIPLES[platform]
         for opt in ("O0","O2"):
             objects={}
-            for compiler in ("clang","neverc"):
+            for compiler in (("clang",) if a.reference_only else ("clang","neverc")):
                 common=[getattr(a,compiler),"--target="+triple,"-"+opt,"-std=gnu23","-ffreestanding","-fno-lto","-fno-stack-protector","-fno-pic","-fno-pie","-msse2","-fno-vectorize","-fno-slp-vectorize"]
                 if compiler=="neverc":common += ["-fno-builtin-mimalloc","-fllvm-backend="+str(a.llc)]
                 for role in ("producer","consumer"):
@@ -261,9 +262,11 @@ def main():
             for name,cc,key in sources_text[2]:
                 if cc=="fastcall" and platform!="windows":continue
                 expected_layout=layout(objects["clang","producer"],name)
-                assert layout(objects["neverc","producer"],name)==expected_layout,(platform,name,"layout mismatch")
+                if not a.reference_only:
+                    assert layout(objects["neverc","producer"],name)==expected_layout,(platform,name,"layout mismatch")
                 size,align,mask=expected_layout
-                for caller,callee in (("clang","clang"),("clang","neverc"),("neverc","clang"),("neverc","neverc")):
+                for caller,callee in ((("clang","clang"),) if a.reference_only else
+                                      (("clang","clang"),("clang","neverc"),("neverc","clang"),("neverc","neverc"))):
                     left,right=objects[caller,"consumer"],objects[callee,"producer"]
                     for seed in SEEDS:
                         try: replay(left,right,key,name,size,mask,seed)

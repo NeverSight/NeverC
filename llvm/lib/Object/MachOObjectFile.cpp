@@ -2595,7 +2595,7 @@ StringRef MachOObjectFile::getFileFormatName() const {
 Triple::ArchType MachOObjectFile::getArch(uint32_t CPUType,
                                           uint32_t CPUSubType) {
   switch (CPUType) {
-  case MachO::CPU_TYPE_I386:
+  case MachO::CPU_TYPE_X86:
     return Triple::x86;
   case MachO::CPU_TYPE_X86_64:
     return Triple::x86_64;
