@@ -141,22 +141,31 @@ void Mangler::getNameWithPrefix(raw_ostream &OS, const GlobalValue *GV,
 
   CallingConv::ID CC =
       MSFunc ? MSFunc->getCallingConv() : (unsigned)CallingConv::C;
-  if (CC != CallingConv::X86_VectorCall)
+  if (!DL.hasMicrosoftFastStdCallMangling() &&
+      CC != CallingConv::X86_VectorCall)
     MSFunc = nullptr;
-  if (MSFunc)
-    Prefix = '\0'; // vectorcall functions have no prefix.
+  if (MSFunc) {
+    if (CC == CallingConv::X86_FastCall)
+      Prefix = '@';
+    else if (CC == CallingConv::X86_VectorCall)
+      Prefix = '\0';
+  }
 
   getNameWithPrefixImpl(OS, Name, PrefixTy, DL, Prefix);
 
   if (!MSFunc)
     return;
 
-  // Vectorcall functions use a double @ suffix: @Name@N where N is the
-  // cumulative byte size of all parameters.
-  OS << '@';
+  // The full fork's 32-bit Microsoft decoration also applies to IR-only
+  // source output and linker directives in the trimmed compiler.
+  if (CC == CallingConv::X86_VectorCall)
+    OS << '@';
   FunctionType *FT = MSFunc->getFunctionType();
-  if (!FT->isVarArg() || FT->getNumParams() == 0 ||
-      (FT->getNumParams() == 1 && MSFunc->hasStructRetAttr()))
+  const bool Suffix = CC == CallingConv::X86_StdCall ||
+                      CC == CallingConv::X86_FastCall ||
+                      CC == CallingConv::X86_VectorCall;
+  if (Suffix && (!FT->isVarArg() || FT->getNumParams() == 0 ||
+                 (FT->getNumParams() == 1 && MSFunc->hasStructRetAttr())))
     addByteCountSuffix(OS, MSFunc, DL);
 }
 

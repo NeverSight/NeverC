@@ -106,23 +106,71 @@ def sources():
     return "".join(producer), "".join(consumer), profiles
 
 
-def object_code(path):
+def object_code(path, base):
     image = lief.parse(str(path))
-    text = [s for s in image.sections if s.name in (".text", "__text") and s.content]
-    assert len(text) == 1, (path, "code section")
-    text = text[0]
-    if isinstance(image, lief.ELF.Binary):
-        assert not any(r.has_section and r.section.name == ".text" for r in image.relocations), (path, "ELF relocation")
-        base = 0
-    else:
-        assert not list(text.relocations), (path, "code relocation")
-        base = text.virtual_address if isinstance(image, lief.MachO.Binary) else 0
+    sections = list(image.sections)
+    elf, coff = isinstance(image, lief.ELF.Binary), isinstance(image, lief.COFF.Binary)
+    blob = bytearray(REGION)
+    offsets = {}
+    cursor = 0
+    for index, section in enumerate(sections):
+        if elf and not (int(section.flags) & 2):
+            continue
+        if coff and section.name.startswith((".debug", "/")):
+            continue
+        if not section.size and not section.content:
+            continue
+        offset = cursor if elf or coff else section.virtual_address
+        offsets[index if elf else index+1] = offset
+        blob[offset:offset+len(section.content)] = bytes(section.content)
+        cursor = (offset+max(section.size,len(section.content))+PAGE-1)&-PAGE
+    assert cursor < REGION-PAGE
+    # Independent cdecl byte-copy helper for compiler-emitted memcpy calls.
+    memcpy = REGION-PAGE
+    helper = bytes.fromhex("56578b44240c89c78b7424108b4c2414fcf3a45f5ec3")
+    blob[memcpy:memcpy+len(helper)] = helper
+
+    def symbol_offset(symbol):
+        index = symbol.shndx if elf else symbol.section_idx if coff else symbol.numberof_sections
+        if index:
+            return offsets[index]+symbol.value if elf or coff else symbol.value
+        assert symbol.name.lstrip("_") == "memcpy", (path,"unbound symbol",symbol.name)
+        return memcpy
+
     symbols = {}
     for symbol in image.symbols:
         name = re.sub(r"^[_@]|@\d+$", "", symbol.name)
         if name.startswith(("callee_", "caller_", "layout_")):
-            symbols[name] = symbol.value - base
-    return bytes(text.content), symbols
+            symbols[name] = symbol_offset(symbol)
+
+    for index, section in enumerate(sections):
+        slot=index if elf else index+1
+        if slot not in offsets:
+            continue
+        relocs = [r for r in image.relocations if r.has_section and r.section == section] if elf else section.relocations
+        for relocation in relocs:
+            offset=offsets[slot]+relocation.address
+            if not elf and not coff:
+                offset=offsets[slot]+relocation.address-section.offset
+            value=struct.unpack_from("<I",blob,offset)[0]
+            if elf:
+                target=base+symbol_offset(relocation.symbol)
+                if relocation.type==lief.ELF.Relocation.TYPE.X86_32:value+=target
+                elif relocation.type in (lief.ELF.Relocation.TYPE.X86_PC32,lief.ELF.Relocation.TYPE.X86_PLT32):value+=target-base-offset
+                else:raise AssertionError((path,"unbound ELF relocation",relocation))
+            elif coff:
+                target=base+symbol_offset(relocation.symbol)
+                if relocation.type==lief.COFF.Relocation.TYPE.I386_DIR32:value+=target
+                elif relocation.type==lief.COFF.Relocation.TYPE.I386_REL32:value+=target-base-offset-4
+                else:raise AssertionError((path,"unbound COFF relocation",relocation))
+            else:
+                assert not relocation.is_scattered and int(relocation.type)==0 and relocation.size==32,(path,relocation)
+                if relocation.has_symbol:
+                    value+=base+symbol_offset(relocation.symbol)
+                    if relocation.pc_relative:value-=base
+                elif not relocation.pc_relative:value+=base
+            struct.pack_into("<I",blob,offset,value&0xffffffff)
+    return bytes(blob), symbols
 
 
 def machine(left, right=None):
@@ -154,8 +202,8 @@ def call(u, entry, args, seed=0):
 
 
 def layout(obj, name):
-    u = machine(obj)
-    call(u, CODE + obj[1]["layout_"+name], [DATA, DATA+256])
+    u = machine((b"", {}), obj)
+    call(u, PEER + obj[1]["layout_"+name], [DATA, DATA+256])
     size, align = struct.unpack("<II", u.mem_read(DATA, 8))
     assert 0 < size <= 128 and align <= 64
     return size, align, bytes(u.mem_read(DATA+256, size))
@@ -209,7 +257,7 @@ def main():
                     stem=f"{platform}-{compiler}-{role}-{opt}"
                     path=a.output/(stem+".o")
                     run(common+["-c",a.output/(role+".c"),"-o",path],stem)
-                    objects[compiler,role]=object_code(path)
+                    objects[compiler,role]=object_code(path, PEER if role=="producer" else CODE)
             for name,cc,key in sources_text[2]:
                 if cc=="fastcall" and platform!="windows":continue
                 expected_layout=layout(objects["clang","producer"],name)

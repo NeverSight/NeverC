@@ -170,7 +170,7 @@ const char *DataLayout::getManglingComponent(const Triple &T) {
     return "-m:o";
 
   if ((T.isOSWindows() || T.isUEFI()) && T.isOSBinFormatCOFF())
-    return "-m:w";
+    return T.getArch() == Triple::x86 ? "-m:x" : "-m:w";
   return "-m:e";
 }
 
@@ -535,6 +535,9 @@ Error DataLayout::parseSpecifier(StringRef Desc) {
         break;
       case 'm':
         ManglingMode = MM_Mips;
+        break;
+      case 'x':
+        ManglingMode = MM_WinCOFFX86;
         break;
       case 'w':
         ManglingMode = MM_WinCOFF;
