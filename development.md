@@ -3485,3 +3485,29 @@ advances the slot by pointer size. The interoperation witness includes 65- and
 97-bit variadic values, `va_copy`, and trailing scalar arguments; it requires
 that Clang fix, not a stock Clang with the incorrect reader. Clang's focused
 regression also checks Windows i386 and preserves direct integer/record slots.
+
+### i386 platform qualification (2026-11-09)
+
+The three-format mixed-call witness passes 12,624 value/ABI comparisons and
+9,348 corruption controls at O0/O2. The record-layout witness passes 6,480
+size/alignment/trailing-offset comparisons across 432 records and five target
+triples, including Windows x64/AArch64 regression coverage. The driver witness
+passes six target/optimization profiles, all four i386/i486/i586/i686 Darwin
+aliases and 15 rejection controls. The required full LLVM fork is
+[`e7c81b978b44`](https://github.com/NeverSight/llvm-project/commit/e7c81b978b440561583eeb43771cb9d486e3f8ff),
+which includes both callee-pop selectors and the Clang variadic fixes above.
+
+Native Linux checks pass 2,560,000 mixed-ABI comparisons, 884,736 intrinsic-header
+checks and 100,000 backend checks. The expanded bounded-system witness passes
+1,152 checks over 184 profiles with 62 negative controls. Recompiling NeverD's
+unchanged VMFUNC exports through all three formats produces 848 objects,
+2,544 controlled comparisons and 4,728 rejected corruptions. These last two
+witnesses intercept privileged instructions; they do not execute their physical
+system effects or qualify operating-system services.
+
+The selected x86/type regression suite passes 205 tests, with three DynCode
+tests skipped because this Linux host lacks their loader. All four builtin
+target-provider tests pass. The strict linked-compiler global-state audit has
+zero findings and zero unscannable inputs. These results qualify the stated
+source and ABI routes; vectorcall, the embedded i386 backend, bundled runtime,
+integrated linking and full-machine event/state completion remain separate.
