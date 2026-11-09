@@ -41,6 +41,8 @@ protected:
 
   CharUnits Alignment;
 
+  CharUnits RequiredAlignment;
+
   CharUnits UnpackedAlignment;
 
   CharUnits UnadjustedAlignment;
@@ -73,6 +75,7 @@ protected:
 
   explicit ItaniumRecordLayoutBuilder(const TreeContext &Context)
       : Context(Context), Size(0), Alignment(CharUnits::One()),
+        RequiredAlignment(CharUnits::Zero()),
         UnpackedAlignment(CharUnits::One()),
         UnadjustedAlignment(CharUnits::One()), UseExternalLayout(false),
         InferAlignment(false), Packed(false), IsUnion(false), IsMsStruct(false),
@@ -143,8 +146,11 @@ void ItaniumRecordLayoutBuilder::InitializeLayout(const Decl *D) {
   if (const MaxFieldAlignmentAttr *MFAA = D->getAttr<MaxFieldAlignmentAttr>())
     MaxFieldAlignment = Context.toCharUnitsFromBits(MFAA->getAlignment());
 
-  if (unsigned MaxAlign = D->getMaxAlignment())
+  if (unsigned MaxAlign = D->getMaxAlignment()) {
     UpdateAlignment(Context.toCharUnitsFromBits(MaxAlign));
+    if (Context.getTargetInfo().getTriple().isWindowsMSVCEnvironment())
+      RequiredAlignment = Context.toCharUnitsFromBits(MaxAlign);
+  }
 }
 
 void ItaniumRecordLayoutBuilder::Layout(const RecordDecl *D) {
@@ -504,6 +510,21 @@ void ItaniumRecordLayoutBuilder::LayoutField(const FieldDecl *D) {
   else
     FieldAlign = UnpackedFieldAlign;
 
+  if (Context.getTargetInfo().getTriple().isWindowsMSVCEnvironment()) {
+    CharUnits Required = MaxAlignmentInChars;
+    if (Context.isAlignmentRequired(D->getType()))
+      Required = std::max(Required, TI.Align);
+    if (const auto *RT =
+            Context.getBaseElementType(D->getType())->getAs<RecordType>())
+      Required = std::max(
+          Required,
+          Context.getStructRecordLayout(RT->getDecl()).getRequiredAlignment());
+    RequiredAlignment = std::max(RequiredAlignment, Required);
+    // Explicit MS alignment survives pragma pack, including nested records.
+    FieldAlign = std::max(FieldAlign, Required);
+    UnpackedFieldAlign = std::max(UnpackedFieldAlign, Required);
+  }
+
   CharUnits AlignTo = FieldAlign;
   // Round up the current record size to the field's alignment boundary.
   FieldOffset = FieldOffset.alignTo(AlignTo);
@@ -714,7 +735,7 @@ TreeContext::getStructRecordLayout(const RecordDecl *D) const {
     Builder.Layout(D);
 
     NewEntry = new (*this) StructRecordLayout(
-        *this, Builder.getSize(), Builder.Alignment,
+        *this, Builder.getSize(), Builder.Alignment, Builder.RequiredAlignment,
         Builder.UnadjustedAlignment, Builder.getSize(), Builder.FieldOffsets);
   }
 
@@ -751,10 +772,12 @@ void StructRecordLayout::Destroy(TreeContext &Ctx) {
 
 StructRecordLayout::StructRecordLayout(const TreeContext &Ctx, CharUnits size,
                                        CharUnits alignment,
+                                       CharUnits requiredAlignment,
                                        CharUnits unadjustedAlignment,
                                        CharUnits datasize,
                                        llvm::ArrayRef<uint64_t> fieldoffsets)
     : Size(size), DataSize(datasize), Alignment(alignment),
+      RequiredAlignment(requiredAlignment),
       UnadjustedAlignment(unadjustedAlignment) {
   FieldOffsets.append(Ctx, fieldoffsets.begin(), fieldoffsets.end());
 }

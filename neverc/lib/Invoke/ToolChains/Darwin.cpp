@@ -35,6 +35,7 @@ darwin::getArchTypeForMachOArchName(llvm::StringRef Str) {
   // translation.
 
   return llvm::StringSwitch<llvm::Triple::ArchType>(Str)
+      .Case("i386", llvm::Triple::x86)
       .Case("x86_64", llvm::Triple::x86_64)
       .Case("arm64", llvm::Triple::aarch64)
       .Default(llvm::Triple::UnknownArch);

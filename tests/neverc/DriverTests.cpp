@@ -790,7 +790,7 @@ TEST_F(DriverTest, RejectUnsupportedTargets) {
       {"armv7", "armv7-unknown-linux-gnueabi"},
       {"riscv64", "riscv64-unknown-linux-gnu"},
       {"mips64", "mips64-unknown-linux-gnu"},
-      {"i386_windows", "i386-pc-windows-msvc"},
+      {"i386_mingw", "i386-pc-windows-gnu"},
       {"arm64ec", "arm64ec-windows-msvc"},
       {"arm64e", "arm64e-apple-darwin"},
       {"aarch64_be", "aarch64_be-linux-gnu"},

@@ -172,7 +172,7 @@ int main(void) {
     reject(["-flto"], "lto", "cannot be combined")
     reject(["-mllvm", "-verify-machineinstrs"], "mllvm", "cannot be combined")
     reject(["-g", "-gsplit-dwarf"], "split-dwarf", "does not accept")
-    reject(["--target=x86_64-unknown-linux-gnu"], "wrong-target", "Linux i386")
+    reject(["--target=x86_64-unknown-linux-gnu"], "wrong-target", "supported i386")
     reject(["-fllvm-backend=/missing/full/llvm/llc"], "missing", "doesn't exist")
     unknown = out / "unknown.c"
     unknown.write_text(
@@ -193,7 +193,7 @@ int main(void) {
         (
             "wrong-object",
             f"shutil.copyfile({str(host)!r}, sys.argv[sys.argv.index('-o') + 1])",
-            "not an i386 ELF",
+            "not an i386 relocatable",
         ),
         ("no-object", "sys.exit(0)", "produced no output"),
     ):

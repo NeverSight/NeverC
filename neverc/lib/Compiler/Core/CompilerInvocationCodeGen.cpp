@@ -1,4 +1,5 @@
 #include "Core/CompilerInvocationArg.h"
+#include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/Frontend/Debug/Options.h"
 #include "llvm/IR/DebugInfoMetadata.h"
@@ -262,10 +263,10 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
   if (const Arg *A = Args.getLastArg(OPT_fllvm_backend_EQ)) {
     Opts.FullLLVMBackend = A->getValue();
     if (Opts.FullLLVMBackend.empty() || T.getArch() != llvm::Triple::x86 ||
-        T.getOS() != llvm::Triple::Linux || T.isAndroid()) {
+        !plugin::findBuiltinTargetRoute(T.str())) {
       Diags.Report(diag::err_drv_invalid_value)
           << A->getAsString(Args)
-          << "requires a nonempty llc path and a Linux i386 target";
+          << "requires a nonempty llc path and a supported i386 target";
     }
   }
 

@@ -373,7 +373,7 @@ public:
   }
 };
 
-// Linux i386 System V data model. Instruction selection is supplied by the
+// Base i386 System V data model. Instruction selection is supplied by the
 // full LLVM fork until the embedded backend regains 32-bit support.
 class LLVM_LIBRARY_VISIBILITY X86_32TargetInfo : public X86TargetInfo {
 public:
@@ -427,6 +427,60 @@ public:
   bool hasBitIntType() const override { return true; }
   size_t getMaxBitIntWidth() const override {
     return llvm::IntegerType::MAX_INT_BITS;
+  }
+};
+
+// Platform data models share the i386 builtin and register-width authority.
+class LLVM_LIBRARY_VISIBILITY DarwinI386TargetInfo
+    : public DarwinTargetInfo<X86_32TargetInfo> {
+public:
+  DarwinI386TargetInfo(const llvm::Triple &Triple, const TargetOptions &Opts)
+      : DarwinTargetInfo<X86_32TargetInfo>(Triple, Opts) {
+    LongDoubleWidth = LongDoubleAlign = 128;
+    SizeType = UnsignedLong;
+    IntPtrType = SignedLong;
+    HasAlignMac68kSupport = true;
+    resetDataLayout("e-m:o-p:32:32-p270:32:32-p271:32:32-p272:64:64-"
+                    "i128:128-f64:32:64-f80:128-n8:16:32-S128",
+                    "_");
+  }
+
+  bool handleTargetFeatures(std::vector<std::string> &Features,
+                            DiagnosticsEngine &Diags) override {
+    if (!DarwinTargetInfo<X86_32TargetInfo>::handleTargetFeatures(Features,
+                                                                  Diags))
+      return false;
+    MaxVectorAlign = hasFeature("avx512f") ? 512
+                     : hasFeature("avx")   ? 256
+                                           : 128;
+    return true;
+  }
+};
+
+class LLVM_LIBRARY_VISIBILITY MicrosoftX86_32TargetInfo
+    : public WindowsTargetInfo<X86_32TargetInfo> {
+public:
+  MicrosoftX86_32TargetInfo(const llvm::Triple &Triple,
+                            const TargetOptions &Opts)
+      : WindowsTargetInfo<X86_32TargetInfo>(Triple, Opts) {
+    DoubleAlign = LongLongAlign = 64;
+    LongDoubleWidth = LongDoubleAlign = 64;
+    LongDoubleFormat = &llvm::APFloat::IEEEdouble();
+    resetDataLayout("e-m:x-p:32:32-p270:32:32-p271:32:32-p272:64:64-"
+                    "i64:64-i128:128-f80:128-n8:16:32-a:0:32-S32",
+                    "_");
+  }
+
+  void getTargetDefines(const LangOptions &Opts,
+                        MacroBuilder &Builder) const override {
+    WindowsTargetInfo<X86_32TargetInfo>::getTargetDefines(Opts, Builder);
+    Builder.defineMacro("_M_IX86", "600");
+  }
+
+  CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
+    if (CC == CC_X86FastCall)
+      return CCCR_OK;
+    return X86_32TargetInfo::checkCallingConvention(CC);
   }
 };
 

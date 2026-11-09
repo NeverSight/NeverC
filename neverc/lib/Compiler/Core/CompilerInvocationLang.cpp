@@ -409,7 +409,7 @@ bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
 
   Opts.PIE = T.isOSLinux();
   if (T.getArch() == llvm::Triple::x86) {
-    Opts.I386PICLevel = Opts.PIE ? 2 : 0;
+    Opts.I386PICLevel = Opts.PIE || T.isMacOSX() ? 2 : 0;
     if (const Arg *A =
             Args.getLastArg(OPT_fPIC, OPT_fpic, OPT_fPIE, OPT_fpie, OPT_fno_PIC,
                             OPT_fno_pic, OPT_fno_PIE, OPT_fno_pie)) {

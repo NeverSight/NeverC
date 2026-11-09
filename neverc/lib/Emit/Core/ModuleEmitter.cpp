@@ -75,6 +75,8 @@ std::unique_ptr<TargetCodeGenInfo> createTargetCodeGenInfo(ModuleEmitter &ME) {
     return createDefaultTargetCodeGenInfo(ME);
 
   switch (Route->ABI) {
+  case neverc::plugin::BuiltinTargetABIKind::X86_32Darwin:
+  case neverc::plugin::BuiltinTargetABIKind::X86_32Win32:
   case neverc::plugin::BuiltinTargetABIKind::X86_32SysV:
     return createX86_32TargetCodeGenInfo(ME);
   case neverc::plugin::BuiltinTargetABIKind::X86_64SysV:

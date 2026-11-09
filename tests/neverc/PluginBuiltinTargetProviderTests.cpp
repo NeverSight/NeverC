@@ -13,6 +13,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/TargetParser/Triple.h"
 #include "gtest/gtest.h"
 #include <array>
 #include <memory>
@@ -72,7 +73,7 @@ file_magic::Impl expectedMagic(BuiltinObjectFormat Format) {
 TEST(PluginBuiltinTargetProviderTest, InventoryIsCompleteAndStable) {
   using ExpectedRoute =
       std::tuple<const char *, BuiltinTargetABIKind, BuiltinObjectFormat>;
-  const std::array<ExpectedRoute, 10> Expected = {{
+  const std::array<ExpectedRoute, 12> Expected = {{
       {"x86_64-apple-macosx", BuiltinTargetABIKind::X86_64SysV,
        BuiltinObjectFormat::MachO},
       {"aarch64-apple-macosx", BuiltinTargetABIKind::AArch64DarwinPCS,
@@ -81,10 +82,10 @@ TEST(PluginBuiltinTargetProviderTest, InventoryIsCompleteAndStable) {
        BuiltinObjectFormat::ELF},
       {"aarch64-unknown-linux-gnu", BuiltinTargetABIKind::AArch64AAPCS,
        BuiltinObjectFormat::ELF},
-      {"x86_64-unknown-linux-android29",
-       BuiltinTargetABIKind::X86_64SysV, BuiltinObjectFormat::ELF},
-      {"aarch64-unknown-linux-android29",
-       BuiltinTargetABIKind::AArch64AAPCS, BuiltinObjectFormat::ELF},
+      {"x86_64-unknown-linux-android29", BuiltinTargetABIKind::X86_64SysV,
+       BuiltinObjectFormat::ELF},
+      {"aarch64-unknown-linux-android29", BuiltinTargetABIKind::AArch64AAPCS,
+       BuiltinObjectFormat::ELF},
       {"x86_64-pc-windows-msvc", BuiltinTargetABIKind::X86_64Win64,
        BuiltinObjectFormat::COFF},
       {"aarch64-pc-windows-msvc", BuiltinTargetABIKind::AArch64Win64,
@@ -93,6 +94,10 @@ TEST(PluginBuiltinTargetProviderTest, InventoryIsCompleteAndStable) {
        BuiltinObjectFormat::MachO},
       {"i386-unknown-linux-gnu", BuiltinTargetABIKind::X86_32SysV,
        BuiltinObjectFormat::ELF},
+      {"i386-apple-macosx", BuiltinTargetABIKind::X86_32Darwin,
+       BuiltinObjectFormat::MachO},
+      {"i386-pc-windows-msvc", BuiltinTargetABIKind::X86_32Win32,
+       BuiltinObjectFormat::COFF},
   }};
 
   ArrayRef<BuiltinTargetRoute> Routes = builtinTargetRoutes();
@@ -106,8 +111,10 @@ TEST(PluginBuiltinTargetProviderTest, InventoryIsCompleteAndStable) {
     EXPECT_EQ(Routes[I].ABI, ABI);
     EXPECT_EQ(Routes[I].ObjectFormat, Format);
     EXPECT_TRUE(Routes[I].SupportsSource);
-    EXPECT_EQ(Routes[I].SupportsAssembly, ABI != BuiltinTargetABIKind::X86_32SysV);
-    EXPECT_EQ(Routes[I].SupportsObject, ABI != BuiltinTargetABIKind::X86_32SysV);
+    EXPECT_EQ(Routes[I].SupportsAssembly,
+              llvm::Triple(Triple).getArch() != llvm::Triple::x86);
+    EXPECT_EQ(Routes[I].SupportsObject,
+              llvm::Triple(Triple).getArch() != llvm::Triple::x86);
     EXPECT_FALSE(Routes[I].SupportsMCDecode);
     EXPECT_TRUE(TargetIDs.emplace(Routes[I].TargetID.High,
                                   Routes[I].TargetID.Low)
@@ -156,9 +163,17 @@ TEST(PluginBuiltinTargetProviderTest, I386SourceRouteOwnsItsWidthAndCapabilities
                                     NEVERC_TARGET_RELOCATION_STATIC);
   ASSERT_TRUE(static_cast<bool>(Key)) << errorText(Key.takeError());
   EXPECT_EQ(Key->view().PointerWidth, 32U);
-  EXPECT_EQ(findBuiltinTargetRoute("i386-pc-windows-msvc"), nullptr);
+  const auto *Windows = findBuiltinTargetRoute("i386-pc-windows-msvc");
+  ASSERT_NE(Windows, nullptr);
+  EXPECT_EQ(Windows->ABI, BuiltinTargetABIKind::X86_32Win32);
+  EXPECT_FALSE(Windows->SupportsObject);
+  EXPECT_EQ(findBuiltinTargetRoute("i386-pc-windows-gnu"), nullptr);
   EXPECT_EQ(findBuiltinTargetRoute("i386-linux-android29"), nullptr);
-  EXPECT_EQ(findBuiltinTargetRoute("i386-apple-macosx"), nullptr);
+  const auto *Darwin = findBuiltinTargetRoute("i386-apple-macosx10.13");
+  ASSERT_NE(Darwin, nullptr);
+  EXPECT_EQ(Darwin->ABI, BuiltinTargetABIKind::X86_32Darwin);
+  EXPECT_FALSE(Darwin->SupportsObject);
+  EXPECT_EQ(findBuiltinTargetRoute("i386-apple-ios"), nullptr);
 }
 
 TEST(PluginBuiltinTargetProviderTest,

@@ -126,7 +126,7 @@ TEST_F(I386FrontendTest, BoundRetainsNativeCallsEffectsAndCompleteIndex) {
   }
 }
 
-TEST_F(I386FrontendTest, RefusesUnrestoredMachineBackendAndOtherPlatforms) {
+TEST_F(I386FrontendTest, RefusesUnrestoredMachineBackendAndUnboundPlatforms) {
   const auto Source = tmpFile("source.c");
   writeFile(Source, "int f(int x) { return x + 1; }");
   for (const char *Mode : {"-c", "-S"}) {
@@ -136,7 +136,7 @@ TEST_F(I386FrontendTest, RefusesUnrestoredMachineBackendAndOtherPlatforms) {
     EXPECT_NE(R.err.find("full LLVM fork"), std::string::npos) << R.err;
   }
   for (const char *Triple :
-       {"i386-pc-windows-msvc", "i386-apple-macosx", "i386-linux-android29"}) {
+       {"i386-pc-windows-gnu", "i386-apple-ios", "i386-linux-android29"}) {
     auto R = ncc(
         {std::string("--target=") + Triple, "-fsyntax-only", Source.string()});
     EXPECT_NE(R.exitCode, 0);
@@ -270,4 +270,84 @@ void reset(unsigned x, volatile unsigned *marker) {
       EXPECT_EQ(Text.find(" asm "), std::string::npos) << Text;
       EXPECT_EQ(Text.find("memory(none)"), std::string::npos) << Text;
     }
+}
+
+TEST_F(I386FrontendTest, PlatformModelsAndAggregateABIsRemainDistinct) {
+  const auto Source = tmpFile("platform.c");
+  writeFile(Source, R"(
+_Static_assert(sizeof(void *) == 4 && sizeof(long) == 4, "ILP32");
+_Static_assert(sizeof(__builtin_va_list) == 4, "varargs");
+#ifdef _WIN32
+#ifndef _M_IX86
+#error Missing MS architecture
+#endif
+_Static_assert(sizeof(long double) == 8 && _Alignof(double) == 8, "MS model");
+_Static_assert(sizeof(__WCHAR_TYPE__) == 2, "MS wchar");
+#else
+#ifndef __APPLE__
+#error Missing Darwin platform
+#endif
+_Static_assert(sizeof(long double) == 16 && _Alignof(long double) == 16, "Darwin x87");
+_Static_assert(_Alignof(double) == 4, "Darwin double");
+_Static_assert(__builtin_types_compatible_p(__SIZE_TYPE__, unsigned long), "Darwin size_t");
+#endif
+struct Pair { unsigned lo, hi; };
+struct Float { float x; };
+struct Big { unsigned a, b, c; };
+struct Pair pair(struct Pair p) { return p; }
+struct Float floating(struct Float f) { return f; }
+struct Big big(struct Big b) { return b; }
+long double extended(long double x) { return x; }
+#ifdef _WIN32
+struct Big __attribute__((fastcall)) fast(int a, struct Big b, int c) {
+  b.a += a; b.c += c; return b;
+}
+#endif
+)");
+  for (const char *Triple :
+       {"i386-pc-windows-msvc", "i386-apple-macosx10.13"}) {
+    const bool Windows =
+        std::string(Triple).find("windows") != std::string::npos;
+    for (const char *Opt : {"-O0", "-O2"}) {
+      const auto IR = tmpFile("platform.ll");
+      const auto R = ncc({std::string("--target=") + Triple, Opt,
+                          "-ffreestanding", "-fno-builtin-mimalloc", "-S",
+                          "-emit-llvm", Source.string(), "-o", IR.string()});
+      ASSERT_EQ(R.exitCode, 0) << R.err;
+      const auto Text = readFile(IR);
+      EXPECT_NE(Text.find("i64 @pair("), std::string::npos) << Text;
+      EXPECT_NE(Text.find(Windows ? "i32 @floating(" : "float @floating("),
+                std::string::npos)
+          << Text;
+      EXPECT_NE(Text.find("sret(%struct.Big)"), std::string::npos) << Text;
+      EXPECT_NE(
+          Text.find(Windows ? "double @extended(" : "x86_fp80 @extended("),
+          std::string::npos)
+          << Text;
+      if (Windows) {
+        EXPECT_NE(Text.find("x86_fastcallcc void"), std::string::npos) << Text;
+        EXPECT_NE(Text.find("i32 inreg"), std::string::npos) << Text;
+      }
+    }
+  }
+}
+
+TEST_F(I386FrontendTest, MSRequiredRecordAlignmentSurvivesPacking) {
+  const auto Source = tmpFile("required-align.c");
+  writeFile(Source, R"(
+struct __declspec(align(16)) A { int x; };
+#pragma pack(push, 1)
+struct Nested { char c; struct A a; };
+struct Field { char c; __declspec(align(16)) int x; };
+#pragma pack(pop)
+_Static_assert(__builtin_offsetof(struct Nested, a) == 16, "nested alignment");
+_Static_assert(sizeof(struct Nested) == 32, "nested size");
+_Static_assert(__builtin_offsetof(struct Field, x) == 16, "field alignment");
+int read(struct Nested n, struct Field f) { return n.a.x + f.x; }
+)");
+  for (const char *Arch : {"i386", "x86_64"}) {
+    const auto R = ncc({std::string("--target=") + Arch + "-pc-windows-msvc",
+                        "-fms-extensions", "-fsyntax-only", Source.string()});
+    EXPECT_EQ(R.exitCode, 0) << R.err;
+  }
 }

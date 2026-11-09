@@ -20,6 +20,9 @@ class StructRecordLayout {
   // Alignment - Alignment of record in characters.
   CharUnits Alignment;
 
+  // Explicit alignment propagated through MS ABI record subobjects.
+  CharUnits RequiredAlignment;
+
   // UnadjustedAlignment - Maximum of the alignments of the record members in
   // characters.
   CharUnits UnadjustedAlignment;
@@ -27,8 +30,9 @@ class StructRecordLayout {
   TreeVector<uint64_t> FieldOffsets;
 
   StructRecordLayout(const TreeContext &Ctx, CharUnits size,
-                     CharUnits alignment, CharUnits unadjustedAlignment,
-                     CharUnits datasize, llvm::ArrayRef<uint64_t> fieldoffsets);
+                     CharUnits alignment, CharUnits requiredAlignment,
+                     CharUnits unadjustedAlignment, CharUnits datasize,
+                     llvm::ArrayRef<uint64_t> fieldoffsets);
 
   ~StructRecordLayout() = default;
 
@@ -39,6 +43,8 @@ public:
   StructRecordLayout &operator=(const StructRecordLayout &) = delete;
 
   CharUnits getAlignment() const { return Alignment; }
+
+  CharUnits getRequiredAlignment() const { return RequiredAlignment; }
 
   CharUnits getUnadjustedAlignment() const { return UnadjustedAlignment; }
 

@@ -7,12 +7,11 @@
 #include "FullLLVMBackend.h"
 #include "neverc/Foundation/LangOpts/CodeGenOptions.h"
 #include "neverc/Foundation/Target/TargetOptions.h"
+#include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/BinaryFormat/ELF.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -31,10 +30,11 @@ neverc::emitWithFullLLVM(Module &M, BackendAction Action,
                          const CodeGenOptions &Options,
                          const TargetOptions &Target) {
   const Triple TT(M.getTargetTriple());
-  if (TT.getArch() != Triple::x86 || TT.getOS() != Triple::Linux ||
-      TT.isAndroid() || M.getDataLayout().getPointerSizeInBits() != 32)
+  if (TT.getArch() != Triple::x86 ||
+      !plugin::findBuiltinTargetRoute(TT.str()) ||
+      M.getDataLayout().getPointerSizeInBits() != 32)
     return createStringError(inconvertibleErrorCode(),
-                             "full LLVM backend requires Linux i386 IR");
+                             "full LLVM backend requires supported i386 IR");
   if (Action != Backend_EmitObj && Action != Backend_EmitAssembly)
     return createStringError(
         inconvertibleErrorCode(),
@@ -146,12 +146,17 @@ neverc::emitWithFullLLVM(Module &M, BackendAction Action,
         object::ObjectFile::createObjectFile((*Result)->getMemBufferRef());
     if (!Object)
       return Object.takeError();
-    const auto *ELF = dyn_cast<object::ELFObjectFileBase>(Object->get());
-    if (!ELF || ELF->getEMachine() != ELF::EM_386 || !ELF->isLittleEndian() ||
-        (*Object)->getBytesInAddress() != 4 ||
-        !(*Object)->isRelocatableObject())
-      return createStringError(inconvertibleErrorCode(),
-                               "full LLVM output is not an i386 ELF object");
+    const auto &Obj = **Object;
+    const bool FormatMatches = (TT.isOSBinFormatELF() && Obj.isELF()) ||
+                               (TT.isOSBinFormatCOFF() && Obj.isCOFF()) ||
+                               (TT.isOSBinFormatMachO() && Obj.isMachO());
+    if (!FormatMatches || Obj.getArch() != Triple::x86 ||
+        !Obj.isLittleEndian() || Obj.getBytesInAddress() != 4 ||
+        !Obj.isRelocatableObject())
+      return createStringError(
+          inconvertibleErrorCode(),
+          "full LLVM output is not an i386 relocatable object for '%s'",
+          TT.str().c_str());
   }
   return SmallVector<char, 0>((*Result)->getBufferStart(),
                               (*Result)->getBufferEnd());
