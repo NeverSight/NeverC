@@ -35,14 +35,17 @@ unsigned probe(unsigned leaf, unsigned *signature) {
 """
 
 
-def execute(code, entry, available, initial_id, leaf, signature, corruption=None):
+def execute(code, entry, segments, available, initial_id, leaf, signature, corruption=None):
     decoder = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
     decoded = {i.address: i for i in decoder.disasm(code, CODE)}
     assert sum(i.size for i in decoded.values()) == len(code)
     machine = unicorn.Uc(unicorn.UC_ARCH_X86, unicorn.UC_MODE_32)
-    for base in (CODE, STACK, DATA):
+    machine.mem_map(CODE - PAGE, 17 * PAGE)
+    for base in (STACK, DATA):
         machine.mem_map(base, 16 * PAGE)
-    machine.mem_write(CODE, code)
+    for address, content in segments:
+        assert CODE - PAGE <= address and address + len(content) <= CODE + 16 * PAGE
+        machine.mem_write(address, content)
     machine.mem_write(DATA, b'\xA5' * PAGE)
     sp = STACK + 15 * PAGE - 16
     machine.mem_write(sp, struct.pack('<3I', STOP, leaf, DATA + 128 if signature else 0))
@@ -99,6 +102,7 @@ def main():
     parser.add_argument('--compiler', type=Path, required=True)
     parser.add_argument('--backend-llc', type=Path, required=True)
     parser.add_argument('--clang', type=Path, required=True)
+    parser.add_argument('--linker', type=Path, required=True)
     parser.add_argument('--keep', type=Path, required=True)
     args = parser.parse_args()
     args.keep.mkdir(parents=True, exist_ok=True)
@@ -112,7 +116,7 @@ def main():
         if compiler == 'clang' and not fallback:
             continue
         name = f'{compiler}-{fallback}-{level}-{pic}-{dialect}'
-        ir, obj = (args.keep / (name + suffix) for suffix in ('.ll', '.o'))
+        ir, obj, exe = (args.keep / (name + suffix) for suffix in ('.ll', '.o', '.elf'))
         common = [str(args.compiler if compiler == 'neverc' else args.clang), '--target=i386-unknown-linux-gnu',
                   '-' + level, '-std=c23', '-ffreestanding', '-fno-lto', '-fno-stack-protector',
                   '-fPIC' if pic else '-fno-pic', '-masm=' + dialect, '-I', str(header.parent), str(source)]
@@ -122,7 +126,9 @@ def main():
             common += ['-DTEST_FALLBACK']
         commands = [common + ['-S', '-emit-llvm', '-o', str(ir)],
                     common + ['-c', '-o', str(obj)] +
-                    (['-fllvm-backend=' + str(args.backend_llc)] if compiler == 'neverc' else [])]
+                    (['-fllvm-backend=' + str(args.backend_llc)] if compiler == 'neverc' else []),
+                    [str(args.linker), '-m', 'elf_i386', '-e', 'probe', '--image-base=0x10000',
+                     '-Ttext=0x10000', str(obj), '-o', str(exe)]]
         for step, command in enumerate(commands):
             result = subprocess.run(command, capture_output=True, text=True, timeout=120)
             (args.keep / (name + f'-{step}.log')).write_text(result.stdout + result.stderr)
@@ -132,20 +138,24 @@ def main():
             assert ' asm ' not in text
             for operation in ('cpuidex', 'flags.read.u32', 'flags.write.u32'):
                 assert '@llvm.x86.' + operation + '(' in text
-        image = lief.parse(str(obj))
-        assert not any(r.has_section and r.section.name == '.text' for r in image.relocations)
-        code, entry = bytes(image.get_section('.text').content), image.get_symbol('probe').value
+        image = lief.parse(str(exe))
+        assert not image.relocations
+        assert image.get_section('.text').virtual_address == CODE
+        code, entry = bytes(image.get_section('.text').content), image.get_symbol('probe').value - CODE
+        segments = [(s.virtual_address, bytes(s.content)) for s in image.segments
+                    if s.type == lief.ELF.Segment.TYPE.LOAD and s.physical_size]
         cases = list(itertools.product((False, True), (False, True), (0, 0x80000000), (False, True)))
         for case in cases:
-            execute(code, entry, *case)
+            execute(code, entry, segments, *case)
         try:
-            execute(code, entry, True, False, 0, True, 'restore')
+            execute(code, entry, segments, True, False, 0, True, 'restore')
         except AssertionError as error:
             assert str(error) == 'ID restoration', error
         else:
             raise AssertionError('ID corruption escaped availability oracle')
         records.append({'name': name, 'comparisons': len(cases), 'negative_controls': 1,
-                        'commands': commands, 'object_sha256': hashlib.sha256(obj.read_bytes()).hexdigest()})
+                        'commands': commands, 'object_sha256': hashlib.sha256(obj.read_bytes()).hexdigest(),
+                        'image_sha256': hashlib.sha256(exe.read_bytes()).hexdigest()})
     report = {'profiles': records, 'comparisons': sum(r['comparisons'] for r in records),
               'negative_controls': sum(r['negative_controls'] for r in records),
               'header_sha256': hashlib.sha256(header.read_bytes()).hexdigest()}
