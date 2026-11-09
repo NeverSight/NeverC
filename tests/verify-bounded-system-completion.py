@@ -145,7 +145,9 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
         src.write_text(f'__attribute__((target("hreset"))) {cword} probe({cword} a, {cword} b, {cword} c, const void *source, {cword} *ordinary) {{\n' +
                        "\n".join(body) + "\n}\n")
         common = [args.compiler, "--target=" + triple, "-" + opt, "-Werror", "-ffreestanding", "-fno-builtin-mimalloc",
-                  "-fno-lto", "-fno-stack-protector", "-mllvm", "-verify-machineinstrs", src]
+                  "-fno-lto", "-fno-stack-protector", src]
+        if not args.backend_llc:
+            common += ["-mllvm", "-verify-machineinstrs"]
         run(common + ["-S", "-emit-llvm", "-o", ir])
         assert " asm " not in ir.read_text() and f"@{api}(" in ir.read_text()
         run(common + ["-c", "-o", obj] +
