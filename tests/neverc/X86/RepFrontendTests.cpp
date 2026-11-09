@@ -35,10 +35,10 @@ void probe(void *d, const void *s, unsigned n, unsigned v) {
 }
 )C");
   for (const char *Opt : {"-O0", "-O2"}) {
-    const auto R =
-        ncc({"--target=i386-unknown-linux-gnu", "-fms-extensions", Opt,
-             "-Werror", "-ffreestanding", "-fno-lto", "-fno-builtin-mimalloc",
-             "-S", "-emit-llvm", Source.string(), "-o", IR.string()});
+    const auto R = ncc({"--target=i386-unknown-linux-gnu", "-fms-extensions",
+                        "-D_MSC_VER=1930", Opt, "-Werror", "-ffreestanding",
+                        "-fno-lto", "-fno-builtin-mimalloc", "-S", "-emit-llvm",
+                        Source.string(), "-o", IR.string()});
     ASSERT_EQ(R.exitCode, 0) << R.err;
     const auto Text = readFile(IR);
     for (const char *Name :

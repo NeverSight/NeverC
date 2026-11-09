@@ -150,7 +150,7 @@ def main():
             src, ir, obj = (args.keep / (name + ext) for ext in ('.c', '.ll', '.o'))
             src.write_text(source(operation, spelling, frame))
             common = [str(args.compiler), '--target=i386-unknown-linux-gnu', '-'+opt, '-std=gnu23',
-                      '-fms-extensions', '-ffreestanding', '-fno-lto', '-fno-builtin-mimalloc',
+                      '-fms-extensions', '-D_MSC_VER=1930', '-ffreestanding', '-fno-lto', '-fno-builtin-mimalloc',
                       '-fno-pic', '-fno-pie', '-fno-stack-protector', str(src)]
             commands = [common + ['-S', '-emit-llvm', '-o', str(ir)],
                         common + ['-fllvm-backend=' + str(args.backend_llc), '-c', '-o', str(obj)]]
