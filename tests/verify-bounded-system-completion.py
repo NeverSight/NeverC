@@ -5,7 +5,8 @@ Executes surrounding scalar code and intercepts privileged instructions. The
 oracle checks exact operands, memory ordering, retention and saved registers;
 it does not emulate processor history, descriptor loading or TLB broadcasts.
 Requires capstone, lief and unicorn. --llc covers both LLVM code modes;
---backend-llc compiles actual NeverC IR with the full LLVM fork.
+--backend-llc uses the external driver for i386 and NeverC IR through llc
+for x64; the external driver intentionally accepts Linux i386 targets only.
 """
 
 import argparse
@@ -150,12 +151,13 @@ def compile_case(args, directory, operation, variant, mode, opt, target=COMMON.T
             common += ["-mllvm", "-verify-machineinstrs"]
         run(common + ["-S", "-emit-llvm", "-o", ir])
         assert " asm " not in ir.read_text() and f"@{api}(" in ir.read_text()
-        run(common + ["-c", "-o", obj] +
-            (["-fllvm-backend=" + str(args.backend_llc)] if args.backend_llc else []))
+        if not args.backend_llc or mode == 32:
+            run(common + ["-c", "-o", obj] +
+                (["-fllvm-backend=" + str(args.backend_llc)] if args.backend_llc else []))
     backend = args.llc or args.backend_llc
     if backend:
         common_backend = [backend, "-mtriple=" + triple, "-mattr=+hreset", "-" + opt, "-verify-machineinstrs", ir]
-        if args.llc:
+        if args.llc or mode == 64:
             run(common_backend + ["-filetype=obj", "-o", obj])
     if variant == "retained":
         for dialect in ("att", "intel"):
@@ -311,7 +313,8 @@ def main():
                     except Exception as error:
                         raise AssertionError(f"{operation}, {variant}, {mode}, {opt}, {values}: {error}") from error
                     count += 1
-                profiles.append(dict(operation=operation,mode=mode,optimization=opt,variant=variant,
+                object_route = "llvm" if args.llc else "neverc-driver" if not args.backend_llc or mode == 32 else "neverc-ir-to-llvm"
+                profiles.append(dict(operation=operation,mode=mode,optimization=opt,variant=variant,object_route=object_route,
                                      code_sha256=hashlib.sha256(code).hexdigest(),comparisons=len(VALUES)))
                 if variant == "retained" and (operation.startswith(("invlpgb", "tlbsync")) or operation == "vmfunc"):
                     fields = ("control", "ids", "count") if operation.startswith("invlpgb") else ("control", "count") if operation == "vmfunc" else ("control",)
