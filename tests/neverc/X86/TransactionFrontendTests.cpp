@@ -185,6 +185,37 @@ TEST_F(X86TransactionTest, AbortPairValidatesConstantCodeAndHeader) {
   }
 }
 
+TEST_F(X86TransactionTest,
+       LegacyAbortPairRetainsNativeHeaderAndStatusContract) {
+  const auto Source = tmpFile("abort-pair32.c");
+  const auto IR = tmpFile("abort-pair32.ll");
+  writeFile(Source, "#include <immintrin.h>\n"
+                    "unsigned probe(unsigned live) {\n"
+                    "return __rtm_abort_pair(167) + live; }\n");
+  for (const char *Opt : {"-O0", "-O2"}) {
+    const auto R =
+        ncc({"--target=i386-unknown-linux-gnu", "-std=c23", "-mrtm", Opt,
+             "-Werror", "-ffreestanding", "-fno-lto", "-fno-builtin-mimalloc",
+             "-S", "-emit-llvm", Source.string(), "-o", IR.string()});
+    ASSERT_EQ(R.exitCode, 0) << R.err;
+    const auto Text = readFile(IR);
+    EXPECT_NE(Text.find("@llvm.x86.rtm.abort.pair(i32 167)"),
+              std::string::npos);
+    EXPECT_NE(Text.find("convergent noduplicate nounwind"), std::string::npos);
+    for (const char *Invalid :
+         {" asm ", "willreturn", "nosync", "memory(none)"})
+      EXPECT_EQ(Text.find(Invalid), std::string::npos) << Text;
+  }
+  for (const char *Code : {"256", "-1", "n"}) {
+    writeFile(Source, "unsigned probe(unsigned n){return "
+                      "__builtin_ia32_rtm_abort_pair(" +
+                          std::string(Code) + ");}\n");
+    const auto R = ncc(
+        {"--target=i386-unknown-linux-gnu", "-fsyntax-only", Source.string()});
+    EXPECT_NE(R.exitCode, 0) << R.err;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // TSX: xbegin, xabort, xend, xtest
 // ---------------------------------------------------------------------------

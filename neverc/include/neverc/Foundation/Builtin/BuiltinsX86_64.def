@@ -207,7 +207,6 @@ BUILTIN(__builtin_ia32_vmrun_context, "vv*IUi", "n")
 BUILTIN(__builtin_ia32_hyperv_call, "vv*v*v*IUi", "n")
 BUILTIN(__builtin_ia32_psmash_context, "vv*v*IUi", "n")
 BUILTIN(__builtin_ia32_hle_context, "vv*v*v*IUiIUi", "n")
-BUILTIN(__builtin_ia32_rtm_abort_pair, "UiIUi", "n")
 BUILTIN(__builtin_ia32_pvalidate_context, "vv*v*IUi", "n")
 BUILTIN(__builtin_ia32_rmpadjust_context, "vv*v*IUi", "n")
 BUILTIN(__builtin_ia32_rmpupdate_context, "vv*v*IUi", "n")
@@ -255,9 +254,6 @@ BUILTIN(__builtin_ia32_vmread_reg, "ULLiULLiULLiUc*", "n")
 // VMWRITE owns the source memory access, including privilege/fault ordering.
 BUILTIN(__builtin_ia32_vmwrite_mem, "UcULLivC*", "n")
 
-// Native MPX uses the physical bounds bank. All controls are constants.
-BUILTIN(__builtin_ia32_bnd_branch, "vIUi", "n")
-
 // Encoding-preserving APX atomic transactions. Addresses are segment offsets.
 BUILTIN(__builtin_ia32_aadd32_address, "vULLiUiIUiIUi", "n")
 BUILTIN(__builtin_ia32_aadd64_address, "vULLiULLiIUiIUi", "n")
@@ -282,7 +278,7 @@ BUILTIN(__builtin_ia32_axor64_legacy_address, "vULLiULLiIUiIUi", "n")
 BUILTIN(__builtin_ia32_cmpccxadd32_legacy_address, "UiULLiUiUiIUiIUiIUi", "n")
 BUILTIN(__builtin_ia32_cmpccxadd64_legacy_address, "ULLiULLiULLiULLiIUiIUiIUi", "n")
 
-BUILTIN(__builtin_ia32_bndmov_reg, "vIUiIUi", "n")
+// Native long-mode MPX values retain the complete 64-bit register.
 BUILTIN(__builtin_ia32_bndcl_reg, "vIUiULLi", "n")
 BUILTIN(__builtin_ia32_bndcu_reg, "vIUiULLi", "n")
 BUILTIN(__builtin_ia32_bndcn_reg, "vIUiULLi", "n")

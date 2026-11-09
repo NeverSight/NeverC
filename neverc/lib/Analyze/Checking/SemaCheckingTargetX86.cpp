@@ -582,6 +582,18 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_invlpga32:
   case X86::BI__builtin_ia32_invlpgb32:
   case X86::BI__builtin_ia32_tlbsync_control32:
+  case X86::BI__builtin_ia32_bndcl_reg32:
+  case X86::BI__builtin_ia32_bndcu_reg32:
+  case X86::BI__builtin_ia32_bndcn_reg32:
+  case X86::BI__builtin_ia32_bndmov_load32:
+  case X86::BI__builtin_ia32_bndmov_store32:
+  case X86::BI__builtin_ia32_bndmov_store_lock32:
+  case X86::BI__builtin_ia32_bndcl_address32:
+  case X86::BI__builtin_ia32_bndcu_address32:
+  case X86::BI__builtin_ia32_bndcn_address32:
+  case X86::BI__builtin_ia32_bndmk32:
+  case X86::BI__builtin_ia32_bndldx32:
+  case X86::BI__builtin_ia32_bndstx32:
   case X86::BI__builtin_ia32_movsb32:
   case X86::BI__builtin_ia32_movsw32:
   case X86::BI__builtin_ia32_movsd_rep32:
@@ -834,19 +846,31 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
            SemaBuiltinConstantArgRange(TheCall, 1, 0,
                                        llvm::X86::MpxRegisterCount - 1);
   case X86::BI__builtin_ia32_bndcl_reg:
+  case X86::BI__builtin_ia32_bndcl_reg32:
   case X86::BI__builtin_ia32_bndcu_reg:
+  case X86::BI__builtin_ia32_bndcu_reg32:
   case X86::BI__builtin_ia32_bndcn_reg:
+  case X86::BI__builtin_ia32_bndcn_reg32:
     return SemaBuiltinConstantArgRange(TheCall, 0, 0,
                                        llvm::X86::MpxRegisterCount - 1);
   case X86::BI__builtin_ia32_bndmov_load:
+  case X86::BI__builtin_ia32_bndmov_load32:
   case X86::BI__builtin_ia32_bndmov_store:
+  case X86::BI__builtin_ia32_bndmov_store32:
   case X86::BI__builtin_ia32_bndmov_store_lock:
+  case X86::BI__builtin_ia32_bndmov_store_lock32:
   case X86::BI__builtin_ia32_bndcl_address:
+  case X86::BI__builtin_ia32_bndcl_address32:
   case X86::BI__builtin_ia32_bndcu_address:
+  case X86::BI__builtin_ia32_bndcu_address32:
   case X86::BI__builtin_ia32_bndcn_address:
+  case X86::BI__builtin_ia32_bndcn_address32:
   case X86::BI__builtin_ia32_bndmk:
+  case X86::BI__builtin_ia32_bndmk32:
   case X86::BI__builtin_ia32_bndldx:
-  case X86::BI__builtin_ia32_bndstx: {
+  case X86::BI__builtin_ia32_bndldx32:
+  case X86::BI__builtin_ia32_bndstx:
+  case X86::BI__builtin_ia32_bndstx32: {
     if (SemaBuiltinConstantArgRange(TheCall, 0, 0,
                                     llvm::X86::MpxRegisterCount - 1))
       return true;
@@ -854,20 +878,28 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     const auto Operation = [&] {
       switch (BuiltinID) {
       case X86::BI__builtin_ia32_bndmov_load:
+      case X86::BI__builtin_ia32_bndmov_load32:
         return MpxOperation::Load;
       case X86::BI__builtin_ia32_bndmov_store:
+      case X86::BI__builtin_ia32_bndmov_store32:
         return MpxOperation::Store;
       case X86::BI__builtin_ia32_bndmov_store_lock:
+      case X86::BI__builtin_ia32_bndmov_store_lock32:
         return MpxOperation::StoreLocked;
       case X86::BI__builtin_ia32_bndcl_address:
+      case X86::BI__builtin_ia32_bndcl_address32:
         return MpxOperation::CheckLowerAddress;
       case X86::BI__builtin_ia32_bndcu_address:
+      case X86::BI__builtin_ia32_bndcu_address32:
         return MpxOperation::CheckUpperAddress;
       case X86::BI__builtin_ia32_bndcn_address:
+      case X86::BI__builtin_ia32_bndcn_address32:
         return MpxOperation::CheckUpperRawAddress;
       case X86::BI__builtin_ia32_bndmk:
+      case X86::BI__builtin_ia32_bndmk32:
         return MpxOperation::Make;
       case X86::BI__builtin_ia32_bndldx:
+      case X86::BI__builtin_ia32_bndldx32:
         return MpxOperation::LoadTable;
       default:
         return MpxOperation::StoreTable;
@@ -878,8 +910,9 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
     if (SemaBuiltinConstantArg(TheCall, WidthArgument, Width) ||
         SemaBuiltinConstantArg(TheCall, WidthArgument + 1, Control))
       return true;
-    if (llvm::X86::isMpxMemoryAddressControl(
-            true, Operation, Width.getZExtValue(), Control.getZExtValue()))
+    if (llvm::X86::isMpxMemoryAddressControl(TI.getTriple().isArch64Bit(),
+                                             Operation, Width.getZExtValue(),
+                                             Control.getZExtValue()))
       return false;
     return bool(Diag(TheCall->getBeginLoc(),
                      diag::err_x86_builtin_invalid_memory_address)

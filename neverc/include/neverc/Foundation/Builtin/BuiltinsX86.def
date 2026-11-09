@@ -72,6 +72,25 @@ BUILTIN(__builtin_ia32_cpuidex, "vi*UiUi", "n")
 // Raw resumable software interrupt; the vector is an immediate in 0..255.
 BUILTIN(__builtin_ia32_int, "vIUi", "n")
 
+// These native region/bank effects have the same ABI in both code modes.
+BUILTIN(__builtin_ia32_rtm_abort_pair, "UiIUi", "n")
+BUILTIN(__builtin_ia32_bnd_branch, "vIUi", "n")
+BUILTIN(__builtin_ia32_bndmov_reg, "vIUiIUi", "n")
+
+// Native i386 MPX keeps full 32-bit register values and explicit controls.
+BUILTIN(__builtin_ia32_bndcl_reg32, "vIUiUi", "n")
+BUILTIN(__builtin_ia32_bndcu_reg32, "vIUiUi", "n")
+BUILTIN(__builtin_ia32_bndcn_reg32, "vIUiUi", "n")
+BUILTIN(__builtin_ia32_bndmov_load32, "vIUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndmov_store32, "vIUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndmov_store_lock32, "vIUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndcl_address32, "vIUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndcu_address32, "vIUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndcn_address32, "vIUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndmk32, "vIUiUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndldx32, "vIUiUiUiIUiIUi", "n")
+BUILTIN(__builtin_ia32_bndstx32, "vIUiUiUiIUiIUi", "n")
+
 // Native legacy REP pointers and counts use 32-bit code-mode words.
 BUILTIN(__builtin_ia32_movsb32, "vv*vC*Ui", "n")
 BUILTIN(__builtin_ia32_movsw32, "vv*vC*Ui", "n")

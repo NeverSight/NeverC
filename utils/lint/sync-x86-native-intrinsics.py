@@ -253,6 +253,13 @@ ADDRESS_SIGNATURES.update({
        for name in ("bndmk", "bndldx", "bndstx")},
 })
 
+# Legacy MPX shares the same bank/control arguments with natural-width words.
+for name in tuple(ADDRESS_SIGNATURES):
+    if name.startswith("bnd") and name not in ("bnd_branch", "bndmov_reg"):
+        signature, immediates = ADDRESS_SIGNATURES[name]
+        ADDRESS_SIGNATURES[name + "32"] = (
+            tuple("I32" if kind == "I64" else kind for kind in signature), immediates)
+
 # Explicit AMX addressing and row-register class controls.
 for operation in ("ldtilecfg", "sttilecfg"):
     ADDRESS_SIGNATURES[operation + "_address"] = (("Done", "I64", "I32", "I32", "I32"), (1, 2, 3))

@@ -4075,34 +4075,89 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_bndmov_reg:
     return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_reg), Ops);
   case X86::BI__builtin_ia32_bndcl_reg:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcl_reg), Ops);
+  case X86::BI__builtin_ia32_bndcl_reg32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndcl_reg
+                        : Intrinsic::x86_bndcl_reg32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndcu_reg:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcu_reg), Ops);
+  case X86::BI__builtin_ia32_bndcu_reg32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndcu_reg
+                        : Intrinsic::x86_bndcu_reg32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndcn_reg:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcn_reg), Ops);
+  case X86::BI__builtin_ia32_bndcn_reg32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndcn_reg
+                        : Intrinsic::x86_bndcn_reg32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndmov_load:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_load), Ops);
+  case X86::BI__builtin_ia32_bndmov_load32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndmov_load
+                        : Intrinsic::x86_bndmov_load32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndmov_store:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_store),
-                              Ops);
+  case X86::BI__builtin_ia32_bndmov_store32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndmov_store
+                        : Intrinsic::x86_bndmov_store32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndmov_store_lock:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmov_store_lock),
-                              Ops);
+  case X86::BI__builtin_ia32_bndmov_store_lock32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndmov_store_lock
+                        : Intrinsic::x86_bndmov_store_lock32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndcl_address:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcl_address),
-                              Ops);
+  case X86::BI__builtin_ia32_bndcl_address32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndcl_address
+                        : Intrinsic::x86_bndcl_address32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndcu_address:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcu_address),
-                              Ops);
+  case X86::BI__builtin_ia32_bndcu_address32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndcu_address
+                        : Intrinsic::x86_bndcu_address32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndcn_address:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndcn_address),
-                              Ops);
+  case X86::BI__builtin_ia32_bndcn_address32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndcn_address
+                        : Intrinsic::x86_bndcn_address32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndmk:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndmk), Ops);
+  case X86::BI__builtin_ia32_bndmk32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndmk
+                        : Intrinsic::x86_bndmk32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndldx:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndldx), Ops);
+  case X86::BI__builtin_ia32_bndldx32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndldx
+                        : Intrinsic::x86_bndldx32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_bndstx:
-    return Builder.CreateCall(ME.getIntrinsic(Intrinsic::x86_bndstx), Ops);
+  case X86::BI__builtin_ia32_bndstx32: {
+    const auto ID = getContext().getTargetInfo().getTriple().isArch64Bit()
+                        ? Intrinsic::x86_bndstx
+                        : Intrinsic::x86_bndstx32;
+    return Builder.CreateCall(ME.getIntrinsic(ID), Ops);
+  }
   case X86::BI__builtin_ia32_v4fmaddps_native:
     return Builder.CreateCall(
         ME.getIntrinsic(Intrinsic::x86_avx512_v4fmaddps_native), Ops);

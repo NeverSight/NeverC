@@ -1034,18 +1034,30 @@ enum X86Intrinsics : unsigned {
     x86_bmi_pext_64,                                 // llvm.x86.bmi.pext.64
     x86_bnd_branch,                                  // llvm.x86.bnd.branch
     x86_bndcl_address,                               // llvm.x86.bndcl.address
+    x86_bndcl_address32,                             // llvm.x86.bndcl.address32
     x86_bndcl_reg,                                   // llvm.x86.bndcl.reg
+    x86_bndcl_reg32,                                 // llvm.x86.bndcl.reg32
     x86_bndcn_address,                               // llvm.x86.bndcn.address
+    x86_bndcn_address32,                             // llvm.x86.bndcn.address32
     x86_bndcn_reg,                                   // llvm.x86.bndcn.reg
+    x86_bndcn_reg32,                                 // llvm.x86.bndcn.reg32
     x86_bndcu_address,                               // llvm.x86.bndcu.address
+    x86_bndcu_address32,                             // llvm.x86.bndcu.address32
     x86_bndcu_reg,                                   // llvm.x86.bndcu.reg
+    x86_bndcu_reg32,                                 // llvm.x86.bndcu.reg32
     x86_bndldx,                                      // llvm.x86.bndldx
+    x86_bndldx32,                                    // llvm.x86.bndldx32
     x86_bndmk,                                       // llvm.x86.bndmk
+    x86_bndmk32,                                     // llvm.x86.bndmk32
     x86_bndmov_load,                                 // llvm.x86.bndmov.load
+    x86_bndmov_load32,                               // llvm.x86.bndmov.load32
     x86_bndmov_reg,                                  // llvm.x86.bndmov.reg
     x86_bndmov_store,                                // llvm.x86.bndmov.store
     x86_bndmov_store_lock,                           // llvm.x86.bndmov.store.lock
+    x86_bndmov_store_lock32,                         // llvm.x86.bndmov.store.lock32
+    x86_bndmov_store32,                              // llvm.x86.bndmov.store32
     x86_bndstx,                                      // llvm.x86.bndstx
+    x86_bndstx32,                                    // llvm.x86.bndstx32
     x86_bound16,                                     // llvm.x86.bound16
     x86_bound16_address32,                           // llvm.x86.bound16.address32
     x86_bound32,                                     // llvm.x86.bound32
