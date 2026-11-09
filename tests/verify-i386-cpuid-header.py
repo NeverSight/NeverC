@@ -58,15 +58,18 @@ def execute(code, entry, segments, available, initial_id, leaf, signature, corru
     calls, writes = [], []
 
     def hook(cpu, address, size, _):
-        if not available:
-            flags = cpu.reg_read(regs.UC_X86_REG_EFLAGS)
-            cpu.reg_write(regs.UC_X86_REG_EFLAGS, (flags & ~ID) | (ID if initial_id else 0))
         instruction = decoded[address]
         if instruction.mnemonic == 'popfd':
             word = struct.unpack('<I', cpu.mem_read(cpu.reg_read(regs.UC_X86_REG_ESP), 4))[0]
             writes.append(word & ID)
+            # Model the non-writable ID bit at the architectural write.
+            # Rewriting Unicorn EFLAGS at every hook would invalidate its
+            # lazy arithmetic flags at a conditional branch.
+            if not available:
+                word = (word & ~ID) | (ID if initial_id else 0)
             if corruption == 'restore' and len(writes) == 2:
-                cpu.mem_write(cpu.reg_read(regs.UC_X86_REG_ESP), struct.pack('<I', word ^ ID))
+                word ^= ID
+            cpu.mem_write(cpu.reg_read(regs.UC_X86_REG_ESP), struct.pack('<I', word))
         if instruction.mnemonic == 'cpuid':
             assert available, 'CPUID executed on unavailable CPU'
             assert (cpu.reg_read(regs.UC_X86_REG_EFLAGS) & ID) == (ID if initial_id else 0), 'ID restoration'
