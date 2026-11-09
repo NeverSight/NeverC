@@ -13921,10 +13921,18 @@ public:
       if (Constructor->getNumParams() != Count) return false;
       for (unsigned I = 0; I < Count; ++I) {
         const auto &Element = InputTuple.Elements[I];
-        if (Element.Field || !Element.EmptyBase ||
-            !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context) ||
+        // Only this factory's independently described owned receiver can
+        // share the selected const-element tuple path with empty placeholders.
+        const auto Type = Element.getType();
+        const bool MemberReceiver = Element.Field && !Element.EmptyBase &&
+            !Type.isNull() && !Type->isReferenceType() && !Type->isDependentType() &&
+            !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+            Type.getAddressSpace() == LangAS::Default &&
+            bindMemberOwnerRecordSource(Type->getAsCXXRecordDecl());
+        if ((!MemberReceiver && (Element.Field || !Element.EmptyBase ||
+             !functionalBindEmptyPlaceholderStorage(S, SM, Type, Context))) ||
             !Context.hasSameType(Constructor->getParamDecl(I)->getType(),
-                Context.getLValueReferenceType(Context.getConstType(Element.getType()))) ||
+                Context.getLValueReferenceType(Context.getConstType(Type))) ||
             !family(Constructor->getParamDecl(I))) return false;
       }
     }
