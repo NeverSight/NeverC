@@ -200,7 +200,7 @@
       "file": "llvm/include/llvm/IR/IntrinsicImpl.inc",
       "symbol": "TargetInfos",
       "declaration": "static constexpr IntrinsicTargetInfo TargetInfos[]",
-      "definition_sha256": "85e7593785364cf00f438ef5ffd9c57707b3c5fb6680ea746d6cef57164aca58",
+      "definition_sha256": "b83e18472fbe84fd31f6d854cad06cc358ec62ac1f30f0166c6f1024aa7b3f3c",
       "owner": "generated LLVM intrinsic target metadata",
       "justification": "Constexpr array of StringLiteral plus size_t metadata generated as a lookup table. Its element type has no mutable subobjects and no code writes the table."
     },

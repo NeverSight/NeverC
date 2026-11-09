@@ -899,14 +899,24 @@ The standard `_hreset(int)` wrapper in `<x86gprintrin.h>` now calls this native
 builtin. Its installed `hresetintrin.h` retains the LLVM source license.
 
 `__builtin_ia32_invlpgb(unsigned long long address_control, unsigned ids,
-unsigned count)` transports rAX, EDX and ECX in that order. The control/address
-word remains an integer, including its low control bits; it is not dereferenced
-by the compiler. `__builtin_ia32_tlbsync()` emits the actual synchronization
-instruction. The shared IR names are `llvm.x86.invlpgb` and `llvm.x86.tlbsync`.
-The full LLVM fork additionally provides `llvm.x86.invlpgb32(i32, i32, i32)`
-for the 32-bit target, rejecting mode mismatches. Its existing INVLPGB machine
-descriptions omitted the ECX input; both backends now retain all three inputs.
-Address-size overrides remain separate from these default-mode APIs.
+unsigned count)` transports RAX, EDX and ECX in that order. The shared i386
+entry `__builtin_ia32_invlpgb32(unsigned address_control, unsigned ids,
+unsigned count)` instead carries EAX, EDX and ECX; both reject the wrong code
+mode. The control/address word remains an integer, including its low control
+bits; the compiler does not dereference it. `invlpgb_addr32` remains a separate
+long-mode address-size override. All forms retain ECX as a machine input.
+
+`__builtin_ia32_tlbsync_control32(unsigned control)` and
+`__builtin_ia32_tlbsync_control64(unsigned long long control)` preserve the
+complete mode-sized rAX value through `llvm.x86.tlbsync.control32/64`.
+AMD APM volume 3 revision 3.38, page 496 specifies rAX bit 0 as the IOMMU
+completion control when EnhancedTlbi is enabled, with reserved bits retaining
+their native fault behavior. Neither interface masks that input. The legacy
+`__builtin_ia32_tlbsync()` / `llvm.x86.tlbsync()` explicitly sets rAX to zero
+for CPU-only synchronization in either code mode. It no longer inherits an
+unbound register value. Both APIs preserve memory ordering and arithmetic
+flags. `sync-x86-tlbsync.py` owns the pruned backend's implicit-RAX pseudo,
+memory effects and both printers; MC lowering emits the ordinary instruction.
 
 `__builtin_ia32_lkgs_reg(unsigned short selector)` and
 `__builtin_ia32_lkgs_mem(const void *selector)` map to `llvm.x86.lkgs.reg(i16)`
@@ -921,7 +931,9 @@ both printers and both assembler dialects. Existing opcode numbers stay fixed.
 
 All four instructions remain ordered effects and preserve arithmetic flags.
 [tests/verify-bounded-system-completion.py](tests/verify-bounded-system-completion.py) supports the usual compiler, full
-LLVM and NeverC-to-fork modes. It checks actual input operands, full live input
+LLVM and NeverC-to-fork modes. The external compiler driver is used for Linux
+i386; x64 NeverC IR is passed to the full backend explicitly. It checks actual
+input operands, full live input
 values, repeated effects, memory ordering, saved registers and unmapped LKGS
 selector boundaries at O0/O2. ELF/COFF/Mach-O output round-trips through both
 assembly dialects. It executes surrounding scalar code while intercepting
@@ -956,7 +968,9 @@ and the IR call has neither `noreturn` nor `willreturn`. All APIs retain
 conservative IR memory effects and native privilege/feature validation.
 
 `__builtin_ia32_vmfunc_eptp_switch(unsigned index)` selects only VMFUNC leaf 0
-with EAX=0 and the full ECX index, through `llvm.x86.vmfunc.eptp.switch`.
+with EAX=0 and the full ECX index in either code mode, through
+`llvm.x86.vmfunc.eptp.switch`. The compiler does not truncate the index to
+9 bits; native VMX validation owns unavailable or out-of-range selections.
 It does not synthesize VMfail status or define register behavior for other
 VMFUNC leaves. Entry/exit continuations, hypercall protocols and arbitrary
 VMRUN machine-state transport remain separate work.
