@@ -7,6 +7,9 @@ no host port I/O is performed. The host compiler builds the independent raw REP
 reference and signal adapter. Requires capstone and lief.
 """
 import argparse
+from contextlib import nullcontext
+import hashlib
+import json
 import ctypes as ct
 from dataclasses import dataclass
 import itertools
@@ -100,13 +103,16 @@ def wrapper_ir(form, bits):
     return declaration, f'define void @{form.name}(ptr %input, ptr %output) {{\n  ' + '\n  '.join(body) + '\n  ret void\n}\n'
 
 
-def wrapper_c(form):
+def wrapper_c(form, bits=64):
+    word = "unsigned long long" if bits == 64 else "unsigned"
+    suffix = "" if bits == 64 else "32"
+    attribute = '__attribute__((target("sahf"))) ' if bits == 64 else ""
     args = ['in[0]', 'in[1]', 'in[2]', 'in[3]'] + (['in[4]'] if form.compare else [])
     args += list(map(str, form.controls)) + ['out'] + (['&flags'] if form.compare else [])
-    return '__attribute__((target("sahf"))) void ' + form.name + \
-        '(const unsigned long long *in, unsigned long long *out) {\n' + \
+    return attribute + 'void ' + form.name + \
+        f'(const {word} *in, {word} *out) {{\n' + \
         ('unsigned short flags;\n' if form.compare else '') + \
-        f'__builtin_ia32_rep_{form.op}_state(' + ', '.join(args) + ');\n' + \
+        f'__builtin_ia32_rep_{form.op}_state{suffix}(' + ', '.join(args) + ');\n' + \
         ('out[3] = flags;\n' if form.compare else '') + '}\n'
 
 
@@ -137,6 +143,7 @@ def reference_c(form):
 
 
 def compile_forms(args, directory, matrix, bits, opt):
+    triple = ('x86_64' if bits == 64 else 'i386') + '-unknown-linux-gnu'
     stem = directory / f'rep_{bits}_{opt}'
     ir, obj = stem.with_suffix('.ll'), stem.with_suffix('.o')
     if args.llc:
@@ -144,24 +151,30 @@ def compile_forms(args, directory, matrix, bits, opt):
         ir.write_text('\n'.join(sorted({item[0] for item in pieces})) + '\n' + '\n'.join(item[1] for item in pieces))
     else:
         source = stem.with_suffix('.c')
-        source.write_text('\n'.join(wrapper_c(form) for form in matrix))
-        command = [args.compiler, '--target=x86_64-unknown-linux-gnu', '-'+opt,
+        source.write_text('\n'.join(wrapper_c(form, bits) for form in matrix))
+        command = [args.compiler, '--target=' + triple, '-'+opt,
                    '-ffreestanding', '-fno-builtin-mimalloc', '-fno-lto', '-fPIC',
-                   '-fno-stack-protector', '-mno-relax-all', '-mllvm',
-                   '-verify-machineinstrs', source]
+                   '-fno-stack-protector', '-mno-relax-all', source]
+        if bits == 64:
+            command += ['-mllvm', '-verify-machineinstrs']
+        else:
+            command += ['-mno-sahf']
         run(command + ['-S', '-emit-llvm', '-o', ir])
         text = ir.read_text()
         assert ' asm ' not in text
         for op in OPS:
-            assert f'@llvm.x86.rep.{op}.state(' in text
-        if not args.backend_llc:
-            run(command + ['-c', '-o', obj])
+            assert f'@llvm.x86.rep.{op}.state' + ('32(' if bits == 32 else '(') in text
+        if bits == 32 or not args.backend_llc:
+            run(command + ['-c', '-o', obj] +
+                (['-fllvm-backend=' + str(args.backend_llc)] if args.backend_llc else []))
     backend = args.llc or args.backend_llc
     triple = ('x86_64' if bits == 64 else 'i386') + '-unknown-linux-gnu'
     if backend:
-        backend_command = [backend, '-mtriple=' + triple, '-mattr=+sahf', '-'+opt,
+        backend_command = [backend, '-mtriple=' + triple,
+                           '-mattr=+sahf' if bits == 64 else '-mattr=-sahf', '-'+opt,
                            '-relocation-model=pic', '-verify-machineinstrs', ir]
-        run(backend_command + ['-filetype=obj', '-o', obj])
+        if args.llc or bits == 64:
+            run(backend_command + ['-filetype=obj', '-o', obj])
     binary = lief.parse(str(obj))
     text = binary.get_section('.text')
     for dialect in ('att', 'intel'):
@@ -281,9 +294,9 @@ def native_suite(args, directory, matrix, obj, code):
                                   final_cx=0x0123456789ABCDEF)
                     returned = lib.rep_fault_invoke(function, values, output, ct.byref(fault))
                     assert returned != (1 << 64) - 1 and not returned & 0x400, form
-                    assert fault.faults == 1 and fault.cx == count and fault.dx & 0xffff == 0xf123, form
+                    assert fault.faults == 1 and fault.cx == count and fault.dx & 0xffff == 0xf123, (form, 'input port')
                     assert (fault.di if form.op == 'ins' else fault.si) == a, form
-                    assert bool(fault.flags & 0x400) == bool(backward), form
+                    assert bool(fault.flags & 0x400) == bool(backward), (form, 'input direction')
                     assert list(output) == [fault.final_di if form.op == 'ins' else fault.final_si,
                                             fault.final_cx, SENTINEL, SENTINEL], (form, list(output))
                     ports += 1
@@ -384,7 +397,7 @@ def native_suite(args, directory, matrix, obj, code):
                 if form.compare:
                     assert (((fault.flags & 0xd5) << 8) | ((fault.flags >> 11) & 1)) == FLAG_MASK, (form, 'fault flags', hex(fault.flags))
                     assert output[3] == expected_flags, form
-                assert bool(fault.flags & 0x400) == bool(backward), form
+                assert bool(fault.flags & 0x400) == bool(backward), (form, 'input direction')
                 if form.op == 'lods':
                     assert output[2] == ax, form
                 assert output[2 if form.op in ('movs', 'cmps') else 1] == 0, form
@@ -395,7 +408,7 @@ def native_suite(args, directory, matrix, obj, code):
     return cases, restarts, ports
 
 
-def emulated32_suite(matrix, code):
+def emulated32_suite(matrix, code, corrupt=None, directions=(0, 255)):
     import struct
     import unicorn
     import unicorn.x86_const as regs
@@ -411,7 +424,8 @@ def emulated32_suite(matrix, code):
     cases = ports = 0
     for form in matrix:
         raw, offset, length = code[form]
-        for count, backward, pattern in itertools.product((0, 1, 7), (0, 1), ('unequal', 'equal', 'late', 'overlap')):
+        for count, direction, pattern in itertools.product((0, 1, 7), directions, ('unequal', 'equal', 'late', 'overlap')):
+            backward = bool(direction)
             machine = unicorn.Uc(unicorn.UC_ARCH_X86, unicorn.UC_MODE_32)
             for address, length_map in ((code_base, PAGE), (stack, PAGE), (state, PAGE),
                                         (gdt, PAGE), (data_base, size)):
@@ -448,7 +462,7 @@ def emulated32_suite(matrix, code):
             inputs = [si, di, cx] if form.op in ('movs', 'cmps') else \
                      [si, cx, accumulator] if form.op == 'lods' else \
                      [si if form.op == 'outs' else di, cx, 0xf123 if form.port else accumulator]
-            values = inputs + [255 if backward else 0, FLAG_MASK | 0x2afe]
+            values = inputs + [direction, FLAG_MASK | 0x2afe]
             machine.mem_write(state, pack(values))
             machine.mem_write(state + 128, pack([sentinel] * 4))
             sp = stack + PAGE - 32
@@ -460,17 +474,32 @@ def emulated32_suite(matrix, code):
                 machine.reg_write(reg, value)
             machine.emu_start(code_base, code_base + offset, count=1000)
             assert machine.reg_read(regs.UC_X86_REG_EIP) == code_base + offset, form
+            mutations = {'input count': regs.UC_X86_REG_ECX,
+                         'input source': regs.UC_X86_REG_ESI,
+                         'input destination': regs.UC_X86_REG_EDI,
+                         'input accumulator': regs.UC_X86_REG_EAX,
+                         'input port': regs.UC_X86_REG_EDX}
+            if corrupt in mutations:
+                register = mutations[corrupt]
+                machine.reg_write(register, machine.reg_read(register) ^
+                                  (1 if corrupt == 'input port' else 0x80000000))
+            if corrupt in ('input direction', 'input flags'):
+                machine.reg_write(regs.UC_X86_REG_EFLAGS,
+                                  machine.reg_read(regs.UC_X86_REG_EFLAGS) ^
+                                  (0x400 if corrupt == 'input direction' else 1))
+            if form.op in ('stos', 'lods', 'scas'):
+                assert machine.reg_read(regs.UC_X86_REG_EAX) == accumulator, (form, 'input accumulator')
             assert machine.reg_read(regs.UC_X86_REG_ECX) == cx, (form, 'input count')
             if form.op in SOURCES:
                 assert machine.reg_read(regs.UC_X86_REG_ESI) == si, (form, 'input source')
             if form.op not in ('lods', 'outs'):
                 assert machine.reg_read(regs.UC_X86_REG_EDI) == di, (form, 'input destination')
-            assert bool(machine.reg_read(regs.UC_X86_REG_EFLAGS) & 0x400) == bool(backward), form
+            assert bool(machine.reg_read(regs.UC_X86_REG_EFLAGS) & 0x400) == bool(backward), (form, 'input direction')
             if form.compare:
                 flags = machine.reg_read(regs.UC_X86_REG_EFLAGS)
-                assert (((flags & 0xd5) << 8) | ((flags >> 11) & 1)) == FLAG_MASK, form
+                assert (((flags & 0xd5) << 8) | ((flags >> 11) & 1)) == FLAG_MASK, (form, 'input flags')
             if form.port:
-                assert machine.reg_read(regs.UC_X86_REG_DX) == 0xf123, form
+                assert machine.reg_read(regs.UC_X86_REG_DX) == 0xf123, (form, 'input port')
                 machine.reg_write(regs.UC_X86_REG_EDI if form.op == 'ins' else regs.UC_X86_REG_ESI, 0xa1b2c3d4)
                 machine.reg_write(regs.UC_X86_REG_ECX, 0x98765432)
                 machine.reg_write(regs.UC_X86_REG_EIP, code_base + offset + length)
@@ -488,13 +517,53 @@ def emulated32_suite(matrix, code):
                 cases += 1
             machine.emu_start(machine.reg_read(regs.UC_X86_REG_EIP), stop, count=10000)
             assert machine.reg_read(regs.UC_X86_REG_EIP) == stop, form
+            if corrupt == 'output state':
+                value = struct.unpack('<I', machine.mem_read(state + 128, 4))[0]
+                machine.mem_write(state + 128, pack([value ^ 0x80000000]))
+            if corrupt == 'stack':
+                machine.reg_write(regs.UC_X86_REG_ESP, machine.reg_read(regs.UC_X86_REG_ESP) ^ 4)
+            if corrupt == 'callee saved':
+                machine.reg_write(regs.UC_X86_REG_EBX, machine.reg_read(regs.UC_X86_REG_EBX) ^ 1)
+            if corrupt == 'return direction':
+                machine.reg_write(regs.UC_X86_REG_EFLAGS, machine.reg_read(regs.UC_X86_REG_EFLAGS) | 0x400)
+            if corrupt == 'memory':
+                machine.mem_write(data_base, bytes([memory[0] ^ 1]))
+            assert machine.reg_read(regs.UC_X86_REG_ESP) == sp + 4, (form, 'stack')
             actual = list(struct.unpack('<4I', machine.mem_read(state + 128, 16)))
-            assert actual == expected, (form, count, backward, pattern, actual, expected)
-            assert not machine.reg_read(regs.UC_X86_REG_EFLAGS) & 0x400, form
+            assert actual == expected, (form, 'output state', count, backward, pattern, actual, expected)
+            assert not machine.reg_read(regs.UC_X86_REG_EFLAGS) & 0x400, (form, 'return direction')
             for reg, value in saved.items():
                 assert machine.reg_read(reg) == value, (form, 'callee saved', reg)
             assert bytes(machine.mem_read(data_base, size)) == bytes(memory), (form, 'memory')
     return cases, ports
+
+
+def emulated32_negative_controls(matrix, code):
+    controls = []
+    for form in matrix:
+        if form.width != 1 or form.segment or form.repeat:
+            continue
+        fields = ['input count', 'input direction', 'output state', 'stack',
+                  'callee saved', 'return direction', 'memory']
+        if form.op in SOURCES:
+            fields.append('input source')
+        if form.op not in ('lods', 'outs'):
+            fields.append('input destination')
+        if form.op in ('stos', 'lods', 'scas'):
+            fields.append('input accumulator')
+        if form.compare:
+            fields.append('input flags')
+        if form.port:
+            fields.append('input port')
+        for field in fields:
+            try:
+                emulated32_suite([form], code, corrupt=field)
+            except AssertionError as error:
+                assert isinstance(error.args[0], tuple) and error.args[0][1] == field, error
+            else:
+                raise AssertionError((form, field, 'corruption escaped oracle'))
+            controls.append({'form': form.name, 'field': field})
+    return controls
 
 
 def main():
@@ -503,28 +572,48 @@ def main():
     parser.add_argument('--llc', type=Path)
     parser.add_argument('--backend-llc', type=Path)
     parser.add_argument('--host-cc', default='cc')
-    parser.add_argument('--emulate-32', action='store_true', help='full LLVM 32-bit code in Unicorn, including addr16')
+    parser.add_argument('--emulate-32', action='store_true', help='32-bit code in Unicorn, including addr16')
+    parser.add_argument('--keep', type=Path, help='retain sources, objects and result hashes')
     args = parser.parse_args()
     if not args.emulate_32 and (platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'AMD64')):
         raise SystemExit('native REP oracle requires Linux x86-64')
     totals = [0, 0, 0]
-    with tempfile.TemporaryDirectory(prefix='rep-state-') as temporary:
+    records = []
+    if args.keep:
+        args.keep.mkdir(parents=True)
+    context = nullcontext(str(args.keep)) if args.keep else tempfile.TemporaryDirectory(prefix='rep-state-')
+    with context as temporary:
         directory = Path(temporary)
         for opt in ('O0', 'O2'):
             if args.emulate_32:
-                if not args.llc:
-                    parser.error('--emulate-32 requires --llc')
+                if not args.llc and not args.backend_llc:
+                    parser.error('--emulate-32 requires --llc or NeverC --backend-llc')
                 matrix = list(forms(32))
                 obj, code = compile_forms(args, directory, matrix, 32, opt)
                 counts = emulated32_suite(matrix, code)
+                controls = emulated32_negative_controls(matrix, code)
+                records.append({'optimization': opt, 'bits': 32, 'forms': len(matrix),
+                                'counts': counts, 'negative_controls': controls,
+                                'object_route': 'llvm' if args.llc else 'neverc-driver'})
                 print(f'{opt}: {counts[0]} emulated 32-bit memory cases, {counts[1]} controlled port cases', flush=True)
                 continue
             matrix = list(forms(64))
             obj, code = compile_forms(args, directory, matrix, 64, opt)
             counts = native_suite(args, directory, matrix, obj, code)
             totals = [a + b for a, b in zip(totals, counts)]
+            records.append({'optimization': opt, 'bits': 64, 'forms': len(matrix),
+                            'counts': counts, 'object_route': 'llvm' if args.llc else
+                            'neverc-ir-to-llvm' if args.backend_llc else 'neverc-driver'})
             print(f'{opt}: {counts[0]} memory/flags cases, {counts[1]} hardware fault restarts, '
                   f'{counts[2]} controlled port completions', flush=True)
+        if args.keep:
+            sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+            report = {'profiles': records, 'physical_port_io': False,
+                      'hardware_restart': not args.emulate_32,
+                      'tools': {str(p): sha(Path(p)) for p in
+                                (args.llc, args.backend_llc, args.compiler if not args.llc else None) if p},
+                      'files': {str(p.relative_to(directory)): sha(p) for p in directory.rglob('*') if p.is_file()}}
+            (directory/'results.json').write_text(json.dumps(report,indent=2)+'\n')
     if args.emulate_32:
         print('PASS: 32-bit emulation; not hardware restart qualification')
         return
