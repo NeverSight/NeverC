@@ -592,7 +592,7 @@ namespace {
 bool isTargetArchSupported(const llvm::Triple &T) {
   switch (T.getArch()) {
   case llvm::Triple::x86:
-    return T.isOSLinux() && !T.isAndroid();
+    return plugin::findBuiltinTargetRoute(T.str()) != nullptr;
   case llvm::Triple::x86_64:
     // X32 ABI is not supported.
     if (T.isX32())
