@@ -21746,6 +21746,15 @@ static bool functionalBindInertMemberOwnerSourceIdentity(
   }
   return true;
 }
+static bool functionalBindInertMemberReceiverSourceIdentity(
+    const State &S, const SourceManager &SM, QualType Type,
+    const ASTContext &Context) {
+  if (Type.isNull()) return false;
+  Type = Type.getNonReferenceType();
+  return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+      Type.getAddressSpace() == LangAS::Default && !Type->isDependentType() &&
+      functionalBindInertMemberOwnerSourceIdentity(S, SM, Type->getAsCXXRecordDecl(), Context);
+}
 static bool functionalBindInertMemberCallableSourceIdentity(
     const State &S, const SourceManager &SM, QualType Type,
     const ASTContext &Context) {
@@ -26691,21 +26700,16 @@ bool retainFunctionalBindConstraintRoot(
     return R && R->getIdentifier() && R->getName() == "reference_wrapper" &&
         R->getTemplateArgs().size() == 1 &&
         R->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
-        Scalar(R->getTemplateArgs()[0].getAsType()) &&
+        (Scalar(R->getTemplateArgs()[0].getAsType()) ||
+         functionalBindInertMemberReceiverSourceIdentity(S, SM, R->getTemplateArgs()[0].getAsType(),
+                                                        Template->getASTContext())) &&
         Check.family(R, {"__functional/reference_wrapper.h", "__fwd/functional.h"});
   };
   // Evidence retention only: no definition, layout, special-member or body
   // request is allowed from this producer callback. The consuming member bind
   // proof must still identify its exact owner, field, operation and lifetime.
-  auto MemberOwnerIdentity = [&](const CXXRecordDecl *Owner) {
-    return functionalBindInertMemberOwnerSourceIdentity(S, SM, Owner, Template->getASTContext());
-  };
   auto MemberReceiverIdentity = [&](QualType T) {
-    if (T.isNull()) return false;
-    T = T.getNonReferenceType();
-    return !T.isVolatileQualified() && !T.isRestrictQualified() &&
-        T.getAddressSpace() == LangAS::Default && !T->isDependentType() &&
-        MemberOwnerIdentity(T->getAsCXXRecordDecl());
+    return functionalBindInertMemberReceiverSourceIdentity(S, SM, T, Template->getASTContext());
   };
   auto Capture = [&](QualType T) {
     return Scalar(T) || Reference(T) || MemberReceiverIdentity(T) ||
