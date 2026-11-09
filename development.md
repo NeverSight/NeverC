@@ -2221,8 +2221,12 @@ one REP instruction. The dword move spelling is
 scalar floating-point MOVSD. MOVS accepts a const source pointer; its builtin
 type must qualify the source element, not the preceding destination pointer.
 
-Memory-string counts are 64-bit in NeverC. String port I/O uses an unsigned
-32-bit count, zero-extended into RCX. These operations consume ambient DF;
+The unsuffixed portable memory-string APIs use 64-bit counts in x64 code.
+The six `__builtin_ia32_{movsb,movsw,movsd_rep,stosb,stosw,stosd}32` APIs
+use 32-bit pointers and counts in i386 code. Microsoft byte/word/dword
+MOVS/STOS names select the code-mode width; `__movsq` and `__stosq` require
+x64. String port I/O uses an unsigned 32-bit count, zero-extended into RCX
+in x64 code. These operations consume ambient DF;
 they do not introduce CLD/STD or change the platform ABI's DF requirements.
 The hardware instruction owns zero-count behavior, element order, overlapping
 accesses and fault/restart behavior. The API does not implement memcpy or
@@ -2232,8 +2236,9 @@ memset, and does not expose partially completed machine state as a C return.
 accumulator width and memory effects in the pruned instruction table. DF is a
 reserved architectural register, so the machine verifier can represent its
 ambient input. Port operations additionally have unmodeled I/O side effects.
-The full LLVM fork supplies the matching 64-bit APIs plus 32-bit-code-mode
-memory-string APIs with a `32` suffix; a mismatched code mode is rejected.
+The full LLVM fork supplies the matching 64-bit and `32` interfaces;
+a mismatched explicit code mode is rejected. Linux i386 machine-code emission
+uses NeverC's `-fllvm-backend=/path/to/llc` driver with that fork.
 
 [tests/verify-string-completion.py](tests/verify-string-completion.py) runs MOVS/STOS in Unicorn against an
 independent sequential byte oracle. It covers O0/O2, every element width,
@@ -2248,6 +2253,17 @@ Run the script normally for NeverC, with `--spelling microsoft` for the
 Microsoft names, with `--llc /path/to/llc` for full-fork 32/64-bit IR, or with
 `--backend-llc /path/to/llc` for NeverC IR through the full fork. The current
 matrix has 544 cases per 64-bit route and 1,000 for the full fork.
+
+[tests/neverc/X86/verify_i386_rep_pointers.py](tests/neverc/X86/verify_i386_rep_pointers.py)
+compares actual i386 C compilation against independent MOVS/STOS bytes.
+It covers portable and Microsoft names, O0/O2, aligned dynamic frames,
+overlap, both directions, zero/one/seven completed elements and full-width
+counts stopped at the REP boundary. It also rejects deliberate corruptions
+of inputs, result, memory, stack and callee-saved registers. The DF=1 entry
+is a raw lowering probe, not a valid platform C ABI entry claim. Run it with
+`--compiler NEVERC --backend-llc LLVM_LLC --keep OUT`; it requires Capstone,
+LIEF and Unicorn. On a Linux target, Microsoft header probes also define
+`_MSC_VER` to select the bundled compatibility declarations.
 
 ### Explicit REP state
 
@@ -2278,8 +2294,16 @@ repeat selector if applicable. Element bytes are 1/2/4/8 (INS/OUTS: 1/2/4);
 address bits are 32/64; source segment is 0 or the architectural prefix byte;
 repeat is 0 for REPE or 1 for REPNE. All controls must be compile-time constants.
 
+In i386 code, `__NEVERC_X86_REP_STATE32__ == 1` advertises the seven
+corresponding `__builtin_ia32_rep_<family>_state32` APIs. GPR inputs and the
+state array use `unsigned`, including with 16-bit address controls. The DF,
+port and comparison-flag types are unchanged. Element bytes are 1/2/4 and
+address bits are 16/32. Comparison completion needs no long-mode SAHF
+feature. The frontend validates controls at their shared LLVM owner and
+emits native `.state32` calls with 32-bit output strides.
+
 Comparison flags use SF/ZF/AF/PF/CF in the LAHF high byte and OF in bit zero,
-masked by `0xd501`. CMPS/SCAS require `target("sahf")`; the capability macro
+masked by `0xd501`. In x64 code CMPS/SCAS require `target("sahf")`; the capability macro
 does not enable CPU features. Input flags are restored before the instruction,
 including for zero count and architectural fault restart. The actual hardware
 instruction owns accesses and partial-register updates; do not pre-truncate
@@ -2290,8 +2314,8 @@ These APIs expose completed registers, not a complete guest exception ABI:
 non-string registers can be compiler scratch, and no result-array stores take
 place until the operation returns. An OS fault handler may resume the native
 instruction. Port I/O still requires the architectural privilege/permission.
-NeverC supports 64-bit code only. The full LLVM fork also supplies `state32`
-interfaces for 32-bit code and 16/32-bit addresses.
+NeverC's Linux i386 driver uses the full LLVM backend for the `state32`
+interfaces. This does not qualify Windows or Darwin i386 source ABIs.
 
 `sync-x86-rep-state.py` owns the pseudo operands, implicit GPR/DF definitions
 and unknown memory effects; `sync-x86-native-intrinsics.py` owns signatures
@@ -2309,14 +2333,28 @@ high-register write behavior.
 
 Run with `--llc /path/to/llc` for full-fork IR, without it for NeverC, or with
 `--backend-llc /path/to/llc` for NeverC IR through the full fork. Add
-`--llc /path/to/llc --emulate-32` to check 8,928 memory cases and 2,304 controlled
-port cases in 32-bit Unicorn, including 16-bit addresses and preserved high
-register halves. That 32-bit result is emulator coverage, not hardware fault
+`--emulate-32` with either `--llc /path/to/llc` or
+`--compiler NEVERC --backend-llc /path/to/llc` to check 8,928 memory cases and
+2,304 controlled port cases in 32-bit Unicorn, including 16-bit addresses,
+preserved high register halves, complete input/output state, ABI restoration
+and rejected corruption controls. The NeverC route compiles actual C through
+its external-backend driver. Add `--keep OUT` to retain sources, original
+bytes, objects and result hashes. That 32-bit result is emulator coverage, not hardware fault
 restart qualification. Dependencies are `capstone`, `lief`, and `unicorn` for
 the emulator route, plus a host C compiler for native execution.
 All routes also reassemble both syntax dialects and compare function bodies
 with direct object emission. The comparison matches the compile driver's
 branch-relaxation policy and excludes inter-function alignment padding.
+
+The 2026-11-08 i386 source qualification passes all 193 selected x86/i386
+frontend tests. Its state matrix passes 11,232 comparisons and rejects 260
+corruption controls; the 48 pointer objects pass 3,456 completed comparisons,
+2,304 large-count boundaries and 384 corruption controls. Both x64 compiler
+routes retain 45,152 memory/flags comparisons, 112 real page-fault restarts and
+192 controlled port completions each. The six new intrinsic signatures also
+pass the generator/sorter checks and strict linked-artifact global-state
+audit with no findings or unscannable inputs. These results do not qualify
+i386 hardware restart, physical port I/O or additional platform ABIs.
 
 Port I/O string operations (`__inbytestring`, `__outbytestring`, etc.) are
 implemented via REP pseudo-instructions: `REP_INSB_64`, `REP_INSW_64`,
