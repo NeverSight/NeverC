@@ -2449,6 +2449,17 @@ bool approvedFunctionalBindMemberCallUnwrapSource(
     std::set<const clang::CXXMethodDecl *> &OwnerQueries,
     const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
 
+// Exact member dispatcher signature/default/declval sources only.
+bool approvedFunctionalBindMemberCallInvokeSignatureSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindMemberCommonCallSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnerQueries,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias = {});
+
 bool approvedFunctionalBindStandardFactorySource(
     const State &S, const clang::SourceManager &SM,
     const FunctionalBindFactorySource &Factory, const clang::ASTContext &Context,
