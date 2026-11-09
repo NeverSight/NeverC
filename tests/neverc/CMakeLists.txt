@@ -63,6 +63,7 @@ set(NEVERC_TEST_SOURCES
   X86/FlagsFrontendTests.cpp
   X86/I386FrontendTests.cpp
   X86/PortableSystemFrontendTests.cpp
+  X86/RepFrontendTests.cpp
   X86/NativeDivisionFrontendTests.cpp
   X86/NativeBitTestFrontendTests.cpp
   X86/WideMultiplyFrontendTests.cpp

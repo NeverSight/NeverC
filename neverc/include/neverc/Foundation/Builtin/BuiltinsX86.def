@@ -72,6 +72,24 @@ BUILTIN(__builtin_ia32_cpuidex, "vi*UiUi", "n")
 // Raw resumable software interrupt; the vector is an immediate in 0..255.
 BUILTIN(__builtin_ia32_int, "vIUi", "n")
 
+// Native legacy REP pointers and counts use 32-bit code-mode words.
+BUILTIN(__builtin_ia32_movsb32, "vv*vC*Ui", "n")
+BUILTIN(__builtin_ia32_movsw32, "vv*vC*Ui", "n")
+BUILTIN(__builtin_ia32_movsd_rep32, "vv*vC*Ui", "n")
+BUILTIN(__builtin_ia32_stosb32, "vv*UcUi", "n")
+BUILTIN(__builtin_ia32_stosw32, "vv*UsUi", "n")
+BUILTIN(__builtin_ia32_stosd32, "vv*UiUi", "n")
+
+// Full legacy GPR results remain 32 bits even with 16-bit address controls.
+// LAHF/SETO comparison flags do not require the long-mode SAHF feature.
+BUILTIN(__builtin_ia32_rep_movs_state32, "vUiUiUiUcIUiIUiIUiUi*", "n")
+BUILTIN(__builtin_ia32_rep_stos_state32, "vUiUiUiUcIUiIUiUi*", "n")
+BUILTIN(__builtin_ia32_rep_lods_state32, "vUiUiUiUcIUiIUiIUiUi*", "n")
+BUILTIN(__builtin_ia32_rep_cmps_state32, "vUiUiUiUcUsIUiIUiIUiIUiUi*Us*", "n")
+BUILTIN(__builtin_ia32_rep_scas_state32, "vUiUiUiUcUsIUiIUiIUiUi*Us*", "n")
+BUILTIN(__builtin_ia32_rep_ins_state32, "vUiUiUsUcIUiIUiUi*", "n")
+BUILTIN(__builtin_ia32_rep_outs_state32, "vUiUiUsUcIUiIUiIUiUi*", "n")
+
 // Native REP port I/O uses 32-bit element counts in either code mode.
 // DF and the instruction-owned DS/ES memory access retain their CPU meaning.
 BUILTIN(__builtin_ia32_inbytestring, "vUsv*Ui", "n")

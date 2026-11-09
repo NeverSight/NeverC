@@ -550,6 +550,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_ljmp64:
   case X86::BI__readcr8:
   case X86::BI__writecr8:
+  case X86::BI__movsq:
+  case X86::BI__stosq:
     if (TI.getTriple().getArch() != llvm::Triple::x86_64) {
       unsigned ID = getDiagnostics().getCustomDiagID(
           DiagnosticsEngine::Error,
@@ -580,6 +582,19 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_invlpga32:
   case X86::BI__builtin_ia32_invlpgb32:
   case X86::BI__builtin_ia32_tlbsync_control32:
+  case X86::BI__builtin_ia32_movsb32:
+  case X86::BI__builtin_ia32_movsw32:
+  case X86::BI__builtin_ia32_movsd_rep32:
+  case X86::BI__builtin_ia32_stosb32:
+  case X86::BI__builtin_ia32_stosw32:
+  case X86::BI__builtin_ia32_stosd32:
+  case X86::BI__builtin_ia32_rep_movs_state32:
+  case X86::BI__builtin_ia32_rep_stos_state32:
+  case X86::BI__builtin_ia32_rep_lods_state32:
+  case X86::BI__builtin_ia32_rep_cmps_state32:
+  case X86::BI__builtin_ia32_rep_scas_state32:
+  case X86::BI__builtin_ia32_rep_ins_state32:
+  case X86::BI__builtin_ia32_rep_outs_state32:
   case X86::BI__builtin_ia32_vmload_addr16:
   case X86::BI__builtin_ia32_vmsave_addr16:
   case X86::BI__builtin_ia32_invlpga_addr16:
@@ -719,33 +734,47 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case X86::BI__builtin_ia32_rorx_u64:
     return SemaBuiltinConstantArgRange(TheCall, 1, 0, 255);
   case X86::BI__builtin_ia32_rep_movs_state:
+  case X86::BI__builtin_ia32_rep_movs_state32:
   case X86::BI__builtin_ia32_rep_stos_state:
+  case X86::BI__builtin_ia32_rep_stos_state32:
   case X86::BI__builtin_ia32_rep_lods_state:
+  case X86::BI__builtin_ia32_rep_lods_state32:
   case X86::BI__builtin_ia32_rep_cmps_state:
+  case X86::BI__builtin_ia32_rep_cmps_state32:
   case X86::BI__builtin_ia32_rep_scas_state:
+  case X86::BI__builtin_ia32_rep_scas_state32:
   case X86::BI__builtin_ia32_rep_ins_state:
-  case X86::BI__builtin_ia32_rep_outs_state: {
+  case X86::BI__builtin_ia32_rep_ins_state32:
+  case X86::BI__builtin_ia32_rep_outs_state:
+  case X86::BI__builtin_ia32_rep_outs_state32: {
     llvm::X86::RepStringKind Kind;
     switch (BuiltinID) {
     case X86::BI__builtin_ia32_rep_movs_state:
+    case X86::BI__builtin_ia32_rep_movs_state32:
       Kind = llvm::X86::RepStringKind::Move;
       break;
     case X86::BI__builtin_ia32_rep_stos_state:
+    case X86::BI__builtin_ia32_rep_stos_state32:
       Kind = llvm::X86::RepStringKind::Store;
       break;
     case X86::BI__builtin_ia32_rep_lods_state:
+    case X86::BI__builtin_ia32_rep_lods_state32:
       Kind = llvm::X86::RepStringKind::Load;
       break;
     case X86::BI__builtin_ia32_rep_cmps_state:
+    case X86::BI__builtin_ia32_rep_cmps_state32:
       Kind = llvm::X86::RepStringKind::Compare;
       break;
     case X86::BI__builtin_ia32_rep_scas_state:
+    case X86::BI__builtin_ia32_rep_scas_state32:
       Kind = llvm::X86::RepStringKind::Scan;
       break;
     case X86::BI__builtin_ia32_rep_ins_state:
+    case X86::BI__builtin_ia32_rep_ins_state32:
       Kind = llvm::X86::RepStringKind::Input;
       break;
     case X86::BI__builtin_ia32_rep_outs_state:
+    case X86::BI__builtin_ia32_rep_outs_state32:
       Kind = llvm::X86::RepStringKind::Output;
       break;
     default:
@@ -766,8 +795,8 @@ bool Sema::CheckX86BuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
         (llvm::X86::repStringHasSource(Kind) && Control(Segment)) ||
         (Compare && Control(NotEqual)))
       return true;
-    if (!llvm::X86::isRepStringControl(Kind, true, Element, Address, Segment,
-                                       NotEqual))
+    if (!llvm::X86::isRepStringControl(Kind, TI.getTriple().isArch64Bit(),
+                                       Element, Address, Segment, NotEqual))
       return bool(Diag(TheCall->getBeginLoc(),
                        diag::err_x86_builtin_invalid_rep_control)
                   << TheCall->getArg(First)->getSourceRange()

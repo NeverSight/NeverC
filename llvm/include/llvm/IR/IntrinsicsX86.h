@@ -1304,9 +1304,12 @@ enum X86Intrinsics : unsigned {
     x86_monitorx,                                    // llvm.x86.monitorx
     x86_movdir64b,                                   // llvm.x86.movdir64b
     x86_movsb,                                       // llvm.x86.movsb
+    x86_movsb32,                                     // llvm.x86.movsb32
     x86_movsd_rep,                                   // llvm.x86.movsd.rep
+    x86_movsd_rep32,                                 // llvm.x86.movsd.rep32
     x86_movsq,                                       // llvm.x86.movsq
     x86_movsw,                                       // llvm.x86.movsw
+    x86_movsw32,                                     // llvm.x86.movsw32
     x86_mwaitx,                                      // llvm.x86.mwaitx
     x86_outbyte,                                     // llvm.x86.outbyte
     x86_outbytestring,                               // llvm.x86.outbytestring
@@ -1584,9 +1587,12 @@ enum X86Intrinsics : unsigned {
     x86_stgi,                                        // llvm.x86.stgi
     x86_sti,                                         // llvm.x86.sti
     x86_stosb,                                       // llvm.x86.stosb
+    x86_stosb32,                                     // llvm.x86.stosb32
     x86_stosd,                                       // llvm.x86.stosd
+    x86_stosd32,                                     // llvm.x86.stosd32
     x86_stosq,                                       // llvm.x86.stosq
     x86_stosw,                                       // llvm.x86.stosw
+    x86_stosw32,                                     // llvm.x86.stosw32
     x86_str_mem,                                     // llvm.x86.str.mem
     x86_str_mem_address,                             // llvm.x86.str.mem.address
     x86_str_reg16,                                   // llvm.x86.str.reg16
