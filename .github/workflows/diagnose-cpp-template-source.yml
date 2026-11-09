@@ -2058,8 +2058,37 @@ jobs:
         sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev
     - name: Prepare genuine pinned private Clang source headers
       run: |
-        python3 utils/ci/prepare-cpp-not-fn-syntax-headers.py \
-          --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-not-fn-headers"
+        python3 - "$GITHUB_WORKSPACE" "$RUNNER_TEMP/cpp-not-fn-headers" <<'PY'
+        import hashlib, pathlib, runpy, sys, time, urllib.error, urllib.request
+        script = 'utils/ci/prepare-cpp-not-fn-syntax-headers.py'
+        assert hashlib.sha256(pathlib.Path(script).read_bytes()).hexdigest() == 'ed675f974fdf3c2145cc7a40a0a7b041eb45c0b89b13afe02662f6505691393d'
+        PINNED_URL = 'https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/llvm-project-20.1.8.src.tar.xz'
+        original_open = urllib.request.urlopen
+        def bounded_header_open(url, *args, **kwargs):
+            if url != PINNED_URL:
+                return original_open(url, *args, **kwargs)
+            assert kwargs.get('timeout') == 60
+            deadline = time.monotonic() + kwargs['timeout']
+            for attempt in range(3):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError('Original60-second upstream opening budget exhausted')
+                current = dict(kwargs, timeout=min(kwargs['timeout'], remaining))
+                try:
+                    return original_open(url, *args, **current)
+                except urllib.error.HTTPError as error:
+                    if error.code not in (502, 503, 504) or attempt == 2:
+                        raise
+                    error.close()
+                    delay = attempt + 1
+                    if deadline - time.monotonic() <= delay:
+                        raise
+                    print('Transient upstream HTTP ' + str(error.code) + '; bounded retry ' + str(attempt + 1), flush=True)
+                    time.sleep(delay)
+        urllib.request.urlopen = bounded_header_open
+        sys.argv = [script, '--repo', sys.argv[1], '--output', sys.argv[2]]
+        runpy.run_path(script, run_name='__main__')
+        PY
     - name: Check exact baseline and not_fn source-description APIs
       run: |
         python3 utils/ci/check-cpp-not-fn-source-syntax.py \
