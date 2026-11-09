@@ -7,7 +7,7 @@
 #include <string.h>
 
 int main(int argc, char **argv) {
-  if (argc != 2)
+  if (argc != 2 && argc != 3)
     return 2;
   const int full = strcmp(argv[1], "full") == 0;
   const int forced = strncmp(argv[1], "sde-abort-", 10) == 0;
@@ -48,6 +48,24 @@ int main(int argc, char **argv) {
       RUN(candidate[code], x, left);
       RUN(reference[code], y, right);
 #undef RUN
+      if (argc == 3) {
+        if (strcmp(argv[2], "status") == 0)
+          x.status ^= 1;
+        else if (strcmp(argv[2], "status-high") == 0)
+          x.status ^= 1ull << 32;
+        else if (strcmp(argv[2], "integer") == 0)
+          x.i0 ^= 1;
+        else if (strcmp(argv[2], "previous-memory") == 0)
+          x.i1 ^= 1;
+        else if (strcmp(argv[2], "completed-memory") == 0)
+          x.i2 ^= 1;
+        else if (strcmp(argv[2], "floating") == 0)
+          x.fp += 1;
+        else if (strcmp(argv[2], "canary") == 0)
+          left[0] ^= 1;
+        else
+          return 2;
+      }
       const uint64_t status = full ? (code << 24) | 1u : reason;
       if (x.status != status || y.status != status ||
           memcmp(&x, &y, sizeof(x)) || memcmp(left, right, sizeof(left)) ||

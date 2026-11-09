@@ -29,7 +29,8 @@ PREFIXES = (0, 0x26, 0x2e, 0x36, 0x3e, 0x64, 0x65)
 
 def generate(mode=64, stack_memory=False, frame=False):
     declarations = {}
-    ir, source, header, cases = [], ["typedef unsigned long long U64;\n"], [], []
+    word = "unsigned long long" if mode == 64 else "unsigned"
+    ir, source, header, cases = [], [f"typedef {word} U64;\n"], [], []
     header.append("enum { " + ", ".join(enum for _, enum in OPERATIONS) + " };\n")
 
     def call(name, args):
@@ -43,7 +44,9 @@ def generate(mode=64, stack_memory=False, frame=False):
         declarations[native] = declaration
         ir_args = ", ".join(kind + " " + ("%" + value if isinstance(value, str) else str(value)) for kind, value in args)
         c_args = ", ".join(map(str, (value for _, value in args)))
-        return f"  call void @{native}({ir_args})\n", f"  __builtin_ia32_{name}({c_args});\n"
+        source_name = name + ("32" if mode == 32 and name not in
+                              ("bndmov_reg", "bnd_branch") else "")
+        return f"  call void @{native}({ir_args})\n", f"  __builtin_ia32_{source_name}({c_args});\n"
 
     def add_call(name, args):
         a, b = call(name, args)

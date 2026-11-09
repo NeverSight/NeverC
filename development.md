@@ -475,10 +475,11 @@ is an additional prerequisite for these observations.
 
 ## Native MPX bounds state
 
-NeverC exposes 14 C23 builtins for the architectural BND0--BND3 bank. Each
-returns `void` and emits a native LLVM intrinsic, without platform headers or
-inline assembly. Bank indices and address controls are constant `unsigned`;
-addresses and values are `unsigned long long`.
+NeverC exposes 14 MPX operations in each x86 code mode for the architectural
+BND0--BND3 bank. Each returns `void` and emits a native LLVM intrinsic, without
+platform headers or inline assembly. Bank indices and address controls are
+constant `unsigned`. The long-mode interfaces below use `unsigned long long`
+addresses and values.
 
 | Builtin suffix after `__builtin_ia32_` | Arguments |
 | --- | --- |
@@ -490,6 +491,13 @@ addresses and values are `unsigned long long`.
 | `bndmk` | `bank, lower, inclusive_upper, address_bits, segment_prefix` |
 | `bndldx`, `bndstx` | `bank, translation_base, pointer_value, address_bits, segment_prefix` |
 
+`bnd_branch` and `bndmov_reg` are shared by i386 and x64. Append `32` to each
+other name for i386, where addresses and values are `unsigned` and the only
+admitted address encoding is 32 bits. Explicit interfaces reject the wrong
+code mode. Linux i386 object emission uses NeverC's
+`-fllvm-backend=/path/to/llc` driver with the full LLVM fork; no source-level
+assembly is required.
+
 Bank indices are 0..3. Address bits select a 32- or 64-bit encoding. Segment
 prefixes are 0, 0x26, 0x2e, 0x36, 0x3e, 0x64 or 0x65. MPX ignores 67H in long
 mode, so a 32-bit encoding still uses the entire 64-bit base and index. BNDMK
@@ -499,8 +507,8 @@ bases. BNDLDX/STX use base+displacement for table translation and a separate,
 unscaled pointer-comparison value. With no encoded base, supply zero, ignoring
 the displacement as required by the instruction.
 
-`__NEVERC_X86_MPX_STACK_MEMORY__=1` advertises stack-default addresses for the
-three BNDMOV memory builtins. OR `0x100` into a non-FS/GS segment control to
+In x64 code, `__NEVERC_X86_MPX_STACK_MEMORY__=1` advertises stack-default
+addresses for the three BNDMOV memory builtins. OR `0x100` into a non-FS/GS segment control to
 retain the SS default using the unmodified frame pointer and a computed index.
 This accepts both 32- and 64-bit encodings, since MPX ignores 67H. Native bounds
 memory is never probed by ordinary compiler loads. MIB table operations,
@@ -538,13 +546,20 @@ the generated-table CI job checks all three authorities and drift regressions.
 callee-saved registers and both assembly dialects for 520 combinations at
 O0/O2 across ELF, COFF and Mach-O. It accepts NeverC, full LLVM, or NeverC IR
 with the full LLVM backend. `--mode=32 --llc=...` checks 268 i386 combinations
-against the full LLVM fork; NeverC's x86 backend remains 64-bit only.
+against the full LLVM fork. Use `--mode 32 --compiler NEVERC
+--backend-llc LLVM_LLC --formats elf` for actual i386 C through NeverC's
+external-backend driver. The i386 matrix uses three full-register input sets,
+including zero, high bits and all bits set. Selected forms reject deliberate
+corruptions of opcode, bounds-bank selection, operand values, stack and
+callee-saved registers; frame profiles also reject damaged local canaries.
 These controlled boundaries do not simulate successful MPX operations.
 `--frame` additionally checks aligned fixed locals, dynamic allocations and
 both stack canaries in every function. `--stack-memory` checks 120 BNDMOV
 combinations; it composes with `--frame`. Per-function instruction bytes and
 relative offsets must match both assembly dialects, independently of section
-ordering or inter-function alignment.
+ordering or inter-function alignment. `--keep DIR` retains sources, command
+logs, object hashes and machine-readable results. The current NeverC i386
+qualification covers ELF; Windows/Darwin i386 source ABIs remain unqualified.
 
 [tests/verify-mpx-state.py](tests/verify-mpx-state.py) supplies a freestanding CPL0 QEMU guest with its own
 page tables, XCR0, BNDCFG and exception gates. It executes native enable/disable,
@@ -2982,7 +2997,8 @@ qualify physical AMD RMP algorithms or actual SEV-ES services.
 
 `__builtin_ia32_rtm_abort_pair(code)` and `<immintrin.h>`'s
 `__rtm_abort_pair(code)` return the actual abort status of a single XBEGIN /
-XABORT pair. The constant code must be in 0..255. Entry requires RTM support
+XABORT pair in both i386 and x64 code. The constant code must be in 0..255.
+Entry requires RTM support
 outside an existing RTM/HLE region; an early abort may have a different status
 from an explicit abort. One machine pseudo owns both instructions and the
 local fallback, so no spill, call, padding or C return splits the checkpoint.
@@ -3002,6 +3018,12 @@ with an independent raw-byte reference. It exercises integer/SIMD values live
 across the pair, memory order and exact status at O0/O2 through NeverC or the
 LLVM fork's legacy/new backend pass managers. Pass `--compiler`, `--sde` and
 `--keep`; add `--backend-llc` and optionally `--new-pm` for the LLVM fork.
+For Linux i386, add `--mode 32 --backend-llc LLVM_LLC` and use the kit's
+`sde` launcher. This compiles actual C through the native external-backend
+driver and links the 32-bit independent oracle. It requires host i386 libc
+development files. Each optimization/abort-mode profile also requires
+deliberately corrupted status, integer/FP results, memory snapshots and
+canaries to fail; those failures are recorded separately from passing pairs.
 SDE 10.13.1 requires `-tsx` only in full mode: that option overrides abort mode.
 Forced abort checks omit it and require exact statuses 0, 2, 6 and 8. This mode
 also clears CPUID.RTM, so only the fixture's explicit `sde-abort-N` entry
