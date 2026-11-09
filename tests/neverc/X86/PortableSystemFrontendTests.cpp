@@ -6,6 +6,27 @@
 
 class X86PortableSystemTest : public X86NativeBuiltinTest {};
 
+TEST_F(X86PortableSystemTest, I386CpuidHeaderUsesNativeAvailabilityProbe) {
+  const auto Source = tmpFile("cpuid-availability.c");
+  const auto IR = tmpFile("cpuid-availability.ll");
+  writeFile(Source, "#include <cpuid.h>\n"
+                    "unsigned probe(unsigned leaf, unsigned *sig) {\n"
+                    "  return __get_cpuid_max(leaf, sig);\n}\n");
+  for (const char *Opt : {"-O0", "-O2"}) {
+    const auto Result =
+        ncc({"--target=i386-unknown-linux-gnu", Opt, "-ffreestanding",
+             "-fno-lto", "-fno-builtin-mimalloc", "-S", "-emit-llvm",
+             Source.string(), "-o", IR.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    const auto Text = readFile(IR);
+    for (const char *Name : {"cpuidex", "flags.read.u32", "flags.write.u32"})
+      EXPECT_NE(Text.find(std::string("@llvm.x86.") + Name + "("),
+                std::string::npos)
+          << Text;
+    EXPECT_EQ(Text.find(" asm "), std::string::npos) << Text;
+  }
+}
+
 TEST_F(X86PortableSystemTest, BothCodeModesAdmitNativeSystemInterfaces) {
   const auto Source = tmpFile("portable-system.c");
   const auto IR = tmpFile("portable-system.ll");

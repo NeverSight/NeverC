@@ -1,8 +1,8 @@
 #ifndef __CPUID_H
 #define __CPUID_H
 
-#if !defined(__x86_64__)
-#error this header is for x86_64 only
+#if !defined(__x86_64__) && !defined(__i386__)
+#error this header is for x86 only
 #endif
 
 /* Responses identification request with %eax 0 */
@@ -249,6 +249,15 @@
   } while (0)
 #define __cpuid(__leaf, __eax, __ebx, __ecx, __edx)                            \
   __cpuid_count(__leaf, 0, __eax, __ebx, __ecx, __edx)
+#elif defined(__i386__)
+/* The compiler owns preservation of the 32-bit EBX output, including PIC. */
+#define __cpuid_count(__leaf, __count, __eax, __ebx, __ecx, __edx)             \
+  __asm__ volatile("cpuid"                                                     \
+                   : "=a"(__eax), "=b"(__ebx), "=c"(__ecx), "=d"(__edx)       \
+                   : "0"(__leaf), "2"(__count)                                \
+                   : "memory")
+#define __cpuid(__leaf, __eax, __ebx, __ecx, __edx)                            \
+  __cpuid_count(__leaf, 0, __eax, __ebx, __ecx, __edx)
 #else
 /* The first exchange writes the temporary before CPUID consumes its inputs.
  * It must not overlap EAX/ECX, even when their outputs are unused. */
@@ -270,7 +279,34 @@
 static __inline unsigned int __get_cpuid_max(unsigned int __leaf,
                                              unsigned int *__sig) {
   unsigned int __eax, __ebx, __ecx, __edx;
-  /* x86-64 always supports cpuid. */
+#ifdef __i386__
+  /* Legacy processors without CPUID cannot change EFLAGS.ID. Restore the
+   * original image before either returning or querying the requested leaf. */
+  unsigned int __original_flags, __changed_flags;
+#if __has_builtin(__builtin_ia32_readeflags_u32) && \
+    __has_builtin(__builtin_ia32_writeeflags_u32)
+  __original_flags = __builtin_ia32_readeflags_u32();
+  __builtin_ia32_writeeflags_u32(__original_flags ^ 0x00200000U);
+  __changed_flags = __builtin_ia32_readeflags_u32();
+  __builtin_ia32_writeeflags_u32(__original_flags);
+#else
+  __asm__ volatile("pushf{l|d}\n\t"
+                   "pop{l|} %0\n\t"
+                   "mov{l|} {%0, %1|%1, %0}\n\t"
+                   "xor{l|} {$0x00200000, %1|%1, 0x00200000}\n\t"
+                   "push{l|} %1\n\t"
+                   "popf{l|d}\n\t"
+                   "pushf{l|d}\n\t"
+                   "pop{l|} %1\n\t"
+                   "push{l|} %0\n\t"
+                   "popf{l|d}"
+                   : "=&r"(__original_flags), "=&r"(__changed_flags)
+                   :
+                   : "cc", "memory");
+#endif
+  if (((__original_flags ^ __changed_flags) & 0x00200000U) == 0)
+    return 0;
+#endif
   __cpuid(__leaf, __eax, __ebx, __ecx, __edx);
   if (__sig)
     *__sig = __ebx;
