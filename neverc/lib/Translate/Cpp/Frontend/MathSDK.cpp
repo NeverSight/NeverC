@@ -26840,7 +26840,11 @@ bool retainFunctionalBindConstraintRoot(
         Owner->getSpecializationKind() == TSK_ImplicitInstantiation &&
         Owner->getTemplateArgs().size() == 1 &&
         Owner->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
-        (Scalar(Owner->getTemplateArgs()[0].getAsType()) || Callable(Owner->getTemplateArgs()[0].getAsType()))) {
+        (Scalar(Owner->getTemplateArgs()[0].getAsType()) || Callable(Owner->getTemplateArgs()[0].getAsType()) ||
+         // Retain only the original declaration-only negative receiver query.
+         // An implicit Microsoft single-inheritance identity is collection
+         // evidence; the consuming member proof still closes every source.
+         (Method->isVariadic() && MemberReceiverIdentity(Owner->getTemplateArgs()[0].getAsType())))) {
       if (!Method->isVariadic() &&
           (!functionalBindInertStandardCallableSourceIdentity(
               S, SM, Owner->getTemplateArgs()[0].getAsType()->getAsCXXRecordDecl()) ||
