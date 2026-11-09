@@ -450,6 +450,8 @@ public:
 
   virtual bool hasBitIntType() const { return false; }
 
+  virtual unsigned getBitIntMaxAlign() const { return getLongLongAlign(); }
+
   // Different targets may support a different maximum width for the _BitInt
   // type, depending on what operations are supported.
   virtual size_t getMaxBitIntWidth() const {

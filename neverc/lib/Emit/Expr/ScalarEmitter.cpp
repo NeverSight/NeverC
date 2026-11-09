@@ -934,6 +934,8 @@ Value *ScalarExprEmitter::genComplexToScalarConversion(
 }
 
 Value *ScalarExprEmitter::genNullValue(QualType Ty) {
+  if (Ty->isBitIntType())
+    return llvm::Constant::getNullValue(convertType(Ty));
   return FE.genFromMemory(FE.ME.genNullConstant(Ty), Ty);
 }
 
@@ -3416,6 +3418,8 @@ Value *ScalarExprEmitter::VisitVAArgExpr(VAArgExpr *VE) {
     return llvm::UndefValue::get(ArgTy);
   }
 
+  if (Ty->isBitIntType())
+    ArgPtr = ArgPtr.withElementType(FE.getTypes().convertTypeForLoadStore(Ty));
   llvm::Value *Val = Builder.CreateLoad(ArgPtr);
 
   // If genVAArg promoted the type, we must truncate it.

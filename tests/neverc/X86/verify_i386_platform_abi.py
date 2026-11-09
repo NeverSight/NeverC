@@ -178,8 +178,14 @@ def object_code(path, base):
                 elif relocation.type==lief.COFF.Relocation.TYPE.I386_REL32:value+=target-base-offset-4
                 else:raise AssertionError((path,"unbound COFF relocation",relocation))
             else:
-                assert not relocation.is_scattered and int(relocation.type)==0 and relocation.size==32,(path,relocation)
-                if relocation.has_symbol:
+                assert int(relocation.type)==0 and relocation.size==32,(path,relocation)
+                if relocation.is_scattered:
+                    # All Mach-O sections retain their original relative VAs.
+                    # Scattered VANILLA references therefore move by the same
+                    # load bias; an intra-image PC-relative delta is unchanged.
+                    assert 0 <= relocation.value < REGION
+                    if not relocation.pc_relative:value+=base
+                elif relocation.has_symbol:
                     value+=base+symbol_offset(relocation.symbol)
                     if relocation.pc_relative:value-=base
                 elif not relocation.pc_relative:value+=base

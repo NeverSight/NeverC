@@ -1135,7 +1135,7 @@ FunctionEmitter::genStoreThroughLValue(RValue Src, LValue Dst, bool isInit) {
 void FunctionEmitter::genStoreThroughBitfieldLValue(RValue Src, LValue Dst,
                                                     llvm::Value **Result) {
   const BitFieldInfo &Info = Dst.getBitFieldInfo();
-  llvm::Type *ResLTy = convertTypeForMem(Dst.getType());
+  llvm::Type *ResLTy = getTypes().convertTypeForLoadStore(Dst.getType());
   Address Ptr = Dst.getBitFieldAddress();
 
   llvm::Value *SrcVal = Src.getScalarVal();

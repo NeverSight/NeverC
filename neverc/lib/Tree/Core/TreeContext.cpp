@@ -780,7 +780,7 @@ TypeInfo TreeContext::getTypeInfoImpl(const Type *T) const {
   case Type::BitInt: {
     const auto *EIT = cast<BitIntType>(T);
     Align = std::clamp<unsigned>(llvm::PowerOf2Ceil(EIT->getNumBits()),
-                                 getCharWidth(), Target->getLongLongAlign());
+                                 getCharWidth(), Target->getBitIntMaxAlign());
     Width = llvm::alignTo(EIT->getNumBits(), Align);
     break;
   }
@@ -2664,4 +2664,3 @@ bool TreeContext::isSameEntity(const NamedDecl *X, const NamedDecl *Y) const {
 
   return false;
 }
-

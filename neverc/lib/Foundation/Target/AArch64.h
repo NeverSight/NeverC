@@ -247,6 +247,7 @@ public:
   bool hasInt128Type() const override;
 
   bool hasBitIntType() const override { return true; }
+  unsigned getBitIntMaxAlign() const override { return 128; }
 };
 
 class LLVM_LIBRARY_VISIBILITY AArch64leTargetInfo : public AArch64TargetInfo {
