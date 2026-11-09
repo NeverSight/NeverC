@@ -28611,6 +28611,122 @@ class FunctionLowering {
     reject(L, "utility operation", "Unknown approved utility operation.");
   }
 
+  Expression functionalBindMemberInvocationFromBindings(
+      const FunctionalBindCallSource &Source,
+      const FunctionalBindMemberCommonCallSource &Given, Expression Address,
+      const std::vector<Expression> &Incoming, SourceLocation L) {
+    const auto Completed = A.VerifiedBindMemberCalls.find(Source.SourceCall);
+    const auto Fresh = describeFunctionalBindMemberCommonCallSource(
+        A.S, A.Sources, Source.SourceCall, A.Context);
+    if (Completed == A.VerifiedBindMemberCalls.end() || &Completed->second != &Given ||
+        !Fresh || Source.SourceCall != Source.OwnedRoot || !Source.OwnedPath.empty() ||
+        Given.Selected.SourceCall != Source.SourceCall ||
+        Given.Selected.Method != Source.Method || Given.Selected.Object != Source.Object ||
+        Given.Selected.Apply != Source.Apply || Given.Selected.Invoke != Source.Invoke ||
+        Given.Selected.Target != Source.Target || Given.Selected.Storage.Record != Source.Storage.Record ||
+        Fresh->Selected.Method != Source.Method || Fresh->Selected.Object != Source.Object ||
+        Fresh->Selected.Target != Source.Target || Fresh->Selected.Apply != Source.Apply ||
+        Fresh->Selected.Invoke != Source.Invoke || Fresh->Selected.Storage.Record != Source.Storage.Record ||
+        Fresh->Member.Value.Factory.Member != Given.Member.Value.Factory.Member ||
+        Fresh->Member.Value.Factory.Address != Given.Member.Value.Factory.Address ||
+        Fresh->Member.Value.Factory.Factory.SourceCall != Given.Member.Value.Factory.Factory.SourceCall ||
+        Fresh->Member.Value.Owner != Given.Member.Value.Owner ||
+        Fresh->Member.Value.Variables != Given.Member.Value.Variables ||
+        Fresh->Member.Value.Copies != Given.Member.Value.Copies ||
+        Fresh->Member.Value.References != Given.Member.Value.References ||
+        Fresh->Member.Access != Given.Member.Access || Fresh->Member.MemberCall != Given.Member.MemberCall ||
+        Fresh->Member.ReceiverForward != Given.Member.ReceiverForward ||
+        Fresh->Member.ArgumentForwards != Given.Member.ArgumentForwards ||
+        Fresh->Member.Selected != Given.Member.Selected ||
+        Fresh->Member.ReceiverIsPointer != Given.Member.ReceiverIsPointer ||
+        !Source.Method || !Source.Object || Source.Arguments.empty() ||
+        Source.Method->getNumParams() != Incoming.size() ||
+        Source.Arguments.size() != Source.Storage.Arguments.Elements.size() ||
+        Fresh->Selected.Arguments.size() != Source.Arguments.size())
+      reject(L, "bind member certificate", "The exact completed closed member value and selected call are required.");
+    const auto *Method = dyn_cast<CXXMethodDecl>(Given.Member.Value.Factory.Member);
+    const auto *Field = dyn_cast<FieldDecl>(Given.Member.Value.Factory.Member);
+    if ((!Method && !Field) || (Method && Field) ||
+        (Method && (Method->getNumParams() + 1 != Source.Arguments.size() ||
+                    Given.Member.ArgumentForwards.size() != Method->getNumParams() ||
+                    recordValue(Method->getReturnType()))) ||
+        (Field && (Source.Arguments.size() != 1 || Source.Target)))
+      reject(L, "bind member target", "The checked ordinary method or original data field is required.");
+    Expression Bound{{"kind", "member"},
+        {"type", A.functionalBindTupleStorageType(Source.Storage, L)}, {"name", "nct_bind_bound"},
+        {"args", json::Array{dereference(std::move(Address), L)}}, {"loc", A.loc(L)}};
+    std::vector<Expression> Bindings;
+    Bindings.reserve(Source.Arguments.size());
+    for (unsigned I = 0; I < Source.Arguments.size(); ++I) {
+      const auto &Element = Source.Storage.Arguments.Elements[I];
+      const auto &Selected = Source.Arguments[I];
+      const auto &Actual = Fresh->Selected.Arguments[I];
+      if (Selected.Get != Actual.Get || Selected.Unwrap != Actual.Unwrap ||
+          Selected.WrapperCopy != Actual.WrapperCopy || Selected.Nested || Actual.Nested ||
+          Selected.PlaceholderRank != Actual.PlaceholderRank ||
+          Selected.PlaceholderIndex != Actual.PlaceholderIndex ||
+          Selected.PlaceholderGet != Actual.PlaceholderGet ||
+          Selected.PlaceholderForward != Actual.PlaceholderForward ||
+          !A.Context.hasSameType(Selected.ForwardedType, Actual.ForwardedType))
+        reject(L, "bind member projection source", "Every bound or incoming slot needs its exact completed source.");
+      if (Selected.PlaceholderRank) {
+        const auto Identity = describeFunctionalBindPlaceholderIdentity(A.S, A.Sources, Element.getType(), A.Context);
+        if (!Identity || !Element.EmptyBase || Element.Field || Selected.Reference || Selected.WrapperCopy ||
+            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl() ||
+            Identity->Rank != Selected.PlaceholderRank || Selected.PlaceholderRank > Incoming.size() ||
+            !Selected.PlaceholderIndex || !Selected.PlaceholderGet || !Selected.PlaceholderForward ||
+            !A.Context.hasSameType(Selected.ForwardedType,
+                Source.Method->getParamDecl(Selected.PlaceholderRank - 1)->getType()))
+          reject(L, "bind member placeholder", "The original incoming forwarding binding is required.");
+        Bindings.push_back(json::Object(Incoming[Selected.PlaceholderRank - 1]));
+        continue;
+      }
+      if (!Element.Field || Element.EmptyBase || Selected.PlaceholderIndex ||
+          Selected.PlaceholderGet || Selected.PlaceholderForward ||
+          bool(Selected.Reference) != bool(Actual.Reference))
+        reject(L, "bind member stored field", "The exact selected logical storage field is required.");
+      const auto Stored = Source.Object->getType().isConstQualified()
+          ? A.Context.getConstType(Element.getType()) : Element.getType();
+      auto Captured = snapshot(address(fieldStorage(json::Object(Bound), Element.Field, L), Stored, L), L);
+      if (Selected.Reference) {
+        const auto &Wrapper = Selected.Reference->Wrapper;
+        const auto *Record = Element.getType()->getAsCXXRecordDecl();
+        if (!Record || Wrapper.Record->getCanonicalDecl() != Record->getCanonicalDecl() ||
+            Wrapper.Record != Actual.Reference->Wrapper.Record ||
+            Selected.Reference->Object != Actual.Reference->Object ||
+            Selected.Reference->ObjectIsArrow != Actual.Reference->ObjectIsArrow)
+          reject(L, "bind member reference binding", "The exact checked wrapper and referent binding are required.");
+        Captured = functionalReferenceArgumentAddress(dereference(std::move(Captured), L), Wrapper, L);
+      }
+      Bindings.push_back(std::move(Captured));
+    }
+    // All original incoming effects have already run once. Projection only
+    // reads those retained bindings, including repeated or unused placeholders.
+    Expression Receiver = Given.Member.ReceiverIsPointer
+        ? snapshot(utilityConstructorArgumentValue(std::move(Bindings[0]), Source.Arguments[0].ForwardedType, L), L)
+        : std::move(Bindings[0]);
+    if (Field)
+      return fieldStorage(dereference(snapshot(std::move(Receiver), L), L), Field, L);
+    beginFullExpression();
+    json::Array Arguments;
+    Arguments.push_back(snapshot(cast(std::move(Receiver), type(Method->getThisType(), L), L), L));
+    for (unsigned I = 0; I < Method->getNumParams(); ++I)
+      Arguments.push_back(utilityInvocationArgument(std::move(Bindings[I + 1]),
+          Source.Arguments[I + 1].ForwardedType, Method->getParamDecl(I)->getType(), nullptr, L));
+    chargeCall(Arguments, L);
+    json::Object Instruction{{"op", "call"}, {"callee", A.name(Method)},
+                             {"args", std::move(Arguments)}, {"loc", A.loc(L)}};
+    Expression Result;
+    const auto ResultType = type(Method->getReturnType(), L, true);
+    if (ResultType != "void") {
+      Result = temporary(ResultType, L);
+      Instruction["target"] = json::Object(Result);
+    }
+    Body.push_back(std::move(Instruction));
+    endFullExpression();
+    return Method->getReturnType()->isReferenceType() ? dereference(std::move(Result), L) : Result;
+  }
+
   // Called only with an already completed exact factory certificate. Every
   // original operand is evaluated before reading any captured lvalue value.
   Expression functionalBindFactoryValue(
@@ -28618,12 +28734,26 @@ class FunctionLowering {
       std::optional<Expression> Destination) {
     const auto L = Call->getExprLoc();
     const auto Verified = A.VerifiedBindFactories.find(Call);
+    const auto MemberEntry = A.VerifiedBindMemberFactories.find(Call);
+    const auto *MemberFactory = MemberEntry == A.VerifiedBindMemberFactories.end() ? nullptr : &MemberEntry->second;
+    const auto Member = MemberFactory ? describeFunctionalBindMemberFactorySource(A.S, A.Sources, Call, A.Context) : std::nullopt;
+    const auto MemberLayout = Member ? describeFunctionalBindMemberNaturalLayout(
+        A.S, A.Sources, Source.Storage.Record, A.Context) : std::nullopt;
+    if (MemberFactory && (!Member || !MemberLayout ||
+        Member->Address != MemberFactory->Address || Member->Member != MemberFactory->Member ||
+        Member->Factory.SourceCall != Call || Member->Factory.Factory != Source.Factory ||
+        Member->Factory.Construction != Source.Construction ||
+        Member->Storage.Storage.Record != Source.Storage.Record ||
+        !A.VerifiedBindMemberRecords.count(Source.Storage.Record->getCanonicalDecl())))
+      reject(L, "bind member factory certificate", "The exact closed member factory and native carrier layout are required.");
     const auto StandardFactory = describeFunctionalBindStandardFactorySource(A.S, A.Sources, Call, A.Context);
-    const auto Layout = StandardFactory
+    const auto Layout = MemberLayout ? std::optional<FunctionalBindNaturalLayout>(MemberLayout->Layout) : StandardFactory
         ? describeFunctionalBindStandardNaturalLayout(A.S, A.Sources, Source.Storage.Record, A.Context)
         : describeFunctionalBindRuntimeLayout(A.S, A.Sources, Source.Storage.Record, A.Context);
     const auto ReferenceFactory = describeFunctionalBindReferenceFactorySource(A.S, A.Sources, Call, A.Context);
-    const auto TupleSource = StandardFactory
+    const auto TupleSource = MemberFactory
+        ? describeFunctionalBindMemberTupleConstructionSource(A.S, A.Sources, *MemberFactory, A.Context)
+        : StandardFactory
         ? describeFunctionalBindStandardTupleConstructionSource(A.S, A.Sources, Source, A.Context)
         : ReferenceFactory
             ? describeFunctionalBindReferenceTupleConstructionSource(A.S, A.Sources, Source, A.Context)
@@ -28641,6 +28771,12 @@ class FunctionLowering {
       const auto Parameter = Factory->getParamDecl(I)->getType();
       if (!Parameter->isReferenceType())
         reject(L, "bind factory parameter", "Every original factory operand needs its exact forwarding binding.");
+      if (!I && MemberFactory) {
+        if (!Member || !Member->Address ||
+            !A.Context.hasSameUnqualifiedType(Parameter.getNonReferenceType(), Source.Storage.CallableType))
+          reject(L, "bind member literal", "Only the exact completed pure member address may omit evaluation.");
+        continue;
+      }
       if (I && Source.Storage.Arguments.Elements[I - 1].EmptyBase) {
         const auto &Element = Source.Storage.Arguments.Elements[I - 1];
         const auto &Retained = Source.Placeholders[I - 1];
@@ -28667,10 +28803,12 @@ class FunctionLowering {
         reject(L, "bind placeholder storage", "Placeholder source must match its exact empty storage slot.");
       Captured[I] = captureUtilityConstructorArgument(Call->getArg(I), Parameter);
     }
-    if (!Captured[0]) reject(L, "bind callable capture", "The original callable binding is required.");
+    if (!MemberFactory && !Captured[0]) reject(L, "bind callable capture", "The original callable binding is required.");
     // Read after all original argument effects and before writing a possibly
     // aliased destination. A bound pointer or reference-wrapper binding is
     // copied; its referent's value and lifetime remain ordinary source work.
+    std::optional<Expression> Callable;
+    if (!MemberFactory) {
     auto CallableValue = utilityConstructorArgumentValue(
         std::move(*Captured[0]), Factory->getParamDecl(0)->getType(), L);
     if (Source.Storage.CallableType->isRecordType()) {
@@ -28680,7 +28818,8 @@ class FunctionLowering {
           Copy->getParent()->getCanonicalDecl() != Source.Storage.CallableType->getAsCXXRecordDecl()->getCanonicalDecl())
         reject(L, "bind callable copy", "The completed exact trivial ordinary callable copy is required.");
     } else CallableValue = cast(std::move(CallableValue), type(Source.Storage.CallableType, L), L);
-    auto Callable = snapshot(std::move(CallableValue), L);
+    Callable = snapshot(std::move(CallableValue), L);
+    }
     std::vector<std::optional<Expression>> Values(Source.Storage.Arguments.Elements.size());
     for (unsigned I = 0; I < Source.Storage.Arguments.Elements.size(); ++I) {
       const auto &Element = Source.Storage.Arguments.Elements[I];
@@ -28698,6 +28837,17 @@ class FunctionLowering {
           reject(L, "bind wrapper capture", "The selected trivial binding copy must be retained.");
         Values[I] = functionalReferenceArgumentAddress(
             dereference(std::move(*Captured[I + 1]), L), *Wrapper, L);
+      } else if (MemberFactory && Stored->isRecordType() &&
+                 Stored->getAsCXXRecordDecl()->getCanonicalDecl() == MemberFactory->Storage.Owner->getCanonicalDecl()) {
+        const auto *Copy = TupleSource->Copies[I];
+        const auto *Selected = Copy ? Copy->getConstructor() : nullptr;
+        if (!Copy || !Selected || Copy->getNumArgs() != 1 ||
+            !Selected->isCopyOrMoveConstructor() || !Selected->isImplicit() ||
+            !Selected->isDefaulted() || !Selected->isTrivial() || Selected->isDeleted() ||
+            Selected->getParent()->getCanonicalDecl() != MemberFactory->Storage.Owner->getCanonicalDecl())
+          reject(L, "bind member receiver copy", "The exact completed trivial ordinary receiver copy is required.");
+        Values[I] = snapshot(utilityConstructorArgumentValue(std::move(*Captured[I + 1]),
+            Factory->getParamDecl(I + 1)->getType(), L), L);
       } else if (const auto Nested = describeFunctionalBindRuntimeLayout(
                      A.S, A.Sources, Stored->getAsCXXRecordDecl(), A.Context)) {
         const auto *Copy = TupleSource->Copies[I];
@@ -28740,10 +28890,16 @@ class FunctionLowering {
           {"loc", A.loc(L)}};
       assign(std::move(Base), A.zero(Layout->BaseStorageType, L), L);
     }
+    const auto CallableStorage = MemberLayout ? MemberLayout->CallableStorageType : Source.Storage.CallableType;
     Expression CallableField{{"kind", "member"},
-        {"type", type(Source.Storage.CallableType, L)}, {"name", "nct_bind_callable"},
+        {"type", type(CallableStorage, L)}, {"name", "nct_bind_callable"},
         {"args", json::Array{json::Object(Result)}}, {"loc", A.loc(L)}};
-    assign(std::move(CallableField), std::move(Callable), L);
+    if (MemberFactory)
+      initializeZero(std::move(CallableField), CallableStorage, L);
+    else {
+      if (!Callable) reject(L, "bind callable value", "The completed captured callable value is required.");
+      assign(std::move(CallableField), std::move(*Callable), L);
+    }
     Expression Bound{{"kind", "member"}, {"type", A.functionalBindTupleStorageType(Source.Storage, L)},
         {"name", "nct_bind_bound"}, {"args", json::Array{json::Object(Result)}}, {"loc", A.loc(L)}};
     assign(json::Object(Bound), A.zeroFunctionalBindTupleStorage(Source.Storage, L), L);
@@ -28785,6 +28941,13 @@ class FunctionLowering {
           Child.Get != Cursor->Arguments[Slot].Get || Child.Unwrap != Cursor->Arguments[Slot].Unwrap)
         reject(L, "nested bind owner", "The child must belong to this root, parent and stored slot.");
       Cursor = &Child.Invocation;
+    }
+    const auto Member = A.VerifiedBindMemberCalls.find(Source.SourceCall);
+    if (Member != A.VerifiedBindMemberCalls.end()) {
+      if (Cursor != &Source || !Path.empty() || &Source != &Root)
+        reject(L, "bind member root", "The exact completed local member call root is required.");
+      return functionalBindMemberInvocationFromBindings(Source, Member->second,
+          std::move(Address), Incoming, L);
     }
     const auto Borrowed = A.VerifiedBindReferenceCalls.find(Source.SourceCall);
     const auto *Reference = Borrowed != A.VerifiedBindReferenceCalls.end() ? &Borrowed->second : nullptr;
@@ -29030,6 +29193,7 @@ class FunctionLowering {
       const CallExpr *Call, const FunctionalBindCallSource &Source) {
     const auto L = Call->getExprLoc();
     const auto Verified = A.VerifiedBindCalls.find(Call);
+    const bool Member = A.VerifiedBindMemberCalls.count(Call);
     const auto Borrowed = A.VerifiedBindReferenceCalls.find(Source.SourceCall);
     const auto *Reference = Borrowed != A.VerifiedBindReferenceCalls.end() ? &Borrowed->second : nullptr;
     const auto *OwnedTarget = Reference ? Reference->Reference.Method
@@ -29042,7 +29206,7 @@ class FunctionLowering {
         Source.SourceCall != Call || !Source.Object ||
         Source.Method != Call->getDirectCallee() || !Call->getNumArgs() ||
         Source.Method->getNumParams() + 1 != Call->getNumArgs() ||
-        !Prototype || Prototype->getNumParams() != Source.Arguments.size() ||
+        (!Member && (!Prototype || Prototype->getNumParams() != Source.Arguments.size())) ||
         Source.Arguments.size() != Source.Storage.Arguments.Elements.size())
       reject(L, "bind call certificate", "The exact completed selected invocation and argument slots are required.");
     // An unqualified bind operator keeps every stored argument an lvalue,
