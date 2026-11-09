@@ -164,23 +164,26 @@ def main():
 
     environment = dict(os.environ, NEVERC_CPP_PROTOCOL_EXECUTION_DIR=str(out / 'invocations'))
     environment.pop('NEVERC_CPP_PAIR_SOURCE_TRACE', None)
+    environment['NEVERC_CPP_BIND_PROOF_TRACE'] = '1'
     save()
     try:
         plan = json.loads(args.plan.read_text())
         assert plan['fixture_group'] == 'bind-call-arguments-clean456' and plan['preparation_only'] is False
-        assert plan['execution_binding_required'] is True and plan['source_trace_included'] is False
+        assert plan['diagnostic_only'] is True and plan['execution_binding_required'] is False and plan['source_trace_included'] is True
         assert plan['private_bind_admission_implemented'] is True and plan['bind_lowering_implemented'] is True
-        assert plan['required_requests'] == 1000 and len(plan['cases']) == 125
-        assert len(plan['target_abis']) == 8 and len(set(plan['target_abis'])) == 8
-        assert re.fullmatch('[0-9a-f]{40}', plan['source_repair_commit'])
-        assert plan['clean_source_basis'] == plan['source_repair_commit']
+        assert plan['required_requests'] == 39 and len(plan['cases']) == 13
+        assert plan['target_abis'] == ['x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc']
+        assert plan['source_repair_commit'] is None and plan['clean_source_basis'] is None
+        assert plan['reference_source_basis'] == 'c09d2519eb533bc027d0b411a50d4faf5816b3f7'
         if plan.get('source_syntax_validation_pending', False):
-            assert plan['post_merge_validation'] is True
+            assert plan['diagnostic_only'] is True and plan['post_merge_validation'] is False
             assert plan['actual_same_source_six_report_sha256'] is None
             assert plan['actual_same_source_six_proof_sha256'] is None
         else:
             for field in ['actual_same_source_six_report_sha256', 'actual_same_source_six_proof_sha256']:
                 assert re.fullmatch('[0-9a-f]{64}', plan[field])
+        report['diagnostic_only'] = True
+        report['support_evidence'] = False
         report['plan'] = plan
         report['revision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
         report['source_sha256'] = {name: sha(root / name) for name in plan['candidate_source_paths']}
@@ -375,9 +378,9 @@ def main():
                 save()
         report['invocation_inventory'] = [{'path': str(path.relative_to(out)), 'sha256': sha(path), 'bytes': path.stat().st_size}
             for path in sorted((out / 'invocations').rglob('*')) if path.is_file()]
-        assert len(report['requests']) == 1000 and len(report['invocation_inventory']) == 5000
+        assert len(report['requests']) == 39 and len(report['invocation_inventory']) == 195
         passed = all(row['expectation_satisfied'] for row in report['requests'])
-        report.update(completed=True, evidence_authenticated=True, passed=passed, not_fn_private_support_complete=False, scope='original928_plus72_standard_callable_requests',
+        report.update(completed=True, evidence_authenticated=True, passed=passed, not_fn_private_support_complete=False, scope='member_pointer_bind_member_signature_metadata39',
                       focused_request_contract_passed=passed,
                       failure=None if passed else 'Actual request expectations failed; retain every original response for diagnosis.')
         save()
