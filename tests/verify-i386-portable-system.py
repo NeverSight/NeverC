@@ -128,6 +128,9 @@ def source(operation, spelling, frame):
     api = '__builtin_ia32_' + operation if spelling == 'portable' else '__' + operation
     if operation == 'wrmsrns':
         return f'void probe(unsigned index, unsigned long long value) {{ {api}(index, value); }}\n'
+    if operation == 'cpuidex' and spelling == 'gnu-header':
+        return ('void probe(int *out, unsigned leaf, unsigned subleaf) { '
+                '__cpuid_count(leaf,subleaf,out[0],out[1],out[2],out[3]); }\n')
     if operation == 'cpuidex':
         return f'void probe(int *out, unsigned leaf, unsigned subleaf) {{ {api}(out, leaf, subleaf); }}\n'
     if operation == 'int':
@@ -155,12 +158,14 @@ def main():
             (args.keep / (operation + '.bin')).write_bytes(baseline)
             for sample in samples:
                 rep_execute(baseline, operation, sample)
-        for spelling in (('portable', 'microsoft') if operation == 'cpuidex' or operation in PORTS else ('portable',)):
+        for spelling in (('portable', 'microsoft', 'gnu-header') if operation == 'cpuidex' else
+                         ('portable', 'microsoft') if operation in PORTS else ('portable',)):
             for frame in ((False, True) if operation in PORTS else (False,)):
                 for level in ('O0', 'O2'):
                     name = f'{operation}-{spelling}-{frame}-{level}'
                     src, ir, obj = (args.keep / (name + suffix) for suffix in ('.c', '.ll', '.o'))
-                    src.write_text(('#include <intrin.h>\n' if spelling == 'microsoft' else '') + source(operation, spelling, frame))
+                    src.write_text(('#include <intrin.h>\n' if spelling == 'microsoft' else
+                                    '#include <cpuid.h>\n' if spelling == 'gnu-header' else '') + source(operation, spelling, frame))
                     common = [str(args.compiler), '--target=i386-unknown-linux-gnu', '-' + level,
                               '-std=c23', '-fms-extensions', '-D_MSC_VER=1930', '-ffreestanding',
                               '-fno-lto', '-fno-builtin-mimalloc', '-fno-pic', '-fno-pie',

@@ -76,22 +76,25 @@ void query(void) {
   __builtin_ia32_cpuidex(next_pointer(),next_leaf(),next_subleaf());
 }
 )C");
-  for (const char *Opt : {"-O0", "-O2"}) {
-    const auto Result =
-        ncc({"--target=x86_64-unknown-linux-gnu", Opt, "-ffreestanding",
-             "-fno-lto", "-fno-builtin-mimalloc", "-S", "-emit-llvm",
-             Source.string(), "-o", IR.string()});
-    ASSERT_EQ(Result.exitCode, 0) << Result.err;
-    const auto Text = readFile(IR);
-    for (const char *Name : {"next_pointer", "next_leaf", "next_subleaf"}) {
-      const std::regex Call(std::string("call [^\\n]*@") + Name + "\\(");
-      EXPECT_EQ(
-          std::distance(std::sregex_iterator(Text.begin(), Text.end(), Call),
-                        std::sregex_iterator()),
-          1)
-          << Text;
+  for (const char *Triple :
+       {"i386-unknown-linux-gnu", "x86_64-unknown-linux-gnu"})
+    for (const char *Opt : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Triple);
+      const auto Result =
+          ncc({std::string("--target=") + Triple, Opt, "-ffreestanding",
+               "-fno-lto", "-fno-builtin-mimalloc", "-S", "-emit-llvm",
+               Source.string(), "-o", IR.string()});
+      ASSERT_EQ(Result.exitCode, 0) << Result.err;
+      const auto Text = readFile(IR);
+      for (const char *Name : {"next_pointer", "next_leaf", "next_subleaf"}) {
+        const std::regex Call(std::string("call [^\\n]*@") + Name + "\\(");
+        EXPECT_EQ(
+            std::distance(std::sregex_iterator(Text.begin(), Text.end(), Call),
+                          std::sregex_iterator()),
+            1)
+            << Text;
+      }
     }
-  }
 }
 
 TEST_F(X86TransactionTest, AbortPairAndCpuidUseNativeInstructions) {
