@@ -31133,7 +31133,9 @@ class BindSourceProof {
                 Check.family(Function, {"__functional/bind.h"})) {
               const auto *Call = dyn_cast<CallExpr>(Expression);
               const auto Factory = Call
-                  ? (StandardFactoryRoot && Call == StandardFactoryRoot->SourceCall
+                  ? (MemberFactoryRoot && Call == MemberFactoryRoot->Factory.SourceCall
+                      ? freshFactorySource(MemberFactoryRoot->Factory)
+                      : StandardFactoryRoot && Call == StandardFactoryRoot->SourceCall
                       ? freshFactorySource(*StandardFactoryRoot)
                       : ReferenceFactoryRoot && Call == ReferenceFactoryRoot->Factory.SourceCall
                           ? freshFactorySource(ReferenceFactoryRoot->Factory)
@@ -31400,7 +31402,8 @@ class BindSourceProof {
         !ActiveScalarValues.empty() || !CompletedScalarValues.empty()) return false;
     const auto Actual = freshFactorySource(Factory);
     const auto Construction = Actual
-        ? (StandardFactoryRoot ? describeFunctionalBindStandardTupleConstructionSource(S, SM, *Actual, Context)
+        ? (MemberFactoryRoot ? describeFunctionalBindMemberTupleConstructionSource(S, SM, *MemberFactoryRoot, Context)
+            : StandardFactoryRoot ? describeFunctionalBindStandardTupleConstructionSource(S, SM, *Actual, Context)
             : ReferenceFactoryRoot ? describeFunctionalBindReferenceTupleConstructionSource(S, SM, *Actual, Context)
                                    : describeFunctionalBindTupleConstructionSource(S, SM, *Actual, Context)) : std::nullopt;
     if (!Actual || !Construction || !sameFunctionalBindPlaceholderOperands(*Actual, Factory) ||
