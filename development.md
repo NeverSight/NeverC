@@ -34,6 +34,43 @@ Frontend (BuiltinEmitterX86.cpp)
 | [`llvm/lib/Target/X86/X86InstrInfo.cpp`](llvm/lib/Target/X86/X86InstrInfo.cpp) | Physical register copy support |
 | [`neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp`](neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp) | Frontend intrinsic emission |
 
+## Portable i386 system APIs and CPUID headers
+
+WRMSRNS, raw INT, CPUIDEX and all six portable string-port interfaces are
+registered in `BuiltinsX86.def` for both code modes. The existing LLVM intrinsic
+signatures and lowering remain unchanged. WRMSRNS takes an unsigned index and
+unsigned long long value. String-port wrappers take an unsigned short port,
+a pointer (const for output) and unsigned element count; DF and instruction-owned
+DS/ES accesses retain their CPU semantics. Raw INT keeps its existing immediate
+byte validation and returning interface, distinct from Microsoft's non-returning
+`__int2c` assertion. A register-changing interrupt handler needs its own explicit
+ABI/state contract.
+
+`cpuid.h` now admits i386. Its native path uses CPUID/FLAGS builtins, probes
+EFLAGS.ID on legacy CPUs, restores the original image, and avoids CPUID and
+signature writes when unavailable. Its i386 fallback supports PIC and AT&T/Intel
+syntax. Argument and output-lvalue evaluation remains single. Linux i386 machine
+output still uses `-fllvm-backend=LLVM_LLC`; this does not enable the Windows or
+Darwin i386 C ABI or the embedded i386 backend.
+
+Qualification passes all 188 x86/i386 frontend tests. Run
+`tests/verify-i386-portable-system.py --compiler NEVERC --backend-llc LLVM_LLC
+--keep OUT` for 58 objects, 1,190 controlled completions, 768 large-count boundary
+checks and 210 operand/continuation negative controls. REP cases include dynamic
+realigned frames; DF=1 is a raw lowering probe, not a valid C ABI entry. Run
+`tests/verify-i386-cpuid-header.py --compiler NEVERC --backend-llc LLVM_LLC
+--clang CLANG --linker LD_LLD --keep OUT` for 24 linked native/fallback/PIC/dialect
+objects, 384 availability/ABI comparisons and 24 ID-restoration negative controls.
+No privileged instruction or port I/O executes in these witnesses.
+
+`python3 utils/plugin-api/check-global-state.py --build-dir build-neverc
+--strict --json` passes for the qualified local ELF compiler: no forbidden,
+header, source-global, binary or unscannable findings. The source-only preflight
+still reports its 90 conservative lexical findings; it lacks the linked-symbol
+proof used by release mode. These are distinct audit modes, and no allowlist
+change was needed. This local artifact result does not qualify other release
+platforms or close the broader machine-state/hardware release gates.
+
 ## Portable scalar MSR and port I/O
 
 `__builtin_ia32_wrmsr(unsigned, unsigned long long)` and the existing
