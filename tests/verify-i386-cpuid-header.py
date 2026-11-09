@@ -116,8 +116,6 @@ def main():
     records = []
     for compiler, fallback, level, pic, dialect in itertools.product(
             ('neverc', 'clang'), (False, True), ('O0', 'O2'), (False, True), ('att', 'intel')):
-        if compiler == 'clang' and not fallback:
-            continue
         name = f'{compiler}-{fallback}-{level}-{pic}-{dialect}'
         ir, obj, exe = (args.keep / (name + suffix) for suffix in ('.ll', '.o', '.elf'))
         common = [str(args.compiler if compiler == 'neverc' else args.clang), '--target=i386-unknown-linux-gnu',
@@ -136,7 +134,7 @@ def main():
             result = subprocess.run(command, capture_output=True, text=True, timeout=120)
             (args.keep / (name + f'-{step}.log')).write_text(result.stdout + result.stderr)
             assert result.returncode == 0, result.stderr
-        if not fallback:
+        if compiler == 'neverc' and not fallback:
             text = ir.read_text()
             assert ' asm ' not in text
             for operation in ('cpuidex', 'flags.read.u32', 'flags.write.u32'):
