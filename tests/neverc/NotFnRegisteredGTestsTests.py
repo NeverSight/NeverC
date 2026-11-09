@@ -26,7 +26,8 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.previous71 = (ROOT / 'utils/ci/bind-seventy-one-formal-additions.cpp').read_bytes()
         cls.previous74 = (ROOT / 'utils/ci/bind-seventy-four-formal-additions.cpp').read_bytes()
         cls.previous77 = (ROOT / 'utils/ci/bind-seventy-seven-formal-additions.cpp').read_bytes()
-        cls.additions = (ROOT / 'utils/ci/bind-eighty-four-formal-additions.cpp').read_bytes()
+        cls.previous84 = (ROOT / 'utils/ci/bind-eighty-four-formal-additions.cpp').read_bytes()
+        cls.additions = (ROOT / 'utils/ci/stl-ninety-seven-formal-additions.cpp').read_bytes()
         cls.original = cls.adapter.restore_original_gtests(cls.registered, cls.additions)
 
     def test_restores_the_exact_original_7493_source(self):
@@ -45,7 +46,7 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         self.assertEqual(actual_proof, proof)
         self.assertEqual(proof['original_test_names'], 7493)
         self.assertEqual(proof['selected_count'], 124)
-        self.assertEqual((actual + self.additions).count(b'TEST_F('), 208)
+        self.assertEqual((actual + self.additions).count(b'TEST_F('), 221)
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.registered, selected)
 
@@ -184,12 +185,21 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
 
     def test_preserves_seventy_seven_and_appends_exact_standard_seven(self):
         seven = (ROOT / 'utils/ci/bind-standard-seven-formal-additions.cpp').read_bytes()
-        self.assertEqual(self.previous77 + seven, self.additions)
+        self.assertEqual(self.previous77 + seven, self.previous84)
         self.assertEqual(seven.count(b'TEST_F('), 7)
         self.assertEqual(self.adapter.restore_original_gtests(
             self.original + self.previous77, self.previous77), self.original)
-        self.assertEqual(hashlib.sha256(self.registered).hexdigest(),
+        self.assertEqual(hashlib.sha256(self.original + self.previous84).hexdigest(),
                          self.adapter.BIND84_REGISTERED_SOURCE_SHA256)
+
+    def test_preserves_eighty_four_and_appends_exact_member_thirteen(self):
+        member = (ROOT / 'utils/ci/bind-member-thirteen-formal-additions.cpp').read_bytes()
+        self.assertEqual(self.previous84 + member, self.additions)
+        self.assertEqual(member.count(b'TEST_F('), 13)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.original + self.previous84, self.previous84), self.original)
+        self.assertEqual(hashlib.sha256(self.registered).hexdigest(),
+                         self.adapter.BIND97_REGISTERED_SOURCE_SHA256)
 
     def test_rejects_mismatched_registered_suffix_versions(self):
         suffixes = [(ROOT / ('utils/ci/not-fn-pointer-' + version + '-formal-additions.cpp')).read_bytes()
@@ -197,7 +207,7 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
                         (ROOT / 'utils/ci/bind-twenty-one-formal-additions.cpp').read_bytes(),
                         (ROOT / 'utils/ci/bind-thirty-two-formal-additions.cpp').read_bytes(),
                         (ROOT / 'utils/ci/bind-forty-formal-additions.cpp').read_bytes(),
-                        self.previous48, self.previous61, self.previous71, self.previous74, self.previous77, self.additions]
+                        self.previous48, self.previous61, self.previous71, self.previous74, self.previous77, self.previous84, self.additions]
         for source_suffix in suffixes:
             for supplied_suffix in suffixes:
                 with self.subTest(source=hashlib.sha256(source_suffix).hexdigest(),
