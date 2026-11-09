@@ -21020,6 +21020,23 @@ describeFunctionalNotFnFactoryTemplateSource(
 
 
 
+// Only the exact owned receiver field of an independently described member
+// factory can enter the const-element tuple source path. This supplies neither
+// an ordinary record operation nor a construction/lifetime certificate.
+static bool functionalBindMemberConstReceiverElementSource(
+    const State &S, const SourceManager &SM, const UtilityTupleElement &Element,
+    const CXXRecordDecl *Receiver, const ASTContext &Context) {
+  if (!Receiver || !Element.Field || Element.EmptyBase ||
+      !S.owns(SM, Receiver->getLocation())) return false;
+  const auto Type = Element.getType();
+  if (Type.isNull() || Type->isDependentType() || Type->isReferenceType() ||
+      Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default) return false;
+  const auto *Owner = Type->getAsCXXRecordDecl();
+  return Owner && Owner->getCanonicalDecl() == Receiver->getCanonicalDecl() &&
+      Context.hasSameUnqualifiedType(Type, Context.getRecordType(Receiver));
+}
+
 static std::optional<FunctionalBindTupleConstructionSource>
 describeFunctionalBindTupleConstructionSourceImpl(
     const State &S, const SourceManager &SM, const UtilityTupleRecord &Arguments,
@@ -21134,9 +21151,10 @@ describeFunctionalBindTupleConstructionSourceImpl(
     const auto *Argument = Implementation->getArg(I + 4);
     const auto *Direct = dyn_cast_or_null<DeclRefExpr>(
         utilityTupleCarrierQualification(Argument, Context));
-    if (Direct && !CallReferenceInputs && Arguments.Elements[I].EmptyBase &&
-        !Arguments.Elements[I].Field && functionalBindEmptyPlaceholderStorage(
-            S, SM, Arguments.Elements[I].getType(), Context)) {
+    if (Direct && !CallReferenceInputs &&
+        ((Arguments.Elements[I].EmptyBase && !Arguments.Elements[I].Field &&
+          functionalBindEmptyPlaceholderStorage(S, SM, Arguments.Elements[I].getType(), Context)) ||
+         functionalBindMemberConstReceiverElementSource(S, SM, Arguments.Elements[I], OrdinaryReceiver, Context))) {
       // The pinned const-element tuple constructor passes its parameters
       // directly. This is a source edge, not a call to std::forward.
       const auto Type = Context.getLValueReferenceType(
@@ -28351,9 +28369,12 @@ class BindSourceProof {
       unsigned I = 0;
       for (const auto &Argument : Owner->getTemplateArgs()[0].pack_elements()) {
         const auto &Element = Storage.Arguments.Elements[I++];
-        if (Argument.getKind() != TemplateArgument::Type || Element.Field || !Element.EmptyBase ||
+        const bool Receiver = MemberFactoryRoot && functionalBindMemberConstReceiverElementSource(
+            S, SM, Element, MemberFactoryRoot->Storage.Owner, Context);
+        if (Argument.getKind() != TemplateArgument::Type ||
             !Context.hasSameType(Argument.getAsType(), Element.getType()) ||
-            !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context)) return false;
+            (!Receiver && (Element.Field || !Element.EmptyBase ||
+             !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context)))) return false;
       }
     } else {
       if (Owner->getTemplateArgs()[0].pack_size() > 2) return false;
@@ -31480,9 +31501,12 @@ class BindSourceProof {
     if (!Actual || !Construction || !sameFunctionalBindPlaceholderOperands(*Actual, Factory) ||
         Construction->Tuple != Tuple.Tuple || Construction->Implementation != Tuple.Implementation ||
         Actual->BoundConstruction != Tuple.Tuple) return false;
-    for (const auto &Element : Storage.Arguments.Elements)
-      if (Element.Field || !Element.EmptyBase ||
-          !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context)) return false;
+    for (const auto &Element : Storage.Arguments.Elements) {
+      const bool Receiver = MemberFactoryRoot && functionalBindMemberConstReceiverElementSource(
+          S, SM, Element, MemberFactoryRoot->Storage.Owner, Context);
+      if (!Receiver && (Element.Field || !Element.EmptyBase ||
+          !functionalBindEmptyPlaceholderStorage(S, SM, Element.getType(), Context))) return false;
+    }
     // Only this freshly described const-element constructor can use its
     // actual _And default and scoped boolean definitions. Other factory
     // constructors retain their existing source path.
