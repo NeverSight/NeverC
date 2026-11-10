@@ -194,7 +194,7 @@
   "all_selected_source_bytes_preserved": true,
   "private_not_fn_admission_implemented": true,
   "not_fn_lowering_implemented": true,
-  "source_trace_included": false,
+  "source_trace_included": true,
   "inverse_source_edits": {},
   "frontend_execution_timeout_seconds": 60,
   "actual_same_source_six_report_sha256": "00e8ee3f17f1fe115d7dfa04aa27e127b3a71aabc84362a8200ee122fb8d2d36",
@@ -224,7 +224,7 @@
     "Frontend.cpp": "0d204a1e6febde2fec8ec2d7e26091403fb60b6862d85841e03b8473be0397c0",
     "Lowering.cpp": "6b995f01316efab56b896ec8fcbda143d03352a2a8f826225e89ef8d4e19b6f3",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "f9995d74d6f5105c4c2478ae64b822f80e8d8be297de533335ee8361ac03f657",
+    "MathSDK.cpp": "53334a01d39b4c09f06a0055ec5ffeb647190bba73b27cecb568462b42894cb4",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
     "Frontend.h": "db73b715aae8c80283be5071836c6648fcf5f1a312bc754c60ce903b23e4c62a",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
@@ -292,10 +292,11 @@
   "historical_1000_result_reused_as_current_success": false,
   "private_member_bind_admission_implemented": true,
   "member_bind_lowering_implemented": true,
-  "diagnostic_only": false,
+  "diagnostic_only": true,
   "integrated_source_preparation_sha256": "4502ad0358ed951b59a95c3d4f438fa449b0897fac871a4bb6e032ee3c373dc1",
   "actual_member_role54_source_proof_sha256": "f7ed884994fe5b26b68439a4b21b6b5df4e5c30c47b9c189405ea5967f12ac13",
   "complete_source_barrier_is_required_by_implementation": true,
   "complete_source_runtime_results_pending": true,
-  "member_runtime_support_verified": false
+  "member_runtime_support_verified": false,
+  "complete_invocation_trace_only": true
 }
