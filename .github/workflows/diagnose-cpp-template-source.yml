@@ -4005,8 +4005,7 @@ jobs:
 
 
   inspect-bind-call-arguments-clean456:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-call-arguments-clean456'
-      }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-call-arguments-clean456' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -4028,8 +4027,7 @@ jobs:
     - name: Install matching host compiler and archive reader
       run: 'set -o pipefail
 
-        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert
-        callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/python.log"
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/python.log"
 
         python3 utils/ci/ensure-llvm-apt-host.py
 
@@ -4040,7 +4038,7 @@ jobs:
         sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/dependencies.log"
 
         '
-    - name: Install the original native Clang20 and libc++20 reference toolchain
+    - name: Run 72 bind reference sources at O0 and O2
       run: 'mkdir -p "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap"
 
         set -o pipefail
@@ -4057,15 +4055,11 @@ jobs:
 
         '
     - name: Run 72 bind reference sources at O0 and O2
-      run: python3 utils/ci/check-cpp-bind-call-arguments-native40.py --repo "$GITHUB_WORKSPACE"
-        --output "$RUNNER_TEMP/cpp-bind-call-arguments-native40"
-    - name: Validate the complete 1000-request STL matrix
+      run: python3 utils/ci/check-cpp-bind-call-arguments-native40.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-bind-call-arguments-native40"
+    - name: Validate the original125 cases across six64bit targets
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: "python3 utils/ci/check-cpp-bind-call-arguments-clean456.py --repo \"$GITHUB_WORKSPACE\"\
-        \ \\\n  --plan utils/ci/cpp-bind-call-arguments-clean456-plan.json \\\n  --output\
-        \ \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456\" \\\n  --build \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456-rebuild\"\
-        \n"
+      run: "python3 utils/ci/check-cpp-bind-call-arguments-clean456.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-bind-call-arguments-clean456-plan.json \\\n  --output \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456\" \\\n  --build \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456-rebuild\"\n"
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
@@ -4116,8 +4110,6 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
         compression-level: 0
-
-
 'on':
   workflow_dispatch:
     inputs:
