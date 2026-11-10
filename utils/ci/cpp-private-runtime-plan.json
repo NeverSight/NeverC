@@ -1,28 +1,28 @@
 {
-  "component_commit": "ed2a908a91f559358a23ad3e927d836e8dad81ce",
-  "component_run_id": 42404130151,
-  "component_actual_job": 128498065660,
+  "component_commit": "856e3659abdd47173b99a1ed927f64c9d1ac7643",
+  "component_run_id": 42900752486,
+  "component_actual_job": 130125774588,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 13598389645,
-    "name": "cpp-bind-call-arguments-clean456-ed2a908a91f559358a23ad3e927d836e8dad81ce",
-    "digest": "sha256:3fa925e6a7b877ee064bfb8caef59d8c287a3c02663ed1b30d71237137cf67b0"
+    "id": 13808498635,
+    "name": "cpp-bind-call-arguments-clean456-856e3659abdd47173b99a1ed927f64c9d1ac7643",
+    "digest": "sha256:b23f6ccb0e9bcd4da6dd69a0ccd1d0891a97ced1a14d64dfc5e57d28585db73c"
   },
   "component_archive_artifact": {
-    "id": 13598876208,
-    "name": "cpp-current-private-archive-remote-only-ed2a908a91f559358a23ad3e927d836e8dad81ce",
-    "digest": "sha256:2358b188eb9bacea78cb3ed683ff34b89782e3e0b742b5d35b95dae2957ac390"
+    "id": 13809520683,
+    "name": "cpp-current-private-archive-remote-only-856e3659abdd47173b99a1ed927f64c9d1ac7643",
+    "digest": "sha256:817cfcad64f1303aa06f2bc051e1022799018340cd1cfbb2f6bf056f816ee49c"
   },
-  "component_report_sha256": "2788610fb697346d62d80a6cbc35ed184bdd21414a7c671175f631622232f057",
-  "private_archive_sha256": "ba8549b3b208f75cf95bcd45997dddb7725dd624473a7b12e66c8a6fa0c75277",
-  "frontend_build_id": "cpp-frontend-1-45a1a3d8dfc2c96e7669ae9adb58c6be3999d788c58197c4de975bd3dd9dbc81",
+  "component_report_sha256": "113cf9d4644e80413436a7e7e3f5360d2ab2083160767f38a9b991b70485a063",
+  "private_archive_sha256": "01e6cad6c8546e261eb94255f028d3b020d933349654dda20db6598b7b0bf8cb",
+  "frontend_build_id": "cpp-frontend-1-5ae702d947664718b35706921873cc0c415f49f475aaabb707ed8a20c0edbcfb",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "1e7589d66f32f33ef00f3c8de67bfc6870e984f75d9c708be7b4fe9f27e5fdb5",
-    "Lowering.cpp": "57d782f1798a859eeac6cf67baf84738fc2fd92c8d912a5e493525a81f90b420",
+    "Frontend.cpp": "0d204a1e6febde2fec8ec2d7e26091403fb60b6862d85841e03b8473be0397c0",
+    "Lowering.cpp": "6b995f01316efab56b896ec8fcbda143d03352a2a8f826225e89ef8d4e19b6f3",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "2594dd74308812ea224c9de0eef30d0b0018c5d316df6c18e07452ce083d3d57",
+    "MathSDK.cpp": "26ecac6824d64b24a2ab9a8dd5ec06d8ae27387f8028f2f29fe7f8f62d5e529b",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "fe4d5a911e925b90a7b093eedf0d62817afe60682d87caa4e96f07c0385a574e",
+    "Frontend.h": "db73b715aae8c80283be5071836c6648fcf5f1a312bc754c60ce903b23e4c62a",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -46,7 +46,7 @@
   "dependency_producer_run_id": 41770367743,
   "private_prefix_sha256": "cf4d69ade740f971db56cc3f4e1b811d8094d2549a0aed84f6d97f9eaed140f8",
   "authenticated_system_libraries_sha256": "1c998ace53fdcebd4e6836bc2f9d50b481b0aa38c2625f9c73fd75c0234f820e",
-  "original_tests_file_sha256": "4794d7921206f429cd3418f9f4211c4d25de42a6c296bd8d194665ce5b32a2a0",
+  "original_tests_file_sha256": "437f0c48ca2f8b9c8821fdde33e65d21dd2934d49cd43b57e01f08f455294ca3",
   "formal_manifest_sha256": "a4e047df483c770a7dd077e50abad961d8a0833c86e56d1bbcb47e92a6c27979",
   "required_actual_original_gtest_xml": 124,
   "original_gtest_bodies_modified": false,
@@ -86,13 +86,17 @@
     "utils/ci/bind-seventy-seven-formal-additions.cpp",
     "utils/ci/bind-reference-three-formal-additions.cpp",
     "utils/ci/bind-eighty-four-formal-additions.cpp",
-    "utils/ci/bind-standard-seven-formal-additions.cpp"
+    "utils/ci/bind-standard-seven-formal-additions.cpp",
+    "utils/ci/stl-ninety-seven-formal-additions.cpp",
+    "utils/ci/check-cpp-bind-member-target-ir.py",
+    "utils/ci/run-private-runtime-target-ir-ci.py",
+    "utils/ci/cpp-bind-member-target-ir-plan.json"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,
   "actual_current_translate_owners_required": true,
   "actual_fresh_host_private_abi_audit_required": true,
-  "scope": "Actual original124 plus84 registered STL goldens,168 generated executions and819 current frontend requests",
+  "scope": "Real current124 original GTests plus84 unchanged STL goldens plus13 member tests;832 frontend requests and182 additional generated C23 O0/O2 products",
   "full_ci_passed": false,
   "published_to_dev": false,
   "goal_complete": false,
@@ -143,8 +147,8 @@
     ],
     "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
   },
-  "not_fn_formal_additions_path": "utils/ci/bind-eighty-four-formal-additions.cpp",
-  "not_fn_formal_additions_sha256": "dd5ac6b2aaae175783f9d51932a89b09d80df9abaeb2e8418b82e30590fead4d",
+  "not_fn_formal_additions_path": "utils/ci/stl-ninety-seven-formal-additions.cpp",
+  "not_fn_formal_additions_sha256": "8d3a87ebacdae8d321140f50dd0bfcfe627acf7aa0b48808e89d9b447ae94411",
   "not_fn_formal_cases": [
     {
       "name": "not-fn-function-pointer",
@@ -649,25 +653,146 @@
       "formal_test_name": "TranslateTest.CoreV2BindStandardArgumentEffectsRunAtBothOptimizations",
       "source_sha256": "d946cc80cc7057f6be7dd66002af2e7d60cefc36284472380efb9b7eddaec7a0",
       "gtest_body_sha256": "d3540cbb034d37e706a36f5c5d6988f4121e0a1378bbbcd3e3c2e84929b6e564"
+    },
+    {
+      "name": "bind-callable-member-pointer",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindCallableMemberPointerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "805a58d770299dba5cb9ae91f441f19d6bae73259d497a5a469141446bc7d03a",
+      "original_case_source_sha256": "07cc3ac6df8d085f2bac003a3196097b81c2deeab75263aa3701bac83475f3fe",
+      "gtest_body_sha256": "9fa2db43cb4e3b806b21e6bf4a490f992b9baa6bfd82351af3d38e2eb2fb308f"
+    },
+    {
+      "name": "bind-member-owned-copy",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberOwnedCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f008b0f717b828391095fa835dc0fd9fe0c578e791d1ccb5e2fc49777032b5bf",
+      "original_case_source_sha256": "986e3929dbc360438ae289f62684c84dee1e8cb29d8f263fa4a98e05cc339974",
+      "gtest_body_sha256": "63a51690ee9e2faac54edf9228aee3124d425a448addef69d019cc4d74504730"
+    },
+    {
+      "name": "bind-member-pointer-receivers",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberPointerReceiversRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3cefac8d523bc75c906bd2b7b4015997e75760254c51f53f12f91db314d526ad",
+      "original_case_source_sha256": "a5797bc55f42d4cf43b0eb92c67ca77b83b1dcc9f2ec8aa3aee98dd28c90239e",
+      "gtest_body_sha256": "7194267ee45d250d5ed20a92856750735a2f61d734c5d31d83245393f8378536"
+    },
+    {
+      "name": "bind-member-incoming-object",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberIncomingObjectRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "59de2c8d82f380c8a810747187baed7266d9d22a5308ccff3f4083efeb1e37e2",
+      "original_case_source_sha256": "3abd77a1bd462e3de92ee365600874233934e33125d30aa4f196e5ed2ba4a5b7",
+      "gtest_body_sha256": "ae46a3ccd4f983a7a7710cb5294f2d68c30735a32379476a9ec1c2682f46a17b"
+    },
+    {
+      "name": "bind-member-const-method",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberConstMethodRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "05cf5d6ab83be399d26ffb4b03bd2a3b4eed71116e22650e3e6b28f2f07b5b16",
+      "original_case_source_sha256": "fe19acc466aa39c2f6fac77fc614a37742b5576cb6687a977abb97bae273b757",
+      "gtest_body_sha256": "b15ad9bf7173d3b2ee3f7b834ad8b51db5f292bec146da278d84a79636170116"
+    },
+    {
+      "name": "bind-member-data-reference",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberDataReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "69f6c2dcf73bb1508a037a98e36af83e48ebc9b345244cdc264e4df0823fd93f",
+      "original_case_source_sha256": "136dbd5c48e51b89306c7e419db9ba8f120028e516c5b4c1eded5a24d5b8d6a5",
+      "gtest_body_sha256": "3fb20e3a631ca23de09bcfda73a31a0139131d680b53508ad695fe262e1a7ead"
+    },
+    {
+      "name": "bind-member-distinct-targets",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberDistinctTargetsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4621733c58444bc24b783860cced3d478bc8e10a8555cd2c6c62e75fcc287564",
+      "original_case_source_sha256": "00710e2b4840a6d41c98331bd5ca33659d9a2f25ba82adb5b3789327365b8fa9",
+      "gtest_body_sha256": "15492df84a7bae3e60ddcad870ec700587baa9ac67dba48f9bd18d6985e355cf"
+    },
+    {
+      "name": "bind-member-ordinary-body-guard",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberOrdinaryBodyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "9a33bf285877d87ece39db831330952f513cb9bb3cae19edebbef83bc4adc4ec",
+      "original_case_source_sha256": "9a33bf285877d87ece39db831330952f513cb9bb3cae19edebbef83bc4adc4ec",
+      "gtest_body_sha256": "8889f727375cd1f1d5d8ec49559e4e7eb3ab73a3a71c49d5eba5a14bde3b356a"
+    },
+    {
+      "name": "bind-member-invalid-const-owned",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberInvalidConstOwnedRejected",
+      "expected": "invalid",
+      "source_sha256": "d84bd056b2992d8186fabafe64b744d9c419f169e5f836a66fdc78ca93ed3305",
+      "original_case_source_sha256": "d84bd056b2992d8186fabafe64b744d9c419f169e5f836a66fdc78ca93ed3305",
+      "gtest_body_sha256": "9f21571aac3aa36ebfec88abe30936d4154170979fcb2645b96261c2f6506ab4"
+    },
+    {
+      "name": "bind-member-value-assignment-guard",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberValueAssignmentGuardRejected",
+      "expected": "reject",
+      "source_sha256": "e697b2d0e04507d2e66aeb06db6080551cbeb97d5f40adff3e4af1f031da0f24",
+      "original_case_source_sha256": "e697b2d0e04507d2e66aeb06db6080551cbeb97d5f40adff3e4af1f031da0f24",
+      "gtest_body_sha256": "d4de85562b56c8f11ab4a98a6c06360b31e07fab49e73d35c932d88aafe0c653"
+    },
+    {
+      "name": "bind-member-value-address-escape-guard",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberValueAddressEscapeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "10001945ce4dd8dc86402749fa78ab6d95ff8fd0682bb84aa369ee380e2602f8",
+      "original_case_source_sha256": "10001945ce4dd8dc86402749fa78ab6d95ff8fd0682bb84aa369ee380e2602f8",
+      "gtest_body_sha256": "14f598a7b06ad62a1301873a2785db2f730399492a2ab21b3c70b71f60273879"
+    },
+    {
+      "name": "bind-member-value-retargeted-input-guard",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberValueRetargetedInputGuardRejected",
+      "expected": "reject",
+      "source_sha256": "8f9403e2f343eee7f0a8e2d78ce5025a8c8e08b3b09deeae1d4c7d9e2991d57f",
+      "original_case_source_sha256": "8f9403e2f343eee7f0a8e2d78ce5025a8c8e08b3b09deeae1d4c7d9e2991d57f",
+      "gtest_body_sha256": "690d47d8f6014db4e0685c8356d8d698914fc08631603b3415981b9d55f3f095"
+    },
+    {
+      "name": "bind-member-value-conditional-object-guard",
+      "formal_test_name": "TranslateTest.CoreV2MemberSourceBindMemberValueConditionalObjectGuardRejected",
+      "expected": "reject",
+      "source_sha256": "1e42745c8d3dc8ea0ef7c8ae657baba5dea585dbf6ee4955f7aecc4310bbb80b",
+      "original_case_source_sha256": "1e42745c8d3dc8ea0ef7c8ae657baba5dea585dbf6ee4955f7aecc4310bbb80b",
+      "gtest_body_sha256": "b18cb2b45b12f78c93a3fc17549cf14ed52b4e7786528a51a16029cff748fa6d"
     }
   ],
-  "required_actual_total_gtest_xml": 208,
-  "required_actual_not_fn_gtest_xml": 84,
-  "required_actual_not_fn_generated_o0_o2_products": 168,
-  "not_fn_registered_previous_additions_path": "utils/ci/bind-eighty-four-formal-additions.cpp",
-  "not_fn_registered_previous_additions_sha256": "dd5ac6b2aaae175783f9d51932a89b09d80df9abaeb2e8418b82e30590fead4d",
-  "required_actual_frontend_requests": 819,
+  "required_actual_total_gtest_xml": 221,
+  "not_fn_registered_previous_additions_path": "utils/ci/stl-ninety-seven-formal-additions.cpp",
+  "not_fn_registered_previous_additions_sha256": "8d3a87ebacdae8d321140f50dd0bfcfe627acf7aa0b48808e89d9b447ae94411",
+  "required_actual_frontend_requests": 832,
   "actual_new_signature_native_reference_verified": false,
   "actual_prior_custom_native_reference_verified": true,
   "preparation_only": false,
   "execution_binding_required": true,
-  "current_clean_syntax6_proof_sha256": "e90ef7244fd923721da77f43a5c9386198ee9afa4f7ad9bb6122c592610c47b0",
+  "current_clean_syntax6_proof_sha256": "a072ec788f81452411ed13105bb69b8597dcf21caf8693e94394ffa1b700bb05",
   "dependency_producer_actual_job": 126378412532,
   "dependency_producer_attempt": 1,
   "dependency_producer_authentication_sha256": "0a2440fc57a6b728293a872375f6d3714b9c6ef2dc2abd6baee3f45c0bed0799",
-  "required_component_accept": 704,
-  "required_component_reject": 264,
-  "required_component_invalid": 32,
-  "required_component_requests": 1000,
-  "current_full456_proof_sha256": "92fb3478dea1c004fe6660514db3f1a84426c6d6cb310a389bfef25f351175b4"
+  "required_component_accept": 528,
+  "required_component_reject": 198,
+  "required_component_invalid": 24,
+  "required_component_requests": 750,
+  "current_full456_proof_sha256": "b61e452134e1bb7787323d77797a6e3f981647640b3f0214f5802154dd570cc3",
+  "required_actual_stl_gtest_xml": 97,
+  "required_actual_stl_generated_o0_o2_products": 182,
+  "actual_integrated_syntax6_authentication_sha256": "a072ec788f81452411ed13105bb69b8597dcf21caf8693e94394ffa1b700bb05",
+  "actual_member78_authentication_sha256": "eac63f47dfff49a2a4c7d62a208fbe86ef9871ce165723b16e1bde69f63021de",
+  "actual_baseline750_authentication_sha256": "b61e452134e1bb7787323d77797a6e3f981647640b3f0214f5802154dd570cc3",
+  "actual_native144_authentication_sha256": "e200a1856c9e64594b53fe5d0d63ade559d0d76a288d9833d10137f6a4971c7a",
+  "target_abis": [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "arm64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc"
+  ],
+  "member_runtime_support_verified": false,
+  "full_stl_complete": false,
+  "exact_production97_registration_preparation_sha256": "a3581cafbe4d5db0824177a16fdc8017535724623cd6148ecca6153a90f70375",
+  "exact_production97_registration_permanent_check_sha256": "57df41b60e639d269704473ae9da7ceceab0e4303e121e0b73d9d1812e6edd82",
+  "exact_production97_registration_source": "6d47cf0184ec1448fc127299a72e35bb5171a041"
 }
