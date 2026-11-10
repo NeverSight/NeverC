@@ -168,7 +168,7 @@ def main():
     try:
         plan = json.loads(args.plan.read_text())
         assert plan['fixture_group'] == 'bind-call-arguments-clean456' and plan['preparation_only'] is False
-        assert plan['execution_binding_required'] is True and plan['source_trace_included'] is False
+        assert plan['execution_binding_required'] is True and plan['source_trace_included'] is True
         assert plan['private_bind_admission_implemented'] is True and plan['bind_lowering_implemented'] is True
         assert plan['required_requests'] == 78 and len(plan['cases']) == 13
         assert plan['target_abis'] == ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'x86_64-apple-darwin', 'arm64-apple-darwin', 'x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc'] and len(set(plan['target_abis'])) == 6
