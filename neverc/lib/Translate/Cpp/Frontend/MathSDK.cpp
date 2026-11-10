@@ -8947,6 +8947,19 @@ class UtilityTupleQueryGraph
         Record->getCanonicalDecl() == BindMemberFactory->Storage.Owner->getCanonicalDecl() &&
         S.owns(SM, Record->getLocation()) && Record->getDefinition() && !Record->isInvalidDecl();
   }
+  bool bindMemberRetainedReferentSource(QualType Type) const {
+    if (!BindMemberCall || !BindMemberFactory || !BindCallMetadata || Type.isNull() ||
+        Type->isReferenceType() || Type.isVolatileQualified() || Type.isRestrictQualified() ||
+        Type.getAddressSpace() != LangAS::Default ||
+        !bindMemberOwnerRecordSource(Type->getAsCXXRecordDecl())) return false;
+    const auto Fresh = freshBindCallSource(S, SM, BindMemberCall->Selected.SourceCall, Context);
+    return Fresh && Fresh->Storage.Record == BindMetadata->Record &&
+        Fresh->SourceCall == BindCallMetadata->SourceCall &&
+        Fresh->Method == BindCallMetadata->Method && Fresh->Object == BindCallMetadata->Object &&
+        Fresh->Apply == BindCallMetadata->Apply && Fresh->Invoke == BindCallMetadata->Invoke &&
+        Fresh->Target == BindCallMetadata->Target && Fresh->CallArguments == BindCallMetadata->CallArguments &&
+        Fresh->CallForwards == BindCallMetadata->CallForwards;
+  }
   bool bindOwnedCallableRecordSource(const CXXRecordDecl *Record) const {
     return Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         BindOwnedCallableRecord && BindOwnedQuerySources && Record &&
@@ -12887,7 +12900,11 @@ public:
         if (Scalar(Element.getType())) continue;
         const auto Wrapper = approvedFunctionalReferenceRecord(
             S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
-        if (Wrapper && Scalar(Wrapper->ReferentType)) continue;
+        // A retained alias may mention the current member receiver wrapper.
+        // Its exact owned call is revalidated; ordinary body/lifetime stay separate.
+        if (Wrapper && (Scalar(Wrapper->ReferentType) ||
+            ((OwnedAncestor || OwnedWitness) && bindMemberRetainedReferentSource(Wrapper->ReferentType))))
+          continue;
         const auto Nested = (OwnedAncestor || OwnedWitness)
             ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
             : std::nullopt;
@@ -13100,7 +13117,11 @@ public:
         if (Scalar(Element.getType())) continue;
         const auto Wrapper = approvedFunctionalReferenceRecord(
             S, SM, Element.getType()->getAsCXXRecordDecl(), Context);
-        if (Wrapper && Scalar(Wrapper->ReferentType)) continue;
+        // A retained alias may mention the current member receiver wrapper.
+        // Its exact owned call is revalidated; ordinary body/lifetime stay separate.
+        if (Wrapper && (Scalar(Wrapper->ReferentType) ||
+            ((OwnedAncestor || OwnedWitness) && bindMemberRetainedReferentSource(Wrapper->ReferentType))))
+          continue;
         const auto Nested = (OwnedAncestor || OwnedWitness)
             ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
             : std::nullopt;
