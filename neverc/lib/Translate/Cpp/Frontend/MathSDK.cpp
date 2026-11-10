@@ -18990,6 +18990,177 @@ describeFunctionalBindExplicitResultFactorySource(
 }
 
 
+std::optional<FunctionalBindExplicitResultCallSource>
+describeFunctionalBindExplicitResultCallSource(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = Operator ? dyn_cast_or_null<CXXMethodDecl>(Operator->getDirectCallee()) : nullptr;
+  const auto Storage = describeFunctionalBindExplicitResultStorage(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (!Storage || !Operator || !Method || !S.owns(SM, Operator->getExprLoc()) ||
+      !Operator->getNumArgs() || Operator->getNumArgs() > 64 ||
+      Operator->isTypeDependent() || Operator->isValueDependent() ||
+      Method->isStatic() || Method->isVolatile() || Method->isVariadic() ||
+      Method->getAccess() != AS_public || Method->getOverloadedOperator() != OO_Call ||
+      Method->getRefQualifier() != RQ_None || !Method->getPrimaryTemplate() ||
+      Method->getNumParams() + 1 != Operator->getNumArgs() ||
+      !Context.hasSameType(Method->getReturnType(), Storage->ResultType)) return std::nullopt;
+  NotFnSelectedSource Check(S, SM, Context);
+  const auto *Object = Operator->getArg(0);
+  if (!Check.family(Method, {"__functional/bind.h"}) ||
+      !Context.hasSameUnqualifiedType(Object->getType(), Context.getRecordType(Storage->Record)) ||
+      Object->getType().isVolatileQualified() ||
+      (!Method->isConst() && Object->getType().isConstQualified()) ||
+      !Context.hasSameUnqualifiedType(Operator->getType(), Storage->ResultType.getNonReferenceType()) ||
+      Operator->isLValue() != Storage->ResultType->isLValueReferenceType() ||
+      Operator->isXValue() != Storage->ResultType->isRValueReferenceType()) return std::nullopt;
+  const auto *InvokeR = dyn_cast_or_null<CallExpr>(Check.stripped(Check.returned(Method)));
+  const auto *InvokeRFunction = InvokeR ? InvokeR->getDirectCallee() : nullptr;
+  const auto *InvokeRArguments = InvokeRFunction ? InvokeRFunction->getTemplateSpecializationArgs() : nullptr;
+  if (!InvokeR || !InvokeRFunction || !InvokeRFunction->getIdentifier() ||
+      InvokeRFunction->getName() != "__invoke_r" || !InvokeRFunction->getPrimaryTemplate() ||
+      InvokeRFunction->isVariadic() || InvokeRFunction->getNumParams() != Operator->getNumArgs() ||
+      InvokeR->getNumArgs() != Operator->getNumArgs() ||
+      !Context.hasSameType(InvokeRFunction->getReturnType(), Storage->ResultType) ||
+      !InvokeRArguments || InvokeRArguments->size() != 2 ||
+      InvokeRArguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(InvokeRArguments->get(0).getAsType(), Storage->ResultType) ||
+      InvokeRArguments->get(1).getKind() != TemplateArgument::Pack ||
+      InvokeRArguments->get(1).pack_size() != InvokeR->getNumArgs() ||
+      !Check.location(InvokeR->getExprLoc(), {"__functional/bind.h"}) ||
+      !Check.family(InvokeRFunction, {"__type_traits/invoke.h"})) return std::nullopt;
+  const auto *BaseCast = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(InvokeR->getArg(0)));
+  const auto *BaseConversion = BaseCast
+      ? dyn_cast<ImplicitCastExpr>(BaseCast->getSubExpr()->IgnoreParens()) : nullptr;
+  const auto *Dereference = BaseConversion
+      ? dyn_cast<UnaryOperator>(BaseConversion->getSubExpr()->IgnoreParens()) : nullptr;
+  const auto *This = Dereference && Dereference->getOpcode() == UO_Deref
+      ? dyn_cast_or_null<CXXThisExpr>(Check.stripped(Dereference->getSubExpr())) : nullptr;
+  const auto BaseType = Method->isConst() ? Context.getConstType(Context.getRecordType(Storage->Base.Record))
+                                         : Context.getRecordType(Storage->Base.Record);
+  const auto BaseReference = Context.getLValueReferenceType(BaseType);
+  const auto DerivedType = Method->isConst() ? Context.getConstType(Context.getRecordType(Storage->Record))
+                                            : Context.getRecordType(Storage->Record);
+  if (!BaseCast || !BaseConversion || !Dereference || !This || BaseCast->getCastKind() != CK_NoOp ||
+      BaseCast->path_size() || BaseConversion->getCastKind() != CK_DerivedToBase ||
+      !BaseConversion->isPartOfExplicitCast() || BaseConversion->path_size() != 1 ||
+      *BaseConversion->path_begin() != &*Storage->Record->bases_begin() ||
+      !BaseCast->isLValue() || !BaseConversion->isLValue() || !Dereference->isLValue() ||
+      !Context.hasSameType(BaseCast->getTypeAsWritten(), BaseReference) ||
+      !Context.hasSameType(BaseCast->getType(), BaseType) ||
+      !Context.hasSameType(BaseConversion->getType(), BaseType) ||
+      !Context.hasSameType(Dereference->getType(), DerivedType) ||
+      !Context.hasSameType(This->getType(), Method->getThisType()) ||
+      !Context.hasSameType(InvokeRFunction->getParamDecl(0)->getType(), BaseReference) ||
+      !Check.location(BaseCast->getExprLoc(), {"__functional/bind.h"})) return std::nullopt;
+  std::vector<const CallExpr *> CallForwards;
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    const CallExpr *Forward = nullptr;
+    if (!Check.forwarding(InvokeR->getArg(I + 1), Method->getParamDecl(I),
+                          "__functional/bind.h", Forward)) return std::nullopt;
+    CallForwards.push_back(Forward);
+  }
+  const auto *ReturnWrapper = dyn_cast_or_null<CallExpr>(Check.stripped(Check.returned(InvokeRFunction)));
+  const auto *ReturnFunction = ReturnWrapper ? dyn_cast_or_null<CXXMethodDecl>(ReturnWrapper->getDirectCallee()) : nullptr;
+  const auto *ReturnRecord = ReturnFunction ? Check.record(Context.getRecordType(ReturnFunction->getParent()),
+      "__invoke_void_return_wrapper", {"__type_traits/invoke.h"}) : nullptr;
+  if (!ReturnWrapper || !ReturnFunction || !ReturnRecord || !ReturnFunction->getIdentifier() ||
+      ReturnFunction->getName() != "__call" || !ReturnFunction->isStatic() || ReturnFunction->isVariadic() ||
+      ReturnFunction->getAccess() != AS_public || !ReturnFunction->getPrimaryTemplate() ||
+      ReturnRecord->getNumBases() || !ReturnRecord->field_empty() ||
+      !ReturnRecord->hasTrivialDestructor() ||
+      ReturnRecord->getTemplateArgs().size() != 2 ||
+      ReturnRecord->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(ReturnRecord->getTemplateArgs()[0].getAsType(), Storage->ResultType) ||
+      ReturnRecord->getTemplateArgs()[1].getKind() != TemplateArgument::Integral ||
+      !Context.hasSameType(ReturnRecord->getTemplateArgs()[1].getIntegralType(), Context.BoolTy) ||
+      (!ReturnRecord->getTemplateArgs()[1].getAsIntegral().isZero()) != Storage->ResultType->isVoidType() ||
+      !Context.hasSameType(ReturnFunction->getReturnType(), Storage->ResultType) ||
+      ReturnFunction->getNumParams() != InvokeRFunction->getNumParams() ||
+      ReturnWrapper->getNumArgs() != InvokeRFunction->getNumParams() ||
+      !Check.family(ReturnFunction, {"__type_traits/invoke.h"}) ||
+      !Check.location(ReturnWrapper->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+  std::vector<const CallExpr *> InvokeRForwards;
+  for (unsigned I = 0; I < InvokeRFunction->getNumParams(); ++I) {
+    const CallExpr *Forward = nullptr;
+    if (!Check.forwarding(ReturnWrapper->getArg(I), InvokeRFunction->getParamDecl(I),
+                          "__type_traits/invoke.h", Forward)) return std::nullopt;
+    InvokeRForwards.push_back(Forward);
+  }
+  const auto *ReturnBody = dyn_cast_or_null<CompoundStmt>(ReturnFunction->getBody());
+  if (!ReturnBody || ReturnBody->size() != 1) return std::nullopt;
+  const Expr *ResultExpression = nullptr;
+  const Expr *InvokeExpression = nullptr;
+  if (Storage->ResultType->isVoidType()) {
+    ResultExpression = dyn_cast<Expr>(ReturnBody->body_front());
+    InvokeExpression = ResultExpression;
+  } else {
+    const auto *Return = dyn_cast<ReturnStmt>(ReturnBody->body_front());
+    ResultExpression = Return ? Return->getRetValue() : nullptr;
+    InvokeExpression = ResultExpression;
+  }
+  // Keep every original implicit result cast. Locating the underlying call
+  // proves neither the conversion nor reference binding/lifetime semantics.
+  std::vector<const ImplicitCastExpr *> ResultCasts;
+  for (unsigned I = 0; InvokeExpression && I < 64; ++I) {
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(InvokeExpression->IgnoreParens());
+    if (!Cast) break;
+    ResultCasts.push_back(Cast);
+    InvokeExpression = Cast->getSubExpr();
+  }
+  if (InvokeExpression && isa<ImplicitCastExpr>(InvokeExpression->IgnoreParens()))
+    return std::nullopt;
+  const auto *Invoke = dyn_cast_or_null<CallExpr>(InvokeExpression ? InvokeExpression->IgnoreParens() : nullptr);
+  const auto *InvokeFunction = Invoke ? Invoke->getDirectCallee() : nullptr;
+  const auto *InvokeArguments = InvokeFunction ? InvokeFunction->getTemplateSpecializationArgs() : nullptr;
+  if (!Invoke || !InvokeFunction || !InvokeFunction->getIdentifier() || InvokeFunction->getName() != "__invoke" ||
+      !InvokeFunction->getPrimaryTemplate() || InvokeFunction->getPrimaryTemplate()->getTemplateParameters()->size() != 2 ||
+      InvokeFunction->isVariadic() || InvokeFunction->getNumParams() != ReturnFunction->getNumParams() ||
+      Invoke->getNumArgs() != ReturnFunction->getNumParams() ||
+      !InvokeArguments || InvokeArguments->size() != 2 ||
+      InvokeArguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(InvokeArguments->get(0).getAsType(), BaseReference) ||
+      InvokeArguments->get(1).getKind() != TemplateArgument::Pack ||
+      InvokeArguments->get(1).pack_size() + 1 != Invoke->getNumArgs() ||
+      !Check.family(InvokeFunction, {"__type_traits/invoke.h"}) ||
+      !Check.location(Invoke->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+  std::vector<const CallExpr *> ReturnForwards;
+  for (unsigned I = 0; I < ReturnFunction->getNumParams(); ++I) {
+    const CallExpr *Forward = nullptr;
+    if (!Check.forwarding(Invoke->getArg(I), ReturnFunction->getParamDecl(I),
+                          "__type_traits/invoke.h", Forward)) return std::nullopt;
+    ReturnForwards.push_back(Forward);
+  }
+  const auto *BaseCall = dyn_cast_or_null<CXXOperatorCallExpr>(Check.stripped(Check.returned(InvokeFunction)));
+  const auto *BaseMethod = BaseCall ? dyn_cast_or_null<CXXMethodDecl>(BaseCall->getDirectCallee()) : nullptr;
+  if (!BaseCall || !BaseMethod || BaseMethod->isStatic() || BaseMethod->isVolatile() || BaseMethod->isVariadic() ||
+      BaseMethod->getAccess() != AS_public || BaseMethod->getOverloadedOperator() != OO_Call ||
+      !BaseMethod->getPrimaryTemplate() || BaseMethod->getRefQualifier() != RQ_None ||
+      BaseMethod->getParent()->getCanonicalDecl() != Storage->Base.Record->getCanonicalDecl() ||
+      (Method->isConst() && !BaseMethod->isConst()) ||
+      BaseMethod->getNumParams() != Method->getNumParams() ||
+      BaseCall->getNumArgs() != InvokeFunction->getNumParams() ||
+      !Context.hasSameType(BaseMethod->getReturnType(), InvokeFunction->getReturnType()) ||
+      !Check.family(BaseMethod, {"__functional/bind.h"}) ||
+      !Check.location(BaseCall->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+  std::vector<const CXXStaticCastExpr *> InvokeCasts;
+  for (unsigned I = 0; I < InvokeFunction->getNumParams(); ++I) {
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Check.stripped(BaseCall->getArg(I)));
+    const auto *Reference = Cast ? dyn_cast_or_null<DeclRefExpr>(Check.stripped(Cast->getSubExpr())) : nullptr;
+    const auto *Parameter = InvokeFunction->getParamDecl(I);
+    if (!Cast || !Reference || Reference->getDecl() != Parameter ||
+        !Parameter->getType()->isReferenceType() || Cast->getCastKind() != CK_NoOp ||
+        !Context.hasSameType(Cast->getTypeAsWritten(), Parameter->getType()) ||
+        !Check.location(Cast->getExprLoc(), {"__type_traits/invoke.h"})) return std::nullopt;
+    InvokeCasts.push_back(Cast);
+  }
+  return FunctionalBindExplicitResultCallSource{*Storage, Operator, BaseCall, Method, Object,
+      ResultExpression, BaseCast, InvokeR, ReturnWrapper, Invoke, std::move(CallForwards),
+      std::move(InvokeRForwards), std::move(ReturnForwards), std::move(InvokeCasts), std::move(ResultCasts)};
+}
+
+
 static std::optional<FunctionalBindFactorySource>
 describeFunctionalBindFactorySourceImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
