@@ -1849,6 +1849,16 @@ struct FunctionalBindFactorySource {
   // Only an exact selected ordinary operation; never a runtime certificate.
   const clang::CXXConstructExpr *CallableCopy = nullptr;
 };
+struct FunctionalBindFactoryInitializers {
+  const clang::CXXConstructExpr *WeakConstruction;
+  const clang::Expr *CallableInitializer;
+  const clang::CXXConstructExpr *BoundConstruction;
+  const clang::CallExpr *CallableForward;
+  std::vector<const clang::CallExpr *> BoundForwards;
+  std::vector<std::optional<FunctionalBindPlaceholderOperandSource>> Placeholders;
+  const clang::CXXConstructExpr *CallableCopy;
+};
+
 // Exact source nodes only. Neither forwarding chain proves the base's
 // initializer/default graph, copies, target body or runtime construction.
 struct FunctionalBindExplicitResultFactorySource {
@@ -1858,6 +1868,7 @@ struct FunctionalBindExplicitResultFactorySource {
   const clang::TypedefDecl *FactoryAlias;
   const clang::CXXConstructExpr *Construction, *BaseConstruction;
   std::vector<const clang::CallExpr *> FactoryForwards, BaseForwards;
+  FunctionalBindFactoryInitializers BaseInitializers;
 };
 std::optional<FunctionalBindExplicitResultFactorySource>
 describeFunctionalBindExplicitResultFactorySource(

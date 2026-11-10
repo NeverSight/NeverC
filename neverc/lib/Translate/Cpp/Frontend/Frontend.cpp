@@ -30845,6 +30845,155 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   for (const auto &Directive : MemberClassDirectives)
     Check.checkExplicitMemberClassInstantiation(Directive);
   prepareBorrowedQueryLayouts(*this);
+    // Observe real selected nodes only; never add an admission or runtime entry.
+    unsigned BindResultNodes = 0, BindResultRoots = 0;
+    unsigned BindResultFactories = 0, BindResultCalls = 0;
+    std::set<const FunctionDecl *> BindResultDumped;
+    auto BindResultEvent = [&](llvm::StringRef Role, const Expr *Outer, const Expr *Expression,
+                               const FunctionDecl *Function) {
+      if (!Outer || !Expression || !Function) return;
+      unsigned Exact = 0, Related = 0, Paired = 0, Retained = 0;
+      unsigned Defaults = 0, ParameterTypes = 0, Overflow = 0, Written = 0;
+      std::set<unsigned> Locations;
+      for (const auto &Selected : SelectedCalls) {
+        if (Selected.Function != Function || Selected.Expression != Expression) continue;
+        ++Exact;
+        Retained += Selected.FunctionalBindConstraint;
+        Locations.insert(Selected.Location.getRawEncoding());
+      }
+      for (const auto &Use : TemplateUses) {
+        if (Use.Kind != TemplateSourceKind::Function || Use.Declaration != Function) continue;
+        ++Related;
+        if (!Locations.count(Use.Location.getRawEncoding())) continue;
+        ++Paired;
+        Defaults += Use.Defaults.size();
+        ParameterTypes += Use.ParameterTypes.size();
+        Overflow += Use.DefaultsOverflow;
+        Written += Use.Written ? Use.Written->getNumTemplateArgs() : 0;
+      }
+      llvm::errs() << "BIND-RESULT-SEMA offset="
+          << Sources.getFileOffset(Sources.getSpellingLoc(Outer->getExprLoc()))
+          << " role=" << Role << " exact=" << Exact << " retained=" << Retained
+          << " related=" << Related << " paired=" << Paired << " defaults=" << Defaults
+          << " parameter-types=" << ParameterTypes << " overflow=" << Overflow
+          << " written=" << Written << "\n";
+    };
+    auto BindResultRecord = [&](const CXXRecordDecl *Record) {
+      const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+      return Instance && Instance->getIdentifier() && Instance->getName() == "__bind_r";
+    };
+    auto BindResultDump = [&](const FunctionDecl *Function) {
+      if (!Function || BindResultDumped.size() == 16 || !BindResultDumped.insert(Function).second) return;
+      llvm::errs() << "BIND-RESULT-ACTUAL-AST-BEGIN " << Function->getQualifiedNameAsString() << "\n";
+      Function->dump(llvm::errs());
+      llvm::errs() << "BIND-RESULT-ACTUAL-AST-END\n";
+    };
+    auto BindResultReturned = [&](const FunctionDecl *Function) -> const Expr * {
+      const auto *Body = Function ? dyn_cast_or_null<CompoundStmt>(Function->getBody()) : nullptr;
+      const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+      return Return && Return->getRetValue() ? Return->getRetValue()->IgnoreParenImpCasts() : nullptr;
+    };
+    std::function<bool(const Stmt *, unsigned)> BindResultStmt;
+    BindResultStmt = [&](const Stmt *Statement, unsigned Depth) {
+      if (!Statement) return true;
+      if (Depth >= 64 || ++BindResultNodes > 200000) return false;
+      if (const auto *Call = dyn_cast<CallExpr>(Statement)) {
+        const auto *Function = Call->getDirectCallee();
+        if (Function && Function->getIdentifier() && Function->getName() == "bind" &&
+            S.owns(Sources, Call->getExprLoc()) && BindResultRecord(Call->getType()->getAsCXXRecordDecl())) {
+          if (++BindResultFactories > 64) return false;
+          const auto Storage = describeFunctionalBindExplicitResultStorage(S, Sources, Call->getType()->getAsCXXRecordDecl(), Context);
+          const auto Factory = describeFunctionalBindExplicitResultFactorySource(S, Sources, Call, Context);
+          llvm::errs() << "BIND-RESULT-FACTORY offset=" << Sources.getFileOffset(Sources.getSpellingLoc(Call->getExprLoc()))
+              << " storage=" << bool(Storage) << " described=" << bool(Factory)
+              << " size=" << (Storage ? Storage->Base.SizeBytes : 0)
+              << " align=" << (Storage ? Storage->Base.AlignmentBytes : 0)
+              << " forwards=" << (Factory ? Factory->FactoryForwards.size() : 0)
+              << " base-forwards=" << (Factory ? Factory->BaseForwards.size() : 0)
+              << " result=" << (Storage ? Storage->ResultType.getAsString().substr(0, 256) : "none") << "\n";
+          BindResultDump(Function);
+          if (Factory) {
+            const auto &Initializers = Factory->BaseInitializers;
+            llvm::errs() << "BIND-RESULT-BASE-INITIALIZERS offset="
+                << Sources.getFileOffset(Sources.getSpellingLoc(Call->getExprLoc()))
+                << " weak=" << bool(Initializers.WeakConstruction)
+                << " callable=" << bool(Initializers.CallableInitializer)
+                << " bound=" << bool(Initializers.BoundConstruction)
+                << " bound-forwards=" << Initializers.BoundForwards.size()
+                << " placeholders=" << std::count_if(Initializers.Placeholders.begin(), Initializers.Placeholders.end(),
+                    [](const auto &P) { return bool(P); })
+                << " callable-copy=" << bool(Initializers.CallableCopy) << "\n";
+            BindResultEvent("factory", Call, Call, Factory->Factory);
+            BindResultEvent("derived-constructor", Call, Factory->Construction, Factory->Construction->getConstructor());
+            BindResultEvent("base-constructor", Call, Factory->BaseConstruction, Factory->BaseConstruction->getConstructor());
+            BindResultEvent("bound-tuple", Call, Initializers.BoundConstruction, Initializers.BoundConstruction->getConstructor());
+            BindResultDump(Factory->Construction->getConstructor());
+            BindResultDump(Factory->BaseConstruction->getConstructor());
+          }
+        }
+      }
+      if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Statement)) {
+        const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+        if (Method && Call->getOperator() == OO_Call && S.owns(Sources, Call->getExprLoc()) && BindResultRecord(Method->getParent())) {
+          if (++BindResultCalls > 64) return false;
+          const auto Description = describeFunctionalBindExplicitResultCallSource(S, Sources, Call, Context);
+          llvm::errs() << "BIND-RESULT-CALL offset=" << Sources.getFileOffset(Sources.getSpellingLoc(Call->getExprLoc()))
+              << " described=" << bool(Description) << " const=" << Method->isConst()
+              << " incoming=" << Method->getNumParams()
+              << " conversions=" << (Description ? Description->ResultCasts.size() : 0)
+              << " base=" << bool(Description && Description->BaseCall)
+              << " result=" << Method->getReturnType().getAsString().substr(0, 256) << "\n";
+          if (Description) {
+            BindResultEvent("wrapper-call", Call, Call, Method);
+            BindResultEvent("invoke-r", Call, Description->InvokeR, Description->InvokeR->getDirectCallee());
+            BindResultEvent("return-wrapper", Call, Description->ReturnWrapper, Description->ReturnWrapper->getDirectCallee());
+            BindResultEvent("invoke", Call, Description->Invoke, Description->Invoke->getDirectCallee());
+            BindResultEvent("base-call", Call, Description->BaseCall, Description->BaseCall->getDirectCallee());
+          }
+          BindResultDump(Method);
+          if (const auto *InvokeR = dyn_cast_or_null<CallExpr>(BindResultReturned(Method))) {
+            const auto *InvokeRFunction = InvokeR->getDirectCallee();
+            BindResultDump(InvokeRFunction);
+            if (const auto *ReturnWrapper = dyn_cast_or_null<CallExpr>(BindResultReturned(InvokeRFunction))) {
+              const auto *ReturnFunction = ReturnWrapper->getDirectCallee();
+              BindResultDump(ReturnFunction);
+              const auto *Body = ReturnFunction ? dyn_cast_or_null<CompoundStmt>(ReturnFunction->getBody()) : nullptr;
+              const Expr *Selected = BindResultReturned(ReturnFunction);
+              if (!Selected && Body && Body->size() == 1) Selected = dyn_cast<Expr>(Body->body_front());
+              if (const auto *Invoke = dyn_cast_or_null<CallExpr>(Selected ? Selected->IgnoreParenImpCasts() : nullptr))
+                BindResultDump(Invoke->getDirectCallee());
+            }
+          }
+        }
+      }
+      for (const auto *Child : Statement->children())
+        if (!BindResultStmt(Child, Depth + 1)) return false;
+      return true;
+    };
+    std::function<bool(const DeclContext *, unsigned)> BindResultDecls;
+    BindResultDecls = [&](const DeclContext *Declarations, unsigned Depth) {
+      if (!Declarations || Depth >= 64 || ++BindResultNodes > 200000) return false;
+      for (const auto *Declaration : Declarations->decls()) {
+        if (++BindResultNodes > 200000) return false;
+        if (!S.owns(Sources, Declaration->getLocation())) continue;
+        if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
+          if (Function->getIdentifier() && Function->getName() == "replacement" &&
+              Function->getDefinition() == Function && Function->getBody()) {
+            ++BindResultRoots;
+            if (!BindResultStmt(Function->getBody(), Depth + 1)) return false;
+          }
+        } else if (const auto *Namespace = dyn_cast<NamespaceDecl>(Declaration)) {
+          if (!BindResultDecls(Namespace, Depth + 1)) return false;
+        } else if (const auto *Linkage = dyn_cast<LinkageSpecDecl>(Declaration)) {
+          if (!BindResultDecls(Linkage, Depth + 1)) return false;
+        }
+      }
+      return true;
+    };
+    const bool BindResultComplete = BindResultDecls(Context.getTranslationUnitDecl(), 0) && BindResultRoots == 1;
+    llvm::errs() << "BIND-RESULT-PREPASS complete=" << BindResultComplete << " roots=" << BindResultRoots
+        << " nodes=" << BindResultNodes << " factories=" << BindResultFactories << " calls=" << BindResultCalls
+        << " runtime-permission=0\n";
   bool Traversed = Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (Traversed && S.Diagnostics.empty())
     Traversed = Check.finishTupleConstructorQueries();
