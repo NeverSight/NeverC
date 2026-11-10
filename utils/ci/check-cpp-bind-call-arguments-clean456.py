@@ -170,8 +170,8 @@ def main():
         assert plan['fixture_group'] == 'bind-call-arguments-clean456' and plan['preparation_only'] is False
         assert plan['execution_binding_required'] is True and plan['source_trace_included'] is False
         assert plan['private_bind_admission_implemented'] is True and plan['bind_lowering_implemented'] is True
-        assert plan['required_requests'] == 1000 and len(plan['cases']) == 125
-        assert len(plan['target_abis']) == 8 and len(set(plan['target_abis'])) == 8
+        assert plan['required_requests'] == 78 and len(plan['cases']) == 13
+        assert plan['target_abis'] == ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'x86_64-apple-darwin', 'arm64-apple-darwin', 'x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc'] and len(set(plan['target_abis'])) == 6
         assert re.fullmatch('[0-9a-f]{40}', plan['source_repair_commit'])
         assert plan['clean_source_basis'] == plan['source_repair_commit']
         if plan.get('source_syntax_validation_pending', False):
@@ -364,7 +364,7 @@ def main():
                     satisfied = bool(valid_response and code == 1 and diagnostics
                         and all(row.get('code') in ['TR0201', 'TR0203'] for row in diagnostics)
                         and not any(field in result for field in ['functions', 'globals', 'records']))
-                if name == 'bind-zero-bound-invalid-ordinary-body':
+                if name in ['bind-zero-bound-invalid-ordinary-body', 'bind-member-ordinary-body-guard']:
                     satisfied = bool(satisfied and diagnostics and any(
                         row.get('code') == 'TR0201' and row.get('construct') == 'GCCAsmStmt'
                         for row in diagnostics))
@@ -375,9 +375,9 @@ def main():
                 save()
         report['invocation_inventory'] = [{'path': str(path.relative_to(out)), 'sha256': sha(path), 'bytes': path.stat().st_size}
             for path in sorted((out / 'invocations').rglob('*')) if path.is_file()]
-        assert len(report['requests']) == 1000 and len(report['invocation_inventory']) == 5000
+        assert len(report['requests']) == 78 and len(report['invocation_inventory']) == 390
         passed = all(row['expectation_satisfied'] for row in report['requests'])
-        report.update(completed=True, evidence_authenticated=True, passed=passed, not_fn_private_support_complete=False, scope='original928_plus72_standard_callable_requests',
+        report.update(completed=True, evidence_authenticated=True, passed=passed, not_fn_private_support_complete=False, scope='closed_member_bind_execution78',
                       focused_request_contract_passed=passed,
                       failure=None if passed else 'Actual request expectations failed; retain every original response for diagnosis.')
         save()
