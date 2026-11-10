@@ -12983,11 +12983,23 @@ public:
           utilityScalar(Context, Input.getAsType().getNonReferenceType().getUnqualifiedType()))) return Proof();
     const FunctionalBindCallSource *ProjectionCall = &*BindCallMetadata;
     std::optional<FunctionalBindStandardCallSource> RetainedOccurrence;
+    std::optional<FunctionalBindMemberCommonCallSource> RetainedMemberOccurrence;
     if (RetainedMetadata) {
-      if (!BindStandardCall || !RetainedMetadata->SourceCall || !RetainedMetadata->CallArguments ||
-          !BindCallMetadata->CallArguments) return false;
-      RetainedOccurrence = describeFunctionalBindStandardCallSource(S, SM, RetainedMetadata->SourceCall, Context);
-      const auto *Fresh = RetainedOccurrence ? &RetainedOccurrence->Selected : nullptr;
+      if ((!BindStandardCall && !BindMemberCall) || !RetainedMetadata->SourceCall ||
+          !RetainedMetadata->CallArguments || !BindCallMetadata->CallArguments) return false;
+      const FunctionalBindCallSource *Fresh = nullptr;
+      if (BindStandardCall) {
+        RetainedOccurrence = describeFunctionalBindStandardCallSource(S, SM, RetainedMetadata->SourceCall, Context);
+        Fresh = RetainedOccurrence ? &RetainedOccurrence->Selected : nullptr;
+      } else {
+        if (!BindMemberFactory || !bindMemberRetainedReferentSource(
+                Context.getRecordType(BindMemberFactory->Storage.Owner))) return false;
+        RetainedMemberOccurrence = describeFunctionalBindMemberCommonCallSource(
+            S, SM, RetainedMetadata->SourceCall, Context);
+        Fresh = RetainedMemberOccurrence ? &RetainedMemberOccurrence->Selected : nullptr;
+        if (!Fresh || !Context.hasSameType(Fresh->Storage.CallableType, BindMetadata->CallableType) ||
+            Fresh->CallForwards != RetainedMetadata->CallForwards) return false;
+      }
       if (!Fresh || Fresh->SourceCall != RetainedMetadata->SourceCall ||
           Fresh->OwnedRoot != Fresh->SourceCall || !Fresh->OwnedPath.empty() ||
           !S.owns(SM, Fresh->SourceCall->getExprLoc()) ||
@@ -14401,6 +14413,21 @@ public:
       SavedExpressions.insert(CompletedExpressions.begin(), CompletedExpressions.end());
     }
     return Complete;
+  }
+  bool bindMemberRetainedWeakResultInput(QualType Type) const {
+    if (BindRetainedTupleProjections.empty() ||
+        !bindMemberRetainedReferentSource(Type)) return false;
+    // This source-only input belongs to a live retained tuple projection of
+    // the freshly matched member call. Preserve the actual cv-qualified type
+    // and wrapper referent; no other record or physical storage is admitted.
+    for (const auto &Projection : BindRetainedTupleProjections)
+      for (const auto &Element : Projection.Storage.Elements) {
+        if (Context.hasSameType(Type, Element.getType())) return true;
+        const auto Wrapper = approvedFunctionalReferenceRecord(S, SM,
+            Element.getType()->getAsCXXRecordDecl(), Context);
+        if (Wrapper && Context.hasSameType(Type, Wrapper->ReferentType)) return true;
+      }
+    return false;
   }
   bool bindSourceComplete() const {
     return Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && !Failed;
@@ -29632,7 +29659,7 @@ class BindSourceProof {
           Element.getType()->getAsCXXRecordDecl(), Context);
       if (Wrapper && Context.hasSameType(Type, Wrapper->ReferentType)) return true;
     }
-    return false;
+    return MemberCallRoot && Graph.bindMemberRetainedWeakResultInput(Type);
   }
   bool weakResultBooleanType(QualType Type, bool Value) {
     const auto *Record = Type.isNull() ? nullptr
@@ -31438,7 +31465,8 @@ class BindSourceProof {
       ActiveUnwrapProjectionSources.push_back(Uses[I]);
       auto Restore = llvm::make_scope_exit([&] { ActiveUnwrapProjectionSources.pop_back(); });
       return Graph.withBindRetainedUnwrapProjectionSource(*Uses[I], [&] { return Scope(I + 1); },
-          StandardCallRoot && ActiveRetainedPlaceholderForwardSource ? ActiveUnwrapSource : nullptr);
+          (StandardCallRoot || MemberCallRoot) && ActiveRetainedPlaceholderForwardSource
+              ? ActiveUnwrapSource : nullptr);
     };
     return Scope(0);
   }
