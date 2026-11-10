@@ -1,0 +1,106 @@
+{
+  "preparation_only": false,
+  "reference_native_only": true,
+  "cases": [
+    {
+      "name": "bind-result-scalar-conversion",
+      "source": "#include <functional>\n#include <type_traits>\nint add(int left, int right) { return left + right; }\nextern \"C\" int replacement() {\n  const auto value = std::bind<long>(&add, std::placeholders::_1, 7);\n  static_assert(std::is_same<decltype(value(3)), long>::value, \"explicit result\");\n  static_assert(std::is_same<typename decltype(value)::result_type, long>::value, \"result_type\");\n  return value(3) == 10L ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "3eb83bb89448de56f32ddc908dda324363c2044e7d939d2c93ed3867cd1c643f",
+      "original_translation_source_sha256": "21794bc562e53e2d1ba37f61249053b9877003559efa52733b35a5c0cec46d96",
+      "expected_exit_code": 0,
+      "only_added_main": true,
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ]
+    },
+    {
+      "name": "bind-result-void-discard",
+      "source": "#include <functional>\n#include <type_traits>\n#include <utility>\nint add_to(int& value, int amount) { value += amount; return value; }\nextern \"C\" int replacement() {\n  int value = 5;\n  auto discard = std::bind<void>(&add_to, std::ref(value), std::placeholders::_1);\n  static_assert(std::is_same<decltype(discard(4)), void>::value, \"void result\");\n  discard(4);\n  std::move(discard)(3);\n  return value == 12 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "338eb382f2343bb2842bc6f7f07e5c9838a6e166ae91b50c8353cf409ab22a18",
+      "original_translation_source_sha256": "6947900a67cc9424a218da685422579135ebe9841b9e9f10430a414e06b4c75a",
+      "expected_exit_code": 0,
+      "only_added_main": true,
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ]
+    },
+    {
+      "name": "bind-result-live-reference",
+      "source": "#include <functional>\n#include <type_traits>\nint& identity(int& value) { return value; }\nextern \"C\" int replacement() {\n  int value = 4;\n  const auto read = std::bind<const int&>(&identity, std::placeholders::_1);\n  auto write = std::bind<int&>(&identity, std::placeholders::_1);\n  static_assert(std::is_same<decltype(read(value)), const int&>::value, \"const live reference\");\n  const int& live = read(value);\n  write(value) = 11;\n  return &live == &value && &write(value) == &value && live == 11 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "f12db4e4f1d9ea152bd161fb35ee6d1b2eb7aaccf710515aea0e80a5a51099c4",
+      "original_translation_source_sha256": "0a72933ffa64ecfa05003e5929f6abece52a1a09032e3ac076d3aae832f75225",
+      "expected_exit_code": 0,
+      "only_added_main": true,
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ]
+    },
+    {
+      "name": "bind-result-nullary-unused-effects",
+      "source": "#include <functional>\n#include <utility>\nint effects;\nint calls;\nint target() { ++calls; return effects + 5; }\nextern \"C\" int replacement() {\n  auto value = std::bind<unsigned>(&target);\n  const auto copy = value;\n  const unsigned first = value(++effects, ++effects);\n  const unsigned second = std::move(copy)(effects);\n  return first == 7u && second == 7u && effects == 2 && calls == 2 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "0306b0a83173481b91bbe3bb80593313b1edddf3f5e02e19f55f4f0776407396",
+      "original_translation_source_sha256": "60d0d0eb0a898d0eaf06013f3bad281c24addf50ed230d28b489ecef32a5714f",
+      "expected_exit_code": 0,
+      "only_added_main": true,
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ]
+    },
+    {
+      "name": "bind-result-owned-callable-copies",
+      "source": "#include <functional>\n#include <utility>\nstruct Counter {\n  int value;\n  int operator()(int amount) { value += amount; return value; }\n};\nextern \"C\" int replacement() {\n  auto value = std::bind<long>(Counter{4}, std::placeholders::_1);\n  auto copy = value;\n  const long first = value(3);\n  const long independent = copy(2);\n  const long moved_expression = std::move(value)(1);\n  return first == 7L && independent == 6L && moved_expression == 8L ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "86f482166e5bbe0f52ca045816c77dc71b824705ef6f55dbded498f17879ff0b",
+      "original_translation_source_sha256": "2cf0b444408bc4c5f96cd8736003eb2cfc739b658e6e6bb75c8268bc70673b17",
+      "expected_exit_code": 0,
+      "only_added_main": true,
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ]
+    },
+    {
+      "name": "bind-result-member-targets",
+      "source": "#include <functional>\nstruct Item {\n  int value;\n  int add(int amount) { value += amount; return value; }\n  int read() const { return value; }\n};\nextern \"C\" int replacement() {\n  Item item{3};\n  auto owned = std::bind<long>(&Item::add, Item{5}, std::placeholders::_1);\n  const auto borrowed = std::bind<long>(&Item::read, std::cref(item));\n  auto data = std::bind<int&>(&Item::value, std::placeholders::_1);\n  const long first = owned(2);\n  data(item) = 11;\n  return first == 7L && borrowed() == 11L && &data(item) == &item.value ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "a86562e5a77ddf82ce29c91af022b13451ddfc3ec30e5ca191984a79f906f0b0",
+      "original_translation_source_sha256": "4791106f1e55962acbe280b239c599fc0bed35676c413722749222ab40e63c5a",
+      "expected_exit_code": 0,
+      "only_added_main": true,
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ]
+    },
+    {
+      "name": "bind-result-standard-callables",
+      "source": "#include <functional>\n#include <type_traits>\nextern \"C\" int replacement() {\n  const auto sum = std::bind<long>(std::plus<int>{}, std::placeholders::_2, std::placeholders::_1);\n  auto bit = std::bind<unsigned>(std::less<>{}, std::placeholders::_1, 5);\n  static_assert(std::is_same<decltype(bit(3)), unsigned>::value, \"converted bool\");\n  return sum(4, 9) == 13L && bit(3) == 1u && bit(8) == 0u ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "435b552a1a9687ffbdd3d90ec982b99ea52e1db083222715e2e751e3990041fc",
+      "original_translation_source_sha256": "7f22d5328f4655803fa31ccc245955eb1f3ee065437cb716b1f403bc9387bb18",
+      "expected_exit_code": 0,
+      "only_added_main": true,
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ]
+    }
+  ],
+  "fixture_group": "bind-explicit-result-reference",
+  "required_native_programs": 14,
+  "required_commands": 29,
+  "source_contract_sha256": "95529f4fbcf248c91ad09d48673d265a6120263b8a910e56b32c8133cdb5c5c7",
+  "source_contract_preparation_sha256": "b44af3691e6f211e4264cedfe59e956068b682978620213f7a26c08717987168",
+  "private_translation_requests": 0,
+  "actual_cpp_compilations": 0,
+  "actual_cpp_executions": 0,
+  "actual_c23_executions": 0,
+  "full_stl_complete": false,
+  "execution_binding_required": true,
+  "source_repair_commit": "57b6c5f003a1fb1b5e9ff6a48d3abdc671fc095d",
+  "clean_source_basis": "57b6c5f003a1fb1b5e9ff6a48d3abdc671fc095d",
+  "source_syntax_validation_pending": false,
+  "actual_same_source_six_report_sha256": "00e8ee3f17f1fe115d7dfa04aa27e127b3a71aabc84362a8200ee122fb8d2d36",
+  "actual_same_source_six_proof_sha256": "4811ae2bf11baf2559910ffc7bd2a60e698fe7299a229ad47ddb29a986b41ba1"
+}
