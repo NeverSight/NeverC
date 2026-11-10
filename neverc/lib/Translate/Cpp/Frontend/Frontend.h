@@ -1778,6 +1778,21 @@ describeFunctionalBindStorage(const State &S, const clang::SourceManager &SM,
                               const clang::ASTContext &Context);
 
 
+// Inert explicit-result wrapper only. The selected derived constructor,
+// invoke_r body, conversion, reference lifetime and base bind operations still
+// need independent complete source certificates before any runtime use.
+struct FunctionalBindExplicitResultStorage {
+  const clang::CXXRecordDecl *Record;
+  FunctionalBindStorage Base;
+  clang::QualType ResultType;
+  const clang::TypedefNameDecl *ResultAlias;
+};
+std::optional<FunctionalBindExplicitResultStorage>
+describeFunctionalBindExplicitResultStorage(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+
 // Original member-pointer storage shape only. Actual selected source graphs,
 // member bodies, capture/lifetime operations and lowering remain independent.
 struct FunctionalBindMemberStorage {
@@ -1834,6 +1849,21 @@ struct FunctionalBindFactorySource {
   // Only an exact selected ordinary operation; never a runtime certificate.
   const clang::CXXConstructExpr *CallableCopy = nullptr;
 };
+// Exact source nodes only. Neither forwarding chain proves the base's
+// initializer/default graph, copies, target body or runtime construction.
+struct FunctionalBindExplicitResultFactorySource {
+  FunctionalBindExplicitResultStorage Storage;
+  const clang::CallExpr *SourceCall;
+  const clang::FunctionDecl *Factory;
+  const clang::TypedefDecl *FactoryAlias;
+  const clang::CXXConstructExpr *Construction, *BaseConstruction;
+  std::vector<const clang::CallExpr *> FactoryForwards, BaseForwards;
+};
+std::optional<FunctionalBindExplicitResultFactorySource>
+describeFunctionalBindExplicitResultFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 bool sameFunctionalBindPlaceholderOperands(
     const FunctionalBindFactorySource &Left,
     const FunctionalBindFactorySource &Right);
