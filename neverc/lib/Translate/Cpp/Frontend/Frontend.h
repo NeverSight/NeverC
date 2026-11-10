@@ -1864,6 +1864,24 @@ describeFunctionalBindExplicitResultFactorySource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+// Actual selected SDK expressions only. No base invocation, object value,
+// conversion, ordinary body, default or reference-lifetime proof is implied.
+struct FunctionalBindExplicitResultCallSource {
+  FunctionalBindExplicitResultStorage Storage;
+  const clang::CXXOperatorCallExpr *SourceCall, *BaseCall;
+  const clang::CXXMethodDecl *Method;
+  const clang::Expr *Object, *ResultExpression;
+  const clang::CXXStaticCastExpr *BaseCast;
+  const clang::CallExpr *InvokeR, *ReturnWrapper, *Invoke;
+  std::vector<const clang::CallExpr *> CallForwards, InvokeRForwards, ReturnForwards;
+  std::vector<const clang::CXXStaticCastExpr *> InvokeCasts;
+  std::vector<const clang::ImplicitCastExpr *> ResultCasts;
+};
+std::optional<FunctionalBindExplicitResultCallSource>
+describeFunctionalBindExplicitResultCallSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 bool sameFunctionalBindPlaceholderOperands(
     const FunctionalBindFactorySource &Left,
     const FunctionalBindFactorySource &Right);
