@@ -1,0 +1,366 @@
+{
+  "diagnostic_only": true,
+  "source_revision": "0eaad5d47e74367881fc42df2588f63009128c7b",
+  "original_test_source_sha256": "437f0c48ca2f8b9c8821fdde33e65d21dd2934d49cd43b57e01f08f455294ca3",
+  "original_owners": [
+    {
+      "name": "TranslateTest.CoreV2OptionalHeaderUsesPlatformFreeClosure",
+      "start": 3585892,
+      "end": 3587386,
+      "sha256": "5c1c900e0764bd7c7910fe83e4ee79de20e124778249b815631619c666f00843",
+      "programs": [
+        "TranslateTest.CoreV2OptionalHeaderUsesPlatformFreeClosure/literal-0"
+      ]
+    },
+    {
+      "name": "TranslateTest.CoreV2FunctionTraitTupleEmptyBaseTupleMultipleTargets",
+      "start": 2808610,
+      "end": 2809937,
+      "sha256": "d1320f279227075868ed6a06d314fdd4cf6bf8aafc196f26a37189315bc80ead",
+      "programs": [
+        "TranslateTest.CoreV2FunctionTraitTupleEmptyBaseTupleMultipleTargets/literal-0"
+      ]
+    },
+    {
+      "name": "TranslateTest.CoreV2InvocationCallbackConversionsNoexceptValues",
+      "start": 3144350,
+      "end": 3146649,
+      "sha256": "a158c10ef199b249aca00610e7b2a853a054f0b902d8e86ea61b9a06fbcfa703",
+      "programs": [
+        "TranslateTest.CoreV2InvocationCallbackConversionsNoexceptValues/literal-0"
+      ]
+    },
+    {
+      "name": "TranslateTest.CoreV2PointerTraitsSignatureQueryNestedWrapper",
+      "start": 9226439,
+      "end": 9227706,
+      "sha256": "f5caa35b2dac249649aac78dfc610ffb9d8c8a70bc8471a90526e3426c37e1ef",
+      "programs": [
+        "TranslateTest.CoreV2PointerTraitsSignatureQueryNestedWrapper/literal-0"
+      ]
+    },
+    {
+      "name": "TranslateTest.CoreV2DeletedArgumentDestructorMoveIfNoexceptQueriesRunAtBothOptimizations",
+      "start": 6201583,
+      "end": 6206124,
+      "sha256": "edcc387b2a606e3bdeb36fd4bb4493919cd2b4904b216aaff2ee5bb01ebc707b",
+      "programs": [
+        "TranslateTest.CoreV2DeletedArgumentDestructorMoveIfNoexceptQueriesRunAtBothOptimizations/literal-0"
+      ]
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "start": 6404821,
+      "end": 6412717,
+      "sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "programs": [
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-0",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-1",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-2",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-3",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-4",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-5",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-6",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-7",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-8",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-9",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-10",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-11",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-12",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-13",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-14",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-15",
+        "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-16"
+      ]
+    },
+    {
+      "name": "TranslateTest.CoreV2ReferenceSourcesAssignValueTuplesAtBothOptimizations",
+      "start": 3226637,
+      "end": 3230469,
+      "sha256": "6cd411aa37ebf58fb18d47379ee1ae49e37d8671ba27beb4915631a9179385e5",
+      "programs": [
+        "TranslateTest.CoreV2ReferenceSourcesAssignValueTuplesAtBothOptimizations/literal-0"
+      ]
+    }
+  ],
+  "programs": [
+    {
+      "name": "TranslateTest.CoreV2OptionalHeaderUsesPlatformFreeClosure/literal-0",
+      "original_test": "TranslateTest.CoreV2OptionalHeaderUsesPlatformFreeClosure",
+      "literal_index": 0,
+      "literal_start": 3586088,
+      "literal_end": 3586414,
+      "source": "\n#include <optional>\nusing Value = std::optional<int>::value_type;\nstatic_assert(sizeof(Value) == sizeof(int));\nstatic_assert(sizeof(std::optional<bool>) == 2);\nstatic_assert(sizeof(std::optional<int>) == 2 * sizeof(int));\nstatic_assert(sizeof(std::optional<int *>) == 2 * sizeof(void *));\nint main() { return 0; }\n",
+      "source_sha256": "3c74b214f7ebdc1999da3752b12626784ef134cfed4414d8ac1d0a647764cc49",
+      "original_test_sha256": "5c1c900e0764bd7c7910fe83e4ee79de20e124778249b815631619c666f00843",
+      "actual_native_failure_log_line": 172165
+    },
+    {
+      "name": "TranslateTest.CoreV2FunctionTraitTupleEmptyBaseTupleMultipleTargets/literal-0",
+      "original_test": "TranslateTest.CoreV2FunctionTraitTupleEmptyBaseTupleMultipleTargets",
+      "literal_index": 0,
+      "literal_start": 2808894,
+      "literal_end": 2809314,
+      "source": "#include <type_traits>\n#include <functional>\n#include <utility>\n#include <tuple>\nint effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;\nint other(int n)noexcept{++effects;return n+2;}using D=std::integral_constant<F,other>;int main(){auto t=std::make_tuple(C{},D{});return std::get<0>(t)()(1)!=2||std::get<1>(t)()(1)!=3||effects!=2;}\n",
+      "source_sha256": "f810edcc7691d9065c17da6dcefa741a0ec1cc3524581be83dca8ed7f095266c",
+      "original_test_sha256": "d1320f279227075868ed6a06d314fdd4cf6bf8aafc196f26a37189315bc80ead",
+      "actual_native_failure_log_line": 171161
+    },
+    {
+      "name": "TranslateTest.CoreV2InvocationCallbackConversionsNoexceptValues/literal-0",
+      "original_test": "TranslateTest.CoreV2InvocationCallbackConversionsNoexceptValues",
+      "literal_index": 0,
+      "literal_start": 3144592,
+      "literal_end": 3146059,
+      "source": "#include <functional>\n#include <tuple>\n#include <utility>\nusing F = int (*)(int);\nusing N = int (*)(int) noexcept;\nint safe(int n) noexcept { return n + 2; }\nint consume(F f, int n) { return f ? f(n) : 9; }\nint boolean(bool f, int n) { return f ? n : 9; }\nstruct Reader {\n  int operator()(F f, int n) const { return consume(f,n); }\n  int read(F f, int n) const { return consume(f,n); }\n};\nstruct BooleanReader {\n  int operator()(bool f, int n) const { return boolean(f,n); }\n  int read(bool f, int n) const { return boolean(f,n); }\n};\nint main() { Reader reader;\nN argument = safe;\nif (std::invoke(consume, argument, 3) != 5) return 1;\nif (std::invoke(reader, argument, 3) != 5) return 2;\nif (std::invoke(&Reader::read, reader, argument, 3) != 5) return 3;\nif (std::mem_fn(&Reader::read)(reader, argument, 3) != 5) return 4;\nif (std::invoke(std::mem_fn(&Reader::read), reader, argument, 3) != 5) return 5;\nif (std::ref(consume)(argument, 3) != 5) return 6;\nif (std::invoke(std::ref(consume), argument, 3) != 5) return 7;\nif (std::apply(consume, std::make_tuple(argument, 3)) != 5) return 8;\nif (std::apply(reader, std::make_tuple(argument, 3)) != 5) return 9;\nif (std::apply(std::ref(consume), std::make_tuple(argument, 3)) != 5) return 10;\nif (std::apply(&Reader::read, std::make_tuple(std::ref(reader), argument, 3)) != 5) return 11;\nif (std::apply(std::mem_fn(&Reader::read), std::make_tuple(std::ref(reader), argument, 3)) != 5) return 12;\nreturn 0;\n}\n",
+      "source_sha256": "f6d9fa2303dfc1203208d31132fb8ff12f4d903ca8656cf756dbc05604bd86e6",
+      "original_test_sha256": "a158c10ef199b249aca00610e7b2a853a054f0b902d8e86ea61b9a06fbcfa703",
+      "actual_native_failure_log_line": 171452
+    },
+    {
+      "name": "TranslateTest.CoreV2PointerTraitsSignatureQueryNestedWrapper/literal-0",
+      "original_test": "TranslateTest.CoreV2PointerTraitsSignatureQueryNestedWrapper",
+      "literal_index": 0,
+      "literal_start": 9226686,
+      "literal_end": 9227069,
+      "source": "\n#include <memory>\n#include <functional>\n#include <type_traits>\n#include <utility>\nusing W=std::reference_wrapper<int>;using E=std::reference_wrapper<W>;\nusing T=std::pointer_traits<E*>;\nstatic_assert(std::is_same<decltype(T::pointer_to(std::declval<E&>())),E*>::value,\"result\");\nstatic_assert(noexcept(T::pointer_to(std::declval<E&>())),\"nothrow\");\nint main(){return 0;}\n",
+      "source_sha256": "0b5af937ee863d4cc119e21ff2a68f1874898cb1fd6ca1609ef3af36489e90ca",
+      "original_test_sha256": "f5caa35b2dac249649aac78dfc610ffb9d8c8a70bc8471a90526e3426c37e1ef",
+      "actual_native_failure_log_line": 175380
+    },
+    {
+      "name": "TranslateTest.CoreV2DeletedArgumentDestructorMoveIfNoexceptQueriesRunAtBothOptimizations/literal-0",
+      "original_test": "TranslateTest.CoreV2DeletedArgumentDestructorMoveIfNoexceptQueriesRunAtBothOptimizations",
+      "literal_index": 0,
+      "literal_start": 6201868,
+      "literal_end": 6205461,
+      "source": "#include <utility>\nnamespace Imported { using std::move_if_noexcept; }\nnamespace Reexport { using Imported::move_if_noexcept; }\nnamespace Alias=Reexport;\nint arguments,argument_defaults,value_defaults,conversions;\nint values,copies,moves,cleanups,calls,operand_defaults;\nstruct Value;\ntemplate<int Tag>struct Argument{\n  int value;\n  Argument(const Value&,int n=(++argument_defaults,5))noexcept:value(n){++arguments;}\n  ~Argument()=delete;\n};\nstruct FriendOwner;\nstruct Value{\n  int value;\n  Value(int n=2)noexcept:value(n){++values;}\n  Value(Argument<0>a,int n=(++value_defaults,6))noexcept:value(a.value+n){++conversions;}\n  Value(const Argument<1>&a,int n=(++value_defaults,6))noexcept;\n  Value(Argument<2>&&a,int n=(++value_defaults,6))noexcept:value(a.value+n){a.value=-2;++conversions;}\n  Value(const Argument<3>&&a,int n=(++value_defaults,6))noexcept:value(a.value+n){++conversions;}\n  Value(Value&v)noexcept:value(v.value){++v.value;++copies;}\n  Value(Value&&v)noexcept(false):value(v.value){v.value=-1;++moves;}\n  ~Value()noexcept{++cleanups;}\n  friend struct FriendOwner;\n};\nValue::Value(const Argument<1>&a,int n)noexcept:value(a.value+n){++conversions;}\nstruct FriendOwner{Value elements[2];};\ntemplate<class T>T&source(T&v,int=(++operand_defaults,1))noexcept{++calls;return v;}\ntemplate<class T>bool queries(T&v){\n  using Alias::move_if_noexcept;\n  static_assert(__is_same(decltype(move_if_noexcept(v)),T&&));\n  static_assert(__is_same(decltype((Imported::move_if_noexcept)(v)),T&&));\n  static_assert(__is_same(decltype(move_if_noexcept<T>(v)),T&&));\n  static_assert(sizeof(move_if_noexcept(v))==sizeof(T));\n  static_assert(alignof(decltype(move_if_noexcept(v)))==alignof(T));\n  static_assert(noexcept(move_if_noexcept(v)));\n  T&&alias=move_if_noexcept(std::forward<T&>(v));\n  return &alias==&v;\n}\ntemplate<class T>struct LazyValue;\ntemplate<class T>struct LazyArgument{\n  LazyArgument(const LazyValue<T>&,T=0)noexcept{static_assert(sizeof(T)==0);}\n  ~LazyArgument()=delete;\n};\ntemplate<class T>struct LazyValue{\n  int value;\n  LazyValue(const LazyArgument<T>&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}\n  LazyValue(LazyValue&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}\n  LazyValue(LazyValue&&)noexcept(false){static_assert(sizeof(T)==0);}\n};\ntemplate<class T>struct Box{T value;};\nstatic_assert(sizeof(LazyArgument<int>)==1&&sizeof(LazyArgument<long>)==1);\nint query_only(LazyValue<int>&a,Box<LazyValue<long>>&b){\n  return queries(a)&&queries(std::as_const(a))&&queries(b)&&queries(std::as_const(b));\n}\nint main(){\n  {\n    Value seed(10);\n    FriendOwner owner;\n    static_assert(__is_same(decltype(Alias::move_if_noexcept(source(seed))),Value&&));\n    if(!queries(seed)||!queries(std::as_const(seed))||!queries(owner)||!queries(std::as_const(owner)))return 1;\n    if(values!=3||copies||moves||cleanups||calls||operand_defaults||\n       arguments||argument_defaults||value_defaults||conversions)return 2;\n    Value&&alias=Alias::move_if_noexcept(source(seed));\n    if(&alias!=&seed||calls!=1||operand_defaults!=1)return 3;\n    Value copied(seed),moved(Alias::move_if_noexcept(seed));\n    FriendOwner copied_owner(owner),moved_owner(Alias::move_if_noexcept(owner));\n    if(seed.value!=-1||copied.value!=10||moved.value!=11||\n       owner.elements[0].value!=-1||owner.elements[1].value!=-1||\n       copied_owner.elements[0].value!=2||moved_owner.elements[1].value!=3||copies!=3||moves!=3||cleanups)return 4;\n  }\n  return cleanups==9&&arguments==0&&argument_defaults==0&&value_defaults==0&&conversions==0&&\n         calls==1&&operand_defaults==1?0:5;\n}\n",
+      "source_sha256": "d487971df6d9bf148cb2098b15e328257131820a7a745b25301a941321292291",
+      "original_test_sha256": "edcc387b2a606e3bdeb36fd4bb4493919cd2b4904b216aaff2ee5bb01ebc707b",
+      "actual_native_failure_log_line": 173404
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-0",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 0,
+      "literal_start": 6405037,
+      "literal_end": 6405340,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+      "source_sha256": "d61586140bacc09c7702476618b0ce0398289a3a17585a89e545b66744de6354",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-1",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 1,
+      "literal_start": 6405373,
+      "literal_end": 6405695,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&&()const noexcept{return static_cast<A&&>(*p);}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+      "source_sha256": "e802c999184f98222faacdedfbb8814dd04c586169bce445a7b4851d01524652",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-2",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 2,
+      "literal_start": 6405728,
+      "literal_end": 6406057,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct C;private:~A()noexcept{}};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+      "source_sha256": "e238460dd126e20f543049a12a4a0836b698320ca33d1c230c49f7b7b7fe7964",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-3",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 3,
+      "literal_start": 6406093,
+      "literal_end": 6406425,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct C;protected:~A()noexcept{}};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{1};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+      "source_sha256": "25e7a9d13e03cb51dd441e62482cb5c70fbda2c1198194b2a9e6db66af3ee857",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-4",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 4,
+      "literal_start": 6406467,
+      "literal_end": 6406795,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct C;private:~A()=default;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+      "source_sha256": "1a27e874dc9bb86f8172803b295beda5453391858087884cc5e74a9efc3be5e4",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-5",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 5,
+      "literal_start": 6406841,
+      "literal_end": 6407187,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct C;private:~A()noexcept;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\nA::~A()noexcept{}\n",
+      "source_sha256": "5ed80757a5efd10bbe85f7e4fdae0273d3252b62d34d480b7e5b9fe734c60014",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-6",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 6,
+      "literal_start": 6407218,
+      "literal_end": 6407547,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};using Arg=const A;struct C{A*p;C(Arg,int=3)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+      "source_sha256": "f05c72645af04221b96fc32c2f5430ef0aeb2fecf087e40748cf49e45628e7f3",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-7",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 7,
+      "literal_start": 6407572,
+      "literal_end": 6407913,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct C;private:~A()noexcept{}};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(const C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&&));return 0;}\n",
+      "source_sha256": "8202acc0c580aa052600d154b88f020625794c61eff39ff0a136f33e5bca81b5",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-8",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 8,
+      "literal_start": 6407948,
+      "literal_end": 6408302,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct C;private:~A()noexcept{}};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct O{C elements[2];};int f(O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O&&));return 0;}\n",
+      "source_sha256": "3efbe038dc4e2b4dad8825e53da9ce1303ff58fb857774dd232435250e247800",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-9",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 9,
+      "literal_start": 6408335,
+      "literal_end": 6408705,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct C;private:~A()noexcept{}};struct C{friend struct O;A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct O{C elements[2];};int f(O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O&&));return 0;}\n",
+      "source_sha256": "eee920344d823d0d7763f64d205717725248f2df4f344a1cdadd8071bccb7988",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-10",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 10,
+      "literal_start": 6408740,
+      "literal_end": 6409084,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct O;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct O{C elements[2];};int f(O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O&&));return 0;}\n",
+      "source_sha256": "0f689582c7266e96fe8c2667483ebc545afcc020be7dbe099f804d8e73d45025",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-11",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 11,
+      "literal_start": 6409118,
+      "literal_end": 6409464,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;struct O;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct A::O{C elements[2];};int f(A::O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),A::O&&));return 0;}\n",
+      "source_sha256": "d1576493b81d642148d49ec2bf7b2e17d24cd4870cfcf546eb0318f92b348891",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-12",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 12,
+      "literal_start": 6409499,
+      "literal_end": 6409929,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct C;private:~A()noexcept{}};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}static int inspect(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+      "source_sha256": "33eee782a0108c072505a4b528218d015fa543bd5a4c38f763785caa7fac3392",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-13",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 13,
+      "literal_start": 6409971,
+      "literal_end": 6410381,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}C(double)=delete;C(int,int)noexcept{}private:C(int)noexcept{}public:operator int()const noexcept{return 0;}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+      "source_sha256": "532b0b5d8ee8022c84b25b28885416fe1199bb3aea17477bd0f344295a4648af",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-14",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 14,
+      "literal_start": 6410419,
+      "literal_end": 6410983,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\ntemplate<class T>struct A{T n;private:~A()noexcept{static_assert(sizeof(T)==0);}};template<class T>struct C{A<T>*p;C(A<T>,T=0)noexcept{static_assert(sizeof(T)==0);}C(C&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&&)noexcept(false){static_assert(sizeof(T)==0);}operator A<T>&()const noexcept{static_assert(sizeof(T)==0);return *p;}};static_assert(sizeof(A<int>)==sizeof(int));int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}\n",
+      "source_sha256": "4ff921c24b54f1bda9fa708165386bd38b8d83b5e3867b520be31af424559c7e",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-15",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 15,
+      "literal_start": 6411013,
+      "literal_end": 6411622,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\ntemplate<class T>struct A{T n;private:~A()noexcept{static_assert(sizeof(T)==0);}};template<class T>struct C{A<T>*p;C(A<T>,T=0)noexcept{static_assert(sizeof(T)==0);}C(C&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&&)noexcept(false){static_assert(sizeof(T)==0);}operator A<T>&()const noexcept{static_assert(sizeof(T)==0);return *p;}};static_assert(sizeof(A<int>)==sizeof(int));template<class T>struct O{C<T> elements[2];};int f(O<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O<int>&&));return 0;}\n",
+      "source_sha256": "24067c23042b96d035d55cb4945133a3abf82e46047ab7940858bc9d4d6e3cbc",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-16",
+      "original_test": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "literal_index": 16,
+      "literal_start": 6411665,
+      "literal_end": 6412242,
+      "source": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\ntemplate<class T>struct A{T n;private:~A()noexcept(sizeof(T)>0){static_assert(sizeof(T)==0);}};template<class T>struct C{A<T>*p;C(A<T>,T=0)noexcept{static_assert(sizeof(T)==0);}C(C&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&&)noexcept(false){static_assert(sizeof(T)==0);}operator A<T>&()const noexcept{static_assert(sizeof(T)==0);return *p;}};static_assert(sizeof(A<int>)==sizeof(int));int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}\n",
+      "source_sha256": "d9c54c65976d158b3281394960642c42e408c6dd2fc1805b15bd6b99393238f7",
+      "original_test_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "actual_native_failure_log_line": 173614
+    },
+    {
+      "name": "TranslateTest.CoreV2ReferenceSourcesAssignValueTuplesAtBothOptimizations/literal-0",
+      "original_test": "TranslateTest.CoreV2ReferenceSourcesAssignValueTuplesAtBothOptimizations",
+      "literal_index": 0,
+      "literal_start": 3226895,
+      "literal_end": 3229815,
+      "source": "\n#include <tuple>\n#include <utility>\nint order;\nusing Values = std::tuple<long, double>;\nusing Refs = std::tuple<short &, float &>;\nValues &select_destination(Values &value) {\n  order = order * 10 + 1;\n  return value;\n}\nRefs &select_source(Refs &value) {\n  order = order * 10 + 2;\n  return value;\n}\nint main() {\n  short first = 3;\n  float second = 4.5f;\n  Refs references(first, second);\n  Values destination(0L, 0.0);\n  auto &result = (select_destination(destination) = select_source(references));\n  if (order != 21 || &result != &destination ||\n      std::get<0>(destination) != 3 || std::get<1>(destination) != 4.5)\n    return 1;\n  first = 5;\n  second = 6.5f;\n  if (std::get<0>(destination) != 3 || std::get<1>(destination) != 4.5 ||\n      &std::get<0>(references) != &first)\n    return 2;\n  const Refs &constant = references;\n  destination = constant;\n  if (std::get<0>(destination) != 5 || std::get<1>(destination) != 6.5)\n    return 3;\n  first = 7;\n  destination = static_cast<Refs &&>(references);\n  if (std::get<0>(destination) != 7)\n    return 4;\n  std::tuple<short &, float> mixed(first, 8.5f);\n  destination = mixed;\n  if (std::get<0>(destination) != 7 || std::get<1>(destination) != 8.5)\n    return 5;\n  destination = std::tuple<short, float &>(short(9), second);\n  if (std::get<0>(destination) != 9 || std::get<1>(destination) != 6.5)\n    return 6;\n  std::pair<short &, float &> pair(first, second);\n  destination = pair;\n  if (std::get<0>(destination) != 7 || std::get<1>(destination) != 6.5)\n    return 7;\n  second = 9.5f;\n  destination = static_cast<std::pair<short &, float &> &&>(pair);\n  if (std::get<0>(destination) != 7 || std::get<1>(destination) != 9.5)\n    return 14;\n  destination = std::pair<short &, float>(first, 10.5f);\n  if (std::get<0>(destination) != 7 || std::get<1>(destination) != 10.5)\n    return 8;\n  const std::pair<short, float &> reverse_pair(short(11), second);\n  destination = reverse_pair;\n  if (std::get<0>(destination) != 11 || std::get<1>(destination) != 9.5)\n    return 9;\n  const int number = 12;\n  std::tuple<const int &> constant_referent(number);\n  std::tuple<long> copied_number(0L);\n  copied_number = constant_referent;\n  if (std::get<0>(copied_number) != 12)\n    return 10;\n  int object = 13;\n  int *pointer = &object;\n  std::tuple<int *&> pointer_reference(pointer);\n  std::tuple<const int *> pointer_value(nullptr);\n  pointer_value = pointer_reference;\n  pointer = nullptr;\n  if (std::get<0>(pointer_value) != &object)\n    return 11;\n  std::tuple<int, int> ordered(14, 15);\n  std::tuple<int &, int &> overlap(std::get<1>(ordered), std::get<0>(ordered));\n  ordered = overlap;\n  if (std::get<0>(ordered) != 15 || std::get<1>(ordered) != 15)\n    return 12;\n  std::get<0>(ordered) = 16;\n  std::pair<int, int &> mixed_overlap(17, std::get<0>(ordered));\n  ordered = mixed_overlap;\n  return std::get<0>(ordered) == 17 && std::get<1>(ordered) == 17 ? 0 : 13;\n}\n",
+      "source_sha256": "1a22ad93b6cea7cfa66ffb45338bd842eb037adf121f735843f2bf33d672b993",
+      "original_test_sha256": "6cd411aa37ebf58fb18d47379ee1ae49e37d8671ba27beb4915631a9179385e5",
+      "actual_native_failure_log_line": 171924
+    }
+  ],
+  "target_abis": [
+    "x86_64-apple-macosx15.0.0",
+    "arm64-apple-macosx15.0.0",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc"
+  ],
+  "compiler_component_revision": "e948b4998de88f1cc3a23306aeb984ec76ae34f1",
+  "compiler_component_run_id": 42917656752,
+  "compiler_binary_artifact_id": 13814169939,
+  "compiler_binary_artifact_sha256": "7b837abc6658aad30a64a7110db529bbb09cfd69df9ad798611b641d08f14b05",
+  "compiler_driver": {
+    "path": "/home/runner/work/_temp/cpp-private-runtime-build/private-frontend-runtime-driver",
+    "sha256": "437de7c3f6e578a89c546c485e50bb55f99c0acc0b04d36865d7c14088b49633",
+    "bytes": 94726608,
+    "first_64_bytes_hex": "7f454c4602010100000000000000000003003e0001000000a06c6a000000000040000000000000005061a5050000000000000000400038000e00400022002100"
+  },
+  "qualified_artifact_metadata_sha256": "f4e4ae40ba4bb8f5aea17ab4f83622f67b8e7ef4079c17d5e32780c4b13df93e",
+  "native_failure_inventory_sha256": "daa2d655d3a17d719f3d96b48f838866b2ab6814515b4d0c0a431abd69723010",
+  "cpp_programs_changed": false,
+  "test_expectations_changed": false,
+  "baseline_qualification_reused_for_new_support": false,
+  "actual_c23_executions": 0,
+  "full_stl_complete": false
+}
