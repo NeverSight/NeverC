@@ -369878,7 +369878,7 @@ int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_v
 namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
 int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
 )cpp"},
-    {"string_view-copy-source-invoke", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string_view-copy-source-invoke", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -369887,7 +369887,7 @@ int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_v
 #include <utility>
 int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::invoke(hash,value)==0;}
 )cpp"},
-    {"string_view-copy-source-apply", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string_view-copy-source-apply", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -369896,7 +369896,7 @@ int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_v
 #include <utility>
 int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(hash,std::tie(value))==0;}
 )cpp"},
-    {"string_view-copy-source-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string_view-copy-source-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -369905,7 +369905,7 @@ int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_v
 #include <utility>
 int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return wrapper(value)==0;}
 )cpp"},
-    {"string_view-copy-source-invoke-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string_view-copy-source-invoke-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -369914,7 +369914,7 @@ int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_v
 #include <utility>
 int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,value)==0;}
 )cpp"},
-    {"string_view-copy-source-apply-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string_view-copy-source-apply-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -369963,7 +369963,7 @@ int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_v
 #include <utility>
 int main(){std::string_view value("abcdefghijklmnop",16);std::hash<std::string_view> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
 )cpp"},
-    {"string_view-copy-source-ignored", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string_view-copy-source-ignored", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -370060,7 +370060,7 @@ int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;
 namespace std { inline namespace __1 { template<>inline size_t __do_string_hash<const char*>(const char*,const char*){return 17;} }}
 int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
 )cpp"},
-    {"string-copy-source-invoke", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string-copy-source-invoke", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -370069,7 +370069,7 @@ int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;
 #include <utility>
 int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::invoke(hash,value)==0;}
 )cpp"},
-    {"string-copy-source-apply", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string-copy-source-apply", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -370078,7 +370078,7 @@ int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;
 #include <utility>
 int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(hash,std::tie(value))==0;}
 )cpp"},
-    {"string-copy-source-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string-copy-source-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -370087,7 +370087,7 @@ int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;
 #include <utility>
 int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return wrapper(value)==0;}
 )cpp"},
-    {"string-copy-source-invoke-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string-copy-source-invoke-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -370096,7 +370096,7 @@ int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;
 #include <utility>
 int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::invoke(wrapper,value)==0;}
 )cpp"},
-    {"string-copy-source-apply-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string-copy-source-apply-wrapper", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
@@ -370145,7 +370145,7 @@ int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;
 #include <utility>
 int main(){std::string value("abcdefghijklmnop",16);std::hash<std::string> hash;auto wrapper=std::ref(hash);return std::apply(wrapper,std::tie(value))==0;}
 )cpp"},
-    {"string-copy-source-ignored", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }
+    {"string-copy-source-ignored", R"cpp(extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }
 #define memcpy user_word_copy
 #include <functional>
 #include <string>
