@@ -1778,6 +1778,21 @@ describeFunctionalBindStorage(const State &S, const clang::SourceManager &SM,
                               const clang::ASTContext &Context);
 
 
+// Inert explicit-result wrapper only. The selected derived constructor,
+// invoke_r body, conversion, reference lifetime and base bind operations still
+// need independent complete source certificates before any runtime use.
+struct FunctionalBindExplicitResultStorage {
+  const clang::CXXRecordDecl *Record;
+  FunctionalBindStorage Base;
+  clang::QualType ResultType;
+  const clang::TypedefNameDecl *ResultAlias;
+};
+std::optional<FunctionalBindExplicitResultStorage>
+describeFunctionalBindExplicitResultStorage(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+
 // Original member-pointer storage shape only. Actual selected source graphs,
 // member bodies, capture/lifetime operations and lowering remain independent.
 struct FunctionalBindMemberStorage {
@@ -1833,7 +1848,57 @@ struct FunctionalBindFactorySource {
   std::vector<std::optional<FunctionalBindPlaceholderOperandSource>> Placeholders;
   // Only an exact selected ordinary operation; never a runtime certificate.
   const clang::CXXConstructExpr *CallableCopy = nullptr;
+  const clang::CXXConstructExpr *ExplicitResultConstruction = nullptr;
 };
+struct FunctionalBindFactoryInitializers {
+  const clang::CXXConstructExpr *WeakConstruction;
+  const clang::Expr *CallableInitializer;
+  const clang::CXXConstructExpr *BoundConstruction;
+  const clang::CallExpr *CallableForward;
+  std::vector<const clang::CallExpr *> BoundForwards;
+  std::vector<std::optional<FunctionalBindPlaceholderOperandSource>> Placeholders;
+  const clang::CXXConstructExpr *CallableCopy;
+};
+
+// Exact source nodes only. Neither forwarding chain proves the base's
+// initializer/default graph, copies, target body or runtime construction.
+struct FunctionalBindExplicitResultFactorySource {
+  FunctionalBindExplicitResultStorage Storage;
+  const clang::CallExpr *SourceCall;
+  const clang::FunctionDecl *Factory;
+  const clang::TypedefDecl *FactoryAlias;
+  const clang::CXXConstructExpr *Construction, *BaseConstruction;
+  std::vector<const clang::CallExpr *> FactoryForwards, BaseForwards;
+  FunctionalBindFactoryInitializers BaseInitializers;
+};
+std::optional<FunctionalBindExplicitResultFactorySource>
+describeFunctionalBindExplicitResultFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+// Actual selected SDK expressions only. No base invocation, object value,
+// conversion, ordinary body, default or reference-lifetime proof is implied.
+struct FunctionalBindExplicitResultCallSource {
+  FunctionalBindExplicitResultStorage Storage;
+  const clang::CXXOperatorCallExpr *SourceCall, *BaseCall;
+  const clang::CXXMethodDecl *Method;
+  const clang::Expr *Object, *ResultExpression;
+  const clang::CXXStaticCastExpr *BaseCast;
+  const clang::CallExpr *InvokeR, *ReturnWrapper, *Invoke;
+  std::vector<const clang::CallExpr *> CallForwards, InvokeRForwards, ReturnForwards;
+  std::vector<const clang::CXXStaticCastExpr *> InvokeCasts;
+  std::vector<const clang::ImplicitCastExpr *> ResultCasts;
+};
+std::optional<FunctionalBindExplicitResultCallSource>
+describeFunctionalBindExplicitResultCallSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindExplicitResultBaseFactorySource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 bool sameFunctionalBindPlaceholderOperands(
     const FunctionalBindFactorySource &Left,
     const FunctionalBindFactorySource &Right);
@@ -1934,7 +1999,43 @@ struct FunctionalBindCallSource {
   std::vector<const clang::CXXStaticCastExpr *> InvokeCasts;
   const clang::CXXOperatorCallExpr *OwnedRoot = nullptr;
   std::vector<unsigned> OwnedPath;
+
+  bool hasExplicitResultOwner() const {
+    return OwnedRoot && SourceCall && OwnedRoot != SourceCall && OwnedPath.empty();
+  }
 };
+
+struct FunctionalBindExplicitResultInvocationSource {
+  FunctionalBindExplicitResultCallSource Wrapper;
+  FunctionalBindCallSource Base;
+  std::optional<FunctionalBindMemberInvokeBodySource> Member;
+};
+bool sameFunctionalBindExplicitResultWrapper(
+    const FunctionalBindExplicitResultCallSource &A, const FunctionalBindExplicitResultCallSource &B,
+    const clang::ASTContext &Context);
+bool approvedFunctionalBindExplicitResultLifecycle(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindFactorySource &Factory, const clang::CXXMethodDecl *Method,
+    const clang::ASTContext &Context, llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnedQueries, std::set<const clang::CXXMethodDecl *> &MemberQueries);
+
+bool approvedFunctionalBindExplicitResultInvocationSource(
+    const State &S, const clang::SourceManager &SM,
+    const FunctionalBindExplicitResultInvocationSource &Call, const clang::ASTContext &Context,
+    llvm::ArrayRef<const TemplateUseSource *> Sources,
+    llvm::ArrayRef<const SelectedTemplateCallSource *> Selections,
+    const std::map<const clang::CXXMethodDecl *, SpecialMemberSource> &Members,
+    const std::map<const clang::TypeTraitExpr *, OperationTraitSource> &Traits,
+    std::set<const clang::CXXMethodDecl *> &OwnedQueries, std::set<const clang::CXXMethodDecl *> &MemberQueries,
+    const std::function<bool(const clang::TypedefNameDecl *)> &SourceAlias);
+
+std::optional<FunctionalBindExplicitResultInvocationSource>
+describeFunctionalBindExplicitResultInvocationSource(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 
 // Member-only source witnesses. The data-member Selected.Target is null;
 // Member.Access retains its actual lvalue operation. These descriptions do not
@@ -2034,6 +2135,32 @@ struct FunctionalBindReferenceCallSource {
 std::optional<FunctionalBindReferenceCallSource>
 describeFunctionalBindReferenceCallSource(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+std::optional<FunctionalBindFactorySource>
+freshFunctionalBindExplicitResultBaseFactorySource(
+    const State &S, const clang::SourceManager &SM, const FunctionalBindFactorySource &Factory,
+    const clang::ASTContext &Context);
+std::optional<FunctionalBindMemberFactorySource>
+describeFunctionalBindMemberFactoryOccurrence(
+    const State &S, const clang::SourceManager &SM, const FunctionalBindFactorySource &Factory,
+    const clang::ASTContext &Context);
+std::optional<FunctionalBindFactorySource>
+describeFunctionalBindStandardFactoryOccurrence(
+    const State &S, const clang::SourceManager &SM, const FunctionalBindFactorySource &Factory,
+    const clang::ASTContext &Context);
+std::optional<FunctionalBindReferenceFactorySource>
+describeFunctionalBindReferenceFactoryOccurrence(
+    const State &S, const clang::SourceManager &SM, const FunctionalBindFactorySource &Factory,
+    const clang::ASTContext &Context);
+
+std::optional<FunctionalBindOwnedCallSource>
+describeFunctionalBindOwnedCallOccurrence(
+    const State &S, const clang::SourceManager &SM, const FunctionalBindCallSource &Call,
+    const clang::ASTContext &Context);
+std::optional<FunctionalBindStandardCallSource>
+describeFunctionalBindStandardCallOccurrence(
+    const State &S, const clang::SourceManager &SM, const FunctionalBindCallSource &Call,
     const clang::ASTContext &Context);
 
 std::optional<FunctionalBindCallSource>
@@ -2264,6 +2391,16 @@ describeFunctionalBindStandardValueQueryTryCallFallbackSource(
     const FunctionalBindStandardCallSource &Owned,
     const FunctionalBindStorage &Storage,
     llvm::ArrayRef<const TemplateUseSource *> Sources, const clang::ASTContext &Context);
+
+struct FunctionalBindExplicitResultCopySource {
+  FunctionalBindExplicitResultStorage Storage;
+  const clang::CXXConstructExpr *Construction;
+  const clang::Expr *Object;
+};
+std::optional<FunctionalBindExplicitResultCopySource>
+describeFunctionalBindExplicitResultCopySource(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
 
 struct FunctionalBindCopySource {
   FunctionalBindNaturalLayout Layout;
@@ -4113,6 +4250,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalNotFnPointers;
   // Layout metadata is separate from the final runtime operation maps.
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalBindRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredFunctionalBindExplicitResultRecords;
   // Metadata ownership only; ordinary tuple/value admission never reads this map.
   std::map<const clang::CXXRecordDecl *, std::set<const clang::CXXRecordDecl *>> RequiredFunctionalBindTuples;
   std::function<bool(const clang::CXXRecordDecl *)> CheckBindDestructionSource;
@@ -4121,6 +4259,8 @@ public:
   std::map<const clang::CXXRecordDecl *, FunctionalBindNaturalLayout> VerifiedBindRecords;
   std::map<const clang::CallExpr *, FunctionalBindFactorySource> VerifiedBindFactories;
   std::map<const clang::CallExpr *, FunctionalBindCallSource> VerifiedBindCalls;
+  std::map<const clang::CallExpr *, FunctionalBindExplicitResultInvocationSource> VerifiedBindExplicitResultCalls;
+  std::map<const clang::CXXConstructExpr *, FunctionalBindExplicitResultCopySource> VerifiedBindExplicitResultCopies;
   std::map<const clang::CallExpr *, FunctionalBindReferenceCallSource> VerifiedBindReferenceCalls;
   // Published only with each exact factory/value/call and its complete SDK,
   // ordinary body, copy and lifetime proofs. Record/type equality never picks
