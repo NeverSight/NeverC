@@ -1,0 +1,74 @@
+{
+  "diagnostic_only": true,
+  "compiler_revision": "0eaad5d47e74367881fc42df2588f63009128c7b",
+  "compiler_artifact_sha256": "2714a5b69761607615127386974049be0db581e6a6b34a5cd9ca0683c7bb4258",
+  "selected_tests": [
+    "TranslateTest.CoreV2WrapperSetSymmetricDifferenceComparisonRuntimeRetainsSourceAndLifetimeBoundaries",
+    "TranslateTest.CoreV2PointerTraitsSignatureQueryNestedWrapper",
+    "TranslateTest.CoreV2AddressofWrapperSignatureQueryNestedWrapper",
+    "TranslateTest.CoreV2WrapperReferenceCastSignatureQueryNestedAsConst",
+    "TranslateTest.CoreV2LaunderWrapperSignatureQueryNestedWrapper"
+  ],
+  "original_translate_tests_sha256": "437f0c48ca2f8b9c8821fdde33e65d21dd2934d49cd43b57e01f08f455294ca3",
+  "original_tests": {
+    "TranslateTest.CoreV2WrapperSetSymmetricDifferenceComparisonRuntimeRetainsSourceAndLifetimeBoundaries": {
+      "start": 17545079,
+      "bytes": 14994,
+      "sha256": "e5c0a46442f04fe0f0b25bc82d665cccac5b53f8817600285ecfdabe3be00f77"
+    },
+    "TranslateTest.CoreV2PointerTraitsSignatureQueryNestedWrapper": {
+      "start": 9226439,
+      "bytes": 1267,
+      "sha256": "f5caa35b2dac249649aac78dfc610ffb9d8c8a70bc8471a90526e3426c37e1ef"
+    },
+    "TranslateTest.CoreV2AddressofWrapperSignatureQueryNestedWrapper": {
+      "start": 9240668,
+      "bytes": 1248,
+      "sha256": "5c62c804d6e68418a4ff10081c956f7e1c7f060c9baf48a2f43b245a2c078ab4"
+    },
+    "TranslateTest.CoreV2WrapperReferenceCastSignatureQueryNestedAsConst": {
+      "start": 9262093,
+      "bytes": 1269,
+      "sha256": "3ccda325f6e894510e4626b1b4ec9201ef62449ff93c0e17510da1a8170f8353"
+    },
+    "TranslateTest.CoreV2LaunderWrapperSignatureQueryNestedWrapper": {
+      "start": 9289937,
+      "bytes": 1233,
+      "sha256": "a60a5579d08facaf38ba205004c052f20245d64be770a4f6dd1237324db15bf5"
+    }
+  },
+  "original_helpers": {
+    "args": {
+      "start": 1139,
+      "bytes": 331,
+      "sha256": "6d4cf91b6f918f2925a691ccf21ffe9bd0f5b010ea667398ddf847aafe07d984"
+    },
+    "translate": {
+      "start": 1472,
+      "bytes": 224,
+      "sha256": "0b2c946a740779e4a8892344d615d36db9b3bcbdb84063bfc7655e88ada03063"
+    },
+    "expectNoArtifacts": {
+      "start": 4906,
+      "bytes": 278,
+      "sha256": "e1b49f01d77df40f5a26436881a109c1370cff38919115b2c424c37d110c8d3e"
+    },
+    "compileGenerated": {
+      "start": 11903,
+      "bytes": 458,
+      "sha256": "26698b99c870dcbef221959573167aee23425e5380f18b8b74382ade66dedda8"
+    }
+  },
+  "input_sha256": {
+    "utils/ci/check-windows-stl-diagnostic.py": "09234aa563f90d1cf4bfe07d863e77b533b948d03237a2bd4bdc518a7dd48cd4",
+    "utils/ci/windows-stl-fixture-original-tests.cpp": "01d7f8a186ad04dfcba95e66ac24b05d6e9730bea90498a267c2f6d004dbe066",
+    "utils/ci/windows-stl-fixture-before.cpp": "11c9aff152730b069d353baea20d2a47067db8d386f0f751a873caffb4008086",
+    "tests/neverc/NeverCTestFixture.cpp": "70f8f0d51627442dfb6b2f6c220afe84d919326bc5868be2be1d64ea9d1a0d7a",
+    "tests/neverc/NeverCTestFixture.h": "0236aed3a6816cf9684ac2a26fdb551b401e9449cbff61e99097003e7c5bc745",
+    "utils/ci/download-windows-arm-sdk-baseline.py": "460dac8e223ea7024c8bf5e23262c6247dc65dc715a07ab5dd5fd69bc404db02"
+  },
+  "fixture_source_commit": "4909589be0c590f973775c18f9483c0edf11b5c3",
+  "fixture_patch_record_sha256": "91e47472f194826d3281f561424f6ad7e8fe81f55843943241ff905d6eeb97a3",
+  "compiler_private19_sdk_and_test_expectations_unchanged": true,
+  "full_stl_complete": false
+}
