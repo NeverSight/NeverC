@@ -993,6 +993,10 @@ Referenztupel leihen unterstützte Besitzer. Werttupel verwenden den ausgewählt
 
 Die geprüfte Teilmenge von `std::bind` unterstützt auch die zugelassenen typisierten und transparenten Standardfunktionsobjekte für Arithmetik, Vergleiche, logische und bitweise Operationen mit skalaren Eingaben. Adapterkopien und const Aufrufe erhalten das geprüfte SDK-Layout und die ausgewählten Operationen. Jedes Eingabeargument wird vor dem Aufruf des Funktionsobjekts einmal ausgewertet, auch bei logischen Operationen.
 
-Die geprüfte Implementierung `085a48ae03fe` besteht 6 Syntaxprüfungen, alle 1000 Erwartungen auf 8 ABIs, 144 native Referenzausführungen, 208 ausgewählte GTests, 168 übersetzte O0/O2-Ausführungen und 819 Frontend-Anfragen. Die unveränderten ursprünglichen 808 Anfragen und ihre Teilmenge mit 600 erfüllen alle Erwartungen. Die Grenzen bleiben bei 64 Ebenen, 200,000 Knoten und 60 Sekunden je Quelle. Memberzeiger und weitere STL-Abdeckung sind noch unvollständig. NeverCs öffentliche Quellsprache bleibt ausschließlich C23.
+Die geprüfte Teilmenge von `std::bind` akzeptiert auch durch Quellcode belegte gewöhnliche Memberfunktionen und Datenmember. Zugelassene triviale eigene Kopien, geliehene Objekte, Zeiger und über Platzhalter übergebene Empfänger erhalten Objektidentität, const Auswahl, gültige Datenreferenzen und unabhängige Adapterkopien. Ausgewählte Methodenrümpfe und jede Erzeugung, Kopie und Zerstörung bleiben geprüft. Memberzeiger behalten native Zielgröße und Ausrichtung.
+
+Zusätzliche Prüfungen erfüllen 78 Erwartungen für Memberbindungen sowie 42 Übersetzungen mit 84 LLVM-IR-Dateien auf sechs 64-Bit-Zielen.
+
+Die geprüfte Implementierung `813a7045ed8b` besteht 6 Syntaxprüfungen, alle 750 Erwartungen auf 6 ABIs, 144 native Referenzausführungen, 221 ausgewählte GTests, 182 übersetzte O0/O2-Ausführungen und 832 Frontend-Anfragen. Die unveränderten ursprünglichen 606 Anfragen und ihre Teilmenge mit 450 erfüllen alle Erwartungen. Die Grenzen bleiben bei 64 Ebenen, 200,000 Knoten und 60 Sekunden je Quelle. Adapterzuweisung, entweichende Adressen, geänderte Zielwerte, Herkunftsnachweise bedingter Empfänger und weitere STL-Abdeckung sind noch unvollständig. NeverCs öffentliche Quellsprache bleibt ausschließlich C23.
 
 [Platzhalteraufrufe](../../utils/ci/cpp-bind-placeholder-cases.json)

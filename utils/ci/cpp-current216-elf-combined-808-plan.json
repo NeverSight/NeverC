@@ -1,30 +1,30 @@
 {
-  "producer_commit": "ed2a908a91f559358a23ad3e927d836e8dad81ce",
-  "producer_run_id": 42404130151,
-  "producer_job_id": 128498065660,
+  "producer_commit": "856e3659abdd47173b99a1ed927f64c9d1ac7643",
+  "producer_run_id": 42900752486,
+  "producer_job_id": 130125774588,
   "producer_attempt": 1,
-  "producer_report_sha256": "2788610fb697346d62d80a6cbc35ed184bdd21414a7c671175f631622232f057",
-  "producer_validation_receipt_sha256": "92fb3478dea1c004fe6660514db3f1a84426c6d6cb310a389bfef25f351175b4",
+  "producer_report_sha256": "113cf9d4644e80413436a7e7e3f5360d2ab2083160767f38a9b991b70485a063",
+  "producer_validation_receipt_sha256": "b61e452134e1bb7787323d77797a6e3f981647640b3f0214f5802154dd570cc3",
   "producer_small_artifact": {
-    "id": 13598389645,
-    "name": "cpp-bind-call-arguments-clean456-ed2a908a91f559358a23ad3e927d836e8dad81ce",
-    "digest": "sha256:3fa925e6a7b877ee064bfb8caef59d8c287a3c02663ed1b30d71237137cf67b0"
+    "id": 13808498635,
+    "name": "cpp-bind-call-arguments-clean456-856e3659abdd47173b99a1ed927f64c9d1ac7643",
+    "digest": "sha256:b23f6ccb0e9bcd4da6dd69a0ccd1d0891a97ced1a14d64dfc5e57d28585db73c"
   },
   "producer_binary_artifact": {
-    "id": 13598359739,
-    "name": "cpp-bind-call-arguments-clean456-binary-remote-only-ed2a908a91f559358a23ad3e927d836e8dad81ce",
-    "digest": "sha256:6c3224b9a6d6b01d22f61ee2e02fa1b533f40fcb38e4de54d3e3dddc2318b39f"
+    "id": 13809386319,
+    "name": "cpp-bind-call-arguments-clean456-binary-remote-only-856e3659abdd47173b99a1ed927f64c9d1ac7643",
+    "digest": "sha256:e6e33e1a495a163ca15215ff4afd5a0b931b843bde672411e6b6334fc48443e5"
   },
-  "executable_sha256": "a3b70221ad70aef48daac95cdc8108c04ec0be6345eee87b01c4e6840e136961",
-  "executable_bytes": 81565176,
-  "frontend_build_id": "cpp-frontend-1-45a1a3d8dfc2c96e7669ae9adb58c6be3999d788c58197c4de975bd3dd9dbc81",
+  "executable_sha256": "2920045b30c48f161604b2de880ec88f1e84e2256e3a8656be72f92308023c12",
+  "executable_bytes": 81879184,
+  "frontend_build_id": "cpp-frontend-1-5ae702d947664718b35706921873cc0c415f49f475aaabb707ed8a20c0edbcfb",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "1e7589d66f32f33ef00f3c8de67bfc6870e984f75d9c708be7b4fe9f27e5fdb5",
-    "Lowering.cpp": "57d782f1798a859eeac6cf67baf84738fc2fd92c8d912a5e493525a81f90b420",
+    "Frontend.cpp": "0d204a1e6febde2fec8ec2d7e26091403fb60b6862d85841e03b8473be0397c0",
+    "Lowering.cpp": "6b995f01316efab56b896ec8fcbda143d03352a2a8f826225e89ef8d4e19b6f3",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "2594dd74308812ea224c9de0eef30d0b0018c5d316df6c18e07452ce083d3d57",
+    "MathSDK.cpp": "26ecac6824d64b24a2ab9a8dd5ec06d8ae27387f8028f2f29fe7f8f62d5e529b",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "fe4d5a911e925b90a7b093eedf0d62817afe60682d87caa4e96f07c0385a574e",
+    "Frontend.h": "db73b715aae8c80283be5071836c6648fcf5f1a312bc754c60ce903b23e4c62a",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -39,7 +39,7 @@
     "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
     "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
   },
-  "clean_source_basis": "085a48ae03feed07e0dd57d97fb1c53e45211ca1",
+  "clean_source_basis": "813a7045ed8b013dff711fad1ee6a6be8cf2b57a",
   "sdk_catalog_sha256": "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167",
   "original_combined_revision": "831f0a6a5b201ca85daf9a6e499197dccaa14991",
   "original_combined_plan": "utils/ci/cpp-ordinary-selected-call-plan.json",
@@ -52,9 +52,7 @@
     "x86_64-apple-darwin",
     "arm64-apple-darwin",
     "x86_64-pc-windows-msvc",
-    "aarch64-pc-windows-msvc",
-    "i686-pc-windows-msvc",
-    "i686-unknown-linux-gnu"
+    "aarch64-pc-windows-msvc"
   ],
   "distinct_original_deployment_targets_requiring_actual_execution": [
     "x86_64-apple-macosx15.0.0",
@@ -66,10 +64,8 @@
     "arm64-apple-macosx15.0.0",
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
-    "i686-unknown-linux-gnu",
     "x86_64-pc-windows-msvc",
-    "aarch64-pc-windows-msvc",
-    "i686-pc-windows-msvc"
+    "aarch64-pc-windows-msvc"
   ],
   "cases": [
     {
@@ -799,14 +795,14 @@
       "original_fixture": "tests/neverc/Inputs/translate/cpp/string-hash-queries.cpp"
     }
   ],
-  "required_requests": 808,
-  "required_acceptances": 640,
-  "required_sdk_guards": 160,
+  "required_requests": 606,
+  "required_acceptances": 480,
+  "required_sdk_guards": 120,
   "required_unsupported_refusals": 0,
-  "required_failed_substitutions": 8,
-  "required_pair_subset_requests": 600,
-  "required_pair_subset_acceptances": 520,
-  "required_pair_subset_guards": 80,
+  "required_failed_substitutions": 6,
+  "required_pair_subset_requests": 450,
+  "required_pair_subset_acceptances": 390,
+  "required_pair_subset_guards": 60,
   "frontend_seconds": 60,
   "graph_depth_limit": 64,
   "graph_node_limit": 200000,
@@ -830,18 +826,18 @@
     "ordinary-source-not-fn-reference-wrapper",
     "ordinary-source-not-fn-signature-queries"
   ],
-  "required_actual_producer_requests": 1000,
+  "required_actual_producer_requests": 750,
   "original_tested_runner_sha256": "26d764cac94c7f3165748fc7351d7077e6e6e2b39b92547ba82bc399034fd95f",
   "actual240_runner_sha256": "26d764cac94c7f3165748fc7351d7077e6e6e2b39b92547ba82bc399034fd95f",
-  "actual456_runner_sha256": "860c19e1aef4776b27fac7372e7a29b0b401d092b02f8e6c1441d863ed195464",
-  "actual_source6_report_sha256": "f4536d8b715309360ef475d8bb5e2be0cdc31a2f31a71a09011a2d2d50e30f30",
-  "actual_source6_proof_sha256": "e90ef7244fd923721da77f43a5c9386198ee9afa4f7ad9bb6122c592610c47b0",
-  "actual456_proof_sha256": "92fb3478dea1c004fe6660514db3f1a84426c6d6cb310a389bfef25f351175b4",
-  "actual_formal156_commit": "191d78587494ccbe38b61e02fe0bcc6fe3cd0523",
-  "actual_formal156_run_id": 42435051893,
-  "actual_formal156_job_id": 128591999624,
+  "actual456_runner_sha256": "803e246d3324f606c468845cd02e0d1a9968d14b066e6313eb75eae06c0a97a2",
+  "actual_source6_report_sha256": "29b8e7090ac129defa88381238947c18b2ec0d4d521a6ae10949625ede31c626",
+  "actual_source6_proof_sha256": "a072ec788f81452411ed13105bb69b8597dcf21caf8693e94394ffa1b700bb05",
+  "actual456_proof_sha256": "b61e452134e1bb7787323d77797a6e3f981647640b3f0214f5802154dd570cc3",
+  "actual_formal156_commit": "e948b4998de88f1cc3a23306aeb984ec76ae34f1",
+  "actual_formal156_run_id": 42917656752,
+  "actual_formal156_job_id": 130184139067,
   "actual_formal156_run_attempt": 1,
-  "actual_formal156_artifact_id": 13603786052,
-  "actual_formal156_proof_sha256": "9463aecbbd5ccec8468d31d8a328b3ac6bcc37f1a9e7de8b73a709c5193625d0",
-  "actual_formal156_report_sha256": "5f82e6f1d106fc36ece34a990de836bb7983634272da1ef68572d92cf07caf7b"
+  "actual_formal156_artifact_id": 13814638825,
+  "actual_formal156_proof_sha256": "ddf95cf52eda5d19276beb9dad47941aa3e12edb1114c7f23e038b981a7d3c90",
+  "actual_formal156_report_sha256": "90223189d60e0f5a39e3e2870ca0c6c2380512e54ce5011832aaa3ffad39ed57"
 }

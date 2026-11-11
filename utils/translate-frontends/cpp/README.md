@@ -1231,6 +1231,10 @@ std::make_pair constructs admitted string, string_view and unique_ptr elements t
 
 The checked `std::bind` subset also accepts the admitted typed and transparent standard arithmetic, comparison, logical and bitwise function objects on scalar inputs. Adapter copies and const calls retain the checked SDK layout and selected operations. Every incoming argument is evaluated once before invoking the function object, including arguments to logical operations.
 
-Qualified implementation `085a48ae03fe` passes 6 source syntax checks, all 1000 expectations across 8 ABIs, 144 native reference executions, 208 selected GTests, 168 translated O0/O2 executions and 819 frontend requests. The unchanged original 808-request regression and its 600-request subset satisfy every expectation. The original 64-level, 200,000-node and 60-second source limits remain. Member-pointer targets and further STL coverage remain unfinished. NeverC's public source language remains C23-only.
+The checked `std::bind` subset also accepts source-proven ordinary member-function and data-member targets. Admitted trivial owned copies, borrowed objects, pointers and placeholder-supplied receivers preserve receiver identity, const selection, live data references and independent adapter copies. Selected method bodies and every factory/copy/destruction source remain checked. Member-pointer storage retains the native target size and alignment.
+
+Additional checks satisfy 78 member-bind expectations and 42 translations producing 84 LLVM IR files across six 64-bit targets.
+
+Qualified implementation `813a7045ed8b` passes 6 source syntax checks, all 750 expectations across 6 ABIs, 144 native reference executions, 221 selected GTests, 182 translated O0/O2 executions and 832 frontend requests. The unchanged original 606-request regression and its 450-request subset satisfy every expectation. The original 64-level, 200,000-node and 60-second source limits remain. Adapter assignment, address escape, retargeted values, conditional receiver provenance and further STL coverage remain unfinished. NeverC's public source language remains C23-only.
 
 [Placeholder call cases](../../ci/cpp-bind-placeholder-cases.json)

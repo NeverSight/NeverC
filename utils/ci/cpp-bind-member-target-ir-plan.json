@@ -1,0 +1,1376 @@
+{
+  "preparation_only": false,
+  "execution_binding_required": true,
+  "target_abis": [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "arm64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc"
+  ],
+  "programs": [
+    {
+      "name": "bind-callable-member-pointer",
+      "gtest": "TranslateTest.CoreV2MemberSourceBindCallableMemberPointerRunAtBothOptimizations",
+      "original_source_sha256": "07cc3ac6df8d085f2bac003a3196097b81c2deeab75263aa3701bac83475f3fe",
+      "source": "#include <functional>\nstruct Counter { int value; int add(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  Counter target{2};\n  auto b = std::bind(&Counter::add, std::ref(target), std::placeholders::_1);\n  int first = b(3);\n  int second = b(4);\n  return first == 5 && second == 9 && target.value == 9 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "805a58d770299dba5cb9ae91f441f19d6bae73259d497a5a469141446bc7d03a",
+      "only_added_main_wrapper": "\nint main() { return replacement(); }\n",
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ],
+      "expected_exit_code": 0
+    },
+    {
+      "name": "bind-member-owned-copy",
+      "gtest": "TranslateTest.CoreV2MemberSourceBindMemberOwnedCopyRunAtBothOptimizations",
+      "original_source_sha256": "986e3929dbc360438ae289f62684c84dee1e8cb29d8f263fa4a98e05cc339974",
+      "source": "#include <functional>\nstruct Counter { int value; int add(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  Counter target{4};\n  auto bound = std::bind(&Counter::add, target, std::placeholders::_1);\n  const int first = bound(3);\n  auto copy = bound;\n  const int independent = copy(2);\n  return first == 7 && independent == 9 && bound(1) == 8 && target.value == 4 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "f008b0f717b828391095fa835dc0fd9fe0c578e791d1ccb5e2fc49777032b5bf",
+      "only_added_main_wrapper": "\nint main() { return replacement(); }\n",
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ],
+      "expected_exit_code": 0
+    },
+    {
+      "name": "bind-member-pointer-receivers",
+      "gtest": "TranslateTest.CoreV2MemberSourceBindMemberPointerReceiversRunAtBothOptimizations",
+      "original_source_sha256": "a5797bc55f42d4cf43b0eb92c67ca77b83b1dcc9f2ec8aa3aee98dd28c90239e",
+      "source": "#include <functional>\nstruct Counter { int value; int add(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  Counter first{4}, second{10};\n  auto bound = std::bind(&Counter::add, &first, std::placeholders::_1);\n  auto incoming = std::bind(&Counter::add, std::placeholders::_1, 2);\n  return bound(3) == 7 && incoming(&second) == 12 && first.value == 7 && second.value == 12 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "3cefac8d523bc75c906bd2b7b4015997e75760254c51f53f12f91db314d526ad",
+      "only_added_main_wrapper": "\nint main() { return replacement(); }\n",
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ],
+      "expected_exit_code": 0
+    },
+    {
+      "name": "bind-member-incoming-object",
+      "gtest": "TranslateTest.CoreV2MemberSourceBindMemberIncomingObjectRunAtBothOptimizations",
+      "original_source_sha256": "3abd77a1bd462e3de92ee365600874233934e33125d30aa4f196e5ed2ba4a5b7",
+      "source": "#include <functional>\nstruct Counter { int value; int add(int x) { value += x; return value; } };\nextern \"C\" int replacement() {\n  Counter target{4};\n  auto call = std::bind(&Counter::add, std::placeholders::_1, std::placeholders::_2);\n  const int result = call(target, 3);\n  return result == 7 && target.value == 7 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "59de2c8d82f380c8a810747187baed7266d9d22a5308ccff3f4083efeb1e37e2",
+      "only_added_main_wrapper": "\nint main() { return replacement(); }\n",
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ],
+      "expected_exit_code": 0
+    },
+    {
+      "name": "bind-member-const-method",
+      "gtest": "TranslateTest.CoreV2MemberSourceBindMemberConstMethodRunAtBothOptimizations",
+      "original_source_sha256": "fe19acc466aa39c2f6fac77fc614a37742b5576cb6687a977abb97bae273b757",
+      "source": "#include <functional>\nstruct Counter { int value; int read(int x) const { return value + x; } };\nextern \"C\" int replacement() {\n  const Counter target{4};\n  auto borrowed = std::bind(&Counter::read, std::cref(target), std::placeholders::_1);\n  const auto owned = std::bind(&Counter::read, target, std::placeholders::_1);\n  return borrowed(3) == 7 && owned(5) == 9 && target.value == 4 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "05cf5d6ab83be399d26ffb4b03bd2a3b4eed71116e22650e3e6b28f2f07b5b16",
+      "only_added_main_wrapper": "\nint main() { return replacement(); }\n",
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ],
+      "expected_exit_code": 0
+    },
+    {
+      "name": "bind-member-data-reference",
+      "gtest": "TranslateTest.CoreV2MemberSourceBindMemberDataReferenceRunAtBothOptimizations",
+      "original_source_sha256": "136dbd5c48e51b89306c7e419db9ba8f120028e516c5b4c1eded5a24d5b8d6a5",
+      "source": "#include <functional>\nstruct Counter { int value; };\nextern \"C\" int replacement() {\n  Counter target{4};\n  const auto borrowed = std::bind(&Counter::value, std::ref(target));\n  auto incoming = std::bind(&Counter::value, std::placeholders::_1);\n  auto pointer = std::bind(&Counter::value, &target);\n  borrowed() = 9;\n  incoming(target) += 3;\n  pointer() += 2;\n  return target.value == 14 && &borrowed() == &target.value ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "69f6c2dcf73bb1508a037a98e36af83e48ebc9b345244cdc264e4df0823fd93f",
+      "only_added_main_wrapper": "\nint main() { return replacement(); }\n",
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ],
+      "expected_exit_code": 0
+    },
+    {
+      "name": "bind-member-distinct-targets",
+      "gtest": "TranslateTest.CoreV2MemberSourceBindMemberDistinctTargetsRunAtBothOptimizations",
+      "original_source_sha256": "00710e2b4840a6d41c98331bd5ca33659d9a2f25ba82adb5b3789327365b8fa9",
+      "source": "#include <functional>\nstruct Counter {\n  int value;\n  int add(int x) { value += x; return value; }\n  int subtract(int x) { value -= x; return value; }\n};\nextern \"C\" int replacement() {\n  Counter target{4};\n  auto add = std::bind(&Counter::add, std::ref(target), std::placeholders::_1);\n  auto subtract = std::bind(&Counter::subtract, std::ref(target), std::placeholders::_1);\n  const auto copy = subtract;\n  const int first = add(3);\n  const int second = subtract(2);\n  return first == 7 && second == 5 && copy(1) == 4 && target.value == 4 ? 0 : 1;\n}\n\nint main() { return replacement(); }\n",
+      "source_sha256": "4621733c58444bc24b783860cced3d478bc8e10a8555cd2c6c62e75fcc287564",
+      "only_added_main_wrapper": "\nint main() { return replacement(); }\n",
+      "optimizations": [
+        "-O0",
+        "-O2"
+      ],
+      "expected_exit_code": 0
+    }
+  ],
+  "original_seven_programs_sha256": "6196930a291abc409fa0374005f924f81e3995020665ec067e36ff8c09b04500",
+  "runner_sha256": "90c6349fe4ca776d72eb611ffb0e8b5057e12a6ef3fb0253d6a7d6e754faafa5",
+  "runtime_driver_source_sha256": "1e626c87ca75781f8da0d66fe05a9e89f5dc650b55a76e4fa8d19f6baa9ff653",
+  "exact_private_input_sha256": {
+    "Frontend.cpp": "0d204a1e6febde2fec8ec2d7e26091403fb60b6862d85841e03b8473be0397c0",
+    "Lowering.cpp": "6b995f01316efab56b896ec8fcbda143d03352a2a8f826225e89ef8d4e19b6f3",
+    "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
+    "MathSDK.cpp": "26ecac6824d64b24a2ab9a8dd5ec06d8ae27387f8028f2f29fe7f8f62d5e529b",
+    "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
+    "Frontend.h": "db73b715aae8c80283be5071836c6648fcf5f1a312bc754c60ce903b23e4c62a",
+    "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
+    "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
+    "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
+    "BuildID.h.in": "11183f49fe1e3bcfdf0d19d2326736afa255398dd093ecb5477e75a0a80c2033",
+    "SetupGuidSymbols.py": "c1114ec45f57700ce93cce1453e53ea4475147de56c83c90f2bbd55c51754cdc",
+    "RewriteSetupCoffSymbols.py": "934bc38224b817646ea9828a4a9f41411eaf4fe691fc5691a432e74a312edcc2",
+    "IsolateMathCoffSymbols.py": "fd02db798e8cbb6cd83075446f09cd0f0fb1366dcd01eaf9bb28350a92d18a33",
+    "BundleArchive.cmake": "22127c08c6d3e3dd5891c66742ddf14a061f94c26c01df6f165c47839a4578c1",
+    "MsvcRuntimeSymbols.py": "6eceb61809889db6be0340fd860760f2b49d66d506446fb9db47c6bd9da27d18",
+    "AuditArchive.py": "844eac8187245bb9a44475912f8fe9bc7c3c02477b71aacb20360bbc42464e2a",
+    "CoffWeakAliases.py": "1432e740a8eefe7c1f058c552d10935918bf40b9b611e2e821d70f3815fcb1c8",
+    "HostCoffSymbols.py": "645394719788f18049e7b4b83e869a3c0f5def7cc30502402aa16c4f68137bb5",
+    "VerifyArchiveMembers.py": "7a02f31f192c0e1d07dc4703697d05f7b544dc711c6f421e4d0dc3d00d532992"
+  },
+  "actual_member_native_layouts": [
+    {
+      "name": "bind-callable-member-pointer",
+      "target": "x86_64-unknown-linux-gnu",
+      "response_sha256": "358e7b332cfca81913abac0a3c0c33e805925a1a4c048b6da86b5404dd3512de",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-owned-copy",
+      "target": "x86_64-unknown-linux-gnu",
+      "response_sha256": "3ce089a3937928afb843a6d6b7e1da6060d28e21d9202fdb70403c9cd9001c01",
+      "binders": [
+        {
+          "record": "nct_fabe62a343bc99e9aa4c1beb",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-pointer-receivers",
+      "target": "x86_64-unknown-linux-gnu",
+      "response_sha256": "9fb117b08ec0ed21c94edea1e3ce498c54ee4e7f33b63e53ca8283b46cef8d28",
+      "binders": [
+        {
+          "record": "nct_4ba78ee52afe2d7dd9b34c80",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_39745a8254f77bea8ec896d4",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-incoming-object",
+      "target": "x86_64-unknown-linux-gnu",
+      "response_sha256": "bed5c8fe58c4f066ec7f034da6821c3a274767c80f87627803ef8204fb36591c",
+      "binders": [
+        {
+          "record": "nct_1821ea366dd1a2d413aac721",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-const-method",
+      "target": "x86_64-unknown-linux-gnu",
+      "response_sha256": "b5c3531cfe9eff3ebb82843a7ca6bda198727d74675167d7ffd542a44a1200ac",
+      "binders": [
+        {
+          "record": "nct_9dae8e7216e628e1b61a3e1f",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_9f0f9be558e17ad32cea4e36",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-data-reference",
+      "target": "x86_64-unknown-linux-gnu",
+      "response_sha256": "9b331495089ad18c5384567bc32b31ff3c44445284d873b6cd00e8fd1143b23f",
+      "binders": [
+        {
+          "record": "nct_fc97c80e5281958fe9b72105",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_c30fa1044a6067b72d34c910",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_4f9bbe9f1d23213fd2343078",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-distinct-targets",
+      "target": "x86_64-unknown-linux-gnu",
+      "response_sha256": "3412f4e02e25e9a90b6a6514239e3b5bf8db886655168cab16a41882c5afcb43",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-callable-member-pointer",
+      "target": "aarch64-unknown-linux-gnu",
+      "response_sha256": "d0a128cc4d6f22969480ba54d462412b1656ce83c823e183f961adf3c8749b68",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-owned-copy",
+      "target": "aarch64-unknown-linux-gnu",
+      "response_sha256": "709bbe9fe15c5cf63e9824a21ecf8f312b4ffd20a986df446430b90283826e3e",
+      "binders": [
+        {
+          "record": "nct_fabe62a343bc99e9aa4c1beb",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-pointer-receivers",
+      "target": "aarch64-unknown-linux-gnu",
+      "response_sha256": "c7c0bfdc1b37d403a2df8323ef7d614b45037a27c92087d14850f7553e838b79",
+      "binders": [
+        {
+          "record": "nct_4ba78ee52afe2d7dd9b34c80",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_39745a8254f77bea8ec896d4",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-incoming-object",
+      "target": "aarch64-unknown-linux-gnu",
+      "response_sha256": "1c80d0cab6ce96cee0c9dc86d844d305e76ecad40ff27a0d579b9200fc720bcf",
+      "binders": [
+        {
+          "record": "nct_1821ea366dd1a2d413aac721",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-const-method",
+      "target": "aarch64-unknown-linux-gnu",
+      "response_sha256": "21d3fa759a634620a511ce0efcca482e92d542fe7f29de654e07d6b49b03eaf3",
+      "binders": [
+        {
+          "record": "nct_9dae8e7216e628e1b61a3e1f",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_9f0f9be558e17ad32cea4e36",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-data-reference",
+      "target": "aarch64-unknown-linux-gnu",
+      "response_sha256": "b8c04d1b0906ced6ba425f2119bec592cd73dc02740f905ef5c48d9493899e28",
+      "binders": [
+        {
+          "record": "nct_fc97c80e5281958fe9b72105",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_c30fa1044a6067b72d34c910",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_4f9bbe9f1d23213fd2343078",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-distinct-targets",
+      "target": "aarch64-unknown-linux-gnu",
+      "response_sha256": "c5851836474c5b86c67806913a8996048509d28e9fad517fc82cb6c745727f74",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-callable-member-pointer",
+      "target": "x86_64-apple-darwin",
+      "response_sha256": "88896ddcba49005d949addf32593c0cda32800c775d233b9f44bf23135de033b",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-owned-copy",
+      "target": "x86_64-apple-darwin",
+      "response_sha256": "e8c5170d6a36e6ba006a79a87d66a2dd09d6d8b214014ee6c6861f154ef78be1",
+      "binders": [
+        {
+          "record": "nct_fabe62a343bc99e9aa4c1beb",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-pointer-receivers",
+      "target": "x86_64-apple-darwin",
+      "response_sha256": "4cc63fb024df541b175f7901dbdcd68221e65e8ceab9fe0305326f37d73eea05",
+      "binders": [
+        {
+          "record": "nct_4ba78ee52afe2d7dd9b34c80",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_39745a8254f77bea8ec896d4",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-incoming-object",
+      "target": "x86_64-apple-darwin",
+      "response_sha256": "29ee0633fd5c8b7abffcbdc86f2b8027f69f9fca8eec04dbbf59af9eb3a54761",
+      "binders": [
+        {
+          "record": "nct_1821ea366dd1a2d413aac721",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-const-method",
+      "target": "x86_64-apple-darwin",
+      "response_sha256": "c6f592a1f41bb0d6cd0be13ad9c914df99390c3e414f8ec6d62bd2031560801f",
+      "binders": [
+        {
+          "record": "nct_9dae8e7216e628e1b61a3e1f",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_9f0f9be558e17ad32cea4e36",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-data-reference",
+      "target": "x86_64-apple-darwin",
+      "response_sha256": "8820d0c684f263283245eee3ae05afc2f1c319c6d50b4c9c869799fc797dd12e",
+      "binders": [
+        {
+          "record": "nct_fc97c80e5281958fe9b72105",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_c30fa1044a6067b72d34c910",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_4f9bbe9f1d23213fd2343078",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-distinct-targets",
+      "target": "x86_64-apple-darwin",
+      "response_sha256": "eb8a5394b3b531b0df722d3b4338047e070c6b95d9c7d2bd9f31901806504f80",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-callable-member-pointer",
+      "target": "arm64-apple-darwin",
+      "response_sha256": "dd49f11a1ca73804555c92583be60a5bbcbbb146ba5478ffc944597ba9bfd9ee",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-owned-copy",
+      "target": "arm64-apple-darwin",
+      "response_sha256": "44e6196ece8108a6828fbbe2071b117812b792c6ca89ee8140ed4fdbf6d5ee4f",
+      "binders": [
+        {
+          "record": "nct_fabe62a343bc99e9aa4c1beb",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-pointer-receivers",
+      "target": "arm64-apple-darwin",
+      "response_sha256": "b4a093300206aa5e3baf422fa3f8b2ae3f3b2492d98ef308f579e55fef921ac4",
+      "binders": [
+        {
+          "record": "nct_4ba78ee52afe2d7dd9b34c80",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_39745a8254f77bea8ec896d4",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-incoming-object",
+      "target": "arm64-apple-darwin",
+      "response_sha256": "46712a087f321c48d8ba206d03b1079aa28c628aab2823659e3e569cbf4581fc",
+      "binders": [
+        {
+          "record": "nct_1821ea366dd1a2d413aac721",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-const-method",
+      "target": "arm64-apple-darwin",
+      "response_sha256": "5cfcea4851384ed0aa077b4ff2e63592c7361767145c6b207e82e796010acf18",
+      "binders": [
+        {
+          "record": "nct_9dae8e7216e628e1b61a3e1f",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_9f0f9be558e17ad32cea4e36",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-data-reference",
+      "target": "arm64-apple-darwin",
+      "response_sha256": "8c3029a7d8f3f94ff07b647f947ac572241c7e35023dc50513c30c4d745ffd0d",
+      "binders": [
+        {
+          "record": "nct_fc97c80e5281958fe9b72105",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_c30fa1044a6067b72d34c910",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_4f9bbe9f1d23213fd2343078",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-distinct-targets",
+      "target": "arm64-apple-darwin",
+      "response_sha256": "62d910e5a82a9b7c46bc9b4cdf0bcb841488cf90fc5252b4de37303bf2837027",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "arr:2:u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              128
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 128,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-callable-member-pointer",
+      "target": "x86_64-pc-windows-msvc",
+      "response_sha256": "b533420ee23ab68fe755a20f603e5a950c7d55e9929117556cb2b8093f22ed3f",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 256
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-owned-copy",
+      "target": "x86_64-pc-windows-msvc",
+      "response_sha256": "bad007e72bb51833e23c7a02bea685521452bddba8aa3fd7188a4ffc2c47037e",
+      "binders": [
+        {
+          "record": "nct_fabe62a343bc99e9aa4c1beb",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-pointer-receivers",
+      "target": "x86_64-pc-windows-msvc",
+      "response_sha256": "1d0d1b274b2f73fd2162fcee4c87fe7e19fb6fb57f91f06f73a46f3adba3fb08",
+      "binders": [
+        {
+          "record": "nct_4ba78ee52afe2d7dd9b34c80",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_39745a8254f77bea8ec896d4",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-incoming-object",
+      "target": "x86_64-pc-windows-msvc",
+      "response_sha256": "400845217e257066e3acb018a5f3a0fa83bcdbe98220928c80aae42cca67071c",
+      "binders": [
+        {
+          "record": "nct_1821ea366dd1a2d413aac721",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-const-method",
+      "target": "x86_64-pc-windows-msvc",
+      "response_sha256": "bb01748c769253d59ae82b8b01db44dc55c7fa5d86c59e4660f37bbc6f61c233",
+      "binders": [
+        {
+          "record": "nct_9dae8e7216e628e1b61a3e1f",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 256
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_9f0f9be558e17ad32cea4e36",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-data-reference",
+      "target": "x86_64-pc-windows-msvc",
+      "response_sha256": "1b9ef132a4acb2a4acb4d27a29c4893c4111dde6ff690c18fa3018b5a8eca52a",
+      "binders": [
+        {
+          "record": "nct_fc97c80e5281958fe9b72105",
+          "opaque_storage": "uint",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              32,
+              64
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 32,
+          "native_member_alignment_bits": 32
+        },
+        {
+          "record": "nct_c30fa1044a6067b72d34c910",
+          "opaque_storage": "uint",
+          "layout": {
+            "abi_align_bits": 32,
+            "field_offsets_bits": [
+              0,
+              32,
+              64
+            ],
+            "size_bits": 96
+          },
+          "native_member_size_bits": 32,
+          "native_member_alignment_bits": 32
+        },
+        {
+          "record": "nct_4f9bbe9f1d23213fd2343078",
+          "opaque_storage": "uint",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              32,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 32,
+          "native_member_alignment_bits": 32
+        }
+      ]
+    },
+    {
+      "name": "bind-member-distinct-targets",
+      "target": "x86_64-pc-windows-msvc",
+      "response_sha256": "a94348df33f96efb702451b9bb91080c13a28f733e2ed067549fd9f83353e9d6",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 256
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-callable-member-pointer",
+      "target": "aarch64-pc-windows-msvc",
+      "response_sha256": "674be50cf246c4d3b5bea4cdcb98bf88eb5323a7f9fd55ae862d14a03d04f7d1",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 256
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-owned-copy",
+      "target": "aarch64-pc-windows-msvc",
+      "response_sha256": "ecf604b26a17fca88d253b8501ca2936187690d8ff240967602b0a15642c0533",
+      "binders": [
+        {
+          "record": "nct_fabe62a343bc99e9aa4c1beb",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-pointer-receivers",
+      "target": "aarch64-pc-windows-msvc",
+      "response_sha256": "14fbbad198af2fa54c2ea2e5163949466fe2efbdd2706c456948ba0a977b9c0d",
+      "binders": [
+        {
+          "record": "nct_4ba78ee52afe2d7dd9b34c80",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_39745a8254f77bea8ec896d4",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-incoming-object",
+      "target": "aarch64-pc-windows-msvc",
+      "response_sha256": "dbd00cfecef486fdc16098d97cd04677214329cec9ef86d54dbb60e10b151f09",
+      "binders": [
+        {
+          "record": "nct_1821ea366dd1a2d413aac721",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-const-method",
+      "target": "aarch64-pc-windows-msvc",
+      "response_sha256": "0a1f9b5464bd4cc8776ebb79271d8704f4c106f35eb4989f7e968026285a219c",
+      "binders": [
+        {
+          "record": "nct_9dae8e7216e628e1b61a3e1f",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 256
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        },
+        {
+          "record": "nct_9f0f9be558e17ad32cea4e36",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    },
+    {
+      "name": "bind-member-data-reference",
+      "target": "aarch64-pc-windows-msvc",
+      "response_sha256": "6a4ed39c2a0fca101cadc6dd9f648387f95cf5278a777f01c51e0c1b74d2b7d1",
+      "binders": [
+        {
+          "record": "nct_fc97c80e5281958fe9b72105",
+          "opaque_storage": "uint",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              32,
+              64
+            ],
+            "size_bits": 192
+          },
+          "native_member_size_bits": 32,
+          "native_member_alignment_bits": 32
+        },
+        {
+          "record": "nct_c30fa1044a6067b72d34c910",
+          "opaque_storage": "uint",
+          "layout": {
+            "abi_align_bits": 32,
+            "field_offsets_bits": [
+              0,
+              32,
+              64
+            ],
+            "size_bits": 96
+          },
+          "native_member_size_bits": 32,
+          "native_member_alignment_bits": 32
+        },
+        {
+          "record": "nct_4f9bbe9f1d23213fd2343078",
+          "opaque_storage": "uint",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              32,
+              64
+            ],
+            "size_bits": 128
+          },
+          "native_member_size_bits": 32,
+          "native_member_alignment_bits": 32
+        }
+      ]
+    },
+    {
+      "name": "bind-member-distinct-targets",
+      "target": "aarch64-pc-windows-msvc",
+      "response_sha256": "b734e39632d82b084da0625143cbbca4fd36b6c87f0435e7a71423846d91540b",
+      "binders": [
+        {
+          "record": "nct_ee46a83ffb883603b24b04de",
+          "opaque_storage": "u64",
+          "layout": {
+            "abi_align_bits": 64,
+            "field_offsets_bits": [
+              0,
+              64
+            ],
+            "size_bits": 256
+          },
+          "native_member_size_bits": 64,
+          "native_member_alignment_bits": 64
+        }
+      ]
+    }
+  ],
+  "actual_integrated_syntax6_authentication_sha256": "a072ec788f81452411ed13105bb69b8597dcf21caf8693e94394ffa1b700bb05",
+  "actual_member78_authentication_sha256": "eac63f47dfff49a2a4c7d62a208fbe86ef9871ce165723b16e1bde69f63021de",
+  "actual_baseline750_authentication_sha256": "b61e452134e1bb7787323d77797a6e3f981647640b3f0214f5802154dd570cc3",
+  "actual_native144_authentication_sha256": "e200a1856c9e64594b53fe5d0d63ade559d0d76a288d9833d10137f6a4971c7a",
+  "required_actual_frontend_requests": 42,
+  "required_actual_c23_ir_compilations": 84,
+  "required_actual_backend_invocations": 168,
+  "required_actual_pid_files": 378,
+  "required_actual_commands": 129,
+  "actual_full221_success_required": true,
+  "original_full221_required_frontend_requests": 832,
+  "original_full221_required_formal_tests": 221,
+  "original_full221_required_generated_products": 182,
+  "unchanged_frontend_timeout_seconds": 60,
+  "unchanged_graph_node_limit": 200000,
+  "unchanged_graph_depth_limit": 64,
+  "unchanged_owner_query_limit": 64,
+  "unchanged_trace_limit": 64,
+  "original_source19_sdk665_archive1455_and_private_abi_checks_required": true,
+  "actual_generated_program_executions": 0,
+  "full_stl_complete": false
+}
