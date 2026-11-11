@@ -32405,6 +32405,11 @@ public:
       // may discover cl.exe. Own the actual language option before predefined
       // macros or headers are created, retaining the requested target ABI.
       CI.getLangOpts().MSCompatibilityVersion = 0;
+      // Preserve libc++'s empty-base annotations for the requested ABI without
+      // enabling MSVC compatibility or accepting additional public flags.
+      const llvm::Triple Target(S.Target);
+      CI.getLangOpts().DeclSpecKeyword =
+          Target.isArch64Bit() && Target.isWindowsMSVCEnvironment();
     }
     return ASTFrontendAction::BeginInvocation(CI);
   }

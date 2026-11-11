@@ -41,7 +41,7 @@ TEST_F(TranslateCppSdkTest, BuiltinSdkLoadsBothTargetsWithoutExternalInputs) {
     SCOPED_TRACE(Triple);
     ASSERT_TRUE(load(Triple)) << (Errors.empty() ? "" : Errors.front().Reason);
     EXPECT_EQ(Context.DistributionID,
-              "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r17");
+              "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r18");
     EXPECT_EQ(Context.TargetTriple, Triple);
     EXPECT_EQ(Context.CatalogSHA256, approvedCppSdkCatalogSHA256());
     EXPECT_EQ(Context.ApprovedFiles.size(), 664u);
@@ -136,7 +136,7 @@ TEST_F(TranslateCppSdkTest,
   ASSERT_NE(Object->getArray("headers"), nullptr);
   EXPECT_EQ(Object->getArray("headers")->size(), 664u);
   EXPECT_EQ(approvedCppSdkCatalogSHA256(),
-            "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167");
+            "1719fa5a2ac36238726e61e9b1120bcff8e41d2e914760e484cef83d669658fd");
   EXPECT_EQ(approvedCppSdkCatalog().find("/Users/"), llvm::StringRef::npos);
   EXPECT_EQ(approvedCppSdkCatalog().find("/Library/"), llvm::StringRef::npos);
   EXPECT_EQ(approvedCppSdkCatalog().find("/opt/"), llvm::StringRef::npos);
@@ -152,7 +152,7 @@ TEST_F(TranslateCppSdkTest, CompiledCatalogPreservesSourceBytesAndTrailingNul) {
   EXPECT_EQ(Compiled, llvm::StringRef(Source));
   EXPECT_EQ(Compiled.data()[Compiled.size()], '\0');
   EXPECT_EQ(approvedCppSdkCatalogSHA256(),
-            "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167");
+            "1719fa5a2ac36238726e61e9b1120bcff8e41d2e914760e484cef83d669658fd");
 }
 
 TEST_F(TranslateCppSdkTest,

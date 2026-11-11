@@ -2,14 +2,21 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r17`. It contains the 664 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r18`. It contains the 664 header
 files admitted by the current
 `clang20.1.8-libcxx200100-macos15.5` catalog: 564 libc++ headers, 14 Clang
 resource headers, five NeverC resource headers, and 81 Darwin platform headers.
 Copyright and license notices are preserved. Upstream-source bytes are retained
-except for the documented search-count correction below; the NeverC-authored C declaration shims are identified
+except for the configured site settings and documented search-count correction below; the NeverC-authored C declaration shims are identified
 separately below. This is a fixed input set for the supported translation
 profiles, not a complete Apple SDK.
+
+The r18 distribution selects the Microsoft C++ ABI for the supported Windows64
+targets independently of MSVC compatibility-version macros. Core v2 enables
+the SDK's empty-base annotations internally for those targets. The public
+frontend flag policy and the absence of host MSVC version macros are retained.
+The header inventory is unchanged; the configured site header's new bytes are
+pinned in the catalog and provenance records.
 
 The r17 distribution adds the original libc++ public `<random>` header and its
 34 missing internal dependencies. Parsing the header does not authorize its
