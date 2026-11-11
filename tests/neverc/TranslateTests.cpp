@@ -115754,7 +115754,7 @@ struct FriendOwner;
 struct Value{
   int value;
   Value(int n=2)noexcept:value(n){++values;}
-  Value(Argument<0>a,int n=(++value_defaults,6))noexcept:value(a.value+n){++conversions;}
+  Value(Argument<0>a,int n=(++value_defaults,6))noexcept;
   Value(const Argument<1>&a,int n=(++value_defaults,6))noexcept;
   Value(Argument<2>&&a,int n=(++value_defaults,6))noexcept:value(a.value+n){a.value=-2;++conversions;}
   Value(const Argument<3>&&a,int n=(++value_defaults,6))noexcept:value(a.value+n){++conversions;}
@@ -118527,11 +118527,11 @@ TEST_F(TranslateTest, CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUn
   const Case Cases[] = {
       {"deleted-from-lvalue", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
-struct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+struct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
       {"deleted-from-rvalue", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
-struct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&&()const noexcept{return static_cast<A&&>(*p);}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+struct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&&()const noexcept{return static_cast<A&&>(*p);}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
       {"private-from-lvalue", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
@@ -118552,7 +118552,7 @@ A::~A()noexcept{}
 )cpp"},
       {"const-value-alias", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
-struct A{int n;~A()=delete;};using Arg=const A;struct C{A*p;C(Arg,int=3)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+struct A{int n;~A()=delete;};using Arg=const A;struct C{A*p;C(Arg,int=3)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
       {"const-query", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
@@ -118568,11 +118568,11 @@ struct A{int n;friend struct C;private:~A()noexcept{}};struct C{friend struct O;
 )cpp"},
       {"deleted-friends-owner", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
-struct A{int n;friend struct O;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct O{C elements[2];};int f(O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O&&));return 0;}
+struct A{int n;friend struct O;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct O{C elements[2];};int f(O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O&&));return 0;}
 )cpp"},
       {"deleted-nested-owner", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
-struct A{int n;struct O;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct A::O{C elements[2];};int f(A::O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),A::O&&));return 0;}
+struct A{int n;struct O;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct A::O{C elements[2];};int f(A::O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),A::O&&));return 0;}
 )cpp"},
       {"root-privileged-query", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
@@ -118580,7 +118580,7 @@ struct A{int n;friend struct C;private:~A()noexcept{}};struct C{A*p;C(A)noexcept
 )cpp"},
       {"mixed-independent-exclusions", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
-struct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}C(double)=delete;C(int,int)noexcept{}private:C(int)noexcept{}public:operator int()const noexcept{return 0;}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+struct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}C(double)=delete;C(int,int)noexcept{}private:C(int)noexcept{}public:operator int()const noexcept{return 0;}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
       {"lazy-template-signatures", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
