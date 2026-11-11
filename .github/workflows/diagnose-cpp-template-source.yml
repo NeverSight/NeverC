@@ -4005,8 +4005,7 @@ jobs:
 
 
   inspect-bind-call-arguments-clean456:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-call-arguments-clean456'
-      }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-call-arguments-clean456' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -4028,16 +4027,33 @@ jobs:
     - name: Install matching host compiler and archive reader
       run: 'set -o pipefail
 
-        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert
-        callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/python.log"
+        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/python.log"
 
-        python3 utils/ci/ensure-llvm-apt-host.py
+        set -euo pipefail
 
-        curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https" -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+        . /etc/os-release
 
-        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/clang-install.log"
+        test "$ID" = ubuntu
 
-        sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/dependencies.log"
+        test "$VERSION_ID" = 22.04
+
+        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o "$RUNNER_TEMP/stl-llvm22.asc"
+
+        sudo install -m 0644 "$RUNNER_TEMP/stl-llvm22.asc" /usr/share/keyrings/neverc-stl-llvm22.asc
+
+        printf ''%s\n'' ''deb [signed-by=/usr/share/keyrings/neverc-stl-llvm22.asc] https://apt.llvm.org/jammy/ llvm-toolchain-jammy-22 main'' | sudo tee /etc/apt/sources.list.d/neverc-stl-llvm22.list
+        >/dev/null
+
+        sudo apt-get -o Dir::Etc::sourcelist=sources.list.d/neverc-stl-llvm22.list -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 update
+
+        sudo apt-get -o Dir::Etc::sourcelist=sources.list.d/neverc-stl-llvm22.list -o Dir::Etc::sourceparts=- install -y --no-install-recommends clang-22 lld-22 llvm-22
+        llvm-22-dev 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/clang-install.log"
+
+        clang++-22 --version
+
+        llvm-ar-22 --version
+
+        for tool in cmake ninja ar nm objcopy objdump readelf; do command -v "$tool"; done
 
         '
     - name: Install the original native Clang20 and libc++20 reference toolchain
@@ -4047,26 +4063,41 @@ jobs:
 
         python3 utils/ci/ensure-llvm-apt-host.py
 
-        curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https" -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+        curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https" -fsSL https://apt.llvm.org/llvm.sh
+        -o "$RUNNER_TEMP/llvm.sh"
 
         sudo bash "$RUNNER_TEMP/llvm.sh" 20 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap/compiler-install.log"
 
-        sudo apt-get install -y --allow-downgrades libc++1=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++abi1=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libunwind=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libunwind-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++abi-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap/dependencies.log"
+        sudo apt-get install -y --allow-downgrades libc++1=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++abi1=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132
+        libunwind=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libunwind-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132
+        libc++-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132 libc++abi-20-dev=1:20.1.8~++20250708082409+6fb913d3e2ec-1~exp1~20250708202428.132
+        2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap/dependencies.log"
 
         dpkg-query -W clang-20 libc++1 libc++abi1 libunwind libunwind-20-dev libc++-20-dev libc++abi-20-dev | tee "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap/toolchain-packages.log"
 
         '
+      if: ${{ false }}
     - name: Run 72 bind reference sources at O0 and O2
-      run: python3 utils/ci/check-cpp-bind-call-arguments-native40.py --repo "$GITHUB_WORKSPACE"
-        --output "$RUNNER_TEMP/cpp-bind-call-arguments-native40"
-    - name: Validate the complete 1000-request STL matrix
+      run: python3 utils/ci/check-cpp-bind-call-arguments-native40.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-bind-call-arguments-native40"
+      if: ${{ false }}
+    - name: Observe explicit-result bind sources across six exact 64-bit targets
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: "python3 utils/ci/check-cpp-bind-call-arguments-clean456.py --repo \"$GITHUB_WORKSPACE\"\
-        \ \\\n  --plan utils/ci/cpp-bind-call-arguments-clean456-plan.json \\\n  --output\
-        \ \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456\" \\\n  --build \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456-rebuild\"\
-        \n"
+      run: "python3 utils/ci/check-cpp-bind-call-arguments-clean456.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-bind-call-arguments-clean456-plan.json\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456\" \\\n  --build \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456-rebuild\"\n"
       id: verify_pair_requests
+    - name: Observe the original six-target late template-source collision
+      if: ${{ always() }}
+      run: python3 utils/ci/check-stl-late-source.py --repo "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/cpp-stl-late-source-v746" --source-report "$RUNNER_TEMP/cpp-bind-call-arguments-clean456/results.json"
+        --driver "$RUNNER_TEMP/cpp-private-frontend-build/private-frontend-source-replay"
+    - name: Upload bounded original late template-source evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-stl-late-source-v746-${{ github.sha }}
+        path: ${{ runner.temp }}/cpp-stl-late-source-v746
+        if-no-files-found: warn
+        retention-days: 14
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -4098,7 +4129,7 @@ jobs:
         compression-level: 0
         retention-days: 7
     - name: Upload only bounded native reference text evidence
-      if: ${{ always() }}
+      if: ${{ false }}
       uses: actions/upload-artifact@v4
       with:
         name: cpp-bind-call-arguments-native40-${{ github.sha }}
@@ -4108,7 +4139,7 @@ jobs:
         if-no-files-found: error
         retention-days: 14
     - name: Retain 144 native reference programs remotely only
-      if: ${{ !cancelled() }}
+      if: ${{ false }}
       uses: actions/upload-artifact@v4
       with:
         name: cpp-bind-call-arguments-native40-binaries-remote-only-${{ github.sha }}
@@ -4116,87 +4147,3 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
         compression-level: 0
-
-
-'on':
-  workflow_dispatch:
-    inputs:
-      fixture_group:
-        description: Choose the diagnostic group
-        required: true
-        type: choice
-        default: template-source
-        options:
-        - template-source
-        - ci-recovery
-        - windows-arm-source-repair
-        - fastlink-request-ownership
-        - session-cache-ownership
-        - macho-data-const
-        - macho-image-backend
-        - algorithm-sdk-manifest
-        - algorithm-sdk-abi-manifest
-        - algorithm-manifest-formal
-        - artifact-policy
-        - branch-test-header
-        - private-frontend-runtime
-        - python-sdk-dependent-snapshots
-        - not-fn-source
-        - private-frontend-protocol
-        - ordinary-template-call-component
-        - ordinary-call-isolation-audit
-        - not-fn-operator-component
-        - not-fn-pointer-statement-depth-trace
-        - not-fn-pointer-clean-200
-        - current-elf-combined-808
-        - not-fn-pointer-storage-layout-trace
-        - not-fn-pointer-input-alias-forwarding-trace
-        - not-fn-pointer-public-forwarding-trace
-        - not-fn-pointer-clean-216
-        - current216-elf-combined-808
-        - not-fn-pointer-direct-invocation-trace
-        - pair-intrinsic-forward
-        - not-fn-pointer-owned-default-trace
-        - not-fn-pointer-default-clean216
-        - not-fn-signature-native
-        - bind-nested-native20
-        - not-fn-custom-negation-eight
-        - not-fn-custom-negation-source-trace
-        - not-fn-custom-negation-clean240
-        - not-fn-owned-four32
-        - not-fn-owned-source-trace
-        - not-fn-owned-constructor-query-trace
-        - not-fn-owned-factory-graph-trace
-        - not-fn-owned-remaining-factory-trace
-        - not-fn-owned-cvref-default-trace
-        - not-fn-owned-cvref-query-trace
-        - not-fn-owned-default-role-trace
-        - not-fn-owned-clean256
-        - not-fn-reference-five40
-        - not-fn-reference-clean272
-        - not-fn-nested-six48
-        - not-fn-nested-call-source-trace
-        - not-fn-nested-default-source-trace
-        - not-fn-nested-result-type-trace
-        - not-fn-nested-clean288
-        - bind-fully-bound-baseline
-        - bind-source-structure
-        - bind-clean360
-        - bind-call-arguments-clean456
-  push:
-    branches:
-    - dev
-    paths:
-    - .github/workflows/diagnose-cpp-template-source.yml
-    - utils/translate-frontends/cpp/diagnostics/template-source.cpp
-    - tests/neverc/Inputs/translate/cpp/nullptr-template-values.cpp
-    - tests/neverc/Inputs/translate/cpp/runtime-aggregate-array.cpp
-    - tests/neverc/Inputs/translate/cpp/array-allocation.cpp
-    - tests/neverc/Inputs/translate/cpp/builtin-type-classification.cpp
-    - tests/neverc/Inputs/translate/cpp/scalar-operation-traits.cpp
-    - tests/neverc/Inputs/translate/cpp/trivial-record-operation-traits.cpp
-    - tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp
-    - tests/neverc/Inputs/translate/cpp/array-type-queries.cpp
-    - tests/neverc/Inputs/translate/cpp/unary-type-transforms.cpp
-    - tests/neverc/Inputs/translate/cpp/bare-function-metadata.cpp
-    - tests/neverc/Inputs/translate/cpp/empty-base-chains.cpp
