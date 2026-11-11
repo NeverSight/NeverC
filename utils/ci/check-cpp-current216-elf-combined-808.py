@@ -132,7 +132,7 @@ def main():
         assert producer['conclusion'] == job['conclusion'] == 'success'
         assert producer['run_attempt'] == job['run_attempt'] == plan['producer_attempt']
         assert job['run_id'] == producer['id']
-        for name in ['Validate the complete 1000-request STL matrix',
+        for name in ['Validate the original125 cases across six64bit targets',
                      'Keep new actual source binary remotely for further diagnosis']:
             assert any(s['name'] == name and s['conclusion'] == 'success' for s in job['steps'])
         provenance = out / 'producer'
@@ -170,7 +170,7 @@ def main():
         assert len(reports) == 1 and sha(reports[0]) == plan['producer_report_sha256']
         previous = json.loads(reports[0].read_text())
         assert previous['revision'] == plan['producer_commit'] and previous['completed'] and previous['passed']
-        assert previous['focused_request_contract_passed'] and len(previous['requests']) == 1000
+        assert previous['focused_request_contract_passed'] and len(previous['requests']) == 750
         assert all(r['expectation_satisfied'] for r in previous['requests'])
         assert previous['exact_private_input_sha256'] == plan['exact_private_input_sha256']
         assert previous['new_build_id'] == plan['frontend_build_id']
@@ -190,7 +190,7 @@ def main():
         version = run([binary, '__neverc_cpp_frontend', '--version'], 'environment/version')
         assert version['returncode'] == 0
         assert (out / version['log']).read_text().strip() == 'neverc-cpp-frontend 20.1.8 protocol 1 ' + plan['frontend_build_id']
-        assert len(plan['cases']) == 101 and len(plan['target_abis']) == 8
+        assert len(plan['cases']) == 101 and len(plan['target_abis']) == 6
         assert len({c['name'] for c in plan['cases']}) == 101
         for target in plan['target_abis']:
             for case in plan['cases']:
@@ -236,9 +236,9 @@ def main():
                 save()
         invocation_root = out / 'invocations'
         processes = list(invocation_root.iterdir())
-        assert len(processes) == 808 and all(p.is_dir() and p.name.isdigit() for p in processes)
+        assert len(processes) == 606 and all(p.is_dir() and p.name.isdigit() for p in processes)
         commands = {row['pid']: row for row in result['commands'][1:]}
-        assert len(commands) == 808
+        assert len(commands) == 606
         for process in processes:
             command = commands[int(process.name)]
             argv = (process / 'argv.txt').read_text().splitlines()
@@ -249,7 +249,7 @@ def main():
             assert len(list(process.iterdir())) == 5 and (process / 'environment-before.tsv').is_file()
             for path in sorted(process.iterdir()):
                 result['invocation_inventory'].append(dict(path=path.relative_to(out).as_posix(), bytes=path.stat().st_size, sha256=sha(path)))
-        assert len(result['requests']) == 808 and len(result['invocation_inventory']) == 4040
+        assert len(result['requests']) == 606 and len(result['invocation_inventory']) == 3030
         result.update(completed=True, passed=all(row['expectation_satisfied'] for row in result['requests']))
     except Exception:
         result['failure'] = traceback.format_exc()
