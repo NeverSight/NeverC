@@ -35,6 +35,7 @@
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
 #include <deque>
 #include <set>
@@ -11537,7 +11538,8 @@ public:
     if (!Record || Depth > 64)
       return false;
     A.chargeExpansion(1, Record->getLocation());
-    if (functionalBindTranslationLayout(A.S, A.Sources, Record, A.Context))
+    if (functionalBindTranslationLayout(A.S, A.Sources, Record, A.Context) ||
+        describeFunctionalBindExplicitResultStorage(A.S, A.Sources, Record, A.Context))
       return A.CheckBindDestructionSource && A.CheckBindDestructionSource(Record);
     if (const auto Nested = describeFunctionalNotFnNestedStorage(A.S, A.Sources, Record, A.Context)) {
       const auto *Destructor = Record->getDestructor();
@@ -13640,6 +13642,11 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
           if (type(NotFn->CallableType, L, false, Depth + 1).empty()) return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
+      } else if (const auto Explicit = describeFunctionalBindExplicitResultStorage(S, Sources, D, Context)) {
+        RequiredFunctionalBindExplicitResultRecords.insert(D->getCanonicalDecl());
+        // The checked derived object has one nonvirtual base at offset zero
+        // with identical size and alignment. It uses the base's C23 carrier.
+        return type(Context.getRecordType(Explicit->Base.Record), L, false, Depth + 1);
       } else if (const auto Bind = functionalBindTranslationLayout(S, Sources, D, Context)) {
         if (RequiredFunctionalBindRecords.insert(D->getCanonicalDecl()).second) {
           const auto Member = describeFunctionalBindMemberNaturalLayout(S, Sources, D, Context);
@@ -15135,6 +15142,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const CallExpr *, FunctionalBindFactorySource> PendingBindFactories;
   const FunctionalBindFactorySource *ActiveBindPlaceholderFactory = nullptr;
   std::map<const CallExpr *, FunctionalBindCallSource> PendingBindCalls;
+  std::map<const CallExpr *, FunctionalBindExplicitResultInvocationSource> PendingBindExplicitResultCalls;
+  std::map<const CXXConstructExpr *, FunctionalBindExplicitResultCopySource> PendingBindExplicitResultCopies;
   std::map<const CallExpr *, FunctionalBindReferenceCallSource> PendingBindReferenceCalls;
   std::map<const CallExpr *, FunctionalBindMemberFactorySource> PendingBindMemberFactories;
   std::map<const CallExpr *, FunctionalBindMemberCommonCallSource> PendingBindMemberCalls;
@@ -18782,6 +18791,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         const auto *Call = dyn_cast<CallExpr>(Expression);
         auto Result = applyResultSource(Call);
         if (Result.isNull())
+          if (const auto Bind = describeFunctionalBindExplicitResultCallSource(A.S, A.Sources, Call, A.Context))
+            Result = A.Context.getCanonicalType(Bind->Storage.ResultType);
+        if (Result.isNull())
           if (auto Query = A.S.UnevaluatedFunctionalCalls.find(Call);
               Query != A.S.UnevaluatedFunctionalCalls.end())
             Result = Query->second;
@@ -18828,6 +18840,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       A.chargeExpansion(1, L);
       const auto *Raw = T.getTypePtr();
       if (const auto *Alias = dyn_cast<TypedefType>(Raw)) {
+        const auto *Declaration = Alias->getDecl();
+        const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext());
+        if (Owner && A.S.owns(A.Sources, L))
+          if (const auto Explicit = describeFunctionalBindExplicitResultStorage(A.S, A.Sources, Owner, A.Context);
+              Explicit && Explicit->ResultAlias == Declaration) {
+            A.RequiredFunctionalBindExplicitResultRecords.insert(Owner->getCanonicalDecl());
+            Self(Self, A.Context.getCanonicalType(Explicit->ResultType), NeedLayout, Depth + 1);
+            return;
+          }
         if (approvedSDKDeclaration(A.S, A.Sources, Alias->getDecl())) {
           // These pinned metadata aliases spell their underlying type with an
           // SDK expression or target record. Their authenticated declaration
@@ -19007,6 +19028,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           // Retain the stored iterator's source without borrowing private
           // field/base TypeLocs or consuming the pointed-to object's layout.
           Self(Self, Iterator->IteratorType, true, Depth + 1);
+          return;
+        }
+        if (const auto Explicit = describeFunctionalBindExplicitResultStorage(A.S, A.Sources, Declaration, A.Context)) {
+          Self(Self, A.Context.getRecordType(Explicit->Base.Record), true, Depth + 1);
           return;
         }
         if (const auto Bind = functionalBindTranslationLayout(
@@ -20455,8 +20480,10 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
         if (const auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
             Operation == UtilityOperation::Move &&
-            functionalBindTranslationLayout(A.S, A.Sources,
-                Call->getType()->getAsCXXRecordDecl(), A.Context) &&
+            (functionalBindTranslationLayout(A.S, A.Sources,
+                 Call->getType()->getAsCXXRecordDecl(), A.Context) ||
+             describeFunctionalBindExplicitResultStorage(A.S, A.Sources,
+                 Call->getType()->getAsCXXRecordDecl(), A.Context)) &&
             utilitySDKValueAdapterSource(A, Call, *Operation))
           if (const auto *Reference = directFunctionReference(Call)) {
             auto [Entry, Inserted] =
@@ -23149,7 +23176,7 @@ public:
     auto Match = [&](const FunctionalBindFactorySource &Factory) -> std::optional<FunctionalBindFactorySource> {
       A.chargeExpansion(1, Factory.SourceCall->getExprLoc());
       if (Factory.Storage.Record->getCanonicalDecl() != Record->getCanonicalDecl()) return std::nullopt;
-      const auto Fresh = describeFunctionalBindStandardFactorySource(A.S, A.Sources, Factory.SourceCall, A.Context);
+      const auto Fresh = describeFunctionalBindStandardFactoryOccurrence(A.S, A.Sources, Factory, A.Context);
       if (!Fresh || Fresh->Factory != Factory.Factory || Fresh->Construction != Factory.Construction ||
           Fresh->CallableCopy != Factory.CallableCopy || !sameBindStorage(Fresh->Storage, Factory.Storage) ||
           !sameFunctionalBindPlaceholderOperands(*Fresh, Factory)) return std::nullopt;
@@ -23163,7 +23190,7 @@ public:
     return std::nullopt;
   }
   bool retainBindMemberLiteralSource(const FunctionalBindMemberFactorySource &Given) {
-    const auto Fresh = describeFunctionalBindMemberFactorySource(A.S, A.Sources, Given.Factory.SourceCall, A.Context);
+    const auto Fresh = describeFunctionalBindMemberFactoryOccurrence(A.S, A.Sources, Given.Factory, A.Context);
     if (!Fresh || Fresh->Address != Given.Address || Fresh->Member != Given.Member ||
         Fresh->Factory.Factory != Given.Factory.Factory ||
         Fresh->Factory.Construction != Given.Factory.Construction ||
@@ -23247,7 +23274,7 @@ public:
       CompletedBindMemberOwnerQueries.insert(Method);
     }
     for (const auto &[Call, Given] : PendingBindMemberCalls) {
-      const auto Fresh = describeFunctionalBindMemberCommonCallSource(A.S, A.Sources, Call, A.Context);
+      const auto Fresh = bindMemberCallOccurrence(Given.Selected);
       if (!Fresh || Fresh->Member.Value.Factory.Member != Given.Member.Value.Factory.Member ||
           Fresh->Member.Value.Factory.Address != Given.Member.Value.Factory.Address ||
           Fresh->Member.Value.Factory.Factory.SourceCall != Given.Member.Value.Factory.Factory.SourceCall ||
@@ -23266,7 +23293,7 @@ public:
       } else if (!isa<FieldDecl>(Fresh->Member.Value.Factory.Member)) return false;
     }
     for (const auto &[Call, Factory] : PendingBindMemberFactories) {
-      const auto Fresh = describeFunctionalBindMemberFactorySource(A.S, A.Sources, Call, A.Context);
+      const auto Fresh = describeFunctionalBindMemberFactoryOccurrence(A.S, A.Sources, Factory.Factory, A.Context);
       const auto Tuple = Fresh ? describeFunctionalBindMemberTupleConstructionSource(A.S, A.Sources, *Fresh, A.Context)
                                : std::nullopt;
       if (!Fresh || !Tuple || Fresh->Member != Factory.Member || Fresh->Address != Factory.Address ||
@@ -23300,21 +23327,21 @@ public:
       return A.S.Diagnostics.empty() && Signature &&
           TraverseTypeLoc(Info->getTypeLoc()) && A.S.Diagnostics.empty();
     };
-    const auto Member = describeFunctionalBindMemberFactorySource(A.S, A.Sources, Factory.SourceCall, A.Context);
+    const auto Member = describeFunctionalBindMemberFactoryOccurrence(A.S, A.Sources, Factory, A.Context);
     if (Member) return Inputs && Member->Factory.Factory == Factory.Factory &&
         Member->Factory.Construction == Factory.Construction &&
         sameBindStorage(Member->Factory.Storage, Factory.Storage) &&
         sameFunctionalBindPlaceholderOperands(Member->Factory, Factory) &&
         approvedFunctionalBindMemberFactorySource(A.S, A.Sources, *Member, A.Context,
             Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits, BindMemberOwnerQueries, AliasSource);
-    const auto Standard = describeFunctionalBindStandardFactorySource(A.S, A.Sources, Factory.SourceCall, A.Context);
+    const auto Standard = describeFunctionalBindStandardFactoryOccurrence(A.S, A.Sources, Factory, A.Context);
     if (Standard) return Inputs && Standard->Factory == Factory.Factory &&
         Standard->Construction == Factory.Construction && Standard->CallableCopy == Factory.CallableCopy &&
         sameBindStorage(Standard->Storage, Factory.Storage) &&
         sameFunctionalBindPlaceholderOperands(*Standard, Factory) &&
         approvedFunctionalBindStandardFactorySource(A.S, A.Sources, Factory, A.Context,
             Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits, AliasSource);
-    const auto Reference = describeFunctionalBindReferenceFactorySource(A.S, A.Sources, Factory.SourceCall, A.Context);
+    const auto Reference = describeFunctionalBindReferenceFactoryOccurrence(A.S, A.Sources, Factory, A.Context);
     if (Reference) return Inputs && Reference->Factory.Factory == Factory.Factory &&
         Reference->Factory.Construction == Factory.Construction &&
         Reference->Factory.CallableCopy == Factory.CallableCopy &&
@@ -23360,7 +23387,47 @@ public:
     return Inputs && approvedFunctionalBindCallUnwrapSource(A.S, A.Sources, Call, A.Context,
         Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits);
   }
+  bool explicitBindInvocationSourceComplete(const FunctionalBindExplicitResultInvocationSource &Source) {
+    const auto Inputs = functionalBindSourceInputs();
+    return Inputs && approvedFunctionalBindExplicitResultInvocationSource(A.S, A.Sources, Source, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits,
+        BindOwnedQuerySources, BindMemberOwnerQueries, {});
+  }
+
+  std::optional<FunctionalBindMemberCommonCallSource> bindMemberCallOccurrence(const FunctionalBindCallSource &Source) {
+    if (!Source.hasExplicitResultOwner())
+      return describeFunctionalBindMemberCommonCallSource(A.S, A.Sources, Source.SourceCall, A.Context);
+    auto Explicit = describeFunctionalBindExplicitResultInvocationSource(A.S, A.Sources, Source.OwnedRoot, A.Context);
+    if (!Explicit || !Explicit->Member || Explicit->Base.SourceCall != Source.SourceCall) return std::nullopt;
+    return FunctionalBindMemberCommonCallSource{std::move(Explicit->Base), std::move(*Explicit->Member)};
+  }
+
+  const FunctionalBindFactorySource *explicitBindFactory(const CXXRecordDecl *Record) {
+    if (!Record) return nullptr;
+    for (const auto &[Call, Source] : PendingBindFactories) {
+      if (Source.SourceCall != Call || !Source.ExplicitResultConstruction) continue;
+      const auto *Type = Source.ExplicitResultConstruction->getType()->getAsCXXRecordDecl();
+      if (Type && Type->getCanonicalDecl() == Record->getCanonicalDecl() &&
+          freshFunctionalBindExplicitResultBaseFactorySource(A.S, A.Sources, Source, A.Context)) return &Source;
+    }
+    return nullptr;
+  }
+
+  bool explicitBindLifecycleSourceComplete(const CXXRecordDecl *Record, const CXXMethodDecl *Method) {
+    const auto *Factory = explicitBindFactory(Record);
+    const auto Inputs = functionalBindSourceInputs();
+    return Factory && Inputs && approvedFunctionalBindExplicitResultLifecycle(A.S, A.Sources, *Factory, Method, A.Context,
+        Inputs->Dependencies, Inputs->Selections, A.SpecialMembers, A.OperationTraits,
+        BindOwnedQuerySources, BindMemberOwnerQueries);
+  }
+
   bool functionalBindCallSourceComplete(const FunctionalBindCallSource &Call) {
+    if (Call.hasExplicitResultOwner()) {
+      const auto Found = PendingBindExplicitResultCalls.find(Call.OwnedRoot);
+      return Found != PendingBindExplicitResultCalls.end() && Found->second.Base.SourceCall == Call.SourceCall &&
+          describeFunctionalBindCallSourceOccurrence(A.S, A.Sources, Call, A.Context) &&
+          explicitBindInvocationSourceComplete(Found->second);
+    }
     const auto Inputs = functionalBindSourceInputs();
     const auto Member = describeFunctionalBindMemberCommonCallSource(A.S, A.Sources, Call.SourceCall, A.Context);
     if (Member) return Inputs && Member->Selected.Method == Call.Method && Member->Selected.Object == Call.Object &&
@@ -23459,6 +23526,73 @@ public:
     SourceEventsReady = true;
   }
   void sealTemplateSourceEvents() { SourceEventsSealed = true; }
+  void traceRepeatedLateTemplateSource(const TemplateUseSource &Source) const {
+    const char *Enabled = std::getenv("NEVERC_STL_SOURCE_TRACE");
+    if (!Enabled || llvm::StringRef(Enabled) != "1") return;
+    static thread_local unsigned Observed = 0;
+    if (Observed >= 32) return;
+    ++Observed;
+    auto Dump = [&](llvm::StringRef Role, const TemplateUseSource &Use) {
+      auto &Out = llvm::errs();
+      Out << "NEVERC_STL_LATE role=" << Role << " target=" << A.S.Target
+          << " kind=" << unsigned(Use.Kind) << " location=" << Use.Location.getRawEncoding()
+          << " template=" << static_cast<const void *>(Use.Template)
+          << " declaration=" << static_cast<const void *>(Use.Declaration)
+          << " type=" << static_cast<const void *>(Use.Type)
+          << " underlying=" << static_cast<const void *>(Use.Underlying)
+          << " written=" << static_cast<const void *>(Use.Written)
+          << " canonical=" << static_cast<const void *>(Use.Canonical)
+          << " sugared=" << static_cast<const void *>(Use.Sugared)
+          << " selection=" << static_cast<const void *>(Use.Selection)
+          << " origin=" << static_cast<const void *>(Use.Origin)
+          << " defaults=" << Use.Defaults.size() << " parameters=" << Use.ParameterTypes.size()
+          << " instantiation=" << Use.Instantiation << " overflow=" << Use.DefaultsOverflow
+          << " bind=" << Use.FunctionalBindConstraint << " not_fn=" << Use.FunctionalNotFnConstraint;
+      if (Use.Template) {
+        const auto Name = Use.Template->getQualifiedNameAsString();
+        Out << " name=" << llvm::StringRef(Name).take_front(240);
+      }
+      if (Use.Type) {
+        const auto Type = QualType(Use.Type, 0).getAsString();
+        Out << " spelling=" << llvm::StringRef(Type).take_front(300);
+      }
+      Out << '\n';
+    };
+    Dump("incoming", Source);
+    const std::vector<const TemplateUseSource *> *Previous = nullptr;
+    if (Source.Kind == TemplateSourceKind::Type) {
+      auto Found = TypeSources.find({Source.Type, Source.Location.getRawEncoding()});
+      if (Found != TypeSources.end()) Previous = &Found->second;
+    } else if (Source.Kind == TemplateSourceKind::Function) {
+      auto Found = FunctionSources.find({dyn_cast_or_null<FunctionDecl>(Source.Declaration),
+                                         Source.Location.getRawEncoding()});
+      if (Found != FunctionSources.end()) Previous = &Found->second;
+    } else if (Source.Kind == TemplateSourceKind::ClassDeclaration) {
+      auto Found = ClassSources.find(Source.Declaration);
+      if (Found != ClassSources.end()) Previous = &Found->second;
+    } else if (Source.Kind == TemplateSourceKind::PartialDeduction ||
+               Source.Kind == TemplateSourceKind::PartialPattern) {
+      auto Found = PartialSources.find(Source.Selection);
+      if (Found != PartialSources.end()) {
+        if (Found->second.Deduction) Dump("previous-deduction", *Found->second.Deduction);
+        if (Found->second.Pattern) Dump("previous-pattern", *Found->second.Pattern);
+      }
+    }
+    if (Previous)
+      for (unsigned I = 0; I < Previous->size() && I != 2; ++I)
+        Dump("previous", *(*Previous)[I]);
+    if (Source.FunctionalBindConstraint || Source.FunctionalNotFnConstraint) {
+      const auto &Sources = Source.FunctionalBindConstraint ? BindConstraintSources : NotFnConstraintSources;
+      unsigned Scanned = 0, Printed = 0;
+      for (const auto *Candidate : Sources) {
+        if (++Scanned > 512 || Printed == 2) break;
+        if (notFnConstraintKey(*Candidate) == notFnConstraintKey(Source)) {
+          Dump("previous-constraint", *Candidate);
+          ++Printed;
+        }
+      }
+    }
+  }
   bool freshLateTemplateSource(const TemplateUseSource &Source) const {
     if (Source.FunctionalBindConstraint &&
         BindConstraintKeys.count(notFnConstraintKey(Source))) return false;
@@ -23532,6 +23666,7 @@ public:
         return;
       for (const auto &Source : Batch.Uses) {
         if (!freshLateTemplateSource(Source)) {
+          traceRepeatedLateTemplateSource(Source);
           A.reject(Source.Location, "repeated late template source",
                    "A retained late use needs a fresh exact source key.");
           return;
@@ -27057,10 +27192,11 @@ public:
       const CXXOperatorCallExpr *Root, unsigned &Nodes) {
     if (!Root || !A.S.owns(A.Sources, Root->getExprLoc()) || ++Nodes > 200000 ||
         Call.OwnedRoot != Root || Call.OwnedPath.size() >= 64) return false;
-    if (const auto Member = describeFunctionalBindMemberCommonCallSource(A.S, A.Sources, Call.SourceCall, A.Context)) {
-      const auto Pending = PendingBindMemberCalls.find(Call.SourceCall);
+    if (const auto Member = bindMemberCallOccurrence(Call)) {
+      const auto Pending = PendingBindMemberCalls.find(Call.OwnedRoot);
       const auto Layout = PendingBindMemberRecords.find(Call.Storage.Record->getCanonicalDecl());
-      return Call.SourceCall == Root && Call.OwnedPath.empty() &&
+      return (Call.SourceCall == Root || Call.hasExplicitResultOwner()) &&
+          Call.OwnedPath.empty() &&
           Pending != PendingBindMemberCalls.end() && Layout != PendingBindMemberRecords.end() &&
           Member->Member.Value.Factory.Member == Pending->second.Member.Value.Factory.Member &&
           Member->Member.Value.Factory.Address == Pending->second.Member.Value.Factory.Address &&
@@ -27071,9 +27207,10 @@ public:
           llvm::none_of(Call.Arguments, [](const auto &Argument) { return bool(Argument.Nested); }) &&
           functionalBindCallSourceComplete(Call) && bindDestructionSourceComplete(Call.Storage.Record);
     }
-    if (const auto Standard = describeFunctionalBindStandardCallSource(A.S, A.Sources, Call.SourceCall, A.Context)) {
+    if (const auto Standard = describeFunctionalBindStandardCallOccurrence(A.S, A.Sources, Call, A.Context)) {
       const auto Layout = PendingBindRecords.find(Call.Storage.Record->getCanonicalDecl());
-      return Call.SourceCall == Root && Call.OwnedPath.empty() &&
+      return (Call.SourceCall == Root || Call.hasExplicitResultOwner()) &&
+          Call.OwnedPath.empty() &&
           Standard->Selected.Method == Call.Method && Standard->Selected.Object == Call.Object &&
           Standard->Selected.Target == Call.Target && Standard->Selected.Invoke == Call.Invoke &&
           Standard->Selected.Apply == Call.Apply && sameBindStorage(Standard->Selected.Storage, Call.Storage) &&
@@ -27097,7 +27234,7 @@ public:
           bindDestructionSourceComplete(Call.Storage.Record->getCanonicalDecl());
     }
     const auto Owned = Call.Storage.CallableType->isRecordType()
-        ? describeFunctionalBindOwnedCallSource(A.S, A.Sources, Call.SourceCall, A.Context) : std::nullopt;
+        ? describeFunctionalBindOwnedCallOccurrence(A.S, A.Sources, Call, A.Context) : std::nullopt;
     const auto Fresh = Owned ? std::optional<FunctionalBindCallSource>(Owned->Selected)
         : describeFunctionalBindCallSourceOccurrence(A.S, A.Sources, Call, A.Context);
     const auto *Prototype = Owned ? Owned->Target->getType()->getAs<FunctionProtoType>()
@@ -27105,7 +27242,8 @@ public:
     const auto Record = Call.Storage.Record->getCanonicalDecl();
     const auto Layout = PendingBindRecords.find(Record);
     if (!Fresh || !Prototype || (Owned ? !ordinaryOperator(Owned->Target) ||
-            Call.SourceCall != Root || !Call.OwnedPath.empty() || Fresh->Target != Call.Target ||
+            (Call.SourceCall != Root && !Call.hasExplicitResultOwner()) ||
+            !Call.OwnedPath.empty() || Fresh->Target != Call.Target ||
             Fresh->Method != Call.Method || Fresh->Object != Call.Object
           : !ordinaryCallbackPrototype(Prototype) ||
             !A.Context.hasSameType(operationCalleePrototype(Fresh->Target), Prototype)) ||
@@ -27126,19 +27264,26 @@ public:
   }
   bool bindDestructionSourceComplete(const CXXRecordDecl *Record) {
     if (!Record) return false;
+    if (const auto Explicit = describeFunctionalBindExplicitResultStorage(A.S, A.Sources, Record, A.Context))
+      return explicitBindLifecycleSourceComplete(Explicit->Record, Explicit->Record->getDestructor());
     const auto Found = PendingBindDestructions.find(Record->getCanonicalDecl());
     const auto Site = PendingBindSourceLocations.find(Record->getCanonicalDecl());
     return Found != PendingBindDestructions.end() && Site != PendingBindSourceLocations.end() &&
         functionalBindDestructionSourceComplete(Found->second, Site->second);
   }
   std::optional<bool> traverseBindFactory(CallExpr *Call) {
-    const auto MemberSource = describeFunctionalBindMemberFactorySource(A.S, A.Sources, Call, A.Context);
-    const auto Standard = describeFunctionalBindStandardFactorySource(A.S, A.Sources, Call, A.Context);
-    const auto ReferenceSource = describeFunctionalBindReferenceFactorySource(A.S, A.Sources, Call, A.Context);
-    const auto Owned = describeFunctionalBindOwnedFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto Explicit = describeFunctionalBindExplicitResultBaseFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto MemberSource = Explicit ? describeFunctionalBindMemberFactoryOccurrence(A.S, A.Sources, *Explicit, A.Context)
+                                       : describeFunctionalBindMemberFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto Standard = Explicit ? describeFunctionalBindStandardFactoryOccurrence(A.S, A.Sources, *Explicit, A.Context)
+                                   : describeFunctionalBindStandardFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto ReferenceSource = Explicit ? describeFunctionalBindReferenceFactoryOccurrence(A.S, A.Sources, *Explicit, A.Context)
+                                          : describeFunctionalBindReferenceFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto Owned = Explicit ? Explicit->CallableCopy && !Standard && !ReferenceSource ? Explicit : std::nullopt
+                                : describeFunctionalBindOwnedFactorySource(A.S, A.Sources, Call, A.Context);
     const auto Source = MemberSource ? std::optional<FunctionalBindFactorySource>(MemberSource->Factory)
         : Standard ? Standard : ReferenceSource ? std::optional<FunctionalBindFactorySource>(ReferenceSource->Factory)
-        : Owned ? Owned : describeFunctionalBindFactorySource(A.S, A.Sources, Call, A.Context);
+        : Owned ? Owned : Explicit ? Explicit : describeFunctionalBindFactorySource(A.S, A.Sources, Call, A.Context);
     if (!Source) return std::nullopt;
     return traverseTypeQuerySource(Call, [&] {
       const auto *PreviousMember = ActiveBindMemberFactory;
@@ -27149,7 +27294,10 @@ public:
       auto RestoreStandard = llvm::make_scope_exit([&] { ActiveBindStandardFactory = PreviousStandard; });
       const auto *Reference = dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
       if (!Reference || Reference->getDecl() != Source->Factory ||
-          Reference->hasExplicitTemplateArgs() || !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+          Reference->hasExplicitTemplateArgs() != bool(Explicit) ||
+          !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+          (Explicit && (Reference->getNumTemplateArgs() != 1 ||
+              !TraverseTemplateArgumentLoc(Reference->template_arguments()[0]) || !A.S.Diagnostics.empty())) ||
           !functionalBindFactorySourceComplete(*Source)) {
         A.reject(Call->getExprLoc(), "bind factory source",
             "The actual deduced factory and complete selected source graph are required.", "TR0203");
@@ -27188,11 +27336,53 @@ public:
           A.chargeExpansion(1, Call->getExprLoc());
       PendingBindFactories.emplace(Call, *Source);
       if (MemberSource) PendingBindMemberFactories.emplace(Call, *MemberSource);
+      if (Explicit && !bindDestructionSourceComplete(Call->getType()->getAsCXXRecordDecl())) {
+        A.reject(Call->getExprLoc(), "bind explicit result construction lifetime",
+            "The completed selected wrapper construction requires its actual base destruction.", "TR0203");
+        return true;
+      }
       A.type(Call->getType(), Call->getExprLoc());
       return true;
     });
   }
+  std::optional<bool> traverseExplicitResultBindCall(CXXOperatorCallExpr *Call) {
+    auto Source = describeFunctionalBindExplicitResultInvocationSource(A.S, A.Sources, Call, A.Context);
+    if (!Source) return std::nullopt;
+    return traverseTypeQuerySource(Call, [&] {
+      const auto &Wrapper = Source->Wrapper;
+      const auto &Base = Source->Base;
+      const auto *MemberTarget = Source->Member
+          ? dyn_cast<CXXMethodDecl>(Source->Member->Value.Factory.Member) : nullptr;
+      if (Source->Member && (MemberTarget ? !ordinaryMethod(MemberTarget) || MemberTarget->isStatic()
+              : !isa<FieldDecl>(Source->Member->Value.Factory.Member))) return false;
+      if (!explicitBindInvocationSourceComplete(*Source)) {
+        A.reject(Call->getExprLoc(), "bind explicit result source",
+            "The exact selected wrapper, conversion and complete ordinary bind invocation are required.", "TR0203");
+        return true;
+      }
+      if (!TraverseStmt(const_cast<Expr *>(Wrapper.Object))) return false;
+      for (unsigned Index = 1; Index < Call->getNumArgs(); ++Index)
+        if (!TraverseStmt(Call->getArg(Index))) return false;
+      if (!A.S.Diagnostics.empty()) return true;
+      if (!retainBindRuntimeSource(Base.Storage, Call->getExprLoc()) ||
+          !bindDestructionSourceComplete(Wrapper.Storage.Record)) {
+        A.reject(Call->getExprLoc(), "bind explicit result lifetime",
+            "The original receiver requires its complete wrapper and base lifecycle.", "TR0203");
+        return true;
+      }
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Destructions.insert(Wrapper.Storage.Record).second)
+          A.chargeExpansion(1, Call->getExprLoc());
+      PendingBindCalls.emplace(Call, Base);
+      if (Source->Member)
+        PendingBindMemberCalls.emplace(Call, FunctionalBindMemberCommonCallSource{Base, *Source->Member});
+      PendingBindExplicitResultCalls.emplace(Call, std::move(*Source));
+      return true;
+    });
+  }
+
   std::optional<bool> traverseBindCall(CXXOperatorCallExpr *Call) {
+    if (auto Explicit = traverseExplicitResultBindCall(Call)) return *Explicit;
     const auto MemberSource = describeFunctionalBindMemberCommonCallSource(A.S, A.Sources, Call, A.Context);
     const auto Standard = describeFunctionalBindStandardCallSource(A.S, A.Sources, Call, A.Context);
     const auto ReferenceSource = describeFunctionalBindReferenceCallSource(A.S, A.Sources, Call, A.Context);
@@ -27234,7 +27424,35 @@ public:
       return true;
     });
   }
+  std::optional<bool> traverseExplicitResultBindCopy(CXXConstructExpr *Construction) {
+    const auto Source = describeFunctionalBindExplicitResultCopySource(A.S, A.Sources, Construction, A.Context);
+    if (!Source) return std::nullopt;
+    return traverseTypeQuerySource(Construction, [&] {
+      if (!explicitBindLifecycleSourceComplete(Source->Storage.Record, Construction->getConstructor())) {
+        A.reject(Construction->getExprLoc(), "bind explicit result copy source",
+            "The selected wrapper copy and exact base operation require complete source.", "TR0203");
+        return true;
+      }
+      if (const auto *Temporary = dyn_cast<CXXTemporaryObjectExpr>(Construction)) {
+        const auto *Written = Temporary->getTypeSourceInfo();
+        if (!Written || !TraverseTypeLoc(Written->getTypeLoc())) return false;
+      }
+      checkBinding(Source->Object, true);
+      if (!TraverseStmt(const_cast<Expr *>(Source->Object))) return false;
+      if (!A.S.Diagnostics.empty()) return true;
+      if (!retainBindRuntimeSource(Source->Storage.Base, Construction->getExprLoc()) ||
+          !bindDestructionSourceComplete(Source->Storage.Record)) return false;
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Destructions.insert(Source->Storage.Record).second)
+          A.chargeExpansion(1, Construction->getExprLoc());
+      PendingBindExplicitResultCopies.emplace(Construction, *Source);
+      A.type(Construction->getType(), Construction->getExprLoc());
+      return true;
+    });
+  }
+
   std::optional<bool> traverseBindCopy(CXXConstructExpr *Construction) {
+    if (auto Explicit = traverseExplicitResultBindCopy(Construction)) return *Explicit;
     auto Source = describeFunctionalBindRuntimeCopy(A.S, A.Sources, Construction, A.Context);
     if (!Source) Source = describeFunctionalBindMemberCopySource(A.S, A.Sources, Construction, A.Context);
     if (!Source) return std::nullopt;
@@ -27309,7 +27527,7 @@ public:
       if (standardBindSourceFactory(Source.Storage.Record)) continue;
       if (describeFunctionalBindReferenceStorage(A.S, A.Sources, Source.Storage.Record, A.Context)) continue;
       if (!Source.Storage.CallableType->isRecordType()) continue;
-      const auto Fresh = describeFunctionalBindOwnedCallSource(A.S, A.Sources, Call, A.Context);
+      const auto Fresh = describeFunctionalBindOwnedCallOccurrence(A.S, A.Sources, Source, A.Context);
       const auto *Target = Fresh ? Fresh->Target : nullptr;
       const auto *Definition = Target ? Target->getDefinition() : nullptr;
       auto Check = NewCheck();
@@ -27399,7 +27617,7 @@ public:
   bool finishBindStandardRuntimeSources() {
     for (const auto &[Call, Factory] : PendingBindFactories) {
       if (!describeFunctionalBindStandardStorage(A.S, A.Sources, Factory.Storage.Record, A.Context)) continue;
-      const auto Fresh = describeFunctionalBindStandardFactorySource(A.S, A.Sources, Call, A.Context);
+      const auto Fresh = describeFunctionalBindStandardFactoryOccurrence(A.S, A.Sources, Factory, A.Context);
       if (!Fresh || Fresh->SourceCall != Call || Fresh->Factory != Factory.Factory ||
           Fresh->Construction != Factory.Construction || Fresh->CallableCopy != Factory.CallableCopy ||
           !sameBindStorage(Fresh->Storage, Factory.Storage) || !Factory.CallableCopy ||
@@ -27408,7 +27626,7 @@ public:
     }
     for (const auto &[Call, Source] : PendingBindCalls) {
       if (!describeFunctionalBindStandardStorage(A.S, A.Sources, Source.Storage.Record, A.Context)) continue;
-      const auto Fresh = describeFunctionalBindStandardCallSource(A.S, A.Sources, Call, A.Context);
+      const auto Fresh = describeFunctionalBindStandardCallOccurrence(A.S, A.Sources, Source, A.Context);
       if (!Fresh || !standardBindSourceFactory(Source.Storage.Record) ||
           Fresh->Selected.Method != Source.Method || Fresh->Selected.Target != Source.Target ||
           Fresh->Selected.Object != Source.Object || Fresh->Selected.Invoke != Source.Invoke ||
@@ -27432,7 +27650,8 @@ public:
         !A.VerifiedBindMemberRecords.empty() || !A.VerifiedBindMemberFactories.empty() || !A.VerifiedBindMemberCalls.empty() ||
         !A.VerifiedBindRecords.empty() || !A.VerifiedBindFactories.empty() ||
         !A.VerifiedBindCalls.empty() || !A.VerifiedBindReferenceCalls.empty() || !A.VerifiedBindCopies.empty() ||
-        !A.VerifiedBindDestructions.empty()) return false;
+        !A.VerifiedBindDestructions.empty() || !A.VerifiedBindExplicitResultCalls.empty() ||
+        !A.VerifiedBindExplicitResultCopies.empty()) return false;
     if (!finishBindStandardRuntimeSources() || !finishBindOwnedRuntimeSources() ||
         !finishBindReferenceRuntimeSources() || !finishBindMemberRuntimeSources()) return false;
     auto OrdinarySource = [&](const Expr *Expression) {
@@ -27448,7 +27667,8 @@ public:
     for (const auto &[Call, Source] : PendingBindCalls) {
       const auto *Root = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
       unsigned Nodes = 0;
-      if (!Root || Source.SourceCall != Call || Source.OwnedRoot != Root || !Source.OwnedPath.empty() ||
+      if (!Root || (Source.SourceCall != Call && !Source.hasExplicitResultOwner()) ||
+          Source.OwnedRoot != Root || !Source.OwnedPath.empty() ||
           !functionalBindCallSourceComplete(Source) || !OrdinarySource(Call) ||
           !nestedBindCallPublicationSource(Source, Root, Nodes)) return false;
     }
@@ -27470,6 +27690,15 @@ public:
         return false;
       }
     }
+    for (const auto *Record : A.RequiredFunctionalBindExplicitResultRecords)
+      if (!explicitBindFactory(Record) || !bindDestructionSourceComplete(Record)) return false;
+    for (const auto &[Construction, Given] : PendingBindExplicitResultCopies) {
+      const auto Fresh = describeFunctionalBindExplicitResultCopySource(A.S, A.Sources, Construction, A.Context);
+      if (!Fresh || Fresh->Construction != Given.Construction || Fresh->Object != Given.Object ||
+          Fresh->Storage.Record != Given.Storage.Record ||
+          !explicitBindLifecycleSourceComplete(Fresh->Storage.Record, Construction->getConstructor()) ||
+          !OrdinarySource(Construction)) return false;
+    }
     // Every ordinary expression root and selected SDK lifecycle is closed.
     // These are the sole publishers consumed by the existing guarded lowering.
     if (BindMemberOwnerQueries != CompletedBindMemberOwnerQueries) return false;
@@ -27482,6 +27711,8 @@ public:
     A.VerifiedBindMemberCalls = PendingBindMemberCalls;
     A.VerifiedBindCopies = PendingBindCopies;
     A.VerifiedBindDestructions = PendingBindDestructions;
+    A.VerifiedBindExplicitResultCalls = PendingBindExplicitResultCalls;
+    A.VerifiedBindExplicitResultCopies = PendingBindExplicitResultCopies;
     return true;
   }
   std::optional<bool> traverseNotFnFactory(CallExpr *Call) {
