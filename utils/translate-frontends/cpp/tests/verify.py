@@ -633,12 +633,30 @@ extern "C" int pair_composite() {
         check("v2-utility-composite-pair-" + target,
               pair_composite_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    protocol_owned_pair_response = check("v2-utility-nontrivial-record-pair",
+        '#include <utility>\nstruct R{int n;~R(){}};int f(){std::pair<R,int> p{{1},2};return p.first.n;}',
+        profile="cpp-core-v2", sdk=True)
+    protocol_owned_pair_element, = [r for r in protocol_owned_pair_response["records"]
+              if [field["type"] for field in r["fields"]] == ["int"]]
+    protocol_owned_pair_record, = [r for r in protocol_owned_pair_response["records"]
+             if [field["type"] for field in r["fields"]] == [protocol_owned_pair_element["id"], "int"]]
+    protocol_owned_pair_functions = {function["name"]: function for function in protocol_owned_pair_response["functions"]}
+    protocol_owned_pair_element_destroy = protocol_owned_pair_element["id"] + "_destroy"
+    protocol_owned_pair_record_destroy = protocol_owned_pair_record["id"] + "_destroy"
+    assert protocol_owned_pair_element_destroy in protocol_owned_pair_functions
+    assert protocol_owned_pair_record_destroy in protocol_owned_pair_functions
+    assert any(node.get("op") == "call" and node.get("callee") == protocol_owned_pair_element_destroy
+               for node in walk(protocol_owned_pair_functions[protocol_owned_pair_record_destroy]["body"]))
+    protocol_owned_pair_entry, = [function for function in protocol_owned_pair_response["functions"] if not function["internal"]]
+    protocol_owned_pair_cleanup = {node.get("callee") for node in walk(protocol_owned_pair_entry["body"]) if node.get("op") == "call"}
+    assert {protocol_owned_pair_element_destroy, protocol_owned_pair_record_destroy} <= protocol_owned_pair_cleanup
+
     for name, source, code in (
         ("quoted", '#include "utility"\nint main(){return 0;}', "TR0201"),
         ("function-address",
          '#include <utility>\nauto f(){return &std::move<int>;}', "TR0201"),
-        ("nontrivial-record-pair",
-         '#include <utility>\nstruct R{int n;~R(){}};int f(){std::pair<R,int> p{{1},2};return p.first.n;}',
+        ("nontrivial-record-pair-unsupported-destruction",
+         '#include <utility>\nstruct R{int n;~R(){long double hidden=0;}};int f(){std::pair<R,int> p{{1},2};return p.first.n;}',
          "TR0201"),
         ("record-pair-comparison",
          '#include <utility>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int f(){std::pair<R,int>a{{1},2},b=a;return a==b;}',

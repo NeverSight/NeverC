@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -41,8 +42,20 @@ bool CmdResult::stderrContains(const std::string &needle) const {
 void NeverCTest::SetUp() {
   auto testName =
       ::testing::UnitTest::GetInstance()->current_test_info()->name();
+#ifdef _WIN32
+  // Keep room for descriptive input names within ordinary Windows path limits.
+  // GoogleTest still prints the full test name; the digest preserves its identity.
+  std::uint64_t testIdentity = 14695981039346656037ULL;
+  for (const char C : std::string(testName)) {
+    testIdentity ^= static_cast<unsigned char>(C);
+    testIdentity *= 1099511628211ULL;
+  }
+  tmpDir_ = fs::temp_directory_path() / ("neverc_test_" + std::to_string(testIdentity)
+                                         + "_" + std::to_string(getpid()));
+#else
   tmpDir_ = fs::temp_directory_path() / ("neverc_test_" + std::string(testName)
                                          + "_" + std::to_string(getpid()));
+#endif
   fs::create_directories(tmpDir_);
 }
 
