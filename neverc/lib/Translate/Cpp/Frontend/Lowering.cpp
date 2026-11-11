@@ -28615,11 +28615,21 @@ class FunctionLowering {
       const FunctionalBindCallSource &Source,
       const FunctionalBindMemberCommonCallSource &Given, Expression Address,
       const std::vector<Expression> &Incoming, SourceLocation L) {
-    const auto Completed = A.VerifiedBindMemberCalls.find(Source.SourceCall);
-    const auto Fresh = describeFunctionalBindMemberCommonCallSource(
-        A.S, A.Sources, Source.SourceCall, A.Context);
+    const auto *Root = Source.hasExplicitResultOwner() ? Source.OwnedRoot : Source.SourceCall;
+    const auto Completed = A.VerifiedBindMemberCalls.find(Root);
+    std::optional<FunctionalBindMemberCommonCallSource> Fresh;
+    if (Source.hasExplicitResultOwner()) {
+      const auto Wrapper = A.VerifiedBindExplicitResultCalls.find(Root);
+      auto Selected = describeFunctionalBindExplicitResultInvocationSource(A.S, A.Sources, Root, A.Context);
+      if (Wrapper != A.VerifiedBindExplicitResultCalls.end() && Selected && Selected->Member &&
+          Selected->Base.SourceCall == Source.SourceCall &&
+          sameFunctionalBindExplicitResultWrapper(Wrapper->second.Wrapper, Selected->Wrapper, A.Context))
+        Fresh = FunctionalBindMemberCommonCallSource{std::move(Selected->Base), std::move(*Selected->Member)};
+    } else {
+      Fresh = describeFunctionalBindMemberCommonCallSource(A.S, A.Sources, Source.SourceCall, A.Context);
+    }
     if (Completed == A.VerifiedBindMemberCalls.end() || &Completed->second != &Given ||
-        !Fresh || Source.SourceCall != Source.OwnedRoot || !Source.OwnedPath.empty() ||
+        !Fresh || Fresh->Selected.OwnedRoot != Root || Source.OwnedRoot != Root || !Source.OwnedPath.empty() ||
         Given.Selected.SourceCall != Source.SourceCall ||
         Given.Selected.Method != Source.Method || Given.Selected.Object != Source.Object ||
         Given.Selected.Apply != Source.Apply || Given.Selected.Invoke != Source.Invoke ||
@@ -28736,7 +28746,7 @@ class FunctionLowering {
     const auto Verified = A.VerifiedBindFactories.find(Call);
     const auto MemberEntry = A.VerifiedBindMemberFactories.find(Call);
     const auto *MemberFactory = MemberEntry == A.VerifiedBindMemberFactories.end() ? nullptr : &MemberEntry->second;
-    const auto Member = MemberFactory ? describeFunctionalBindMemberFactorySource(A.S, A.Sources, Call, A.Context) : std::nullopt;
+    const auto Member = MemberFactory ? describeFunctionalBindMemberFactoryOccurrence(A.S, A.Sources, Source, A.Context) : std::nullopt;
     const auto MemberLayout = Member ? describeFunctionalBindMemberNaturalLayout(
         A.S, A.Sources, Source.Storage.Record, A.Context) : std::nullopt;
     if (MemberFactory && (!Member || !MemberLayout ||
@@ -28746,11 +28756,11 @@ class FunctionLowering {
         Member->Storage.Storage.Record != Source.Storage.Record ||
         !A.VerifiedBindMemberRecords.count(Source.Storage.Record->getCanonicalDecl())))
       reject(L, "bind member factory certificate", "The exact closed member factory and native carrier layout are required.");
-    const auto StandardFactory = describeFunctionalBindStandardFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto StandardFactory = describeFunctionalBindStandardFactoryOccurrence(A.S, A.Sources, Source, A.Context);
     const auto Layout = MemberLayout ? std::optional<FunctionalBindNaturalLayout>(MemberLayout->Layout) : StandardFactory
         ? describeFunctionalBindStandardNaturalLayout(A.S, A.Sources, Source.Storage.Record, A.Context)
         : describeFunctionalBindRuntimeLayout(A.S, A.Sources, Source.Storage.Record, A.Context);
-    const auto ReferenceFactory = describeFunctionalBindReferenceFactorySource(A.S, A.Sources, Call, A.Context);
+    const auto ReferenceFactory = describeFunctionalBindReferenceFactoryOccurrence(A.S, A.Sources, Source, A.Context);
     const auto TupleSource = MemberFactory
         ? describeFunctionalBindMemberTupleConstructionSource(A.S, A.Sources, *MemberFactory, A.Context)
         : StandardFactory
@@ -28761,6 +28771,8 @@ class FunctionLowering {
     const auto *Factory = Source.Factory;
     if (Verified == A.VerifiedBindFactories.end() || &Verified->second != &Source ||
         Source.SourceCall != Call || !Layout || !TupleSource || !Factory ||
+        (Source.ExplicitResultConstruction &&
+         !freshFunctionalBindExplicitResultBaseFactorySource(A.S, A.Sources, Source, A.Context)) ||
         Factory->getNumParams() != Call->getNumArgs() ||
         Call->getNumArgs() != Source.Storage.Arguments.Elements.size() + 1 ||
         Source.Placeholders.size() != Source.Storage.Arguments.Elements.size() ||
@@ -28926,7 +28938,7 @@ class FunctionLowering {
       const FunctionalBindCallSource &Source, Expression Address,
       const std::vector<Expression> &Incoming, SourceLocation L,
       const FunctionalBindCallSource &Root, std::vector<unsigned> &Path) {
-    const auto Verified = A.VerifiedBindCalls.find(Root.SourceCall);
+    const auto Verified = A.VerifiedBindCalls.find(Root.OwnedRoot);
     if (Verified == A.VerifiedBindCalls.end() || &Verified->second != &Root || Path.size() >= 64)
       reject(L, "nested bind root", "The completed owned root must retain every nested invocation.");
     const FunctionalBindCallSource *Cursor = &Root;
@@ -28936,13 +28948,14 @@ class FunctionLowering {
       if (Slot >= Cursor->Arguments.size() || !Cursor->Arguments[Slot].Nested)
         reject(L, "nested bind path", "The exact original argument path is required.");
       const auto &Child = *Cursor->Arguments[Slot].Nested;
-      if (Child.Root != Root.SourceCall || Child.Parent != Cursor->SourceCall ||
+      if (Child.Root != Root.OwnedRoot || Child.Parent != Cursor->SourceCall ||
           Child.Slot != Slot || Child.Path != ExpectedPath ||
           Child.Get != Cursor->Arguments[Slot].Get || Child.Unwrap != Cursor->Arguments[Slot].Unwrap)
         reject(L, "nested bind owner", "The child must belong to this root, parent and stored slot.");
       Cursor = &Child.Invocation;
     }
-    const auto Member = A.VerifiedBindMemberCalls.find(Source.SourceCall);
+    const auto Member = A.VerifiedBindMemberCalls.find(
+        Source.hasExplicitResultOwner() ? Source.OwnedRoot : Source.SourceCall);
     if (Member != A.VerifiedBindMemberCalls.end()) {
       if (Cursor != &Source || !Path.empty() || &Source != &Root)
         reject(L, "bind member root", "The exact completed local member call root is required.");
@@ -28951,7 +28964,7 @@ class FunctionLowering {
     }
     const auto Borrowed = A.VerifiedBindReferenceCalls.find(Source.SourceCall);
     const auto *Reference = Borrowed != A.VerifiedBindReferenceCalls.end() ? &Borrowed->second : nullptr;
-    const auto Standard = describeFunctionalBindStandardCallSource(A.S, A.Sources, Source.SourceCall, A.Context);
+    const auto Standard = describeFunctionalBindStandardCallOccurrence(A.S, A.Sources, Source, A.Context);
     const auto *OwnedTarget = Reference ? Reference->Reference.Method
         : Source.Storage.CallableType->isRecordType() && Source.Target
             ? dyn_cast_or_null<CXXMethodDecl>(Source.Target->getDirectCallee()) : nullptr;
@@ -29049,7 +29062,7 @@ class FunctionLowering {
         ChildPath.push_back(I);
         if (!Record || Selected.Reference || Selected.WrapperCopy || Child.ResultType.isNull() ||
             Child.ResultType->isVoidType() || !Child.Invocation.Method || !Child.Invocation.Object ||
-            !Child.Invocation.Storage.Record || Child.Root != Root.SourceCall ||
+            !Child.Invocation.Storage.Record || Child.Root != Root.OwnedRoot ||
             Child.Parent != Source.SourceCall || Child.Slot != I || Child.Path != ChildPath ||
             Child.Get != Selected.Get || Child.Unwrap != Selected.Unwrap || !Child.Expand || !Child.Indices ||
             Child.Invocation.Storage.Record->getCanonicalDecl() != Record->getCanonicalDecl() ||
@@ -29189,6 +29202,84 @@ class FunctionLowering {
     return emitIndirectCall(std::move(Callable), std::move(Arguments), Prototype->getReturnType(), L);
   }
 
+  Expression functionalBindExplicitResultTransfer(
+      Expression Value, const FunctionalBindExplicitResultCallSource &Source, SourceLocation L) {
+    const auto Result = Source.Storage.ResultType;
+    if (!Source.Invoke || !Source.ResultExpression || Result.isNull())
+      reject(L, "bind result transfer", "The exact selected result expression is required.");
+    if (Result->isVoidType()) {
+      if (!Source.ResultCasts.empty() || Source.ResultExpression->IgnoreParens() != Source.Invoke)
+        reject(L, "bind void result", "The selected void wrapper must discard the completed call.");
+      // The base invocation has already emitted its instructions and effects.
+      return {};
+    }
+    const Expr *Selected = Source.Invoke;
+    for (auto I = Source.ResultCasts.rbegin(); I != Source.ResultCasts.rend(); ++I) {
+      const auto *Conversion = *I;
+      if (!Conversion || Conversion->getSubExpr()->IgnoreParens() != Selected || Conversion->path_size())
+        reject(L, "bind result conversion", "Every completed conversion must keep its original input.");
+      const auto To = Conversion->getType();
+      if (Result->isReferenceType()) {
+        if (Conversion->getCastKind() != CK_NoOp || !Selected->isGLValue() ||
+            Conversion->getValueKind() != Selected->getValueKind() ||
+            !A.Context.hasSameUnqualifiedType(To, Selected->getType()) ||
+            (Selected->getType().isConstQualified() && !To.isConstQualified()))
+          reject(L, "bind result reference", "The completed reference must retain its original referent.");
+        Value = dereference(cast(address(std::move(Value), Selected->getType(), L),
+            type(A.Context.getPointerType(To), L), L), L);
+      } else {
+        const auto Target = type(To, L);
+        switch (Conversion->getCastKind()) {
+        case CK_LValueToRValue:
+          Value = snapshot(cast(std::move(Value), Target, L), L);
+          break;
+        case CK_NullToPointer:
+          Value = Expression{{"kind", "null"}, {"type", Target}, {"loc", A.loc(L)}};
+          break;
+        case CK_NoOp: case CK_IntegralCast: case CK_IntegralToBoolean: case CK_IntegralToFloating:
+        case CK_FloatingToIntegral: case CK_FloatingToBoolean: case CK_FloatingCast: case CK_PointerToBoolean:
+          Value = cast(std::move(Value), Target, L);
+          break;
+        default:
+          reject(L, "bind result conversion", "The selected conversion has no scalar C23 transfer.");
+        }
+      }
+      Selected = Conversion;
+    }
+    if (Source.ResultExpression->IgnoreParens() != Selected ||
+        Selected->getValueKind() != Expr::getValueKindForType(Result) ||
+        !A.Context.hasSameUnqualifiedType(Selected->getType(), Result.getNonReferenceType()))
+      reject(L, "bind result transfer", "The completed expression must have the original result type and value category.");
+    return Value;
+  }
+
+  Expression functionalBindExplicitResultInvocationValue(
+      const CallExpr *Call, const FunctionalBindExplicitResultInvocationSource &Source) {
+    const auto L = Call->getExprLoc();
+    const auto Verified = A.VerifiedBindExplicitResultCalls.find(Call);
+    const auto Root = A.VerifiedBindCalls.find(Call);
+    const auto Fresh = describeFunctionalBindExplicitResultInvocationSource(A.S, A.Sources, Call, A.Context);
+    if (Verified == A.VerifiedBindExplicitResultCalls.end() || &Verified->second != &Source ||
+        Root == A.VerifiedBindCalls.end() || !Fresh ||
+        !sameFunctionalBindExplicitResultWrapper(Source.Wrapper, Fresh->Wrapper, A.Context) ||
+        !Root->second.hasExplicitResultOwner() || Root->second.OwnedRoot != Call ||
+        Root->second.SourceCall != Source.Wrapper.BaseCall ||
+        Root->second.Method != Source.Base.Method || Root->second.Object != Source.Base.Object ||
+        Root->second.Apply != Source.Base.Apply || Root->second.Invoke != Source.Base.Invoke ||
+        Root->second.Target != Source.Base.Target ||
+        !describeFunctionalBindCallSourceOccurrence(A.S, A.Sources, Root->second, A.Context) ||
+        !A.verifiedFunctionalBindLayout(Root->second.Storage.Record))
+      reject(L, "bind explicit result certificate", "The exact completed wrapper and selected base invocation are required.");
+    const auto *Object = Source.Wrapper.Object;
+    auto Address = snapshot(address(lvalue(Object), Object->getType(), L), L);
+    // Evaluate the user's original operands once. The selected SDK forwarding
+    // only binds those same values to the underlying operation.
+    auto Incoming = captureUtilityInvocationArguments(Call, 1, Call->getNumArgs() - 1);
+    std::vector<unsigned> Path;
+    auto BaseResult = functionalBindInvocationFromBindings(Root->second, std::move(Address), Incoming, L, Root->second, Path);
+    return functionalBindExplicitResultTransfer(std::move(BaseResult), Source.Wrapper, L);
+  }
+
   Expression functionalBindInvocationValue(
       const CallExpr *Call, const FunctionalBindCallSource &Source) {
     const auto L = Call->getExprLoc();
@@ -29235,6 +29326,9 @@ class FunctionLowering {
       if (const auto Factory = A.VerifiedBindFactories.find(Call);
           Factory != A.VerifiedBindFactories.end())
         return functionalBindFactoryValue(Call, Factory->second, std::move(Destination));
+      if (const auto Invocation = A.VerifiedBindExplicitResultCalls.find(Call);
+          Invocation != A.VerifiedBindExplicitResultCalls.end())
+        return functionalBindExplicitResultInvocationValue(Call, Invocation->second);
       if (const auto Invocation = A.VerifiedBindCalls.find(Call);
           Invocation != A.VerifiedBindCalls.end())
         return functionalBindInvocationValue(Call, Invocation->second);
@@ -33909,6 +34003,18 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (const auto Found = A.VerifiedBindExplicitResultCopies.find(C);
+        Found != A.VerifiedBindExplicitResultCopies.end()) {
+      const auto &Source = Found->second;
+      const auto Fresh = describeFunctionalBindExplicitResultCopySource(A.S, A.Sources, C, A.Context);
+      if (!Fresh || Source.Construction != C || Fresh->Object != Source.Object ||
+          Fresh->Storage.Record != Source.Storage.Record || Fresh->Storage.Base.Record != Source.Storage.Base.Record ||
+          !A.verifiedFunctionalBindLayout(Source.Storage.Base.Record))
+        reject(L, "bind explicit result copy", "The exact completed wrapper copy and base layout are required.");
+      auto SourcePointer = captureUtilityConstructorArgument(Source.Object, Constructor->getParamDecl(0)->getType());
+      assign(std::move(Place), dereference(std::move(SourcePointer), L), L);
+      return;
+    }
     if (const auto Found = A.VerifiedBindCopies.find(C); Found != A.VerifiedBindCopies.end()) {
       const auto &Source = Found->second;
       if (Source.Construction != C || C->getNumArgs() != 1 || !Source.Object ||
