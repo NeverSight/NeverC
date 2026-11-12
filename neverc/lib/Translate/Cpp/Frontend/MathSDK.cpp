@@ -4363,10 +4363,218 @@ approvedUtilityTupleCatQueryOwnerLayout(
   return utilityUniquePtrRecord(S, SM, Record, Context, false, false);
 }
 
+
+namespace {
+struct ScopedIntAllocatorRecord {
+  UtilityAllocatorRecord Carrier;
+  const CXXRecordDecl *Storage;
+  UtilityAllocatorRecord Outer;
+};
+bool scopedAllocatorStdNamespace(const DeclContext *Scope) {
+  for (unsigned Depth = 0; Scope && Depth != 8; ++Depth) {
+    const auto *N = dyn_cast<NamespaceDecl>(Scope);
+    if (!N) return false;
+    if (N->isStdNamespace()) return true;
+    if (!N->isInline()) return false;
+    Scope = N->getParent();
+  }
+  return false;
+}
+bool scopedAllocatorPinned(const State &S, const SourceManager &SM,
+                            const Decl *D, bool ScopedHeader = false) {
+  const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+  if (!File || File->Root != "libcxx" ||
+      (ScopedHeader && File->Path != "scoped_allocator") ||
+      !approvedStandardSDKDeclaration(S, SM, D)) return false;
+  if (D->getLocation().isMacroID()) {
+    const auto Spelling = S.sdkFile(SM, SM.getSpellingLoc(D->getLocation()));
+    if (!Spelling || Spelling->Root != "libcxx") return false;
+  }
+  return true;
+}
+const ClassTemplateSpecializationDecl *scopedAllocatorSpecialization(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    llvm::StringRef Name, bool ScopedHeader = true) {
+  const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input);
+  const auto *T = R ? R->getSpecializedTemplate() : nullptr;
+  if (!T || !T->getIdentifier() || T->getName() != Name ||
+      !scopedAllocatorStdNamespace(T->getDeclContext()) || R->isInvalidDecl() ||
+      R->isDependentContext() || R->isUnion() ||
+      R->getSpecializationKind() != TSK_ImplicitInstantiation) return nullptr;
+  for (const auto *D : T->redecls()) {
+    if (!scopedAllocatorPinned(S, SM, D, ScopedHeader)) return nullptr;
+    for (const auto *Pattern : D->getTemplatedDecl()->redecls())
+      if (!scopedAllocatorPinned(S, SM, Pattern, ScopedHeader)) return nullptr;
+  }
+  for (const auto *D : R->redecls())
+    if (!scopedAllocatorPinned(S, SM, D, ScopedHeader)) return nullptr;
+  return R->getDefinition() && scopedAllocatorPinned(S, SM, R->getDefinition(), ScopedHeader) ? R : nullptr;
+}
+std::optional<ScopedIntAllocatorRecord> scopedIntAllocatorRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    const ASTContext &Context) {
+  if (!S.coreV2()) return std::nullopt;
+  const auto *T = scopedAllocatorSpecialization(S, SM, Input, "scoped_allocator_adaptor");
+  if (!T || T->getTemplateArgs().size() != 2) return std::nullopt;
+  const auto &Args = T->getTemplateArgs();
+  if (Args[0].getKind() != TemplateArgument::Type || Args[1].getKind() != TemplateArgument::Pack ||
+      Args[1].pack_size() != 0) return std::nullopt;
+  const auto OuterType = Args[0].getAsType();
+  const auto *OuterDecl = OuterType->getAsCXXRecordDecl();
+  if (!OuterDecl || !OuterDecl->getIdentifier() || OuterDecl->getName() != "allocator")
+    return std::nullopt;
+  // The name check above prevents recursion through nested scoped adaptors.
+  const auto Outer = approvedUtilityAllocatorRecord(S, SM, OuterDecl, Context);
+  if (!Outer || !Context.hasSameType(Outer->ElementType, Context.IntTy)) return std::nullopt;
+  const auto *R = T->getDefinition();
+  if (!R || R->getNumBases() != 1 || R->getNumVBases() || !R->field_empty() ||
+      !R->isEmpty() || R->isDynamicClass() || !R->hasTrivialDestructor()) return std::nullopt;
+  const auto &Base = *R->bases_begin();
+  const auto *StorageT = Base.isVirtual() || Base.isPackExpansion() ? nullptr :
+      scopedAllocatorSpecialization(S, SM, Base.getType()->getAsCXXRecordDecl(), "__scoped_allocator_storage");
+  if (!StorageT || StorageT->getTemplateArgs().size() != 2 ||
+      StorageT->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(StorageT->getTemplateArgs()[0].getAsType(), OuterType) ||
+      StorageT->getTemplateArgs()[1].getKind() != TemplateArgument::Pack ||
+      StorageT->getTemplateArgs()[1].pack_size() != 0) return std::nullopt;
+  const auto *Storage = StorageT->getDefinition();
+  if (!Storage || Storage->getNumBases() != 1 || Storage->getNumVBases() || !Storage->field_empty() ||
+      !Storage->isEmpty() || Storage->isDynamicClass() || !Storage->hasTrivialDestructor()) return std::nullopt;
+  const auto &OuterBase = *Storage->bases_begin();
+  if (OuterBase.isVirtual() || OuterBase.isPackExpansion() ||
+      !Context.hasSameType(OuterBase.getType(), Context.getRecordType(Outer->Record))) return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(R);
+  const auto &StorageLayout = Context.getASTRecordLayout(Storage);
+  if (Layout.getSize().getQuantity() != 1 || Layout.getAlignment().getQuantity() != 1 ||
+      StorageLayout.getSize().getQuantity() != 1 || StorageLayout.getAlignment().getQuantity() != 1 ||
+      !Layout.getBaseClassOffset(Storage).isZero() ||
+      !StorageLayout.getBaseClassOffset(Outer->Record).isZero()) return std::nullopt;
+  return ScopedIntAllocatorRecord{UtilityAllocatorRecord{R, Context.IntTy}, Storage, *Outer};
+}
+bool scopedAllocatorFunction(const State &S, const SourceManager &SM,
+                              const FunctionDecl *F, bool ScopedHeader = true) {
+  if (!F || F->isInvalidDecl()) return false;
+  for (const auto *D : F->redecls())
+    if (!scopedAllocatorPinned(S, SM, D, ScopedHeader)) return false;
+  if (const auto *Pattern = F->getTemplateInstantiationPattern())
+    for (const auto *D : Pattern->redecls())
+      if (!scopedAllocatorPinned(S, SM, D, ScopedHeader)) return false;
+  if (const auto *Template = F->getPrimaryTemplate())
+    for (const auto *D : Template->redecls())
+      if (!scopedAllocatorPinned(S, SM, D, ScopedHeader) ||
+          !scopedAllocatorPinned(S, SM, D->getTemplatedDecl(), ScopedHeader)) return false;
+  return true;
+}
+const Expr *scopedAllocatorExpression(const Expr *E) {
+  return E ? E->IgnoreParenImpCasts() : nullptr;
+}
+bool scopedAllocatorParameter(const State &S, const SourceManager &SM,
+                               const Expr *E, const ParmVarDecl *P) {
+  E = scopedAllocatorExpression(E);
+  if (const auto *R = dyn_cast_or_null<DeclRefExpr>(E)) return R->getDecl() == P;
+  const auto *Call = dyn_cast_or_null<CallExpr>(E);
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  return Call && Call->getNumArgs() == 1 && F && F->getIdentifier() && F->getName() == "forward" &&
+         scopedAllocatorFunction(S, SM, F, false) &&
+         scopedAllocatorParameter(S, SM, Call->getArg(0), P);
+}
+bool scopedAllocatorMacroSource(const State &S, const SourceManager &SM,
+                                 const Stmt *Root) {
+  unsigned Nodes = 0;
+  auto Check = [&](auto &&Self, const Stmt *Node, unsigned Depth) -> bool {
+    if (!Node) return true;
+    if (Depth > 64 || ++Nodes > 4096) return false;
+    auto Location = [&](SourceLocation L) {
+      if (!L.isMacroID()) return true;
+      const auto File = S.sdkFile(SM, SM.getSpellingLoc(L));
+      return File && (File->Root == "libcxx" || File->Root == "resource");
+    };
+    if (!Location(Node->getBeginLoc()) || !Location(Node->getEndLoc())) return false;
+    if (const auto *E = dyn_cast<Expr>(Node)) if (!Location(E->getExprLoc())) return false;
+    for (const auto *Child : Node->children()) if (!Self(Self, Child, Depth + 1)) return false;
+    return true;
+  };
+  return Check(Check, Root, 0);
+}
+const Expr *scopedAllocatorBody(const State &S, const SourceManager &SM,
+                                const FunctionDecl *F) {
+  const auto *Body = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
+  if (!Body || !scopedAllocatorMacroSource(S, SM, Body)) return nullptr;
+  const Expr *Result = nullptr;
+  for (const auto *Node : Body->body()) {
+    if (const auto *D = dyn_cast<DeclStmt>(Node)) {
+      for (const auto *Decl : D->decls())
+        if (!isa<TypedefNameDecl>(Decl) || !scopedAllocatorPinned(S, SM, Decl)) return nullptr;
+      continue;
+    }
+    if (Result) return nullptr;
+    Result = isa<ReturnStmt>(Node) ? cast<ReturnStmt>(Node)->getRetValue() : dyn_cast<Expr>(Node);
+    if (!Result) return nullptr;
+  }
+  return scopedAllocatorExpression(Result);
+}
+// The outer allocator accessor has no state beyond the exact empty base at
+// offset zero. Prove both forwarding accessors instead of accepting its name.
+bool scopedAllocatorOuter(const State &S, const SourceManager &SM,
+                           const Expr *E, const ScopedIntAllocatorRecord &Info,
+                           const ASTContext &Context) {
+  E = scopedAllocatorExpression(E);
+  if (const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(E)) {
+    const auto *M = dyn_cast_or_null<CXXMethodDecl>(Operator->getDirectCallee());
+    const auto *Outer = M ? scopedAllocatorSpecialization(S, SM, M->getParent(), "__outermost") : nullptr;
+    if (!M || Operator->getOperator() != OO_Call || Operator->getNumArgs() != 2 ||
+        !Outer || Outer->getTemplateArgs().size() != 2 ||
+        Outer->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Outer->getTemplateArgs()[0].getAsType(), Context.getRecordType(Info.Outer.Record)) ||
+        Outer->getTemplateArgs()[1].getKind() != TemplateArgument::Integral ||
+        !Outer->getTemplateArgs()[1].getAsIntegral().isZero() ||
+        M->getNumParams() != 1 || !scopedAllocatorFunction(S, SM, M) ||
+        !M->getReturnType()->isLValueReferenceType() ||
+        !Context.hasSameType(M->getReturnType()->getPointeeType(), Context.getRecordType(Info.Outer.Record)) ||
+        !scopedAllocatorParameter(S, SM, scopedAllocatorBody(S, SM, M), M->getParamDecl(0))) return false;
+    E = scopedAllocatorExpression(Operator->getArg(1));
+  }
+  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(E);
+  const auto *M = Call ? Call->getMethodDecl() : nullptr;
+  if (!M || !M->getIdentifier() || M->getName() != "outer_allocator" || Call->getNumArgs() ||
+      M->getNumParams() || !scopedAllocatorFunction(S, SM, M) ||
+      !isa<CXXThisExpr>(scopedAllocatorExpression(Call->getImplicitObjectArgument())) ||
+      M->getParent()->getCanonicalDecl() != Info.Carrier.Record->getCanonicalDecl()) return false;
+  const auto *Forward = dyn_cast_or_null<CXXMemberCallExpr>(scopedAllocatorBody(S, SM, M));
+  const auto *BaseMethod = Forward ? Forward->getMethodDecl() : nullptr;
+  if (!BaseMethod || Forward->getNumArgs() || BaseMethod->getNumParams() ||
+      !BaseMethod->getIdentifier() || BaseMethod->getName() != "outer_allocator" ||
+      !scopedAllocatorFunction(S, SM, BaseMethod) ||
+      !isa<CXXThisExpr>(scopedAllocatorExpression(Forward->getImplicitObjectArgument())) ||
+      BaseMethod->getParent()->getCanonicalDecl() != Info.Storage->getCanonicalDecl()) return false;
+  const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(scopedAllocatorBody(S, SM, BaseMethod));
+  const auto *This = Cast ? dyn_cast_or_null<UnaryOperator>(scopedAllocatorExpression(Cast->getSubExpr())) : nullptr;
+  return Cast && Context.hasSameType(Cast->getType(), Context.getRecordType(Info.Outer.Record)) &&
+         This && This->getOpcode() == UO_Deref &&
+         isa<CXXThisExpr>(scopedAllocatorExpression(This->getSubExpr()));
+}
+bool scopedAllocatorDefaultConstructor(const State &S, const SourceManager &SM,
+                                        const CXXConstructorDecl *M, unsigned Depth = 0) {
+  if (!M || Depth > 16 || M->getNumParams() || !M->isDefaultConstructor() ||
+      !scopedAllocatorFunction(S, SM, M, false)) return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(M->getBody());
+  if (Body && (!Body->body_empty() || !scopedAllocatorMacroSource(S, SM, Body))) return false;
+  if (!Body && !M->isDefaulted()) return false;
+  for (const auto *I : M->inits()) {
+    if (!I->isBaseInitializer()) return false;
+    const auto *C = dyn_cast_or_null<CXXConstructExpr>(I->getInit()->IgnoreImplicit());
+    if (!C || C->getNumArgs() || !scopedAllocatorDefaultConstructor(S, SM, C->getConstructor(), Depth + 1))
+      return false;
+  }
+  return true;
+}
+} // namespace
+
 std::optional<UtilityAllocatorRecord>
 approvedUtilityAllocatorRecord(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
                                const ASTContext &Context) {
+  if (auto Scoped = scopedIntAllocatorRecord(S, SM, Record, Context)) return Scoped->Carrier;
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition);
@@ -4470,6 +4678,8 @@ approvedUtilityAllocatorConstruction(const State &S, const SourceManager &SM,
       Construction->isInstantiationDependent() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete)
     return std::nullopt;
+  if (scopedIntAllocatorRecord(S, SM, Construction->getType()->getAsCXXRecordDecl(), Context) &&
+      !scopedAllocatorDefaultConstructor(S, SM, Construction->getConstructor())) return std::nullopt;
   const auto *Constructor = Construction->getConstructor();
   const auto Allocator = approvedUtilityAllocatorRecord(
       S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
@@ -45826,10 +46036,77 @@ static bool utilityAllocatorForwardingArguments(
   return true;
 }
 
+
+// Only the closed std::allocator<int>/empty-inner-pack adaptor is admitted.
+// In particular no user allocator, uses-allocator constructor or callback can
+// be substituted into the primitive forwarding described here.
+static bool scopedAllocatorTraitsForward(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
+    const CallExpr *Forward, const ScopedIntAllocatorRecord &Info,
+    llvm::StringRef Name, unsigned Offset, const ASTContext &Context) {
+  const auto *Callee = dyn_cast_or_null<CXXMethodDecl>(Forward ? Forward->getDirectCallee() : nullptr);
+  const auto Traits = Callee ? approvedUtilityAllocatorTraitsRecord(S, SM, Callee->getParent(), Context) : std::nullopt;
+  if (!Traits || !Callee->getIdentifier() || Callee->getName() != Name || !Callee->isStatic() ||
+      !scopedAllocatorFunction(S, SM, Callee, false) ||
+      Traits->Allocator.Record->getCanonicalDecl() != Info.Outer.Record->getCanonicalDecl() ||
+      Forward->getNumArgs() != Method->getNumParams() - Offset + 1 ||
+      !scopedAllocatorOuter(S, SM, Forward->getArg(0), Info, Context)) return false;
+  for (unsigned I = Offset; I < Method->getNumParams(); ++I)
+    if (!scopedAllocatorParameter(S, SM, Forward->getArg(I - Offset + 1), Method->getParamDecl(I))) return false;
+  return true;
+}
+static bool scopedAllocatorMethodSource(const State &S, const SourceManager &SM,
+                                         const CXXMethodDecl *M, const ASTContext &Context) {
+  const auto Info = M ? scopedIntAllocatorRecord(S, SM, M->getParent(), Context) : std::nullopt;
+  if (!Info || !M->getIdentifier() || M->isStatic() || M->isConst() || M->isVariadic() ||
+      !scopedAllocatorFunction(S, SM, M)) return false;
+  const auto Name = M->getName();
+  const auto Pointer = Context.getPointerType(Context.IntTy);
+  const auto *Call = dyn_cast_or_null<CallExpr>(scopedAllocatorBody(S, SM, M));
+  if (Name == "allocate" || Name == "deallocate") {
+    const unsigned Count = Name == "allocate" ? 1 : 2;
+    if (M->getNumParams() != Count ||
+        !Context.hasSameType(M->getReturnType(), Name == "allocate" ? Pointer : Context.VoidTy)) return false;
+    if (Name == "allocate") {
+      if (!Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) return false;
+    } else if (!Context.hasSameType(M->getParamDecl(0)->getType(), Pointer) ||
+               !Context.hasSameType(M->getParamDecl(1)->getType(), Context.getSizeType())) return false;
+    return scopedAllocatorTraitsForward(S, SM, M, Call, *Info, Name, 0, Context);
+  }
+  if ((Name != "construct" && Name != "destroy") || !M->getPrimaryTemplate() ||
+      !M->getReturnType()->isVoidType() || M->getNumParams() < 1 ||
+      !Context.hasSameType(M->getParamDecl(0)->getType(), Pointer)) return false;
+  if (Name == "destroy")
+    return M->getNumParams() == 1 && scopedAllocatorTraitsForward(S, SM, M, Call, *Info, Name, 0, Context);
+  if (M->getNumParams() > 2 || (M->getNumParams() == 2 &&
+      (!M->getParamDecl(1)->getType()->isReferenceType() ||
+       !Context.hasSameType(M->getParamDecl(1)->getType()->getPointeeType(), Context.IntTy)))) return false;
+  const auto *Helper = dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  if (!Helper || !Helper->getIdentifier() || Helper->getName() != "__construct" ||
+      !scopedAllocatorFunction(S, SM, Helper) ||
+      Helper->getParent()->getCanonicalDecl() != Info->Carrier.Record->getCanonicalDecl() ||
+      Helper->getNumParams() != M->getNumParams() + 1 || Call->getNumArgs() != Helper->getNumParams()) return false;
+  const auto *Tag = scopedAllocatorSpecialization(S, SM,
+      Helper->getParamDecl(0)->getType()->getAsCXXRecordDecl(), "integral_constant", false);
+  if (!Tag || Tag->getTemplateArgs().size() != 2 ||
+      Tag->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Tag->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
+      Tag->getTemplateArgs()[1].getKind() != TemplateArgument::Integral ||
+      !Tag->getTemplateArgs()[1].getAsIntegral().isZero()) return false;
+  for (unsigned I = 0; I < M->getNumParams(); ++I)
+    if (!scopedAllocatorParameter(S, SM, Call->getArg(I + 1), M->getParamDecl(I)) ||
+        !Context.hasSameType(M->getParamDecl(I)->getType(), Helper->getParamDecl(I + 1)->getType())) return false;
+  const auto *Leaf = dyn_cast_or_null<CallExpr>(scopedAllocatorBody(S, SM, Helper));
+  return scopedAllocatorTraitsForward(S, SM, Helper, Leaf, *Info, "construct", 1, Context);
+}
+
 static std::optional<UtilityAllocatorConstructCall>
 utilityAllocatorMemberConstruct(const State &S, const SourceManager &SM,
                                 const CXXMethodDecl *Method,
                                 const ASTContext &Context) {
+  if (Method && Method->getIdentifier() && Method->getName() == "construct" &&
+      scopedAllocatorMethodSource(S, SM, Method, Context))
+    return UtilityAllocatorConstructCall{Context.IntTy, nullptr, nullptr};
   const auto Allocator = approvedUtilityAllocatorRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context);
   const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
@@ -45997,8 +46274,8 @@ utilityAllocatorMemberHeap(const State &S, const SourceManager &SM,
       Method->isStatic() || Method->isConst() || Method->isVariadic() ||
       !Method->isInlined() || !Method->hasBody() ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
-      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
-                     "__memory/allocator.h") ||
+      (!cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "__memory/allocator.h") &&
+       !scopedAllocatorMethodSource(S, SM, Method, Context)) ||
       Allocator->ElementType->isVoidType() ||
       Allocator->ElementType->isIncompleteType())
     return std::nullopt;
@@ -111618,6 +111895,17 @@ approvedUtilityPairPiecewiseConstruction(
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
+  if (const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+      M && M->getIdentifier() && M->getName() == "destroy" && Call->getNumArgs() == 1 &&
+      scopedAllocatorMethodSource(S, SM, M, Context)) {
+    const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+    const auto *Reference = directMethodReference(Call);
+    if (Member && Reference && S.owns(SM, Reference->getExprLoc()) &&
+        Context.hasSameType(Call->getArg(0)->getType(), Context.getPointerType(Context.IntTy)) &&
+        Context.hasSameUnqualifiedType(Member->getImplicitObjectArgument()->getType(),
+                                      Context.getRecordType(M->getParent())))
+      return UtilityOperation::MemoryAllocatorDestroy;
+  }
   if (approvedUtilityUniquePtrExchange(S, SM, Call, Context, true))
     return UtilityOperation::UniquePtrExchange;
   if (approvedUtilityMakeFromTupleCall(S, SM, Call, Context))
