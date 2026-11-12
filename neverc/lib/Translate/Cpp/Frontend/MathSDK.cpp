@@ -4415,11 +4415,11 @@ std::optional<ScopedIntAllocatorRecord> scopedIntAllocatorRecord(
     const ASTContext &Context) {
   if (!S.coreV2()) return std::nullopt;
   const auto *T = scopedAllocatorSpecialization(S, SM, Input, "scoped_allocator_adaptor");
-  if (!T || T->getTemplateArgs().size() != 2) return std::nullopt;
+  if (!T || T->getTemplateArgs().size() != 1) return std::nullopt;
   const auto &Args = T->getTemplateArgs();
-  if (Args[0].getKind() != TemplateArgument::Type || Args[1].getKind() != TemplateArgument::Pack ||
-      Args[1].pack_size() != 0) return std::nullopt;
-  const auto OuterType = Args[0].getAsType();
+  if (Args[0].getKind() != TemplateArgument::Pack || Args[0].pack_size() != 1 ||
+      Args[0].pack_elements()[0].getKind() != TemplateArgument::Type) return std::nullopt;
+  const auto OuterType = Args[0].pack_elements()[0].getAsType();
   const auto *OuterDecl = OuterType->getAsCXXRecordDecl();
   if (!OuterDecl || !OuterDecl->getIdentifier() || OuterDecl->getName() != "allocator")
     return std::nullopt;
@@ -4432,11 +4432,12 @@ std::optional<ScopedIntAllocatorRecord> scopedIntAllocatorRecord(
   const auto &Base = *R->bases_begin();
   const auto *StorageT = Base.isVirtual() || Base.isPackExpansion() ? nullptr :
       scopedAllocatorSpecialization(S, SM, Base.getType()->getAsCXXRecordDecl(), "__scoped_allocator_storage");
-  if (!StorageT || StorageT->getTemplateArgs().size() != 2 ||
-      StorageT->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(StorageT->getTemplateArgs()[0].getAsType(), OuterType) ||
-      StorageT->getTemplateArgs()[1].getKind() != TemplateArgument::Pack ||
-      StorageT->getTemplateArgs()[1].pack_size() != 0) return std::nullopt;
+  if (!StorageT || StorageT->getTemplateArgs().size() != 1 ||
+      StorageT->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
+      StorageT->getTemplateArgs()[0].pack_size() != 1 ||
+      StorageT->getTemplateArgs()[0].pack_elements()[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(StorageT->getTemplateArgs()[0].pack_elements()[0].getAsType(), OuterType))
+    return std::nullopt;
   const auto *Storage = StorageT->getDefinition();
   if (!Storage || Storage->getNumBases() != 1 || Storage->getNumVBases() || !Storage->field_empty() ||
       !Storage->isEmpty() || Storage->isDynamicClass() || !Storage->hasTrivialDestructor()) return std::nullopt;
