@@ -4185,20 +4185,36 @@ utilityUniquePtrRecord(const State &S, const SourceManager &SM,
   std::vector<const FieldDecl *> Fields;
   for (const auto *Field : Definition->fields())
     Fields.push_back(Field);
-  const auto ExpectedFields = Array ? 5u : 4u;
+  // The pinned Microsoft ABI disables compressed-pair padding. Its
+  // no_unique_address members still share offset zero in one pointer-sized
+  // carrier; the complete size, alignment and offset proof below is unchanged.
+  const auto &Triple = Context.getTargetInfo().getTriple();
+  const bool CompactMicrosoft = Triple.isArch64Bit() && Triple.isOSWindows() &&
+      Context.getTargetInfo().getCXXABI().isMicrosoft() &&
+      Fields.size() == (Array ? 3u : 2u);
+  const auto ExpectedFields = CompactMicrosoft ? (Array ? 3u : 2u)
+                                               : (Array ? 5u : 4u);
+  const auto DeleterIndex = CompactMicrosoft ? 1u : 2u;
+  const auto CheckerIndex = CompactMicrosoft ? 2u : 4u;
   const std::string PaddingLine = Array ? "431" : "162";
   if (Fields.size() != ExpectedFields || Fields[0]->getName() != "__ptr_" ||
-      Fields[1]->getName() != "__padding1_" + PaddingLine + "_" ||
-      Fields[2]->getName() != "__deleter_" ||
-      Fields[3]->getName() != "__padding2_" + PaddingLine + "_" ||
-      (Array && Fields[4]->getName() != "__checker_") ||
+      Fields[DeleterIndex]->getName() != "__deleter_" ||
+      (!CompactMicrosoft &&
+       (Fields[1]->getName() != "__padding1_" + PaddingLine + "_" ||
+        Fields[3]->getName() != "__padding2_" + PaddingLine + "_")) ||
+      (Array && Fields[CheckerIndex]->getName() != "__checker_") ||
       !Context.hasSameType(Fields[0]->getType(), Pointer))
     return std::nullopt;
-  if (!Context.hasSameType(Arguments.get(1).getAsType(), Fields[2]->getType()))
+  if (CompactMicrosoft)
+    for (const auto *Field : Fields)
+      if (!Field->hasAttr<NoUniqueAddressAttr>())
+        return std::nullopt;
+  const auto *DeleterField = Fields[DeleterIndex];
+  if (!Context.hasSameType(Arguments.get(1).getAsType(), DeleterField->getType()))
     return std::nullopt;
 
   auto Deleter = approvedUtilityDefaultDeleteRecord(
-      S, SM, Fields[2]->getType()->getAsCXXRecordDecl(), Context);
+      S, SM, DeleterField->getType()->getAsCXXRecordDecl(), Context);
   const bool StandardDeleter = Deleter.has_value();
   const CXXMethodDecl *CustomDeleter = nullptr;
   if (Deleter) {
@@ -4206,7 +4222,7 @@ utilityUniquePtrRecord(const State &S, const SourceManager &SM,
         Deleter->Array != (Array != nullptr))
       return std::nullopt;
   } else {
-    const auto *CustomRecord = Fields[2]->getType()->getAsCXXRecordDecl();
+    const auto *CustomRecord = DeleterField->getType()->getAsCXXRecordDecl();
     const auto *CustomDefinition =
         CustomRecord ? CustomRecord->getDefinition() : nullptr;
     if (!CustomDefinition || CustomDefinition->isInvalidDecl() ||
@@ -4282,10 +4298,11 @@ utilityUniquePtrRecord(const State &S, const SourceManager &SM,
     return PaddingLayout.getSize().getQuantity() == 1 &&
            PaddingLayout.getAlignment().getQuantity() == 1;
   };
-  if (!Padding(Fields[1], Pointer) || !Padding(Fields[3], Fields[2]->getType()))
+  if (!CompactMicrosoft &&
+      (!Padding(Fields[1], Pointer) || !Padding(Fields[3], DeleterField->getType())))
     return std::nullopt;
   if (Array) {
-    const auto *Checker = Fields[4]->getType()->getAsCXXRecordDecl();
+    const auto *Checker = Fields[CheckerIndex]->getType()->getAsCXXRecordDecl();
     const auto *CheckerDefinition = Checker ? Checker->getDefinition() : nullptr;
     if (!CheckerDefinition || CheckerDefinition->isInvalidDecl() ||
         CheckerDefinition->isUnion() ||
