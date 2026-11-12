@@ -34,13 +34,13 @@ source `fenv` API is implied by the runtime probes.
 ## Built-in SDK and approved catalog
 
 `cpp-math-v1` always uses distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r18`. No SDK descriptor, host SDK
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r19`. No SDK descriptor, host SDK
 discovery or external root selection is involved. The removed `--cpp-sdk` option
 is rejected; `NEVERC_CPP_SDK` is ignored. Failed built-in SDK integrity checks use
 `TR0101` with the required distribution identity.
 
 The implementation-owned [catalog.json](../../../neverc/lib/Translate/Cpp/SDK/catalog.json)
-and its source files are compiled into NeverC. The catalog contains 664 approved
+and its source files are compiled into NeverC. The catalog contains 686 approved
 headers; the `<cmath>` dependency union contains 211 headers: 127 libc++ headers,
 one Clang resource header, two NeverC resource declaration shims and
 81 platform headers. The original full Apple `SDKSettings.json` is not distributed.
@@ -81,7 +81,7 @@ The request adds a single SDK envelope:
 ```json
 {
   "sdk": {
-    "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r18",
+    "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r19",
     "catalog_sha256": "<compiled catalog SHA-256>"
   }
 }

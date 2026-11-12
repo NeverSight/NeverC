@@ -29,7 +29,7 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r18",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r19",
         "catalog_sha256": "1719fa5a2ac36238726e61e9b1120bcff8e41d2e914760e484cef83d669658fd",
     }
 

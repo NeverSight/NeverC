@@ -2,14 +2,23 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r18`. It contains the 664 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r19`. It contains the 686 header
 files admitted by the current
-`clang20.1.8-libcxx200100-macos15.5` catalog: 564 libc++ headers, 14 Clang
+`clang20.1.8-libcxx200100-macos15.5` catalog: 586 libc++ headers, 14 Clang
 resource headers, five NeverC resource headers, and 81 Darwin platform headers.
 Copyright and license notices are preserved. Upstream-source bytes are retained
 except for the configured site settings and documented search-count correction below; the NeverC-authored C declaration shims are identified
 separately below. This is a fixed input set for the supported translation
 profiles, not a complete Apple SDK.
+
+The r19 distribution adds the original libc++ public `<deque>`, `<list>`,
+`<forward_list>`, `<map>`, `<set>`, `<unordered_set>`, `<queue>`, `<stack>`,
+`<variant>`, `<any>`, `<bitset>`, `<valarray>`, and `<scoped_allocator>` headers
+with nine missing internal dependencies. These 22 files retain their exact
+LLVM 20.1.8 source bytes and license notices. Core v2 already disables
+compatibility transitive includes; this increment preserves that policy.
+The expanded inventory does not establish parsing or runtime support.
+Operations require separate checked source proofs and direct lowering.
 
 The r18 distribution selects the Microsoft C++ ABI for the supported Windows64
 targets independently of MSVC compatibility-version macros. Core v2 enables
@@ -543,8 +552,8 @@ the exact header bytes supplied here.
 
 | Header group | Files | Applicable notices |
 | --- | ---: | --- |
-| libc++ and Clang resource headers | 532 | Apache-2.0 with LLVM exceptions |
-| NeverC C declaration shims | 3 | AGPL-3.0-only |
+| libc++ and Clang resource headers | 600 | Apache-2.0 with LLVM exceptions |
+| NeverC C declaration shims | 5 | AGPL-3.0-only |
 | Darwin headers with an APSL notice | 63 | APSL-2.0 |
 | Darwin headers with APSL and Berkeley notices | 12 | APSL-2.0 and BSD-4-Clause |
 | `arm/endian.h`, `arm/types.h` | 2 | BSD-4-Clause |

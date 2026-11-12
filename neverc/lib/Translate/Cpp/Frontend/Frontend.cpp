@@ -2405,7 +2405,8 @@ static bool memoryTemplateMetadataType(Adapter &A, QualType T) {
     const auto *Raw = T.getCanonicalType().getTypePtr();
     if (const auto *Record = Raw->getAsCXXRecordDecl())
       return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value() ||
-             approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context);
+             approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context) ||
+             approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context);
     if (const auto *Array = dyn_cast<ArrayType>(Raw))
       T = Array->getElementType();
     else if (Raw->isPointerType() || Raw->isReferenceType())
@@ -2639,6 +2640,10 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
     } else if (AllowIncompleteRecords &&
                unorderedNodeTypeQueryMetadata(*this, T->getAsCXXRecordDecl(), L)) {
       // Exact SDK storage is checked without constructing an owner or its methods.
+    } else if (AllowIncompleteRecords &&
+               approvedSequenceContainerMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context)) {
+      // The proof already checks the exact int/default-allocator arguments.
+      checkQueryType(Context.IntTy, L, AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
                approvedUnorderedMapMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context)) {
       const auto *Map = cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
@@ -3308,6 +3313,13 @@ static bool utilityUnorderedMapQueryLayout(Adapter &A, const CXXRecordDecl *Reco
       return bool(unorderedNodeRecord(A.S, A.Sources, Record, A.Context, Complete));
     if (Record->getName() == "__insert_return_type")
       return bool(unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete));
+  }
+  if (approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context)) {
+    A.chargeExpansion(1, Location);
+    if (!Record->getDefinition() && !Complete(A.Context.getRecordType(Record)))
+      return false;
+    return approvedSequenceContainerMetadataRecord(
+        A.S, A.Sources, Record->getDefinition(), A.Context);
   }
   if (approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context))
     return bool(approvedUtilityUnorderedMapRecord(A.S, A.Sources, Record, A.Context, Complete));
@@ -19042,6 +19054,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             return;
           }
         }
+        if (approvedSequenceContainerMetadataRecord(A.S, A.Sources, Declaration, A.Context)) {
+          Self(Self, A.Context.IntTy, true, Depth + 1);
+          return;
+        }
         if (approvedUnorderedMapMetadataRecord(A.S, A.Sources, Declaration, A.Context)) {
           const auto *Map = cast<ClassTemplateSpecializationDecl>(Declaration);
           Self(Self, Map->getTemplateArgs().get(0).getAsType(), true, Depth + 1);
@@ -30168,6 +30184,8 @@ public:
           // completing that pointee or admitting a runtime pointer carrier.
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (approvedUnorderedMapMetadataRecord(A.S, A.Sources,
+                     A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context) ||
+                 approvedSequenceContainerMetadataRecord(A.S, A.Sources,
                      A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context))
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (!Query->isArgumentType() &&
@@ -31779,7 +31797,11 @@ public:
             Name != "optional" && Name != "memory" && Name != "new" &&
             Name != "functional" && Name != "ratio" && Name != "cstring" &&
             Name != "string_view" && Name != "string" && Name != "vector" &&
-            Name != "unordered_map"))) {
+            Name != "unordered_map" && Name != "deque" && Name != "list" &&
+             Name != "forward_list" && Name != "map" && Name != "set" &&
+             Name != "unordered_set" && Name != "queue" && Name != "stack" &&
+             Name != "variant" && Name != "any" && Name != "bitset" &&
+             Name != "valarray" && Name != "scoped_allocator"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
@@ -31789,7 +31811,9 @@ public:
                "#include <memory>, #include <new> and #include <functional> "
                "and #include <ratio>, #include <cstring> and "
                "#include <string_view>, #include <string> and #include "
-               "<vector> and <unordered_map> entries are "
+               "<vector>, <unordered_map>, <deque>, <list>, <forward_list>, "
+               "<map>, <set>, <unordered_set>, <queue>, <stack>, <variant>, "
+               "<any>, <bitset>, <valarray> and <scoped_allocator> entries are "
                "admitted in cpp-core-v2.");
         return;
       }
