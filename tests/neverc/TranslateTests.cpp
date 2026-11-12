@@ -371823,6 +371823,31 @@ int main(){std::bitset<70> b;return int(b.count());}
   EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
+TEST_F(TranslateTest, CoreV2BitsetOwnedPopcountDeclarationRejected) {
+  const auto Source = tmpFile("bitset-owned-popcount-declarations.cpp");
+  writeFile(Source, R"popguard(extern "C" int __builtin_popcountl(unsigned long);
+extern "C" int __builtin_popcountll(unsigned long long);
+#include <bitset>
+int main(){std::bitset<70> v;v.set(0);return v.count()!=1;}
+)popguard");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetOwnedPopcountMacroRejected) {
+  const auto Source = tmpFile("bitset-owned-popcount-macros.cpp");
+  writeFile(Source, R"popguard(#define __builtin_popcountl(x) __builtin_popcountl((x)+0)
+#define __builtin_popcountll(x) __builtin_popcountll((x)+0)
+#include <bitset>
+int main(){std::bitset<70> v;v.set(0);return v.count()!=1;}
+)popguard");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

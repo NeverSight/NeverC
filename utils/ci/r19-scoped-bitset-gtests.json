@@ -3,7 +3,9 @@
     "TranslateTest.CoreV2ScopedAllocatorIntRunAtBothOptimizations",
     "TranslateTest.CoreV2Bitset70RunAtBothOptimizations",
     "TranslateTest.CoreV2ScopedAllocatorOwnedConstructorRejected",
-    "TranslateTest.CoreV2BitsetOwnedCountRejected"
+    "TranslateTest.CoreV2BitsetOwnedCountRejected",
+    "TranslateTest.CoreV2BitsetOwnedPopcountDeclarationRejected",
+    "TranslateTest.CoreV2BitsetOwnedPopcountMacroRejected"
   ],
   "source_cases": [
     {
@@ -53,6 +55,22 @@
       "expected": "reject",
       "kind": "source-body-guard",
       "public_header": "bitset"
+    },
+    {
+      "name": "bitset-owned-popcount-declarations",
+      "source": "extern \"C\" int __builtin_popcountl(unsigned long);\nextern \"C\" int __builtin_popcountll(unsigned long long);\n#include <bitset>\nint main(){std::bitset<70> v;v.set(0);return v.count()!=1;}\n",
+      "source_sha256": "79f25fa40bc39a5f67b72f38ceb866c4093d9c5eb1cfe18935e809eafd69d5cb",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "bitset"
+    },
+    {
+      "name": "bitset-owned-popcount-macros",
+      "source": "#define __builtin_popcountl(x) __builtin_popcountl((x)+0)\n#define __builtin_popcountll(x) __builtin_popcountll((x)+0)\n#include <bitset>\nint main(){std::bitset<70> v;v.set(0);return v.count()!=1;}\n",
+      "source_sha256": "5b7f672e1dc6e9469d0745dabb6d39d5ad73daad34cb5a4e25bc9377e96d4103",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "bitset"
     }
   ],
   "positive_cases": [
@@ -74,11 +92,11 @@
     }
   ],
   "previous_maintained_sha256": "7a86aa397d598346ab9ef84f05098452ed0c41c16852586e7ce6ee4f5b1fc31a",
-  "maintained_original_sha256": "c758bb163adc94a8c5988a3093cddb16c78c0bf500948f9a0c136962088db782",
-  "registered_source_sha256": "4cfc01142e1cfefab6eaa8ae58ff236117a3fb1e133ea03b12092cb0ff177b29",
+  "maintained_original_sha256": "93fefb63333bea119087a1265f504b3d20f6db1e4ccdf794021a973899d0be50",
+  "registered_source_sha256": "7267b21a6e640ede8ecffb05c9971fcd865475b9e4e0fd66c691570fe7ea57aa",
   "registered_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
-  "previous_registry_count": 7496,
-  "current_registry_count": 7500,
+  "previous_registry_count": 7500,
+  "current_registry_count": 7502,
   "historical_registry_count": 7493,
   "original124_extraction_and_proof_unchanged": true,
   "current4_extraction_passed": true,
@@ -86,5 +104,7 @@
   "all_original_test_bodies_and109_suffix_unchanged": true,
   "actual_new_gtests_executed": 0,
   "actual_new_generated_c23_executions": 0,
-  "full_stl_complete": false
+  "full_stl_complete": false,
+  "all_previous4_gtest_bodies_unchanged": true,
+  "new_popcount_guards_not_yet_executed": true
 }

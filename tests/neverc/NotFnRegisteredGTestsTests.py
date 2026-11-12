@@ -47,12 +47,12 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.r19_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.r19_original = cls.adapter.restore_original_gtests(cls.r19_registered, cls.r19_suffix)
         cls.r19_manifest = json.loads((ROOT / 'utils/ci/r19-scoped-bitset-gtests.json').read_text())
-        assert hashlib.sha256(cls.r19_registered).hexdigest() == cls.adapter.R19_SCOPED_BITSET_REGISTERED_SHA256
-        assert hashlib.sha256(cls.r19_original).hexdigest() == cls.adapter.R19_SCOPED_BITSET_MAINTAINED_SHA256
+        assert hashlib.sha256(cls.r19_registered).hexdigest() == cls.adapter.R19_POPCOUNT_REGISTERED_SHA256
+        assert hashlib.sha256(cls.r19_original).hexdigest() == cls.adapter.R19_POPCOUNT_MAINTAINED_SHA256
         first = cls.r19_manifest['new_gtest_names'][0].split('.')[1].encode()
         match, = re.finditer(rb'(?m)^TEST_F\(TranslateTest, ' + re.escape(first) + rb'\) \{', cls.r19_original)
         cls.r19_additions = cls.r19_original[match.start():]
-        assert cls.r19_additions.count(b'TEST_F(') == 4
+        assert cls.r19_additions.count(b'TEST_F(') == 6
         cls.registered = cls.r19_original[:match.start()] + cls.r19_suffix
         cls.previous48 = (ROOT / 'utils/ci/bind-forty-eight-formal-additions.cpp').read_bytes()
         cls.previous61 = (ROOT / 'utils/ci/bind-sixty-one-formal-additions.cpp').read_bytes()
@@ -449,17 +449,19 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.extractor.extract(self.query_original, selected + ['TranslateTest.UnknownQueryOwner'])
 
 
-    def test_r19_registry_keeps_exact_history_and_four_new_bodies(self):
+    def test_r19_registry_keeps_exact_history_and_six_new_bodies(self):
         expected = ['TranslateTest.' + name for name in [
             'CoreV2ScopedAllocatorIntRunAtBothOptimizations',
             'CoreV2Bitset70RunAtBothOptimizations',
             'CoreV2ScopedAllocatorOwnedConstructorRejected',
-            'CoreV2BitsetOwnedCountRejected']]
+            'CoreV2BitsetOwnedCountRejected',
+            'CoreV2BitsetOwnedPopcountDeclarationRejected',
+            'CoreV2BitsetOwnedPopcountMacroRejected']]
         self.assertEqual(self.r19_manifest['new_gtest_names'], expected)
         generated, proof = self.extractor.extract(self.r19_original, expected)
-        self.assertEqual(proof['original_test_names'], 7500)
-        self.assertEqual(proof['selected_count'], 4)
-        self.assertEqual(generated.count(b'TEST_F('), 4)
+        self.assertEqual(proof['original_test_names'], 7502)
+        self.assertEqual(proof['selected_count'], 6)
+        self.assertEqual(generated.count(b'TEST_F('), 6)
         self.assertEqual(self.adapter.restore_original_gtests(
             self.r19_registered, self.r19_suffix), self.r19_original)
         manifest = json.loads((ROOT / 'utils/ci/cpp-pair-piecewise-formal-tests.json').read_text())
@@ -467,13 +469,22 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         _, old = self.extractor.extract(self.query_original, selected)
         _, current = self.extractor.extract(self.r19_original, selected)
         self.assertEqual(old['original_test_names'], 7496)
-        self.assertEqual(current['original_test_names'], 7500)
+        self.assertEqual(current['original_test_names'], 7502)
         self.assertEqual(old['selected_original_test_bodies'], current['selected_original_test_bodies'])
+        first_extra = self.r19_manifest['new_gtest_names'][4].split('.')[1].encode()
+        match, = re.finditer(rb'(?m)^TEST_F\(TranslateTest, ' + re.escape(first_extra) + rb'\) \{', self.r19_original)
+        previous_r19 = self.r19_original[:match.start()]
+        self.assertEqual(hashlib.sha256(previous_r19).hexdigest(), self.adapter.R19_SCOPED_BITSET_MAINTAINED_SHA256)
+        self.assertEqual(self.adapter.restore_original_gtests(previous_r19 + self.r19_suffix, self.r19_suffix), previous_r19)
+        _, previous = self.extractor.extract(previous_r19, expected[:4])
+        self.assertEqual(previous['original_test_names'], 7500)
+        _, current_four = self.extractor.extract(self.r19_original, expected[:4])
+        self.assertEqual(previous['selected_original_test_bodies'], current_four['selected_original_test_bodies'])
 
     def test_r19_tests_keep_actual_programs_optimization_loops_and_check_mode(self):
         selected = [row for row in self.r19_manifest['source_cases']
                     if row['kind'] in ['runtime', 'source-body-guard']]
-        self.assertEqual(len(selected), 4)
+        self.assertEqual(len(selected), 6)
         for row in selected:
             with self.subTest(name=row['name']):
                 program = row['source'].encode()
@@ -481,7 +492,7 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
                 self.assertEqual(self.r19_additions.count(program), 1)
         self.assertEqual(self.r19_additions.count(b'compileGenerated('), 2)
         self.assertEqual(self.r19_additions.count(b'{"-O0", "-O2"}'), 2)
-        self.assertEqual(self.r19_additions.count(b'"--check"'), 2)
+        self.assertEqual(self.r19_additions.count(b'"--check"'), 4)
 
     def test_r19_registry_rejects_changed_bodies_counts_and_suffixes(self):
         for source, suffix in [
