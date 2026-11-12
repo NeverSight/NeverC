@@ -47199,7 +47199,7 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *M = Member ? Member->getMethodDecl() : nullptr;
   const auto Info = M ? approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) : std::nullopt;
-  if (!Info || !ownedMethodRef(S, SM, Member->getCallee()) || !M->getIdentifier() || M->isStatic() || M->isVariadic() || !bitsetPinnedFunction(S, SM, M) ||
+  if (!Info || (!directMethodReference(Call) || !S.owns(SM, directMethodReference(Call)->getExprLoc())) || !M->getIdentifier() || M->isStatic() || M->isVariadic() || !bitsetPinnedFunction(S, SM, M) ||
       !bitsetSourceGraph(S, SM, M)) return std::nullopt;
   const auto Name = M->getName();
   if (M->isConst() && M->getNumParams() == 0 && Call->getNumArgs() == 0) {
