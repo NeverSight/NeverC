@@ -23608,7 +23608,14 @@ public:
       for (const auto &Source : Batch.Uses) {
         if (!freshLateTemplateSource(Source)) {
           A.reject(Source.Location, "repeated late template source",
-                   "A retained late use needs a fresh exact source key.");
+                   "A retained late use needs a fresh exact source key. kind=" +
+                   std::to_string(static_cast<unsigned>(Source.Kind)) + " template=" +
+                   (Source.Template ? Source.Template->getQualifiedNameAsString() : "<none>") +
+                   " declaration=" + (Source.Declaration ? Source.Declaration->getDeclKindName() : "<none>") +
+                   " defaults=" + std::to_string(Source.Defaults.size()) +
+                   " parameters=" + std::to_string(Source.ParameterTypes.size()) +
+                   " bind=" + std::to_string(Source.FunctionalBindConstraint) +
+                   " notfn=" + std::to_string(Source.FunctionalNotFnConstraint));
           return;
         }
         indexTemplateSources(llvm::ArrayRef<TemplateUseSource>(&Source, 1), {}, {});
@@ -28553,7 +28560,12 @@ public:
         (!A.S.project() || D->getFormalLinkage() == Linkage::Internal))
       A.reject(
           D->getLocation(), "function declaration",
-          "Every declared function needs a definition in this source unit.",
+          "Every declared function needs a definition in this source unit. declaration=" +
+              D->getQualifiedNameAsString() + " used=" + std::to_string(D->isUsed(true)) +
+              " referenced=" + std::to_string(D->isReferenced()) +
+              " method=" + std::to_string(isa<CXXMethodDecl>(D)) +
+              " constructor=" + std::to_string(isa<CXXConstructorDecl>(D)) +
+              " operation_queries=" + std::to_string(A.OperationTraits.size()),
           "TR0203");
     if (A.S.project()) {
       auto &Declaration = A.FunctionDeclarations[D->getCanonicalDecl()];

@@ -1,3 +1,4 @@
+#include "llvm/Support/raw_ostream.h"
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/AST/Attr.h"
@@ -17940,6 +17941,10 @@ public:
                           const UtilityPairFunctionSources &Functions,
                           const UtilityPairSelectionSources &Selections,
                           const CallExpr *Factory) {
+    auto PairSourceDiagnostic = [&](unsigned Line) {
+      llvm::errs() << "STL-PAIR-SOURCE-REFUSAL line=" << Line << "\n";
+      return false;
+    };
     const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
     if (Mode != UtilityTupleQueryMode::PairConstruction || !Constructor ||
         Constructor->isInvalidDecl() || Constructor->isDeleted() ||
@@ -17950,37 +17955,37 @@ public:
                  : !S.owns(SM, Source.Location)) ||
         !approvedUtilityPairMetadata(S, SM, Constructor->getParent()) ||
         !Context.hasSameUnqualifiedType(Construction->getType(),
-            Context.getRecordType(Constructor->getParent()))) return false;
+            Context.getRecordType(Constructor->getParent()))) return PairSourceDiagnostic(__LINE__);
     // A piecewise use binds its exact public/private constructor descriptor.
     // This still grants signature source only; runtime admission requires the
     // separate outer-source, child-operation, lifetime and deferred checks.
     if (!approvedUtilityPairConstruction(S, SM, Construction, Context) &&
         (Factory || !approvedUtilityPairPiecewiseConstruction(
                          S, SM, Construction, Context)))
-      return false;
+      return PairSourceDiagnostic(__LINE__);
     PairConstructor = Constructor;
     PairFunctions = &Functions;
     PairSelections = &Selections;
     for (const auto *Field : Constructor->getParent()->fields())
-      if (!bindPairInput(Field->getType())) return false;
+      if (!bindPairInput(Field->getType())) return PairSourceDiagnostic(__LINE__);
     const auto Arguments = Factory ? Factory->arguments() : Construction->arguments();
     for (const auto *Argument : Arguments)
-      if (!bindPairInput(Argument->getType())) return false;
+      if (!bindPairInput(Argument->getType())) return PairSourceDiagnostic(__LINE__);
     for (const auto *Argument : Arguments)
-      if (!bindPairReferenceFactory(Argument)) return false;
+      if (!bindPairReferenceFactory(Argument)) return PairSourceDiagnostic(__LINE__);
     for (const auto *Argument : Arguments)
-      if (!bindPairCallerValueAdapter(Argument)) return false;
+      if (!bindPairCallerValueAdapter(Argument)) return PairSourceDiagnostic(__LINE__);
     if (Factory) {
       // Only this authenticated factory's substitutions join this fresh graph.
       // The caller's actual template use and arguments still complete ordinarily.
       std::vector<const Decl *> Pending{Factory->getDirectCallee()};
       while (!Pending.empty()) {
         const auto *Declaration = Pending.back(); Pending.pop_back();
-        if (!Declaration || !step()) return false;
+        if (!Declaration || !step()) return PairSourceDiagnostic(__LINE__);
         if (!PairInputFamilies.insert(Declaration).second) continue;
         if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
             !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__utility/pair.h"))
-          return false;
+          return PairSourceDiagnostic(__LINE__);
         if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
           for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
           if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
@@ -17989,7 +17994,7 @@ public:
           for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
           Pending.push_back(Template->getTemplatedDecl());
           for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
-        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return false;
+        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return PairSourceDiagnostic(__LINE__);
       }
       // These are the exact two SDK forwarding uses already authenticated by
       // the public factory descriptor. Bind their substitutions, not their bodies.
@@ -17997,9 +18002,9 @@ public:
         if (!bindPairInput(Construction->getArg(I)->getType()) ||
             !bindPairCallerValueAdapter(Construction->getArg(I),
                                        Factory->getDirectCallee()->getParamDecl(I)))
-          return false;
+          return PairSourceDiagnostic(__LINE__);
     }
-    if (!templateSource(Source, Constructor) || Failed) return false;
+    if (!templateSource(Source, Constructor) || Failed) return PairSourceDiagnostic(__LINE__);
     for (std::size_t I = 0; I < PairConstructionSources.size(); ++I) {
       // Copy the item: its source can append more work to this same vector.
       const auto Work = PairConstructionSources[I];
@@ -18007,21 +18012,21 @@ public:
       if (!step() || Work.Ancestors.empty() || Work.Ancestors.size() > 64 ||
           Work.Ancestors.back() != Work.Construction || !Selected ||
           !PairInputRecords.count(Selected->getParent()->getCanonicalDecl()) ||
-          PendingPairConstructions[Work.Construction] != Work.Query) return false;
+          PendingPairConstructions[Work.Construction] != Work.Query) return PairSourceDiagnostic(__LINE__);
       PairConstructor = Selected;
       PairConstructionAncestors = Work.Ancestors;
       for (const auto *Field : Selected->getParent()->fields())
-        if (!bindPairInput(Field->getType())) return false;
+        if (!bindPairInput(Field->getType())) return PairSourceDiagnostic(__LINE__);
       const auto Events = PairSelections->find(Work.Construction);
-      if (Events == PairSelections->end() || Events->second.empty()) return false;
+      if (Events == PairSelections->end() || Events->second.empty()) return PairSourceDiagnostic(__LINE__);
       for (const auto *Event : Events->second) {
         if (!Event || Event->Expression != Work.Construction || Event->Function != Selected ||
-            Event->Location != Work.Query->getExprLoc()) return false;
+            Event->Location != Work.Query->getExprLoc()) return PairSourceDiagnostic(__LINE__);
         const auto Sources = PairFunctions->find({Selected, Event->Location.getRawEncoding()});
-        if (Sources == PairFunctions->end() || Sources->second.empty()) return false;
+        if (Sources == PairFunctions->end() || Sources->second.empty()) return PairSourceDiagnostic(__LINE__);
         for (const auto *Use : Sources->second)
           if (!Use || Use->Location != Event->Location || Use->Written ||
-              !templateSource(*Use, Selected) || Failed) return false;
+              !templateSource(*Use, Selected) || Failed) return PairSourceDiagnostic(__LINE__);
       }
     }
     Queries.assign(PairSourceQueries.begin(), PairSourceQueries.end());
