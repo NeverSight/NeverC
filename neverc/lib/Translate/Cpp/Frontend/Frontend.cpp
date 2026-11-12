@@ -31784,7 +31784,11 @@ public:
             Name != "optional" && Name != "memory" && Name != "new" &&
             Name != "functional" && Name != "ratio" && Name != "cstring" &&
             Name != "string_view" && Name != "string" && Name != "vector" &&
-            Name != "unordered_map"))) {
+            Name != "unordered_map" && Name != "deque" && Name != "list" &&
+             Name != "forward_list" && Name != "map" && Name != "set" &&
+             Name != "unordered_set" && Name != "queue" && Name != "stack" &&
+             Name != "variant" && Name != "any" && Name != "bitset" &&
+             Name != "valarray" && Name != "scoped_allocator"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
@@ -31794,7 +31798,9 @@ public:
                "#include <memory>, #include <new> and #include <functional> "
                "and #include <ratio>, #include <cstring> and "
                "#include <string_view>, #include <string> and #include "
-               "<vector> and <unordered_map> entries are "
+               "<vector>, <unordered_map>, <deque>, <list>, <forward_list>, "
+               "<map>, <set>, <unordered_set>, <queue>, <stack>, <variant>, "
+               "<any>, <bitset>, <valarray> and <scoped_allocator> entries are "
                "admitted in cpp-core-v2.");
         return;
       }
