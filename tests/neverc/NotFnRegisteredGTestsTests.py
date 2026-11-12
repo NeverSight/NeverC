@@ -57,9 +57,9 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.maintenance = json.loads((ROOT / 'utils/ci/stl-source-maintenance.json').read_text())
         cls.query_registered, cls.query_original = cls.latest_registered, cls.latest_original
         cls.query_additions = (ROOT / 'utils/ci/query-constructor-three-formal-additions.cpp').read_bytes()
-        assert hashlib.sha256(cls.query_additions).hexdigest() == '4ece697a138991fb33372736883b19e0859900885037a4cda5b856289f839dbd'
-        assert hashlib.sha256(cls.query_original).hexdigest() == cls.adapter.QUERY_CONSTRUCTOR_MAINTAINED_ORIGINAL_SHA256
-        assert hashlib.sha256(cls.query_registered).hexdigest() == cls.adapter.QUERY_CONSTRUCTOR_REGISTERED_BIND109_SHA256
+        assert hashlib.sha256(cls.query_additions).hexdigest() == 'e9a94886790c6ad8987c21522a67f899953f167205f26155bb2d08b418553005'
+        assert hashlib.sha256(cls.query_original).hexdigest() == cls.adapter.QUERY_CONSTRUCTOR_CHECKED_MAINTAINED_ORIGINAL_SHA256
+        assert hashlib.sha256(cls.query_registered).hexdigest() == cls.adapter.QUERY_CONSTRUCTOR_CHECKED_REGISTERED_BIND109_SHA256
         assert cls.query_original.count(cls.query_additions) == 1
         assert cls.query_registered.count(cls.query_additions) == 1
         cls.latest_original = cls.query_original.replace(cls.query_additions, b'', 1)

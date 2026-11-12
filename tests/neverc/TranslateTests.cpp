@@ -371742,7 +371742,7 @@ int main() { return 0; }
     SCOPED_TRACE(I);
     const auto Source = tmpFile("constructor-definition-" + std::to_string(I) + ".cpp");
     writeFile(Source, Cases[I]);
-    auto Result = translate(Source, {"--profile", "cpp-core-v2"});
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
     EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
     EXPECT_NE(Result.err.find("TR0203"), std::string::npos) << Result.err;
   }
@@ -371755,7 +371755,7 @@ struct C { C(int = unsupported_default()) noexcept; };
 static_assert(__is_constructible(C));
 int main() { return 0; }
 )cpp");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2"});
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
   EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
   EXPECT_NE(Result.err.find("TR0201"), std::string::npos) << Result.err;
 }

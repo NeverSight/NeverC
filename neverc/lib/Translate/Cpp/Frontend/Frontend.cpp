@@ -2819,6 +2819,46 @@ static bool operationDefinitionCategory(Adapter &A, const FunctionDecl *Function
          Function->getTemplateInstantiationPattern(/*ForDefinition=*/true) == Origin;
 }
 
+static bool constructorMetadataQueryOwnerContains(
+    Adapter &A, const CXXRecordDecl *Owner, const CXXRecordDecl *ConstructorOwner) {
+  if (!Owner || !ConstructorOwner)
+    return false;
+  const auto *Target = ConstructorOwner->getCanonicalDecl();
+  llvm::SmallVector<std::pair<const CXXRecordDecl *, unsigned>, 8> Pending;
+  llvm::SmallPtrSet<const CXXRecordDecl *, 16> Seen;
+  Pending.push_back({Owner, 0});
+  while (!Pending.empty()) {
+    const auto [Current, Depth] = Pending.pop_back_val();
+    if (Current->getCanonicalDecl() == Target)
+      return true;
+    const auto *Definition = Current->getDefinition();
+    if (!Definition || Depth >= 64 ||
+        !A.S.owns(A.Sources, Definition->getLocation()))
+      return false;
+    if (!Seen.insert(Definition->getCanonicalDecl()).second)
+      continue;
+    A.chargeExpansion(1, Definition->getLocation());
+    for (const auto *Field : Definition->fields()) {
+      if (Field->isInvalidDecl() ||
+          !A.S.owns(A.Sources, Field->getLocation()))
+        return false;
+      A.chargeExpansion(1, Field->getLocation());
+      QualType Type = Field->getType();
+      unsigned NextDepth = Depth + 1;
+      while (const auto *Array = A.Context.getAsConstantArrayType(Type)) {
+        if (++NextDepth > 64)
+          return false;
+        A.chargeExpansion(1, Field->getLocation());
+        Type = Array->getElementType();
+      }
+      // Pointer, reference and lexical nesting never establish ownership.
+      if (const auto *Child = Type->getAsCXXRecordDecl())
+        Pending.push_back({Child, NextDepth});
+    }
+  }
+  return false;
+}
+
 static bool constructorDeclarationMetadataSource(Adapter &A, const FunctionDecl *Function) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
   if (!A.S.coreV2() || !Constructor || !A.S.owns(A.Sources, Constructor->getLocation()) ||
@@ -2847,8 +2887,8 @@ static bool constructorDeclarationMetadataSource(Adapter &A, const FunctionDecl 
          Query->getTrait() != TT_IsTriviallyConstructible))
       continue;
     const auto *Owner = Query->getArg(0)->getType()->getAsCXXRecordDecl();
-    if (Owner && Owner->getCanonicalDecl() ==
-                     Constructor->getParent()->getCanonicalDecl())
+    if (constructorMetadataQueryOwnerContains(A, Owner,
+                                               Constructor->getParent()))
       return true;
   }
   return false;
