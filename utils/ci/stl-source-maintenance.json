@@ -1,0 +1,211 @@
+{
+  "all_other_original_source_bytes_unchanged": true,
+  "assertions_and_runtime_loops_unchanged": true,
+  "format": 1,
+  "maintained_original_sha256": "726b475241352fd3ee832e479968f9daf5e44a27cb7b6f9f0f7f52b9a84ae4e3",
+  "previous_maintained_original_sha256": "28d17d01980bed3e058d29abf852f494a5b9f16354e0b7d101f53e93e0a1f909",
+  "programs": 18,
+  "scope": "exact-unavailable-destruction-test-source-maintenance",
+  "sdk_or_compiler_qualification_not_claimed": true,
+  "source_file": "tests/neverc/TranslateTests.cpp",
+  "test_owners": [
+    {
+      "archived_body_sha256": "f83905dc1d6905e37832fcd7d3958f7f63744bb2b159c68814f57921e531b569",
+      "maintained_body_sha256": "fb74125b52437b3758cbe1bfdee34f07c5a9b075d408dbd1ba77dc9c913f3863",
+      "owner": "TranslateTest.CoreV2DeletedArgumentDestructorMoveIfNoexceptQueriesAdmitDeletedDestructors",
+      "programs": [
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct C;struct A{A(const C&,int=3)noexcept{}~A()=delete;};struct C{C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}};\nint f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "e572d3e6facad2557d4f16dccad85f84c29393677bbd3022dae125dbc378c070",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct C;struct A{A(const C&,int=3)noexcept{}~A()=delete;};struct C{C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}};\nint f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "01c26e675ac3e204c40bfc83c84941030c8b314a57517abda25ad5ba3ff963b7",
+          "name": "TranslateTest.CoreV2DeletedArgumentDestructorMoveIfNoexceptQueriesAdmitDeletedDestructors/literal-0",
+          "owner": "TranslateTest.CoreV2DeletedArgumentDestructorMoveIfNoexceptQueriesAdmitDeletedDestructors"
+        }
+      ]
+    },
+    {
+      "archived_body_sha256": "edcc387b2a606e3bdeb36fd4bb4493919cd2b4904b216aaff2ee5bb01ebc707b",
+      "maintained_body_sha256": "0118337bb5c3389c38e5fb840fa86fea63d419c9cc2618ea4afdf5f628d1ebcb",
+      "owner": "TranslateTest.CoreV2DeletedArgumentDestructorMoveIfNoexceptQueriesRunAtBothOptimizations",
+      "programs": [
+        {
+          "actual_reference_proof_sha256": "94b6db7f72e67b1388dcada2e89641b94d8e770ba9dc7a013445de4debcbf437",
+          "after": "#include <utility>\nnamespace Imported { using std::move_if_noexcept; }\nnamespace Reexport { using Imported::move_if_noexcept; }\nnamespace Alias=Reexport;\nint arguments,argument_defaults,value_defaults,conversions;\nint values,copies,moves,cleanups,calls,operand_defaults;\nstruct Value;\ntemplate<int Tag>struct Argument{\n  int value;\n  Argument(const Value&,int n=(++argument_defaults,5))noexcept:value(n){++arguments;}\n  ~Argument()=delete;\n};\nstruct FriendOwner;\nstruct Value{\n  int value;\n  Value(int n=2)noexcept:value(n){++values;}\n  Value(Argument<0>a,int n=(++value_defaults,6))noexcept;\n  Value(const Argument<1>&a,int n=(++value_defaults,6))noexcept;\n  Value(Argument<2>&&a,int n=(++value_defaults,6))noexcept:value(a.value+n){a.value=-2;++conversions;}\n  Value(const Argument<3>&&a,int n=(++value_defaults,6))noexcept:value(a.value+n){++conversions;}\n  Value(Value&v)noexcept:value(v.value){++v.value;++copies;}\n  Value(Value&&v)noexcept(false):value(v.value){v.value=-1;++moves;}\n  ~Value()noexcept{++cleanups;}\n  friend struct FriendOwner;\n};\nValue::Value(const Argument<1>&a,int n)noexcept:value(a.value+n){++conversions;}\nstruct FriendOwner{Value elements[2];};\ntemplate<class T>T&source(T&v,int=(++operand_defaults,1))noexcept{++calls;return v;}\ntemplate<class T>bool queries(T&v){\n  using Alias::move_if_noexcept;\n  static_assert(__is_same(decltype(move_if_noexcept(v)),T&&));\n  static_assert(__is_same(decltype((Imported::move_if_noexcept)(v)),T&&));\n  static_assert(__is_same(decltype(move_if_noexcept<T>(v)),T&&));\n  static_assert(sizeof(move_if_noexcept(v))==sizeof(T));\n  static_assert(alignof(decltype(move_if_noexcept(v)))==alignof(T));\n  static_assert(noexcept(move_if_noexcept(v)));\n  T&&alias=move_if_noexcept(std::forward<T&>(v));\n  return &alias==&v;\n}\ntemplate<class T>struct LazyValue;\ntemplate<class T>struct LazyArgument{\n  LazyArgument(const LazyValue<T>&,T=0)noexcept{static_assert(sizeof(T)==0);}\n  ~LazyArgument()=delete;\n};\ntemplate<class T>struct LazyValue{\n  int value;\n  LazyValue(const LazyArgument<T>&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}\n  LazyValue(LazyValue&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}\n  LazyValue(LazyValue&&)noexcept(false){static_assert(sizeof(T)==0);}\n};\ntemplate<class T>struct Box{T value;};\nstatic_assert(sizeof(LazyArgument<int>)==1&&sizeof(LazyArgument<long>)==1);\nint query_only(LazyValue<int>&a,Box<LazyValue<long>>&b){\n  return queries(a)&&queries(std::as_const(a))&&queries(b)&&queries(std::as_const(b));\n}\nint main(){\n  {\n    Value seed(10);\n    FriendOwner owner;\n    static_assert(__is_same(decltype(Alias::move_if_noexcept(source(seed))),Value&&));\n    if(!queries(seed)||!queries(std::as_const(seed))||!queries(owner)||!queries(std::as_const(owner)))return 1;\n    if(values!=3||copies||moves||cleanups||calls||operand_defaults||\n       arguments||argument_defaults||value_defaults||conversions)return 2;\n    Value&&alias=Alias::move_if_noexcept(source(seed));\n    if(&alias!=&seed||calls!=1||operand_defaults!=1)return 3;\n    Value copied(seed),moved(Alias::move_if_noexcept(seed));\n    FriendOwner copied_owner(owner),moved_owner(Alias::move_if_noexcept(owner));\n    if(seed.value!=-1||copied.value!=10||moved.value!=11||\n       owner.elements[0].value!=-1||owner.elements[1].value!=-1||\n       copied_owner.elements[0].value!=2||moved_owner.elements[1].value!=3||copies!=3||moves!=3||cleanups)return 4;\n  }\n  return cleanups==9&&arguments==0&&argument_defaults==0&&value_defaults==0&&conversions==0&&\n         calls==1&&operand_defaults==1?0:5;\n}\n",
+          "after_sha256": "f5e07221d0ccdefe8c497831bfa291c62a415fdbd5999c980a61353b450181d2",
+          "before": "#include <utility>\nnamespace Imported { using std::move_if_noexcept; }\nnamespace Reexport { using Imported::move_if_noexcept; }\nnamespace Alias=Reexport;\nint arguments,argument_defaults,value_defaults,conversions;\nint values,copies,moves,cleanups,calls,operand_defaults;\nstruct Value;\ntemplate<int Tag>struct Argument{\n  int value;\n  Argument(const Value&,int n=(++argument_defaults,5))noexcept:value(n){++arguments;}\n  ~Argument()=delete;\n};\nstruct FriendOwner;\nstruct Value{\n  int value;\n  Value(int n=2)noexcept:value(n){++values;}\n  Value(Argument<0>a,int n=(++value_defaults,6))noexcept:value(a.value+n){++conversions;}\n  Value(const Argument<1>&a,int n=(++value_defaults,6))noexcept;\n  Value(Argument<2>&&a,int n=(++value_defaults,6))noexcept:value(a.value+n){a.value=-2;++conversions;}\n  Value(const Argument<3>&&a,int n=(++value_defaults,6))noexcept:value(a.value+n){++conversions;}\n  Value(Value&v)noexcept:value(v.value){++v.value;++copies;}\n  Value(Value&&v)noexcept(false):value(v.value){v.value=-1;++moves;}\n  ~Value()noexcept{++cleanups;}\n  friend struct FriendOwner;\n};\nValue::Value(const Argument<1>&a,int n)noexcept:value(a.value+n){++conversions;}\nstruct FriendOwner{Value elements[2];};\ntemplate<class T>T&source(T&v,int=(++operand_defaults,1))noexcept{++calls;return v;}\ntemplate<class T>bool queries(T&v){\n  using Alias::move_if_noexcept;\n  static_assert(__is_same(decltype(move_if_noexcept(v)),T&&));\n  static_assert(__is_same(decltype((Imported::move_if_noexcept)(v)),T&&));\n  static_assert(__is_same(decltype(move_if_noexcept<T>(v)),T&&));\n  static_assert(sizeof(move_if_noexcept(v))==sizeof(T));\n  static_assert(alignof(decltype(move_if_noexcept(v)))==alignof(T));\n  static_assert(noexcept(move_if_noexcept(v)));\n  T&&alias=move_if_noexcept(std::forward<T&>(v));\n  return &alias==&v;\n}\ntemplate<class T>struct LazyValue;\ntemplate<class T>struct LazyArgument{\n  LazyArgument(const LazyValue<T>&,T=0)noexcept{static_assert(sizeof(T)==0);}\n  ~LazyArgument()=delete;\n};\ntemplate<class T>struct LazyValue{\n  int value;\n  LazyValue(const LazyArgument<T>&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}\n  LazyValue(LazyValue&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}\n  LazyValue(LazyValue&&)noexcept(false){static_assert(sizeof(T)==0);}\n};\ntemplate<class T>struct Box{T value;};\nstatic_assert(sizeof(LazyArgument<int>)==1&&sizeof(LazyArgument<long>)==1);\nint query_only(LazyValue<int>&a,Box<LazyValue<long>>&b){\n  return queries(a)&&queries(std::as_const(a))&&queries(b)&&queries(std::as_const(b));\n}\nint main(){\n  {\n    Value seed(10);\n    FriendOwner owner;\n    static_assert(__is_same(decltype(Alias::move_if_noexcept(source(seed))),Value&&));\n    if(!queries(seed)||!queries(std::as_const(seed))||!queries(owner)||!queries(std::as_const(owner)))return 1;\n    if(values!=3||copies||moves||cleanups||calls||operand_defaults||\n       arguments||argument_defaults||value_defaults||conversions)return 2;\n    Value&&alias=Alias::move_if_noexcept(source(seed));\n    if(&alias!=&seed||calls!=1||operand_defaults!=1)return 3;\n    Value copied(seed),moved(Alias::move_if_noexcept(seed));\n    FriendOwner copied_owner(owner),moved_owner(Alias::move_if_noexcept(owner));\n    if(seed.value!=-1||copied.value!=10||moved.value!=11||\n       owner.elements[0].value!=-1||owner.elements[1].value!=-1||\n       copied_owner.elements[0].value!=2||moved_owner.elements[1].value!=3||copies!=3||moves!=3||cleanups)return 4;\n  }\n  return cleanups==9&&arguments==0&&argument_defaults==0&&value_defaults==0&&conversions==0&&\n         calls==1&&operand_defaults==1?0:5;\n}\n",
+          "before_sha256": "d487971df6d9bf148cb2098b15e328257131820a7a745b25301a941321292291",
+          "name": "TranslateTest.CoreV2DeletedArgumentDestructorMoveIfNoexceptQueriesRunAtBothOptimizations/literal-0",
+          "owner": "TranslateTest.CoreV2DeletedArgumentDestructorMoveIfNoexceptQueriesRunAtBothOptimizations"
+        }
+      ]
+    },
+    {
+      "archived_body_sha256": "5423e86483b626f7146a02c71b0416bbc6b084aac86c6b17c60b5fa872859bb7",
+      "maintained_body_sha256": "069f528c1f3dcb567dbed2e5484cab95cc43f57f9ec706d1b17e82faa5f99b95",
+      "owner": "TranslateTest.CoreV2RecordToScalarMoveIfNoexceptQueriesAdmitRecordResults",
+      "programs": [
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}C(double)noexcept{}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "fd4e827eaccee1c1ff3dee07990adc8e13814d97475143cd86b412aa42cee0e3",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}C(double)noexcept{}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "b01b23f6b2593fb6093fffee046044497ebc22f4efa751fbaf5277b4e3510ae8",
+          "name": "TranslateTest.CoreV2RecordToScalarMoveIfNoexceptQueriesAdmitRecordResults/literal-17",
+          "owner": "TranslateTest.CoreV2RecordToScalarMoveIfNoexceptQueriesAdmitRecordResults"
+        }
+      ]
+    },
+    {
+      "archived_body_sha256": "16af83c9517b5bdae9c876407d551f057b5f6fda940345f0f0ff881f4eb1232d",
+      "maintained_body_sha256": "941a1f38c7acb3c94d0bad275a03a29e0a1f270357454c1970fd92b906ccad96",
+      "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction",
+      "programs": [
+        {
+          "actual_reference_proof_sha256": "94b6db7f72e67b1388dcada2e89641b94d8e770ba9dc7a013445de4debcbf437",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "6cba3acbb314994f4cc985cba43aafa1a52ffe9fb51b4b2038e085d8d3773a70",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "d61586140bacc09c7702476618b0ce0398289a3a17585a89e545b66744de6354",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-0",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction"
+        },
+        {
+          "actual_reference_proof_sha256": "94b6db7f72e67b1388dcada2e89641b94d8e770ba9dc7a013445de4debcbf437",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&&()const noexcept{return static_cast<A&&>(*p);}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "3ec9bd87773f802b212cadf0a871fca155e38d6ab314bbb3c6fd4ee8fbb4d28f",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&&()const noexcept{return static_cast<A&&>(*p);}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "e802c999184f98222faacdedfbb8814dd04c586169bce445a7b4851d01524652",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-1",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction"
+        },
+        {
+          "actual_reference_proof_sha256": "94b6db7f72e67b1388dcada2e89641b94d8e770ba9dc7a013445de4debcbf437",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};using Arg=const A;struct C{A*p;C(Arg,int=3)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "75d2692222e764a02edb0e868be1a0597b8097ec7025e322f31aefd0372685ec",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};using Arg=const A;struct C{A*p;C(Arg,int=3)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "f05c72645af04221b96fc32c2f5430ef0aeb2fecf087e40748cf49e45628e7f3",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-6",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction"
+        },
+        {
+          "actual_reference_proof_sha256": "94b6db7f72e67b1388dcada2e89641b94d8e770ba9dc7a013445de4debcbf437",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct O;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct O{C elements[2];};int f(O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O&&));return 0;}\n",
+          "after_sha256": "1ff007903ce65e831d7b5bdb9073f4209564a774ce54b2fe1b4c1f585346280a",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;friend struct O;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct O{C elements[2];};int f(O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O&&));return 0;}\n",
+          "before_sha256": "0f689582c7266e96fe8c2667483ebc545afcc020be7dbe099f804d8e73d45025",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-10",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction"
+        },
+        {
+          "actual_reference_proof_sha256": "94b6db7f72e67b1388dcada2e89641b94d8e770ba9dc7a013445de4debcbf437",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;struct O;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct A::O{C elements[2];};int f(A::O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),A::O&&));return 0;}\n",
+          "after_sha256": "44ca9b9f6316dccac3ce30b023d923a8321fb9319c9f6edee5b72480f4960855",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;struct O;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct A::O{C elements[2];};int f(A::O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),A::O&&));return 0;}\n",
+          "before_sha256": "d1576493b81d642148d49ec2bf7b2e17d24cd4870cfcf546eb0318f92b348891",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-11",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction"
+        },
+        {
+          "actual_reference_proof_sha256": "94b6db7f72e67b1388dcada2e89641b94d8e770ba9dc7a013445de4debcbf437",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}C(double)=delete;C(int,int)noexcept{}private:C(int)noexcept{}public:operator int()const noexcept{return 0;}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "d49e8c3c0bb53c36219f2070ea7c181ab507fb7d81ad0a1debcc9656ff828446",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}C(double)=delete;C(int,int)noexcept{}private:C(int)noexcept{}public:operator int()const noexcept{return 0;}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "532b0b5d8ee8022c84b25b28885416fe1199bb3aea17477bd0f344295a4648af",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction/literal-13",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesAdmitUnavailableDestruction"
+        }
+      ]
+    },
+    {
+      "archived_body_sha256": "073e569c552fe1a48a8279760db762fb219d5a6982a768bf9b3f315611037227",
+      "maintained_body_sha256": "b686cf67c39239e4b438cb0ecde98f0291e9f160f49b245bae7d72b5415879ef",
+      "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries",
+      "programs": [
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;template<class T>A(T)noexcept{}~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "655131506c346b5ac11600c7dacd8f52af8ce5d9facd608ef2c18d262279faf8",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;template<class T>A(T)noexcept{}~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "94fb00db8640b5fc20cd56fca81782167e81564724a0ef2fa268ace6a60fe161",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries/literal-7",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries"
+        },
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;A(int,...)noexcept{}~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "186a2f2c1c54a8f1912dbe9ea37a5fc0cc6ec42ea8512269399fbc470c139f96",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;A(int,...)noexcept{}~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "58fdf0e9b5561b5056a474ee07cdeb6186496d607de1d787f92f963e35367d10",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries/literal-8",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries"
+        },
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A,...)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "35d4c0b9a304a6bcefc11bf6d150af55beb4d9b5731cffac0c5973fec51868f5",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A,...)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "2a1637512645a370e34f3e6fc30eddc73c3ffac4e81c2ccea3185e33fd4b66a3",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries/literal-10",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries"
+        },
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}template<class T>operator T&()const noexcept{return *static_cast<T*>(nullptr);}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "df1d5223ee0185ab1a4937407ee06f90c01ad6a3f2659f2a94ca2cade15eb3e1",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}template<class T>operator T&()const noexcept{return *static_cast<T*>(nullptr);}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "9d4090286b07b76942b4351ec09e297115cdb2947081cbfc32efe4f2245fea7e",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries/literal-11",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries"
+        },
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\ntemplate<class T,int N>using Erase=T;struct A{int n;~A()=delete;};struct C{A*p;C(Erase<A,sizeof(long double)>)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "ae6b6b0332fabdfbd5a1d7c6d1a7b9b8060a55f321abd4b89426c86562d26459",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\ntemplate<class T,int N>using Erase=T;struct A{int n;~A()=delete;};struct C{A*p;C(Erase<A,sizeof(long double)>)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "096dc7515eb0353f19f88d2146d5b70dc00c0f8d7247a1628c74be176bc3c2f4",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries/literal-12",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries"
+        },
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()noexcept(sizeof(long double)>0)=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "9ff40219677f5fd9b0a23ca7689e2cb119ab880c92bbbabb1fc7833e84a9508b",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()noexcept(sizeof(long double)>0)=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "2268881912ceb16f6b82df5f691e233f122b06804b1a30c1e1a43b88ab334d8f",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries/literal-13",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries"
+        },
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept(sizeof(long double)>0){return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "08da9b36274e2f0e3ffd495b0d37d9f53ffd9daf6cb286d5cea76ad2b2e636b6",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept(sizeof(long double)>0){return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "a5c69262ff34731db267548a489f58cdf614ccaf6ea878265f619a19cc847ec0",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries/literal-14",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries"
+        },
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A,int=sizeof(long double))noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "51c63fb0bd1f7209f2eded974f174daada56de84a840b5ddcdc85bd1ac730f45",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\nstruct A{int n;~A()=delete;};struct C{A*p;C(A,int=sizeof(long double))noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "616e5d99472531cae729c435fda2530852b9faacb04f088e0a0a27517ec882dc",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries/literal-15",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries"
+        },
+        {
+          "actual_reference_proof_sha256": "6c7a415ea6b5687fca9343a1898f572ac0a944ac02b351c2271752a060b7e44e",
+          "after": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\ntemplate<int N>struct A{int n;~A()noexcept(N==0)=delete;};struct C{A<0>*a;A<1>*b;C(A<0>)noexcept;C(A<1>)noexcept;C(C&)noexcept{}C(C&&)noexcept(false){}operator A<0>&()const noexcept{return *a;}operator A<1>&()const noexcept{return *b;}};static_assert(sizeof(A<0>)==sizeof(int)&&sizeof(A<1>)==sizeof(int));int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "after_sha256": "50ac73565d465581fd129347e989c26babe059f7dbb198fb90ae2e88557a840b",
+          "before": "#include <utility>\nnamespace Alias { using std::move_if_noexcept; }\ntemplate<int N>struct A{int n;~A()noexcept(N==0)=delete;};struct C{A<0>*a;A<1>*b;C(A<0>)noexcept{}C(A<1>)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A<0>&()const noexcept{return *a;}operator A<1>&()const noexcept{return *b;}};static_assert(sizeof(A<0>)==sizeof(int)&&sizeof(A<1>)==sizeof(int));int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}\n",
+          "before_sha256": "66947a401b54f05877205b25182eee74b86e7a1f1cbfa5b7c6e7547c28954f88",
+          "name": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries/literal-16",
+          "owner": "TranslateTest.CoreV2ValueArgumentDestructionMoveIfNoexceptQueriesRetainSourceBoundaries"
+        }
+      ]
+    }
+  ],
+  "unchanged97_suffix_sha256": "8d3a87ebacdae8d321140f50dd0bfcfe627acf7aa0b48808e89d9b447ae94411"
+}

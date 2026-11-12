@@ -17325,6 +17325,8 @@ The checked `std::bind` subset also accepts source-proven ordinary member-functi
 
 Additional checks satisfy 78 member-bind expectations and 42 translations producing 84 LLVM IR files across six 64-bit targets.
 
+`cpp-core-v2`: The checked explicit-result `std::bind<R>` subset applies the admitted scalar conversion after invoking an ordinary function pointer, an admitted stored callable, a member target or a checked standard function object. `R = void` preserves invocation effects and result cleanup; live reference results retain their source and lifetime checks. Nullary calls still evaluate unused arguments once, and copied adapters retain their documented capture behavior. Invalid conversions and references to temporary results remain rejected. Selected ordinary and SDK bodies stay subject to the same source checks.
+
 Qualified implementation `813a7045ed8b` passes 6 source syntax checks, all 750 expectations across 6 ABIs, 144 native reference executions, 221 selected GTests, 182 translated O0/O2 executions and 832 frontend requests. The unchanged original 606-request regression and its 450-request subset satisfy every expectation. The original 64-level, 200,000-node and 60-second source limits remain. Adapter assignment, address escape, retargeted values, conditional receiver provenance and further STL coverage remain unfinished. NeverC's public source language remains C23-only.
 
 [Placeholder call cases](../../ci/cpp-bind-placeholder-cases.json)

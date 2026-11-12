@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import importlib.util
 import json
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,6 +14,27 @@ def module(name, relative):
     result = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(result)
     return result
+
+
+def restore_previous_maintenance(source, manifest, extractor):
+    assert hashlib.sha256(source).hexdigest() == manifest['maintained_original_sha256']
+    for owner in manifest['test_owners']:
+        fixture, name = owner['owner'].split('.')
+        pattern = rb'(?m)^TEST_F\(\s*' + fixture.encode() + rb'\s*,\s*' + name.encode() + rb'\s*\)\s*\{'
+        match, = list(re.finditer(pattern, source))
+        end = extractor.body_end(source, match.end()-1)
+        body = source[match.start():end]
+        assert hashlib.sha256(body).hexdigest() == owner['maintained_body_sha256']
+        for row in owner['programs']:
+            before, after = row['before'].encode(), row['after'].encode()
+            assert hashlib.sha256(before).hexdigest() == row['before_sha256']
+            assert hashlib.sha256(after).hexdigest() == row['after_sha256']
+            assert body.count(after) == 1
+            body = body.replace(after, before, 1)
+        assert hashlib.sha256(body).hexdigest() == owner['archived_body_sha256']
+        source = source[:match.start()] + body + source[end:]
+    assert hashlib.sha256(source).hexdigest() == manifest['previous_maintained_original_sha256']
+    return source
 
 
 class RegisteredNotFnGTestsTests(unittest.TestCase):
@@ -28,7 +50,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.previous77 = (ROOT / 'utils/ci/bind-seventy-seven-formal-additions.cpp').read_bytes()
         cls.previous84 = (ROOT / 'utils/ci/bind-eighty-four-formal-additions.cpp').read_bytes()
         cls.additions = (ROOT / 'utils/ci/stl-ninety-seven-formal-additions.cpp').read_bytes()
+        cls.latest_registered = cls.registered
+        cls.latest_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.latest_twelve = (ROOT / 'utils/ci/bind-explicit-result-twelve-formal-additions.cpp').read_bytes()
+        cls.latest_original = cls.adapter.restore_original_gtests(cls.latest_registered, cls.latest_suffix)
+        cls.maintenance = json.loads((ROOT / 'utils/ci/stl-source-maintenance.json').read_text())
+        cls.previous_maintained_original = restore_previous_maintenance(
+            cls.latest_original, cls.maintenance, cls.extractor)
+        cls.registered = cls.previous_maintained_original + cls.additions
         cls.original = cls.adapter.restore_original_gtests(cls.registered, cls.additions)
+        cls.current_registered, cls.current_original = cls.registered, cls.original
+        fixed = b'extern "C" void* user_word_copy(void* destination, const void*, __SIZE_TYPE__ size) { auto* bytes=static_cast<unsigned char*>(destination); for(__SIZE_TYPE__ i=0;i<size;++i) bytes[i]=0; return destination; }'
+        archived = b'extern "C" void* user_word_copy(void* destination, const void*, unsigned long size) { auto* bytes=static_cast<unsigned char*>(destination); for(unsigned long i=0;i<size;++i) bytes[i]=0; return destination; }'
+        cls.target_size_helper_current, cls.target_size_helper_archived = fixed, archived
+        assert cls.original.count(fixed) == 12
+        cls.original = cls.original.replace(fixed, archived)
+        assert hashlib.sha256(cls.original).hexdigest() == cls.adapter.ORIGINAL_SOURCE_SHA256
+        cls.registered = cls.original + cls.additions
+        assert hashlib.sha256(cls.registered).hexdigest() == cls.adapter.BIND97_REGISTERED_SOURCE_SHA256
 
     def test_restores_the_exact_original_7493_source(self):
         self.assertEqual(hashlib.sha256(self.original).hexdigest(), self.adapter.ORIGINAL_SOURCE_SHA256)
@@ -239,6 +278,109 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
     def test_rejects_mutated_reference_additions(self):
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.registered, self.additions[:-1])
+
+
+    def test_current_target_size_maintenance_has_exact_source_and_suffix(self):
+        self.assertEqual(hashlib.sha256(self.current_registered).hexdigest(),
+                         self.adapter.WINDOWS64_MAINTAINED_BIND97_SHA256)
+        self.assertEqual(hashlib.sha256(self.current_original).hexdigest(),
+                         self.adapter.WINDOWS64_MAINTAINED_ORIGINAL_SHA256)
+        self.assertEqual(self.current_original + self.additions, self.current_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.current_registered, self.additions), self.current_original)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.current_original, self.additions), self.current_original)
+
+    def test_current_maintenance_preserves_124_cases_and_exact_target_size_repair(self):
+        manifest = json.loads((ROOT / 'utils/ci/cpp-pair-piecewise-formal-tests.json').read_text())
+        selected = manifest['new'] + manifest['regression']
+        import re
+        pattern = re.compile(rb'(?m)^TEST_F\(\s*(\w+)\s*,\s*(\w+)\s*\)\s*\{')
+        def bodies(source):
+            matches = list(pattern.finditer(source))
+            self.assertEqual(len(matches), 7493)
+            result = {}
+            for match in matches:
+                name = match[1].decode() + '.' + match[2].decode()
+                if name in selected:
+                    end = self.extractor.body_end(source, match.end() - 1)
+                    result[name] = source[match.start():end]
+            self.assertEqual(set(result), set(selected))
+            self.assertEqual(len(result), 124)
+            return result
+        current, archived = bodies(self.current_original), bodies(self.original)
+        changed = {name for name in current if current[name] != archived[name]}
+        owner = 'TranslateTest.CoreV2StringHashAdaptersRejectSelectedSourcesAndConversions'
+        self.assertEqual(changed, {owner})
+        self.assertEqual(archived[owner].count(self.target_size_helper_archived), 12)
+        self.assertEqual(current[owner].count(self.target_size_helper_current), 12)
+        self.assertEqual(current[owner], archived[owner].replace(
+            self.target_size_helper_archived, self.target_size_helper_current))
+
+    def test_current_maintenance_rejects_changed_source_and_mismatched_suffixes(self):
+        sources = [self.current_registered[:-1], self.current_registered + self.additions,
+                   b' ' + self.current_registered[1:],
+                   self.current_registered.replace(b'__SIZE_TYPE__ size', b'unsigned long size', 1)]
+        for source in sources:
+            with self.subTest(source=hashlib.sha256(source).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(source, self.additions)
+        for suffix in [self.previous48, self.previous61, self.previous71,
+                       self.previous74, self.previous77, self.previous84, self.additions[:-1]]:
+            with self.subTest(suffix=hashlib.sha256(suffix).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(self.current_registered, suffix)
+
+
+    def test_latest109_preserves_exact97_and_twelve_executed_bodies(self):
+        self.assertEqual(self.additions + self.latest_twelve, self.latest_suffix)
+        self.assertEqual(self.latest_twelve.count(b'TEST_F('), 12)
+        self.assertEqual(self.latest_suffix.count(b'TEST_F('), 109)
+        self.assertEqual(self.latest_original + self.latest_suffix, self.latest_registered)
+        self.assertEqual(hashlib.sha256(self.latest_registered).hexdigest(),
+                         self.adapter.BIND109_REGISTERED_SOURCE_SHA256)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.latest_registered, self.latest_suffix), self.latest_original)
+
+    def test_latest_maintenance_is_exactly_eighteen_programs_in_five_owners(self):
+        self.assertEqual(self.maintenance['programs'], 18)
+        self.assertEqual(len(self.maintenance['test_owners']), 5)
+        self.assertEqual(sum(len(row['programs']) for row in self.maintenance['test_owners']), 18)
+        self.assertEqual(hashlib.sha256(self.previous_maintained_original).hexdigest(),
+                         self.adapter.WINDOWS64_MAINTAINED_ORIGINAL_SHA256)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.latest_original, self.latest_suffix), self.latest_original)
+        latest97 = self.latest_original + self.additions
+        self.assertEqual(hashlib.sha256(latest97).hexdigest(), self.adapter.FIXTURE_MAINTAINED_BIND97_SHA256)
+        self.assertEqual(self.adapter.restore_original_gtests(latest97, self.additions), self.latest_original)
+
+    def test_latest_twelve_source_and_body_hashes_match_the_actual_execution_contract(self):
+        mapping = json.loads((ROOT / 'utils/ci/bind-explicit-result-formal-tests.json').read_text())
+        cases = mapping['cases']
+        self.assertEqual(len(cases), 12)
+        self.assertEqual(sum(row['expected'] == 'accept' for row in cases), 7)
+        matches = list(re.finditer(rb'(?m)^TEST_F\(TranslateTest, (\w+)\) \{', self.latest_twelve))
+        self.assertEqual(len(matches), 12)
+        for match, case in zip(matches, cases):
+            self.assertEqual('TranslateTest.' + match[1].decode(), case['formal_test_name'])
+            end = self.extractor.body_end(self.latest_twelve, match.end()-1)
+            body = self.latest_twelve[match.start():end+1]
+            self.assertEqual(hashlib.sha256(body).hexdigest(), case['gtest_body_sha256'])
+            begin = body.index(b'R"result_bind(') + len(b'R"result_bind(')
+            finish = body.index(b')result_bind"', begin)
+            self.assertEqual(hashlib.sha256(body[begin:finish]).hexdigest(), case['source_sha256'])
+
+    def test_latest109_rejects_modified_source_and_mismatched_suffixes(self):
+        sources = [self.latest_registered[:-1], self.latest_registered + self.latest_twelve,
+                   b' ' + self.latest_registered[1:], self.latest_registered + b' ']
+        for source in sources:
+            with self.subTest(source=hashlib.sha256(source).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(source, self.latest_suffix)
+        for suffix in [self.additions, self.previous84, self.latest_twelve, self.latest_suffix[:-1]]:
+            with self.subTest(suffix=hashlib.sha256(suffix).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(self.latest_registered, suffix)
 
 
 if __name__ == '__main__':

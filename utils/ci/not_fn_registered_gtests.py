@@ -42,11 +42,23 @@ BIND61_REGISTERED_SOURCE_SHA256 = 'dc42e287ed5f6ad0c66369429ff1cfc852f22b4977d30
 BIND61_GOLDEN_SUFFIX_SHA256 = '73f36c04fabb4af01ede679c2fede542876f865a81143bc65f512970ce615df9'
 
 
+# The target-size fixture repair keeps every archived registration unchanged.
+WINDOWS64_MAINTAINED_ORIGINAL_SHA256 = '28d17d01980bed3e058d29abf852f494a5b9f16354e0b7d101f53e93e0a1f909'
+WINDOWS64_MAINTAINED_BIND97_SHA256 = '897d3f3dd65d00ca8f03117cef9196aa93eca05082a6282d4ffd75557a9e0acf'
+
+FIXTURE_MAINTAINED_ORIGINAL_SHA256 = '726b475241352fd3ee832e479968f9daf5e44a27cb7b6f9f0f7f52b9a84ae4e3'
+FIXTURE_MAINTAINED_BIND97_SHA256 = 'cabce24d8eadcc4fd4b384b1f3d92e3536ba884d13afce0c3a2d28bc94ff2ab0'
+BIND109_REGISTERED_SOURCE_SHA256 = '3db5ef196fd52c95dfb7fccfe80b6d5417a723899cf315ef7abbc4b6c2a06f5e'
+BIND109_GOLDEN_SUFFIX_SHA256 = 'b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb'
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
     suffix_digest = digest(additions)
-    if suffix_digest == BIND97_GOLDEN_SUFFIX_SHA256:
+    if suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256:
+        registered_digest = BIND109_REGISTERED_SOURCE_SHA256
+    elif suffix_digest == BIND97_GOLDEN_SUFFIX_SHA256:
         registered_digest = BIND97_REGISTERED_SOURCE_SHA256
     elif suffix_digest == BIND84_GOLDEN_SUFFIX_SHA256:
         registered_digest = BIND84_REGISTERED_SOURCE_SHA256
@@ -81,6 +93,24 @@ def restore_original_gtests(source, additions):
         registered_digest = TWELVE_REGISTERED_SOURCE_SHA256
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
+    source_digest = digest(source)
+    if source_digest == FIXTURE_MAINTAINED_ORIGINAL_SHA256:
+        return source
+    if source_digest in [FIXTURE_MAINTAINED_BIND97_SHA256, BIND109_REGISTERED_SOURCE_SHA256]:
+        expected_suffix = (BIND97_GOLDEN_SUFFIX_SHA256 if source_digest == FIXTURE_MAINTAINED_BIND97_SHA256
+                           else BIND109_GOLDEN_SUFFIX_SHA256)
+        assert suffix_digest == expected_suffix and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == FIXTURE_MAINTAINED_ORIGINAL_SHA256
+        return original
+    if source_digest == WINDOWS64_MAINTAINED_ORIGINAL_SHA256:
+        return source
+    if source_digest == WINDOWS64_MAINTAINED_BIND97_SHA256:
+        assert suffix_digest == BIND97_GOLDEN_SUFFIX_SHA256
+        assert source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == WINDOWS64_MAINTAINED_ORIGINAL_SHA256
+        return original
     assert digest(source) == registered_digest
     assert source.endswith(additions)
     original = source[:-len(additions)]
