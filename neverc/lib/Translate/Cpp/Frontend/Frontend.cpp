@@ -23576,8 +23576,11 @@ public:
         Source.FunctionalBindConstraint || Source.FunctionalNotFnConstraint ||
         !Constructor || !approvedUtilityPairMetadata(A.S, A.Sources,
                                                      Constructor->getParent()) ||
-        !approvedUtilityPairTraitSelectionLocation(A.S, A.Sources,
-                                                    Source.Location, Constructor))
+        (!approvedUtilityPairTraitSelectionLocation(A.S, A.Sources,
+                                                     Source.Location, Constructor) &&
+         !approvedUtilityPairFactorySelectionLocation(A.S, A.Sources,
+                                                       Source.Location, Constructor) &&
+         !pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Constructor)))
       return false;
     const auto Found = FunctionSources.find(
         {Constructor, Source.Location.getRawEncoding()});
@@ -23597,11 +23600,14 @@ public:
     if (!Constructor || Constructor != Source.Function ||
         Source.FunctionalBindConstraint || Source.FunctionalNotFnConstraint ||
         !approvedUtilityPairMetadata(A.S, A.Sources, Constructor->getParent()) ||
-        !approvedUtilityPairTraitSelectionLocation(A.S, A.Sources,
-                                                    Source.Location, Constructor))
+        (!approvedUtilityPairTraitSelectionLocation(A.S, A.Sources,
+                                                     Source.Location, Constructor) &&
+         !approvedUtilityPairFactorySelectionLocation(A.S, A.Sources,
+                                                       Source.Location, Constructor) &&
+         !pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Constructor)))
       return false;
-    const auto Found = PairTraitSelections.find(Construction);
-    if (Found == PairTraitSelections.end() || Found->second.empty())
+    const auto Found = SelectedCallSources.find(Construction);
+    if (Found == SelectedCallSources.end() || Found->second.empty())
       return false;
     for (const auto *Previous : Found->second)
       if (!Previous || Previous->Expression != Construction ||
@@ -23686,31 +23692,8 @@ public:
         const bool Fresh = freshLateTemplateSource(Source);
         const bool RepeatedPair = !Fresh && equivalentLatePairTemplateSource(Source);
         if (!Fresh && !RepeatedPair) {
-          const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Source.Declaration);
-          unsigned Alternatives = 0;
-          bool Equivalent = true;
-          if (Constructor) {
-            const auto Found = FunctionSources.find({Constructor, Source.Location.getRawEncoding()});
-            if (Found != FunctionSources.end())
-              for (const auto *Previous : Found->second) {
-                ++Alternatives;
-                Equivalent &= Previous && Previous->Template && Source.Template &&
-                    equivalentUse(*Previous, Source);
-              }
-          }
           A.reject(Source.Location, "repeated late template source",
-                   "A retained late use needs a fresh exact source key. kind=" +
-                   std::to_string(static_cast<unsigned>(Source.Kind)) + " template=" +
-                   (Source.Template ? Source.Template->getQualifiedNameAsString() : "<none>") +
-                   " written=" + std::to_string(Source.Written != nullptr) +
-                   " pair_metadata=" + std::to_string(Constructor &&
-                       approvedUtilityPairMetadata(A.S, A.Sources, Constructor->getParent())) +
-                   " pair_trait_location=" + std::to_string(Constructor &&
-                       approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Constructor)) +
-                   " alternatives=" + std::to_string(Alternatives) +
-                   " equivalent=" + std::to_string(Equivalent) +
-                   " bind=" + std::to_string(Source.FunctionalBindConstraint) +
-                   " notfn=" + std::to_string(Source.FunctionalNotFnConstraint));
+                   "A retained late use needs a fresh exact source key.");
           return;
         }
         indexTemplateSources(llvm::ArrayRef<TemplateUseSource>(&Source, 1), {}, {});
@@ -23731,7 +23714,7 @@ public:
         ReplayPairSources |= RepeatedPair;
       }
       if (ReplayPairSources) {
-        // SDK query events stay inert until a real pair graph binds them.
+        // SDK constructor events stay inert until a real pair graph binds them.
         // Replay every already-bound graph against the complete new index;
         // canonical equivalence alone never certifies fresh substitutions.
         // Copy the roots because completion can append more retained events.
