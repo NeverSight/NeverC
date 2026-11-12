@@ -1,0 +1,90 @@
+{
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ScopedAllocatorIntRunAtBothOptimizations",
+    "TranslateTest.CoreV2Bitset70RunAtBothOptimizations",
+    "TranslateTest.CoreV2ScopedAllocatorOwnedConstructorRejected",
+    "TranslateTest.CoreV2BitsetOwnedCountRejected"
+  ],
+  "source_cases": [
+    {
+      "name": "scoped-allocator-layout",
+      "source": "#include <memory>\n#include <scoped_allocator>\nusing Subject=std::scoped_allocator_adaptor<std::allocator<int>>;\nextern \"C\" unsigned long long stl_sizeof(){return sizeof(Subject);}\nextern \"C\" unsigned long long stl_alignof(){return alignof(Subject);}\nint main(){return stl_sizeof()==0||stl_alignof()==0;}\n",
+      "source_sha256": "906d1ddab831c76268ae4b895aafe5b638976136e60c7e36ec39f488b533a238",
+      "expected": "accept",
+      "kind": "layout",
+      "public_header": "scoped_allocator"
+    },
+    {
+      "name": "scoped-allocator-runtime",
+      "source": "#include <memory>\n#include <scoped_allocator>\nint main(){std::scoped_allocator_adaptor<std::allocator<int>> a;int *p=a.allocate(2);\na.construct(p,9);a.construct(p+1,4);int n=p[0]+p[1];\na.destroy(p+1);a.destroy(p);a.deallocate(p,2);return n!=13;}\n",
+      "source_sha256": "14dac10ea450939b48a3df666df32e50c737c2a6d6000e58687eb7122c39dc8f",
+      "expected": "accept",
+      "kind": "runtime",
+      "public_header": "scoped_allocator"
+    },
+    {
+      "name": "bitset-layout",
+      "source": "#include <bitset>\nusing Subject=std::bitset<70>;\nextern \"C\" unsigned long long stl_sizeof(){return sizeof(Subject);}\nextern \"C\" unsigned long long stl_alignof(){return alignof(Subject);}\nint main(){return stl_sizeof()==0||stl_alignof()==0;}\n",
+      "source_sha256": "8ad330e84fec727759d985bcc8d885faff72138e05c68f70cc3be6962387bf18",
+      "expected": "accept",
+      "kind": "layout",
+      "public_header": "bitset"
+    },
+    {
+      "name": "bitset-runtime",
+      "source": "#include <bitset>\nint main(){std::bitset<70> v;v.set(0).set(69);\nbool both=v.count()==2&&v.test(0)&&v.test(69);v.flip(0);v.reset(69);return !both||v.any();}\n",
+      "source_sha256": "8ceeb180f60f847a1439c56b2e9c77d8bb3b52a96c0c7e29213b8294e2d5cff4",
+      "expected": "accept",
+      "kind": "runtime",
+      "public_header": "bitset"
+    },
+    {
+      "name": "scoped-allocator-owned-constructor-body",
+      "source": "#include <memory>\n#include <scoped_allocator>\ntemplate<> std::scoped_allocator_adaptor<std::allocator<int>>::scoped_allocator_adaptor() noexcept {asm volatile(\"\":::\"memory\");}\nint main(){std::scoped_allocator_adaptor<std::allocator<int>> a;return 0;}\n",
+      "source_sha256": "31823bb0be07c18b7c3c94620c7d43db2bbc01d7261317540e43f26920972bb9",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "scoped_allocator"
+    },
+    {
+      "name": "bitset-owned-count-body",
+      "source": "#include <bitset>\ntemplate<> std::size_t std::bitset<70>::count() const noexcept {asm volatile(\"\":::\"memory\");return 0;}\nint main(){std::bitset<70> b;return int(b.count());}\n",
+      "source_sha256": "d1c2238fffa22c7867d879441bd7f6c045adca03ab96b8cfd83bc3a5e9056cfa",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "bitset"
+    }
+  ],
+  "positive_cases": [
+    {
+      "name": "scoped-allocator-basic",
+      "formal_test_name": "TranslateTest.CoreV2ScopedAllocatorIntRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "14dac10ea450939b48a3df666df32e50c737c2a6d6000e58687eb7122c39dc8f",
+      "original_case_source_sha256": "14dac10ea450939b48a3df666df32e50c737c2a6d6000e58687eb7122c39dc8f",
+      "gtest_body_sha256": "12164ef22e0d3ae9a7635559d58ce00c87f240e7ed523ccae930940d9044ee70"
+    },
+    {
+      "name": "bitset70-basic",
+      "formal_test_name": "TranslateTest.CoreV2Bitset70RunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8ceeb180f60f847a1439c56b2e9c77d8bb3b52a96c0c7e29213b8294e2d5cff4",
+      "original_case_source_sha256": "8ceeb180f60f847a1439c56b2e9c77d8bb3b52a96c0c7e29213b8294e2d5cff4",
+      "gtest_body_sha256": "2aaa0e98280003b19cd2b70ea6d1402204a95f9402e71f10756ece174d54a013"
+    }
+  ],
+  "previous_maintained_sha256": "7a86aa397d598346ab9ef84f05098452ed0c41c16852586e7ce6ee4f5b1fc31a",
+  "maintained_original_sha256": "c758bb163adc94a8c5988a3093cddb16c78c0bf500948f9a0c136962088db782",
+  "registered_source_sha256": "4cfc01142e1cfefab6eaa8ae58ff236117a3fb1e133ea03b12092cb0ff177b29",
+  "registered_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "previous_registry_count": 7496,
+  "current_registry_count": 7500,
+  "historical_registry_count": 7493,
+  "original124_extraction_and_proof_unchanged": true,
+  "current4_extraction_passed": true,
+  "mutation_checks_rejected": 7,
+  "all_original_test_bodies_and109_suffix_unchanged": true,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "full_stl_complete": false
+}
