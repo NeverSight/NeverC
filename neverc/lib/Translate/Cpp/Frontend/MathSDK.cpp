@@ -46980,12 +46980,284 @@ bool approvedUtilityUniquePtrDefaultArgumentSignature(
                                          Context, true);
 }
 
+
+namespace {
+bool bitsetStandardNamespace(const DeclContext *Scope) {
+  for (unsigned Depth = 0; Scope && Depth != 8; ++Depth) {
+    const auto *N = dyn_cast<NamespaceDecl>(Scope);
+    if (!N) return false;
+    if (N->isStdNamespace()) return true;
+    if (!N->isInline()) return false;
+    Scope = N->getParent();
+  }
+  return false;
+}
+bool bitsetPinned(const State &S, const SourceManager &SM, const Decl *D,
+                  bool PublicHeader = false) {
+  const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+  if (D && D->getLocation().isMacroID()) {
+    const auto Spelling = S.sdkFile(SM, SM.getSpellingLoc(D->getLocation()));
+    if (!Spelling || Spelling->Root != "libcxx") return false;
+  }
+  return File && File->Root == "libcxx" &&
+         (!PublicHeader || File->Path == "bitset") &&
+         approvedStandardSDKDeclaration(S, SM, D);
+}
+const ClassTemplateSpecializationDecl *bitsetSpecialization(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    llvm::StringRef Name) {
+  const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input);
+  const auto *T = R ? R->getSpecializedTemplate() : nullptr;
+  if (!T || T->getName() != Name || !bitsetStandardNamespace(T->getDeclContext()) ||
+      R->isInvalidDecl() || R->isDependentContext() || R->isUnion() ||
+      R->getSpecializationKind() != TSK_ImplicitInstantiation) return nullptr;
+  for (const auto *D : T->redecls()) {
+    if (!bitsetPinned(S, SM, D, true)) return nullptr;
+    for (const auto *Pattern : D->getTemplatedDecl()->redecls())
+      if (!bitsetPinned(S, SM, Pattern, true)) return nullptr;
+  }
+  for (const auto *D : R->redecls())
+    if (!bitsetPinned(S, SM, D, true)) return nullptr;
+  const auto *Definition = R->getDefinition();
+  if (!Definition || !bitsetPinned(S, SM, Definition, true)) return nullptr;
+  return R;
+}
+bool bitsetIntegral(const TemplateArgument &Argument, uint64_t Expected) {
+  if (Argument.getKind() != TemplateArgument::Integral) return false;
+  const auto &Value = Argument.getAsIntegral();
+  return !Value.isNegative() && Value.getActiveBits() <= 64 &&
+         Value.getZExtValue() == Expected;
+}
+bool bitsetPinnedFunction(const State &S, const SourceManager &SM,
+                          const FunctionDecl *F) {
+  if (!F || F->isInvalidDecl()) return false;
+  for (const auto *D : F->redecls()) if (!bitsetPinned(S, SM, D)) return false;
+  if (const auto *Pattern = F->getTemplateInstantiationPattern())
+    for (const auto *D : Pattern->redecls())
+      if (!bitsetPinned(S, SM, D)) return false;
+  if (const auto *T = F->getPrimaryTemplate())
+    for (const auto *D : T->redecls())
+      if (!bitsetPinned(S, SM, D) || !bitsetPinned(S, SM, D->getTemplatedDecl()))
+        return false;
+  return true;
+}
+// Primitive bitset arguments cannot introduce a user comparator or allocator.
+// Still reject intercepted SDK calls, explicit user redeclarations and indirect
+// calls anywhere in the selected implementation graph.
+bool bitsetSourceGraph(const State &S, const SourceManager &SM,
+                        const FunctionDecl *Root) {
+  std::set<const FunctionDecl *> Seen;
+  unsigned Nodes = 0;
+  std::function<bool(const FunctionDecl *, unsigned)> Function;
+  std::function<bool(const Stmt *, unsigned)> Statement;
+  Function = [&](const FunctionDecl *F, unsigned Depth) {
+    if (!F || Depth > 64 || ++Nodes > 4096) return false;
+    if (F->getBuiltinID()) {
+      for (const auto *D : F->redecls())
+        if (D->getLocation().isValid() && !bitsetPinned(S, SM, D)) return false;
+      if (F->hasBody()) return false;
+      const auto Name = F->getName();
+      return Name == "__builtin_is_constant_evaluated" ||
+             Name == "__builtin_popcount" || Name == "__builtin_popcountl" ||
+             Name == "__builtin_popcountll" || Name == "__builtin_expect" ||
+             Name == "__builtin_assume" || Name == "__builtin_unreachable";
+    }
+    if (!bitsetPinnedFunction(S, SM, F)) return false;
+    if (!Seen.insert(F->getCanonicalDecl()).second) return true;
+    // Position-taking operations below require a constant in-range index.
+    // Their error branch cannot execute, but its declaration remains pinned.
+    if (F->getIdentifier() && F->getName() == "__throw_out_of_range" && F->getNumParams() == 1)
+      return true;
+    if (const auto *M = dyn_cast<CXXMethodDecl>(F);
+        M && M->isImplicit() && M->isTrivial()) return true;
+    if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(F))
+      for (const auto *Init : Constructor->inits())
+        if (!Statement(Init->getInit(), Depth + 1)) return false;
+    const auto *Body = F->getBody();
+    return Body && Statement(Body, Depth + 1);
+  };
+  Statement = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node) return true;
+    if (Depth > 64 || ++Nodes > 4096) return false;
+    auto PinnedMacro = [&](SourceLocation Location) {
+      if (!Location.isMacroID()) return true;
+      const auto File = S.sdkFile(SM, SM.getSpellingLoc(Location));
+      return File && (File->Root == "libcxx" || File->Root == "resource");
+    };
+    if (!PinnedMacro(Node->getBeginLoc()) || !PinnedMacro(Node->getEndLoc())) return false;
+    if (const auto *E = dyn_cast<Expr>(Node))
+      if (!PinnedMacro(E->getExprLoc())) return false;
+    if (const auto *E = dyn_cast<MemberExpr>(Node))
+      if (!PinnedMacro(E->getMemberLoc())) return false;
+    if (const auto *Call = dyn_cast<CallExpr>(Node))
+      if (!Function(Call->getDirectCallee(), Depth + 1)) return false;
+    if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
+      if (!Function(C->getConstructor(), Depth + 1)) return false;
+    for (const auto *Child : Node->children())
+      if (!Statement(Child, Depth + 1)) return false;
+    return true;
+  };
+  return Function(Root, 0);
+}
+std::optional<uint64_t> bitsetFixedPosition(const Expr *E,
+                                           const ASTContext &Context,
+                                           uint64_t Bits) {
+  const auto *Value = E ? dyn_cast<IntegerLiteral>(E->IgnoreParenImpCasts()) : nullptr;
+  if (!Value || Value->getValue().getActiveBits() > 64 ||
+      Value->getValue().getZExtValue() >= Bits) return std::nullopt;
+  return Value->getValue().getZExtValue();
+}
+} // namespace
+
+std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    const ASTContext &Context) {
+  if (!S.coreV2() || Context.getCharWidth() != 8 ||
+      Context.getTypeSize(Context.getSizeType()) != 64 ||
+      Context.getTypeSize(Context.VoidPtrTy) != 64) return std::nullopt;
+  const auto *Specialization = bitsetSpecialization(S, SM, Input, "bitset");
+  if (!Specialization || Specialization->getTemplateArgs().size() != 1)
+    return std::nullopt;
+  const auto &Argument = Specialization->getTemplateArgs()[0];
+  if (Argument.getKind() != TemplateArgument::Integral ||
+      Argument.getAsIntegral().isNegative() || Argument.getAsIntegral().getActiveBits() > 64)
+    return std::nullopt;
+  const uint64_t Bits = Argument.getAsIntegral().getZExtValue();
+  if (!Bits || Bits > UINT64_MAX - 63) return std::nullopt;
+  const uint64_t Words = (Bits + 63) / 64;
+  const auto *R = Specialization->getDefinition();
+  if (!R || R->getNumBases() != 1 || R->getNumVBases() || R->isPolymorphic() ||
+      !R->field_empty() || !R->isTriviallyCopyable() || !R->hasTrivialDestructor())
+    return std::nullopt;
+  const auto &BaseSpecifier = *R->bases_begin();
+  if (BaseSpecifier.isVirtual()) return std::nullopt;
+  const auto *BaseSpecialization = bitsetSpecialization(
+      S, SM, BaseSpecifier.getType()->getAsCXXRecordDecl(), "__bitset");
+  if (!BaseSpecialization || BaseSpecialization->getTemplateArgs().size() != 2 ||
+      !bitsetIntegral(BaseSpecialization->getTemplateArgs()[0], Words) ||
+      !bitsetIntegral(BaseSpecialization->getTemplateArgs()[1], Bits)) return std::nullopt;
+  const auto *Base = BaseSpecialization->getDefinition();
+  if (!Base || Base->getNumBases() || Base->getNumVBases() || Base->isPolymorphic())
+    return std::nullopt;
+  const FieldDecl *Storage = nullptr;
+  for (const auto *F : Base->fields()) {
+    if (Storage || !bitsetPinned(S, SM, F, true) || F->getName() != "__first_" || F->isBitField())
+      return std::nullopt;
+    Storage = F;
+  }
+  if (!Storage) return std::nullopt;
+  QualType Word = Storage->getType();
+  if (Words != 1) {
+    const auto *Array = Context.getAsConstantArrayType(Word);
+    if (!Array || Array->getSize().getActiveBits() > 64 || Array->getSize().getZExtValue() != Words)
+      return std::nullopt;
+    Word = Array->getElementType();
+  }
+  if (!Context.hasSameType(Word, Context.getSizeType())) return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(R);
+  const auto &BaseLayout = Context.getASTRecordLayout(Base);
+  if (Layout.getBaseClassOffset(Base).getQuantity() != 0 ||
+      BaseLayout.getFieldCount() != 1 || BaseLayout.getFieldOffset(0) != 0 ||
+      uint64_t(Layout.getSize().getQuantity()) != Words * 8 ||
+      uint64_t(BaseLayout.getSize().getQuantity()) != Words * 8 ||
+      Layout.getAlignment().getQuantity() != 8 || BaseLayout.getAlignment().getQuantity() != 8)
+    return std::nullopt;
+  return UtilityBitsetRecord{R, Base, Storage, Bits, Words};
+}
+
+std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *C,
+    const ASTContext &Context) {
+  if (!C || C->isTypeDependent() || C->isValueDependent() ||
+      C->getConstructionKind() != CXXConstructionKind::Complete) return std::nullopt;
+  const auto *M = C->getConstructor();
+  const auto Info = M ? approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) : std::nullopt;
+  if (!Info || !bitsetPinnedFunction(S, SM, M) || !bitsetSourceGraph(S, SM, M)) return std::nullopt;
+  if ((M->isCopyConstructor() || M->isMoveConstructor()) && M->isImplicit() && M->isTrivial() &&
+      C->getNumArgs() == 1) return UtilityBitsetConstruction::Copy;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(M->getBody());
+  if (!Body || !Body->body_empty() || M->getNumCtorInitializers() != 1) return std::nullopt;
+  const auto *Initializer = *M->init_begin();
+  const auto *Type = Initializer->getTypeSourceInfo();
+  const auto *BaseConstruction = dyn_cast_or_null<CXXConstructExpr>(Initializer->getInit()->IgnoreImplicit());
+  if (!Initializer->isBaseInitializer() || !Type ||
+      !Context.hasSameType(Type->getType(), Context.getRecordType(Info->Base)) ||
+      !BaseConstruction || !bitsetPinnedFunction(S, SM, BaseConstruction->getConstructor()))
+    return std::nullopt;
+  if (M->getNumParams() == 0 && C->getNumArgs() == 0)
+    return UtilityBitsetConstruction::Default;
+  if (M->getNumParams() == 1 && C->getNumArgs() == 1 &&
+      Context.hasSameType(M->getParamDecl(0)->getType(), Context.UnsignedLongLongTy))
+    return UtilityBitsetConstruction::UnsignedValue;
+  return std::nullopt;
+}
+
+std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *M = Member ? Member->getMethodDecl() : nullptr;
+  const auto Info = M ? approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) : std::nullopt;
+  if (!Info || !ownedMethodRef(S, SM, Member->getCallee()) || !M->getIdentifier() || M->isStatic() || M->isVariadic() || !bitsetPinnedFunction(S, SM, M) ||
+      !bitsetSourceGraph(S, SM, M)) return std::nullopt;
+  const auto Name = M->getName();
+  if (M->isConst() && M->getNumParams() == 0 && Call->getNumArgs() == 0) {
+    if (Name == "count" && Context.hasSameType(M->getReturnType(), Context.getSizeType()))
+      return UtilityBitsetCall{UtilityOperation::BitsetCount, 0};
+    if (Name == "any" && Context.hasSameType(M->getReturnType(), Context.BoolTy))
+      return UtilityBitsetCall{UtilityOperation::BitsetAny, 0};
+    return std::nullopt;
+  }
+  if (M->getNumParams() == 0 || Call->getNumArgs() == 0 ||
+      !Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) return std::nullopt;
+  const auto Position = bitsetFixedPosition(Call->getArg(0), Context, Info->Bits);
+  if (!Position) return std::nullopt;
+  if (Name == "test" && M->isConst() && M->getNumParams() == 1 && Call->getNumArgs() == 1 &&
+      Context.hasSameType(M->getReturnType(), Context.BoolTy))
+    return UtilityBitsetCall{UtilityOperation::BitsetTest, *Position};
+  if (M->isConst() || !M->getReturnType()->isLValueReferenceType() ||
+      !Context.hasSameType(M->getReturnType()->getPointeeType(), Context.getRecordType(Info->Record)))
+    return std::nullopt;
+  if (Name == "set" && M->getNumParams() == 2 && Call->getNumArgs() == 2 &&
+      Context.hasSameType(M->getParamDecl(1)->getType(), Context.BoolTy))
+    return UtilityBitsetCall{UtilityOperation::BitsetSet, *Position};
+  if (M->getNumParams() == 1 && Call->getNumArgs() == 1) {
+    if (Name == "reset") return UtilityBitsetCall{UtilityOperation::BitsetReset, *Position};
+    if (Name == "flip") return UtilityBitsetCall{UtilityOperation::BitsetFlip, *Position};
+  }
+  return std::nullopt;
+}
+
+
+bool bitsetDefaultArgument(const State &S, const SourceManager &SM,
+                           const CXXDefaultArgExpr *Default,
+                           const FunctionDecl *Function, unsigned Index,
+                           ASTContext &Context) {
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(Function);
+  const auto *P = Default ? Default->getParam() : nullptr;
+  const auto *Owner = P ? dyn_cast<FunctionDecl>(P->getDeclContext()) : nullptr;
+  if (!M || !M->getIdentifier() || M->getName() != "set" || M->isConst() ||
+      M->getNumParams() != 2 || Index != 1 || P != M->getParamDecl(1) ||
+      P->getFunctionScopeIndex() != 1 || !Owner ||
+      Owner->getCanonicalDecl() != M->getCanonicalDecl() ||
+      !Context.hasSameType(P->getType(), Context.BoolTy) ||
+      !Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) ||
+      !approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) ||
+      !bitsetPinnedFunction(S, SM, M) || !bitsetPinned(S, SM, P, true)) return false;
+  const auto *Init = selectedDefaultArgument(Default, Context);
+  const auto *Value = Init ? dyn_cast<CXXBoolLiteralExpr>(Init->IgnoreParenImpCasts()) : nullptr;
+  return Value && Value->getValue() && bitsetPinned(S, SM, M, true) &&
+         cstddefOrigin(S, SM, Value->getExprLoc(), "libcxx", "bitset") &&
+         !Value->getExprLoc().isMacroID();
+}
+
 bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     const CXXDefaultArgExpr *Default,
                                     const FunctionDecl *Function,
                                     unsigned Index, ASTContext &Context) {
   if (!S.coreV2())
     return false;
+  if (bitsetDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
   if (approvedUtilityUnorderedMapDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
   if (approvedScalarRealDistributionDefaultArgument(S, SM, Default, Function, Index, Context))
@@ -111895,6 +112167,7 @@ approvedUtilityPairPiecewiseConstruction(
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
+  if (const auto Bitset = approvedUtilityBitsetCall(S, SM, Call, Context)) return Bitset->Operation;
   if (const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
       M && M->getIdentifier() && M->getName() == "destroy" && Call->getNumArgs() == 1 &&
       scopedAllocatorMethodSource(S, SM, M, Context)) {

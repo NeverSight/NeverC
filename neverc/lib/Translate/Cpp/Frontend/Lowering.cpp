@@ -26125,9 +26125,90 @@ class FunctionLowering {
     }
   }
 
+
+  QualType bitsetArrayType(const UtilityBitsetRecord &Info) {
+    return A.Context.getConstantArrayType(A.Context.getSizeType(),
+        llvm::APInt(64, Info.Words), nullptr, ArraySizeModifier::Normal, 0);
+  }
+  Expression bitsetStorage(Expression Place, const UtilityBitsetRecord &Info,
+                           SourceLocation L) {
+    return Expression{{"kind", "member"}, {"type", type(bitsetArrayType(Info), L)},
+        {"name", "nct_bitset_words"}, {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+  Expression bitsetWord(Expression Place, const UtilityBitsetRecord &Info,
+                        Expression Position, SourceLocation L) {
+    auto Words = decay(bitsetStorage(std::move(Place), Info, L), "ptr:u64", L);
+    return index(std::move(Words), std::move(Position), "u64", L);
+  }
+  Expression utilityBitsetOperation(const CallExpr *Call, UtilityOperation Operation) {
+    const auto L = Call->getExprLoc();
+    const auto Proof = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
+    const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+    const auto Info = Member ? approvedUtilityBitsetRecord(A.S, A.Sources,
+        Member->getMethodDecl()->getParent(), A.Context) : std::nullopt;
+    if (!Proof || !Info || Proof->Operation != Operation)
+      reject(L, "bitset operation", "The exact selected SDK body and receiver are required.");
+    const auto *Object = Member->getImplicitObjectArgument();
+    auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+        : address(lvalue(Object), Object->getType(), L), L);
+    auto Place = dereference(Receiver, L);
+    if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny) {
+      auto Result = temporary("u64", L), Position = temporary("u64", L);
+      assign(Result, quantity(0, "u64", L), L);
+      assign(Position, quantity(0, "u64", L), L);
+      const auto Check = labelName(), Word = labelName(), Next = labelName(), Done = labelName();
+      jump(Check, L);label(Check, L);
+      branch(binary("<", Position, quantity(Info->Words, "u64", L), "bool", L), Word, Done, L);
+      label(Word, L);
+      auto Bits = snapshot(bitsetWord(Place, *Info, Position, L), L);
+      if (Operation == UtilityOperation::BitsetAny) {
+        assign(Result, cast(binary("||", binary("!=", Result, quantity(0, "u64", L), "bool", L),
+            binary("!=", Bits, quantity(0, "u64", L), "bool", L), "bool", L), "u64", L), L);
+        jump(Next, L);
+      } else {
+        const auto BitCheck = labelName(), Count = labelName();
+        jump(BitCheck, L);label(BitCheck, L);
+        branch(binary("!=", Bits, quantity(0, "u64", L), "bool", L), Count, Next, L);
+        label(Count, L);
+        assign(Result, binary("+", Result, quantity(1, "u64", L), "u64", L), L);
+        assign(Bits, binary("&", Bits, binary("-", Bits, quantity(1, "u64", L), "u64", L), "u64", L), L);
+        jump(BitCheck, L);
+      }
+      label(Next, L);
+      assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
+      jump(Check, L);label(Done, L);
+      return cast(Result, type(Call->getType(), L), L);
+    }
+    // A literal, in-range position has no side effects. Evaluate its owned
+    // operand slot as well, preserving the receiver-before-arguments rule.
+    argument(Call->getArg(0), Member->getMethodDecl()->getParamDecl(0)->getType());
+    auto Word = bitsetWord(Place, *Info, quantity(Proof->Position / 64, "u64", L), L);
+    const uint64_t Mask = uint64_t(1) << (Proof->Position % 64);
+    if (Operation == UtilityOperation::BitsetTest)
+      return binary("!=", binary("&", Word, quantity(Mask, "u64", L), "u64", L), quantity(0, "u64", L), "bool", L);
+    if (Operation == UtilityOperation::BitsetSet) {
+      auto Value = snapshot(argument(Call->getArg(1), A.Context.BoolTy), L);
+      const auto Set = labelName(), Clear = labelName(), Done = labelName();
+      branch(Value, Set, Clear, L);label(Set, L);
+      assign(Word, binary("|", Word, quantity(Mask, "u64", L), "u64", L), L);
+      jump(Done, L);label(Clear, L);
+      assign(Word, binary("&", Word, quantity(UINT64_MAX ^ Mask, "u64", L), "u64", L), L);
+      jump(Done, L);label(Done, L);
+    } else if (Operation == UtilityOperation::BitsetReset) {
+      assign(Word, binary("&", Word, quantity(UINT64_MAX ^ Mask, "u64", L), "u64", L), L);
+    } else if (Operation == UtilityOperation::BitsetFlip) {
+      assign(Word, binary("^", Word, quantity(Mask, "u64", L), "u64", L), L);
+    } else reject(L, "bitset operation", "Unknown checked bitset operation.");
+    return Place;
+  }
+
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
+    if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
+        Operation == UtilityOperation::BitsetTest || Operation == UtilityOperation::BitsetSet ||
+        Operation == UtilityOperation::BitsetReset || Operation == UtilityOperation::BitsetFlip)
+      return utilityBitsetOperation(Call, Operation);
     if (Operation == UtilityOperation::UnorderedMapGetAllocator ||
         Operation == UtilityOperation::UnorderedMapPolicy) {
       const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
@@ -35392,6 +35473,25 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       return;
     }
+
+    if (auto Kind = approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedUtilityBitsetRecord(A.S, A.Sources,
+          T->getAsCXXRecordDecl(), A.Context);
+      if (!Info) reject(L, "bitset construction", "The authenticated word storage is unavailable.");
+      if (*Kind == UtilityBitsetConstruction::Copy) {
+        assign(Place, expression(C->getArg(0)), L);
+      } else {
+        initializeZero(bitsetStorage(Place, *Info, L), bitsetArrayType(*Info), L);
+        if (*Kind == UtilityBitsetConstruction::UnsignedValue) {
+          auto Value = snapshot(cast(argument(C->getArg(0), A.Context.UnsignedLongLongTy), "u64", L), L);
+          if (Info->Bits < 64)
+            Value = binary("&", Value, quantity((uint64_t(1) << Info->Bits) - 1, "u64", L), "u64", L);
+          assign(bitsetWord(Place, *Info, quantity(0, "u64", L), L), Value, L);
+        }
+      }
+      return;
+    }
+
     if (auto Kind = approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context)) {
       auto Vector = approvedUtilityVectorRecord(

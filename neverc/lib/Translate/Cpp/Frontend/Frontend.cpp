@@ -13803,6 +13803,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityUnorderedMapRecord(S, Sources, D, Context) &&
                  !requireUtilityUnorderedMap(D, L, Depth + 1)) {
         return {};
+      } else if (approvedUtilityBitsetRecord(S, Sources, D, Context) &&
+                 !requireUtilityBitset(D, L, Depth + 1)) {
+        return {};
       } else if (approvedUtilityVectorRecord(S, Sources, D, Context) &&
                  !requireUtilityVector(D, L, Depth + 1)) {
         return {};
@@ -14197,6 +14200,22 @@ bool Adapter::requireUtilityUnorderedMap(const CXXRecordDecl *Record,
   return true;
 }
 
+
+bool Adapter::requireUtilityBitset(const CXXRecordDecl *Record,
+                                   SourceLocation L, unsigned Depth) {
+  const auto Info = approvedUtilityBitsetRecord(S, Sources, Record, Context);
+  if (!Info || Depth > 64) {
+    reject(L, "bitset layout", "The pinned nonempty 64-bit-word bitset layout is required.", "TR0203");
+    return false;
+  }
+  if (!RequiredUtilityBitsets.insert(Info->Record->getCanonicalDecl()).second) return true;
+  const auto Storage = Context.getConstantArrayType(Context.getSizeType(),
+      llvm::APInt(64, Info->Words), nullptr, ArraySizeModifier::Normal, 0);
+  if (type(Storage, L, false, Depth + 1).empty()) return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Info->Record));
+  return true;
+}
+
 bool Adapter::requireUtilityVector(const CXXRecordDecl *Record,
                                    SourceLocation Location, unsigned Depth) {
   if (Depth > 64) {
@@ -14512,6 +14531,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Map->NodePointerType, L));
       Args.push_back(zero(Context.getSizeType(), L));
       Args.push_back(zero(Context.FloatTy, L));
+    } else if (auto Bitset = approvedUtilityBitsetRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, Bitset->Words), nullptr, ArraySizeModifier::Normal, 0), L));
     } else if (auto Vector = approvedUtilityVectorRecord(S, Sources, R,
                                                         Context)) {
       for (unsigned I = 0; I != 3; ++I)
@@ -15005,6 +15026,13 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
                             L));
     } else if (approvedFunctionalObjectRecord(S, Sources, Record, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
+    } else if (auto Bitset = approvedUtilityBitsetRecord(S, Sources, Record, Context)) {
+      const auto &Storage = V.getStructBase(0).getStructField(0);
+      const auto Array = Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, Bitset->Words), nullptr, ArraySizeModifier::Normal, 0);
+      if (Bitset->Words == 1) {
+        json::Array Words;Words.push_back(constant(Storage, Context.getSizeType(), L));
+        Args.push_back(json::Object{{"kind", "aggregate"}, {"type", type(Array, L)}, {"args", std::move(Words)}, {"loc", loc(L)}});
+      } else Args.push_back(constant(Storage, Array, L));
     } else if (auto Unique = approvedUtilityUniquePtrRecord(S, Sources, Record,
                                                             Context)) {
       Args.push_back(constant(V.getStructField(0), Unique->PointerType, L));
@@ -18444,6 +18472,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          unorderedResultConstruction(A.S, A.Sources, C, A.Context) ||
          unorderedNodeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityVectorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                   A.Context) ||
@@ -21129,6 +21158,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             approvedUtilityStringConstruction(A.S, A.Sources, Construction,
                                               A.Context)
                 .has_value() ||
+            approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             UniqueSourceConstruction || VectorConstruction.has_value();
         auto Pinned = [&](const FunctionDecl *Function) {
           if (!Function || Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
@@ -23922,6 +23952,7 @@ public:
          unorderedResultConstruction(A.S, A.Sources, Construction, A.Context) ||
          unorderedNodeConstruction(A.S, A.Sources, Construction, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
            approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
@@ -30769,6 +30800,7 @@ public:
          unorderedResultConstruction(A.S, A.Sources, C, A.Context) ||
          unorderedNodeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
                    approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
@@ -30991,6 +31023,7 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityStringRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityVector =
         approvedUtilityVectorRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityBitset = approvedUtilityBitsetRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedIterator =
         approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedMap =
@@ -31031,7 +31064,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
                                    UtilityString ||
-                                   UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
+                                   UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
                                    UnorderedNode || UnorderedResult ||
                                    UtilityDefaultDelete || UtilityAllocator
                                ? nullptr
@@ -31283,6 +31316,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     const auto UtilityVector =
         S.coreV2() ? approvedUtilityVectorRecord(S, Sources, R, Context)
                    : std::optional<UtilityVectorRecord>();
+    const auto UtilityBitset = approvedUtilityBitsetRecord(S, Sources, R, Context);
     const auto UtilityUnorderedIterator =
         approvedUtilityUnorderedMapIteratorRecord(S, Sources, R, Context);
     const auto UtilityUnorderedMap =
@@ -31329,7 +31363,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
                                !UtilityUniquePtr && !UtilityString &&
-                               !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
+                               !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
                                !UnorderedNode && !UnorderedResult &&
                                !UtilityDefaultDelete &&
                                !UtilityAllocator
@@ -31370,6 +31404,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       Fields.push_back(json::Object{
           {"name", "nct_unique_ptr_pointer"},
           {"type", type(UtilityUniquePtr->PointerType, R->getLocation())}});
+    } else if (UtilityBitset) {
+      const auto Storage = Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, UtilityBitset->Words), nullptr, ArraySizeModifier::Normal, 0);
+      Fields.push_back(json::Object{{"name", "nct_bitset_words"}, {"type", type(Storage, R->getLocation())}});
     } else if (UtilityString) {
       for (unsigned I = 0; I != 3; ++I)
         Fields.push_back(json::Object{
@@ -31476,6 +31513,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                      : Context.getTypeSize(UtilityVector->PointerType);
         for (unsigned I = 0; I != 3; ++I)
           Offsets.push_back(I * PointerBits);
+      } else if (UtilityBitset) {
+        Offsets.push_back(uint64_t(0));
       } else if (NotFn || FunctionalObject || UtilityUniquePtr ||
           UtilityDefaultDelete || UtilityAllocator) {
         Offsets.push_back(uint64_t(0));

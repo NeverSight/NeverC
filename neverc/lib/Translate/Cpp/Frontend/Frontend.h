@@ -1296,6 +1296,7 @@ enum class UtilityOperation {
   StringFindFirstNotOf,
   StringFindLastNotOf,
   StringViewSize,
+  BitsetCount, BitsetAny, BitsetTest, BitsetSet, BitsetReset, BitsetFlip,
   VectorSize,
   VectorGetAllocator,
   VectorCapacity,
@@ -3650,6 +3651,29 @@ bool approvedUtilityStringDestructor(const State &S,
                                      const clang::SourceManager &SM,
                                      const clang::CXXDestructorDecl *Destructor,
                                      const clang::ASTContext &Context);
+
+struct UtilityBitsetRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  const clang::CXXRecordDecl *Base = nullptr;
+  const clang::FieldDecl *Storage = nullptr;
+  uint64_t Bits = 0;
+  uint64_t Words = 0;
+};
+enum class UtilityBitsetConstruction { Default, UnsignedValue, Copy };
+struct UtilityBitsetCall {
+  UtilityOperation Operation;
+  uint64_t Position = 0;
+};
+std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+
 struct UtilityVectorRecord {
   const clang::CXXRecordDecl *Record;
   clang::QualType ElementType, PointerType;
@@ -4232,6 +4256,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityInitializerLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStringViews;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStrings;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityBitsets;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMapIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMaps;
@@ -4340,6 +4365,7 @@ public:
       clang::SourceLocation Location, unsigned Depth = 0);
   bool requireUnorderedNode(const clang::CXXRecordDecl *Record,
       clang::SourceLocation Location, unsigned Depth);
+  bool requireUtilityBitset(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
                             unsigned Depth = 0);
