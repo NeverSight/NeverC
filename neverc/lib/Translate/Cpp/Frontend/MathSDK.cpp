@@ -123432,6 +123432,66 @@ std::string Adapter::mapping(const CallExpr *Call) {
                               {"column", Sources.getSpellingColumnNumber(L)}}}};
   return ID;
 }
+// This proof admits unevaluated type metadata, never an object carrier or
+// container operation. Both the element and the default allocator are closed.
+bool approvedSequenceContainerMetadataRecord(const State &S,
+    const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  if (!S.coreV2()) return false;
+  auto StandardNamespace = [](const DeclContext *Scope) {
+    for (unsigned Depth = 0; Scope && Depth < 8; ++Depth) {
+      const auto *Namespace = dyn_cast<NamespaceDecl>(Scope);
+      if (!Namespace) return false;
+      if (Namespace->isStdNamespace()) return true;
+      if (!Namespace->isInline()) return false;
+      Scope = Namespace->getParent();
+    }
+    return false;
+  };
+  auto Specialization = [&](const CXXRecordDecl *Input, llvm::StringRef Name,
+                            llvm::StringRef Header, llvm::StringRef Forward)
+      -> const ClassTemplateSpecializationDecl * {
+    const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input);
+    const auto *Template = R ? R->getSpecializedTemplate() : nullptr;
+    if (!Template || Template->getName() != Name ||
+        !StandardNamespace(Template->getDeclContext()) || R->isInvalidDecl() ||
+        R->isUnion() || R->isDependentContext() ||
+        (R->getSpecializationKind() != TSK_ImplicitInstantiation &&
+         R->getSpecializationKind() != TSK_Undeclared)) return nullptr;
+    auto Pinned = [&](const Decl *D) {
+      const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+      return File && File->Root == "libcxx" &&
+             (File->Path == Header || File->Path == Forward ||
+              (Name == "allocator" && File->Path == "__memory/allocator_traits.h")) &&
+             approvedStandardSDKDeclaration(S, SM, D);
+    };
+    for (const auto *D : Template->redecls()) {
+      if (!Pinned(D)) return nullptr;
+      for (const auto *Pattern : D->getTemplatedDecl()->redecls())
+        if (!Pinned(Pattern)) return nullptr;
+    }
+    for (const auto *D : R->redecls()) if (!Pinned(D)) return nullptr;
+    if (R->getDefinition() && !Pinned(R->getDefinition())) return nullptr;
+    return R;
+  };
+  if (!Record || !Record->getIdentifier()) return false;
+  const auto Name = Record->getName();
+  if (Name != "deque" && Name != "list" && Name != "forward_list") return false;
+  const std::string Forward = "__fwd/" + Name.str() + ".h";
+  const auto *Container = Specialization(Record, Name, Name, Forward);
+  if (!Container || Container->getTemplateArgs().size() != 2) return false;
+  const auto &Arguments = Container->getTemplateArgs();
+  if (Arguments[0].getKind() != TemplateArgument::Type ||
+      Arguments[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments[0].getAsType(), Context.IntTy)) return false;
+  const auto *Allocator = Specialization(
+      Arguments[1].getAsType()->getAsCXXRecordDecl(), "allocator",
+      "__memory/allocator.h", "__fwd/memory.h");
+  return Allocator && Allocator->getTemplateArgs().size() == 1 &&
+         Allocator->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
+         Context.hasSameType(Allocator->getTemplateArgs()[0].getAsType(), Context.IntTy);
+}
+
 bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
     const CXXRecordDecl *Record, const ASTContext &Context) {
   if (!S.coreV2()) return false;

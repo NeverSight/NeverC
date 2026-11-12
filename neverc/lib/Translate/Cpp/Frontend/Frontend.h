@@ -4034,6 +4034,9 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapIteratorOperation(
 std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+bool approvedSequenceContainerMetadataRecord(const State &S,
+    const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
 bool approvedUnorderedMapMetadataRecord(const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 bool approvedCstddefTypeQuery(const State &S,
