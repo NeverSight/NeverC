@@ -41599,17 +41599,24 @@ approvedUtilityStringRecord(const State &S, const SourceManager &SM,
   std::vector<const FieldDecl *> Fields;
   for (const auto *Field : String->fields())
     Fields.push_back(Field);
-  if (Fields.size() != 4 || Fields[0]->getName() != "__rep_" ||
-      !Fields[1]->getName().starts_with("__padding1_") ||
-      Fields[2]->getName() != "__alloc_" ||
-      !Fields[3]->getName().starts_with("__padding2_") ||
-      !Context.hasSameType(Fields[2]->getType(),
-                           Arguments.get(2).getAsType()) ||
+  const auto &Triple = Context.getTargetInfo().getTriple();
+  const bool CompactMicrosoft = Triple.isArch64Bit() && Triple.isOSWindows() &&
+      Context.getTargetInfo().getCXXABI().isMicrosoft() && Fields.size() == 2;
+  const auto AllocatorIndex = CompactMicrosoft ? 1u : 2u;
+  if ((!CompactMicrosoft && Fields.size() != 4) || Fields[0]->getName() != "__rep_" ||
+      Fields[AllocatorIndex]->getName() != "__alloc_" ||
+      (!CompactMicrosoft &&
+       (!Fields[1]->getName().starts_with("__padding1_") ||
+        !Fields[3]->getName().starts_with("__padding2_"))) ||
+      !Context.hasSameType(Fields[AllocatorIndex]->getType(), Arguments.get(2).getAsType()) ||
       !approvedStandardSDKDeclaration(S, SM, Fields[0]) ||
-      !approvedStandardSDKDeclaration(S, SM, Fields[2]) ||
+      !approvedStandardSDKDeclaration(S, SM, Fields[AllocatorIndex]) ||
       !cstddefOrigin(S, SM, Fields[0]->getLocation(), "libcxx", "string") ||
-      !cstddefOrigin(S, SM, Fields[2]->getLocation(), "libcxx", "string"))
+      !cstddefOrigin(S, SM, Fields[AllocatorIndex]->getLocation(), "libcxx", "string"))
     return std::nullopt;
+  if (CompactMicrosoft)
+    for (const auto *Field : Fields)
+      if (!Field->hasAttr<NoUniqueAddressAttr>()) return std::nullopt;
   const auto *Rep = Fields[0]->getType()->getAsCXXRecordDecl();
   Rep = Rep ? Rep->getDefinition() : nullptr;
   if (!Rep || !Rep->isUnion() || !Rep->isStandardLayout() ||
@@ -41669,9 +41676,9 @@ approvedUtilityStringRecord(const State &S, const SourceManager &SM,
   const auto &Layout = Context.getASTRecordLayout(String);
   const auto &RepLayout = Context.getASTRecordLayout(Rep);
   if (PointerBits != WordBits || (WordBits != 32 && WordBits != 64) ||
-      Layout.getFieldCount() != 4 || Layout.getFieldOffset(0) != 0 ||
-      Layout.getFieldOffset(1) != 0 || Layout.getFieldOffset(2) != 0 ||
-      Layout.getFieldOffset(3) != 0 ||
+      Layout.getFieldCount() != Fields.size() || Layout.getFieldOffset(0) != 0 ||
+      Layout.getFieldOffset(AllocatorIndex) != 0 ||
+      (!CompactMicrosoft && (Layout.getFieldOffset(1) != 0 || Layout.getFieldOffset(3) != 0)) ||
       uint64_t(Layout.getSize().getQuantity()) * 8 != 3 * WordBits ||
       uint64_t(Layout.getAlignment().getQuantity()) * 8 != WordBits ||
       uint64_t(RepLayout.getSize().getQuantity()) * 8 != 3 * WordBits ||

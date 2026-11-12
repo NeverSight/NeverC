@@ -8771,8 +8771,17 @@ public:
 
   bool moveConstructor(const CXXConstructorDecl *M) {
     const auto *B = M ? dyn_cast_or_null<CompoundStmt>(M->getBody()) : nullptr;
+    unsigned FieldCount = 0;
+    for (auto I = Owner.Record->field_begin(); I != Owner.Record->field_end(); ++I)
+      ++FieldCount;
+    const auto &Triple = A.Context.getTargetInfo().getTriple();
+    const bool CompactMicrosoft = Triple.isArch64Bit() && Triple.isOSWindows() &&
+        A.Context.getTargetInfo().getCXXABI().isMicrosoft() &&
+        FieldCount == (Owner.Deleter.Array ? 3u : 2u);
+    const auto ExpectedFields = CompactMicrosoft ? (Owner.Deleter.Array ? 3u : 2u)
+                                                 : (Owner.Deleter.Array ? 5u : 4u);
     if (!M || !M->isMoveConstructor() || M->getNumParams() != 1 ||
-        M->getNumCtorInitializers() != (Owner.Deleter.Array ? 5u : 4u) ||
+        FieldCount != ExpectedFields || M->getNumCtorInitializers() != ExpectedFields ||
         !B || !B->body_empty() || !utilityUniquePtrFunctionSource(A, M))
       return false;
     const auto *Source = M->getParamDecl(0);
@@ -8787,7 +8796,7 @@ public:
                     Owner.Record->getCanonicalDecl()) return false;
       const auto *E = Init->getInit()->IgnoreParenImpCasts();
       const auto Position = Index++;
-      if (Position == 1 || Position == 3) {
+      if (!CompactMicrosoft && (Position == 1 || Position == 3)) {
         // Only these exact descriptor-checked padding fields use token-pasted
         // names. Their spelling is scratch space; the owning pinned SDK macro
         // invocation, exact field identity and selected constructor prove them.
@@ -10234,13 +10243,17 @@ static bool utilityPairDefaultStringConstructionSource(
       !Body || Body->size() != 1 || !utilityStringOperationSource(A, Constructor)) return false;
   std::vector<const FieldDecl *> RecordFields;
   for (const auto *Field : Constructor->getParent()->fields()) RecordFields.push_back(Field);
-  if (RecordFields.size() != 4) return false;
+  const auto &Triple = A.Context.getTargetInfo().getTriple();
+  const bool CompactMicrosoft = Triple.isArch64Bit() && Triple.isOSWindows() &&
+      A.Context.getTargetInfo().getCXXABI().isMicrosoft() && RecordFields.size() == 2;
+  if (!CompactMicrosoft && RecordFields.size() != 4) return false;
   std::set<const FieldDecl *> Fields;
   for (const auto *Initializer : Definition->inits()) {
     const auto *Field = Initializer->isMemberInitializer() ? Initializer->getMember() : nullptr;
     const auto *Child = dyn_cast_or_null<CXXConstructExpr>(Initializer->getInit());
     const auto *Selected = Child ? Child->getConstructor() : nullptr;
-    const unsigned Padding = Field == RecordFields[1] ? 1 : Field == RecordFields[3] ? 3 : 0;
+    const unsigned Padding = CompactMicrosoft ? 0u :
+        Field == RecordFields[1] ? 1u : Field == RecordFields[3] ? 3u : 0u;
     if (!Field || !Fields.insert(Field).second || !Child || Child->getNumArgs() ||
         !Selected || !Selected->isDefaultConstructor() || !Selected->isDefaulted() ||
         Selected->getNumParams() || Selected->getPrimaryTemplate() ||
