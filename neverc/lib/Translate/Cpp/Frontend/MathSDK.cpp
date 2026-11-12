@@ -47049,21 +47049,32 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
                         const FunctionDecl *Root) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
+  unsigned Traces = 0;
+  auto Fail = [&](const char *Reason, const FunctionDecl *F, unsigned Depth) {
+    if (++Traces <= 64) {
+      llvm::errs() << "NCT_BITSET_SOURCE_TRACE " << Reason << " function="
+          << (F ? F->getQualifiedNameAsString() : "<indirect>")
+          << " location=" << (F ? F->getLocation().printToString(SM) : "<none>")
+          << " implicit=" << (F && F->isImplicit()) << " depth=" << Depth << " nodes=" << Nodes << "\n";
+    }
+    return false;
+  };
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   Function = [&](const FunctionDecl *F, unsigned Depth) {
-    if (!F || Depth > 64 || ++Nodes > 4096) return false;
+    if (!F || Depth > 64 || ++Nodes > 4096) return Fail("function budget or indirect", F, Depth);
     if (F->getBuiltinID()) {
       for (const auto *D : F->redecls())
-        if (D->getLocation().isValid() && !bitsetPinned(S, SM, D)) return false;
-      if (F->hasBody()) return false;
+        if (D->getLocation().isValid() && !bitsetPinned(S, SM, D)) return Fail("builtin redeclaration", D, Depth);
+      if (F->hasBody()) return Fail("builtin body", F, Depth);
       const auto Name = F->getName();
-      return Name == "__builtin_is_constant_evaluated" ||
+      const bool Allowed = Name == "__builtin_is_constant_evaluated" ||
              Name == "__builtin_popcount" || Name == "__builtin_popcountl" ||
              Name == "__builtin_popcountll" || Name == "__builtin_expect" ||
              Name == "__builtin_assume" || Name == "__builtin_unreachable";
+      return Allowed || Fail("builtin not admitted", F, Depth);
     }
-    if (!bitsetPinnedFunction(S, SM, F)) return false;
+    if (!bitsetPinnedFunction(S, SM, F)) return Fail("function origin", F, Depth);
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
     // Position-taking operations below require a constant in-range index.
     // Their error branch cannot execute, but its declaration remains pinned.
@@ -47075,21 +47086,21 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
       for (const auto *Init : Constructor->inits())
         if (!Statement(Init->getInit(), Depth + 1)) return false;
     const auto *Body = F->getBody();
-    return Body && Statement(Body, Depth + 1);
+    return Body ? Statement(Body, Depth + 1) : Fail("unavailable body", F, Depth);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
-    if (Depth > 64 || ++Nodes > 4096) return false;
+    if (Depth > 64 || ++Nodes > 4096) return Fail("statement budget", Root, Depth);
     auto PinnedMacro = [&](SourceLocation Location) {
       if (!Location.isMacroID()) return true;
       const auto File = S.sdkFile(SM, SM.getSpellingLoc(Location));
       return File && (File->Root == "libcxx" || File->Root == "resource");
     };
-    if (!PinnedMacro(Node->getBeginLoc()) || !PinnedMacro(Node->getEndLoc())) return false;
+    if (!PinnedMacro(Node->getBeginLoc()) || !PinnedMacro(Node->getEndLoc())) return Fail("statement macro origin", Root, Depth);
     if (const auto *E = dyn_cast<Expr>(Node))
-      if (!PinnedMacro(E->getExprLoc())) return false;
+      if (!PinnedMacro(E->getExprLoc())) return Fail("expression macro origin", Root, Depth);
     if (const auto *E = dyn_cast<MemberExpr>(Node))
-      if (!PinnedMacro(E->getMemberLoc())) return false;
+      if (!PinnedMacro(E->getMemberLoc())) return Fail("member macro origin", Root, Depth);
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
