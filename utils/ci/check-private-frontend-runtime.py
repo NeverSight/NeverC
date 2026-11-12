@@ -81,7 +81,7 @@ def main():
         assert plan['required_actual_frontend_requests'] == 832
         assert plan['required_actual_stl_generated_o0_o2_products'] == 182
         assert len(plan['target_abis']) == 6 and all('i686' not in target for target in plan['target_abis'])
-        for field in ['actual_integrated_syntax6_authentication_sha256', 'actual_member78_authentication_sha256',
+        for field in ['actual_current_source72_authentication_sha256', 'actual_member78_authentication_sha256',
                       'actual_baseline750_authentication_sha256', 'actual_native144_authentication_sha256']:
             assert re.fullmatch('[0-9a-f]{64}', plan[field])
         r['execution_plan_sha256'] = sha(plan_path)
@@ -117,13 +117,19 @@ def main():
             private_prefix_sha256=sha(args.private_prefix),
             baseline_provenance=baseline, focused_component_scope_only=True)
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
-        assert sha(sdk / 'catalog.json') == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
+        assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == '1719fa5a2ac36238726e61e9b1120bcff8e41d2e914760e484cef83d669658fd'
         catalog = json.loads((sdk / 'catalog.json').read_text())
         rows = catalog['headers'] + catalog['metadata']
         assert len(rows) == 665
         for row in rows:
             assert sha(sdk / row['root'] / row['path']) == row['sha256']
         r['sdk_files_verified'] = 665
+        current_sdk = {p.relative_to(sdk).as_posix(): sha(p) for p in sdk.rglob('*') if p.is_file()}
+        assert current_sdk == plan['sdk_input_sha256'] and len(current_sdk) == 673
+        assert component['exact_sdk_input_sha256'] == current_sdk
+        embedding = component['current_sdk_embedding']
+        assert embedding['generated_in_actions'] and embedding['new_header_sha256'] == plan['expected_embedding_sha256']
+        r['exact_sdk_input_sha256'] = current_sdk
         manifest = json.loads((root / 'utils/ci/cpp-pair-piecewise-formal-tests.json').read_text())
         selected = manifest['new'] + manifest['regression']
         assert len(selected) == manifest['expected_total'] == 124
