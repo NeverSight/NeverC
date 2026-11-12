@@ -15338,6 +15338,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   using BindConstraintKey = std::pair<NotFnConstraintKey, const TemplateArgumentList *>;
   std::set<BindConstraintKey> BindConstraintKeys;
   std::vector<const TemplateUseSource *> BindConstraintSources;
+  bool BindConstraintInputsConsumed = false;
   std::map<const Expr *, std::vector<const SelectedTemplateCallSource *>> BindSelectedCallSources;
   static NotFnConstraintKey notFnConstraintKey(const TemplateUseSource &Source) {
     return {Source.Kind, Source.Template, Source.Type, Source.Declaration,
@@ -23184,6 +23185,9 @@ public:
     std::vector<const SelectedTemplateCallSource *> Selections;
   };
   std::optional<FunctionalBindSourceInputs> functionalBindSourceInputs() {
+    // This is the sole consumer of the inert bind use/selection indexes.
+    // Once a graph takes its snapshot, repeated late keys keep refusing.
+    BindConstraintInputsConsumed = true;
     std::vector<const TemplateUseSource *> Dependencies;
     std::set<const TemplateUseSource *> Uses;
     auto AddUse = [&](const TemplateUseSource *Use) {
@@ -23616,7 +23620,29 @@ public:
         return false;
     return true;
   }
+  bool inertBindConstraintSource(const TemplateUseSource &Source) const {
+    const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration);
+    return Source.FunctionalBindConstraint && !Source.FunctionalNotFnConstraint &&
+        !A.S.owns(A.Sources, Source.Location) &&
+        !(Source.Kind == TemplateSourceKind::Function &&
+          (tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Function) ||
+           approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Function) ||
+           approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Function) ||
+           pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Function)));
+  }
+  bool inertBindConstraintSource(const SelectedTemplateCallSource &Source) const {
+    return Source.FunctionalBindConstraint && !Source.FunctionalNotFnConstraint &&
+        !A.S.owns(A.Sources, Source.Location) &&
+        !tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
+        !approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
+        !approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
+        !pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Source.Function);
+  }
   bool freshLateTemplateSource(const TemplateUseSource &Source) const {
+    // Before the first bind graph snapshot, these SDK events have granted no
+    // ordinary permission. Retain every alternative for its later full check.
+    if (!BindConstraintInputsConsumed && inertBindConstraintSource(Source))
+      return true;
     if (Source.FunctionalBindConstraint &&
         BindConstraintKeys.count(bindConstraintKey(Source))) return false;
     if (Source.FunctionalNotFnConstraint)
@@ -23705,7 +23731,9 @@ public:
             BindSelectedCallSources.count(Source.Expression) ||
             PairTraitSelections.count(Source.Expression);
         const bool RepeatedPair = Repeated && equivalentLatePairSelectedSource(Source);
-        if (Repeated && !RepeatedPair) {
+        const bool RepeatedInertBind = Repeated && !BindConstraintInputsConsumed &&
+            inertBindConstraintSource(Source);
+        if (Repeated && !RepeatedPair && !RepeatedInertBind) {
           A.reject(Source.Location, "repeated late selected source",
                    "A retained late selection needs a fresh exact expression.");
           return;
@@ -23754,11 +23782,7 @@ public:
         BindSelectedCallSources[Source.Expression].push_back(&Source);
         // Preserve every historical producer route independently. Newly
         // retained Bind-only SDK evidence has no ordinary permission index.
-        if (!A.S.owns(A.Sources, Source.Location) && !Source.FunctionalNotFnConstraint &&
-            !tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
-            !approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
-            !approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Source.Function) &&
-            !pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Source.Function))
+        if (inertBindConstraintSource(Source))
           continue;
       }
       if (Source.FunctionalNotFnConstraint) {
@@ -24282,12 +24306,7 @@ public:
         BindConstraintKeys.insert(bindConstraintKey(Source));
         BindConstraintSources.push_back(&Source);
         const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration);
-        if (!A.S.owns(A.Sources, Source.Location) && !Source.FunctionalNotFnConstraint &&
-            !(Source.Kind == TemplateSourceKind::Function &&
-              (tupleFactorySelectionLocation(A.S, A.Sources, Source.Location, Function) ||
-               approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Function) ||
-               approvedUtilityPairFactorySelectionLocation(A.S, A.Sources, Source.Location, Function) ||
-               pairPiecewiseSelectionLocation(A.S, A.Sources, Source.Location, Function))))
+        if (inertBindConstraintSource(Source))
           continue;
       }
       if (Source.FunctionalNotFnConstraint) {
