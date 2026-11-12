@@ -94,7 +94,7 @@ def main():
     job = api('actions/jobs/' + str(selected[0]['id']))
     assert job['head_sha'] == plan['component_commit'] and job['status'] == 'completed' and job['conclusion'] == 'success'
     assert job['id'] == plan['component_actual_job'] and run['run_attempt'] == plan['component_attempt']
-    for name, expected in [('Validate the original125 cases across six64bit targets', 'success'),
+    for name, expected in [('Observe explicit-result bind sources across six exact 64-bit targets', 'success'),
                            ('Retain actual current private archive remotely for source diagnosis', 'success')]:
         assert any(step['name'] == name and step['conclusion'] == expected for step in job['steps'])
     downloads = []
