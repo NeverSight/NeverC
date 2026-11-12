@@ -107,9 +107,13 @@ def main():
         assert sha(__file__) == plan['runner_sha256'] and len(plan['exact_private_input_sha256']) == 19
         assert all(sha(root / ('neverc/lib/Translate/Cpp/Frontend/' + name)) == digest for name, digest in plan['exact_private_input_sha256'].items())
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'; catalog = json.loads((sdk / 'catalog.json').read_bytes())
-        assert sha(sdk / 'catalog.json') == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
+        assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == '1719fa5a2ac36238726e61e9b1120bcff8e41d2e914760e484cef83d669658fd'
         sdk_rows = catalog['headers'] + catalog['metadata']; assert len(sdk_rows) == 665
         assert all(sha(sdk / row['root'] / row['path']) == row['sha256'] for row in sdk_rows)
+        current_sdk = {p.relative_to(sdk).as_posix():sha(p) for p in sdk.rglob('*') if p.is_file()}
+        assert current_sdk==plan['sdk_input_sha256']==runtime['exact_sdk_input_sha256']==component['exact_sdk_input_sha256']
+        assert len(current_sdk)==673
+        r['exact_sdk_input_sha256']=current_sdk
         owner = runtime['actual_cmake_owners']; old_hook = Path(owner['hook']); old_driver = Path(owner['driver'])
         assert sha(old_hook) == owner['hook_sha256'] and sha(old_driver) == runtime['driver_elf']['sha256']
         archive = args.archive.resolve(); backend = Path(runtime['baseline_provenance']['compiler']).resolve()

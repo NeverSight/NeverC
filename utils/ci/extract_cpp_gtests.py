@@ -68,11 +68,12 @@ def body_end(source, opening):
 def extract(source, selected_names):
     pattern = re.compile(rb'(?m)^TEST_F\(\s*(\w+)\s*,\s*(\w+)\s*\)\s*\{')
     matches = list(pattern.finditer(source))
-    assert len(matches) == 7493
+    expected_count = 7496 if sha(source) == '748a1966c60985df355d52f5746a7610b155aec2e1480a55144efb52a9c054b8' else 7493
+    assert len(matches) == expected_count
     assert len(set(selected_names)) == len(selected_names)
     selected = set(selected_names)
     available = {m[1].decode() + '.' + m[2].decode() for m in matches}
-    assert len(available) == 7493 and selected <= available
+    assert len(available) == expected_count and selected <= available
     parts, kept, excluded, at = [], {}, {}, 0
     for index, match in enumerate(matches):
         assert at <= match.start()
@@ -99,7 +100,7 @@ def extract(source, selected_names):
         end = body_end(generated, match.end() - 1)
         assert sha(generated[match.start():end]) == kept[name]['sha256']
     return generated, {'original_source_sha256': sha(source), 'generated_source_sha256': sha(generated),
-        'original_test_names': 7493, 'selected_count': len(kept),
+        'original_test_names': expected_count, 'selected_count': len(kept),
         'selected_original_test_bodies': kept, 'nonselected_original_test_bodies': excluded,
         'all_non_test_source_retained': True, 'selected_bodies_modified': False,
         'whole_original_suite_executed': False, 'formal_xml_created': False}
