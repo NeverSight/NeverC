@@ -13698,10 +13698,35 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
           return {};
       } else if (approvedMemoryTemplateMetadata(S, Sources, D) ==
                  MemoryTemplateMetadata::UniquePtr) {
+        std::string Detail = " [unique-layout";
+        const auto *Definition = D->getDefinition();
+        if (Definition && Definition->isCompleteDefinition()) {
+          const auto &Layout = Context.getASTRecordLayout(Definition);
+          Detail += " size=" + std::to_string(Layout.getSize().getQuantity()) +
+                    " align=" + std::to_string(Layout.getAlignment().getQuantity()) +
+                    " standard=" + std::to_string(Definition->isStandardLayout()) +
+                    " bases=" + std::to_string(Definition->getNumBases());
+          unsigned I = 0;
+          for (const auto *Field : Definition->fields()) {
+            Detail += " field=" + Field->getNameAsString() +
+                      ":" + Field->getType().getAsString() +
+                      ":" + std::to_string(Layout.getFieldOffset(I++)) +
+                      ":nua=" + std::to_string(Field->hasAttr<NoUniqueAddressAttr>());
+            const auto *FieldRecord = Field->getType()->getAsCXXRecordDecl();
+            const auto *FieldDefinition = FieldRecord ? FieldRecord->getDefinition() : nullptr;
+            if (FieldDefinition && FieldDefinition->isCompleteDefinition()) {
+              const auto &FieldLayout = Context.getASTRecordLayout(FieldDefinition);
+              Detail += ":empty=" + std::to_string(FieldDefinition->isEmpty()) +
+                        ":size=" + std::to_string(FieldLayout.getSize().getQuantity()) +
+                        ":align=" + std::to_string(FieldLayout.getAlignment().getQuantity());
+            }
+          }
+        }
+        Detail += "]";
         reject(L, "standard library record",
                "Only the pinned single-object and array std::unique_ptr "
                "layouts with matching std::default_delete or an admitted "
-               "empty custom deleter are supported.",
+               "empty custom deleter are supported." + Detail,
                "TR0203");
         return {};
       } else if (approvedUtilityDefaultDeleteRecord(S, Sources, D, Context)) {
