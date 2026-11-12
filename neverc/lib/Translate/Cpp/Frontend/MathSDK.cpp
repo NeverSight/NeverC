@@ -47045,6 +47045,25 @@ bool bitsetPinnedFunction(const State &S, const SourceManager &SM,
 // Primitive bitset arguments cannot introduce a user comparator or allocator.
 // Still reject intercepted SDK calls, explicit user redeclarations and indirect
 // calls anywhere in the selected implementation graph.
+
+bool bitsetImplicitPopcountBuiltin(const State &S, const SourceManager &SM,
+                                   const FunctionDecl *D, unsigned BuiltinID) {
+  if (!D || !D->isImplicit() || D->hasBody() ||
+      D->getBuiltinID() != BuiltinID || !D->getIdentifier() ||
+      !D->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__bit/popcount.h"))
+    return false;
+  const auto Name = D->getName();
+  if (Name != "__builtin_popcount" && Name != "__builtin_popcountl" &&
+      Name != "__builtin_popcountll") return false;
+  if (D->getLocation().isMacroID()) {
+    const auto Spelling = S.sdkFile(SM, SM.getSpellingLoc(D->getLocation()));
+    if (!Spelling || Spelling->Root != "libcxx" ||
+        Spelling->Path != "__bit/popcount.h") return false;
+  }
+  return true;
+}
+
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
                         const FunctionDecl *Root) {
   std::set<const FunctionDecl *> Seen;
@@ -47054,8 +47073,12 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
   Function = [&](const FunctionDecl *F, unsigned Depth) {
     if (!F || Depth > 64 || ++Nodes > 4096) return false;
     if (F->getBuiltinID()) {
+      // Clang creates these global builtin declarations lazily at their
+      // SDK call token. They are not ordinary declarations in namespace std.
+      // Every explicit or user-sourced redeclaration still fails closed.
       for (const auto *D : F->redecls())
-        if (D->getLocation().isValid() && !bitsetPinned(S, SM, D)) return false;
+        if (D->getLocation().isValid() && !bitsetPinned(S, SM, D) &&
+            !bitsetImplicitPopcountBuiltin(S, SM, D, F->getBuiltinID())) return false;
       if (F->hasBody()) return false;
       const auto Name = F->getName();
       return Name == "__builtin_is_constant_evaluated" ||
