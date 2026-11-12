@@ -1186,7 +1186,7 @@ jobs:
         1617f18ead74a8fa719e3d1bd02f9c84a10de551 --output "$RUNNER_TEMP/cpp-private-runtime-backend"
 
         '
-    - name: Build actual Translate owners and run all 124 original private GTests
+    - name: Build actual Translate owners and run twelve explicit-result bind GTests
       run: 'python3 utils/ci/run-private-runtime-ci.py --repo "$GITHUB_WORKSPACE"
         --component "$RUNNER_TEMP/cpp-private-runtime-component" --baseline "$RUNNER_TEMP/cpp-private-runtime-backend/provenance.json"
         --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-formal"
