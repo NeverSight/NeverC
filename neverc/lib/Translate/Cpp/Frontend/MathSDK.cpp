@@ -7883,9 +7883,13 @@ struct ExplicitBindProofDiagnosticRing {
   const char *Functions[128] = {};
 };
 static thread_local ExplicitBindProofDiagnosticRing ExplicitBindProofDiagnostic;
+static thread_local unsigned BaselineProofDiagnosticDumps[3] = {};
+static thread_local unsigned BaselineProofDiagnosticContexts = 0;
 static thread_local const clang::FunctionDecl *ExplicitBindProofSignature = nullptr;
 static bool explicitBindProofContextPermit() {
-  if (!std::getenv("NEVERC_CPP_BIND_PROOF_TRACE") || ExplicitBindProofDiagnostic.Contexts == 128) return false;
+  if (!std::getenv("NEVERC_CPP_BIND_PROOF_TRACE") || ExplicitBindProofDiagnostic.Contexts == 128 ||
+      BaselineProofDiagnosticContexts == 128) return false;
+  ++BaselineProofDiagnosticContexts;
   ++ExplicitBindProofDiagnostic.Contexts;
   return true;
 }
@@ -7910,6 +7914,11 @@ static void explicitBindProofDiagnosticReset() {
 }
 static void explicitBindProofDiagnosticDump(const char *Phase, bool Ready) {
   if (!std::getenv("NEVERC_CPP_BIND_PROOF_TRACE")) return;
+  const unsigned Slot = llvm::StringRef(Phase) == "baseline-complete" ? 0u
+      : (llvm::StringRef(Phase) == "baseline-factory" ||
+         llvm::StringRef(Phase) == "baseline-standard-factory") ? 1u : 2u;
+  if (BaselineProofDiagnosticDumps[Slot] == (Slot == 2 ? 4u : 8u)) return;
+  ++BaselineProofDiagnosticDumps[Slot];
   const auto &Trace = ExplicitBindProofDiagnostic;
   const unsigned Begin = Trace.Count < 128 ? 0 : Trace.Next;
   std::fprintf(stderr, "BIND-RESULT-PROOF phase=%s ready=%u failures=%u\n", Phase, unsigned(Ready), Trace.Count);
@@ -19889,7 +19898,12 @@ std::optional<FunctionalBindFactorySource>
 describeFunctionalBindFactorySource(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
-  return describeFunctionalBindFactorySourceImpl(S, SM, Call, Context, false);
+  auto Result = describeFunctionalBindFactorySourceImpl(S, SM, Call, Context, false);
+  const auto *Target = Call ? Call->getDirectCallee() : nullptr;
+  if (!Result && Target && Target->getIdentifier() && Target->getName() == "bind" &&
+      S.owns(SM, Call->getExprLoc()))
+    explicitBindProofDiagnosticDump("baseline-factory", false);
+  return Result;
 }
 
 std::optional<FunctionalBindFactorySource>
@@ -19903,7 +19917,12 @@ std::optional<FunctionalBindFactorySource>
 describeFunctionalBindStandardFactorySource(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
-  return describeFunctionalBindFactorySourceImpl(S, SM, Call, Context, true, true);
+  auto Result = describeFunctionalBindFactorySourceImpl(S, SM, Call, Context, true, true);
+  const auto *Target = Call ? Call->getDirectCallee() : nullptr;
+  if (!Result && Target && Target->getIdentifier() && Target->getName() == "bind" &&
+      S.owns(SM, Call->getExprLoc()))
+    explicitBindProofDiagnosticDump("baseline-standard-factory", false);
+  return Result;
 }
 
 std::optional<FunctionalBindFactorySource>
@@ -36213,6 +36232,9 @@ public:
   }
   bool callCompleteSource(const FunctionalBindCallSource &Call,
       const std::function<bool(const FunctionalBindCallSource &)> &AfterComplete = {}) {
+    auto DiagnosticDump = llvm::make_scope_exit([&] {
+      explicitBindProofDiagnosticDump("baseline-complete", Ready);
+    });
     if (!Ready || ActiveSourceCall || ActiveCompleteCall || ActiveUnusedVoidConversion || !ClosedCompleteCalls.empty() || !ClosedCallTupleConstructors.empty() ||
         !Call.SourceCall || (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) ||
         Call.Storage.Record != Storage.Record) return explicitBindProofDiagnosticFailure(__LINE__, __func__);
