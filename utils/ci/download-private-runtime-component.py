@@ -87,14 +87,14 @@ def main():
     plan = json.loads(args.plan.read_text())
     run = api('actions/runs/' + str(plan['component_run_id']))
     assert run['head_sha'] == plan['component_commit']
-    assert run['status'] == 'completed' and run['conclusion'] == 'success'
+    assert run['status'] == 'completed' and run['conclusion'] == 'failure'
     actual_jobs = api('actions/runs/' + str(run['id']) + '/attempts/' + str(run['run_attempt']) + '/jobs?per_page=100')
     selected = [j for j in actual_jobs['jobs'] if j['name'] == 'inspect-bind-call-arguments-clean456']
     assert len(selected) == 1
     job = api('actions/jobs/' + str(selected[0]['id']))
-    assert job['head_sha'] == plan['component_commit'] and job['status'] == 'completed' and job['conclusion'] == 'success'
+    assert job['head_sha'] == plan['component_commit'] and job['status'] == 'completed' and job['conclusion'] == 'failure'
     assert job['id'] == plan['component_actual_job'] and run['run_attempt'] == plan['component_attempt']
-    for name, expected in [('Validate the original125 cases across six64bit targets', 'success'),
+    for name, expected in [('Observe explicit-result bind sources across six exact 64-bit targets', 'failure'),
                            ('Retain actual current private archive remotely for source diagnosis', 'success')]:
         assert any(step['name'] == name and step['conclusion'] == expected for step in job['steps'])
     downloads = []
@@ -126,17 +126,26 @@ def main():
     report = reports[0]
     assert sha(report) == plan['component_report_sha256']
     r = json.loads(report.read_text())
-    assert r['revision'] == plan['component_commit'] and r['completed'] and r['passed'] is True and r['not_fn_private_support_complete'] is False
-    assert r['all_five_bridge_units_recompiled'] and r['focused_request_contract_passed']
-    assert len(r['requests']) == 750 and all(row['expectation_satisfied'] for row in r['requests'])
-    assert sum(row['expected'] == 'accept' for row in r['requests']) == 528
-    assert sum(row['expected'] == 'reject' for row in r['requests']) == 198
-    assert sum(row['expected'] == 'invalid' for row in r['requests']) == 24
+    assert r['revision'] == plan['component_commit'] and r['completed'] and r['passed'] is False and r['not_fn_private_support_complete'] is False
+    assert r['all_five_bridge_units_recompiled'] and r['focused_request_contract_passed'] is False
+    assert r['completed'] and r['passed'] is False
+    assert r['all_five_bridge_units_recompiled'] and r['focused_request_contract_passed'] is False
+    known_count = [row for row in r['requests'] if not row['expectation_satisfied']]
+    assert len(known_count) == 6 and len(r['requests']) == 36
+    assert all(row['name'] == 'bitset-runtime' and row['expected'] == 'accept' and row['returncode'] == 1 for row in known_count)
+    assert all(len(row['diagnostics']) == 1 and row['diagnostics'][0]['code'] == 'TR0203'
+               and row['diagnostics'][0]['line'] == 3 and row['diagnostics'][0]['column'] == 11 for row in known_count)
+    scoped = [row for row in r['requests'] if row['name'] == 'scoped-allocator-runtime']
+    assert len(scoped) == 6 and all(row['returncode'] == 0 and row['expectation_satisfied'] and not row['diagnostics'] for row in scoped)
+    assert sum(bool(row['expectation_satisfied']) for row in r['requests']) == 30
+    assert sum(row['expected'] == 'accept' for row in r['requests']) == 24
+    assert sum(row['expected'] == 'reject' for row in r['requests']) == 12
+    assert sum(row['expected'] == 'invalid' for row in r['requests']) == 0
     assert len(r['exact_private_input_sha256']) == 19
     for name, identity in r['exact_private_input_sha256'].items():
         assert identity == plan['exact_private_input_sha256'][name]
         assert sha(root / 'neverc/lib/Translate/Cpp/Frontend' / name) == identity
-    assert r['sdk_files_verified'] == 665 and r['new_build_id'] == plan['frontend_build_id']
+    assert r['sdk_files_verified'] == 687 and r['new_build_id'] == plan['frontend_build_id']
     assert r['replayed_archive_sha256'] == plan['private_archive_sha256']
     folder = download(plan['component_archive_artifact'], 'component-archive')
     archives = [path for path in folder.rglob('*') if path.is_file()]
