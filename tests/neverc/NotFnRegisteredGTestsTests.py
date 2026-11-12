@@ -43,6 +43,17 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.r19_registered = cls.registered
+        cls.r19_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.r19_original = cls.adapter.restore_original_gtests(cls.r19_registered, cls.r19_suffix)
+        cls.r19_manifest = json.loads((ROOT / 'utils/ci/r19-scoped-bitset-gtests.json').read_text())
+        assert hashlib.sha256(cls.r19_registered).hexdigest() == cls.adapter.R19_SCOPED_BITSET_REGISTERED_SHA256
+        assert hashlib.sha256(cls.r19_original).hexdigest() == cls.adapter.R19_SCOPED_BITSET_MAINTAINED_SHA256
+        first = cls.r19_manifest['new_gtest_names'][0].split('.')[1].encode()
+        match, = re.finditer(rb'(?m)^TEST_F\(TranslateTest, ' + re.escape(first) + rb'\) \{', cls.r19_original)
+        cls.r19_additions = cls.r19_original[match.start():]
+        assert cls.r19_additions.count(b'TEST_F(') == 4
+        cls.registered = cls.r19_original[:match.start()] + cls.r19_suffix
         cls.previous48 = (ROOT / 'utils/ci/bind-forty-eight-formal-additions.cpp').read_bytes()
         cls.previous61 = (ROOT / 'utils/ci/bind-sixty-one-formal-additions.cpp').read_bytes()
         cls.previous71 = (ROOT / 'utils/ci/bind-seventy-one-formal-additions.cpp').read_bytes()
@@ -436,6 +447,60 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
                     self.extractor.extract(source, selected)
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.query_original, selected + ['TranslateTest.UnknownQueryOwner'])
+
+
+    def test_r19_registry_keeps_exact_history_and_four_new_bodies(self):
+        expected = ['TranslateTest.' + name for name in [
+            'CoreV2ScopedAllocatorIntRunAtBothOptimizations',
+            'CoreV2Bitset70RunAtBothOptimizations',
+            'CoreV2ScopedAllocatorOwnedConstructorRejected',
+            'CoreV2BitsetOwnedCountRejected']]
+        self.assertEqual(self.r19_manifest['new_gtest_names'], expected)
+        generated, proof = self.extractor.extract(self.r19_original, expected)
+        self.assertEqual(proof['original_test_names'], 7500)
+        self.assertEqual(proof['selected_count'], 4)
+        self.assertEqual(generated.count(b'TEST_F('), 4)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.r19_registered, self.r19_suffix), self.r19_original)
+        manifest = json.loads((ROOT / 'utils/ci/cpp-pair-piecewise-formal-tests.json').read_text())
+        selected = manifest['new'] + manifest['regression']
+        _, old = self.extractor.extract(self.query_original, selected)
+        _, current = self.extractor.extract(self.r19_original, selected)
+        self.assertEqual(old['original_test_names'], 7496)
+        self.assertEqual(current['original_test_names'], 7500)
+        self.assertEqual(old['selected_original_test_bodies'], current['selected_original_test_bodies'])
+
+    def test_r19_tests_keep_actual_programs_optimization_loops_and_check_mode(self):
+        selected = [row for row in self.r19_manifest['source_cases']
+                    if row['kind'] in ['runtime', 'source-body-guard']]
+        self.assertEqual(len(selected), 4)
+        for row in selected:
+            with self.subTest(name=row['name']):
+                program = row['source'].encode()
+                self.assertEqual(hashlib.sha256(program).hexdigest(), row['source_sha256'])
+                self.assertEqual(self.r19_additions.count(program), 1)
+        self.assertEqual(self.r19_additions.count(b'compileGenerated('), 2)
+        self.assertEqual(self.r19_additions.count(b'{"-O0", "-O2"}'), 2)
+        self.assertEqual(self.r19_additions.count(b'"--check"'), 2)
+
+    def test_r19_registry_rejects_changed_bodies_counts_and_suffixes(self):
+        for source, suffix in [
+                (self.r19_registered + b' ', self.r19_suffix),
+                (self.r19_registered[:-1], self.r19_suffix),
+                (self.r19_registered + self.r19_suffix, self.r19_suffix),
+                (self.r19_registered, self.r19_suffix + b' ')]:
+            with self.subTest(source=hashlib.sha256(source).hexdigest(), suffix=hashlib.sha256(suffix).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(source, suffix)
+        selected = self.r19_manifest['new_gtest_names']
+        for source in [self.r19_original + b' ',
+                       self.r19_original.replace(b'TEST_F(', b'NOT_TEST_F(', 1),
+                       self.r19_original.replace(b'return 0;', b'return 1;', 1)]:
+            with self.subTest(source=hashlib.sha256(source).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.extractor.extract(source, selected)
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.r19_original, selected + ['TranslateTest.UnknownR19Owner'])
 
 
 if __name__ == '__main__':
