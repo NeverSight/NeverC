@@ -6833,13 +6833,20 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
           Offset % 8 ||
           (Offset + 8 > ImplementationBits && !EmptyAtEnd))
         return std::nullopt;
-      // Repeated empty subobjects of the same type must retain distinct
-      // addresses.
+      // The pinned Microsoft tuple implementation uses empty_bases. Its
+      // zero-sized placeholder leaves share offset zero, including repeated
+      // placeholder types. These stateless slots describe bind metadata and
+      // never authorize an object byte access.
+      const bool MicrosoftPlaceholderEBO = BindPlaceholderStorage &&
+          Context.getTargetInfo().getCXXABI().isMicrosoft() &&
+          Context.getTargetInfo().getTriple().isArch64Bit() &&
+          ImplSpecialization->hasAttr<EmptyBasesAttr>() && Offset == 0 &&
+          functionalBindEmptyPlaceholderStorage(S, SM, (*Types)[Index], Context);
       for (const auto &Element : Elements)
         if (Element.EmptyBase &&
             Element.EmptyBase->getCanonicalDecl() ==
                 Definition->getCanonicalDecl() &&
-            Element.OffsetBits == Offset)
+            Element.OffsetBits == Offset && !MicrosoftPlaceholderEBO)
           return std::nullopt;
       Elements.emplace_back(Definition, (*Types)[Index], Offset);
       ++Index;
