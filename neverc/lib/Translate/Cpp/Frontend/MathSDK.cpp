@@ -1,3 +1,4 @@
+#include "llvm/Support/raw_ostream.h"
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/AST/Attr.h"
@@ -8129,7 +8130,7 @@ class UtilityTupleQueryGraph
         Use.Canonical->size() != 1 || Use.Canonical->get(0).getKind() != TemplateArgument::Type ||
         Argument.getArgument().getKind() != TemplateArgument::Type ||
         !Argument.getTypeSourceInfo() ||
-        Argument.getTypeSourceInfo() != Use.Written->arguments()[0].getTypeSourceInfo()) return false;
+        Argument.getTypeSourceInfo() != Use.Written->arguments()[0].getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const CXXRecordDecl *Callable = nullptr;
     if (BindStandardFactory) {
       const auto Fresh = describeFunctionalBindStandardFactoryOccurrence(S, SM, *BindStandardFactory, Context);
@@ -8137,7 +8138,7 @@ class UtilityTupleQueryGraph
           Fresh->Construction != BindStandardFactory->Construction ||
           Fresh->CallableCopy != BindStandardFactory->CallableCopy ||
           Fresh->Storage.Record != BindMetadata->Record ||
-          !sameFunctionalBindPlaceholderOperands(*Fresh, *BindStandardFactory)) return false;
+          !sameFunctionalBindPlaceholderOperands(*Fresh, *BindStandardFactory)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Callable = Fresh->Storage.CallableType->getAsCXXRecordDecl();
     } else {
       const auto Fresh = describeFunctionalBindStandardCallOccurrence(S, SM, BindStandardCall->Selected, Context);
@@ -8150,7 +8151,7 @@ class UtilityTupleQueryGraph
           Fresh->Selected.Target != BindStandardCall->Selected.Target ||
           Fresh->Selected.Object != BindStandardCall->Selected.Object ||
           Fresh->Selected.Storage.Record != BindMetadata->Record || Fresh->Method != BindStandardCall->Method ||
-          !Context.hasSameType(Fresh->Selected.Storage.CallableType, BindMetadata->CallableType)) return false;
+          !Context.hasSameType(Fresh->Selected.Storage.CallableType, BindMetadata->CallableType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Callable = Fresh->Selected.Storage.CallableType->getAsCXXRecordDecl();
     }
     const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Callable);
@@ -8159,7 +8160,7 @@ class UtilityTupleQueryGraph
         Use.Template != Record->getSpecializedTemplate() ||
         Type->getTemplateName().getAsTemplateDecl() != Use.Template ||
         Type->getAsCXXRecordDecl() != Record || Record->getTemplateArgs().size() != 1 ||
-        Record->getTemplateArgs()[0].getKind() != TemplateArgument::Type) return false;
+        Record->getTemplateArgs()[0].getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Value = Record->getTemplateArgs()[0].getAsType();
     const auto Location = Argument.getTypeSourceInfo()->getTypeLoc();
     return !Location.isNull() && Location.getAs<BuiltinTypeLoc>() &&
@@ -8169,9 +8170,9 @@ class UtilityTupleQueryGraph
   }
   bool bindStandardCallableWrittenTypeLocation(TypeLoc Location, SourceLocation Site) const {
     if (!BindStandardWrittenSource || !BindStandardWrittenSource->Written ||
-        BindStandardWrittenSource->Written->getNumTemplateArgs() != 1 || Location.isNull()) return false;
+        BindStandardWrittenSource->Written->getNumTemplateArgs() != 1 || Location.isNull()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Argument = BindStandardWrittenSource->Written->arguments()[0];
-    if (!bindStandardCallableWrittenArgument(*BindStandardWrittenSource, 0, Argument)) return false;
+    if (!bindStandardCallableWrittenArgument(*BindStandardWrittenSource, 0, Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Original = Argument.getTypeSourceInfo()->getTypeLoc();
     return Location.getOpaqueData() == Original.getOpaqueData() &&
         Location.getType() == Original.getType() && Location.getAs<BuiltinTypeLoc>() &&
@@ -8181,15 +8182,15 @@ class UtilityTupleQueryGraph
   bool bindSelectedPartialSplitTypeEnd(TypeLoc Location, SourceLocation End) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step() ||
         !BindSelectedPartialPattern || !BindSelectedPartialInstance || Location.isNull() ||
-        End != Location.getEndLoc() || !End.isMacroID()) return false;
+        End != Location.getEndLoc() || !End.isMacroID()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Source = *BindSelectedPartialPattern;
     const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(Source.Declaration);
     const auto *Original = Partial ? Partial->getTemplateArgsAsWritten() : nullptr;
     if (!Original || Original->getNumTemplateArgs() != 2 || !Source.Written ||
-        Source.Written->getNumTemplateArgs() != 2) return false;
+        Source.Written->getNumTemplateArgs() != 2) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *ActualType = Source.Written->arguments()[1].getTypeSourceInfo();
     const auto *OriginalType = Original->arguments()[1].getTypeSourceInfo();
-    if (!ActualType || !OriginalType) return false;
+    if (!ActualType || !OriginalType) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Named = [](TypeLoc Node) {
       if (Node.isNull()) return Node;
       if (const auto Wrapper = Node.getAs<ElaboratedTypeLoc>()) {
@@ -8202,7 +8203,7 @@ class UtilityTupleQueryGraph
     const auto ActualNode = Named(ActualType->getTypeLoc());
     const auto WrittenNode = Named(OriginalType->getTypeLoc());
     const auto CurrentNode = Named(Location);
-    if (ActualNode.isNull() || WrittenNode.isNull() || CurrentNode.isNull()) return false;
+    if (ActualNode.isNull() || WrittenNode.isNull() || CurrentNode.isNull()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = ActualNode.getAs<TemplateSpecializationTypeLoc>();
     const auto Written = WrittenNode.getAs<TemplateSpecializationTypeLoc>();
     const auto Current = CurrentNode.getAs<TemplateSpecializationTypeLoc>();
@@ -8225,19 +8226,19 @@ class UtilityTupleQueryGraph
         SM.getExpansionLoc(Actual.getRAngleLoc()) != SM.getExpansionLoc(End) ||
         SM.getExpansionLoc(Written.getRAngleLoc()) != SM.getExpansionLoc(End) ||
         !cstddefOrigin(S, SM, Actual.getTemplateNameLoc(), "libcxx", "__tuple/make_tuple_types.h") ||
-        !cstddefOrigin(S, SM, Written.getTemplateNameLoc(), "libcxx", "__tuple/make_tuple_types.h")) return false;
+        !cstddefOrigin(S, SM, Written.getTemplateNameLoc(), "libcxx", "__tuple/make_tuple_types.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     bool Found = false;
     for (const auto *Role : {ActualType, OriginalType}) {
       const auto Root = Role->getTypeLoc();
       const auto Child = Named(Root);
       for (const auto Node : {Root, Child}) {
-        if (!step()) return false;
+        if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (!Node.isNull() && Node.getType() == Location.getType() &&
             Node.getOpaqueData() == Location.getOpaqueData() &&
             Node.getSourceRange() == Location.getSourceRange()) Found = true;
       }
     }
-    if (!Found) return false;
+    if (!Found) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Spell = SM.getSpellingLoc(End);
     const auto Range = SM.getImmediateExpansionRange(End);
     const auto Begin = Range.getBegin();
@@ -8245,10 +8246,10 @@ class UtilityTupleQueryGraph
         !SM.isWrittenInScratchSpace(Spell) || Range.isTokenRange() ||
         !Begin.isFileID() || !Range.getEnd().isFileID() ||
         Range.getEnd() != Begin.getLocWithOffset(1) || SM.getExpansionLoc(End) != Begin ||
-        !cstddefOrigin(S, SM, Begin, "libcxx", "__tuple/make_tuple_types.h")) return false;
+        !cstddefOrigin(S, SM, Begin, "libcxx", "__tuple/make_tuple_types.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     bool Invalid = false;
     const char *OriginalChar = SM.getCharacterData(Begin, &Invalid);
-    if (Invalid || *OriginalChar != '>') return false;
+    if (Invalid || *OriginalChar != '>') return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const char *Split = SM.getCharacterData(Spell, &Invalid);
     return !Invalid && *Split == '>';
   }
@@ -8260,7 +8261,7 @@ class UtilityTupleQueryGraph
     return NestedSharedBudget || (ParentBudget && ParentBudget->nestedBudgetActive());
   }
   bool nestedDepthFits(unsigned ChildDepth) const {
-    if (Failed || ChildDepth > 64 || Depth > 64 - ChildDepth) return false;
+    if (Failed || ChildDepth > 64 || Depth > 64 - ChildDepth) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return !ParentBudget || ParentBudget->nestedDepthFits(Depth + ChildDepth);
   }
 
@@ -8269,8 +8270,8 @@ class UtilityTupleQueryGraph
         (ParentBudget && ((nestedBudgetActive() ? !ParentBudget->nestedDepthFits(Depth)
                                                : ParentBudget->Depth + Depth > 64) ||
                           !ParentBudget->step()))) {
-      Failed = true;
-      return false;
+      Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return true;
   }
@@ -8298,19 +8299,19 @@ class UtilityTupleQueryGraph
         !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "__utility/declval.h") ||
         !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__utility/declval.h") ||
         !cstddefOrigin(S, SM, Use->getExprLoc(), "libcxx", "__type_traits/invoke.h"))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Keep exact original unevaluated operands; no body/runtime permission.
     Declvals.push_back(Use);
     return true;
   }
   bool notFnInvokeParameter(const ParmVarDecl *Parameter) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation ||
-        !NotFnInvokeSignature || !Parameter || Parameter->hasDefaultArg()) return false;
+        !NotFnInvokeSignature || !Parameter || Parameter->hasDefaultArg()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Owner = dyn_cast<FunctionDecl>(Parameter->getDeclContext());
     if (Owner != NotFnInvokeSignature) {
       const auto *Primary = NotFnInvokeSignature->getPrimaryTemplate();
       if (!NotFnInvokeWrittenPattern || Owner != NotFnInvokeWrittenPattern ||
-          !Primary || Primary->getTemplatedDecl() != Owner) return false;
+          !Primary || Primary->getTemplatedDecl() != Owner) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     bool Found = false;
     for (const auto *Actual : Owner->parameters()) Found |= Actual == Parameter;
@@ -8372,28 +8373,28 @@ class UtilityTupleQueryGraph
         !Arguments || Arguments->size() != (NotFnReferenceDependency ? 1U : 2U) || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         Arguments->get(0).pack_size() != Wrapper->getNumParams() ||
         Target->getNumArgs() != Wrapper->getNumParams() + 1 ||
-        Method->getNumParams() != Wrapper->getNumParams()) return false;
+        Method->getNumParams() != Wrapper->getNumParams()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Bound = notFnQueryBound();
-    if (Bound.isNull()) return false;
+    if (Bound.isNull()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Actual) {
       if (!Actual || Actual->size() != 2 || Actual->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Actual->get(0).getAsType(), Bound) ||
           Actual->get(1).getKind() != TemplateArgument::Pack ||
-          Actual->get(1).pack_size() != Pack.size()) return false;
+          Actual->get(1).pack_size() != Pack.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Types = Actual->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type || Types[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Types[I].getAsType(), Pack[I].getAsType())) return false;
+            !Context.hasSameType(Types[I].getAsType(), Pack[I].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return true;
     };
     const bool HelperReturn = NotFnInvokeSignature && Expression == NotFnInvokeReturn;
     if (Forwarded) {
       if (!NotFnInvokeSignature || Expression != NotFnInvokeException ||
           NotFnInvokeSignature->getNumParams() != Target->getNumArgs() ||
-          !BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return false;
+          !BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else if (HelperReturn) {
-      if (!BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return false;
+      if (!BoundArguments(NotFnInvokeSignature->getTemplateSpecializationArgs())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else {
       const auto *Owner = dyn_cast_or_null<ClassTemplateSpecializationDecl>(NotFnConstraintBaseOwner);
       const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
@@ -8403,10 +8404,10 @@ class UtilityTupleQueryGraph
           !NotFnConstraintBase || NotFnConstraintBase->isVirtual() ||
           !NotFnConstraintBase->getTypeSourceInfo() || !family(Owner) ||
           !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !BoundArguments(&Owner->getTemplateArgs())) return false;
+          !BoundArguments(&Owner->getTemplateArgs())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       bool Actual = false;
       for (const auto &Base : Owner->bases()) Actual |= &Base == NotFnConstraintBase;
-      if (!Actual) return false;
+      if (!Actual) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     std::vector<const CallExpr *> Declvals;
     auto Operand = [&](const Expr *Value, QualType Input, unsigned Index) {
@@ -8435,7 +8436,7 @@ class UtilityTupleQueryGraph
           Cast->path_size() != 1 || *Cast->path_begin() != &*Inner.Record->bases_begin() ||
           !Context.hasSameType(Cast->getType(), Forwarder) ||
           !Context.hasSameType(Cast->getSubExpr()->getType(), Bound.getNonReferenceType()) ||
-          Cast->getValueKind() != Cast->getSubExpr()->getValueKind()) return false;
+          Cast->getValueKind() != Cast->getSubExpr()->getValueKind()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Receiver = Cast->getSubExpr();
     }
     if (ReferenceWrapper) {
@@ -8445,38 +8446,38 @@ class UtilityTupleQueryGraph
           Cast && Cast->getCastKind() == CK_NoOp) {
         if (!Context.hasSameType(Cast->getType(), Context.getConstType(Bound.getNonReferenceType())) ||
             !Context.hasSameType(Cast->getSubExpr()->getType(), Bound.getNonReferenceType()) ||
-            Cast->getValueKind() != Cast->getSubExpr()->getValueKind()) return false;
+            Cast->getValueKind() != Cast->getSubExpr()->getValueKind()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Receiver = Cast->getSubExpr();
       }
     }
     if (!Context.hasSameType(Receiver->getType(), Bound.getNonReferenceType()) ||
         Receiver->getValueKind() != Expr::getValueKindForType(ReceiverType) ||
-        !Operand(Receiver, Bound, 0)) return false;
+        !Operand(Receiver, Bound, 0)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < Pack.size(); ++I) {
       const auto Parameter = Method->getParamDecl(I)->getType();
       if (((ReferenceWrapper || NestedWrapper) ? !Parameter->isReferenceType() : !Parameter->isScalarType()) ||
           Parameter.getNonReferenceType().isVolatileQualified() ||
           !Context.hasSameType(Target->getArg(I + 1)->getType(), Parameter.getNonLValueExprType(Context)) ||
           Target->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter) ||
-          !Operand(Target->getArg(I + 1), Pack[I].getAsType(), I + 1)) return false;
+          !Operand(Target->getArg(I + 1), Pack[I].getAsType(), I + 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
     const auto Inserted = NotFnOwnedInvokeQueries.emplace(Target, Method);
-    if (!Inserted.second && Inserted.first->second != Method) return false;
+    if (!Inserted.second && Inserted.first->second != Method) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (!ReferenceWrapper && !NestedWrapper) OrdinarySources->insert(Method);
     return true;
   }
   bool notFnInvokeForwardedCall(const CallExpr *Expression) {
     if (notFnQueryTargetMethod()) return notFnOwnedInvokeQuery(Expression, true);
     if (!Expression || Expression != NotFnInvokeException || !NotFnInvokeSignature ||
-        Expression->getDirectCallee() || !NotFnInvocation) return false;
+        Expression->getDirectCallee() || !NotFnInvocation) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Prototype = NotFnCallableType->getPointeeType()->getAs<FunctionProtoType>();
     if (!Prototype || Expression->getNumArgs() != Prototype->getNumParams() ||
         NotFnInvokeSignature->getNumParams() != Expression->getNumArgs() + 1 ||
         !Context.hasSameType(Expression->getType(),
             Prototype->getReturnType().getNonLValueExprType(Context)) ||
         Expression->getValueKind() != Expr::getValueKindForType(Prototype->getReturnType()))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Forward = [&](const Expr *Operand, unsigned Index) {
       const auto *Cast = Operand ? dyn_cast<CXXStaticCastExpr>(Operand->IgnoreParenImpCasts()) : nullptr;
       const auto *Reference = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
@@ -8493,13 +8494,13 @@ class UtilityTupleQueryGraph
     const auto *Callee = dyn_cast<ImplicitCastExpr>(Expression->getCallee());
     if (!Callee || Callee->getCastKind() != CK_LValueToRValue ||
         !Context.hasSameType(Callee->getType(), NotFnCallableType) ||
-        !Forward(Callee->getSubExpr(), 0)) return false;
+        !Forward(Callee->getSubExpr(), 0)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < Expression->getNumArgs(); ++I)
       if (!Forward(Expression->getArg(I), I + 1) ||
           !Context.hasSameType(Expression->getArg(I)->getType(),
               Prototype->getParamType(I).getNonLValueExprType(Context)) ||
           Expression->getArg(I)->getValueKind() !=
-              Expr::getValueKindForType(Prototype->getParamType(I))) return false;
+              Expr::getValueKindForType(Prototype->getParamType(I))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return true;
   }
   bool notFnIndirectSignature(const CallExpr *Expression) {
@@ -8530,13 +8531,13 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Expression->getType(),
             Prototype->getReturnType().getNonLValueExprType(Context)) ||
         Expression->getValueKind() != Expr::getValueKindForType(Prototype->getReturnType()))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     bool ActualBase = false;
     if (!HelperReturn)
       for (const auto &Base : Owner->bases()) ActualBase |= &Base == NotFnConstraintBase;
     auto Bound = Method->isConst() ? Context.getConstType(NotFnCallableType) : NotFnCallableType;
     if (Method->getRefQualifier() == RQ_LValue) Bound = Context.getLValueReferenceType(Bound);
-    else if (Method->getRefQualifier() != RQ_RValue) return false;
+    else if (Method->getRefQualifier() != RQ_RValue) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Selected = Arguments->get(0).pack_elements();
     const auto *HelperArguments = HelperReturn
         ? NotFnInvokeSignature->getTemplateSpecializationArgs() : nullptr;
@@ -8545,12 +8546,12 @@ class UtilityTupleQueryGraph
         (*OwnerArguments)[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType((*OwnerArguments)[0].getAsType(), Bound) ||
         (*OwnerArguments)[1].getKind() != TemplateArgument::Pack ||
-        (*OwnerArguments)[1].pack_size() != Selected.size()) return false;
+        (*OwnerArguments)[1].pack_size() != Selected.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = (*OwnerArguments)[1].pack_elements();
     for (unsigned I = 0; I < Selected.size(); ++I)
       if (Selected[I].getKind() != TemplateArgument::Type ||
           Actual[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Selected[I].getAsType(), Actual[I].getAsType())) return false;
+          !Context.hasSameType(Selected[I].getAsType(), Actual[I].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
 
     std::vector<const CallExpr *> Declvals;
     auto Declval = [&](const Expr *Value, QualType Input) {
@@ -8558,13 +8559,13 @@ class UtilityTupleQueryGraph
     };
     const auto *Callee = dyn_cast<ImplicitCastExpr>(Expression->getCallee());
     if (!Callee || Callee->getCastKind() != CK_LValueToRValue ||
-        !Declval(Callee->getSubExpr(), Bound)) return false;
+        !Declval(Callee->getSubExpr(), Bound)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < Selected.size(); ++I) {
       const auto Parameter = Prototype->getParamType(I);
       if (!Context.hasSameType(Expression->getArg(I)->getType(),
               Parameter.getNonLValueExprType(Context)) ||
           Expression->getArg(I)->getValueKind() != Expr::getValueKindForType(Parameter) ||
-          !Declval(Expression->getArg(I), Selected[I].getAsType())) return false;
+          !Declval(Expression->getArg(I), Selected[I].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
     return true;
@@ -8585,7 +8586,7 @@ class UtilityTupleQueryGraph
         Constructor->isInvalidDecl() || Constructor->isVariadic() ||
         Constructor->getAccess() != AS_public ||
         !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
     return Prototype && Prototype->getExceptionSpecType() == EST_None &&
         !Prototype->getNoexceptExpr() &&
@@ -8600,7 +8601,7 @@ class UtilityTupleQueryGraph
   bool pinned(const Decl *D) {
     if (!D || !step() || D->isInvalidDecl() ||
         !approvedStandardSDKDeclaration(S, SM, D))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Origin = S.sdkFile(SM, D->getLocation());
     return Origin && Origin->Root == "libcxx" &&
            (DefaultEqualityFamilies.count(D) ||
@@ -8651,13 +8652,13 @@ class UtilityTupleQueryGraph
   bool family(const Decl *D) {
     bool Complete = false;
     auto Latch = llvm::make_scope_exit([&] {
-      if (!Complete && (Mode == UtilityTupleQueryMode::PairConstruction || Mode == UtilityTupleQueryMode::BindSignature || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = true;
+      if (!Complete && (Mode == UtilityTupleQueryMode::PairConstruction || Mode == UtilityTupleQueryMode::BindSignature || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
     });
     if (!pinned(D)) {
       // A genuine source failure cannot be recovered by a second cache lookup.
       // Other metadata modes preserve their existing behavior.
-      if ((Mode == UtilityTupleQueryMode::PairConstruction || Mode == UtilityTupleQueryMode::BindSignature || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = true;
-      return false;
+      if ((Mode == UtilityTupleQueryMode::PairConstruction || Mode == UtilityTupleQueryMode::BindSignature || NotFnReferenceStorage || NotFnNestedStorage || NotFnNestedInner)) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     if (!Declarations.insert(D).second) {
       Complete = true;
@@ -8665,32 +8666,32 @@ class UtilityTupleQueryGraph
     }
     if (const auto *R = dyn_cast<CXXRecordDecl>(D)) {
       for (const auto *Redeclaration : R->redecls())
-        if (!pinned(Redeclaration)) return false;
+        if (!pinned(Redeclaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
         const auto *Primary = Instance->getSpecializedTemplate();
-        if (!family(Primary)) return false;
+        if (!family(Primary)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (const auto *Partial = Instance->getSpecializedTemplateOrPartial()
                 .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
-          if (!family(Partial)) return false;
+          if (!family(Partial)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (const auto *Pattern = Instance->getTemplateInstantiationPattern())
-          if (!family(Pattern)) return false;
+          if (!family(Pattern)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
     } else if (const auto *F = dyn_cast<FunctionDecl>(D)) {
       for (const auto *Redeclaration : F->redecls())
-        if (!pinned(Redeclaration)) return false;
+        if (!pinned(Redeclaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Primary = F->getPrimaryTemplate())
-        if (!family(Primary)) return false;
+        if (!family(Primary)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Pattern = F->getTemplateInstantiationPattern())
-        if (!family(Pattern)) return false;
+        if (!family(Pattern)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else if (const auto *T = dyn_cast<RedeclarableTemplateDecl>(D)) {
       for (const auto *Redeclaration : T->redecls())
         if (!pinned(Redeclaration) || !pinned(Redeclaration->getTemplatedDecl()))
-          return false;
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else if (const auto *V = dyn_cast<VarDecl>(D)) {
       for (const auto *Redeclaration : V->redecls())
-        if (!pinned(Redeclaration)) return false;
+        if (!pinned(Redeclaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Pattern = V->getInstantiatedFromStaticDataMember())
-        if (!family(Pattern)) return false;
+        if (!family(Pattern)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     Complete = true;
     return true;
@@ -8956,7 +8957,7 @@ class UtilityTupleQueryGraph
   bool bindMemberSignatureBoundAccess(const Expr *Expression) const {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindMemberCall ||
         !BindMemberInvokeSignature || !BindMemberCall->Member.MemberCall || !Expression ||
-        !Context.hasSameType(Expression->getType(), Context.BoundMemberTy)) return false;
+        !Context.hasSameType(Expression->getType(), Context.BoundMemberTy)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Stripped = [](const Expr *E) -> const Expr * {
       for (unsigned I = 0; E && I < 64; ++I) {
         if (const auto *P = dyn_cast<ParenExpr>(E)) { E = P->getSubExpr(); continue; }
@@ -8978,13 +8979,13 @@ class UtilityTupleQueryGraph
       const auto *Access = Call ? dyn_cast_or_null<BinaryOperator>(Stripped(Call->getCallee())) : nullptr;
       if (Access != Expression || Access->getOpcode() != BO_PtrMemD) continue;
       const auto Site = Access->getExprLoc();
-      if (Site.isInvalid()) return false;
+      if (Site.isInvalid()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Spell = S.sdkFile(SM, SM.getSpellingLoc(Site));
       const auto Expansion = S.sdkFile(SM, SM.getExpansionLoc(Site));
       return Spell && Expansion && Spell->Root == "libcxx" && Expansion->Root == "libcxx" &&
           Spell->Path == "__type_traits/invoke.h" && Expansion->Path == "__type_traits/invoke.h";
     }
-    return false;
+    return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
   }
 
   bool bindMemberOwnerRecordSource(const CXXRecordDecl *Record) const {
@@ -8997,7 +8998,7 @@ class UtilityTupleQueryGraph
     if (!BindMemberCall || !BindMemberFactory || !BindCallMetadata || Type.isNull() ||
         Type->isReferenceType() || Type.isVolatileQualified() || Type.isRestrictQualified() ||
         Type.getAddressSpace() != LangAS::Default ||
-        !bindMemberOwnerRecordSource(Type->getAsCXXRecordDecl())) return false;
+        !bindMemberOwnerRecordSource(Type->getAsCXXRecordDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Fresh = freshBindCallSource(S, SM, BindMemberCall->Selected.SourceCall, Context);
     return Fresh && Fresh->Storage.Record == BindMetadata->Record &&
         Fresh->SourceCall == BindCallMetadata->SourceCall &&
@@ -9017,13 +9018,13 @@ class UtilityTupleQueryGraph
             : Context.hasSameType(Context.getRecordType(Record), BindMetadata->CallableType));
   }
   bool ownedPairInputRecord(const CXXRecordDecl *Record) const {
-    if (!Record || !S.owns(SM, Record->getLocation())) return false;
+    if (!Record || !S.owns(SM, Record->getLocation())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     return !Primary || S.owns(SM, Primary->getLocation());
   }
   bool pairSourceTypeSpelling(QualType Type) {
-    if (!PairInputTypes.count(Type.getCanonicalType().getTypePtr())) return false;
+    if (!PairInputTypes.count(Type.getCanonicalType().getTypePtr())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Raw = Type.getTypePtr();
     const auto *Alias = dyn_cast<TypedefType>(Raw);
     const auto *Instance = dyn_cast<TemplateSpecializationType>(Raw);
@@ -9051,10 +9052,10 @@ class UtilityTupleQueryGraph
       }
     }
     if (!Declaration || !S.owns(SM, Declaration->getLocation()) ||
-        approvedStandardSDKDeclaration(S, SM, Declaration)) return false;
+        approvedStandardSDKDeclaration(S, SM, Declaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (const auto *Record = Type->getAsCXXRecordDecl();
         Record && S.owns(SM, Record->getLocation()) && !ownedPairInputRecord(Record))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // This is a source dependency, never an SDK certificate. The exact alias
     // TypeLoc or retained template use must finish in the ordinary checker.
     PairSourceTypeSpellings.insert(Raw);
@@ -9066,9 +9067,9 @@ class UtilityTupleQueryGraph
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back();
       Pending.pop_back();
-      if (!Declaration || !step()) return false;
+      if (!Declaration || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!PairInputFamilies.insert(Declaration).second) continue;
-      if (!approvedStandardSDKDeclaration(S, SM, Declaration)) return false;
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *R = dyn_cast<CXXRecordDecl>(Declaration)) {
         for (const auto *Redeclaration : R->redecls()) Pending.push_back(Redeclaration);
         if (const auto *Described = R->getDescribedClassTemplate())
@@ -9108,14 +9109,14 @@ class UtilityTupleQueryGraph
     }
   public:
     explicit PairStorageUseSource(UtilityTupleQueryGraph &Graph) : Graph(Graph) {}
-    bool shouldWalkTypesOfTypeLocs() const { return false; }
+    bool shouldWalkTypesOfTypeLocs() const { return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); }
     bool check(const TypeSourceInfo *Info) {
-      if (!Info || !Graph.step()) return false;
+      if (!Info || !Graph.step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Seen.insert(Info).second) return true;
       return TraverseTypeLoc(Info->getTypeLoc());
     }
     bool TraverseTypeLoc(TypeLoc TL) {
-      if (!TL) return false;
+      if (!TL) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       ++Graph.Depth;
       auto Restore = llvm::make_scope_exit([&] { --Graph.Depth; });
       return Graph.step() && location(TL.getBeginLoc()) && location(TL.getEndLoc()) &&
@@ -9133,7 +9134,7 @@ class UtilityTupleQueryGraph
             !Graph.Context.hasSameType(TL.getType(), Storage->getElementType()) ||
             !approvedStandardSDKDeclaration(Graph.S, Graph.SM, Alias) ||
             !cstddefOrigin(Graph.S, Graph.SM, Alias->getLocation(), "libcxx", "array") ||
-            !Alias->getTypeSourceInfo()) return false;
+            !Alias->getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         // The exact zero-array field use binds this member alias. Its actual
         // original TSI below still proves every __empty/conditional token.
         Graph.PairInputFamilies.insert(Alias);
@@ -9144,7 +9145,7 @@ class UtilityTupleQueryGraph
             cstddefOrigin(Graph.S, Graph.SM, Owner->getLocation(), "libcxx", "optional")) {
           if (!approvedStandardSDKDeclaration(Graph.S, Graph.SM, Alias) ||
               !cstddefOrigin(Graph.S, Graph.SM, Alias->getLocation(), "libcxx", "optional") ||
-              !Alias->getTypeSourceInfo()) return false;
+              !Alias->getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           Graph.PairInputFamilies.insert(Alias);
         }
       }
@@ -9161,21 +9162,21 @@ class UtilityTupleQueryGraph
                                 : "__functional/binary_function.h";
         if (!Actual || !Graph.PairBorrowedStorageRecords.count(Actual->getCanonicalDecl()) ||
             Actual->getName() != (Unary ? "__unary_function_keep_layout_base"
-                                       : "__binary_function_keep_layout_base")) return false;
+                                       : "__binary_function_keep_layout_base")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         std::vector<const Decl *> Pending{Alias};
         std::set<const Decl *> Family;
         while (!Pending.empty()) {
           const auto *D = Pending.back();
           Pending.pop_back();
-          if (!D || !Graph.step()) return false;
+          if (!D || !Graph.step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           if (!Family.insert(D).second) continue;
           if (!approvedStandardSDKDeclaration(Graph.S, Graph.SM, D) ||
-              !cstddefOrigin(Graph.S, Graph.SM, D->getLocation(), "libcxx", Path)) return false;
+              !cstddefOrigin(Graph.S, Graph.SM, D->getLocation(), "libcxx", Path)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           if (const auto *T = dyn_cast<TypeAliasTemplateDecl>(D)) {
             for (const auto *R : T->redecls()) Pending.push_back(R);
             Pending.push_back(T->getTemplatedDecl());
             for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-          } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return false;
+          } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
         // Only this actual base use supplies the independent alias family.
         Graph.PairInputFamilies.insert(Family.begin(), Family.end());
@@ -9186,9 +9187,9 @@ class UtilityTupleQueryGraph
            Alias->getName() == "__optional_sfinae_assign_base_t")) {
         const auto *Actual = TL.getType()->getAsCXXRecordDecl();
         if (!Actual || !Graph.PairOptionalStorageRecords.count(Actual->getCanonicalDecl()) ||
-            !Graph.bindPairOptionalAlias(Alias)) return false;
+            !Graph.bindPairOptionalAlias(Alias)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
-      if (!Template || !Graph.family(Template)) return false;
+      if (!Template || !Graph.family(Template)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Template))
         return Graph.family(Alias->getTemplatedDecl()) &&
                check(Alias->getTemplatedDecl()->getTypeSourceInfo());
@@ -9201,7 +9202,7 @@ class UtilityTupleQueryGraph
       ++Graph.Depth;
       if (Graph.step()) return true;
       --Graph.Depth;
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     bool dataTraverseStmtPost(Stmt *) { --Graph.Depth; return true; }
   };
@@ -9210,15 +9211,15 @@ class UtilityTupleQueryGraph
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *D = Pending.back(); Pending.pop_back();
-      if (!D || !step()) return false;
+      if (!D || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(D).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, D) ||
-          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "optional")) return false;
+          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "optional")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *T = dyn_cast<TypeAliasTemplateDecl>(D)) {
         for (const auto *R : T->redecls()) Pending.push_back(R);
         Pending.push_back(T->getTemplatedDecl());
         for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return false;
+      } else if (!isa<TypeAliasDecl, TemplateTypeParmDecl>(D)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
     return true;
@@ -9226,15 +9227,15 @@ class UtilityTupleQueryGraph
   bool bindPairOptionalStorage(const CXXRecordDecl *Record, unsigned Nesting = 0) {
     if (!Record || Nesting > 64 || !step() || Record->isInvalidDecl() ||
         Record->isUnion() || Record->isDynamicClass() || Record->getNumVBases() ||
-        !approvedStandardSDKDeclaration(S, SM, Record) || !bindPairInputFamily(Record)) return false;
+        !approvedStandardSDKDeclaration(S, SM, Record) || !bindPairInputFamily(Record)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (!PairOptionalStorageRecords.insert(Record->getCanonicalDecl()).second) return true;
     for (const auto &Base : Record->bases()) {
       const auto *Child = Base.getType()->getAsCXXRecordDecl();
-      if (Base.isVirtual() || !Child || !bindPairOptionalStorage(Child, Nesting + 1)) return false;
+      if (Base.isVirtual() || !Child || !bindPairOptionalStorage(Child, Nesting + 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       PairStorageUseSource Source(*this);
       if (!Base.getTypeSourceInfo() ||
           !Context.hasSameType(Base.getTypeSourceInfo()->getType(), Base.getType()) ||
-          !Source.check(Base.getTypeSourceInfo())) return false;
+          !Source.check(Base.getTypeSourceInfo())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return true;
   }
@@ -9245,9 +9246,9 @@ class UtilityTupleQueryGraph
         Definition->isUnion() || Definition->isDynamicClass() || Definition->getNumVBases() ||
         !Definition->isStandardLayout() || !Definition->hasTrivialCopyConstructor() ||
         !Definition->hasTrivialDestructor() ||
-        !approvedStandardSDKDeclaration(S, SM, Definition)) return false;
+        !approvedStandardSDKDeclaration(S, SM, Definition)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Wrapper) {
-      if (!approvedFunctionalReferenceRecord(S, SM, Definition, Context)) return false;
+      if (!approvedFunctionalReferenceRecord(S, SM, Definition, Context)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else {
       const auto Origin = S.sdkFile(SM, Definition->getLocation());
       if (!Origin || Origin->Root != "libcxx" || !Definition->isEmpty() ||
@@ -9265,16 +9266,16 @@ class UtilityTupleQueryGraph
              Definition->getName() == "__binary_function_keep_layout_base" &&
              !Definition->getNumBases()) ||
             (Origin->Path == "__utility/empty.h" && Definition->getName() == "__empty" &&
-             !Definition->getNumBases()))) return false;
+             !Definition->getNumBases()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
-    if (!bindPairInputFamily(Definition)) return false;
+    if (!bindPairInputFamily(Definition)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Wrapper) {
       const auto Description = approvedFunctionalReferenceRecord(S, SM, Definition, Context);
       const TypedefNameDecl *Alias = nullptr;
       for (const auto *Declaration : Definition->decls())
         if (const auto *Named = dyn_cast<TypedefNameDecl>(Declaration);
             Named && Named->getIdentifier() && Named->getName() == "type") {
-          if (Alias) return false;
+          if (Alias) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           Alias = Named;
         }
       const auto *Info = Alias ? Alias->getTypeSourceInfo() : nullptr;
@@ -9287,7 +9288,7 @@ class UtilityTupleQueryGraph
           !Context.hasSameType(Info->getType(), Alias->getUnderlyingType()) ||
           !approvedStandardSDKDeclaration(S, SM, Alias) ||
           !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/reference_wrapper.h") ||
-          !Source.check(Info)) return false;
+          !Source.check(Info)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // Only this bound wrapper's actual referent alias supplies metadata.
       // Its original type spelling closes before any later alias/cache use.
       PairInputFamilies.insert(Alias);
@@ -9298,12 +9299,12 @@ class UtilityTupleQueryGraph
       if (Base.isVirtual() || !Base.getTypeSourceInfo() ||
           !Context.hasSameType(Base.getTypeSourceInfo()->getType(), Base.getType()) ||
           !bindPairBorrowedStorage(Base.getType()->getAsCXXRecordDecl(), false, Nesting + 1) ||
-          !Source.check(Base.getTypeSourceInfo()) || Failed) return false;
+          !Source.check(Base.getTypeSourceInfo()) || Failed) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return true;
   }
   bool bindPairInput(QualType Type, unsigned Nesting = 0) {
-    if (Type.isNull() || Nesting > 64 || !step()) return false;
+    if (Type.isNull() || Nesting > 64 || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Canonical = Type.getCanonicalType().getTypePtr();
     if (!PairInputTypes.insert(Canonical).second) return true;
     if (Canonical->isPointerType() || Canonical->isReferenceType())
@@ -9312,21 +9313,21 @@ class UtilityTupleQueryGraph
         Array && (isa<ConstantArrayType>(Array) || isa<IncompleteArrayType>(Array)))
       return bindPairInput(Array->getElementType(), Nesting + 1);
     if (const auto *Function = Canonical->getAs<FunctionProtoType>()) {
-      if (!bindPairInput(Function->getReturnType(), Nesting + 1)) return false;
+      if (!bindPairInput(Function->getReturnType(), Nesting + 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto Parameter : Function->param_types())
-        if (!bindPairInput(Parameter, Nesting + 1)) return false;
+        if (!bindPairInput(Parameter, Nesting + 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return true;
     }
     const auto *Record = Canonical->getAsCXXRecordDecl();
     if (!Record) return true;
     PairInputRecords.insert(Record->getCanonicalDecl());
-    if (!bindPairInputFamily(Record)) return false;
+    if (!bindPairInputFamily(Record)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (approvedFunctionalReferenceRecord(S, SM, Record, Context) &&
-        !bindPairBorrowedStorage(Record, true)) return false;
+        !bindPairBorrowedStorage(Record, true)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (const auto Optional = approvedUtilityOptionalRecord(S, SM, Record, Context)) {
       const auto *Union = dyn_cast<CXXRecordDecl>(Optional->Value->getDeclContext());
       if (!Union || !Union->isUnion() || !Union->hasTrivialDestructor() ||
-          !bindPairOptionalStorage(Record) || !bindPairInputFamily(Union)) return false;
+          !bindPairOptionalStorage(Record) || !bindPairInputFamily(Union)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       PairOptionalStorageRecords.insert(Union->getCanonicalDecl());
       PairOptionalStorageUnions.insert(Union->getCanonicalDecl());
       // Actual storage field spellings are independent source uses. Layout
@@ -9335,10 +9336,10 @@ class UtilityTupleQueryGraph
       for (const auto *Field : Union->fields()) {
         const auto *Written = Field->getTypeSourceInfo();
         if (!Written || !Context.hasSameType(Written->getType(), Field->getType()) ||
-            !Source.check(Written)) return false;
+            !Source.check(Written)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       if (!Optional->Engaged->getTypeSourceInfo() ||
-          !Source.check(Optional->Engaged->getTypeSourceInfo())) return false;
+          !Source.check(Optional->Engaged->getTypeSourceInfo())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context);
         Array && !Array->Size) {
@@ -9348,23 +9349,23 @@ class UtilityTupleQueryGraph
       if (!Storage || !Written ||
           !Context.hasSameType(Written->getType(), Array->Elements->getType()) ||
           !bindPairBorrowedStorage(Storage->getElementType()->getAsCXXRecordDecl(), false) ||
-          !Source.check(Written) || Failed) return false;
+          !Source.check(Written) || Failed) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     // Follow type arguments only; no source declaration/body becomes SDK code.
     const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(Record);
     if (!Specialization) return true;
     auto Argument = [&](auto &&Self, const TemplateArgument &Value,
                         unsigned Depth) -> bool {
-      if (Depth > 64 || !step()) return false;
+      if (Depth > 64 || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Value.getKind() == TemplateArgument::Type)
         return bindPairInput(Value.getAsType(), Depth + 1);
       if (Value.getKind() == TemplateArgument::Pack)
         for (const auto &Element : Value.pack_elements())
-          if (!Self(Self, Element, Depth + 1)) return false;
+          if (!Self(Self, Element, Depth + 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return true;
     };
     for (const auto &Value : Specialization->getTemplateArgs().asArray())
-      if (!Argument(Argument, Value, Nesting + 1)) return false;
+      if (!Argument(Argument, Value, Nesting + 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return true;
   }
   bool bindPairReferenceFactory(const Expr *Argument) {
@@ -9382,17 +9383,17 @@ class UtilityTupleQueryGraph
                             NotFnReferenceStorage->Reference.ReferentType);
     if (!Function || !Primary ||
         (!PairInputRecords.count(Factory->Result.Record->getCanonicalDecl()) && !NotFnInput))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const Decl *> Pending{Function, Primary};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(Current).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Current) ||
           !cstddefOrigin(S, SM, Current->getLocation(), "libcxx",
-                         "__functional/reference_wrapper.h")) return false;
+                         "__functional/reference_wrapper.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *F = dyn_cast<FunctionDecl>(Current)) {
         for (const auto *D : F->redecls()) Pending.push_back(D);
         if (const auto *Pattern = F->getTemplateInstantiationPattern()) Pending.push_back(Pattern);
@@ -9401,7 +9402,7 @@ class UtilityTupleQueryGraph
         for (const auto *D : T->redecls()) Pending.push_back(D);
         Pending.push_back(T->getTemplatedDecl());
         for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TemplateTypeParmDecl, NonTypeTemplateParmDecl>(Current)) return false;
+      } else if (!isa<TemplateTypeParmDecl, NonTypeTemplateParmDecl>(Current)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     // Only metadata substitutions of this exact admitted caller factory join
     // the graph. The caller still checks its actual call and referent source.
@@ -9436,26 +9437,26 @@ class UtilityTupleQueryGraph
           !Context.hasSameType(Arguments->get(0).getAsType(),
               Parameter->isLValueReferenceType() ? Parameter : Parameter->getPointeeType()) ||
           !Context.hasSameType(Function->getReturnType(), Parameter) ||
-          !Context.hasSameType(Call->getType(), Parameter->getPointeeType())) return false;
+          !Context.hasSameType(Call->getType(), Parameter->getPointeeType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const bool LValue = Parameter->isLValueReferenceType() || Call->getType()->isFunctionType();
-      if (Call->isLValue() != LValue || Call->isXValue() == LValue) return false;
+      if (Call->isLValue() != LValue || Call->isXValue() == LValue) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Operation = UtilityOperation::Forward;
     } else {
       Operation = approvedUtilityOperation(S, SM, Call, Context);
-      if (!S.owns(SM, Call->getExprLoc())) return false;
+      if (!S.owns(SM, Call->getExprLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const auto Path = Operation == UtilityOperation::Move ? "__utility/move.h"
         : Operation == UtilityOperation::Forward ? "__utility/forward.h" : "";
     if (!*Path ||
-        !PairInputTypes.count(Call->getType().getCanonicalType().getTypePtr())) return false;
+        !PairInputTypes.count(Call->getType().getCanonicalType().getTypePtr())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const Decl *> Pending{Function, Primary};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(Current).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Current) ||
-          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", Path)) return false;
+          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", Path)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *F = dyn_cast<FunctionDecl>(Current)) {
         for (const auto *D : F->redecls()) Pending.push_back(D);
         if (const auto *Pattern = F->getTemplateInstantiationPattern()) Pending.push_back(Pattern);
@@ -9464,7 +9465,7 @@ class UtilityTupleQueryGraph
         for (const auto *D : T->redecls()) Pending.push_back(D);
         Pending.push_back(T->getTemplatedDecl());
         for (const auto *Parameter : *T->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TemplateTypeParmDecl>(Current)) return false;
+      } else if (!isa<TemplateTypeParmDecl>(Current)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     // These actual caller adapters supply metadata substitution provenance.
     // Ordinary completion still authenticates their calls and original operands.
@@ -9473,7 +9474,7 @@ class UtilityTupleQueryGraph
   }
   bool pairOwner(const CXXRecordDecl *Record) {
     if (Mode != UtilityTupleQueryMode::PairConstruction || !PairConstructor ||
-        !Record) return false;
+        !Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(
         PairConstructor->getParent());
     const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
@@ -9487,15 +9488,15 @@ class UtilityTupleQueryGraph
   bool pairHelperOwner(const CXXRecordDecl *Record) {
     if (!Record || !Record->getIdentifier() || Record->getName() != "_CheckArgs" ||
         !pairOwner(dyn_cast<CXXRecordDecl>(Record->getDeclContext())) ||
-        !family(Record)) return false;
+        !family(Record)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Definition = Record->getDefinition();
     if (!Definition || !family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumBases() ||
-        !Definition->field_empty()) return false;
+        !Definition->field_empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Origin = Definition->getInstantiatedFromMemberClass();
     if (Origin && (!family(Origin) || !Origin->getIdentifier() ||
         Origin->getName() != "_CheckArgs" ||
-        !pairOwner(dyn_cast<CXXRecordDecl>(Origin->getDeclContext())))) return false;
+        !pairOwner(dyn_cast<CXXRecordDecl>(Origin->getDeclContext())))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return true;
   }
   bool pairHelper(const FunctionDecl *Function) {
@@ -9503,40 +9504,40 @@ class UtilityTupleQueryGraph
     if (!Method || !pairHelperOwner(Method->getParent()) || !family(Method) ||
         !Method->isStatic() || !Method->isConstexpr() || Method->isVariadic() ||
         Method->getNumParams() || !Method->getReturnType()->isBooleanType() ||
-        Method->getAccess() != AS_public || !Method->getIdentifier()) return false;
+        Method->getAccess() != AS_public || !Method->getIdentifier()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Name = Method->getName();
     if (Name != "__is_pair_constructible" && Name != "__is_implicit" &&
-        Name != "__enable_default" && Name != "__enable_implicit_default") return false;
+        Name != "__enable_default" && Name != "__enable_implicit_default") return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Primary = Method->getPrimaryTemplate();
     const auto *Arguments = Method->getTemplateSpecializationArgs();
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     if (!Primary || !Arguments || !Parameters || !family(Primary) ||
         Primary->getDeclContext() != Method->getDeclContext() ||
-        Arguments->size() != Parameters->size()) return false;
+        Arguments->size() != Parameters->size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const bool Default = Name == "__enable_default" ||
                          Name == "__enable_implicit_default";
-    if (Parameters->size() != (Default ? 1u : 2u)) return false;
+    if (Parameters->size() != (Default ? 1u : 2u)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < Parameters->size(); ++I) {
-      if (!family(Parameters->getParam(I))) return false;
+      if (!family(Parameters->getParam(I))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Default) {
         const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(I));
         if (!Parameter || !Parameter->isParameterPack() || Parameter->hasDefaultArgument() ||
             !Context.hasSameType(Parameter->getType(),
                 Context.getLValueReferenceType(Context.IntTy)) ||
             Arguments->get(I).getKind() != TemplateArgument::Pack ||
-            Arguments->get(I).pack_size()) return false;
+            Arguments->get(I).pack_size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       } else {
         const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
         if (!Parameter || Parameter->isParameterPack() || Parameter->hasDefaultArgument() ||
             Arguments->get(I).getKind() != TemplateArgument::Type ||
-            !TraverseTemplateArgument(Arguments->get(I))) return false;
+            !TraverseTemplateArgument(Arguments->get(I))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
     }
     if (const auto *Original = Primary->getInstantiatedFromMemberTemplate())
       if (!family(Original) || !pairHelperOwner(
-              dyn_cast<CXXRecordDecl>(Original->getDeclContext()))) return false;
+              dyn_cast<CXXRecordDecl>(Original->getDeclContext()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (CompletedPairHelpers.count(Function)) return true;
-    if (!ActivePairHelpers.insert(Function).second) return false;
+    if (!ActivePairHelpers.insert(Function).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Restore = llvm::make_scope_exit([&] { ActivePairHelpers.erase(Function); });
     const auto *Definition = Function->getDefinition();
     const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
@@ -9559,46 +9560,46 @@ class UtilityTupleQueryGraph
     if (!PairInputRecords.count(Owner->Record->getCanonicalDecl()) || !PairOwnerUse ||
         PairOwnerUse->Method != Method || PairOwnerUse->Query != PairTraitQuery ||
         PairOwnerUse->Root != PairTraitConstruction || !PairTraitQuery ||
-        !PairTraitConstruction || !PairConstructor) return false;
+        !PairTraitConstruction || !PairConstructor) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Use = *PairOwnerUse;
     const auto Found = OperationTraits.find(Use.Query);
     if (Found == OperationTraits.end() || !Found->second.Attempted ||
-        !Found->second.Complete || !Found->second.Root) return false;
+        !Found->second.Complete || !Found->second.Root) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Original = Found->second.Root->IgnoreParenImpCasts();
     const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Original);
     if (Temporary) Original = Temporary->getSubExpr()->IgnoreParenImpCasts();
-    if (Original != Use.Root) return false;
+    if (Original != Use.Root) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Use.Parent) {
       const auto Source = SpecialMembers.find(Use.Parent->getCanonicalDecl());
       if (!Use.Subobject || Use.Temporary || !ActiveMembers.count(Use.Parent) ||
           Source == SpecialMembers.end() || !Source->second.Complete ||
           Source->second.Owner != Use.Parent || Use.Subobject->Method != Method)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       bool Actual = false;
       for (const auto &Selection : Source->second.Selections)
         Actual |= &Selection == Use.Subobject;
-      if (!Actual) return false;
+      if (!Actual) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else if (Use.Subobject) {
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else if (isa<CXXConstructorDecl>(Method)) {
-      if (Use.Temporary || Use.Root->getConstructor() != Method) return false;
+      if (Use.Temporary || Use.Root->getConstructor() != Method) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else {
       if (!Use.Temporary || Use.Temporary != Temporary ||
           !Use.Temporary->getTemporary() ||
-          Use.Temporary->getTemporary()->getDestructor() != Method) return false;
+          Use.Temporary->getTemporary()->getDestructor() != Method) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
     const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
     if (!Primary || !(Constructor ? Constructor->isMoveConstructor()
-                                 : isa<CXXDestructorDecl>(Method))) return false;
+                                 : isa<CXXDestructorDecl>(Method))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(Current).second) continue;
       const auto *Record = Current->getParent();
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Current);
@@ -9622,13 +9623,13 @@ class UtilityTupleQueryGraph
            (!Pattern || Record->getCanonicalDecl() != Pattern->getCanonicalDecl())) ||
           (Constructor ? !Copy || !Copy->isMoveConstructor() || Copy->getNumParams() != 1 ||
                              Copy->getParamDecl(0)->hasDefaultArg()
-                       : !isa<CXXDestructorDecl>(Current) || Current->getNumParams())) return false;
+                       : !isa<CXXDestructorDecl>(Current) || Current->getNumParams())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Copy && !Context.hasSameType(Copy->getParamDecl(0)->getType(),
-              Context.getRValueReferenceType(Context.getRecordType(Record)))) return false;
+              Context.getRValueReferenceType(Context.getRecordType(Record)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(D));
       if (const auto *Source = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Source);
-        if (!Member) return false;
+        if (!Member) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Pending.push_back(Member);
       }
     }
@@ -9643,11 +9644,11 @@ class UtilityTupleQueryGraph
     const bool Owner = Mode == UtilityTupleQueryMode::PairConstruction && PairOwnerUse &&
         PairOwnerUse->Method == Method &&
         utilityUniquePtrRecord(S, SM, R, Context, false, false).has_value();
-    if ((!String && !Owner) || !family(Method)) return false;
+    if ((!String && !Owner) || !family(Method)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     if (!Prototype || Prototype->getNoexceptExpr() || Method->isDeleted() ||
         Method->isInvalidDecl() || Method->isVariadic() || Method->getPrimaryTemplate())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Destructor)
       return !Method->getNumParams() && !Method->isVirtual() &&
              R->getDestructor() && R->getDestructor()->getCanonicalDecl() ==
@@ -9655,7 +9656,7 @@ class UtilityTupleQueryGraph
     if (!Constructor || !Constructor->isCopyOrMoveConstructor() ||
         (Owner && !Constructor->isMoveConstructor()) ||
         Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Parameter = Method->getParamDecl(0)->getType();
     const auto Type = Context.getRecordType(R);
     const auto Expected = Constructor->isMoveConstructor()
@@ -9677,20 +9678,20 @@ class UtilityTupleQueryGraph
     if (!Method->isImplicit() || !Method->isDefaulted() || !Method->isTrivial() ||
         !(Constructor ? (Constructor->isCopyOrMoveConstructor() ||
                          (PairDefault && Constructor->isDefaultConstructor())) : isa<CXXDestructorDecl>(Method)))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Origin = S.sdkFile(SM, Record->getLocation());
     if (!Origin || Origin->Root != "libcxx" ||
         (Origin->Path != "__functional/reference_wrapper.h" &&
          Origin->Path != "__functional/weak_result_type.h" &&
          Origin->Path != "__functional/unary_function.h" &&
          Origin->Path != "__functional/binary_function.h" &&
-         Origin->Path != "__utility/empty.h")) return false;
+         Origin->Path != "__utility/empty.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(Current).second) continue;
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Current);
       const auto *Owner = Current->getParent();
@@ -9705,11 +9706,11 @@ class UtilityTupleQueryGraph
                          Copy->isMoveConstructor() != Constructor->isMoveConstructor() ||
                          !(Copy->isCopyOrMoveConstructor() ||
                            (PairDefault && Copy->isDefaultConstructor()))
-                       : !isa<CXXDestructorDecl>(Current))) return false;
+                       : !isa<CXXDestructorDecl>(Current))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(D));
       if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
-        if (!Member) return false;
+        if (!Member) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Pending.push_back(Member);
       }
     }
@@ -9721,19 +9722,19 @@ class UtilityTupleQueryGraph
         Nesting > 64 || !step() || !Constructor->isDefaultConstructor() ||
         Constructor->getNumParams() || Constructor->isDeleted() || Constructor->isInvalidDecl() ||
         Constructor->isVariadic() || Constructor->getPrimaryTemplate() ||
-        !PairOptionalStorageRecords.count(Constructor->getParent()->getCanonicalDecl())) return false;
+        !PairOptionalStorageRecords.count(Constructor->getParent()->getCanonicalDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Record = Constructor->getParent()->getDefinition();
     const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
     const auto Origin = S.sdkFile(SM, Record->getLocation());
     if (!Primary || !Pattern || !Origin || Origin->Root != "libcxx" ||
-        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return false;
+        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const CXXConstructorDecl *> Pending{Constructor};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(Current).second) continue;
       const auto *Owner = Current->getParent();
       if (!Current->isDefaultConstructor() || Current->getNumParams() ||
@@ -9742,28 +9743,28 @@ class UtilityTupleQueryGraph
           !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", Origin->Path) ||
           (Owner->getCanonicalDecl() != Record->getCanonicalDecl() &&
            Owner->getCanonicalDecl() != Pattern->getCanonicalDecl() &&
-           Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl())) return false;
+           Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Explicit = Current->getExplicitSpecifier();
       if (Explicit.isInvalid() || Explicit.getKind() == ExplicitSpecKind::Unresolved ||
-          Explicit.getExpr() || Explicit.isExplicit()) return false;
+          Explicit.getExpr() || Explicit.isExplicit()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXConstructorDecl>(D));
       if (const auto *D = Current->getTemplateInstantiationPattern())
         Pending.push_back(cast<CXXConstructorDecl>(D));
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
-    if (!family(Constructor) || !family(Record)) return false;
+    if (!family(Constructor) || !family(Record)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
     if (!Prototype || Prototype->getNoexceptExpr() ||
-        Prototype->getExceptionSpecType() != EST_BasicNoexcept) return false;
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
     if (!Body || !Body->body_empty() ||
-        !S.sdkFile(SM, Body->getBeginLoc()) || !S.sdkFile(SM, Body->getEndLoc())) return false;
+        !S.sdkFile(SM, Body->getBeginLoc()) || !S.sdkFile(SM, Body->getEndLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Record->getName() == "__optional_destruct_base") {
       // This selected constructor activates only the null union member and
       // false engagement flag. No element default constructor is evaluated.
       const CXXCtorInitializer *Null = nullptr, *Engaged = nullptr;
       for (const auto *Init : Constructor->inits()) {
-        if (!step() || !Init->isAnyMemberInitializer() || !Init->getAnyMember()) return false;
+        if (!step() || !Init->isAnyMemberInitializer() || !Init->getAnyMember()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto *Field = Init->getAnyMember();
         if (Init->isIndirectMemberInitializer()) {
           const auto *Indirect = Init->getIndirectMember();
@@ -9779,15 +9780,15 @@ class UtilityTupleQueryGraph
               !approvedStandardSDKDeclaration(S, SM, Indirect) ||
               !approvedStandardSDKDeclaration(S, SM, Anonymous) ||
               !cstddefOrigin(S, SM, Indirect->getLocation(), "libcxx", "optional") ||
-              !cstddefOrigin(S, SM, Anonymous->getLocation(), "libcxx", "optional")) return false;
-        } else if (Field->getDeclContext() != Record) return false;
+              !cstddefOrigin(S, SM, Anonymous->getLocation(), "libcxx", "optional")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+        } else if (Field->getDeclContext() != Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (!approvedStandardSDKDeclaration(S, SM, Field) ||
-            !cstddefOrigin(S, SM, Field->getLocation(), "libcxx", "optional")) return false;
+            !cstddefOrigin(S, SM, Field->getLocation(), "libcxx", "optional")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (Field->getName() == "__null_state_" && Field->getType()->isCharType() && !Null)
           Null = Init;
         else if (Field->getName() == "__engaged_" && Field->getType()->isBooleanType() && !Engaged)
           Engaged = Init;
-        else return false;
+        else return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       const auto *Zero = Null ? dyn_cast<ImplicitValueInitExpr>(Null->getInit()) : nullptr;
       const auto *False = Engaged ? dyn_cast<CXXBoolLiteralExpr>(Engaged->getInit()) : nullptr;
@@ -9801,9 +9802,9 @@ class UtilityTupleQueryGraph
       const auto *Child = Base.getType()->getAsCXXRecordDecl();
       if (!Child || Base.isVirtual() ||
           !PairOptionalStorageRecords.count(Child->getCanonicalDecl()) ||
-          !Expected.insert(Child->getCanonicalDecl()).second) return false;
+          !Expected.insert(Child->getCanonicalDecl()).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
-    if (!Record->field_empty()) return false;
+    if (!Record->field_empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Expected.empty())
       return Constructor->isImplicit() && Constructor->isDefaulted() && Constructor->isTrivial() &&
           Constructor->init_begin() == Constructor->init_end();
@@ -9817,7 +9818,7 @@ class UtilityTupleQueryGraph
           !Context.hasSameUnqualifiedType(Call->getType(), Context.getRecordType(Base)) ||
           !S.sdkFile(SM, Call->getBeginLoc()) || !S.sdkFile(SM, Call->getEndLoc()) ||
           !Expected.erase(Base->getCanonicalDecl()) ||
-          !pairOptionalDefault(Child, Nesting + 1)) return false;
+          !pairOptionalDefault(Child, Nesting + 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return Expected.empty();
   }
@@ -9835,12 +9836,12 @@ class UtilityTupleQueryGraph
         !(Method->isImplicit() || Method->isDefaulted()) || !Method->isDefaulted() ||
         !Method->isTrivial() || !Record->hasTrivialDestructor() ||
         !Origin || Origin->Root != "libcxx" ||
-        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return false;
+        (Origin->Path != "optional" && Origin->Path != "__tuple/sfinae_helpers.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(Current).second) continue;
       const auto *Owner = Current->getParent();
       const auto *CurrentCopy = dyn_cast<CXXConstructorDecl>(Current);
@@ -9856,7 +9857,7 @@ class UtilityTupleQueryGraph
            (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()) &&
            (!Primary || Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl()) &&
            (!SelectedPattern || Current->getCanonicalDecl() != SelectedPattern->getCanonicalDecl())))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *D : Current->redecls()) Pending.push_back(cast<CXXMethodDecl>(D));
       if (const auto *D = Current->getTemplateInstantiationPattern()) Pending.push_back(cast<CXXMethodDecl>(D));
     }
@@ -9874,17 +9875,17 @@ class UtilityTupleQueryGraph
     const bool SelectedDefault = PairDefault && Default && Default->isDefaultConstructor();
     if (!Primary || !Method->isImplicit() || !Method->isDefaulted() ||
         (!Method->isTrivial() && !SelectedDefault) ||
-        !utilityPairValue(S, SM, Context, Context.getRecordType(Array->Record))) return false;
+        !utilityPairValue(S, SM, Context, Context.getRecordType(Array->Record))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
     if (!(Constructor ? (Constructor->isCopyOrMoveConstructor() ||
                          (PairDefault && Constructor->isDefaultConstructor()))
-                      : isa<CXXDestructorDecl>(Method))) return false;
+                      : isa<CXXDestructorDecl>(Method))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const CXXMethodDecl *> Pending{Method};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(Current).second) continue;
       const auto *Owner = Current->getParent();
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Current);
@@ -9898,12 +9899,12 @@ class UtilityTupleQueryGraph
                          Copy->isDefaultConstructor() != Constructor->isDefaultConstructor() ||
                          !(Copy->isCopyOrMoveConstructor() ||
                            (PairDefault && Copy->isDefaultConstructor()))
-                       : !isa<CXXDestructorDecl>(Current))) return false;
+                       : !isa<CXXDestructorDecl>(Current))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Declaration : Current->redecls())
         Pending.push_back(cast<CXXMethodDecl>(Declaration));
       if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
-        if (!Member) return false;
+        if (!Member) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Pending.push_back(Member);
       }
     }
@@ -9917,22 +9918,22 @@ class UtilityTupleQueryGraph
                      bool PairDefault = false) {
     if (!Method || Nesting > 64 || !step() || Method->isInvalidDecl() ||
         Method->isDeleted() || Method->isVariadic() || Method->isVirtual() ||
-        Method->getPrimaryTemplate()) return false;
+        Method->getPrimaryTemplate()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (bindMemberOwnerRecordSource(Method->getParent())) {
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Method);
       const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
       if (!Method->isImplicit() || !Method->isDefaulted() || !Method->isTrivial() ||
           Method->hasAttrs() || !S.owns(SM, Method->getLocation()) ||
-          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return false;
+          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Declaration : Method->redecls())
-        if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return false;
+        if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Copy && (Copy->getNumParams() != 1 ||
           !Copy->getParamDecl(0)->getType()->isReferenceType() ||
           Copy->getParamDecl(0)->hasDefaultArg() ||
           !Context.hasSameUnqualifiedType(Copy->getParamDecl(0)->getType().getNonReferenceType(),
-              Context.getRecordType(BindMemberFactory->Storage.Owner)))) return false;
-      if (Destructor && Destructor->getNumParams()) return false;
-      if (BindMemberOwnerQueries->size() == 64 && !BindMemberOwnerQueries->count(Method)) return false;
+              Context.getRecordType(BindMemberFactory->Storage.Owner)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (Destructor && Destructor->getNumParams()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (BindMemberOwnerQueries->size() == 64 && !BindMemberOwnerQueries->count(Method)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindMemberOwnerQueries->insert(Method);
       return true; // Signature dependency; ordinary source/body/lifetime remain separate.
     }
@@ -9941,14 +9942,14 @@ class UtilityTupleQueryGraph
       const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
       if (!Method->isImplicit() || !Method->isDefaulted() || !Method->isTrivial() ||
           Method->hasAttrs() || !S.owns(SM, Method->getLocation()) ||
-          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return false;
+          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Declaration : Method->redecls())
-        if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return false;
+        if (!S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Copy && (Copy->getNumParams() != 1 ||
           !Copy->getParamDecl(0)->getType()->isReferenceType() ||
           !Context.hasSameUnqualifiedType(Copy->getParamDecl(0)->getType().getNonReferenceType(),
-                                          BindMetadata->CallableType))) return false;
-      if (Destructor && Destructor->getNumParams()) return false;
+                                          BindMetadata->CallableType))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (Destructor && Destructor->getNumParams()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // Export only the retained ordinary signature. Its normal source and
       // selected operation must close separately before any runtime use.
       BindOwnedQuerySources->insert(Method);
@@ -9959,17 +9960,17 @@ class UtilityTupleQueryGraph
       const auto *Copy = dyn_cast<CXXConstructorDecl>(Method);
       const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
       if (!NotFnOwnedQuerySources || Method->hasAttrs() || !S.owns(SM, Method->getLocation()) ||
-          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return false;
+          !(Copy ? Copy->isCopyOrMoveConstructor() : bool(Destructor))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Declaration : Method->redecls()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Declaration);
         if (!Member || !S.owns(SM, Declaration->getLocation()) || Declaration->hasAttrs() ||
-            Member->getParent()->getCanonicalDecl() != NotFnOwnedCallableRecord) return false;
+            Member->getParent()->getCanonicalDecl() != NotFnOwnedCallableRecord) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       if (Copy && (Copy->getNumParams() != 1 ||
           !Copy->getParamDecl(0)->getType()->isReferenceType() ||
           !Context.hasSameUnqualifiedType(Copy->getParamDecl(0)->getType().getNonReferenceType(),
-                                        NotFnCallableType))) return false;
-      if (Destructor && Destructor->getNumParams()) return false;
+                                        NotFnCallableType))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (Destructor && Destructor->getNumParams()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // A real retained query selected this ordinary operation. Export that
       // exact signature dependency; it supplies no SDK or runtime body grant.
       NotFnOwnedQuerySources->insert(Method);
@@ -9978,7 +9979,7 @@ class UtilityTupleQueryGraph
     // Clang checks anonymous optional variants in the enclosing member's
     // deletion graph; it never selects an anonymous-union copy operation.
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
-        PairOptionalStorageUnions.count(Method->getParent()->getCanonicalDecl())) return false;
+        PairOptionalStorageUnions.count(Method->getParent()->getCanonicalDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
         PairInputRecords.count(Method->getParent()->getCanonicalDecl()) &&
         ownedPairInputRecord(Method->getParent())) {
@@ -9988,7 +9989,7 @@ class UtilityTupleQueryGraph
           !Method->isDefaulted() || !Method->isTrivial() ||
           !(Copy ? (Copy->isCopyOrMoveConstructor() ||
                     (PairDefault && Copy->isDefaultConstructor())) : isa<CXXDestructorDecl>(Method)))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // This exact retained child is an ordinary source dependency, never an
       // SDK family member. The caller must close its declaration, layout,
       // exception and selected subobject sources after whole-graph success.
@@ -10003,12 +10004,12 @@ class UtilityTupleQueryGraph
     }
     // Bind this use before consulting the method cache; another retained
     // query or subobject selection must independently authenticate its purpose.
-    if (!bindPairOwnerMember(Method)) { Failed = true; return false; }
+    if (!bindPairOwnerMember(Method)) { Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true); return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); }
     if (!bindPairBorrowedMember(Method, PairDefault) ||
         !bindPairArrayMember(Method, PairDefault) ||
-        !bindPairOptionalMember(Method) || !family(Method)) return false;
+        !bindPairOptionalMember(Method) || !family(Method)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (CompletedMembers.count(Method)) return true;
-    if (!ActiveMembers.insert(Method).second) return false;
+    if (!ActiveMembers.insert(Method).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Restore = llvm::make_scope_exit([&] { ActiveMembers.erase(Method); });
     if (selectedLeaf(Method)) {
       CompletedMembers.insert(Method);
@@ -10055,26 +10056,26 @@ class UtilityTupleQueryGraph
           (Mode == UtilityTupleQueryMode::PairConstruction && Method->isTrivial() &&
            (Destructor || (Constructor && Constructor->isCopyOrMoveConstructor())) &&
            PairOptionalStorageRecords.count(Record->getCanonicalDecl())) ||
-          approvedUtilityStringViewRecord(S, SM, Record, Context))) return false;
+          approvedUtilityStringViewRecord(S, SM, Record, Context))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Constructor && PairDefault && Constructor->isDefaultConstructor()) {
-      if (Constructor->getNumParams()) return false;
+      if (Constructor->getNumParams()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else if (Constructor) {
       const auto Type = Context.getRecordType(Record);
       if (Constructor->getNumParams() != 1 ||
           !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
               Constructor->isMoveConstructor() ? Context.getRValueReferenceType(Type)
-                  : Context.getLValueReferenceType(Type.withConst()))) return false;
-    } else if (Destructor->getNumParams()) return false;
+                  : Context.getLValueReferenceType(Type.withConst()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    } else if (Destructor->getNumParams()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Bind each semantic choice to its actual base/field. A layout or a
     // defaulted flag alone cannot authenticate a selected child operation.
     std::set<std::pair<const void *, bool>> Expected;
     for (const auto &Base : Record->bases()) {
-      if (Base.isVirtual()) return false;
+      if (Base.isVirtual()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Expected.emplace(&Base, false);
       if (Constructor) Expected.emplace(&Base, true);
     }
     auto FieldDependency = [&](const FieldDecl *Field) {
-      if (!Field || !step() || Field->isInvalidDecl() || Field->isBitField()) return false;
+      if (!Field || !step() || Field->isInvalidDecl() || Field->isBitField()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Context.getBaseElementType(Field->getType())->isRecordType()) {
         Expected.emplace(Field, false);
         if (Constructor) Expected.emplace(Field, true);
@@ -10089,44 +10090,44 @@ class UtilityTupleQueryGraph
           PairOptionalStorageUnions.count(Union->getCanonicalDecl())) {
         // Match Sema's actual anonymous-variant deletion walk: selections are
         // owned by this enclosing method and name the exact variant field.
-        if (!FieldDependency(Field)) return false;
+        if (!FieldDependency(Field)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Expected.erase({Field, false}); Expected.erase({Field, true});
         for (const auto *Variant : Union->fields())
-          if (!FieldDependency(Variant)) return false;
-      } else if (!FieldDependency(Field)) return false;
+          if (!FieldDependency(Variant)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      } else if (!FieldDependency(Field)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const auto Found = SpecialMembers.find(Method->getCanonicalDecl());
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
         PairOptionalStorageRecords.count(Record->getCanonicalDecl()) &&
         (Found == SpecialMembers.end() || !Found->second.Complete ||
-         Found->second.Owner != Method)) return false;
+         Found->second.Owner != Method)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Found == SpecialMembers.end()) {
-      if (!Method->isTrivial() || !Expected.empty()) return false;
+      if (!Method->isTrivial() || !Expected.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else {
       const auto &Source = Found->second;
-      if (!Source.Complete || Source.Owner != Method) return false;
+      if (!Source.Complete || Source.Owner != Method) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Selection : Source.Selections) {
         const auto *Child = Selection.Method;
         const void *Object = Selection.Base ? static_cast<const void *>(Selection.Base)
                                             : Selection.Field;
         if (!Child || bool(Selection.Base) == bool(Selection.Field) ||
-            !Expected.erase({Object, Selection.ConstructorDestruction})) return false;
+            !Expected.erase({Object, Selection.ConstructorDestruction})) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto Type = Selection.Base ? Selection.Base->getType() : Selection.Field->getType();
         const auto *Subrecord = Context.getBaseElementType(Type)->getAsCXXRecordDecl();
         if (!Subrecord || Subrecord->getCanonicalDecl() !=
-                              Child->getParent()->getCanonicalDecl()) return false;
+                              Child->getParent()->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (Selection.ConstructorDestruction) {
           const auto *Dtor = dyn_cast<CXXDestructorDecl>(Child);
           if (!Constructor || !Dtor || !Subrecord->getDestructor() ||
               Subrecord->getDestructor()->getCanonicalDecl() != Dtor->getCanonicalDecl())
-            return false;
+            return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         } else if (Constructor) {
           const auto *Copy = dyn_cast<CXXConstructorDecl>(Child);
           if (!Copy ||
               (Constructor->isDefaultConstructor()
                    ? !PairDefault || !Copy->isDefaultConstructor()
-                   : !Copy->isCopyOrMoveConstructor())) return false;
-        } else if (!isa<CXXDestructorDecl>(Child)) return false;
+                   : !Copy->isCopyOrMoveConstructor())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+        } else if (!isa<CXXDestructorDecl>(Child)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto SavedOwnerUse = PairOwnerUse;
         if (Mode == UtilityTupleQueryMode::PairConstruction &&
             utilityUniquePtrRecord(S, SM, Subrecord, Context, false, false))
@@ -10134,9 +10135,9 @@ class UtilityTupleQueryGraph
                                            Method, &Selection, nullptr};
         auto RestoreOwnerUse = llvm::make_scope_exit([&] { PairOwnerUse = SavedOwnerUse; });
         if (!specialMember(Child, Nesting + 1,
-                           PairDefault && Constructor && Constructor->isDefaultConstructor())) return false;
+                           PairDefault && Constructor && Constructor->isDefaultConstructor())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
-      if (!Expected.empty()) return false;
+      if (!Expected.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     switch (Prototype->getExceptionSpecType()) {
     case EST_None: case EST_BasicNoexcept: break;
@@ -10148,10 +10149,10 @@ class UtilityTupleQueryGraph
           Literal->getEndLoc().isInvalid() &&
           Context.hasSameType(Literal->getType(), Context.BoolTy))
         GeneratedExceptionLiterals.insert(Literal);
-      if (!E || !TraverseStmt(const_cast<Expr *>(E))) return false;
+      if (!E || !TraverseStmt(const_cast<Expr *>(E))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       break;
     }
-    default: return false;
+    default: return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     CompletedMembers.insert(Method);
     return true;
@@ -10161,7 +10162,7 @@ class UtilityTupleQueryGraph
       return utilityCatCarrier(S, SM, Context, T, LayoutProof, Nesting);
     if (T.isNull() || Nesting > 64 || T.isVolatileQualified() ||
         T.isRestrictQualified() || T.getAddressSpace() != LangAS::Default)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (T->isReferenceType())
       return carrier(T->getPointeeType(), Nesting + 1);
     // Only the callable independently certified in this not_fn storage may
@@ -10203,32 +10204,32 @@ class UtilityTupleQueryGraph
       return true;
     const auto Tuple = utilityTupleStorageRecord(S, SM, R, Context, Nesting);
     if (!Tuple)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto &E : Tuple->Elements)
-      if (!carrier(E.getType(), Nesting + 1)) return false;
+      if (!carrier(E.getType(), Nesting + 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return true;
   }
   bool defaultEqualityFamily(const NamedDecl *Candidate) {
-    if (Mode != UtilityTupleQueryMode::CatSignature || !Candidate) return false;
+    if (Mode != UtilityTupleQueryMode::CatSignature || !Candidate) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const Decl *> Pending{Candidate};
     std::set<const Decl *> Seen;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back();
       Pending.pop_back();
-      if (!Declaration || !step() || Declaration->isInvalidDecl()) return false;
+      if (!Declaration || !step() || Declaration->isInvalidDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Seen.insert(Declaration).second) continue;
       if (Seen.size() > 64 || !approvedStandardSDKDeclaration(S, SM, Declaration))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
       const auto *Function = Template ? Template->getTemplatedDecl()
           : dyn_cast<FunctionDecl>(Declaration);
       if (!Function || isa<CXXMethodDecl>(Function) ||
-          Function->getOverloadedOperator() != OO_EqualEqual) return false;
+          Function->getOverloadedOperator() != OO_EqualEqual) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Origin = S.sdkFile(SM, Declaration->getLocation());
       const bool IteratorCandidate = Origin && Origin->Root == "libcxx" &&
           (Origin->Path == "__iterator/reverse_iterator.h" ||
            Origin->Path == "__iterator/wrap_iter.h");
-      if (!pinned(Declaration) && !IteratorCandidate) return false;
+      if (!pinned(Declaration) && !IteratorCandidate) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Template) {
         for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
         Pending.push_back(Function);
@@ -10250,19 +10251,19 @@ class UtilityTupleQueryGraph
         Use->isDependentType() || !Use->isTypeAlias() || !family(Alias) ||
         Alias->getName() != "__make_indices_imp" ||
         !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__utility/integer_sequence.h"))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Declaration = Alias->getTemplatedDecl();
     const auto *Parameters = Alias->getTemplateParameters();
     if (!Declaration || !family(Declaration) || !Declaration->getTypeSourceInfo() ||
         Parameters->size() != 2 || Use->template_arguments().size() != 2)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Ep = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Sp = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1));
     for (const auto *Parameter : {Ep, Sp})
       if (!Parameter || Parameter->hasDefaultArgument() || Parameter->isParameterPack() ||
           !family(Parameter) || !Context.hasSameType(Parameter->getType(), Context.getSizeType()) ||
           !Parameter->getTypeSourceInfo() ||
-          !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+          !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Inspect the original alias DSL, without admitting the location-less
     // compiler builtin as a general declaration or template name.
     const auto *Original = dyn_cast<DependentTemplateSpecializationType>(
@@ -10285,7 +10286,7 @@ class UtilityTupleQueryGraph
         !Builtin || !Builtin->isImplicit() || !Builtin->getLocation().isInvalid() ||
         !Builtin->getDeclContext()->isTranslationUnit() ||
         Builtin->getBuiltinTemplateKind() != BTK__make_integer_seq ||
-        SequenceUse->template_arguments().size() != 3) return false;
+        SequenceUse->template_arguments().size() != 3) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &SequenceArguments = SequenceUse->template_arguments();
     const auto *Sequence = SequenceArguments[0].getKind() == TemplateArgument::Template
         ? dyn_cast_or_null<ClassTemplateDecl>(SequenceArguments[0].getAsTemplate().getAsTemplateDecl()) : nullptr;
@@ -10300,14 +10301,14 @@ class UtilityTupleQueryGraph
         : TemplateSpecializationTypeLoc();
     if (!OriginalLoc || OriginalLoc.getTypePtr() != Original || !SequenceLoc ||
         SequenceLoc.getTypePtr() != SequenceUse || SequenceLoc.getNumArgs() != 3)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto L : {Location.getBeginLoc(), Location.getEndLoc(),
                          OriginalLoc.getTemplateNameLoc(), SequenceLoc.getTemplateNameLoc(),
                          SequenceLoc.getArgLoc(0).getTemplateNameLoc(),
                          Difference ? Difference->getOperatorLoc() : SourceLocation(),
                          Left ? Left->getLocation() : SourceLocation(),
                          Right ? Right->getLocation() : SourceLocation()})
-      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return false;
+      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (!Sequence || Sequence->getName() != "__integer_sequence" || !family(Sequence) ||
         !cstddefOrigin(S, SM, Sequence->getLocation(), "libcxx", "__utility/integer_sequence.h") ||
         SequenceArguments[1].getKind() != TemplateArgument::Type ||
@@ -10315,12 +10316,12 @@ class UtilityTupleQueryGraph
         !TraverseType(SequenceArguments[1].getAsType()) ||
         !Difference || Difference->getOpcode() != BO_Sub ||
         !Left || Left->getDecl() != Ep || !Right || Right->getDecl() != Sp ||
-        !Context.hasSameType(Difference->getType(), Context.getSizeType())) return false;
+        !Context.hasSameType(Difference->getType(), Context.getSizeType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *SizeSource = SequenceLoc.getArgLoc(1).getTypeSourceInfo();
     const auto *OriginalOffset = dyn_cast<DeclRefExpr>(Original->template_arguments()[0].getAsExpr());
     if (!SizeSource || !TraverseTypeLoc(SizeSource->getTypeLoc()) ||
         !cstddefOrigin(S, SM, OriginalOffset->getLocation(), "libcxx", "__utility/integer_sequence.h"))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *SequenceParameters = Sequence->getTemplateParameters();
     const auto *IndexType = SequenceParameters->size() == 2
         ? dyn_cast<TemplateTypeParmDecl>(SequenceParameters->getParam(0)) : nullptr;
@@ -10330,15 +10331,15 @@ class UtilityTupleQueryGraph
     if (!IndexType || IndexType->hasDefaultArgument() || IndexType->isParameterPack() ||
         !Values || !Values->isParameterPack() || Values->hasDefaultArgument() ||
         !ValueType || ValueType->getDecl() != IndexType ||
-        !family(IndexType) || !family(Values)) return false;
+        !family(IndexType) || !family(Values)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *SequenceDefinition = Sequence->getTemplatedDecl()->getDefinition();
     if (!SequenceDefinition || !family(SequenceDefinition) ||
-        !SequenceDefinition->field_empty() || SequenceDefinition->getNumBases()) return false;
+        !SequenceDefinition->field_empty() || SequenceDefinition->getNumBases()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const TypeAliasTemplateDecl *ToIndices = nullptr;
     for (const auto *Member : SequenceDefinition->decls())
       if (const auto *Template = dyn_cast<TypeAliasTemplateDecl>(Member);
           Template && Template->getName() == "__to_tuple_indices") {
-        if (ToIndices) return false;
+        if (ToIndices) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         ToIndices = Template;
       }
     const auto *ToParameters = ToIndices ? ToIndices->getTemplateParameters() : nullptr;
@@ -10367,7 +10368,7 @@ class UtilityTupleQueryGraph
           cstddefOrigin(S, SM, Indices->getLocation(), "libcxx", "__utility/integer_sequence.h")) ||
         !Addition || Addition->getOpcode() != BO_Add || !ValueReference ||
         ValueReference->getDecl() != Values || !OffsetReference ||
-        OffsetReference->getDecl() != Offset || !ToDeclaration->getTypeSourceInfo()) return false;
+        OffsetReference->getDecl() != Offset || !ToDeclaration->getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto IndicesLoc = ToDeclaration->getTypeSourceInfo()->getTypeLoc();
     for (unsigned I = 0; I <= 8 && IndicesLoc &&
          !IndicesLoc.getAs<TemplateSpecializationTypeLoc>(); ++I)
@@ -10375,12 +10376,12 @@ class UtilityTupleQueryGraph
     const auto IndexTemplateLoc = IndicesLoc.getAs<TemplateSpecializationTypeLoc>();
     if (!IndexTemplateLoc || IndexTemplateLoc.getTypePtr() != IndicesUse ||
         !cstddefOrigin(S, SM, IndexTemplateLoc.getTemplateNameLoc(), "libcxx", "__utility/integer_sequence.h"))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto L : {ToDeclaration->getTypeSourceInfo()->getTypeLoc().getBeginLoc(),
                          ToDeclaration->getTypeSourceInfo()->getTypeLoc().getEndLoc(),
                          Addition->getOperatorLoc(), ValueReference->getLocation(),
                          OffsetReference->getLocation()})
-      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return false;
+      if (!cstddefOrigin(S, SM, L, "libcxx", "__utility/integer_sequence.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *IndexParameters = Indices->getTemplateParameters();
     const auto *IndexPack = IndexParameters->size() == 1
         ? dyn_cast<NonTypeTemplateParmDecl>(IndexParameters->getParam(0)) : nullptr;
@@ -10393,7 +10394,7 @@ class UtilityTupleQueryGraph
         !cstddefOrigin(S, SM, IndexDefinition->getLocation(), "libcxx", "__tuple/tuple_indices.h") ||
         !IndexDefinition->field_empty() ||
         IndexDefinition->getNumBases() || IndexDefinition->isUnion() ||
-        IndexDefinition->isDynamicClass()) return false;
+        IndexDefinition->isDynamicClass()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     uint64_t End = 0, Start = 0;
     auto Concrete = [&](const TemplateArgument &Argument, uint64_t &Value) {
       const llvm::APSInt *Integer = nullptr;
@@ -10404,15 +10405,15 @@ class UtilityTupleQueryGraph
       } else if (Argument.getKind() == TemplateArgument::Expression) {
         const auto *Expression = dyn_cast<ConstantExpr>(Argument.getAsExpr());
         if (!Expression || Expression->getResultStorageKind() == ConstantResultStorageKind::None ||
-            Expression->getAPValueResult().getKind() != APValue::Int) return false;
+            Expression->getAPValueResult().getKind() != APValue::Int) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Stored = Expression->getResultAsAPSInt(); Integer = &Stored; Type = Expression->getType();
       }
       if (!Integer || !Context.hasSameType(Type, Context.getSizeType()) ||
-          Integer->isNegative() || Integer->getLimitedValue(65537) > 65536) return false;
+          Integer->isNegative() || Integer->getLimitedValue(65537) > 65536) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Value = Integer->getZExtValue(); return true;
     };
     if (!Concrete(Use->template_arguments()[0], End) ||
-        !Concrete(Use->template_arguments()[1], Start) || Start > End) return false;
+        !Concrete(Use->template_arguments()[1], Start) || Start > End) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *ActualTo = Use->getAliasedType()->getAs<TemplateSpecializationType>();
     const auto *ActualAlias = ActualTo ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         ActualTo->getTemplateName().getAsTemplateDecl()) : nullptr;
@@ -10430,13 +10431,13 @@ class UtilityTupleQueryGraph
         (Result->getSpecializationKind() != TSK_ImplicitInstantiation &&
          Result->getSpecializationKind() != TSK_Undeclared) ||
         !Result->getSpecializedTemplateOrPartial().is<ClassTemplateDecl *>() ||
-        Result->getSpecializedTemplate()->getCanonicalDecl() != Indices->getCanonicalDecl()) return false;
+        Result->getSpecializedTemplate()->getCanonicalDecl() != Indices->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // The final empty metadata specialization may remain lazy. Its actual
     // family, original primary definition and every index are authenticated;
     // this query neither asks Sema for a definition nor consumes a layout.
     if (const auto *Definition = Result->getDefinition())
       if (!family(Definition) || !Definition->field_empty() || Definition->getNumBases() ||
-          Definition->isUnion() || Definition->isDynamicClass()) return false;
+          Definition->isUnion() || Definition->isDynamicClass()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &ActualArguments = ActualSequence->getTemplateArgs();
     const auto &ResultArguments = Result->getTemplateArgs();
     if (ActualArguments.size() != 2 || ActualArguments[0].getKind() != TemplateArgument::Type ||
@@ -10444,12 +10445,12 @@ class UtilityTupleQueryGraph
         ActualArguments[1].getKind() != TemplateArgument::Pack ||
         ActualArguments[1].pack_size() != End - Start || ResultArguments.size() != 1 ||
         ResultArguments[0].getKind() != TemplateArgument::Pack ||
-        ResultArguments[0].pack_size() != End - Start) return false;
+        ResultArguments[0].pack_size() != End - Start) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < End - Start; ++I) {
       uint64_t Generated = 0, Index = 0;
       if (!step() || !Concrete(ActualArguments[1].pack_elements()[I], Generated) ||
           !Concrete(ResultArguments[0].pack_elements()[I], Index) ||
-          Generated != I || Index != Start + I) return false;
+          Generated != I || Index != Start + I) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return true;
   }
@@ -10462,16 +10463,16 @@ class UtilityTupleQueryGraph
         Partial->getName() != "__make_tuple_types_flat" ||
         !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx", "__tuple/make_tuple_types.h") ||
         Actual->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplatePartialSpecializationDecl *>() != Partial)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Output = Pattern->getTemplatedDecl()->getUnderlyingType()->getAs<TemplateSpecializationType>();
     if (!Output || Output->template_arguments().size() != 1 ||
-        Output->template_arguments()[0].getKind() != TemplateArgument::Type) return false;
+        Output->template_arguments()[0].getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Expansion = dyn_cast<PackExpansionType>(Output->template_arguments()[0].getAsType().getTypePtr());
     const auto *Copy = Expansion ? Expansion->getPattern()->getAs<TemplateSpecializationType>() : nullptr;
     const auto *CopyAlias = Copy ? dyn_cast_or_null<TypeAliasTemplateDecl>(Copy->getTemplateName().getAsTemplateDecl()) : nullptr;
     if (!CopyAlias || CopyAlias->getName() != "__copy_cvref_t" || !family(CopyAlias) ||
         Copy->template_arguments().size() != 2 ||
-        Copy->template_arguments()[1].getKind() != TemplateArgument::Type) return false;
+        Copy->template_arguments()[1].getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Projection = Copy->template_arguments()[1].getAsType()->getAs<TemplateSpecializationType>();
     const auto *Builtin = Projection ? dyn_cast_or_null<BuiltinTemplateDecl>(Projection->getTemplateName().getAsTemplateDecl()) : nullptr;
     if (!Builtin) {
@@ -10497,8 +10498,8 @@ class UtilityTupleQueryGraph
           !IgnoredIndex || IgnoredIndex->isParameterPack() || IgnoredIndex->hasDefaultArgument() ||
           !family(IgnoredIndex) || !Context.hasSameType(IgnoredIndex->getType(), Context.getSizeType()) ||
           !ValueType || ValueType->getDecl() != Value || !Reference || Reference->getDecl() != Index ||
-          !cstddefOrigin(S, SM, ValueAlias->getLocation(), "libcxx", "__tuple/make_tuple_types.h")) return false;
-      if (ArrayValueProjections.size() >= 64 && !ArrayValueProjections.count(Projection)) return false;
+          !cstddefOrigin(S, SM, ValueAlias->getLocation(), "libcxx", "__tuple/make_tuple_types.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (ArrayValueProjections.size() >= 64 && !ArrayValueProjections.count(Projection)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       ArrayValueProjections.insert(Projection);
       return true;
     }
@@ -10519,29 +10520,29 @@ class UtilityTupleQueryGraph
         !Index || !Index->isParameterPack() || !family(Index) ||
         !Context.hasSameType(Index->getType(), Context.getSizeType()) ||
         !Reference || Reference->getDecl() != Index ||
-        !ParameterType || ParameterType->getDecl() != Types) return false;
+        !ParameterType || ParameterType->getDecl() != Types) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto &Existing : PackProjections)
       if (Existing.Original == Projection && Existing.Owner == Actual) return true;
-    if (PackProjections.size() >= 64) return false;
+    if (PackProjections.size() >= 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     PackProjections.push_back({Projection, Builtin, Actual, Index, Types});
     return true;
   }
   bool retainDefinitionParameters(const TypeAliasTemplateDecl *Alias) {
     auto Keep = [&](const TemplateParameterList *Parameters) {
-      if (!Parameters) return false;
+      if (!Parameters) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Declaration : *Parameters)
         if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration)) {
           if (!step() || !family(Parameter) || !Parameter->getTypeSourceInfo() ||
-              !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
+              !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           const auto Inserted = CatDefinitionParameters.emplace(Parameter, Parameters);
-          if (!Inserted.second && Inserted.first->second != Parameters) return false;
+          if (!Inserted.second && Inserted.first->second != Parameters) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
       return true;
     };
-    if (!Alias || !family(Alias) || !Keep(Alias->getTemplateParameters())) return false;
+    if (!Alias || !family(Alias) || !Keep(Alias->getTemplateParameters())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Owner = dyn_cast<CXXRecordDecl>(Alias->getDeclContext());
     if (!Owner) return true;
-    if (!family(Owner)) return false;
+    if (!family(Owner)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(Owner))
       return Keep(Partial->getTemplateParameters());
     if (const auto *Primary = Owner->getDescribedClassTemplate())
@@ -10581,16 +10582,16 @@ class UtilityTupleQueryGraph
   }
   bool bindTupleElementPackElement(const TemplateSpecializationType *Use) {
     const auto *Source = bindTupleElementProjectionFor(Use);
-    if (!Source || !step()) return false;
+    if (!Source || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Projection = *Source;
-    if (Use->getTemplateName().getAsTemplateDecl() != Projection.Builtin) return false;
+    if (Use->getTemplateName().getAsTemplateDecl() != Projection.Builtin) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Arguments = Use->template_arguments();
     if (Use == Projection.Original) {
       if (!Use->isDependentType() || Arguments.size() != 2 ||
           Projection.OriginalLoc.getTypePtr() != Use || Projection.OriginalLoc.getNumArgs() != 2)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < 2; ++I)
-        if (!TraverseTemplateArgumentLoc(Projection.OriginalLoc.getArgLoc(I))) return false;
+        if (!TraverseTemplateArgumentLoc(Projection.OriginalLoc.getArgLoc(I))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return !Failed;
     }
     const auto Count = Projection.Elements.size();
@@ -10605,16 +10606,16 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Constant->getType(), Context.getSizeType()) ||
         Constant->getResultAsAPSInt().isNegative() ||
         Constant->getResultAsAPSInt().getLimitedValue(Count) != Projection.Slot ||
-        !TraverseStmt(const_cast<ConstantExpr *>(Constant))) return false;
+        !TraverseStmt(const_cast<ConstantExpr *>(Constant))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < Count; ++I) {
-      if (!step() || Arguments[I + 1].getKind() != TemplateArgument::Type) return false;
+      if (!step() || Arguments[I + 1].getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Type = Arguments[I + 1].getAsType();
       const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Type.getTypePtr());
       if (!Substitution || Substitution->getAssociatedDecl() != Projection.Owner ||
           Substitution->getReplacedParameter() != Projection.Types || !Substitution->getPackIndex() ||
           *Substitution->getPackIndex() != Count - 1 - I ||
           !Context.hasSameType(Type, Projection.Elements[I]) ||
-          !TraverseType(Type)) return false;
+          !TraverseType(Type)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const auto Result = Use->getAliasedType();
     const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Result.getTypePtr());
@@ -10736,7 +10737,7 @@ class UtilityTupleQueryGraph
     return bindTupleElementProjectionFromType(Local->getUnderlyingType(), Storage, Slot);
   }
   bool catPackElement(const TemplateSpecializationType *Use) {
-    if (!catMetadataMode() || !Use || !step()) return false;
+    if (!catMetadataMode() || !Use || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Builtin = dyn_cast_or_null<BuiltinTemplateDecl>(Use->getTemplateName().getAsTemplateDecl());
     for (const auto &Projection : PackProjections) {
       if (Builtin != Projection.Builtin) continue;
@@ -10754,50 +10755,50 @@ class UtilityTupleQueryGraph
       const auto Number = Index->getResultAsAPSInt();
       const auto &OwnerArguments = Projection.Owner->getTemplateArgs();
       if (OwnerArguments.size() != 2 || OwnerArguments[0].getKind() != TemplateArgument::Type ||
-          Number.isNegative()) return false;
+          Number.isNegative()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Storage = approvedUtilityTupleCatQueryLayout(S, SM, OwnerArguments[0].getAsType(), Context);
       if (!Storage || Storage->ArrayElements || Arguments.size() != Storage->size() + 1 ||
-          Number.getLimitedValue(Storage->size()) >= Storage->size()) return false;
+          Number.getLimitedValue(Storage->size()) >= Storage->size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Storage->size(); ++I) {
-        if (!step() || Arguments[I+1].getKind() != TemplateArgument::Type) return false;
+        if (!step() || Arguments[I+1].getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto Type = Arguments[I+1].getAsType();
         const auto *Element = dyn_cast<SubstTemplateTypeParmType>(Type.getTypePtr());
         if (!Element || Element->getAssociatedDecl() != Projection.Owner ||
             Element->getReplacedParameter() != Projection.Types || !Element->getPackIndex() ||
             *Element->getPackIndex() != Storage->size() - 1 - I ||
-            !Context.hasSameType(Type, Storage->elementType(I)) || !TraverseType(Type)) return false;
+            !Context.hasSameType(Type, Storage->elementType(I)) || !TraverseType(Type)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       return Context.hasSameType(Use->getAliasedType(), Storage->elementType(Number.getZExtValue()));
     }
-    return false;
+    return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
   }
   bool bindCatInputs(const FunctionDecl *Function) {
     if (Mode != UtilityTupleQueryMode::CatSignature) return true;
     if (!Function || !Function->getIdentifier() || Function->getName() != "tuple_cat" ||
         !family(Function) || !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "tuple") ||
-        Function->getNumParams() > 64) return false;
+        Function->getNumParams() > 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (CatInputFunction) return CatInputFunction == Function;
     CatInputFunction = Function;
     auto Bind = [&](auto &&Self, QualType Type, unsigned Nesting) -> bool {
-      if (!step() || Nesting > 64 || Type.isNull()) return false;
+      if (!step() || Nesting > 64 || Type.isNull()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Type->isReferenceType()) return Self(Self, Type->getPointeeType(), Nesting + 1);
-      if (!carrier(Type, Nesting)) return false;
+      if (!carrier(Type, Nesting)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (utilityScalar(Context, Type) || Type->isVoidType()) return true;
       const auto *Record = Type->getAsCXXRecordDecl();
       if (const auto Storage = approvedUtilityTupleCatQueryLayout(S, SM, Type, Context)) {
         if (Storage->ArrayElements)
           return Self(Self, Storage->ArrayElementType, Nesting + 1);
         for (unsigned I = 0; I < Storage->size(); ++I)
-          if (!Self(Self, Storage->elementType(I), Nesting + 1)) return false;
+          if (!Self(Self, Storage->elementType(I), Nesting + 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         return true;
       }
       if (const auto Owner = utilityUniquePtrRecord(S, SM, Record, Context, false, false)) {
         const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record);
-        if (!Instance || Instance->getTemplateArgs().size() != 2) return false;
+        if (!Instance || Instance->getTemplateArgs().size() != 2) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         CatInputOwners.insert(Instance->getCanonicalDecl());
         for (unsigned I = 0; I < 2; ++I) {
           const auto &Argument = Instance->getTemplateArgs().get(I);
-          if (Argument.getKind() != TemplateArgument::Type) return false;
+          if (Argument.getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           const auto Input = Argument.getAsType();
           const auto *InputRecord = Context.getBaseElementType(Input)->getAsCXXRecordDecl();
           // External atoms belong to these exact owner input slots. Caller
@@ -10815,7 +10816,7 @@ class UtilityTupleQueryGraph
     };
     for (const auto *Parameter : Function->parameters())
       if (!Parameter->getType()->isReferenceType() ||
-          !Bind(Bind, Parameter->getType(), 0)) return false;
+          !Bind(Bind, Parameter->getType(), 0)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return true;
   }
   bool ownerSource(const CXXRecordDecl *Record) {
@@ -10831,12 +10832,12 @@ class UtilityTupleQueryGraph
                    PairInputRecords.count(Instance->getCanonicalDecl()));
     if (!Instance || !Bound || !family(Instance) ||
         !Parameters || Parameters->size() != 2 || Instance->getTemplateArgs().size() != 2)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Tp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
     const auto *Dp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
     if (!Tp || !Dp || Tp->hasDefaultArgument() || !Dp->hasDefaultArgument() ||
         Tp->isParameterPack() || Dp->isParameterPack() || !family(Tp) || !family(Dp))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Default = Dp->getDefaultArgument();
     const auto *Info = Default.getArgument().getKind() == TemplateArgument::Type
         ? Default.getTypeSourceInfo() : nullptr;
@@ -10851,12 +10852,12 @@ class UtilityTupleQueryGraph
         Deletion->getName() != "default_delete" ||
         !approvedStandardSDKDeclaration(S, SM, Deletion) ||
         !cstddefOrigin(S, SM, Deletion->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
-        !Argument || Argument->getDecl() != Tp) return false;
+        !Argument || Argument->getDecl() != Tp) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // A custom actual deleter still depends on this exact written SDK default.
     // Bind only its declaration family before traversing the original TSI.
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
-        !bindPairInputFamily(Deletion->getTemplatedDecl())) return false;
-    if (!family(Deletion) || !TraverseTypeLoc(Info->getTypeLoc())) return false;
+        !bindPairInputFamily(Deletion->getTemplatedDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!family(Deletion) || !TraverseTypeLoc(Info->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Actual = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Deleter.Record);
     const bool DefaultFamily = Actual &&
         Actual->getSpecializedTemplate()->getCanonicalDecl() == Deletion->getCanonicalDecl();
@@ -10866,23 +10867,23 @@ class UtilityTupleQueryGraph
           Actual->getTemplateArgs().size() != 1 ||
           Actual->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Actual->getTemplateArgs()[0].getAsType(),
-                              Instance->getTemplateArgs()[0].getAsType())) return false;
+                              Instance->getTemplateArgs()[0].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     for (const auto &Input : Instance->getTemplateArgs().asArray())
-      if (!TraverseTemplateArgument(Input)) return false;
+      if (!TraverseTemplateArgument(Input)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return true;
   }
   bool fullSliceDefaults(const ClassTemplateSpecializationDecl *Instance) {
     if (!Instance || Context.getExternalSource() ||
         Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
-        !Instance->getDefinition() || !family(Instance)) return false;
+        !Instance->getDefinition() || !family(Instance)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Primary = Instance->getSpecializedTemplate();
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     const auto &Arguments = Instance->getTemplateArgs();
     if (!Parameters || Parameters->size() != 4 || Arguments.size() != 4 ||
         Arguments[0].getKind() != TemplateArgument::Type ||
         !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__tuple/make_tuple_types.h"))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Tp = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
     const auto *Ep = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1));
     const auto *Sp = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(2));
@@ -10899,11 +10900,11 @@ class UtilityTupleQueryGraph
         !Same->getTypeSourceInfo() ||
         !TraverseTypeLoc(Ep->getTypeSourceInfo()->getTypeLoc()) ||
         !TraverseTypeLoc(Sp->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseTypeLoc(Same->getTypeSourceInfo()->getTypeLoc())) return false;
+        !TraverseTypeLoc(Same->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Object = Arguments[0].getAsType();
     if (Object->isReferenceType() || Object.hasLocalQualifiers() ||
         (!catMetadataMode() &&
-         !approvedUtilityTupleMetadata(S, SM, Object->getAsCXXRecordDecl()))) return false;
+         !approvedUtilityTupleMetadata(S, SM, Object->getAsCXXRecordDecl()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto NotFnSlice = NotFnTupleTagSlices.find(Instance->getCanonicalDecl());
     const auto BindSlice = BindTupleTagSlices.find(Instance->getCanonicalDecl());
     std::optional<UtilityTupleLikeSource> Tuple;
@@ -10914,19 +10915,19 @@ class UtilityTupleQueryGraph
       if (!catMetadataMode() || !NotFnTupleTagStorage ||
           !Context.hasSameType(Object, Context.getRecordType(NotFnTupleTagStorage->Tuple)) ||
           !Context.hasSameType(NotFnTupleTagStorage->Callable.getType(),
-                               NotFnTupleTagStorage->CallableType)) return false;
+                               NotFnTupleTagStorage->CallableType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Tuple = UtilityTupleLikeSource{{NotFnTupleTagStorage->Callable}, nullptr, {}, 0};
     } else if (Mode == UtilityTupleQueryMode::BindSignature &&
                BindSlice != BindTupleTagSlices.end()) {
       if (!BindMetadata || !BindTupleTagStorage || !Context.hasSameType(Object,
-              Context.getRecordType(BindTupleTagStorage->Record))) return false;
+              Context.getRecordType(BindTupleTagStorage->Record))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Tuple = UtilityTupleLikeSource{BindTupleTagStorage->Elements, nullptr, {}, 0};
     } else {
       Tuple = catMetadataMode()
           ? approvedUtilityTupleCatQueryLayout(S, SM, Object, Context)
           : approvedUtilityTupleLikeSource(S, SM, Object, Context, true, true);
     }
-    if (!Tuple) return false;
+    if (!Tuple) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Integral = [&](unsigned I, QualType T, uint64_t N) {
       const auto &Argument = Arguments[I];
       return Argument.getKind() == TemplateArgument::Integral &&
@@ -10940,7 +10941,7 @@ class UtilityTupleQueryGraph
     if (Start > End || End > Tuple->size() ||
         !Integral(1, Context.getSizeType(), End) ||
         !Integral(2, Context.getSizeType(), Start) ||
-        !Integral(3, Context.BoolTy, End == Tuple->size())) return false;
+        !Integral(3, Context.BoolTy, End == Tuple->size())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Default = [](const NonTypeTemplateParmDecl *P) -> const Expr * {
       const auto &A = P->getDefaultArgument().getArgument();
       return A.getKind() == TemplateArgument::Expression ? A.getAsExpr() : nullptr;
@@ -11007,23 +11008,23 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Zero->getType(), Context.IntTy) ||
         !(Equality ? Equality->getOpcode() == BO_EQ : DependentEquality) ||
         !Left || Left->getDecl() != Ep || !OtherSize ||
-        Size->getCanonicalDecl() != OtherSize->getCanonicalDecl()) return false;
+        Size->getCanonicalDecl() != OtherSize->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // The retained dependent lookup must close every original candidate.
     // Ep and the already instantiated tuple_size value both have size_t;
     // no candidate body, overload resolution or new evaluation is requested.
     if (DependentEquality)
       for (const auto *Candidate : Lookup->decls())
-        if (!defaultEqualityFamily(Candidate)) return false;
+        if (!defaultEqualityFamily(Candidate)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     {
       // This is the original definition's exact parameter, not an
       // instantiated metadata object's value member.
       const auto Inserted = DefinitionParameters.emplace(Ep, Primary);
-      if (!Inserted.second && Inserted.first->second != Primary) return false;
+      if (!Inserted.second && Inserted.first->second != Primary) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       auto Restore = llvm::make_scope_exit([&] {
         if (Inserted.second) DefinitionParameters.erase(Ep);
       });
       if (!TraverseStmt(const_cast<Expr *>(Default(Sp))) ||
-          !TraverseStmt(const_cast<Expr *>(Default(Same)))) return false;
+          !TraverseStmt(const_cast<Expr *>(Default(Same)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     // The only lookup permitted here reads the specialization already used
     // by Sema's defaults. External AST loading was excluded above.
@@ -11032,16 +11033,16 @@ class UtilityTupleQueryGraph
     const auto *Witness = const_cast<ClassTemplateDecl *>(Size)->findSpecialization(
         llvm::ArrayRef<TemplateArgument>(SizeArgument), InsertPosition);
     if (!Witness || !approvedUtilityTupleLikeSizeTrait(S, SM, Witness, Object, *Tuple, Context) ||
-        !record(Witness)) return false;
+        !record(Witness)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     bool HasValue = false;
     for (const auto &Base : Witness->getDefinition()->bases()) {
       const auto *Owner = Base.getType()->getAsCXXRecordDecl();
       const auto *Definition = Owner ? Owner->getDefinition() : nullptr;
-      if (!Definition) return false;
+      if (!Definition) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Declaration : Definition->decls()) {
         const auto *Value = dyn_cast<VarDecl>(Declaration);
         if (!Value || Value->getName() != "value") continue;
-        if (HasValue || !value(Value)) return false;
+        if (HasValue || !value(Value)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         HasValue = true;
       }
     }
@@ -11070,17 +11071,17 @@ class UtilityTupleQueryGraph
     const bool Fallback = !SelectedPartial;
     const auto *Partial = Candidate ? Candidate : SelectedPartial;
     if (Fallback && !Candidate) {
-      if (!Primary || !family(Primary)) return false;
+      if (!Primary || !family(Primary)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       llvm::SmallVector<ClassTemplatePartialSpecializationDecl *, 2> Partials;
       Primary->getPartialSpecializations(Partials);
-      if (Partials.size() != 2) return false;
+      if (Partials.size() != 2) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       std::set<bool> Values;
       for (const auto *Original : Partials) {
         if (!step() || Original->getTemplateArgs().size() != 3 ||
-            Original->getTemplateArgs()[2].getKind() != TemplateArgument::Type) return false;
+            Original->getTemplateArgs()[2].getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto Value = pairBooleanConstant(Original->getTemplateArgs()[2].getAsType());
         if (!Value || !Values.insert(*Value).second ||
-            !pairImplicitDefaultSource(Instance, Original)) return false;
+            !pairImplicitDefaultSource(Instance, Original)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       return Values.size() == 2 && !Failed;
     }
@@ -11094,14 +11095,14 @@ class UtilityTupleQueryGraph
         Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
         Partial->getSpecializedTemplate()->getCanonicalDecl() != Primary->getCanonicalDecl() ||
         Partial->getTemplateParameters()->size() != 1)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Arguments = Instance->getTemplateArgs();
     if (Arguments.size() != 3 || Arguments[0].getKind() != TemplateArgument::Type ||
         Arguments[1].getKind() != TemplateArgument::Type ||
         Arguments[2].getKind() != TemplateArgument::Type ||
         !Arguments[1].getAsType()->isVoidType() ||
         !PairInputTypes.count(Arguments[0].getAsType().getCanonicalType().getTypePtr()))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Target = Arguments[0].getAsType();
     const auto *First = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0));
     const auto *Second = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
@@ -11110,7 +11111,7 @@ class UtilityTupleQueryGraph
         Partial->getTemplateParameters()->getParam(0));
     for (const auto *Parameter : {First, Second, Third, Element})
       if (!Parameter || !family(Parameter) || Parameter->isParameterPack() ||
-          Parameter->getDepth() || Parameter->getIndex() > 2) return false;
+          Parameter->getDepth() || Parameter->getIndex() > 2) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (First->getIndex() || First->hasDefaultArgument() || Second->getIndex() != 1 ||
         Third->getIndex() != 2 || Element->getIndex() || Element->hasDefaultArgument() ||
         !Second->hasDefaultArgument() || !Third->hasDefaultArgument() ||
@@ -11119,7 +11120,7 @@ class UtilityTupleQueryGraph
         !Second->getDefaultArgument().getTypeSourceInfo() || !Third->getDefaultArgument().getTypeSourceInfo() ||
         !Second->getDefaultArgument().getArgument().getAsType()->isVoidType() ||
         !TraverseTypeLoc(Second->getDefaultArgument().getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseTypeLoc(Third->getDefaultArgument().getTypeSourceInfo()->getTypeLoc())) return false;
+        !TraverseTypeLoc(Third->getDefaultArgument().getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // The original third default must name the real default-construction trait
     // for this primary's own first parameter. Its folded result alone is not
     // evidence for the source which selected this partial specialization.
@@ -11136,27 +11137,27 @@ class UtilityTupleQueryGraph
         Use->template_arguments().size() != 1 ||
         Use->template_arguments()[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Use->template_arguments()[0].getAsType(),
-                            QualType(First->getTypeForDecl(), 0))) return false;
+                            QualType(First->getTypeForDecl(), 0))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const ClassTemplateSpecializationDecl *DefaultInstance = nullptr;
     for (const auto *Candidate : DefaultTrait->specializations()) {
-      if (!step()) return false;
+      if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &A = Candidate->getTemplateArgs();
       if (A.size() != 1 || A[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(A[0].getAsType(), Target)) continue;
       if ((DefaultInstance && DefaultInstance->getCanonicalDecl() != Candidate->getCanonicalDecl()) ||
           !record(Candidate) || Candidate->getNumBases() != 1 ||
           !Context.hasSameType(Candidate->bases_begin()->getType(), Arguments[2].getAsType()))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       DefaultInstance = Candidate;
     }
-    if (!DefaultInstance) return false;
+    if (!DefaultInstance) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *PrimaryDefinition = Primary->getTemplatedDecl()->getDefinition();
     if (!PrimaryDefinition || !family(PrimaryDefinition) ||
         PrimaryDefinition->getNumBases() != 1 || !PrimaryDefinition->field_empty() ||
         !PrimaryDefinition->bases_begin()->getTypeSourceInfo() ||
-        !TraverseTypeLoc(PrimaryDefinition->bases_begin()->getTypeSourceInfo()->getTypeLoc())) return false;
+        !TraverseTypeLoc(PrimaryDefinition->bases_begin()->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto PrimaryValue = pairBooleanConstant(PrimaryDefinition->bases_begin()->getType());
-    if (!PrimaryValue || *PrimaryValue) return false;
+    if (!PrimaryValue || *PrimaryValue) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Fallback) {
       // Failed copy-list candidates have no successful selected helper call.
       // Bind their independent source proof to this exact retained direct
@@ -11182,19 +11183,19 @@ class UtilityTupleQueryGraph
           !Constructor->isDefaultConstructor() || !TargetRecord ||
           !ownedPairInputRecord(TargetRecord) ||
           Constructor->getParent()->getCanonicalDecl() != TargetRecord->getCanonicalDecl() ||
-          !Context.hasSameType(Root->getType(), Target)) return false;
+          !Context.hasSameType(Root->getType(), Target)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const auto PartialBase = Partial->getTemplateArgs()[2].getAsType();
     for (const auto *Definition : {Instance->getDefinition(), Partial->getDefinition()}) {
       if (!Definition || !family(Definition) || Definition->isUnion() ||
           Definition->isDynamicClass() || Definition->getNumBases() != 1 ||
-          !Definition->field_empty()) return false;
+          !Definition->field_empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &Base = *Definition->bases_begin();
       if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public ||
           !Context.hasSameType(Base.getType(), Definition == Instance->getDefinition()
               ? (Fallback ? PrimaryDefinition->bases_begin()->getType() : Arguments[2].getAsType())
               : PartialBase) || !Base.getTypeSourceInfo() ||
-          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const auto PartialArguments = Written->arguments();
     if (PartialArguments[0].getArgument().getKind() != TemplateArgument::Type ||
@@ -11204,7 +11205,7 @@ class UtilityTupleQueryGraph
                             QualType(Element->getTypeForDecl(), 0)) ||
         !Context.hasSameType(PartialArguments[2].getArgument().getAsType(), PartialBase) ||
         (!Fallback && !Context.hasSameType(PartialBase, Arguments[2].getAsType())))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Decltype = dyn_cast<DecltypeType>(
         PartialArguments[1].getArgument().getAsType().getTypePtr());
     const auto *Call = Decltype ? dyn_cast<CallExpr>(Decltype->getUnderlyingExpr()) : nullptr;
@@ -11216,32 +11217,32 @@ class UtilityTupleQueryGraph
     if (!Call || !Lookup || !List || List->getNumInits() || Lookup->requiresADL() ||
         !Namespace || !Namespace->isStdNamespace() || CallQualifier->getPrefix() ||
         !Lookup->hasExplicitTemplateArgs() || Lookup->getNumTemplateArgs() != 1 ||
-        Lookup->decls_begin() == Lookup->decls_end()) return false;
+        Lookup->decls_begin() == Lookup->decls_end()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto Location : {Call->getBeginLoc(), Lookup->getNameLoc(),
                                List->getLBraceLoc(), List->getRBraceLoc(), Call->getEndLoc()})
       if (!cstddefOrigin(S, SM, Location, "libcxx",
-                         "__type_traits/is_implicitly_default_constructible.h")) return false;
+                         "__type_traits/is_implicitly_default_constructible.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &HelperArgument = Lookup->template_arguments()[0].getArgument();
     if (HelperArgument.getKind() != TemplateArgument::Type ||
         !Context.hasSameType(HelperArgument.getAsType(), Context.getLValueReferenceType(
-            QualType(Element->getTypeForDecl(), 0).withConst()))) return false;
+            QualType(Element->getTypeForDecl(), 0).withConst()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const FunctionTemplateDecl *Helper = nullptr;
     for (const auto *Declaration : Lookup->decls()) {
-      if (!step()) return false;
+      if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Candidate = dyn_cast<FunctionTemplateDecl>(Declaration);
       if (!Candidate || !family(Candidate) ||
           Candidate->getName() != "__test_implicit_default_constructible" ||
           Candidate->getDeclContext() != Primary->getDeclContext() ||
-          (Helper && Helper->getCanonicalDecl() != Candidate->getCanonicalDecl())) return false;
+          (Helper && Helper->getCanonicalDecl() != Candidate->getCanonicalDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Helper = Candidate;
     }
     if (!Helper || !Helper->getIdentifier() || Helper->getTemplateParameters()->size() != 1)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Declaration : Helper->getDeclContext()->lookup(Helper->getDeclName())) {
-      if (!step()) return false;
+      if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Candidate = dyn_cast<FunctionTemplateDecl>(Declaration);
       if (!Candidate || Candidate->getCanonicalDecl() != Helper->getCanonicalDecl() ||
-          !family(Candidate)) return false;
+          !family(Candidate)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const auto *HelperParameter = dyn_cast<TemplateTypeParmDecl>(
         Helper->getTemplateParameters()->getParam(0));
@@ -11256,11 +11257,11 @@ class UtilityTupleQueryGraph
         !Context.hasSameType(Pattern->getParamDecl(0)->getType(),
                             QualType(HelperParameter->getTypeForDecl(), 0)) ||
         !Pattern->getTypeSourceInfo() ||
-        !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return false;
+        !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Expected = Context.getLValueReferenceType(Target.withConst());
     const FunctionDecl *Selected = nullptr;
     for (const auto *Candidate : Helper->specializations()) {
-      if (!step()) return false;
+      if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *A = Candidate->getTemplateSpecializationArgs();
       if (!A || A->size() != 1 || A->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(A->get(0).getAsType(), Expected)) continue;
@@ -11272,18 +11273,18 @@ class UtilityTupleQueryGraph
           Candidate->getType()->castAs<FunctionProtoType>()->getExceptionSpecType() != EST_None ||
           Candidate->getParamDecl(0)->hasDefaultArg() ||
           !Context.hasSameType(Candidate->getParamDecl(0)->getType(), Expected) ||
-          !function(Candidate)) return false;
+          !function(Candidate)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Declaration : Candidate->redecls())
         if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Selected = Candidate;
     }
     // On a primary fallback, a specialization may have been discarded by
     // failed deduction. Existing exact candidates must nevertheless close all
     // source/redeclaration checks above; absence grants no selected identity.
-    if ((!Fallback && !Selected) || !TraverseStmt(const_cast<CallExpr *>(Call))) return false;
+    if ((!Fallback && !Selected) || !TraverseStmt(const_cast<CallExpr *>(Call))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto &Argument : PartialArguments)
-      if (!TraverseTemplateArgumentLoc(Argument)) return false;
+      if (!TraverseTemplateArgumentLoc(Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return !Failed;
   }
 
@@ -11345,13 +11346,13 @@ class UtilityTupleQueryGraph
         }
       }
     }
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
     return Complete;
   }
   bool bindRetainedTupleMetadataRecord(const CXXRecordDecl *Record) const {
-    if (!Record) return false;
+    if (!Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Identity = [&](const CXXRecordDecl *Candidate) {
-      if (!Candidate) return false;
+      if (!Candidate) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Record->getCanonicalDecl() == Candidate->getCanonicalDecl()) return true;
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Candidate);
       const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
@@ -11365,10 +11366,10 @@ class UtilityTupleQueryGraph
       for (const auto &Element : Source.Storage.Elements)
         if (Identity(Element.getType()->getAsCXXRecordDecl())) return true;
     }
-    return false;
+    return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
   }
   bool record(const CXXRecordDecl *R) {
-    if (!R || Failed) return false;
+    if (!R || Failed) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (bindOwnedCallableRecordSource(R) || bindMemberOwnerRecordSource(R)) return true;
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindFactoryLeafComparisonRecord &&
         R->getCanonicalDecl() == BindFactoryLeafComparisonRecord)
@@ -11379,7 +11380,7 @@ class UtilityTupleQueryGraph
         R->getCanonicalDecl() == BindCallMetadata->CallArguments->getType()
             ->getAsCXXRecordDecl()->getCanonicalDecl()) {
       const bool Complete = bindFunctionalBindEmptyCallTupleSource(R);
-      if (!Complete) Failed = true;
+      if (!Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
       return Complete;
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
@@ -11389,7 +11390,7 @@ class UtilityTupleQueryGraph
           R->getCanonicalDecl() == BindResultComparisonRecord && bindResultSentinelDefinition(R)) ||
           (BindFallbackSignature && BindFallbackSentinel &&
            R->getCanonicalDecl() == BindFallbackSentinel && bindDeletedResultSentinelDefinition(R));
-      if (!Complete) Failed = true;
+      if (!Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
       return Complete;
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
@@ -11400,8 +11401,8 @@ class UtilityTupleQueryGraph
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         bindRetainedTupleMetadataRecord(R)) {
       if (!family(R) || (!R->isDependentContext() && (!BindRecordSource || !BindRecordSource(R)))) {
-        Failed = true;
-        return false;
+        Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       // Source-only identity: do not add physical records or completed members.
       return true;
@@ -11409,14 +11410,14 @@ class UtilityTupleQueryGraph
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         BindMetadataRecords.count(R->getCanonicalDecl())) {
       if (!R->isDependentContext() && (!BindRecordSource || !BindRecordSource(R))) {
-        Failed = true;
-        return false;
+        Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       return family(R); // Identity is separate from its actual selected partial source.
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindRecordSource &&
         !R->isDependentContext()) {
-      if (!BindRecordSource(R)) { Failed = true; return false; }
+      if (!BindRecordSource(R)) { Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true); return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); }
     }
     if (NotFnNestedStorage && NotFnNestedRecords.count(R->getCanonicalDecl()))
       return family(R); // Exact descriptor metadata only; selected operations still close independently.
@@ -11439,7 +11440,7 @@ class UtilityTupleQueryGraph
            !Context.hasSameType(NotFnConstructorQuery->getArg(0)->getType(), Context.getRecordType(R)) ||
            !Context.hasSameType(NotFnConstructorRoot->getType(), Context.getRecordType(R)) ||
            NotFnConstructorRoot->getConstructor()->getParent()->getCanonicalDecl() != R->getCanonicalDecl()))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &Storage = NotFnFactoryDefaults->Selected.Storage;
       const auto Owned = NotFnNestedStorage
           ? std::optional<FunctionalNotFnStorage>(NotFnNestedStorage->Outer)
@@ -11457,7 +11458,7 @@ class UtilityTupleQueryGraph
           !Context.hasSameType(Instance->getTemplateArgs()[0].pack_elements()[0].getAsType(), Storage.CallableType) ||
           Definition->getNumBases() || std::distance(Definition->field_begin(), Definition->field_end()) != 1 ||
           *Definition->field_begin() != Storage.TupleBase)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // A storage identity supplies metadata here, never a runtime operation
       // or an ordinary constructor, destructor or callback body certificate.
       return TraverseType(Storage.CallableType);
@@ -11476,13 +11477,13 @@ class UtilityTupleQueryGraph
       const auto *Key = R->getCanonicalDecl();
       if (CompletedPairImplicitDefaults.count(Key)) return true;
       if (!ActivePairImplicitDefaults.insert(Key).second) {
-        Failed = true;
-        return false;
+        Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       auto Restore = llvm::make_scope_exit([&] { ActivePairImplicitDefaults.erase(Key); });
       if (!family(R) || !pairImplicitDefaultSource(PairTrait)) {
-        Failed = true;
-        return false;
+        Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       CompletedPairImplicitDefaults.insert(Key);
       return true;
@@ -11500,7 +11501,7 @@ class UtilityTupleQueryGraph
         utilityUniquePtrRecord(S, SM, R, Context, false, false)) {
       if (!Records.insert(R).second) return !Failed;
       const bool Complete = ownerSource(R);
-      if (!Complete) Failed = true;
+      if (!Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
       return Complete;
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
@@ -11514,13 +11515,13 @@ class UtilityTupleQueryGraph
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairOwner(R)) {
       if (!Records.insert(R).second) return true;
       const auto *Definition = R->getDefinition();
-      if (!Definition || Definition->getNumBases() || !family(Definition)) return false;
+      if (!Definition || Definition->getNumBases() || !family(Definition)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       unsigned Fields = 0;
       for (const auto *Field : Definition->fields()) {
         if (++Fields > 2 || !family(Field) || Field->isBitField() ||
             Field->isMutable() || Field->hasAttrs() || Field->getAccess() != AS_public ||
             Field->getName() != (Fields == 1 ? "first" : "second") ||
-            !TraverseType(Field->getType())) return false;
+            !TraverseType(Field->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       return Fields == 2;
     }
@@ -11557,7 +11558,7 @@ class UtilityTupleQueryGraph
       if (!Instance || !Definition || !family(R) || !family(Definition) ||
           Instance->getTemplateArgs().size() != 1 ||
           Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
-          Instance->getTemplateArgs()[0].pack_size() != 1) return false;
+          Instance->getTemplateArgs()[0].pack_size() != 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &Element = Instance->getTemplateArgs()[0].pack_elements()[0];
       return Element.getKind() == TemplateArgument::Type &&
           Context.hasSameType(Element.getAsType(), NotFnTupleTagStorage->CallableType) &&
@@ -11571,7 +11572,7 @@ class UtilityTupleQueryGraph
       const auto *Definition = R->getDefinition();
       if (Definition && NotFnTupleLeafEmptyBase) {
         if (!NotFnOwnedCallableRecord || NotFnTupleLeafValue || !family(R) || !family(Definition) ||
-            !Definition->field_empty() || Definition->getNumBases() != 1) return false;
+            !Definition->field_empty() || Definition->getNumBases() != 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto &Base = *Definition->bases_begin();
         const auto *Owner = Base.getType()->getAsCXXRecordDecl();
         return Owner && !Base.isVirtual() && Base.getAccessSpecifier() == AS_private &&
@@ -11582,12 +11583,12 @@ class UtilityTupleQueryGraph
           Definition->getNumBases() || Definition->isUnion() || Definition->isDynamicClass() ||
           std::distance(Definition->field_begin(), Definition->field_end()) != 1 ||
           *Definition->field_begin() != NotFnTupleLeafValue || !family(NotFnTupleLeafValue) ||
-          !Context.hasSameType(NotFnTupleLeafValue->getType(), NotFnCallableType)) return false;
+          !Context.hasSameType(NotFnTupleLeafValue->getType(), NotFnCallableType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return TraverseType(NotFnTupleLeafValue->getType());
     }
     if (carrier(Context.getRecordType(R))) {
       if (Mode != UtilityTupleQueryMode::CatSignature) return true;
-      if (!family(R)) return false;
+      if (!family(R)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // The layout descriptor is structural evidence only. Close each actual
       // tuple-like element in the SDK signature graph as well.
       if (const auto Storage = approvedUtilityTupleCatQueryLayout(
@@ -11596,7 +11597,7 @@ class UtilityTupleQueryGraph
         if (Storage->ArrayElements)
           return TraverseType(Storage->ArrayElementType);
         for (unsigned I = 0; I < Storage->size(); ++I)
-          if (!TraverseType(Storage->elementType(I))) return false;
+          if (!TraverseType(Storage->elementType(I))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         return true;
       }
       if (approvedMemoryTemplateMetadata(S, SM, R) == MemoryTemplateMetadata::UniquePtr)
@@ -11628,22 +11629,22 @@ class UtilityTupleQueryGraph
       const bool Complete = Definition && family(R) && family(Definition) &&
           !Definition->isUnion() && !Definition->isDynamicClass() &&
           !Definition->getNumBases() && Definition->field_empty();
-      if (!Complete) Failed = true;
+      if (!Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
       return Complete;
     }
-    if (!family(R)) return false;
+    if (!family(R)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (!Records.insert(R).second) return true;
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
     if (Instance && Instance->getIdentifier() && Instance->getName() == "__make_tuple_types" &&
-        !fullSliceDefaults(Instance)) return false;
-    if (!Instance) return false;
+        !fullSliceDefaults(Instance)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!Instance) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto &Argument : Instance->getTemplateArgs().asArray())
-      if (!TraverseTemplateArgument(Argument)) return false;
+      if (!TraverseTemplateArgument(Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Definition = R->getDefinition();
     if (!Definition) return true; // Unconsumed metadata remains lazy.
     if (!family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumVBases())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto &Base : Definition->bases()) {
       const auto *SavedOwner = NotFnConstraintBaseOwner;
       const auto *SavedBase = NotFnConstraintBase;
@@ -11664,14 +11665,14 @@ class UtilityTupleQueryGraph
         BindConstraintBase = SavedBindBase;
       });
       if (Base.isVirtual() || !Base.getTypeSourceInfo() ||
-          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+          !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     // Only referenced value/alias members are consumed below. Never walk
     // metadata's unselected constructors or manufacture a definition.
     return Definition->field_empty();
   }
   bool value(const ValueDecl *D, const DeclRefExpr *Reference = nullptr) {
-    if (!family(D) || !TraverseType(D->getType())) return false;
+    if (!family(D) || !TraverseType(D->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(D)) {
       if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata)
         if (const auto Found = BindDefinitionParameters.find(Parameter);
@@ -11703,7 +11704,7 @@ class UtilityTupleQueryGraph
       }
     }
     if (const auto *R = dyn_cast<CXXRecordDecl>(D->getDeclContext()))
-      if (!record(R)) return false;
+      if (!record(R)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (const auto *V = dyn_cast<VarDecl>(D)) {
       if (!V->isStaticDataMember()) {
         // Only the bound not_fn proof can consume this exact retained use
@@ -11776,7 +11777,7 @@ public:
   bool bindFunctionalBindStandardAliasSource(
       std::function<std::optional<bool>(const TypedefNameDecl *, const std::function<bool()> &)> Source) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-        (!BindStandardFactory && !BindStandardCall) || BindStandardAliasSource || !Source) return false;
+        (!BindStandardFactory && !BindStandardCall) || BindStandardAliasSource || !Source) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindStandardAliasSource = std::move(Source);
     return true;
   }
@@ -11793,9 +11794,9 @@ public:
       std::set<const CXXMethodDecl *> *MemberOwnerQueries = nullptr,
       const FunctionalBindMemberCommonCallSource *MemberCall = nullptr) {
     if (MemberCall && (!MemberFactory || MemberFactory != &MemberCall->Member.Value.Factory ||
-        MemberCall->Selected.Storage.Record != Storage.Record)) return false;
+        MemberCall->Selected.Storage.Record != Storage.Record)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Mode != UtilityTupleQueryMode::BindSignature || BindMetadata || !step() ||
-        !TypeSource || !RecordSource || !CallSource || !VariableSource || !ConstructionSource) return false;
+        !TypeSource || !RecordSource || !CallSource || !VariableSource || !ConstructionSource) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Standard = StandardFactory || StandardCall
         ? describeFunctionalBindStandardStorage(S, SM, Storage.Record, Context) : std::nullopt;
     const auto Member = MemberFactory
@@ -11806,8 +11807,8 @@ public:
         Member->Storage.Owner != MemberFactory->Storage.Owner ||
         Member->Factory.Construction != MemberFactory->Factory.Construction ||
         Member->Factory.BoundConstruction != MemberFactory->Factory.BoundConstruction ||
-        !sameFunctionalBindPlaceholderOperands(Member->Factory, MemberFactory->Factory))) return false;
-    if (MemberOwnerQueries && !MemberFactory) return false;
+        !sameFunctionalBindPlaceholderOperands(Member->Factory, MemberFactory->Factory))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (MemberOwnerQueries && !MemberFactory) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = MemberFactory
         ? (Member ? std::optional<FunctionalBindStorage>(Member->Factory.Storage) : std::nullopt)
         : StandardFactory || StandardCall
@@ -11816,32 +11817,32 @@ public:
     if (StandardFactory && (!Standard || BindStandardFactory || BindReferenceStorage ||
         BindReferenceFactory || BindOwnedCallableRecord || OwnedQuerySources ||
         StandardFactory->Storage.Record != Storage.Record || !StandardFactory->SourceCall ||
-        !S.owns(SM, StandardFactory->SourceCall->getExprLoc()))) return false;
+        !S.owns(SM, StandardFactory->SourceCall->getExprLoc()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (StandardCall && (!Standard || StandardFactory || BindStandardFactory || BindStandardCall ||
         BindReferenceStorage || BindReferenceFactory || BindOwnedCallableRecord || OwnedQuerySources ||
         StandardCall->Selected.Storage.Record != Storage.Record || !StandardCall->Selected.SourceCall ||
         !StandardCall->Selected.OwnedRoot ||
-        !S.owns(SM, StandardCall->Selected.OwnedRoot->getExprLoc()))) return false;
+        !S.owns(SM, StandardCall->Selected.OwnedRoot->getExprLoc()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (!Actual || Actual->Record != Storage.Record || Actual->Callable != Storage.Callable ||
         Actual->BoundArguments != Storage.BoundArguments ||
-        !Context.hasSameType(Actual->CallableType, Storage.CallableType)) return false;
+        !Context.hasSameType(Actual->CallableType, Storage.CallableType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindMetadata = *Actual;
     BindStandardFactory = StandardFactory;
     BindStandardCall = StandardCall;
     BindMemberFactory = MemberFactory;
     BindMemberCall = MemberCall;
     BindMemberOwnerQueries = MemberOwnerQueries;
-    if (MemberFactory && !freshBindFactorySource(MemberFactory->Factory)) return false;
-    if (MemberCall && !freshBindCallSource(S, SM, MemberCall->Selected.SourceCall, Context)) return false;
-    if (StandardCall && !freshBindCallSource(S, SM, StandardCall->Selected.SourceCall, Context)) return false;
-    if (StandardFactory && !freshBindFactorySource(*StandardFactory)) return false;
+    if (MemberFactory && !freshBindFactorySource(MemberFactory->Factory)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (MemberCall && !freshBindCallSource(S, SM, MemberCall->Selected.SourceCall, Context)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (StandardCall && !freshBindCallSource(S, SM, StandardCall->Selected.SourceCall, Context)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (StandardFactory && !freshBindFactorySource(*StandardFactory)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindTypeSource = std::move(TypeSource);
     BindRecordSource = std::move(RecordSource);
     BindCallSource = std::move(CallSource);
     BindVariableSource = std::move(VariableSource);
     BindConstructionSource = std::move(ConstructionSource);
     if (const auto *Owned = Actual->CallableType->getAsCXXRecordDecl(); Owned && !StandardFactory && !StandardCall) {
-      if (!OwnedQuerySources || !S.owns(SM, Owned->getLocation())) return false;
+      if (!OwnedQuerySources || !S.owns(SM, Owned->getLocation())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindOwnedCallableRecord = Owned->getCanonicalDecl();
       BindOwnedQuerySources = OwnedQuerySources;
     }
@@ -11853,37 +11854,37 @@ public:
       if (Element.EmptyBase) {
         const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
         if (Element.Field || !Identity ||
-            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return false;
+            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         // The freshly described bind tuple owns this exact empty subobject.
         // Its actual implementation/leaf bases are walked below as usual;
         // no ordinary tuple consumer gains placeholder or member permission.
         Records.push_back(Element.EmptyBase);
         continue;
       }
-      if (!Element.Field) return false;
+      if (!Element.Field) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Leaf = dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext());
-      if (!Leaf) return false;
+      if (!Leaf) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Records.push_back(Leaf);
       if (const auto *Wrapper = Element.getType()->getAsCXXRecordDecl()) {
         if (bindMemberOwnerRecordSource(Wrapper)) continue;
         if (!approvedFunctionalReferenceRecord(S, SM, Wrapper, Context) &&
-            !describeFunctionalBindStorage(S, SM, Wrapper, Context)) return false;
+            !describeFunctionalBindStorage(S, SM, Wrapper, Context)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Records.push_back(Wrapper);
       }
     }
     for (std::size_t I = 0; I < Records.size(); ++I) {
       const auto *Record = Records[I];
-      if (!Record || !step() || Records.size() > 64) return false;
+      if (!Record || !step() || Records.size() > 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // The exact ordinary callable is an input signature dependency, never
       // an SDK physical-record family or a runtime member permission.
       if (bindOwnedCallableRecordSource(Record) || bindMemberOwnerRecordSource(Record)) continue;
       if (!BindPhysicalRecords.insert(Record->getCanonicalDecl()).second) continue;
       const auto *Definition = Record->getDefinition();
       if (!Definition || Definition->isDependentContext() || Definition->isUnion() ||
-          Definition->isDynamicClass() || Definition->getNumVBases()) return false;
+          Definition->isDynamicClass() || Definition->getNumVBases()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Base : Definition->bases()) {
         const auto *Child = Base.getType()->getAsCXXRecordDecl();
-        if (Base.isVirtual() || !Child) return false;
+        if (Base.isVirtual() || !Child) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Records.push_back(Child);
       }
       for (const auto *Field : Definition->fields())
@@ -11891,7 +11892,7 @@ public:
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record)) {
         const auto *Primary = Instance->getSpecializedTemplate();
-        if (!Primary) return false;
+        if (!Primary) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         BindMetadataRecords.insert(Primary->getTemplatedDecl()->getCanonicalDecl());
       }
     }
@@ -11906,15 +11907,15 @@ public:
       std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr) {
     const auto &Storage = ReferenceStorage.Storage;
     if (Mode != UtilityTupleQueryMode::BindSignature || BindMetadata || !step() ||
-        !TypeSource || !RecordSource || !CallSource || !VariableSource || !ConstructionSource) return false;
+        !TypeSource || !RecordSource || !CallSource || !VariableSource || !ConstructionSource) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Fresh = describeFunctionalBindReferenceStorage(S, SM, Storage.Record, Context);
     if (!Fresh || Fresh->Reference.Record != ReferenceStorage.Reference.Record ||
         Fresh->Reference.Pointer != ReferenceStorage.Reference.Pointer ||
-        !Context.hasSameType(Fresh->Reference.ReferentType, ReferenceStorage.Reference.ReferentType)) return false;
+        !Context.hasSameType(Fresh->Reference.ReferentType, ReferenceStorage.Reference.ReferentType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = std::optional<FunctionalBindStorage>(Fresh->Storage);
     if (!Actual || Actual->Record != Storage.Record || Actual->Callable != Storage.Callable ||
         Actual->BoundArguments != Storage.BoundArguments ||
-        !Context.hasSameType(Actual->CallableType, Storage.CallableType)) return false;
+        !Context.hasSameType(Actual->CallableType, Storage.CallableType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindMetadata = *Actual;
     BindReferenceStorage = *Fresh;
     BindTypeSource = std::move(TypeSource);
@@ -11923,7 +11924,7 @@ public:
     BindVariableSource = std::move(VariableSource);
     BindConstructionSource = std::move(ConstructionSource);
     if (const auto *Owned = Fresh->Reference.ReferentType->getAsCXXRecordDecl()) {
-      if (!OwnedQuerySources || !S.owns(SM, Owned->getLocation())) return false;
+      if (!OwnedQuerySources || !S.owns(SM, Owned->getLocation())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindOwnedCallableRecord = Owned->getCanonicalDecl();
       BindOwnedQuerySources = OwnedQuerySources;
     }
@@ -11935,36 +11936,36 @@ public:
       if (Element.EmptyBase) {
         const auto Identity = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
         if (Element.Field || !Identity ||
-            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return false;
+            Identity->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         // The freshly described bind tuple owns this exact empty subobject.
         // Its actual implementation/leaf bases are walked below as usual;
         // no ordinary tuple consumer gains placeholder or member permission.
         Records.push_back(Element.EmptyBase);
         continue;
       }
-      if (!Element.Field) return false;
+      if (!Element.Field) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Leaf = dyn_cast<CXXRecordDecl>(Element.Field->getDeclContext());
-      if (!Leaf) return false;
+      if (!Leaf) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Records.push_back(Leaf);
       if (const auto *Wrapper = Element.getType()->getAsCXXRecordDecl()) {
         if (!approvedFunctionalReferenceRecord(S, SM, Wrapper, Context) &&
-            !describeFunctionalBindStorage(S, SM, Wrapper, Context)) return false;
+            !describeFunctionalBindStorage(S, SM, Wrapper, Context)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Records.push_back(Wrapper);
       }
     }
     for (std::size_t I = 0; I < Records.size(); ++I) {
       const auto *Record = Records[I];
-      if (!Record || !step() || Records.size() > 64) return false;
+      if (!Record || !step() || Records.size() > 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // The exact ordinary callable is an input signature dependency, never
       // an SDK physical-record family or a runtime member permission.
       if (bindOwnedCallableRecordSource(Record)) continue;
       if (!BindPhysicalRecords.insert(Record->getCanonicalDecl()).second) continue;
       const auto *Definition = Record->getDefinition();
       if (!Definition || Definition->isDependentContext() || Definition->isUnion() ||
-          Definition->isDynamicClass() || Definition->getNumVBases()) return false;
+          Definition->isDynamicClass() || Definition->getNumVBases()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Base : Definition->bases()) {
         const auto *Child = Base.getType()->getAsCXXRecordDecl();
-        if (Base.isVirtual() || !Child) return false;
+        if (Base.isVirtual() || !Child) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Records.push_back(Child);
       }
       for (const auto *Field : Definition->fields())
@@ -11972,7 +11973,7 @@ public:
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record)) {
         const auto *Primary = Instance->getSpecializedTemplate();
-        if (!Primary) return false;
+        if (!Primary) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         BindMetadataRecords.insert(Primary->getTemplatedDecl()->getCanonicalDecl());
       }
     }
@@ -11993,7 +11994,7 @@ public:
         Fresh->Storage.Reference.Pointer != Factory.Storage.Reference.Pointer ||
         !sameFunctionalBindPlaceholderOperands(Fresh->Factory, Factory.Factory) ||
         !bindFunctionalBindReferenceStorageMetadata(Factory.Storage, std::move(TypeSource), std::move(RecordSource),
-            std::move(CallSource), std::move(VariableSource), std::move(ConstructionSource), OwnedQuerySources)) return false;
+            std::move(CallSource), std::move(VariableSource), std::move(ConstructionSource), OwnedQuerySources)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindReferenceFactory = &Factory;
     return !Failed;
   }
@@ -12002,7 +12003,7 @@ public:
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindReferenceStorage ||
         BindReferenceCall || BindReferenceFactory || Failed || !step() ||
         !Call.Selected.SourceCall || Call.Selected.SourceCall != Call.Selected.OwnedRoot ||
-        !Call.Selected.OwnedPath.empty() || Call.Selected.Storage.Record != BindMetadata->Record) return false;
+        !Call.Selected.OwnedPath.empty() || Call.Selected.Storage.Record != BindMetadata->Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Fresh = describeFunctionalBindReferenceCallSource(S, SM, Call.Selected.SourceCall, Context);
     if (!Fresh || Fresh->Selected.Method != Call.Selected.Method || Fresh->Selected.Object != Call.Selected.Object ||
         Fresh->Selected.Apply != Call.Selected.Apply || Fresh->Selected.Invoke != Call.Selected.Invoke ||
@@ -12010,17 +12011,17 @@ public:
         Fresh->WrapperMethod != Call.WrapperMethod || Fresh->WrapperReceiver != Call.WrapperReceiver ||
         Fresh->Storage.Reference.Record != BindReferenceStorage->Reference.Record ||
         Fresh->Storage.Reference.Pointer != BindReferenceStorage->Reference.Pointer ||
-        !Context.hasSameType(Fresh->Storage.Reference.ReferentType, BindReferenceStorage->Reference.ReferentType)) return false;
+        !Context.hasSameType(Fresh->Storage.Reference.ReferentType, BindReferenceStorage->Reference.ReferentType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindReferenceCall = &Call;
     BindReferenceReferentQueries = ReferentQueries;
     return !Failed;
   }
   bool bindFunctionalBindExplicitResultRecord(const FunctionalBindExplicitResultStorage &Storage) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || Failed ||
-        Storage.Base.Record != BindMetadata->Record || !step()) return false;
+        Storage.Base.Record != BindMetadata->Record || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = describeFunctionalBindExplicitResultStorage(S, SM, Storage.Record, Context);
     if (!Actual || Actual->Base.Record != Storage.Base.Record || Actual->ResultAlias != Storage.ResultAlias ||
-        !Context.hasSameType(Actual->ResultType, Storage.ResultType)) return false;
+        !Context.hasSameType(Actual->ResultType, Storage.ResultType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Actual->Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Primary ? Primary->getTemplatedDecl()->getDefinition() : nullptr;
@@ -12028,23 +12029,23 @@ public:
     const auto *Result = Parameters && Parameters->size() == 3
         ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
     if (!Instance || !Pattern || !Result || Result->isParameterPack() || Result->hasDefaultArgument() ||
-        Pattern->getNumBases() != 1 || !family(Instance) || !family(Pattern) || !family(Result)) return false;
+        Pattern->getNumBases() != 1 || !family(Instance) || !family(Pattern) || !family(Result)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const TypedefNameDecl *OriginalResult = nullptr;
     unsigned Declarations = 0;
     for (const auto *Declaration : Pattern->decls()) {
-      if (++Declarations > 64) return false;
+      if (++Declarations > 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
       if (!Alias || !Alias->getIdentifier() || Alias->getName() != "result_type") continue;
       // The written type carries the original declaration identity.
       const auto *Parameter = dyn_cast<TemplateTypeParmType>(
           Alias->getUnderlyingType().getTypePtr());
       if (OriginalResult || !Parameter || Parameter->getDecl() != Result ||
-          !Alias->getTypeSourceInfo() || !family(Alias)) return false;
+          !Alias->getTypeSourceInfo() || !family(Alias)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       OriginalResult = Alias;
     }
     const auto *ActualResult = Actual->ResultAlias;
     if (!OriginalResult || !ActualResult || !ActualResult->getTypeSourceInfo() ||
-        OriginalResult->getLocation() != ActualResult->getLocation() || !family(ActualResult)) return false;
+        OriginalResult->getLocation() != ActualResult->getLocation() || !family(ActualResult)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindMetadataRecords.insert(Instance->getCanonicalDecl());
     BindMetadataRecords.insert(Pattern->getCanonicalDecl());
     const auto *ActualBase = Instance->bases_begin()->getTypeSourceInfo();
@@ -12061,7 +12062,7 @@ public:
       const std::function<bool(const TypedefNameDecl *)> &SourceAlias) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || Failed || !step() ||
         Factory.Storage.Record != BindMetadata->Record || !Factory.SourceCall ||
-        !S.owns(SM, Factory.SourceCall->getExprLoc())) return false;
+        !S.owns(SM, Factory.SourceCall->getExprLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = freshBindFactorySource(Factory);
     const unsigned First = Factory.ExplicitResultConstruction ? 1 : 0;
     if (!Actual || Actual->Factory != Factory.Factory || Actual->Storage.Record != BindMetadata->Record ||
@@ -12072,11 +12073,11 @@ public:
         Use.Canonical->get(First).getKind() != TemplateArgument::Type ||
         Use.Sugared->get(First).getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Use.Canonical->get(First).getAsType(), Use.Sugared->get(First).getAsType()))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Input = Use.Sugared->get(First).getAsType().getNonReferenceType();
     auto Pending = BindOwnedInputAliases;
     for (unsigned I = 0; ; ++I) {
-      if (I >= 64 || !step() || Input.isNull()) return false;
+      if (I >= 64 || !step() || Input.isNull()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Input.getTypePtr())) {
         Input = Elaborated->getNamedType();
         continue;
@@ -12092,13 +12093,13 @@ public:
           approvedStandardSDKDeclaration(S, SM, Alias) ||
           (Named && Named->getDescribedAliasTemplate()) ||
           !Alias->getUnderlyingType()->isFunctionPointerType() ||
-          !Context.hasSameType(Alias->getUnderlyingType(), BindMetadata->CallableType)) return false;
+          !Context.hasSameType(Alias->getUnderlyingType(), BindMetadata->CallableType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Found = Pending.find(Alias);
       if (Found != Pending.end()) {
-        if (Found->second != Info) return false;
+        if (Found->second != Info) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       } else {
         if (!SourceAlias || !SourceAlias(Alias) || !Pending.emplace(Alias, Info).second ||
-            Pending.size() > 64) return false;
+            Pending.size() > 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       Input = Alias->getUnderlyingType();
     }
@@ -12111,20 +12112,20 @@ public:
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           !BindTupleElementProjections.empty() || BindTupleElementProjectionRoots || !Proof || !Call.SourceCall ||
           (!Call.OwnedRoot || !S.owns(SM, Call.OwnedRoot->getExprLoc())) || Call.Storage.Record != BindMetadata->Record)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
       if (!Actual || Actual->Method != Call.Method || Actual->Apply != Call.Apply ||
           Actual->Invoke != Call.Invoke || Actual->Target != Call.Target ||
           Actual->Storage.Record != BindMetadata->Record || Actual->Arguments.empty() ||
           Actual->Arguments.size() != BindMetadata->Arguments.Elements.size())
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Actual->CallArguments != Call.CallArguments || Actual->CallForwards != Call.CallForwards ||
-          Actual->Arguments.size() != Call.Arguments.size()) return false;
+          Actual->Arguments.size() != Call.Arguments.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       std::vector<BindTupleElementProjection> Projections;
       std::vector<const ClassTemplatePartialSpecializationDecl *> Partials;
       auto Add = [&](const CallExpr *Get, const UtilityTupleRecord &Tuple, unsigned Slot) {
         const auto Projection = bindTupleElementProjection(Get, Tuple, Slot);
-        if (!Projection) return false;
+        if (!Projection) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Projections.push_back(*Projection);
         if (std::find(Partials.begin(), Partials.end(), Projection->Partial) == Partials.end())
           Partials.push_back(Projection->Partial);
@@ -12139,19 +12140,19 @@ public:
             Argument.PlaceholderIndex != Retained.PlaceholderIndex ||
             Argument.PlaceholderGet != Retained.PlaceholderGet ||
             Argument.PlaceholderForward != Retained.PlaceholderForward ||
-            !Add(Argument.Get, BindMetadata->Arguments, I)) return false;
+            !Add(Argument.Get, BindMetadata->Arguments, I)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (Argument.PlaceholderRank) {
           if (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size() ||
               Argument.PlaceholderRank > Incoming->Elements.size() ||
-              !Add(Argument.PlaceholderGet, *Incoming, Argument.PlaceholderRank - 1)) return false;
+              !Add(Argument.PlaceholderGet, *Incoming, Argument.PlaceholderRank - 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
         if (Argument.Nested) {
           if (!Retained.Nested || Argument.Nested->IncomingGets != Retained.Nested->IncomingGets ||
               Argument.Nested->IncomingGets.size() != Actual->CallForwards.size() ||
               (!Argument.Nested->IncomingGets.empty() &&
-               (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size()))) return false;
+               (!Incoming || Incoming->Elements.size() != Actual->CallForwards.size()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           for (unsigned J = 0; J < Argument.Nested->IncomingGets.size(); ++J)
-            if (!Add(Argument.Nested->IncomingGets[J], *Incoming, J)) return false;
+            if (!Add(Argument.Nested->IncomingGets[J], *Incoming, J)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
       }
       // These builtin identities exist only for this fresh get/storage/slot
@@ -12185,22 +12186,22 @@ public:
   }
   bool TraverseBindTupleElementProjectionSource(const BindTupleElementProjection &Projection) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindRecordSource ||
-        Projection.Elements.empty() || Projection.Slot >= Projection.Elements.size()) return false;
-    if (!BindRecordSource(Projection.Owner)) return false;
+        Projection.Elements.empty() || Projection.Slot >= Projection.Elements.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!BindRecordSource(Projection.Owner)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Alias : {Projection.OriginalAlias, Projection.Alias})
       if (!Alias || !Alias->getTypeSourceInfo() || !family(Alias) ||
-          !TraverseTypeLoc(Alias->getTypeSourceInfo()->getTypeLoc())) return false;
+          !TraverseTypeLoc(Alias->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Record : {static_cast<const CXXRecordDecl *>(Projection.Partial),
                                 static_cast<const CXXRecordDecl *>(Projection.Owner)}) {
       const auto *Definition = Record->getDefinition();
-      if (!Definition || !family(Definition)) return false;
+      if (!Definition || !family(Definition)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       unsigned Assertions = 0;
       for (const auto *Declaration : Definition->decls()) {
-        if (!step()) return false;
+        if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto *Assertion = dyn_cast<StaticAssertDecl>(Declaration);
         if (!Assertion) continue;
         const Expr *Expression = Assertion->getAssertExpr();
-        if (!Expression || Assertion->isFailed() || !family(Assertion) || ++Assertions != 1) return false;
+        if (!Expression || Assertion->isFailed() || !family(Assertion) || ++Assertions != 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Expression = Expression->IgnoreParenImpCasts();
         if (const auto *Constant = dyn_cast<ConstantExpr>(Expression))
           Expression = Constant->getSubExpr()->IgnoreParenImpCasts();
@@ -12208,20 +12209,20 @@ public:
         const auto *Size = Comparison
             ? dyn_cast<SizeOfPackExpr>(Comparison->getRHS()->IgnoreParenImpCasts()) : nullptr;
         if (!Comparison || Comparison->getOpcode() != BO_LT || !Size || Size->getPack() != Projection.Types)
-          return false;
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         // IgnoreParenImpCasts also removes SubstNonTypeTemplateParmExpr.
         // Preserve that real Sema node for the owner/parameter checks below.
         const Expr *Index = Comparison->getLHS()->IgnoreParens();
         if (Record == Projection.Partial) {
           const auto *Reference = dyn_cast<DeclRefExpr>(Index);
-          if (!Reference || Reference->getDecl() != Projection.Index || !Size->isValueDependent()) return false;
+          if (!Reference || Reference->getDecl() != Projection.Index || !Size->isValueDependent()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         } else {
           const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(Index);
           if (!Substitution || Substitution->getAssociatedDecl() != Projection.Owner ||
               Substitution->getParameter() != Projection.Index || Size->isValueDependent() ||
-              Size->getPackLength() != Projection.Elements.size()) return false;
+              Size->getPackLength() != Projection.Elements.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
-        if (!TraverseStmt(const_cast<Expr *>(Assertion->getAssertExpr()))) return false;
+        if (!TraverseStmt(const_cast<Expr *>(Assertion->getAssertExpr()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (Record != Projection.Partial) {
           // The actual original source graph closes before conversion
           // is folded to bind its concrete owner slot.
@@ -12229,10 +12230,10 @@ public:
           if (!Index->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects) || !Value.Val.isInt() ||
               Value.Val.getInt().isNegative() ||
               Value.Val.getInt().getLimitedValue(Projection.Elements.size()) != Projection.Slot)
-            return false;
+            return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
       }
-      if (Assertions != 1) return false;
+      if (Assertions != 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return !Failed;
   }
@@ -12241,9 +12242,9 @@ public:
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           BindTupleElementProjections.empty() ||
           BindTupleElementProjections.size() != BindTupleElementProjectionRoots ||
-          !BindRecordSource) return false;
+          !BindRecordSource) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Projection : BindTupleElementProjections)
-        if (!TraverseBindTupleElementProjectionSource(Projection)) return false;
+        if (!TraverseBindTupleElementProjectionSource(Projection)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return !Failed;
     });
   }
@@ -12252,11 +12253,11 @@ public:
       const std::function<bool()> &Proof) {
     return withBindSourceChild([&] {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-          BindSourceMemberUsesActive || !BindSourceMemberUses.empty() || Uses.size() > 64 || !Proof) return false;
+          BindSourceMemberUsesActive || !BindSourceMemberUses.empty() || Uses.size() > 64 || !Proof) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &[Use, Declaration] : Uses)
         if (!step() || !Use || !Declaration || Use->getMemberDecl() != Declaration ||
             !family(Declaration) || !isa_and_nonnull<CXXRecordDecl>(Declaration->getDeclContext()) ||
-            !(isa<FieldDecl>(Declaration) || isa<CXXMethodDecl>(Declaration))) return false;
+            !(isa<FieldDecl>(Declaration) || isa<CXXMethodDecl>(Declaration))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // A scoped member witness cannot escape through statement memoization.
       // Keep the previous cache isolated and discard this scope's statements.
       std::set<const Stmt *> SavedExpressions;
@@ -12276,7 +12277,7 @@ public:
       std::function<std::optional<bool>(TypeLoc)> LocationSource) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         BindNestedTraitTypeSource || BindNestedTraitTypeLocSource || !Source || !LocationSource || !step())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindNestedTraitTypeSource = std::move(Source);
     BindNestedTraitTypeLocSource = std::move(LocationSource);
     return true;
@@ -12285,7 +12286,7 @@ public:
   bool bindFunctionalBindTypeTraversalSource(
       std::function<bool(const TemplateSpecializationType *, const std::function<bool()> &)> Source) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
-        BindTypeTraversalSource || !Source || !step()) return false;
+        BindTypeTraversalSource || !Source || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindTypeTraversalSource = std::move(Source);
     return true;
   }
@@ -12293,7 +12294,7 @@ public:
   bool withBindFactoryLeafComparisonSource(const TemplateUseSource &Source,
       const CXXConstructorDecl *Constructor, const std::function<bool()> &Proof,
       bool Incoming = false) {
-    if (!Proof) return false;
+    if (!Proof) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *AliasType = Source.Kind == TemplateSourceKind::Type
         ? dyn_cast_or_null<TemplateSpecializationType>(Source.Type) : nullptr;
     const auto *Owned = Constructor
@@ -12315,7 +12316,7 @@ public:
           BindCallMetadata->hasExplicitResultOwner() && BindCallMetadata->OwnedRoot &&
           S.owns(SM, BindCallMetadata->OwnedRoot->getExprLoc());
       if ((!BindStandardCall && !ExplicitIncoming) || !BindCallMetadata || !Scalar->isReferenceType() ||
-          !utilityScalar(Context, Value)) return false;
+          !utilityScalar(Context, Value)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Actual = freshBindCallOccurrence(S, SM, *BindCallMetadata, Context);
       const auto Tuple = Actual
           ? freshBindCallTupleConstructionSource(S, SM, *Actual, Context) : std::nullopt;
@@ -12330,7 +12331,7 @@ public:
           std::none_of(Tuple->Leaves.begin(), Tuple->Leaves.end(), [&](const CXXConstructExpr *Leaf) {
             return Leaf && Leaf->getConstructor() == Constructor &&
                 Leaf->getConstructor()->getParent() == Owned;
-          })) return false;
+          })) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const auto *Compared = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
         AliasType->template_arguments()[1].getAsType()->getAsCXXRecordDecl());
@@ -12373,11 +12374,11 @@ public:
           Compared->getTemplateArgs().size() != 3 || !Definition || Definition->isUnion() ||
           Definition->isDynamicClass() || Definition->getNumBases() ||
           std::distance(Definition->field_begin(), Definition->field_end()) != 1 ||
-          !family(Compared) || !family(Definition) || !family(Primary)) return false;
+          !family(Compared) || !family(Definition) || !family(Primary)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Field = *Definition->field_begin();
       if (!Field->getIdentifier() || Field->getName() != "__value_" || Field->isBitField() ||
           Field->hasInClassInitializer() || !Field->getTypeSourceInfo() || !family(Field) ||
-          !Context.hasSameType(Field->getType(), Scalar)) return false;
+          !Context.hasSameType(Field->getType(), Scalar)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &Arguments = Compared->getTemplateArgs();
       if (Arguments[0].getKind() != TemplateArgument::Integral || Arguments[0].getAsIntegral().isNegative() ||
           Arguments[0].getAsIntegral().getLimitedValue(8) >= 8 ||
@@ -12386,18 +12387,18 @@ public:
           !Context.hasSameType(Arguments[1].getAsType(), Scalar) ||
           Arguments[2].getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(Arguments[2].getIntegralType(), Context.BoolTy) ||
-          !Arguments[2].getAsIntegral().isZero()) return false;
+          !Arguments[2].getAsIntegral().isZero()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Source.Template != Alias || Source.Declaration || Source.Instantiation || Source.Selection ||
           !Source.FunctionalBindConstraint || !Source.Written || Source.Written->getNumTemplateArgs() != 2 ||
           !Source.Underlying || !Source.Defaults.empty() || !Source.ParameterTypes.empty() ||
           !Source.Canonical || !Source.Sugared || Source.Canonical->size() != 2 || Source.Sugared->size() != 2 ||
           !family(Alias) || !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/is_same.h"))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Values : {Source.Canonical, Source.Sugared})
         if (Values->get(0).getKind() != TemplateArgument::Type ||
             Values->get(1).getKind() != TemplateArgument::Type ||
             !Context.hasSameType(Values->get(0).getAsType(), Value) ||
-            Values->get(1).getAsType()->getAsCXXRecordDecl() != Compared) return false;
+            Values->get(1).getAsType()->getAsCXXRecordDecl() != Compared) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Expansion = dyn_cast<ElaboratedType>(AliasType->getAliasedType().getTypePtr());
       const auto *Constant = Expansion ? dyn_cast<TemplateSpecializationType>(Expansion->getNamedType().getTypePtr()) : nullptr;
       const auto *ConstantAlias = Constant
@@ -12405,7 +12406,7 @@ public:
       if (!ConstantAlias || !ConstantAlias->getIdentifier() || ConstantAlias->getName() != "_BoolConstant" ||
           !family(ConstantAlias) || Constant->template_arguments().size() != 1 ||
           Constant->template_arguments()[0].getKind() != TemplateArgument::Expression ||
-          !cstddefOrigin(S, SM, ConstantAlias->getLocation(), "libcxx", "__type_traits/integral_constant.h")) return false;
+          !cstddefOrigin(S, SM, ConstantAlias->getLocation(), "libcxx", "__type_traits/integral_constant.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const Expr *Expression = Constant->template_arguments()[0].getAsExpr();
       if (const auto *Value = dyn_cast<ConstantExpr>(Expression)) Expression = Value->getSubExpr();
       const auto *Negation = dyn_cast<UnaryOperator>(Expression->IgnoreParenImpCasts());
@@ -12414,7 +12415,7 @@ public:
       const auto *Parameters = Alias->getTemplateParameters();
       if (!Query || Query->getTrait() != BTT_IsSame || Query->getNumArgs() != 2 ||
           Query->isTypeDependent() || Query->isValueDependent() || Parameters->size() != 2 ||
-          !cstddefOrigin(S, SM, Query->getExprLoc(), "libcxx", "__type_traits/is_same.h")) return false;
+          !cstddefOrigin(S, SM, Query->getExprLoc(), "libcxx", "__type_traits/is_same.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < 2; ++I) {
         const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
         const auto *Substitution = dyn_cast<SubstTemplateTypeParmType>(Query->getArg(I)->getType().getTypePtr());
@@ -12422,7 +12423,7 @@ public:
             Parameter->hasDefaultArgument() || !family(Parameter) || !Substitution ||
             Substitution->getAssociatedDecl() != Alias || Substitution->getReplacedParameter() != Parameter ||
             !Context.hasSameType(Substitution->getReplacementType(), AliasType->template_arguments()[I].getAsType()))
-          return false;
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       // This exact comparison names a pinned SDK type. It neither owns that
       // leaf's storage nor registers a constructor, member, body or operation.
@@ -12451,11 +12452,11 @@ public:
           Found->second->getParent() != Owner || Owner->getTemplateArgs().size() != 3 ||
           Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Owner->getTemplateArgs()[0].getAsType(), Context.VoidTy) ||
-          !family(Result) || !family(Owner)) return false;
+          !family(Result) || !family(Owner)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Completed = BindCompletedResultAliasSources.find(Result);
       if (BindUnusedResultOperand || Completed == BindCompletedResultAliasSources.end() ||
           Completed->second.first != Found->second ||
-          Completed->second.second != Result->getTypeSourceInfo()) return false;
+          Completed->second.second != Result->getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindUnusedResultOperand = Result;
       auto RestoreOperand = llvm::make_scope_exit([&] { BindUnusedResultOperand = nullptr; });
       // Source-only unused operands cannot escape in type or statement caches.
@@ -12497,7 +12498,7 @@ public:
           Variable->getDeclContext() != Definition || !family(Definition) || !family(Variable) ||
           !cstddefOrigin(S, SM, Body->getLBracLoc(), "libcxx", "__functional/bind.h") ||
           !cstddefOrigin(S, SM, Body->getRBracLoc(), "libcxx", "__functional/bind.h") ||
-          !cstddefOrigin(S, SM, Return->getReturnLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, Return->getReturnLoc(), "libcxx", "__functional/bind.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // Both actual children remain source obligations. The declaration must
       // traverse under its own positive/index constraint proof; that proof's
       // temporary scalar scope must end before the ordinary return is walked.
@@ -12512,7 +12513,7 @@ public:
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           BindScalarConstraintSource || !BindScalarConditionals.empty() || !Proof ||
           bool(CompletedTypes) != bool(CompletedExpressions) ||
-          (CompletedTypes && CompletedTypes->size() + CompletedExpressions->size() > 200000)) return false;
+          (CompletedTypes && CompletedTypes->size() + CompletedExpressions->size() > 200000)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       std::set<const Type *> SavedTypes;
       std::set<const Stmt *> SavedExpressions;
       SavedTypes.swap(Types);
@@ -12531,7 +12532,7 @@ public:
       });
       const bool Complete = Proof() && BindScalarConditionals.empty() && !Failed;
       if (Complete && CompletedTypes) {
-        if (Types.size() + Expressions.size() > 200000) return false;
+        if (Types.size() + Expressions.size() > 200000) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         CompletedTypes->swap(Types);
         CompletedExpressions->swap(Expressions);
       }
@@ -12540,7 +12541,7 @@ public:
   }
   bool withBindScalarConditionalSource(const TemplateUseSource &Source,
                                       const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Use = Source.Kind == TemplateSourceKind::Type
         ? dyn_cast_or_null<TemplateSpecializationType>(Source.Type) : nullptr;
     const auto *Alias = Use ? dyn_cast_or_null<TypeAliasTemplateDecl>(
@@ -12557,7 +12558,7 @@ public:
       auto Written = BindConstraintBase && BindConstraintBase->getTypeSourceInfo()
           ? BindConstraintBase->getTypeSourceInfo()->getTypeLoc() : TypeLoc();
       if (const auto Name = Written.getAs<ElaboratedTypeLoc>()) {
-        if (Name.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Name.getQualifierLoc()) return false;
+        if (Name.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None || Name.getQualifierLoc()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Written = Name.getNamedTypeLoc();
       }
       const auto BaseUse = Written.getAs<TemplateSpecializationTypeLoc>();
@@ -12578,7 +12579,7 @@ public:
           !BaseUse || BaseUse.getTypePtr() != Use ||
           !family(Owner) || !family(OwnerPrimary) || !family(OwnerParameter) || !family(Alias) ||
           !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__functional/bind.h") ||
-          !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/conditional.h")) return false;
+          !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/conditional.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const bool Choice = Source.Canonical->get(0).getAsIntegral().getBoolValue();
       const auto ActualName = Source.Underlying->getTypeLoc().getAs<ElaboratedTypeLoc>();
       const auto Select = ActualName
@@ -12601,12 +12602,12 @@ public:
           Qualifier.getTypePtr()->getTemplateName().getAsTemplateDecl() != SelectorPrimary ||
           SelectAlias->getDeclContext() != Selector || !family(Selector) || !family(SelectAlias) ||
           !cstddefOrigin(S, SM, Selector->getLocation(), "libcxx", "__type_traits/conditional.h") ||
-          !Context.hasSameType(Use->getAliasedType(), Source.Canonical->get(Choice ? 1 : 2).getAsType())) return false;
+          !Context.hasSameType(Use->getAliasedType(), Source.Canonical->get(Choice ? 1 : 2).getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < 2; ++I)
         if (Select.getArgLoc(I).getArgument().getKind() != TemplateArgument::Type ||
             !Select.getArgLoc(I).getTypeSourceInfo() ||
             !Context.hasSameType(Select.getArgLoc(I).getArgument().getAsType(),
-                                 Source.Canonical->get(I + 1).getAsType())) return false;
+                                 Source.Canonical->get(I + 1).getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Unselected = Source.Canonical->get(Choice ? 2 : 1).getAsType()->getAsCXXRecordDecl();
       const auto *Self = Unselected && Unselected->getCanonicalDecl() == Owner->getCanonicalDecl()
           ? Owner : nullptr;
@@ -12627,10 +12628,10 @@ public:
   }
   bool bindScalarConditionalSelector(const ClassTemplateSpecializationDecl *Instance) const {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindScalarConstraintSource || !Instance)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto &Frame : BindScalarConditionals)
       if (Frame.Selector == Instance) return true;
-    return false;
+    return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
   }
   std::optional<bool> bindScalarConditionalUnselectedSelf(const CXXRecordDecl *Record) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindScalarConstraintSource || !Record)
@@ -12647,7 +12648,7 @@ public:
     return withBindSourceChild([&] {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           BindSourceLookupUsesActive || !BindSourceLookupUses.empty() ||
-          Uses.size() > 64 || !Proof) return false;
+          Uses.size() > 64 || !Proof) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &[Use, Declarations] : Uses) {
         const auto Origin = Use ? S.sdkFile(SM, Use->getExprLoc()) : std::nullopt;
         if (!step() || !Use || !Origin || Origin->Root != "libcxx" ||
@@ -12655,14 +12656,14 @@ public:
             !Use->hasExplicitTemplateArgs() || Use->getNumTemplateArgs() != 1 ||
             Use->getName().getNameKind() != DeclarationName::Identifier ||
             Use->getName().getAsIdentifierInfo()->getName() != "get" ||
-            Declarations.size() != 16 || Use->getNumDecls() != Declarations.size()) return false;
+            Declarations.size() != 16 || Use->getNumDecls() != Declarations.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         unsigned I = 0;
         for (const auto *Declaration : Use->decls()) {
           const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
           const auto *Function = Template ? Template->getTemplatedDecl() : nullptr;
           if (!step() || Declaration != Declarations[I++] || !Function ||
               !Function->getIdentifier() || Function->getName() != "get" ||
-              !approvedStandardSDKDeclaration(S, SM, Declaration)) return false;
+              !approvedStandardSDKDeclaration(S, SM, Declaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
       }
       std::set<const Type *> SavedTypes;
@@ -12688,10 +12689,10 @@ public:
     const auto Found = BindSourceLookupUses.find(Use);
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !BindSourceLookupUsesActive || Found == BindSourceLookupUses.end() ||
-        Use->getNumDecls() != Found->second.size()) return false;
+        Use->getNumDecls() != Found->second.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     unsigned I = 0;
     for (const auto *Declaration : Use->decls())
-      if (!step() || Declaration != Found->second[I++]) return false;
+      if (!step() || Declaration != Found->second[I++]) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return true;
   }
 
@@ -12699,15 +12700,15 @@ public:
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || Failed || !step() ||
         !Probe.Function || !Probe.Owner || !Probe.Result ||
         Probe.Function->getParent() != Probe.Owner || Probe.Result->getDeclContext() != Probe.Owner ||
-        !family(Probe.Function) || !family(Probe.Owner) || !family(Probe.Result)) return false;
+        !family(Probe.Function) || !family(Probe.Owner) || !family(Probe.Result)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Written = Probe.Result->getTypeSourceInfo();
     if (!Written || !Context.hasSameType(Written->getType(), Probe.Result->getUnderlyingType()) ||
-        !TraverseTypeLoc(Written->getTypeLoc()) || !bindSourceComplete()) return false;
+        !TraverseTypeLoc(Written->getTypeLoc()) || !bindSourceComplete()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Publish only after this graph closes the exact original written source.
     const auto Expected = std::make_pair(Probe.Function, Written);
     const auto Found = BindCompletedResultAliasSources.find(Probe.Result);
     if (Found != BindCompletedResultAliasSources.end()) return Found->second == Expected;
-    if (BindCompletedResultAliasSources.size() >= 64) return false;
+    if (BindCompletedResultAliasSources.size() >= 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return BindCompletedResultAliasSources.emplace(Probe.Result, Expected).second;
   }
 
@@ -12715,15 +12716,15 @@ public:
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || Failed || !step() ||
         !Probe.Function || !Probe.Owner || !Probe.Result ||
         Probe.Function->getParent() != Probe.Owner || Probe.Result->getDeclContext() != Probe.Owner ||
-        !family(Probe.Function) || !family(Probe.Owner) || !family(Probe.Result)) return false;
+        !family(Probe.Function) || !family(Probe.Owner) || !family(Probe.Result)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Written = Probe.Result->getTypeSourceInfo();
     if (!Written || !Context.hasSameType(Written->getType(), Probe.Result->getUnderlyingType()) ||
-        !TraverseTypeLoc(Written->getTypeLoc()) || !bindSourceComplete()) return false;
+        !TraverseTypeLoc(Written->getTypeLoc()) || !bindSourceComplete()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Publish only after this graph closes the exact original written source.
     const auto Expected = std::make_pair(Probe.Function, Written);
     const auto Found = BindCompletedResultAliasSources.find(Probe.Result);
     if (Found != BindCompletedResultAliasSources.end()) return Found->second == Expected;
-    if (BindCompletedResultAliasSources.size() >= 64) return false;
+    if (BindCompletedResultAliasSources.size() >= 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return BindCompletedResultAliasSources.emplace(Probe.Result, Expected).second;
   }
   bool bindFunctionalBindResultProbe(const FunctionalBindTryCallSignatureSource &Probe) {
@@ -12733,10 +12734,10 @@ public:
           Probe.Result->getDeclContext() != Probe.Owner ||
           Probe.Owner->getTemplateArgs().size() != 3 ||
           Probe.Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-          BindResultProbes.size() > 64) return false;
+          BindResultProbes.size() > 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       std::vector<QualType> Forwarded;
       for (const auto &Argument : Probe.Owner->getTemplateArgs()[2].pack_elements()) {
-        if (!step() || Argument.getKind() != TemplateArgument::Type) return false;
+        if (!step() || Argument.getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Forwarded.push_back(Argument.getAsType());
       }
       const auto Actual = Probe.Dispatcher.Nested
@@ -12750,14 +12751,14 @@ public:
           Actual->Ancestors != Probe.Ancestors || Actual->Declvals != Probe.Declvals ||
           Actual->OriginalInvokes != Probe.OriginalInvokes ||
           Actual->OriginalCallableDeclvals != Probe.OriginalCallableDeclvals ||
-          Actual->OriginalArgumentDeclvals != Probe.OriginalArgumentDeclvals) return false;
+          Actual->OriginalArgumentDeclvals != Probe.OriginalArgumentDeclvals) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Completed = BindCompletedResultAliasSources.find(Probe.Result);
       if (Completed == BindCompletedResultAliasSources.end() ||
           Completed->second.first != Probe.Function ||
-          Completed->second.second != Probe.Result->getTypeSourceInfo()) return false;
+          Completed->second.second != Probe.Result->getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Bound = BindResultProbes.find(Probe.Result);
       if (Bound != BindResultProbes.end()) return Bound->second == Probe.Function;
-      if (BindResultProbes.size() >= 64) return false;
+      if (BindResultProbes.size() >= 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return BindResultProbes.emplace(Probe.Result, Probe.Function).second;
     });
   }
@@ -12769,10 +12770,10 @@ public:
           Probe.Result->getDeclContext() != Probe.Owner ||
           Probe.Owner->getTemplateArgs().size() != 3 ||
           Probe.Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-          BindResultProbes.size() > 64) return false;
+          BindResultProbes.size() > 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       std::vector<QualType> Forwarded;
       for (const auto &Argument : Probe.Owner->getTemplateArgs()[2].pack_elements()) {
-        if (!step() || Argument.getKind() != TemplateArgument::Type) return false;
+        if (!step() || Argument.getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Forwarded.push_back(Argument.getAsType());
       }
       const auto Actual = describeFunctionalBindMemberTryCallSignatureSource(
@@ -12783,14 +12784,14 @@ public:
           Actual->Ancestors != Probe.Ancestors || Actual->Declvals != Probe.Declvals ||
           Actual->OriginalInvokes != Probe.OriginalInvokes ||
           Actual->OriginalCallableDeclvals != Probe.OriginalCallableDeclvals ||
-          Actual->OriginalArgumentDeclvals != Probe.OriginalArgumentDeclvals) return false;
+          Actual->OriginalArgumentDeclvals != Probe.OriginalArgumentDeclvals) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Completed = BindCompletedResultAliasSources.find(Probe.Result);
       if (Completed == BindCompletedResultAliasSources.end() ||
           Completed->second.first != Probe.Function ||
-          Completed->second.second != Probe.Result->getTypeSourceInfo()) return false;
+          Completed->second.second != Probe.Result->getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Bound = BindResultProbes.find(Probe.Result);
       if (Bound != BindResultProbes.end()) return Bound->second == Probe.Function;
-      if (BindResultProbes.size() >= 64) return false;
+      if (BindResultProbes.size() >= 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return BindResultProbes.emplace(Probe.Result, Probe.Function).second;
     });
   }
@@ -12802,10 +12803,10 @@ public:
           Probe.Result->getDeclContext() != Probe.Owner ||
           Probe.Owner->getTemplateArgs().size() != 3 ||
           Probe.Owner->getTemplateArgs()[2].getKind() != TemplateArgument::Pack ||
-          BindResultProbes.size() > 64) return false;
+          BindResultProbes.size() > 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       std::vector<QualType> Forwarded;
       for (const auto &Argument : Probe.Owner->getTemplateArgs()[2].pack_elements()) {
-        if (!step() || Argument.getKind() != TemplateArgument::Type) return false;
+        if (!step() || Argument.getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Forwarded.push_back(Argument.getAsType());
       }
       const auto Actual = describeFunctionalBindMemberValueQueryTryCallSignatureSource(
@@ -12816,14 +12817,14 @@ public:
           Actual->Ancestors != Probe.Ancestors || Actual->Declvals != Probe.Declvals ||
           Actual->OriginalInvokes != Probe.OriginalInvokes ||
           Actual->OriginalCallableDeclvals != Probe.OriginalCallableDeclvals ||
-          Actual->OriginalArgumentDeclvals != Probe.OriginalArgumentDeclvals) return false;
+          Actual->OriginalArgumentDeclvals != Probe.OriginalArgumentDeclvals) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Completed = BindCompletedResultAliasSources.find(Probe.Result);
       if (Completed == BindCompletedResultAliasSources.end() ||
           Completed->second.first != Probe.Function ||
-          Completed->second.second != Probe.Result->getTypeSourceInfo()) return false;
+          Completed->second.second != Probe.Result->getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Bound = BindResultProbes.find(Probe.Result);
       if (Bound != BindResultProbes.end()) return Bound->second == Probe.Function;
-      if (BindResultProbes.size() >= 64) return false;
+      if (BindResultProbes.size() >= 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return BindResultProbes.emplace(Probe.Result, Probe.Function).second;
     });
   }
@@ -12836,7 +12837,7 @@ public:
     if (!Sentinel || Index != 1) return TraverseTemplateArgument(Argument);
     const auto Arguments = Type->template_arguments();
     if (Arguments.size() != 2 || Argument.getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Argument.getAsType(), Arguments[1].getAsType())) return false;
+        !Context.hasSameType(Argument.getAsType(), Arguments[1].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Saved = BindResultComparisonRecord;
     BindResultComparisonRecord = Sentinel;
     auto Restore = llvm::make_scope_exit([&] { BindResultComparisonRecord = Saved; });
@@ -12859,12 +12860,12 @@ public:
     for (unsigned Slot : Occurrence->OwnedPath) {
       if (!withBindSourceChild([&] {
             if (Current->OwnedRoot != Root->SourceCall || Current->OwnedPath != Path ||
-                Slot >= Current->Arguments.size() || !Current->Arguments[Slot].Nested) return false;
+                Slot >= Current->Arguments.size() || !Current->Arguments[Slot].Nested) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
             // Only real ancestor storage of this exact owned occurrence may
             // supply an alternative retained projection. No unrelated tuple
             // or shared SDK range joins the graph's physical record set.
             if (Current->Storage.Arguments.Record->getCanonicalDecl() == Tuple->getCanonicalDecl()) {
-              if (Result) return false;
+              if (Result) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
               Result = Current->Storage.Arguments;
             }
             const auto &Child = *Current->Arguments[Slot].Nested;
@@ -12873,7 +12874,7 @@ public:
                 Child.Slot != Slot || Child.Path != Path || Child.Invocation.OwnedPath != Path ||
                 Child.Invocation.OwnedRoot != Root->SourceCall ||
                 Child.Get != Current->Arguments[Slot].Get || Child.Unwrap != Current->Arguments[Slot].Unwrap)
-              return false;
+              return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
             Current = &Child.Invocation;
             return true;
           })) return std::nullopt;
@@ -12890,9 +12891,9 @@ public:
     return withBindSourceChild([&] {
       if (!Source || !Complete || BindNestedReturnSource || !BindNestedReturnLocations.empty() ||
           !BindCallMetadata || Parent.SourceCall != BindCallMetadata->SourceCall ||
-          Parent.Storage.Record != BindMetadata->Record) return false;
+          Parent.Storage.Record != BindMetadata->Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Fresh = freshBindCallOccurrence(S, SM, Parent, Context);
-      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
+      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &Child = *Fresh->Arguments[Slot].Nested;
       if (Child.Root != Given.Root || Child.Parent != Given.Parent || Child.Slot != Given.Slot ||
           Child.Path != Given.Path || Child.Get != Given.Get || Child.Unwrap != Given.Unwrap ||
@@ -12900,7 +12901,7 @@ public:
           Child.Indices != Given.Indices || Child.IncomingGets != Given.IncomingGets ||
           Child.IncomingForwards != Given.IncomingForwards ||
           Child.Invocation.SourceCall != Given.Invocation.SourceCall || Child.Invocation.Method != Given.Invocation.Method)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       std::vector<TypeLoc> Locations;
       for (const auto *Call : {Child.Unwrap, Child.Expand}) {
         const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -12909,7 +12910,7 @@ public:
         const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
         if (!Function || !family(Function) || !Return ||
             !Context.hasSameType(Function->getReturnType(), Child.ResultType) ||
-            !Context.hasSameType(Return.getType(), Child.ResultType)) return false;
+            !Context.hasSameType(Return.getType(), Child.ResultType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Locations.push_back(Return);
       }
       BindNestedReturnLocations = std::move(Locations);
@@ -12928,16 +12929,16 @@ public:
     return withBindSourceChild([&] {
       if (!Proof || !ResultSource || BindNestedCallResultSource || BindNestedExpansionSource || !BindNestedReturnSource ||
           !BindCallMetadata || Parent.SourceCall != BindCallMetadata->SourceCall ||
-          Parent.Storage.Record != BindMetadata->Record) return false;
+          Parent.Storage.Record != BindMetadata->Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Fresh = freshBindCallOccurrence(S, SM, Parent, Context);
-      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return false;
+      if (!Fresh || Slot >= Fresh->Arguments.size() || !Fresh->Arguments[Slot].Nested) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &Child = *Fresh->Arguments[Slot].Nested;
       if (Child.Root != Given.Root || Child.Parent != Given.Parent || Child.Slot != Given.Slot ||
           Child.Path != Given.Path || Child.Get != Given.Get || Child.Unwrap != Given.Unwrap ||
           Child.Expand != Given.Expand || Child.IndexAlias != Given.IndexAlias || Child.Indices != Given.Indices ||
           Child.IncomingGets != Given.IncomingGets || Child.IncomingForwards != Given.IncomingForwards ||
           Child.Invocation.SourceCall != Given.Invocation.SourceCall || Child.Invocation.Method != Given.Invocation.Method)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Construction = Child.Indices;
       const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
       const auto *Record = Constructor ? dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()) : nullptr;
@@ -12955,17 +12956,17 @@ public:
           Reference->getDecl() != Child.Invocation.Method || Reference->hasExplicitTemplateArgs() ||
           !Context.hasSameType(Pointer->getPointeeType(), Child.Invocation.Method->getType()) ||
           !Context.hasSameType(Reference->getType(), Child.Invocation.Method->getType()) ||
-          !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__functional/bind.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       std::vector<const CXXRecordDecl *> Inserted;
       for (const auto *Declaration : {static_cast<const CXXRecordDecl *>(Record), Pattern}) {
-        if (!step()) return false;
+        if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto *Canonical = Declaration->getCanonicalDecl();
         if (BindMetadataRecords.insert(Canonical).second) Inserted.push_back(Canonical);
       }
       auto RestoreRecords = llvm::make_scope_exit([&] {
         for (const auto *Declaration : Inserted) BindMetadataRecords.erase(Declaration);
       });
-      if (!bindFunctionalBindSpecialMember(Constructor, true)) return false;
+      if (!bindFunctionalBindSpecialMember(Constructor, true)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindNestedExpansionSource = &Child;
       BindNestedCallResultSource = ResultSource;
       auto RestoreChild = llvm::make_scope_exit([&] {
@@ -12978,7 +12979,7 @@ public:
 
   bool bindFunctionalBindRetainedTupleSource(
       std::function<std::optional<UtilityTupleRecord>(const TemplateUseSource &, const CXXRecordDecl *, unsigned, const TypeAliasDecl *)> Source) {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Source || BindRetainedOwnedTupleSource) return false;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Source || BindRetainedOwnedTupleSource) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindRetainedOwnedTupleSource = std::move(Source);
     return true;
   }
@@ -12986,7 +12987,7 @@ public:
   bool withBindRetainedTupleProjectionSource(const TemplateUseSource &Use,
       unsigned Index, const TemplateArgumentLoc &Argument,
       const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !BindScalarConstraintSource || BindTupleElementProjections.empty() ||
         !Use.Template || !Use.Template->getIdentifier() ||
@@ -13019,7 +13020,7 @@ public:
     const auto &Arguments = Root->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Integral ||
         Arguments[0].getAsIntegral().isNegative() || Arguments[1].getKind() != TemplateArgument::Type)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Object = Arguments[1].getAsType();
     const auto *TupleRecord = Object.isNull() ? nullptr : Object->getAsCXXRecordDecl();
     if (TupleRecord && TupleRecord->getCanonicalDecl() == BindMetadata->Arguments.Record->getCanonicalDecl())
@@ -13045,7 +13046,7 @@ public:
           !Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType()) ||
           Object.hasQualifiers() || !TupleRecord || BindRetainedTupleProjections.size() == 64 ||
           !cstddefOrigin(S, SM, Info->getTypeLoc().getBeginLoc(), "libcxx", "__functional/bind.h") ||
-          !cstddefOrigin(S, SM, Info->getTypeLoc().getEndLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, Info->getTypeLoc().getEndLoc(), "libcxx", "__functional/bind.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       auto Storage = approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
       bool OwnedAncestor = false;
       if (!Storage) {
@@ -13060,7 +13061,7 @@ public:
       }
       if (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
           Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Slot = unsigned(Arguments[0].getAsIntegral().getZExtValue());
       auto Scalar = [&](QualType Value) {
         return !Value.isNull() && !Value->isReferenceType() && !Value.isVolatileQualified() &&
@@ -13077,15 +13078,15 @@ public:
       const bool MemberReceiver = (OwnedAncestor || OwnedWitness) &&
           bindMemberRetainedReferentSource(Selected);
       if ((!Scalar(Selected) && !Placeholder && !Wrapper && !Nested && !MemberReceiver) ||
-          !Context.hasSameUnqualifiedType(Selected, Info->getType())) return false;
+          !Context.hasSameUnqualifiedType(Selected, Info->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Element : Storage->Elements) {
         if ((OwnedAncestor || OwnedWitness) && Element.EmptyBase) {
           const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
           if (!Placeholder || Placeholder->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
-            return false;
+            return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           continue;
         }
-        if (!Element.Field || Element.EmptyBase) return false;
+        if (!Element.Field || Element.EmptyBase) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (Scalar(Element.getType())) continue;
         if ((OwnedAncestor || OwnedWitness) && bindMemberRetainedReferentSource(Element.getType()))
           continue; // Exact current member owner metadata; no physical or lifetime permission.
@@ -13100,16 +13101,16 @@ public:
             ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
             : std::nullopt;
         if (!Nested || !Context.hasSameUnqualifiedType(Element.getType(), Context.getRecordType(Nested->Record)))
-          return false;
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       const auto Projection = bindTupleElementProjectionFromType(ProjectionType, *Storage, Slot);
-      if (!Projection) return false;
+      if (!Projection) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       bool BoundParameters = false;
       for (const auto &Current : BindTupleElementProjections)
         BoundParameters |= Projection->Partial == Current.Partial && Projection->Builtin == Current.Builtin &&
             Projection->Index == Current.Index && Projection->Types == Current.Types &&
             Projection->Original == Current.Original;
-      if (!BoundParameters) return false;
+      if (!BoundParameters) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Active : BindRetainedTupleProjections)
         if (Active.Projection.Actual == Projection->Actual && Active.Projection.Owner == Projection->Owner &&
             Active.Projection.Slot == Slot &&
@@ -13129,7 +13130,7 @@ public:
       });
       // Close the retained alias/partial/assertion against its own tuple.
       // The original written operand still traverses with all ordinary checks.
-      if (!TraverseBindTupleElementProjectionSource(Active.Projection)) return false;
+      if (!TraverseBindTupleElementProjectionSource(Active.Projection)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Active.Complete = true;
       return Proof() && !Failed;
     });
@@ -13164,9 +13165,9 @@ public:
       const std::function<bool()> &Proof,
       const FunctionalBindCallSource *RetainedMetadata = nullptr,
       const FunctionalBindArgumentSource *RetainedForward = nullptr) {
-    if (!Proof) return false;
+    if (!Proof) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const bool ForwardProjection = RetainedMetadata && RetainedForward;
-    if (RetainedForward && !ForwardProjection) return false;
+    if (RetainedForward && !ForwardProjection) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         BindTupleElementProjections.empty() || Use.Kind != TemplateSourceKind::Function ||
         !Use.Template || !Use.Template->getIdentifier())
@@ -13183,11 +13184,11 @@ public:
         !Selected || Selected->size() != (ForwardProjection ? 1U : 3U) || !Use.Canonical || !Use.Sugared ||
         Use.Canonical->size() != Selected->size() || Use.Sugared->size() != Selected->size() ||
         !cstddefOrigin(S, SM, Use.Location, "libcxx", "__functional/bind.h") ||
-        !family(Function) || !family(Primary)) return false;
+        !family(Function) || !family(Primary)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < Selected->size(); ++I)
       if (!Use.Canonical->get(I).structurallyEquals(Selected->get(I)) ||
           !Use.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Use.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Use.Sugared->get(I)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Input = Use.Sugared->get(0);
     if (Input.getKind() != TemplateArgument::Type) return Proof();
     const auto InputPlaceholder = describeFunctionalBindPlaceholderIdentity(S, SM, Input.getAsType(), Context);
@@ -13215,7 +13216,7 @@ public:
     std::optional<FunctionalBindMemberCommonCallSource> RetainedMemberOccurrence;
     if (RetainedMetadata) {
       if ((!BindStandardCall && !BindMemberCall && !CurrentExplicitForward) || !RetainedMetadata->SourceCall ||
-          !RetainedMetadata->CallArguments || !BindCallMetadata->CallArguments) return false;
+          !RetainedMetadata->CallArguments || !BindCallMetadata->CallArguments) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const FunctionalBindCallSource *Fresh = nullptr;
       if (CurrentExplicitForward) {
         CurrentOccurrence = describeFunctionalBindCallSourceOccurrence(S, SM, *RetainedMetadata, Context);
@@ -13227,12 +13228,12 @@ public:
         Fresh = RetainedOccurrence ? &RetainedOccurrence->Selected : nullptr;
       } else {
         if (!BindMemberFactory || !bindMemberRetainedReferentSource(
-                Context.getRecordType(BindMemberFactory->Storage.Owner))) return false;
+                Context.getRecordType(BindMemberFactory->Storage.Owner))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         RetainedMemberOccurrence = describeFunctionalBindMemberCommonCallSource(
             S, SM, RetainedMetadata->SourceCall, Context);
         Fresh = RetainedMemberOccurrence ? &RetainedMemberOccurrence->Selected : nullptr;
         if (!Fresh || !Context.hasSameType(Fresh->Storage.CallableType, BindMetadata->CallableType) ||
-            Fresh->CallForwards != RetainedMetadata->CallForwards) return false;
+            Fresh->CallForwards != RetainedMetadata->CallForwards) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       if (!Fresh || Fresh->SourceCall != RetainedMetadata->SourceCall ||
           ((CurrentExplicitForward || RetainedExplicitOwner)
@@ -13245,7 +13246,7 @@ public:
           Fresh->Apply != RetainedMetadata->Apply || Fresh->Invoke != RetainedMetadata->Invoke ||
           Fresh->Target != RetainedMetadata->Target || Fresh->Storage.Record != RetainedMetadata->Storage.Record ||
           Fresh->CallArguments != RetainedMetadata->CallArguments)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // Only this alias/partial/assertion scope uses the actual __mu owner.
       // The graph's bind record and selected SDK operation remain unchanged.
       ProjectionCall = Fresh;
@@ -13256,7 +13257,7 @@ public:
           !RetainedForward->Unwrap || !RetainedForward->PlaceholderForward ||
           !RetainedForward->PlaceholderGet || !RetainedForward->PlaceholderIndex ||
           Function->getBuiltinID() != Builtin::BIforward || Function->getDefinition() ||
-          !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "__utility/forward.h")) return false;
+          !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "__utility/forward.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Argument : ProjectionCall->Arguments) {
         if (Argument.Unwrap != RetainedForward->Unwrap ||
             Argument.PlaceholderForward != RetainedForward->PlaceholderForward ||
@@ -13269,7 +13270,7 @@ public:
         const auto *Callee = dyn_cast<DeclRefExpr>(Argument.PlaceholderForward->getCallee()->IgnoreParenImpCasts());
         const auto *Info = Callee && Callee->hasExplicitTemplateArgs() && Callee->getNumTemplateArgs() == 1
             ? Callee->template_arguments()[0].getTypeSourceInfo() : nullptr;
-        if (!Info) return false;
+        if (!Info) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (Info->getType() != Input.getAsType()) {
           // Sema can rebuild the elaborated spelling around the same retained
           // tuple_element::type declaration. That exact declaration, together
@@ -13296,7 +13297,7 @@ public:
               !InputAlias->getIdentifier() || InputAlias->getName() != "type" ||
               !Owner || !Owner->getIdentifier() || Owner->getName() != "tuple_element" ||
               !cstddefOrigin(S, SM, InputAlias->getLocation(), "libcxx", "__tuple/sfinae_helpers.h") ||
-              !Context.hasSameType(Info->getType(), Input.getAsType())) return false;
+              !Context.hasSameType(Info->getType(), Input.getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
         ActualUnwrap = true;
       }
@@ -13314,7 +13315,7 @@ public:
     // retained projection, completed source, value or runtime permission.
     if (!ActualUnwrap) return Proof();
     if (!ProjectionCall->SourceCall ||
-        (!ProjectionCall->OwnedRoot || !S.owns(SM, ProjectionCall->OwnedRoot->getExprLoc()))) return false;
+        (!ProjectionCall->OwnedRoot || !S.owns(SM, ProjectionCall->OwnedRoot->getExprLoc()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     QualType ProjectionType = Input.getAsType();
     const TypeAliasDecl *RootAlias = nullptr;
     for (unsigned Depth = 0; !ProjectionType.isNull() && Depth < 64; ++Depth) {
@@ -13335,27 +13336,27 @@ public:
     const auto &Arguments = Root->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Integral ||
         Arguments[0].getAsIntegral().isNegative() || Arguments[1].getKind() != TemplateArgument::Type)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Object = Arguments[1].getAsType();
     const auto *TupleRecord = Object.isNull() ? nullptr : Object->getAsCXXRecordDecl();
     if (ForwardProjection && (!ProjectionCall->CallArguments ||
         !Context.hasSameType(Object, ProjectionCall->CallArguments->getType()) ||
         Arguments[0].getAsIntegral().getLimitedValue(3) != RetainedForward->PlaceholderRank - 1))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (TupleRecord && TupleRecord->getCanonicalDecl() == BindMetadata->Arguments.Record->getCanonicalDecl())
       return Proof();
     return withBindSourceChild([&] {
       const auto *Info = RootAlias->getTypeSourceInfo();
-      if (!Info) return false;
-      if (!family(RootAlias)) return false;
-      if (!family(Root)) return false;
-      if (Root->getSpecializationKind() != TSK_ImplicitInstantiation) return false;
+      if (!Info) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!family(RootAlias)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!family(Root)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (Root->getSpecializationKind() != TSK_ImplicitInstantiation) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!(RetainedMetadata ? Context.hasSameUnqualifiedType(Info->getType(), Input.getAsType())
-                             : Context.hasSameType(Info->getType(), Input.getAsType()))) return false;
-      if (!Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType())) return false;
-      if (Object.hasQualifiers()) return false;
-      if (!TupleRecord) return false;
-      if (BindRetainedTupleProjections.size() == 64) return false;
+                             : Context.hasSameType(Info->getType(), Input.getAsType()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!Context.hasSameType(Arguments[0].getIntegralType(), Context.getSizeType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (Object.hasQualifiers()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!TupleRecord) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (BindRetainedTupleProjections.size() == 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       auto Storage = ForwardProjection
           ? approvedUtilityReferenceTupleRecord(S, SM, TupleRecord, Context)
           : approvedUtilityTupleRecord(S, SM, TupleRecord, Context);
@@ -13372,7 +13373,7 @@ public:
       }
       if (!Storage || Storage->Elements.empty() || Storage->Elements.size() > 64 ||
           Arguments[0].getAsIntegral().getLimitedValue(Storage->Elements.size()) >= Storage->Elements.size())
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Slot = unsigned(Arguments[0].getAsIntegral().getZExtValue());
       auto Scalar = [&](QualType Value) {
         if (ForwardProjection && !Value.isNull() && Value->isReferenceType())
@@ -13387,15 +13388,15 @@ public:
           : std::nullopt;
       if ((!Scalar(Storage->Elements[Slot].getType()) &&
            (!ProjectedPlaceholder || ProjectedPlaceholder->Rank != InputPlaceholder->Rank)) ||
-          !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Input.getAsType())) return false;
+          !Context.hasSameUnqualifiedType(Storage->Elements[Slot].getType(), Input.getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Element : Storage->Elements) {
         if ((OwnedAncestor || OwnedWitness) && Element.EmptyBase) {
           const auto Placeholder = describeFunctionalBindPlaceholderIdentity(S, SM, Element.getType(), Context);
           if (!Placeholder || Placeholder->Record->getCanonicalDecl() != Element.EmptyBase->getCanonicalDecl())
-            return false;
+            return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           continue;
         }
-        if (!Element.Field || Element.EmptyBase) return false;
+        if (!Element.Field || Element.EmptyBase) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (Scalar(Element.getType())) continue;
         if ((OwnedAncestor || OwnedWitness) && bindMemberRetainedReferentSource(Element.getType()))
           continue; // Exact current member owner metadata; no physical or lifetime permission.
@@ -13410,16 +13411,16 @@ public:
             ? describeFunctionalBindStorage(S, SM, Element.getType()->getAsCXXRecordDecl(), Context)
             : std::nullopt;
         if (!Nested || !Context.hasSameUnqualifiedType(Element.getType(), Context.getRecordType(Nested->Record)))
-          return false;
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       const auto Projection = bindTupleElementProjectionFromType(ProjectionType, *Storage, Slot);
-      if (!Projection) return false;
+      if (!Projection) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       bool BoundParameters = false;
       for (const auto &Current : BindTupleElementProjections)
         BoundParameters |= Projection->Partial == Current.Partial && Projection->Builtin == Current.Builtin &&
             Projection->Index == Current.Index && Projection->Types == Current.Types &&
             Projection->Original == Current.Original;
-      if (!BoundParameters) return false;
+      if (!BoundParameters) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Active : BindRetainedTupleProjections)
         if (Active.Projection.Actual == Projection->Actual && Active.Projection.Owner == Projection->Owner &&
             Active.Projection.Slot == Slot &&
@@ -13439,7 +13440,7 @@ public:
         Types.clear(); Types.swap(SavedTypes);
         Expressions.clear(); Expressions.swap(SavedExpressions);
       });
-      if (!TraverseBindTupleElementProjectionSource(Active.Projection)) return false;
+      if (!TraverseBindTupleElementProjectionSource(Active.Projection)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Active.Complete = true;
       return Proof() && !Failed;
     });
@@ -13447,7 +13448,7 @@ public:
 
   bool withBindRetainedTupleProjectionSources(const TemplateUseSource &Use,
       const std::function<bool()> &Proof) {
-    if (!Proof) return false;
+    if (!Proof) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (!Use.Written || Use.Written->getNumTemplateArgs() != 1) return Proof();
     return withBindRetainedTupleProjectionSource(Use, 0, Use.Written->arguments()[0], Proof);
   }
@@ -13455,7 +13456,7 @@ public:
       unsigned Index, const TemplateArgument &Argument) {
     const auto *Type = Use.Kind == TemplateSourceKind::Type
         ? dyn_cast_or_null<TemplateSpecializationType>(Use.Type) : nullptr;
-    if (Type && Use.Template != Type->getTemplateName().getAsTemplateDecl()) return false;
+    if (Type && Use.Template != Type->getTemplateName().getAsTemplateDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return TraverseBindResultArgument(Type, Index, Argument);
   }
   bool TraverseBindResultSourceWrittenArgument(const TemplateUseSource &Use,
@@ -13478,7 +13479,7 @@ public:
         !Argument.getTypeSourceInfo() ||
         Use.Written->arguments()[1].getTypeSourceInfo() != Argument.getTypeSourceInfo() ||
         !Context.hasSameType(Argument.getArgument().getAsType(),
-                            Type->template_arguments()[1].getAsType())) return false;
+                            Type->template_arguments()[1].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Saved = BindResultComparisonRecord;
     BindResultComparisonRecord = Sentinel;
     auto Restore = llvm::make_scope_exit([&] { BindResultComparisonRecord = Saved; });
@@ -13488,13 +13489,13 @@ public:
       const FunctionalBindMemberInvokeSignatureSource &Description,
       const std::function<bool()> &Proof) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindMemberCall ||
-        BindMemberInvokeSignature || !Proof || !step()) return false;
+        BindMemberInvokeSignature || !Proof || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Fresh = freshFunctionalBindMemberCallSource(
         S, SM, BindMemberCall->Selected.SourceCall, *BindMemberCall, Context);
     const auto Actual = Fresh ? describeFunctionalBindMemberInvokeSignatureSource(
         S, SM, Description.Function, *Fresh, Context) : std::nullopt;
     if (!Actual || !sameFunctionalBindMemberInvokeSignature(*Actual, Description) ||
-        Fresh->Selected.Storage.Record != BindMetadata->Record) return false;
+        Fresh->Selected.Storage.Record != BindMetadata->Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindMemberInvokeSignature = &Description;
     auto Restore = llvm::make_scope_exit([&] { BindMemberInvokeSignature = nullptr; });
     return Proof() && !Failed;
@@ -13504,20 +13505,20 @@ public:
       const FunctionalBindMemberInvokeSignatureSource &Description,
       const std::function<bool()> &Proof) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindMemberCall ||
-        BindMemberInvokeSignature || !Proof || !step()) return false;
+        BindMemberInvokeSignature || !Proof || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Fresh = freshFunctionalBindMemberCallSource(
         S, SM, BindMemberCall->Selected.SourceCall, *BindMemberCall, Context);
     const auto Actual = Fresh ? describeFunctionalBindMemberValueQueryInvokeSignatureSource(
         S, SM, Description.Function, *Fresh, Context) : std::nullopt;
     if (!Actual || !sameFunctionalBindMemberInvokeSignature(*Actual, Description) ||
-        Fresh->Selected.Storage.Record != BindMetadata->Record) return false;
+        Fresh->Selected.Storage.Record != BindMetadata->Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindMemberInvokeSignature = &Description;
     auto Restore = llvm::make_scope_exit([&] { BindMemberInvokeSignature = nullptr; });
     return Proof() && !Failed;
   }
   bool TraverseBindMemberInvokeSignature(const FunctionalBindMemberInvokeSignatureSource &Description) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindMemberCall ||
-        BindMemberInvokeSignature != &Description || !step()) return false;
+        BindMemberInvokeSignature != &Description || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Function = Description.Function;
     const auto *Primary = Description.Primary;
     const auto *Template = Function ? Function->getPrimaryTemplate() : nullptr;
@@ -13530,23 +13531,23 @@ public:
         !family(Description.Constraint) || !family(Description.ConstraintAlias) ||
         !Function->getTypeSourceInfo() || !Primary->getTypeSourceInfo() ||
         Pattern->getExceptionSpecType() != EST_DependentNoexcept ||
-        Pattern->getNoexceptExpr() != Description.PrimaryException) return false;
+        Pattern->getNoexceptExpr() != Description.PrimaryException) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Prototype->getExceptionSpecType() == EST_Uninstantiated) {
       const auto *Origin = Prototype->getExceptionSpecTemplate();
       const auto *Owner = Prototype->getExceptionSpecDecl();
       if (!Origin || !Owner || Origin->getCanonicalDecl() != Primary->getCanonicalDecl() ||
-          Owner->getCanonicalDecl() != Function->getCanonicalDecl() || Description.ActualException) return false;
+          Owner->getCanonicalDecl() != Function->getCanonicalDecl() || Description.ActualException) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else if ((Prototype->getExceptionSpecType() != EST_NoexceptTrue &&
                 Prototype->getExceptionSpecType() != EST_NoexceptFalse) ||
-               !Prototype->getNoexceptExpr() || !Description.ActualException) return false;
+               !Prototype->getNoexceptExpr() || !Description.ActualException) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return withBindTemplateParameters(Template, Parameters, [&] {
-      if (!TraverseTypeLoc(Description.ConstraintDefault->getTypeLoc())) return false;
+      if (!TraverseTypeLoc(Description.ConstraintDefault->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Declaration : {Primary, Function}) {
         for (const auto *Parameter : Declaration->parameters())
           if (!step() || !family(Parameter) || Parameter->hasDefaultArg() ||
               !Parameter->getTypeSourceInfo() ||
-              !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
-        if (!TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+              !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+        if (!TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       return TraverseStmt(const_cast<Expr *>(Pattern->getNoexceptExpr())) &&
           (!Prototype->getNoexceptExpr() ||
@@ -13555,15 +13556,15 @@ public:
   }
 
   bool TraverseBindInvokeSignature(const FunctionalBindInvokeSignatureSource &Description) {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step()) return false;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Function = Description.Function;
     const auto *Primary = Description.Primary;
     const auto *Selected = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!Function || !Primary || !Selected || Selected->size() != 2 ||
-        Selected->get(1).getKind() != TemplateArgument::Pack) return false;
+        Selected->get(1).getKind() != TemplateArgument::Pack) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<QualType> Forwarded;
     for (const auto &Argument : Selected->get(1).pack_elements()) {
-      if (!step() || Argument.getKind() != TemplateArgument::Type) return false;
+      if (!step() || Argument.getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Forwarded.push_back(Argument.getAsType());
     }
     const auto Actual = Description.Nested
@@ -13581,41 +13582,41 @@ public:
         Actual->Declvals != Description.Declvals ||
         Actual->SpecializedDeclvals != Description.SpecializedDeclvals ||
         !family(Function) || !family(Primary) || !Function->getTypeSourceInfo() ||
-        !Primary->getTypeSourceInfo()) return false;
+        !Primary->getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Pattern = Primary->getType()->getAs<FunctionProtoType>();
     const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
     if (!Pattern || !Prototype || Pattern->getExceptionSpecType() != EST_DependentNoexcept ||
-        Pattern->getNoexceptExpr() != Description.PrimaryException) return false;
+        Pattern->getNoexceptExpr() != Description.PrimaryException) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Prototype->getExceptionSpecType() == EST_Uninstantiated) {
       const auto *Origin = Prototype->getExceptionSpecTemplate();
       const auto *Owner = Prototype->getExceptionSpecDecl();
       if (!Origin || !Owner || Origin->getCanonicalDecl() != Primary->getCanonicalDecl() ||
           Owner->getCanonicalDecl() != Function->getCanonicalDecl() ||
-          Description.ActualException) return false;
+          Description.ActualException) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else {
       if (Prototype->getExceptionSpecType() != EST_NoexceptTrue &&
-          Prototype->getExceptionSpecType() != EST_NoexceptFalse) return false;
-      if (!Prototype->getNoexceptExpr()) return false;
-      if (!Description.ActualException) return false;
+          Prototype->getExceptionSpecType() != EST_NoexceptFalse) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!Prototype->getNoexceptExpr()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!Description.ActualException) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     for (const auto *Declaration : {Primary, Function}) {
       for (const auto *Parameter : Declaration->parameters())
         if (!step() || !family(Parameter) || Parameter->hasDefaultArg() ||
             !Parameter->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return false;
-      if (!TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     // The primary exception is always an independent original source root.
     // An uninstantiated concrete exception supplies no runtime body certificate.
     if (!TraverseStmt(const_cast<Expr *>(Pattern->getNoexceptExpr())) ||
         (Prototype->getNoexceptExpr() &&
-         !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr())))) return false;
+         !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr())))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return !Failed;
   }
   bool bindFunctionalBindCallPhysicalMetadata(const FunctionalBindCallSource &Call) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !Call.SourceCall || Call.SourceCall != BindCallMetadata->SourceCall ||
-        Call.Storage.Record != BindMetadata->Record) return false;
+        Call.Storage.Record != BindMetadata->Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Storage.Record != BindMetadata->Record ||
         Actual->Method != Call.Method || Actual->Method != BindCallMetadata->Method ||
@@ -13623,31 +13624,31 @@ public:
         Actual->CallArguments != BindCallMetadata->CallArguments ||
         Actual->CallForwards != Call.CallForwards ||
         Actual->CallForwards != BindCallMetadata->CallForwards ||
-        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return false;
+        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Input = approvedUtilityReferenceTupleRecord(
         S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
     const auto Construction = freshBindCallTupleConstructionSource(S, SM, *Actual, Context);
     if (!Input || !Construction || Construction->Tuple != Actual->CallArguments ||
         Input->Elements.size() != Actual->CallForwards.size() ||
-        Construction->Leaves.size() != Input->Elements.size()) return false;
+        Construction->Leaves.size() != Input->Elements.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto &Element : Input->Elements)
       if (!Element.Field || Element.EmptyBase || !Element.getType()->isReferenceType() ||
           (!Element.getType().getNonReferenceType()->isScalarType() &&
            !(BindMemberCall && bindMemberOwnerRecordSource(
-               Element.getType().getNonReferenceType()->getAsCXXRecordDecl())))) return false;
+               Element.getType().getNonReferenceType()->getAsCXXRecordDecl())))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Only the exact independently described incoming reference tuple owns these
     // physical type identities. Selected operations close in separate source proofs.
     std::vector<const CXXRecordDecl *> Records{Input->Record};
     for (std::size_t I = 0; I < Records.size(); ++I) {
       const auto *Record = Records[I];
-      if (!Record || !step() || Records.size() > 64) return false;
+      if (!Record || !step() || Records.size() > 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!BindCallPhysicalRecords.insert(Record->getCanonicalDecl()).second) continue;
       const auto *Definition = Record->getDefinition();
       if (!Definition || Definition->isDependentContext() || Definition->isUnion() ||
-          Definition->isDynamicClass() || Definition->getNumVBases()) return false;
+          Definition->isDynamicClass() || Definition->getNumVBases()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Base : Definition->bases()) {
         const auto *Child = Base.getType()->getAsCXXRecordDecl();
-        if (Base.isVirtual() || !Child) return false;
+        if (Base.isVirtual() || !Child) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Records.push_back(Child);
       }
       for (const auto *Field : Definition->fields())
@@ -13655,7 +13656,7 @@ public:
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record)) {
         const auto *Primary = Instance->getSpecializedTemplate();
-        if (!Primary) return false;
+        if (!Primary) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         BindMetadataRecords.insert(Primary->getTemplatedDecl()->getCanonicalDecl());
       }
     }
@@ -13663,22 +13664,22 @@ public:
   }
   bool TraverseBindCallPhysicalStorageSource() {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
-        BindCallMetadata->CallForwards.empty() || BindCallPhysicalRecords.empty() || !step()) return false;
+        BindCallMetadata->CallForwards.empty() || BindCallPhysicalRecords.empty() || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Record : BindCallPhysicalRecords) {
       const auto *Definition = Record->getDefinition();
-      if (!Definition || !family(Definition)) return false;
+      if (!Definition || !family(Definition)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Base : Definition->bases())
         if (!Base.getTypeSourceInfo() || Base.isVirtual() ||
-            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Field : Definition->fields())
         if (!family(Field) || Field->isBitField() || Field->isMutable() ||
             !Field->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return !Failed;
   }
   bool bindFunctionalBindEmptyTupleDefinitionSource(const CXXRecordDecl *R) {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !R || !step()) return false;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !R || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(R);
     const auto *Definition = R->getDefinition();
     const auto *Written = Instance ? Instance->getTemplateArgsAsWritten() : nullptr;
@@ -13692,25 +13693,25 @@ public:
         Instance->getTemplateArgs().size() != 1 ||
         Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
         Instance->getTemplateArgs()[0].pack_size() || !Written || Written->getNumTemplateArgs())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto Site : {Instance->getLocation(), Definition->getBeginLoc(), Definition->getEndLoc(),
                             Written->getLAngleLoc(), Written->getRAngleLoc()})
-      if (!cstddefOrigin(S, SM, Site, "libcxx", "tuple")) return false;
+      if (!cstddefOrigin(S, SM, Site, "libcxx", "tuple")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Declaration : Instance->redecls())
       if (!step() || !family(Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "tuple")) return false;
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "tuple")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return !Failed;
   }
   bool bindFunctionalBindEmptyStorageTupleDefinitionSource(const CXXRecordDecl *R) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !R ||
-        !BindMetadata->Arguments.Record) return false;
+        !BindMetadata->Arguments.Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const bool RootStorage = BindMetadata->Arguments.Elements.empty() &&
         R->getCanonicalDecl() == BindMetadata->Arguments.Record->getCanonicalDecl();
     // The physical record set comes only from this freshly described bind's
     // actual fields and bases. A nested nullary child owns its empty tuple even
     // when the enclosing bind has stored arguments. No ordinary tuple consumer,
     // constructor or runtime operation receives permission from this identity.
-    if (!RootStorage && !BindPhysicalRecords.count(R->getCanonicalDecl())) return false;
+    if (!RootStorage && !BindPhysicalRecords.count(R->getCanonicalDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return bindFunctionalBindEmptyTupleDefinitionSource(R);
   }
   bool TraverseBindEmptyStorageTupleConstructionSource(
@@ -13720,7 +13721,7 @@ public:
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
           Factory.Storage.Record != BindMetadata->Record || !Factory.SourceCall ||
           !S.owns(SM, Factory.SourceCall->getExprLoc()) ||
-          !BindMetadata->Arguments.Elements.empty()) return false;
+          !BindMetadata->Arguments.Elements.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Actual = freshBindFactorySource(Factory);
       const auto Fresh = Actual
           ? (BindReferenceFactory ? describeFunctionalBindReferenceTupleConstructionSource(S, SM, *Actual, Context) : describeFunctionalBindTupleConstructionSource(S, SM, *Actual, Context)) : std::nullopt;
@@ -13733,7 +13734,7 @@ public:
           !Tuple.Leaves.empty() || !Tuple.Copies.empty() || !Tuple.Initializers.empty() ||
           !Tuple.Forwards.empty() || !Tuple.Assertions.empty() ||
           !bindFunctionalBindEmptyStorageTupleDefinitionSource(BindMetadata->Arguments.Record))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Construction = Tuple.Tuple;
       const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
       const auto *Prototype = Constructor ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
@@ -13753,7 +13754,7 @@ public:
           !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
           Prototype->getNoexceptExpr() || Member == SpecialMembers.end() ||
           !Member->second.Complete || Member->second.Owner != Constructor ||
-          !Member->second.Selections.empty()) return false;
+          !Member->second.Selections.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // Reuse the established empty-call-tuple lifecycle and written-signature
       // protocols, bound here to this exact stored default construction.
       return bindFunctionalBindSpecialMember(Constructor, true) &&
@@ -13762,7 +13763,7 @@ public:
   }
   bool bindFunctionalBindEmptyCallTupleSource(const CXXRecordDecl *R) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
-        !R || !BindCallMetadata->CallArguments || !BindCallMetadata->CallForwards.empty()) return false;
+        !R || !BindCallMetadata->CallArguments || !BindCallMetadata->CallForwards.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Expected = BindCallMetadata->CallArguments->getType()->getAsCXXRecordDecl();
     return Expected && R->getCanonicalDecl() == Expected->getCanonicalDecl() &&
         bindFunctionalBindEmptyTupleDefinitionSource(R);
@@ -13770,22 +13771,22 @@ public:
   bool bindFunctionalBindCallAuxiliaryMetadata(const FunctionalBindCallSource &Call) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !step() || !Call.SourceCall || Call.Storage.Record != BindMetadata->Record ||
-        (BindCallMetadata && BindCallMetadata->SourceCall != Call.SourceCall)) return false;
+        (BindCallMetadata && BindCallMetadata->SourceCall != Call.SourceCall)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Method != Call.Method || Actual->Indices != Call.Indices ||
         Actual->CallArguments != Call.CallArguments ||
         Actual->CallForwards != Call.CallForwards ||
-        Actual->Storage.Record != BindMetadata->Record) return false;
+        Actual->Storage.Record != BindMetadata->Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Empty = Actual->CallArguments->getType()->getAsCXXRecordDecl();
     const auto *Indices = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
         Actual->Indices->getType()->getAsCXXRecordDecl());
-    if (!Empty || !Indices || !Indices->getSpecializedTemplate()) return false;
+    if (!Empty || !Indices || !Indices->getSpecializedTemplate()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindCallMetadata = *Actual;
     if (Actual->CallForwards.empty()) {
-      if (!bindFunctionalBindEmptyCallTupleSource(Empty)) return false;
-    } else if (!bindFunctionalBindCallPhysicalMetadata(*Actual)) return false;
+      if (!bindFunctionalBindEmptyCallTupleSource(Empty)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    } else if (!bindFunctionalBindCallPhysicalMetadata(*Actual)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Record : {Empty, static_cast<const CXXRecordDecl *>(Indices)}) {
-      if (!step() || !family(Record)) return false;
+      if (!step() || !family(Record)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindMetadataRecords.insert(Record->getCanonicalDecl());
     }
     BindMetadataRecords.insert(Indices->getSpecializedTemplate()->getTemplatedDecl()->getCanonicalDecl());
@@ -13793,11 +13794,11 @@ public:
   }
   bool TraverseBindCallAuxiliarySource(const FunctionalBindCallSource &Call) {
     return withBindSourceChild([&] {
-      if (!bindFunctionalBindCallAuxiliaryMetadata(Call)) return false;
+      if (!bindFunctionalBindCallAuxiliaryMetadata(Call)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &Actual = *BindCallMetadata;
       const auto *Empty = Actual.CallArguments->getConstructor();
       const auto *Indices = Actual.Indices->getConstructor();
-      if (!Empty || !Indices) return false;
+      if (!Empty || !Indices) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Actual.CallForwards.empty()) {
         const auto *Prototype = Empty ? Empty->getType()->getAs<FunctionProtoType>() : nullptr;
         const auto Member = Empty ? SpecialMembers.find(Empty->getCanonicalDecl()) : SpecialMembers.end();
@@ -13807,19 +13808,19 @@ public:
             !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
             Prototype->getNoexceptExpr() || Member == SpecialMembers.end() ||
             !Member->second.Complete || Member->second.Owner != Empty ||
-            !Member->second.Selections.empty()) return false;
+            !Member->second.Selections.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       const auto *Definition = BindMetadata->Record->getDefinition();
       const TypedefDecl *IndexAlias = nullptr;
-      if (!Definition || !family(Definition)) return false;
+      if (!Definition || !family(Definition)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Declaration : Definition->decls()) {
-        if (!step()) return false;
+        if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto *Alias = dyn_cast<TypedefDecl>(Declaration);
         if (!Alias || !Alias->getIdentifier() || Alias->getName() != "__indices") continue;
         if (IndexAlias || Alias->getDeclContext() != Definition ||
             Alias->getAccess() != AS_private || !family(Alias) || !Alias->getTypeSourceInfo() ||
             !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/bind.h") ||
-            !Context.hasSameType(Alias->getUnderlyingType(), Actual.Indices->getType())) return false;
+            !Context.hasSameType(Alias->getUnderlyingType(), Actual.Indices->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         IndexAlias = Alias;
       }
       // This written SDK root is mandatory even when the actual construction
@@ -13830,20 +13831,20 @@ public:
           (Actual.CallForwards.empty() &&
            (!bindFunctionalBindSpecialMember(Empty, true) ||
             !TraverseBindConstructorSignature(Empty))) ||
-          !bindFunctionalBindSpecialMember(Indices, true)) return false;
+          !bindFunctionalBindSpecialMember(Indices, true)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return !Failed;
     });
   }
   bool withBindPartialPatternSource(const ClassTemplateSpecializationDecl *Instance,
       const TemplateUseSource &Source, const std::function<bool()> &Proof) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Instance || !Proof ||
-        Failed || !step()) return false;
+        Failed || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Partial = Instance->getSpecializedTemplateOrPartial()
         .dyn_cast<ClassTemplatePartialSpecializationDecl *>();
     const auto *Primary = Instance->getSpecializedTemplate();
     if (!Partial || !Primary || Source.Kind != TemplateSourceKind::PartialPattern ||
         Source.Declaration != Partial || Source.Template != Primary ||
-        Source.Selection != &Instance->getTemplateInstantiationArgs()) return false;
+        Source.Selection != &Instance->getTemplateInstantiationArgs()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (!Primary->getIdentifier() || Primary->getName() != "__make_tuple_types_flat")
       return Proof() && !Failed;
     const auto &Arguments = Instance->getTemplateArgs();
@@ -13863,16 +13864,16 @@ public:
         !Source.Written->arguments()[1].getTypeSourceInfo() ||
         !Original->arguments()[1].getTypeSourceInfo() ||
         !Context.hasSameType(Source.Written->arguments()[1].getArgument().getAsType(), Arguments[1].getAsType()))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < 2; ++I)
       if (!Source.Canonical->get(I).structurallyEquals(Arguments[I]) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Indices = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Arguments[1].getAsType()->getAsCXXRecordDecl());
     if (!Indices || !Indices->getIdentifier() || Indices->getName() != "__tuple_indices" ||
         !family(Indices) || Indices->getSpecializationKind() != TSK_ImplicitInstantiation ||
         Indices->getTemplateArgs().size() != 1 || Indices->getTemplateArgs()[0].getKind() != TemplateArgument::Pack)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Only the actual empty-index slice observed in the authenticated packet
     // needs this split-token role. Other slices retain ordinary location rules.
     if (Indices->getTemplateArgs()[0].pack_size()) return Proof() && !Failed;
@@ -13893,7 +13894,7 @@ public:
         Instance->getSpecializationKind() != TSK_Undeclared || Instance->getDefinition() ||
         Source.Kind != TemplateSourceKind::Type || !SourceType || !Source.Written ||
         Source.Declaration || Source.Instantiation || Source.Selection ||
-        !Source.FunctionalBindConstraint || !Source.Defaults.empty()) return false;
+        !Source.FunctionalBindConstraint || !Source.Defaults.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Primary = Instance->getSpecializedTemplate();
     const auto *Parameters = Primary ? Primary->getTemplateParameters() : nullptr;
     const auto *Parameter = Parameters && Parameters->size() == 1
@@ -13916,15 +13917,15 @@ public:
         OwnerParameter->hasDefaultArgument() || !OwnerParameter->getTypeSourceInfo() ||
         !Context.hasSameType(OwnerParameter->getType(), Context.BoolTy) ||
         !BindConstraintBase || &*Owner->bases_begin() != BindConstraintBase ||
-        BindConstraintBase->isVirtual() || !BindConstraintBase->getTypeSourceInfo()) return false;
+        BindConstraintBase->isVirtual() || !BindConstraintBase->getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const Decl *Declarations[] = {Instance, Primary, Parameter, Owner, OwnerPrimary, OwnerParameter};
     for (const auto *Declaration : Declarations)
       if (!family(Declaration) || !cstddefOrigin(S, SM, Declaration->getLocation(),
-              "libcxx", "__type_traits/conjunction.h")) return false;
+              "libcxx", "__type_traits/conjunction.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Location = BindConstraintBase->getTypeSourceInfo()->getTypeLoc();
     if (const auto Elaborated = Location.getAs<ElaboratedTypeLoc>()) {
       if (Elaborated.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None ||
-          Elaborated.getQualifierLoc()) return false;
+          Elaborated.getQualifierLoc()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Location = Elaborated.getNamedTypeLoc();
     }
     const auto Comparison = Location.getAs<TemplateSpecializationTypeLoc>();
@@ -13935,10 +13936,10 @@ public:
         !Alias || !Alias->getIdentifier() || Alias->getName() != "_IsSame" || !family(Alias) ||
         !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__type_traits/is_same.h") ||
         !cstddefOrigin(S, SM, Comparison.getTemplateNameLoc(), "libcxx", "__type_traits/conjunction.h") ||
-        !cstddefOrigin(S, SM, Source.Location, "libcxx", "__type_traits/conjunction.h")) return false;
+        !cstddefOrigin(S, SM, Source.Location, "libcxx", "__type_traits/conjunction.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &OwnerArguments = Owner->getTemplateArgs();
     if (OwnerArguments.size() != 1 || OwnerArguments[0].getKind() != TemplateArgument::Pack ||
-        OwnerArguments[0].pack_size() > 64) return false;
+        OwnerArguments[0].pack_size() > 64) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto OwnerPack = OwnerArguments[0].pack_elements();
     bool Matches = false;
     for (unsigned I = 0; I < 2; ++I) {
@@ -13951,7 +13952,7 @@ public:
           Record->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
           Record->getTemplateArgs()[0].pack_size() != OwnerPack.size() ||
           !cstddefOrigin(S, SM, Info->getTypeLoc().getBeginLoc(), "libcxx", "__type_traits/conjunction.h") ||
-          !cstddefOrigin(S, SM, Info->getTypeLoc().getEndLoc(), "libcxx", "__type_traits/conjunction.h")) return false;
+          !cstddefOrigin(S, SM, Info->getTypeLoc().getEndLoc(), "libcxx", "__type_traits/conjunction.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Pack = Record->getTemplateArgs()[0].pack_elements();
       for (unsigned J = 0; J < Pack.size(); ++J)
         if (OwnerPack[J].getKind() != TemplateArgument::Integral ||
@@ -13959,7 +13960,7 @@ public:
             Pack[J].getKind() != TemplateArgument::Integral ||
             !Context.hasSameType(Pack[J].getIntegralType(), Context.BoolTy) ||
             (I ? Pack[J].getAsIntegral().isZero()
-               : !Pack[J].structurallyEquals(OwnerPack[J]))) return false;
+               : !Pack[J].structurallyEquals(OwnerPack[J]))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Matches |= SourceType == Type && Record->getCanonicalDecl() == Instance->getCanonicalDecl();
     }
     // Match only a real __all base comparison operand. Record identity
@@ -13987,14 +13988,14 @@ public:
           !cstddefOrigin(S, SM, Sentinel->getLocation(), "libcxx", "__functional/weak_result_type.h") ||
           !cstddefOrigin(S, SM, Original->getLocation(), "libcxx", "__functional/weak_result_type.h") ||
           Definition->isUnion() || Definition->isDynamicClass() || Definition->getNumBases() ||
-          std::distance(Definition->field_begin(), Definition->field_end()) != 2) return false;
+          std::distance(Definition->field_begin(), Definition->field_end()) != 2) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       unsigned Fields = 0;
       for (const auto *Field : Definition->fields()) {
         if (!Field->getIdentifier() || Field->getName() != (Fields++ ? "__lxx" : "__lx") ||
             Field->getAccess() != AS_public || Field->isBitField() || Field->isMutable() ||
             Field->hasAttrs() || Field->hasInClassInitializer() || !Field->getTypeSourceInfo() ||
             !Context.hasSameType(Field->getType(), Context.CharTy) || !family(Field) ||
-            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       BindWeakResultSentinel = Sentinel->getCanonicalDecl();
       BindWeakResultOriginalSentinel = Original->getCanonicalDecl();
@@ -14029,14 +14030,14 @@ public:
           Result->template_arguments().size() != Parameters->size() || !family(Template) || !family(Method) ||
           !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "__functional/weak_result_type.h") ||
           !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx",
-              Binary ? "__functional/binary_function.h" : "__functional/unary_function.h")) return false;
+              Binary ? "__functional/binary_function.h" : "__functional/unary_function.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Parameters->size(); ++I) {
         const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(I));
         const auto &Argument = Result->template_arguments()[I];
         const auto *Use = Argument.getKind() == TemplateArgument::Type
             ? dyn_cast<TemplateTypeParmType>(Argument.getAsType().getTypePtr()) : nullptr;
         if (!Type || Type->getIndex() != I || Type->isParameterPack() || Type->hasDefaultArgument() ||
-            !Use || Use->getDecl() != Type || !family(Type)) return false;
+            !Use || Use->getDecl() != Type || !family(Type)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       BindWeakResultSignaturePointee = Pointee;
       auto Restore = llvm::make_scope_exit([&] { BindWeakResultSignaturePointee = QualType(); });
@@ -14074,7 +14075,7 @@ public:
           Owner->getTemplateArgs().size() != 1 || Owner->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Owner->getTemplateArgs()[0].getAsType(), BindMetadata->CallableType) ||
           !family(Method) || !family(Template) || !family(Parameter) ||
-          !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "__functional/weak_result_type.h")) return false;
+          !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "__functional/weak_result_type.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto FreshFactory = BindStandardFactory
           ? describeFunctionalBindStandardFactoryOccurrence(S, SM, *BindStandardFactory, Context) : std::nullopt;
       const auto FreshCall = BindStandardCall
@@ -14085,12 +14086,12 @@ public:
               FreshCall->Selected.OwnedRoot != BindStandardCall->Selected.OwnedRoot ||
               FreshCall->Selected.OwnedPath != BindStandardCall->Selected.OwnedPath ||
               FreshCall->Method != BindStandardCall->Method || FreshCall->Selected.Target != BindStandardCall->Selected.Target)))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const bool Binary = Owner->getName() == "__derives_from_binary_function";
       if ((!Binary && Owner->getName() != "__derives_from_unary_function") ||
-          Arguments->size() != (Binary ? 3U : 2U) || Arguments->size() != Base->getTemplateArgs().size()) return false;
+          Arguments->size() != (Binary ? 3U : 2U) || Arguments->size() != Base->getTemplateArgs().size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Arguments->size(); ++I)
-        if (!Arguments->get(I).structurallyEquals(Base->getTemplateArgs()[I])) return false;
+        if (!Arguments->get(I).structurallyEquals(Base->getTemplateArgs()[I])) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // This capability lives only while consuming this actual query's
       // selected signature and initializer. TraverseType checks it before
       // memoization, so no later source or runtime operation inherits it.
@@ -14117,10 +14118,10 @@ public:
           Result->getCanonicalDecl() != Sentinel->getCanonicalDecl() ||
           WrittenResult->getCanonicalDecl() != Sentinel->getCanonicalDecl() ||
           !family(Function) || !cstddefOrigin(S, SM, Function->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !bindDeletedResultSentinelDefinition(Sentinel)) return false;
+          !bindDeletedResultSentinelDefinition(Sentinel)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                               Prototype->getEllipsisLoc()})
-        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // This complete signature is static, declaration-only, parameterless
       // except for ellipsis, and has no exception expression. The sentinel
       // can occur only as its actual return type, never as storage or a value.
@@ -14145,15 +14146,15 @@ public:
           Pack->hasDefaultArgument() || !Pattern->getIdentifier() ||
           Pattern->getName() != "__and_helper" || isa<CXXMethodDecl>(Pattern) ||
           Pattern->hasBody() || !Info || !Location || !family(Template) || !family(Pack) ||
-          !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/conjunction.h")) return false;
+          !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/conjunction.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Pattern->isVariadic())
         return !Pattern->getNumParams() && function(Pattern) && TraverseTypeLoc(Info->getTypeLoc());
       if (Pattern->getNumParams() != 1 || Pattern->getParamDecl(0)->hasDefaultArg() ||
-          !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return false;
+          !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       auto Return = Location.getReturnLoc();
       if (const auto Elaborated = Return.getAs<ElaboratedTypeLoc>()) {
         if (Elaborated.getTypePtr()->getKeyword() != ElaboratedTypeKeyword::None ||
-            Elaborated.getQualifierLoc()) return false;
+            Elaborated.getQualifierLoc()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Return = Elaborated.getNamedTypeLoc();
       }
       const auto AliasLoc = Return.getAs<TemplateSpecializationTypeLoc>();
@@ -14172,10 +14173,10 @@ public:
           !Expansion->getPattern()->isDependentType() || AliasLoc.getNumArgs() != 1 ||
           !Declaration->getTemplatedDecl()->getTypeSourceInfo() ||
           !Context.hasSameType(Location.getReturnLoc().getType(), Pattern->getReturnType()) ||
-          !family(Declaration) || !family(AliasPack)) return false;
+          !family(Declaration) || !family(AliasPack)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto Site : {AliasLoc.getTemplateNameLoc(), AliasLoc.getLAngleLoc(), AliasLoc.getRAngleLoc(),
                               Declaration->getLocation(), Declaration->getTemplatedDecl()->getLocation()})
-        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/conjunction.h")) return false;
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/conjunction.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Saved = BindOriginalConjunctionAlias;
       BindOriginalConjunctionAlias = Alias;
       auto Restore = llvm::make_scope_exit([&] { BindOriginalConjunctionAlias = Saved; });
@@ -14199,7 +14200,7 @@ public:
         !Parameter->isParameterPack() || Parameter->getIndex() || Parameter->hasDefaultArgument() ||
         !Parameter->getTypeSourceInfo() || Parameter->getType()->isDependentType() ||
         !Context.hasSameType(Parameter->getType(), Context.BoolTy) ||
-        !Context.hasSameType(Parameter->getTypeSourceInfo()->getType(), Context.BoolTy)) return false;
+        !Context.hasSameType(Parameter->getTypeSourceInfo()->getType(), Context.BoolTy)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Type = dyn_cast_or_null<TemplateSpecializationType>(Source.Type);
     const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(Source.Template);
     const auto *Instance = Type
@@ -14210,22 +14211,22 @@ public:
         Instance->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>() != Template ||
         Template->getTemplateParameters()->size() != 1 ||
         Template->getTemplateParameters()->getParam(0) != Parameter ||
-        Instance->getTemplateArgs().size() != 1) return false;
+        Instance->getTemplateArgs().size() != 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Arguments : {Source.Canonical, Source.Sugared, &Instance->getTemplateArgs()})
-      if (Arguments->get(0).getKind() != TemplateArgument::Pack || Arguments->get(0).pack_size()) return false;
+      if (Arguments->get(0).getKind() != TemplateArgument::Pack || Arguments->get(0).pack_size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Declaration : {static_cast<const Decl *>(Template), static_cast<const Decl *>(Parameter),
                                     static_cast<const Decl *>(Instance)})
       if (!family(Declaration) || !cstddefOrigin(S, SM, Declaration->getLocation(),
-              "libcxx", "__type_traits/conjunction.h")) return false;
+              "libcxx", "__type_traits/conjunction.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Template->getName() == "__all") {
       const auto *Definition = Instance->getDefinition();
       if (Instance->getSpecializationKind() != TSK_ImplicitInstantiation || !Definition ||
           !family(Definition) || Definition->isUnion() || Definition->isDynamicClass() ||
           Definition->getNumBases() != 1 || Definition->getNumVBases() || !Definition->field_empty() ||
-          !cstddefOrigin(S, SM, Source.Location, "libcxx", "tuple")) return false;
+          !cstddefOrigin(S, SM, Source.Location, "libcxx", "tuple")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else if (Template->getName() == "__all_dummy") {
-      if (!bindFunctionalBindConjunctionOperand(Instance, Source)) return false;
-    } else return false;
+      if (!bindFunctionalBindConjunctionOperand(Instance, Source)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    } else return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // An actually empty fixed-bool pack has no substituted element TSI.
     // Consume the genuine original primary bool TSI, without synthesizing
     // an element or a Sema parameter_types marker. The caller still closes
@@ -14242,40 +14243,40 @@ public:
         !Parameter->isParameterPack() || Parameter->getIndex() || Parameter->hasDefaultArgument() ||
         !Parameter->getTypeSourceInfo() || Parameter->getType()->isDependentType() ||
         !Context.hasSameType(Parameter->getType(), Context.getSizeType()) ||
-        !Context.hasSameType(Parameter->getTypeSourceInfo()->getType(), Parameter->getType())) return false;
+        !Context.hasSameType(Parameter->getTypeSourceInfo()->getType(), Parameter->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Type = dyn_cast<TemplateSpecializationType>(Source.Type);
     const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(Source.Template);
     const auto *Instance = Type
         ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(Type->getAsCXXRecordDecl()) : nullptr;
-    if (!Type) return false;
-    if (!Template) return false;
-    if (!Instance) return false;
-    if (!Template->getIdentifier()) return false;
-    if (Template->getName() != "__tuple_indices") return false;
-    if (!family(Template)) return false;
-    if (!family(Parameter)) return false;
-    if (Template->getTemplateParameters()->size() != 1) return false;
-    if (Template->getTemplateParameters()->getParam(0) != Parameter) return false;
+    if (!Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!Template) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!Instance) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!Template->getIdentifier()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (Template->getName() != "__tuple_indices") return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!family(Template)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!family(Parameter)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (Template->getTemplateParameters()->size() != 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (Template->getTemplateParameters()->getParam(0) != Parameter) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // This exact primary parameter list already proves ownership above.
     // Clang can attach the retained parameter to its semantic declaration
     // context after creation; that context is not its template membership.
-    if (Type->getTemplateName().getAsTemplateDecl() != Template) return false;
-    if (Instance->getSpecializedTemplate() != Template) return false;
-    if (Instance->getSpecializationKind() != TSK_ImplicitInstantiation) return false;
-    if (!BindMetadataRecords.count(Instance->getCanonicalDecl())) return false;
-    if (Instance->getTemplateArgs().size() != 1) return false;
-    if (Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack) return false;
-    if (Instance->getTemplateArgs()[0].pack_size()) return false;
+    if (Type->getTemplateName().getAsTemplateDecl() != Template) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (Instance->getSpecializedTemplate() != Template) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (Instance->getSpecializationKind() != TSK_ImplicitInstantiation) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!BindMetadataRecords.count(Instance->getCanonicalDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (Instance->getTemplateArgs().size() != 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Pack) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (Instance->getTemplateArgs()[0].pack_size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Arguments : {Source.Canonical, Source.Sugared}) {
       const auto &Slot = Arguments->get(0);
       if (Slot.getKind() != TemplateArgument::Pack || Slot.pack_size() ||
           !Context.getCanonicalTemplateArgument(Slot).structurallyEquals(
-              Instance->getTemplateArgs()[0])) return false;
+              Instance->getTemplateArgs()[0])) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     for (const auto Site : {Parameter->getLocation(),
                             Parameter->getTypeSourceInfo()->getTypeLoc().getBeginLoc(),
                             Parameter->getTypeSourceInfo()->getTypeLoc().getEndLoc()})
-      if (!cstddefOrigin(S, SM, Site, "libcxx", "__tuple/tuple_indices.h")) return false;
+      if (!cstddefOrigin(S, SM, Site, "libcxx", "__tuple/tuple_indices.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // This actual empty SDK pack has no element whose type could have been
     // substituted. Its fixed nondependent size_t declaration remains a full
     // original source obligation; no replacement TSI or marker is invented.
@@ -14285,7 +14286,7 @@ public:
                                   const TypeSourceInfo *Underlying) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !Use || !Use->isTypeAlias() || !Underlying || !step() ||
-        !Context.hasSameType(Underlying->getType(), Use->getAliasedType())) return false;
+        !Context.hasSameType(Underlying->getType(), Use->getAliasedType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Alias = dyn_cast_or_null<TypeAliasTemplateDecl>(
         Use->getTemplateName().getAsTemplateDecl());
     if (!Alias || Alias->getName() != "__make_indices_imp")
@@ -14293,7 +14294,7 @@ public:
     // This DSL authenticates the original alias, both original parameter
     // spellings, the builtin declaration, and every generated sequence/index.
     // The separately retained substituted TSI still has its own obligations.
-    if (!catIndexAlias(Use, Alias)) return false;
+    if (!catIndexAlias(Use, Alias)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto OriginalLoc = Alias->getTemplatedDecl()->getTypeSourceInfo()
         ->getTypeLoc().getAs<DependentTemplateSpecializationTypeLoc>();
     const auto OriginalSequence = OriginalLoc
@@ -14306,24 +14307,24 @@ public:
     const auto ActualSequence = ActualElaborated
         ? ActualElaborated.getQualifierLoc().getTypeLoc().getAs<TemplateSpecializationTypeLoc>()
         : TemplateSpecializationTypeLoc();
-    if (!OriginalLoc || !OriginalSequence) return false;
-    if (!ActualElaborated || !ActualLoc || !ActualSequence) return false;
-    if (ActualLoc.getNumArgs() != 1 || ActualSequence.getNumArgs() != 3) return false;
+    if (!OriginalLoc || !OriginalSequence) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!ActualElaborated || !ActualLoc || !ActualSequence) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (ActualLoc.getNumArgs() != 1 || ActualSequence.getNumArgs() != 3) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *ActualAlias = dyn_cast_or_null<TypeAliasTemplateDecl>(
         ActualLoc.getTypePtr()->getTemplateName().getAsTemplateDecl());
     const auto *ExpectedTo = Use->getAliasedType()->getAs<TemplateSpecializationType>();
     if (!ActualAlias || !ActualLoc.getTypePtr()->isTypeAlias() || !ExpectedTo ||
         ActualAlias != ExpectedTo->getTemplateName().getAsTemplateDecl() ||
         ActualAlias->getIdentifier() != OriginalLoc.getTypePtr()->getIdentifier() ||
-        !family(ActualAlias)) return false;
-    if (ActualLoc.getTemplateNameLoc() != OriginalLoc.getTemplateNameLoc()) return false;
-    if (ActualSequence.getTemplateNameLoc() != OriginalSequence.getTemplateNameLoc()) return false;
+        !family(ActualAlias)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (ActualLoc.getTemplateNameLoc() != OriginalLoc.getTemplateNameLoc()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (ActualSequence.getTemplateNameLoc() != OriginalSequence.getTemplateNameLoc()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Builtin = dyn_cast_or_null<BuiltinTemplateDecl>(
         ActualSequence.getTypePtr()->getTemplateName().getAsTemplateDecl());
     if (!Builtin || Builtin != OriginalSequence.getTypePtr()->getTemplateName().getAsTemplateDecl() ||
         Builtin->getBuiltinTemplateKind() != BTK__make_integer_seq ||
         !Builtin->isImplicit() || Builtin->getLocation().isValid() ||
-        !Builtin->getDeclContext()->isTranslationUnit()) return false;
+        !Builtin->getDeclContext()->isTranslationUnit()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto ActualArguments = ActualSequence.getTypePtr()->template_arguments();
     const auto OriginalArguments = OriginalSequence.getTypePtr()->template_arguments();
     const auto *Parameters = Alias->getTemplateParameters();
@@ -14348,7 +14349,7 @@ public:
         !Difference || !OriginalDifference || Difference->getOpcode() != BO_Sub ||
         Difference->getOperatorLoc() != OriginalDifference->getOperatorLoc() ||
         !Context.hasSameType(Difference->getType(), Context.getSizeType()) ||
-        Offset.getKind() != TemplateArgument::Expression) return false;
+        Offset.getKind() != TemplateArgument::Expression) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto Site : {Underlying->getTypeLoc().getBeginLoc(),
                             Underlying->getTypeLoc().getEndLoc(),
                             ActualElaborated.getElaboratedKeywordLoc(),
@@ -14356,7 +14357,7 @@ public:
                             ActualSequence.getArgLoc(0).getTemplateNameLoc(),
                             Difference->getOperatorLoc()})
       if (!step() || !cstddefOrigin(S, SM, Site, "libcxx", "__utility/integer_sequence.h"))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Bound = [&](const Expr *Expression, const NonTypeTemplateParmDecl *Parameter,
                      unsigned Slot) {
       // IgnoreParenImpCasts also removes SubstNonTypeTemplateParmExpr itself.
@@ -14366,12 +14367,12 @@ public:
       if (const auto *Cache = dyn_cast_or_null<ConstantExpr>(Core))
         Core = Cache->getSubExpr();
       const auto *Substitution = dyn_cast_or_null<SubstNonTypeTemplateParmExpr>(Core);
-      if (!Substitution) return false;
-      if (Substitution->getParameter() != Parameter) return false;
-      if (!family(Substitution->getAssociatedDecl())) return false;
-      if (!family(Parameter)) return false;
-      if (!Context.hasSameType(Expression->getType(), Context.getSizeType())) return false;
-      if (!TraverseStmt(const_cast<Expr *>(Expression))) return false;
+      if (!Substitution) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (Substitution->getParameter() != Parameter) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!family(Substitution->getAssociatedDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!family(Parameter)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!Context.hasSameType(Expression->getType(), Context.getSizeType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!TraverseStmt(const_cast<Expr *>(Expression))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &Argument = Use->template_arguments()[Slot];
       llvm::APSInt Expected;
       if (Argument.getKind() == TemplateArgument::Integral) {
@@ -14379,9 +14380,9 @@ public:
       } else if (Argument.getKind() == TemplateArgument::Expression) {
         const auto *Constant = dyn_cast<ConstantExpr>(Argument.getAsExpr());
         if (!Constant || Constant->getResultStorageKind() == ConstantResultStorageKind::None ||
-            Constant->getAPValueResult().getKind() != APValue::Int) return false;
+            Constant->getAPValueResult().getKind() != APValue::Int) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Expected = Constant->getResultAsAPSInt();
-      } else return false;
+      } else return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // The original graph and exact substituted parameter identity were
       // checked first. This fold only binds the retained converted value.
       Expr::EvalResult Value;
@@ -14390,12 +14391,12 @@ public:
     };
     if (!Bound(Difference->getLHS(), Ep, 0) ||
         !Bound(Difference->getRHS(), Sp, 1) ||
-        !Bound(Offset.getAsExpr(), Sp, 1)) return false;
+        !Bound(Offset.getAsExpr(), Sp, 1)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Size = ActualSequence.getArgLoc(1).getTypeSourceInfo();
     if (!Size || !Context.hasSameType(Size->getType(), Context.getSizeType()) ||
         !TraverseTypeLoc(Size->getTypeLoc()) ||
         !TraverseTemplateName(ActualArguments[0].getAsTemplate()) ||
-        !TraverseStmt(const_cast<Expr *>(DifferenceSource))) return false;
+        !TraverseStmt(const_cast<Expr *>(DifferenceSource))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return !Failed;
   }
   bool bindFunctionalBindTupleTagGraph(const UtilityTupleRecord &InputTuple,
@@ -14407,12 +14408,12 @@ public:
         !Tuple.Tuple || !Tuple.Implementation || Tags.size() != 4 ||
         Tuple.Implementation->getNumArgs() != Count + 4 ||
         !Context.hasSameType(Tuple.Tuple->getType(), Context.getRecordType(InputTuple.Record)))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindTupleTagStorage = InputTuple;
     const auto *Constructor = Tuple.Tuple->getConstructor();
     const auto *Primary = Constructor ? Constructor->getPrimaryTemplate() : nullptr;
     const auto *TupleRecord = dyn_cast<ClassTemplateSpecializationDecl>(InputTuple.Record);
-    if (!Primary || !TupleRecord || !family(Primary)) return false;
+    if (!Primary || !TupleRecord || !family(Primary)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const bool ReferenceCopy = BindCallMetadata &&
         Tuple.Tuple == BindCallMetadata->CallArguments &&
         Primary->getTemplateParameters()->size() == 2 &&
@@ -14422,7 +14423,7 @@ public:
         Primary->getTemplateParameters()->size() == 2 &&
         isa<TemplateTemplateParmDecl>(Primary->getTemplateParameters()->getParam(0));
     if (PlaceholderCopy) {
-      if (Constructor->getNumParams() != Count) return false;
+      if (Constructor->getNumParams() != Count) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Count; ++I) {
         const auto &Element = InputTuple.Elements[I];
         // Only this factory's independently described owned receiver can
@@ -14437,23 +14438,23 @@ public:
              !functionalBindEmptyPlaceholderStorage(S, SM, Type, Context))) ||
             !Context.hasSameType(Constructor->getParamDecl(I)->getType(),
                 Context.getLValueReferenceType(Context.getConstType(Type))) ||
-            !family(Constructor->getParamDecl(I))) return false;
+            !family(Constructor->getParamDecl(I))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
     }
     if (ReferenceCopy) {
-      if (Constructor->getNumParams() != Count) return false;
+      if (Constructor->getNumParams() != Count) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Count; ++I)
         if (!InputTuple.Elements[I].getType()->isLValueReferenceType() ||
             !Context.hasSameType(Constructor->getParamDecl(I)->getType(),
                                  InputTuple.Elements[I].getType()) ||
-            !family(Constructor->getParamDecl(I))) return false;
+            !family(Constructor->getParamDecl(I))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const bool CopyInputs = ReferenceCopy || PlaceholderCopy;
     std::set<const NamedDecl *> InputPacks, StoredPacks;
     std::set<const FunctionTemplateDecl *> Templates;
     for (const auto *Current = Primary; Current;) {
       if (!step() || !Templates.insert(Current).second || !family(Current) ||
-          !Current->getTemplateParameters()->size()) return false;
+          !Current->getTemplateParameters()->size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (CopyInputs) {
         const auto *Parameters = Current->getTemplateParameters();
         const auto *Alias = dyn_cast<TemplateTemplateParmDecl>(Parameters->getParam(0));
@@ -14469,19 +14470,19 @@ public:
             !Value->hasDefaultArgument() || !Pack || !Pack->isParameterPack() ||
             Pack->getIndex() || Pack->hasDefaultArgument() ||
             Pack->getDepth() != Alias->getDepth() + 1 ||
-            !family(Alias) || !family(Value) || !family(Pack)) return false;
+            !family(Alias) || !family(Value) || !family(Pack)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       } else {
         const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-        if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+        if (!Pack || !Pack->isParameterPack() || !family(Pack)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         InputPacks.insert(Pack);
       }
       Current = Current->getInstantiatedFromMemberTemplate();
     }
     for (const auto *Current : TupleRecord->getSpecializedTemplate()->redecls()) {
       if (!step() || !family(Current) || Current->getTemplateParameters()->size() != 1)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       StoredPacks.insert(Pack);
     }
     if (CopyInputs) InputPacks = StoredPacks;
@@ -14500,10 +14501,10 @@ public:
           !Record->field_empty() || Record->getNumBases() || Record->isUnion() ||
           Record->isDynamicClass() || !Record->hasTrivialDestructor() ||
           !family(Selected) || !family(Record) ||
-          !Context.hasSameType(Written->getType(), Construction->getType())) return false;
+          !Context.hasSameType(Written->getType(), Construction->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindMetadataRecords.insert(Record->getCanonicalDecl());
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Record);
-      if (!Instance) return false;
+      if (!Instance) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindMetadataRecords.insert(Instance->getSpecializedTemplate()->getTemplatedDecl()->getCanonicalDecl());
       WrittenTags.push_back(Written);
       if (!(I % 2)) continue;
@@ -14521,7 +14522,7 @@ public:
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Location.getArgLoc(0).getArgument().getAsType(),
                                Context.getRecordType(InputTuple.Record)) ||
-          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return false;
+          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned J = 1; J < Slots; ++J) {
         const auto Argument = Location.getArgLoc(J);
         const auto Kind = Argument.getArgument().getKind();
@@ -14533,23 +14534,23 @@ public:
             Core = Constant->getSubExpr()->IgnoreParenImpCasts();
           const auto *Zero = dyn_cast_or_null<IntegerLiteral>(Core);
           if (J != 1 || !Zero || !Zero->getValue().isZero() ||
-              !cstddefOrigin(S, SM, Zero->getExprLoc(), "libcxx", "tuple")) return false;
+              !cstddefOrigin(S, SM, Zero->getExprLoc(), "libcxx", "tuple")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           continue;
         }
         const auto *Pack = Expression ? dyn_cast<SizeOfPackExpr>(Expression->IgnoreParenImpCasts()) : nullptr;
         const auto &Expected = I == 1 || J == 2 ? InputPacks : StoredPacks;
         if (!Pack || Pack->isValueDependent() || Pack->getPackLength() != Count ||
             !Expected.count(Pack->getPack()) || !family(Pack->getPack()) ||
-            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return false;
+            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       if (!BindTupleTagSlices.emplace(Slice->getCanonicalDecl(),
               BindTupleTagSlice{Use, I == 1 || CopyInputs ? 0U : unsigned(Count),
-                                CopyInputs && I == 3 ? 0U : unsigned(Count)}).second) return false;
+                                CopyInputs && I == 3 ? 0U : unsigned(Count)}).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     // Bind both exact slices before traversing their actual original TypeLocs.
     // The retained Sema packets still close defaults and selected partials.
     for (const auto *Written : WrittenTags)
-      if (!TraverseTypeLoc(Written->getTypeLoc())) return false;
+      if (!TraverseTypeLoc(Written->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return !Failed;
   }
 
@@ -14559,11 +14560,11 @@ public:
         !BindTupleTagSlices.empty() || Factory.Storage.Record != BindMetadata->Record ||
         Factory.BoundConstruction != Tuple.Tuple || !Tuple.Implementation ||
         Tuple.Implementation->getNumArgs() != BindMetadata->Arguments.Elements.size() + 4)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Tags = BindMemberFactory ? describeFunctionalBindMemberTupleTagSources(S, SM, *BindMemberFactory, Context)
         : BindStandardFactory ? describeFunctionalBindStandardTupleTagSources(S, SM, Factory, Context)
         : BindReferenceFactory ? describeFunctionalBindReferenceTupleTagSources(S, SM, Factory, Context) : describeFunctionalBindTupleTagSources(S, SM, Factory, Context);
-    if (!Tags || Tags->size() != 4) return false;
+    if (!Tags || Tags->size() != 4) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return bindFunctionalBindTupleTagGraph(BindMetadata->Arguments, Tuple, *Tags);
   }
 
@@ -14571,7 +14572,7 @@ public:
       const FunctionalBindTupleConstructionSource &Tuple) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindCallMetadata ||
         !Call.SourceCall || Call.SourceCall != BindCallMetadata->SourceCall ||
-        Call.Storage.Record != BindMetadata->Record) return false;
+        Call.Storage.Record != BindMetadata->Record) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = freshBindCallOccurrence(S, SM, Call, Context);
     if (!Actual || Actual->Storage.Record != BindMetadata->Record ||
         Actual->Method != Call.Method || Actual->Method != BindCallMetadata->Method ||
@@ -14579,7 +14580,7 @@ public:
         Actual->CallArguments != BindCallMetadata->CallArguments ||
         Actual->CallForwards != Call.CallForwards ||
         Actual->CallForwards != BindCallMetadata->CallForwards ||
-        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return false;
+        Actual->CallForwards.empty() || Actual->CallForwards.size() > 2) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Input = approvedUtilityReferenceTupleRecord(
         S, SM, Actual->CallArguments->getType()->getAsCXXRecordDecl(), Context);
     const auto Construction = freshBindCallTupleConstructionSource(S, SM, *Actual, Context);
@@ -14588,7 +14589,7 @@ public:
         Construction->Tuple != Tuple.Tuple || Construction->Implementation != Tuple.Implementation ||
         Construction->Leaves != Tuple.Leaves || Construction->Copies != Tuple.Copies ||
         Construction->Initializers != Tuple.Initializers || Construction->Forwards != Tuple.Forwards ||
-        Construction->Assertions != Tuple.Assertions) return false;
+        Construction->Assertions != Tuple.Assertions) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return bindFunctionalBindTupleTagGraph(*Input, Tuple, *Tags);
   }
   bool withBindCallTupleTags(const FunctionalBindCallSource &Call,
@@ -14598,7 +14599,7 @@ public:
       return bindFunctionalBindCallTupleTags(Call, Tuple) && Proof();
     if (!Proof || Failed || !BindMetadata || !BindMemberFactory || !BindTupleTagStorage ||
         BindTupleTagStorage->Record != BindMetadata->Arguments.Record ||
-        BindTupleTagSlices.size() != 2) return false;
+        BindTupleTagSlices.size() != 2) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // The member factory and its stored tuple were already proved in this
     // graph. The incoming tuple has its own selected constructors and tags.
     auto StoredTuple = std::exchange(BindTupleTagStorage, std::nullopt);
@@ -14614,7 +14615,7 @@ public:
       const TemplateSpecializationType *Root, const std::function<bool()> &Proof) {
     if (!Proof || !BindMemberFactory ||
         !bindMemberRetainedReferentSource(Context.getRecordType(BindMemberFactory->Storage.Owner)) ||
-        !step()) return false;
+        !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (BindMemberReturnOperand &&
         Context.hasSameType(Source.Operand, BindMemberReturnOperand->Operand) &&
         Context.hasSameType(Source.Tuple, BindMemberReturnOperand->Tuple) &&
@@ -14638,13 +14639,13 @@ public:
       const auto Incoming = approvedUtilityReferenceTupleRecord(
           S, SM, Source.Tuple->getAsCXXRecordDecl(), Context);
       if (!Incoming || Incoming->Elements.size() != Source.Arity || !Source.PlaceholderRank ||
-          Source.PlaceholderRank > Incoming->Elements.size()) return false;
+          Source.PlaceholderRank > Incoming->Elements.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // This is the other real call's exact selected get and tuple slot.
       // Only the original builtin and alias visits are available in this scope.
       BindMemberReturnProjection = bindTupleElementProjection(
           Source.PlaceholderGet, *Incoming, Source.PlaceholderRank - 1);
       if (!BindMemberReturnProjection || !TraverseBindTupleElementProjectionSource(*BindMemberReturnProjection))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return Proof() && bindSourceComplete();
   }
@@ -14657,7 +14658,7 @@ public:
     if (BindStandardFactory) {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || Failed ||
           BindStandardCallableCopy || !Factory.CallableCopy ||
-          Factory.Storage.Record != BindMetadata->Record || !step()) return false;
+          Factory.Storage.Record != BindMetadata->Record || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Fresh = freshBindFactorySource(Factory);
       const auto *Constructor = Fresh && Fresh->CallableCopy ? Fresh->CallableCopy->getConstructor() : nullptr;
       const auto Member = Constructor ? SpecialMembers.find(Constructor->getCanonicalDecl()) : SpecialMembers.end();
@@ -14666,30 +14667,30 @@ public:
           Member == SpecialMembers.end() || !Member->second.Complete ||
           Member->second.Owner != Constructor ||
           approvedFunctionalObjectConstruction(S, SM, Fresh->CallableCopy, Context) !=
-              FunctionalObjectConstruction::CopyOrMove) return false;
+              FunctionalObjectConstruction::CopyOrMove) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindStandardCallableCopy = Fresh->CallableCopy;
       return true;
     }
     if (BindReferenceFactory) {
       if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || Failed ||
           BindReferenceCallableCopy || !Factory.CallableCopy || !Factory.SourceCall ||
-          Factory.Storage.Record != BindMetadata->Record || !step()) return false;
+          Factory.Storage.Record != BindMetadata->Record || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Fresh = freshBindFactorySource(Factory);
       if (!Fresh || Fresh->CallableCopy != Factory.CallableCopy ||
-          Fresh->CallableInitializer != Factory.CallableInitializer) return false;
+          Fresh->CallableInitializer != Factory.CallableInitializer) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindReferenceCallableCopy = Fresh->CallableCopy;
       return true;
     }
     if (!BindOwnedCallableRecord) return !Factory.CallableCopy;
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || Failed ||
         BindOwnedCallableCopy || !Factory.CallableCopy || !Factory.SourceCall ||
-        Factory.Storage.Record != BindMetadata->Record || !step()) return false;
+        Factory.Storage.Record != BindMetadata->Record || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = Factory.ExplicitResultConstruction
         ? freshFunctionalBindExplicitResultBaseFactorySource(S, SM, Factory, Context)
         : describeFunctionalBindOwnedFactorySource(S, SM, Factory.SourceCall, Context);
     if (!Actual || Actual->CallableCopy != Factory.CallableCopy ||
         Actual->Storage.Record != BindMetadata->Record || Actual->CallableInitializer != Factory.CallableInitializer)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     BindOwnedCallableCopy = Actual->CallableCopy;
     return true;
   }
@@ -14699,45 +14700,45 @@ public:
         (!BindMetadataRecords.count(Method->getParent()->getCanonicalDecl()) &&
          !bindOwnedCallableRecordSource(Method->getParent()) &&
          !bindMemberOwnerRecordSource(Method->getParent())) ||
-        !Method->isTrivial()) return false;
+        !Method->isTrivial()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Default) {
       const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
-      if (!Constructor || !Constructor->isDefaultConstructor()) return false;
+      if (!Constructor || !Constructor->isDefaultConstructor()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const bool Complete = specialMember(Method, 0, Default) && !Failed;
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
     return Complete;
   }
 
   bool bindFunctionalBindStorageSource() {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step()) return false;
+    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Record : BindPhysicalRecords) {
       const auto *Definition = Record->getDefinition();
-      if (!Definition || !family(Definition)) return false;
+      if (!Definition || !family(Definition)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto &Base : Definition->bases())
         if (!Base.getTypeSourceInfo() || Base.isVirtual() ||
-            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Base.getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Field : Definition->fields())
         if (!family(Field) || Field->isBitField() || Field->isMutable() ||
             !Field->getTypeSourceInfo() ||
-            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return false;
+            !TraverseTypeLoc(Field->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return !Failed;
   }
   bool withBindSourceChild(const std::function<bool()> &Proof) {
     NestedSharedBudget = true;
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Proof ||
-        Failed || Depth >= 64 || !step()) { Failed = true; return false; }
+        Failed || Depth >= 64 || !step()) { Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true); return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); }
     ++Depth;
     auto Restore = llvm::make_scope_exit([&] { --Depth; });
     const bool Complete = Proof();
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
     return Complete && !Failed;
   }
   bool withBindCompletedGraphNodes(std::set<const Type *> &CompletedTypes,
       std::set<const Stmt *> &CompletedExpressions, const std::function<bool()> &Proof) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Proof || Failed ||
-        CompletedTypes.size() + CompletedExpressions.size() > 200000) return false;
+        CompletedTypes.size() + CompletedExpressions.size() > 200000) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::set<const Type *> SavedTypes;
     std::set<const Stmt *> SavedExpressions;
     SavedTypes.swap(Types);
@@ -14752,7 +14753,7 @@ public:
     });
     const bool Complete = Proof() && !Failed;
     if (Complete) {
-      if (Types.size() + Expressions.size() > 200000) return false;
+      if (Types.size() + Expressions.size() > 200000) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       CompletedTypes.swap(Types);
       CompletedExpressions.swap(Expressions);
       // A normal completed proof leaves these nodes in its caller's
@@ -14764,7 +14765,7 @@ public:
   }
   bool bindMemberRetainedWeakResultInput(QualType Type) const {
     if ((BindRetainedTupleProjections.empty() && !BindMemberReturnOperand) ||
-        !bindMemberRetainedReferentSource(Type)) return false;
+        !bindMemberRetainedReferentSource(Type)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (BindMemberReturnOperand && !BindMemberReturnOperand->Referent.isNull() &&
         Context.hasSameType(Type, BindMemberReturnOperand->Referent)) return true;
     // This source-only input belongs to a live retained tuple projection of
@@ -14777,7 +14778,7 @@ public:
             Element.getType()->getAsCXXRecordDecl(), Context);
         if (Wrapper && Context.hasSameType(Type, Wrapper->ReferentType)) return true;
       }
-    return false;
+    return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
   }
   bool bindSourceComplete() const {
     return Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && !Failed;
@@ -14786,24 +14787,24 @@ public:
       const TemplateParameterList *Parameters, const std::function<bool()> &Proof) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
         !Template || !Parameters || !Proof || Failed || !step() ||
-        Parameters->size() > 64 || !family(Template)) return false;
+        Parameters->size() > 64 || !family(Template)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const TemplateParameterList *Declared = nullptr;
     if (const auto *Primary = dyn_cast<TemplateDecl>(Template))
       Declared = Primary->getTemplateParameters();
     else if (const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(Template))
       Declared = Partial->getTemplateParameters();
-    if (Declared != Parameters) return false;
+    if (Declared != Parameters) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const NonTypeTemplateParmDecl *> Inserted;
     auto Restore = llvm::make_scope_exit([&] {
       for (const auto *Parameter : Inserted) BindDefinitionParameters.erase(Parameter);
     });
     for (const auto *Declaration : *Parameters) {
-      if (!step() || !family(Declaration)) return false;
+      if (!step() || !family(Declaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration);
       if (!Parameter) continue;
       const auto Bound = BindDefinitionParameters.find(Parameter);
       if (Bound != BindDefinitionParameters.end()) {
-        if (Bound->second != Parameters) return false;
+        if (Bound->second != Parameters) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       } else {
         BindDefinitionParameters.emplace(Parameter, Parameters);
         Inserted.push_back(Parameter);
@@ -14814,13 +14815,13 @@ public:
   bool TraverseBindConstructorSignature(const CXXConstructorDecl *Constructor) {
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Constructor ||
         !BindMetadataRecords.count(Constructor->getParent()->getCanonicalDecl()) ||
-        !Constructor->getTypeSourceInfo() || !family(Constructor)) return false;
+        !Constructor->getTypeSourceInfo() || !family(Constructor)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Location = Constructor->getTypeSourceInfo()->getTypeLoc();
     const auto Function = Location.getAs<FunctionProtoTypeLoc>();
-    if (Function.isNull()) return false;
+    if (Function.isNull()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Return = Function.getReturnLoc();
     if (!Return.getAs<BuiltinTypeLoc>() || !Return.getType()->isVoidType() ||
-        Return.getBeginLoc().isValid() || Return.getEndLoc().isValid()) return false;
+        Return.getBeginLoc().isValid() || Return.getEndLoc().isValid()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Saved = BindConstructorReturn;
     BindConstructorReturn = Return;
     auto Restore = llvm::make_scope_exit([&] { BindConstructorReturn = Saved; });
@@ -14833,30 +14834,30 @@ public:
   bool withNotFnChildProof(const std::function<bool()> &Proof) {
     NestedSharedBudget = true;
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !Proof || Failed ||
-        Depth >= 64 || !step()) { Failed = true; return false; }
+        Depth >= 64 || !step()) { Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true); return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); }
     ++Depth;
     auto Restore = llvm::make_scope_exit([&] { --Depth; });
     const bool Complete = Proof();
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
     return Complete && !Failed;
   }
   bool bindNotFnNestedStorage(const FunctionalNotFnNestedStorage &Storage) {
     if ((Mode != UtilityTupleQueryMode::NotFnSignature && Mode != UtilityTupleQueryMode::CatSignature) ||
-        NotFnOwnedCallableRecord || NotFnReferenceStorage || NotFnNestedStorage || !step()) return false;
+        NotFnOwnedCallableRecord || NotFnReferenceStorage || NotFnNestedStorage || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = describeFunctionalNotFnNestedStorage(S, SM, Storage.Outer.Record, Context);
     if (!Actual || Actual->Outer.Record != Storage.Outer.Record ||
         Actual->Inner.Record != Storage.Inner.Record ||
-        !Context.hasSameType(Actual->Inner.CallableType, Storage.Inner.CallableType)) return false;
+        !Context.hasSameType(Actual->Inner.CallableType, Storage.Inner.CallableType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     NotFnNestedStorage = *Actual;
     for (const auto *Layer : {Actual->Outer.Record, Actual->Outer.Forwarder, Actual->Outer.Tuple,
                              Actual->Outer.TupleImplementation, Actual->Outer.TupleLeaf,
                              Actual->Inner.Record, Actual->Inner.Forwarder, Actual->Inner.Tuple,
                              Actual->Inner.TupleImplementation, Actual->Inner.TupleLeaf}) {
-      if (!step()) return false;
+      if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       NotFnNestedRecords.insert(Layer->getCanonicalDecl());
       const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Layer);
       const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
-      if (!Primary) return false;
+      if (!Primary) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *R : Layer->redecls()) NotFnNestedFamilies.insert(R);
       for (const auto *T : Primary->redecls()) {
         NotFnNestedFamilies.insert(T);NotFnNestedFamilies.insert(T->getTemplatedDecl());
@@ -14867,11 +14868,11 @@ public:
   }
   bool bindNotFnNestedInner(const FunctionalNotFnNestedCallSource &Source) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnNestedInner || NotFnNestedStorage ||
-        NotFnReferenceStorage || NotFnOwnedCallableRecord) return false;
+        NotFnReferenceStorage || NotFnOwnedCallableRecord) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = describeFunctionalNotFnNestedCallSource(S, SM, Source.OuterRuntime.SourceCall, Context);
     if (!Actual || Actual->InnerRuntime.SourceCall != Source.InnerRuntime.SourceCall ||
         Actual->InnerRuntime.Method != Source.InnerRuntime.Method ||
-        Actual->OuterRuntime.TargetCall != Actual->InnerRuntime.SourceCall) return false;
+        Actual->OuterRuntime.TargetCall != Actual->InnerRuntime.SourceCall) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     NotFnNestedInner = *Actual;
     return true;
   }
@@ -14894,19 +14895,19 @@ public:
     return describeFunctionalNotFnCallSource(S, SM, Call, Context, SourceMode);
   }
   bool bindNotFnNestedCall(const FunctionalNotFnNestedCallSource &Source, bool InnerClosed) {
-    if (!InnerClosed || !NotFnNestedStorage || NotFnNestedInner || NotFnNestedCall) return false;
+    if (!InnerClosed || !NotFnNestedStorage || NotFnNestedInner || NotFnNestedCall) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = describeFunctionalNotFnNestedCallSource(S, SM, Source.OuterRuntime.SourceCall, Context);
     if (!Actual || Actual->Storage.Outer.Record != NotFnNestedStorage->Outer.Record ||
         Actual->InnerRuntime.Method != Source.InnerRuntime.Method ||
-        Actual->InnerRuntime.SourceCall != Source.InnerRuntime.SourceCall) return false;
+        Actual->InnerRuntime.SourceCall != Source.InnerRuntime.SourceCall) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     NotFnNestedCall = *Actual;NotFnNestedChildClosed = true;
     return true;
   }
   bool notFnNestedSpecialMember(const CXXMethodDecl *Method) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnNestedStorage || !Method ||
-        !NotFnNestedRecords.count(Method->getParent()->getCanonicalDecl())) return false;
+        !NotFnNestedRecords.count(Method->getParent()->getCanonicalDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const bool Complete = specialMember(Method) && !Failed;
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
     return Complete;
   }
 
@@ -14914,13 +14915,13 @@ public:
       llvm::ArrayRef<FunctionalNotFnTupleTagSource> Tags, bool Owned = false, bool Reference = false, bool Nested = false) {
     if (Mode != UtilityTupleQueryMode::CatSignature || !NotFnTupleTagSlices.empty() ||
         NotFnTupleTagStorage || Tags.size() != 4 ||
-        Factory.SelectedConstructions.size() != 4) return false;
-    if ((Owned && Reference) || (Nested && (Owned || Reference))) return false;
+        Factory.SelectedConstructions.size() != 4) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if ((Owned && Reference) || (Nested && (Owned || Reference))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Borrowed = Reference
         ? describeFunctionalNotFnReferenceStorage(S, SM, Factory.Storage.Record, Context) : std::nullopt;
     const auto NestedStorage = Nested
         ? describeFunctionalNotFnNestedStorage(S, SM, Factory.Storage.Record, Context) : std::nullopt;
-    if (Nested && (!NestedStorage || !bindNotFnNestedStorage(*NestedStorage))) return false;
+    if (Nested && (!NestedStorage || !bindNotFnNestedStorage(*NestedStorage))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Pointer = NestedStorage
         ? std::optional<FunctionalNotFnStorage>(NestedStorage->Outer) : Reference
         ? (Borrowed ? std::optional<FunctionalNotFnStorage>(Borrowed->Storage) : std::nullopt)
@@ -14935,29 +14936,29 @@ public:
         !Arguments || Arguments->size() != 2 || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         Arguments->get(0).pack_size() != 1 || Construction->getNumArgs() != 1 ||
         Constructor->getParent()->getCanonicalDecl() != Pointer->Tuple->getCanonicalDecl() ||
-        !family(Constructor)) return false;
+        !family(Constructor)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::set<const NamedDecl *> InputPacks, StoredPacks;
     std::set<const FunctionTemplateDecl *> Seen;
     for (const auto *Current = Primary; Current;) {
       if (!step() || !Seen.insert(Current).second || !family(Current) ||
-          !Current->getTemplateParameters()->size()) return false;
+          !Current->getTemplateParameters()->size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Current->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       InputPacks.insert(Pack);
       Current = Current->getInstantiatedFromMemberTemplate();
     }
     for (const auto *Template : TupleInstance->getSpecializedTemplate()->redecls()) {
       if (!step() || !family(Template) || Template->getTemplateParameters()->size() != 1)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Template->getTemplateParameters()->getParam(0));
-      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return false;
+      if (!Pack || !Pack->isParameterPack() || !family(Pack)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       StoredPacks.insert(Pack);
     }
     for (unsigned I : {1U, 3U}) {
       const auto &Tag = Tags[I];
       if (!Tag.Written || !Tag.Construction ||
           Tag.Construction->getConstructor()->getParent()->getCanonicalDecl() !=
-              Tag.Record->getCanonicalDecl()) return false;
+              Tag.Record->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Written = Tag.Written->getTypeLoc().getAs<ElaboratedTypeLoc>();
       const auto Qualifier = Written.isNull() ? NestedNameSpecifierLoc() : Written.getQualifierLoc();
       const auto Location = Qualifier ? Qualifier.getTypeLoc().getAs<TemplateSpecializationTypeLoc>()
@@ -14972,7 +14973,7 @@ public:
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Location.getArgLoc(0).getArgument().getAsType(),
                                Context.getRecordType(Pointer->Tuple)) ||
-          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return false;
+          !cstddefOrigin(S, SM, Location.getTemplateNameLoc(), "libcxx", "tuple")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned J = 1; J != Count; ++J) {
         const auto Argument = Location.getArgLoc(J);
         const auto Kind = Argument.getArgument().getKind();
@@ -14982,17 +14983,17 @@ public:
         const auto &Expected = I == 1 || J == 2 ? InputPacks : StoredPacks;
         if (!Pack || Pack->isValueDependent() || Pack->getPackLength() != 1 ||
             !Expected.count(Pack->getPack()) || !family(Pack->getPack()) ||
-            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return false;
+            !cstddefOrigin(S, SM, Pack->getExprLoc(), "libcxx", "tuple")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       // Both actual ranges end at this independently described one-element
       // storage. The fourth tag's explicit start is one, so its slice is empty.
       if (!NotFnTupleTagSlices.emplace(Instance->getCanonicalDecl(),
-              std::make_pair(Use, I == 1 ? 0U : 1U)).second) return false;
+              std::make_pair(Use, I == 1 ? 0U : 1U)).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     NotFnTupleTagStorage = *Pointer;
     if (Borrowed) {
       NotFnReferenceStorage = *Borrowed;
-      if (!bindPairBorrowedStorage(Borrowed->Reference.Record, true)) return false;
+      if (!bindPairBorrowedStorage(Borrowed->Reference.Record, true)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return true;
   }
@@ -15007,11 +15008,11 @@ public:
         Factory.Use.Canonical->get(0).getKind() != TemplateArgument::Type ||
         Factory.Use.Sugared->get(0).getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Factory.Use.Canonical->get(0).getAsType(),
-                             Factory.Use.Sugared->get(0).getAsType())) return false;
+                             Factory.Use.Sugared->get(0).getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Input = Factory.Use.Sugared->get(0).getAsType().getNonReferenceType();
     std::map<const TypedefNameDecl *, const TypeSourceInfo *> Pending;
     for (unsigned I = 0; ; ++I) {
-      if (I >= 64 || !step() || Input.isNull()) return false;
+      if (I >= 64 || !step() || Input.isNull()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Input.getTypePtr())) {
         Input = Elaborated->getNamedType();
         continue;
@@ -15029,10 +15030,10 @@ public:
           (!Alias->getUnderlyingType()->isFunctionPointerType() && !NotFnOwnedCallableRecord &&
            !NotFnReferenceStorage && !NotFnNestedStorage) ||
           !Context.hasSameType(Alias->getUnderlyingType(), NotFnCallableType) ||
-          !Pending.emplace(Alias, Info).second) return false;
+          !Pending.emplace(Alias, Info).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // Complete the actual alias TSI, callback signature and owned spelling
       // before exposing this one raw typedef identity to the metadata graph.
-      if (!SourceAlias || !SourceAlias(Alias)) return false;
+      if (!SourceAlias || !SourceAlias(Alias)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Input = Alias->getUnderlyingType();
     }
     NotFnOwnedInputAliases = std::move(Pending);
@@ -15040,10 +15041,10 @@ public:
   }
   bool bindNotFnReferenceInputFactory(const FunctionalNotFnFactoryTemplateSource &Factory) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnReferenceStorage ||
-        NotFnFactoryDefaults != &Factory) return false;
+        NotFnFactoryDefaults != &Factory) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Call = dyn_cast_or_null<CallExpr>(Factory.Selection.Expression);
     if (!Call || Call->getDirectCallee() != Factory.Selected.Factory ||
-        Call->getNumArgs() != 1 || !S.owns(SM, Call->getExprLoc())) return false;
+        Call->getNumArgs() != 1 || !S.owns(SM, Call->getExprLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Bind only the admitted ref/cref factory used by this exact outer call.
     // Its ordinary argument and actual runtime call still close separately.
     return bindPairReferenceFactory(Call->getArg(0));
@@ -15051,13 +15052,13 @@ public:
   bool bindNotFnOperation(const FunctionalNotFnStorage &Storage,
       std::set<const CXXMethodDecl *> *OwnedQuerySources = nullptr, bool Reference = false, bool Nested = false) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnOperationRecord)
-      return false;
-    if ((OwnedQuerySources && Reference) || (Nested && (OwnedQuerySources || Reference))) return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if ((OwnedQuerySources && Reference) || (Nested && (OwnedQuerySources || Reference))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Borrowed = Reference
         ? describeFunctionalNotFnReferenceStorage(S, SM, Storage.Record, Context) : std::nullopt;
     const auto NestedStorage = Nested
         ? describeFunctionalNotFnNestedStorage(S, SM, Storage.Record, Context) : std::nullopt;
-    if (Nested && (!NestedStorage || !bindNotFnNestedStorage(*NestedStorage))) return false;
+    if (Nested && (!NestedStorage || !bindNotFnNestedStorage(*NestedStorage))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Pointer = NestedStorage
         ? std::optional<FunctionalNotFnStorage>(NestedStorage->Outer) : Reference
         ? (Borrowed ? std::optional<FunctionalNotFnStorage>(Borrowed->Storage) : std::nullopt)
@@ -15065,28 +15066,28 @@ public:
         : approvedFunctionalNotFnPointerStorage(S, SM, Storage.Record, Context);
     if (!Pointer || Pointer->Operation != Storage.Operation ||
         !Context.hasSameType(Pointer->CallableType, Storage.CallableType) || !Pointer->TupleLeaf)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Pointer->Callable.EmptyBase) {
       const auto *Leaf = Pointer->TupleLeaf->getDefinition();
       if (!OwnedQuerySources || !Leaf || !Leaf->field_empty() || Leaf->getNumBases() != 1 ||
           Pointer->Callable.Field || !Pointer->Callable.EmptyBase->isEmpty() ||
           Leaf->bases_begin()->getType()->getAsCXXRecordDecl()->getCanonicalDecl() !=
-              Pointer->Callable.EmptyBase->getCanonicalDecl()) return false;
+              Pointer->Callable.EmptyBase->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       NotFnTupleLeafEmptyBase = Pointer->Callable.EmptyBase->getCanonicalDecl();
     } else if (!Pointer->Callable.Field || Pointer->Callable.Field->getParent()->getCanonicalDecl() !=
-                   Pointer->TupleLeaf->getCanonicalDecl()) return false;
+                   Pointer->TupleLeaf->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     NotFnOperationRecord = Pointer->Operation->getCanonicalDecl();
     NotFnTupleLeafRecord = Pointer->TupleLeaf->getCanonicalDecl();
     NotFnTupleLeafValue = Pointer->Callable.Field;
     NotFnCallableType = Pointer->CallableType;
     if (Borrowed) {
       NotFnReferenceStorage = *Borrowed;
-      if (!bindPairBorrowedStorage(Borrowed->Reference.Record, true)) return false;
+      if (!bindPairBorrowedStorage(Borrowed->Reference.Record, true)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       PairStorageUseSource Written(*this);
       const auto *PointerSource = Borrowed->Reference.Pointer->getTypeSourceInfo();
       if (!PointerSource ||
           !Context.hasSameType(PointerSource->getType(), Borrowed->Reference.PointerType) ||
-          !Written.check(PointerSource)) return false;
+          !Written.check(PointerSource)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else if (OwnedQuerySources) {
       NotFnOwnedCallableRecord = Pointer->CallableType->getAsCXXRecordDecl()->getCanonicalDecl();
       NotFnOwnedQuerySources = OwnedQuerySources;
@@ -15097,29 +15098,29 @@ public:
   }
   bool notFnReferenceSpecialMember(const CXXMethodDecl *Method) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnReferenceStorage || !Method)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Storage = NotFnReferenceStorage->Storage;
     const auto *Owner = Method->getParent()->getCanonicalDecl();
     if (Owner != Storage.Record->getCanonicalDecl() && Owner != Storage.Forwarder->getCanonicalDecl() &&
         Owner != Storage.Tuple->getCanonicalDecl() && Owner != Storage.TupleImplementation->getCanonicalDecl() &&
         Owner != Storage.TupleLeaf->getCanonicalDecl() &&
-        Owner != NotFnReferenceStorage->Reference.Record->getCanonicalDecl()) return false;
+        Owner != NotFnReferenceStorage->Reference.Record->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return specialMember(Method) && !Failed;
   }
   bool bindNotFnReferenceInvokeFamily(const CXXMethodDecl *Method) {
     if (!NotFnReferenceStorage || !Method || !Method->getPrimaryTemplate() ||
         Method->getParent()->getCanonicalDecl() != NotFnReferenceStorage->Reference.Record->getCanonicalDecl())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
     const auto *Class = Owner ? Owner->getSpecializedTemplate() : nullptr;
-    if (!Class || Class->getTemplateParameters()->size() != 1) return false;
+    if (!Class || Class->getTemplateParameters()->size() != 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *TypeParameter = dyn_cast<TemplateTypeParmDecl>(Class->getTemplateParameters()->getParam(0));
     const auto *Pattern = Class->getTemplatedDecl();
     const TypedefNameDecl *Alias = nullptr;
     for (const auto *D : Pattern->decls())
       if (const auto *Candidate = dyn_cast<TypedefNameDecl>(D);
           Candidate && Candidate->getIdentifier() && Candidate->getName() == "type") {
-        if (Alias) return false;
+        if (Alias) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Alias = Candidate;
       }
     const auto *Spelling = Alias ? Alias->getTypeSourceInfo() : nullptr;
@@ -15134,22 +15135,22 @@ public:
         ParameterType->isParameterPack() != TypeParameter->isParameterPack() ||
         Alias->getDeclContext() != Pattern ||
         !approvedStandardSDKDeclaration(S, SM, Alias) ||
-        !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+        !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     PairInputFamilies.insert(Alias);
     PairStorageUseSource AliasSource(*this);
-    if (!AliasSource.check(Spelling)) return false;
+    if (!AliasSource.check(Spelling)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const Decl *> Pending{Method};
     std::set<const Decl *> Bound;
     while (!Pending.empty()) {
       const auto *D = Pending.back(); Pending.pop_back();
       if (!D || !step() || !approvedStandardSDKDeclaration(S, SM, D) ||
-          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Bound.insert(D).second) continue;
       if (const auto *Function = dyn_cast<CXXMethodDecl>(D)) {
         if (Function->getOverloadedOperator() != OO_Call || !Function->isConst() ||
             Function->isStatic() || Function->isVolatile() || Function->isVariadic() ||
             (Function->getParent()->getCanonicalDecl() != Owner->getCanonicalDecl() &&
-             Function->getParent()->getCanonicalDecl() != Class->getTemplatedDecl()->getCanonicalDecl())) return false;
+             Function->getParent()->getCanonicalDecl() != Class->getTemplatedDecl()->getCanonicalDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
         for (const auto *Parameter : Function->parameters()) Pending.push_back(Parameter);
         if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
@@ -15159,7 +15160,7 @@ public:
         Pending.push_back(Template->getTemplatedDecl());
         for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
         if (const auto *Pattern = Template->getInstantiatedFromMemberTemplate()) Pending.push_back(Pattern);
-      } else if (!isa<ParmVarDecl, TemplateTypeParmDecl>(D)) return false;
+      } else if (!isa<ParmVarDecl, TemplateTypeParmDecl>(D)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     PairInputFamilies.insert(Bound.begin(), Bound.end());
     return family(Method);
@@ -15176,7 +15177,7 @@ public:
   bool withNotFnReferenceDependency(std::function<bool()> Proof) {
     if (!NotFnReferenceCall || NotFnReferenceDependency || !Proof || Depth || Failed ||
         NotFnInvokeSignature || NotFnInvokeWrittenPattern || !NotFnInvokeUses.empty() ||
-        !CompletedNotFnInvokeSignatures.empty() || !NotFnTryResultUses.empty()) return false;
+        !CompletedNotFnInvokeSignatures.empty() || !NotFnTryResultUses.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     NotFnReferenceDependency = true;
     auto Restore = llvm::make_scope_exit([&] {
       NotFnReferenceDependency = false;
@@ -15190,7 +15191,7 @@ public:
     // Types/expressions only remain cached after this whole dependency closes.
     // Nodes and depth are never reset or moved to a new graph.
     const bool Complete = Proof() && !Failed;
-    if (!Complete) Failed = true;
+    if (!Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
     return Complete;
   }
   bool withNotFnInvocation(const FunctionalNotFnCallSource &Call,
@@ -15210,18 +15211,18 @@ public:
         !Proof || !Call.Method || !Call.SourceCall ||
         !Call.InvokeCall || !NotFnOperationRecord ||
         Call.Storage.Operation->getCanonicalDecl() != NotFnOperationRecord ||
-        !Context.hasSameType(Call.Storage.CallableType, NotFnCallableType)) return false;
+        !Context.hasSameType(Call.Storage.CallableType, NotFnCallableType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (NotFnNestedStorage &&
         (!NotFnNestedCall || !NotFnNestedChildClosed ||
          NotFnNestedCall->OuterRuntime.SourceCall != Call.SourceCall ||
          NotFnNestedCall->OuterRuntime.Method != Call.Method ||
-         NotFnNestedCall->OuterRuntime.TargetCall != Call.TargetCall)) return false;
+         NotFnNestedCall->OuterRuntime.TargetCall != Call.TargetCall)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (NotFnOwnedCallableRecord) {
       const auto Owned = describeFunctionalNotFnOwnedCallSource(S, SM, Call.SourceCall, Context);
       if (!Owned || !NotFnOwnedQuerySources || Owned->Selected.TargetCall != Call.TargetCall ||
           Owned->Selected.Method != Call.Method ||
           Owned->CallableMethod->getParent()->getCanonicalDecl() != NotFnOwnedCallableRecord)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       NotFnOwnedInvokeMethod = Owned->CallableMethod;
     }
     if (NotFnReferenceStorage) {
@@ -15229,10 +15230,10 @@ public:
       if (!ReferenceQuerySources || !Reference || Reference->Selected.TargetCall != Call.TargetCall ||
           Reference->Selected.Method != Call.Method ||
           Reference->Reference.Wrapper.Record != NotFnReferenceStorage->Reference.Record ||
-          !bindNotFnReferenceInvokeFamily(dyn_cast<CXXMethodDecl>(Call.TargetCall->getDirectCallee()))) return false;
+          !bindNotFnReferenceInvokeFamily(dyn_cast<CXXMethodDecl>(Call.TargetCall->getDirectCallee()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       NotFnReferenceCall = *Reference;
       NotFnReferenceQuerySources = ReferenceQuerySources;
-    } else if (ReferenceQuerySources) return false;
+    } else if (ReferenceQuerySources) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     NotFnInvocation = &Call;
     auto Restore = llvm::make_scope_exit([&] {
       NotFnInvocation = nullptr;
@@ -15272,16 +15273,16 @@ public:
         Roots.size() != 3 || Forwards.size() != 3 * Operation->getNumParams() ||
         !NotFnInvocation->OperationCall || NotFnInvocation->OperationCall->getDirectCallee() != Operation ||
         NotFnInvocation->InvokeCall->getDirectCallee() != Function || !family(Function) || !family(Operation))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Root : Roots)
       if (!Root || Root->getDirectCallee() != Function ||
-          !NotFnPublicInvokeUses.insert(Root).second) return false;
-    if (!NotFnPublicInvokeUses.count(NotFnInvocation->InvokeCall)) return false;
+          !NotFnPublicInvokeUses.insert(Root).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    if (!NotFnPublicInvokeUses.count(NotFnInvocation->InvokeCall)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Forward : Forwards)
-      if (!Forward || !NotFnPublicForwards.insert(Forward).second) return false;
+      if (!Forward || !NotFnPublicForwards.insert(Forward).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Parameter : Operation->parameters()) {
       if (!Parameter || Parameter->getDeclContext() != Operation ||
-          !NotFnPublicParameters.insert(Parameter).second) return false;
+          !NotFnPublicParameters.insert(Parameter).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     // Only the three original result/noexcept/body expressions of this exact
     // operation can refer to the owned negation. No SDK family or user body
@@ -15290,11 +15291,11 @@ public:
                            FunctionalNotFnSourceMode::Exception, FunctionalNotFnSourceMode::Runtime}) {
       const auto Source = describeNotFnInvocation(NotFnInvocation->SourceCall, Mode);
       if (!Source || Source->OperationCall->getDirectCallee() != Operation ||
-          !NotFnPublicInvokeUses.count(Source->InvokeCall)) return false;
+          !NotFnPublicInvokeUses.count(Source->InvokeCall)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Negation = dyn_cast<CXXOperatorCallExpr>(Source->Negation)) {
         const auto *Method = approvedFunctionalNotFnPointerNegation(S, SM, *Source, Context);
         if (!Method || Method != approvedFunctionalNotFnPointerNegation(S, SM, *NotFnInvocation, Context) ||
-            !NotFnNegationUses.emplace(Negation, Source->InvokeCall).second) return false;
+            !NotFnNegationUses.emplace(Negation, Source->InvokeCall).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (Mode != FunctionalNotFnSourceMode::Runtime) {
           const auto *Receiver = dyn_cast<ImplicitCastExpr>(Negation->getArg(0)->IgnoreParens());
           const auto *Temporary = Receiver
@@ -15303,16 +15304,16 @@ public:
               ? dyn_cast<CXXBindTemporaryExpr>(Temporary->getSubExpr()->IgnoreParens()) : nullptr;
           // approvedFunctionalNotFnPointerNegation already bound this exact
           // query node, invoke child, original SDK range and trivial result.
-          if (Binding && !NotFnQueryBindings.emplace(Binding, Source->InvokeCall).second) return false;
+          if (Binding && !NotFnQueryBindings.emplace(Binding, Source->InvokeCall).second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
-      } else if (NotFnCallbackResultRecord) return false;
+      } else if (NotFnCallbackResultRecord) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     NotFnPublicInvoke = Function;
     NotFnPublicOperation = Operation;
     return true;
   }
   bool withNotFnOperationQuery(const DeclRefExpr *Reference, std::function<bool()> Proof) {
-    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation || !Proof) return false;
+    if (Mode != UtilityTupleQueryMode::NotFnSignature || !NotFnInvocation || !Proof) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (!Reference) return Proof();
     const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
     const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
@@ -15328,17 +15329,17 @@ public:
         !NotFnInvocation->OperationCall ||
         Operation != NotFnInvocation->OperationCall->getDirectCallee() ||
         Operation->getParent()->getCanonicalDecl() != NotFnInvocation->Storage.Operation->getCanonicalDecl() ||
-        !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__type_traits/invoke.h")) return false;
+        !cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Arguments = Variable->getTemplateArgs();
     if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments[0].getAsType(), Context.getRecordType(Operation->getParent())) ||
         Arguments[1].getKind() != TemplateArgument::Pack ||
-        Arguments[1].pack_size() != Operation->getNumParams()) return false;
+        Arguments[1].pack_size() != Operation->getNumParams()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Actual = Arguments[1].pack_elements();
     const auto Expected = Selected->get(0).pack_elements();
     for (unsigned I = 0; I < Actual.size(); ++I)
       if (Actual[I].getKind() != TemplateArgument::Type || Expected[I].getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) return false;
+          !Context.hasSameType(Actual[I].getAsType(), Expected[I].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // The caller independently authenticated this real initializer, selected
     // SDK primary and original written-void alias. This scope grants only the
     // corresponding unevaluated operation query, never a runtime body.
@@ -15353,20 +15354,20 @@ public:
     if (Mode != UtilityTupleQueryMode::NotFnSignature || !Method || !Arguments ||
         NotFnInvokeSignature || NotFnInvokeWrittenPattern || !NotFnInvokeUses.empty() ||
         !CompletedNotFnInvokeSignatures.empty() || Arguments->size() != (NotFnReferenceDependency ? 1U : 2U) ||
-        Arguments->get(0).getKind() != TemplateArgument::Pack) return false;
+        Arguments->get(0).getKind() != TemplateArgument::Pack) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Bound = notFnQueryBound();
-    if (Bound.isNull()) return false;
+    if (Bound.isNull()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Types) {
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) return false;
+          Types->get(1).pack_size() != Pack.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return false;
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return true;
     };
     std::set<const FunctionDecl *> Functions;
@@ -15396,22 +15397,22 @@ public:
           !family(F) || !family(Primary) || !family(First) || !family(Rest) ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return false;
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(
                 F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // _Fp is the deduction result; the actual parameter is _Fp&&.
       // Reference collapsing preserves lvalues and forwards rvalues with the
       // original const qualification. Do not change the template argument.
       const auto ForwardedCallable = Bound->isReferenceType() ? Bound : Context.getRValueReferenceType(Bound);
-      if (!Context.hasSameType(F->getParamDecl(0)->getType(), ForwardedCallable)) return false;
+      if (!Context.hasSameType(F->getParamDecl(0)->getType(), ForwardedCallable)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
         if (Forwarded->isObjectType() || Forwarded->isFunctionType())
           Forwarded = Context.getRValueReferenceType(Forwarded);
-        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return false;
+        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       bool Selected = false;
       for (const auto *Selection : Selections) {
@@ -15423,22 +15424,22 @@ public:
             !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context) ||
             E->getNumArgs() != F->getNumParams() || E->isTypeDependent() || E->isValueDependent() ||
             !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return false;
+            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         std::vector<const CallExpr *> Declvals;
-        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return false;
+        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (unsigned I = 0; I < Pack.size(); ++I)
-          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return false;
+          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
         Uses.insert(E);
         Selected = true;
       }
-      if (!Selected) return false;
+      if (!Selected) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty()) return false;
+    if (Functions.size() != 1 || Uses.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *F = *Functions.begin();
     if (NotFnReferenceCall && F != (NotFnReferenceDependency
-        ? NotFnReferenceCall->ReferentDispatcher : NotFnReferenceCall->Dispatcher)) return false;
+        ? NotFnReferenceCall->ReferentDispatcher : NotFnReferenceCall->Dispatcher)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Pattern = F->getPrimaryTemplate()->getTemplatedDecl();
     const auto *Info = F->getTypeSourceInfo();
     const auto Location = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
@@ -15450,7 +15451,7 @@ public:
     const auto *ReturnCall = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
     const auto *ExceptionCall = Exception ? dyn_cast<CallExpr>(Exception->getOperand()->IgnoreParens()) : nullptr;
     if (!Info || !Pattern || !Pattern->getTypeSourceInfo() || !ReturnCall || !ExceptionCall ||
-        (!notFnQueryTargetMethod() && (ReturnCall->getDirectCallee() || ExceptionCall->getDirectCallee()))) return false;
+        (!notFnQueryTargetMethod() && (ReturnCall->getDirectCallee() || ExceptionCall->getDirectCallee()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Close this selected dependency at the original graph's root, retaining
     // the same cumulative node budget. No runtime helper/body is certified.
     auto Restore = llvm::make_scope_exit([&] {
@@ -15461,7 +15462,7 @@ public:
     NotFnInvokeReturn = ReturnCall;
     NotFnInvokeException = ExceptionCall;
     if (!notFnIndirectSignature(ReturnCall) || !notFnInvokeForwardedCall(ExceptionCall))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     {
       // The selected instance's written type preserves primary-template
       // parameter references. Bind only that exact primary while walking
@@ -15469,18 +15470,18 @@ public:
       // independent primary signature below retain their own full proofs.
       NotFnInvokeWrittenPattern = Pattern;
       auto RestoreWritten = llvm::make_scope_exit([&] { NotFnInvokeWrittenPattern = nullptr; });
-      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return false;
+      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
-    if (!function(F)) return false;
+    if (!function(F)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     NotFnInvokeSignature = Pattern;
     NotFnInvokeReturn = NotFnInvokeException = nullptr;
     const auto *PatternPrototype = Pattern->getType()->getAs<FunctionProtoType>();
     if (!PatternPrototype || PatternPrototype->getExceptionSpecType() != EST_DependentNoexcept ||
         !PatternPrototype->getNoexceptExpr() || !family(Pattern) ||
         !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return false;
+        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Parameter : Pattern->parameters())
-      if (!notFnInvokeParameter(Parameter)) return false;
+      if (!notFnInvokeParameter(Parameter)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     CompletedNotFnInvokeSignatures.insert(F);
     NotFnInvokeUses = std::move(Uses);
     return !Failed;
@@ -15494,19 +15495,19 @@ public:
         !Operation || !Arguments || NotFnInvokeSignature || NotFnInvokeWrittenPattern ||
         NotFnOperationInvokeSignatureActive || Arguments->size() != 1 ||
         Arguments->get(0).getKind() != TemplateArgument::Pack ||
-        Arguments->get(0).pack_size() != Operation->getNumParams()) return false;
+        Arguments->get(0).pack_size() != Operation->getNumParams()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Bound = Context.getRecordType(Operation->getParent());
     const auto Pack = Arguments->get(0).pack_elements();
     auto BoundArguments = [&](const TemplateArgumentList *Types) {
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) return false;
+          Types->get(1).pack_size() != Pack.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return false;
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return true;
     };
     if (NotFnOperationInvokeFunction)
@@ -15539,18 +15540,18 @@ public:
           !family(F) || !family(Primary) || !family(First) || !family(Rest) ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return false;
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(
                 F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
-      if (!Context.hasSameType(F->getParamDecl(0)->getType(), Context.getRValueReferenceType(Bound))) return false;
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!Context.hasSameType(F->getParamDecl(0)->getType(), Context.getRValueReferenceType(Bound))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Pack.size(); ++I) {
         auto Forwarded = Pack[I].getAsType();
         if (Forwarded->isObjectType() || Forwarded->isFunctionType())
           Forwarded = Context.getRValueReferenceType(Forwarded);
-        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return false;
+        if (!Context.hasSameType(F->getParamDecl(I + 1)->getType(), Forwarded)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       bool Selected = false;
       for (const auto *Selection : Selections) {
@@ -15562,19 +15563,19 @@ public:
             !matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context) ||
             E->getNumArgs() != F->getNumParams() || E->isTypeDependent() || E->isValueDependent() ||
             !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return false;
+            E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         std::vector<const CallExpr *> Declvals;
-        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return false;
+        if (!notFnSignatureDeclval(E->getArg(0), Bound, Declvals)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (unsigned I = 0; I < Pack.size(); ++I)
-          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return false;
+          if (!notFnSignatureDeclval(E->getArg(I + 1), Pack[I].getAsType(), Declvals)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
         Uses.insert(E);
         Selected = true;
       }
-      if (!Selected) return false;
+      if (!Selected) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty()) return false;
+    if (Functions.size() != 1 || Uses.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *F = *Functions.begin();
     const auto *Pattern = F->getPrimaryTemplate()->getTemplatedDecl();
     const auto *Info = F->getTypeSourceInfo();
@@ -15595,7 +15596,7 @@ public:
           Cached->getBeginLoc() != Written->getBeginLoc() || Cached->getEndLoc() != Written->getEndLoc() ||
           !cstddefOrigin(S, SM, F->getLocation(), "libcxx", "__type_traits/invoke.h") ||
           !cstddefOrigin(S, SM, Cached->getBeginLoc(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Cached->getEndLoc(), "libcxx", "__type_traits/invoke.h")) return false;
+          !cstddefOrigin(S, SM, Cached->getEndLoc(), "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       ExceptionSource = Written;
     }
     const auto *Exception = ExceptionSource
@@ -15604,7 +15605,7 @@ public:
     const auto *ExceptionCall = Exception ? dyn_cast<CallExpr>(Exception->getOperand()->IgnoreParens()) : nullptr;
     if (!Info || !Pattern || !Pattern->getTypeSourceInfo() || !ReturnCall || !ExceptionCall ||
         !isa<CXXOperatorCallExpr>(ReturnCall) || !isa<CXXOperatorCallExpr>(ExceptionCall) ||
-        ReturnCall->getDirectCallee() != Operation || ExceptionCall->getDirectCallee() != Operation) return false;
+        ReturnCall->getDirectCallee() != Operation || ExceptionCall->getDirectCallee() != Operation) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Close this selected dependency at the original graph's root, retaining
     // the same cumulative node budget. No runtime helper/body is certified.
     auto Restore = llvm::make_scope_exit([&] {
@@ -15617,7 +15618,7 @@ public:
     NotFnInvokeReturn = ReturnCall;
     NotFnInvokeException = ExceptionCall;
     if (!notFnOperationQueryCall(ReturnCall) || !notFnOperationInvokeForwardedCall(ExceptionCall))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     {
       // The selected instance's written type preserves primary-template
       // parameter references. Bind only that exact primary while walking
@@ -15625,18 +15626,18 @@ public:
       // independent primary signature below retain their own full proofs.
       NotFnInvokeWrittenPattern = Pattern;
       auto RestoreWritten = llvm::make_scope_exit([&] { NotFnInvokeWrittenPattern = nullptr; });
-      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return false;
+      if (!family(Pattern) || !TraverseTypeLoc(Info->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
-    if (!function(F)) return false;
+    if (!function(F)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     NotFnInvokeSignature = Pattern;
     NotFnInvokeReturn = NotFnInvokeException = nullptr;
     const auto *PatternPrototype = Pattern->getType()->getAs<FunctionProtoType>();
     if (!PatternPrototype || PatternPrototype->getExceptionSpecType() != EST_DependentNoexcept ||
         !PatternPrototype->getNoexceptExpr() || !family(Pattern) ||
         !TraverseTypeLoc(Pattern->getTypeSourceInfo()->getTypeLoc()) ||
-        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return false;
+        !TraverseStmt(const_cast<Expr *>(PatternPrototype->getNoexceptExpr()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Parameter : Pattern->parameters())
-      if (!notFnInvokeParameter(Parameter)) return false;
+      if (!notFnInvokeParameter(Parameter)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // These exact declaration-only calls are published only after both the
     // selected and primary written signatures have passed this same graph.
     // Runtime bodies, forwarding, negation and lifetime remain separate.
@@ -15651,15 +15652,15 @@ public:
         isa<ClassTemplateSpecializationDecl>(R) || R->getDescribedClassTemplate() ||
         !family(R) || !family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumBases() || !Definition->field_empty() ||
-        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
+        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Self = Context.getRecordType(Definition);
     const auto ConstantReference = Context.getLValueReferenceType(Self.withConst());
     unsigned Injected = 0, Default = 0, Copy = 0, Assign = 0, Destroy = 0;
     for (const auto *Declaration : Definition->decls()) {
-      if (!step()) return false;
+      if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Name = dyn_cast<CXXRecordDecl>(Declaration)) {
         if (++Injected != 1 || !Name->isImplicit() || !Name->isInjectedClassName() ||
-            Name->getDeclContext() != Definition || !family(Name)) return false;
+            Name->getDeclContext() != Definition || !family(Name)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         continue;
       }
       const auto *Member = dyn_cast<CXXMethodDecl>(Declaration);
@@ -15668,20 +15669,20 @@ public:
           Member->isVariadic() || Member->getAccess() != AS_public || Member->isConst() ||
           Member->isVolatile() || Member->getRefQualifier() != RQ_None ||
           Member->getDescribedFunctionTemplate() || !Member->getTypeSourceInfo() ||
-          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
+          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Parameter : Member->parameters())
         if (!family(Parameter) || Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() ||
-            !Context.hasSameType(Parameter->getType(), ConstantReference)) return false;
+            !Context.hasSameType(Parameter->getType(), ConstantReference)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Member)) {
         if (Constructor->isDefaultConstructor() && !Constructor->getNumParams()) ++Default;
         else if (Constructor->isCopyConstructor() && Constructor->getNumParams() == 1) ++Copy;
-        else return false;
+        else return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       } else if (isa<CXXDestructorDecl>(Member)) {
-        if (Member->getNumParams()) return false;
+        if (Member->getNumParams()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         ++Destroy;
       } else {
         if (!Member->isCopyAssignmentOperator() || Member->getNumParams() != 1 ||
-            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return false;
+            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         ++Assign;
       }
     }
@@ -15758,15 +15759,15 @@ public:
         isa<ClassTemplateSpecializationDecl>(R) || R->getDescribedClassTemplate() ||
         !family(R) || !family(Definition) || Definition->isUnion() ||
         Definition->isDynamicClass() || Definition->getNumBases() || !Definition->field_empty() ||
-        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
+        !cstddefOrigin(S, SM, R->getLocation(), "libcxx", "__type_traits/nat.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Self = Context.getRecordType(Definition);
     const auto ConstantReference = Context.getLValueReferenceType(Self.withConst());
     unsigned Injected = 0, Default = 0, Copy = 0, Assign = 0, Destroy = 0;
     for (const auto *Declaration : Definition->decls()) {
-      if (!step()) return false;
+      if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Name = dyn_cast<CXXRecordDecl>(Declaration)) {
         if (++Injected != 1 || !Name->isImplicit() || !Name->isInjectedClassName() ||
-            Name->getDeclContext() != Definition || !family(Name)) return false;
+            Name->getDeclContext() != Definition || !family(Name)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         continue;
       }
       const auto *Member = dyn_cast<CXXMethodDecl>(Declaration);
@@ -15775,20 +15776,20 @@ public:
           Member->isVariadic() || Member->getAccess() != AS_public || Member->isConst() ||
           Member->isVolatile() || Member->getRefQualifier() != RQ_None ||
           Member->getDescribedFunctionTemplate() || !Member->getTypeSourceInfo() ||
-          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return false;
+          !cstddefOrigin(S, SM, Member->getLocation(), "libcxx", "__type_traits/nat.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Parameter : Member->parameters())
         if (!family(Parameter) || Parameter->hasDefaultArg() || !Parameter->getTypeSourceInfo() ||
-            !Context.hasSameType(Parameter->getType(), ConstantReference)) return false;
+            !Context.hasSameType(Parameter->getType(), ConstantReference)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Member)) {
         if (Constructor->isDefaultConstructor() && !Constructor->getNumParams()) ++Default;
         else if (Constructor->isCopyConstructor() && Constructor->getNumParams() == 1) ++Copy;
-        else return false;
+        else return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       } else if (isa<CXXDestructorDecl>(Member)) {
-        if (Member->getNumParams()) return false;
+        if (Member->getNumParams()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         ++Destroy;
       } else {
         if (!Member->isCopyAssignmentOperator() || Member->getNumParams() != 1 ||
-            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return false;
+            !Context.hasSameType(Member->getReturnType(), Context.getLValueReferenceType(Self))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         ++Assign;
       }
     }
@@ -15863,16 +15864,16 @@ public:
         Arguments->size() != (NotFnReferenceDependency ? 1U : 2U) || Arguments->get(0).getKind() != TemplateArgument::Pack ||
         CompletedNotFnInvokeSignatures.size() != 1 || NotFnInvokeUses.empty() ||
         (OperationDependency ? !NotFnOperationTryResultUses.empty()
-                             : !NotFnTryResultUses.empty())) return false;
+                             : !NotFnTryResultUses.empty())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Operation = OperationDependency ? NotFnPublicOperation : nullptr;
     const auto *OperationArguments = Operation ? Operation->getTemplateSpecializationArgs() : nullptr;
     if (OperationDependency && (Depth != 0 || Failed || NotFnOperationQuery ||
         !Operation || !OperationArguments || OperationArguments->size() != 1 ||
         OperationArguments->get(0).getKind() != TemplateArgument::Pack ||
         OperationArguments->get(0).pack_size() != Operation->getNumParams() ||
-        !NotFnOperationInvokeFunction || NotFnOperationInvokeUses.empty())) return false;
+        !NotFnOperationInvokeFunction || NotFnOperationInvokeUses.empty())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Bound = notFnQueryBound();
-    if (Bound.isNull()) return false;
+    if (Bound.isNull()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (OperationDependency) Bound = Context.getRecordType(Operation->getParent());
     const auto Pack = OperationDependency ? OperationArguments->get(0).pack_elements()
                                           : Arguments->get(0).pack_elements();
@@ -15880,18 +15881,18 @@ public:
       if (!Types || Types->size() != 2 || Types->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Types->get(0).getAsType(), Bound) ||
           Types->get(1).getKind() != TemplateArgument::Pack ||
-          Types->get(1).pack_size() != Pack.size()) return false;
+          Types->get(1).pack_size() != Pack.size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Actual = Types->get(1).pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (Pack[I].getKind() != TemplateArgument::Type ||
             Actual[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return false;
+            !Context.hasSameType(Pack[I].getAsType(), Actual[I].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return true;
     };
     std::set<const FunctionDecl *> Functions;
     std::map<const CallExpr *, const FunctionDecl *> Uses;
     for (const auto *Source : Sources) {
-      if (!step()) return false;
+      if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *F = Source ? dyn_cast_or_null<CXXMethodDecl>(Source->Declaration) : nullptr;
       if (!F || !F->getIdentifier() || F->getName() != "__try_call" ||
           !BoundArguments(F->getTemplateSpecializationArgs()) || F->isVariadic() ||
@@ -15921,24 +15922,24 @@ public:
           !Source->Canonical || !Source->Sugared || !BoundArguments(Source->Canonical) ||
           !BoundArguments(Source->Sugared) || !family(F) || !family(Owner) || !family(OwnerPrimary) ||
           !cstddefOrigin(S, SM, Owner->getLocation(), "libcxx", "__type_traits/invoke.h") ||
-          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return false;
+          !cstddefOrigin(S, SM, Source->Location, "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto OwnerPack = Owner->getTemplateArgs()[2].pack_elements();
       for (unsigned I = 0; I < Pack.size(); ++I)
         if (OwnerPack[I].getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(OwnerPack[I].getAsType(), Pack[I].getAsType())) return false;
+            !Context.hasSameType(OwnerPack[I].getAsType(), Pack[I].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Source->Canonical->size(); ++I)
         if (!Source->Canonical->get(I).structurallyEquals(F->getTemplateSpecializationArgs()->get(I)) ||
             !Source->Canonical->get(I).structurallyEquals(
-                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return false;
+                Context.getCanonicalTemplateArgument(Source->Sugared->get(I)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Definition = Owner->getDefinition();
       if (!Definition || Definition->isUnion() || Definition->isDynamicClass() ||
-          Definition->getNumBases() || !Definition->field_empty() || !family(Definition)) return false;
+          Definition->getNumBases() || !Definition->field_empty() || !family(Definition)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const TypeAliasDecl *Result = nullptr;
       for (const auto *Declaration : Definition->decls()) {
-        if (!step()) return false;
+        if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto *Alias = dyn_cast<TypeAliasDecl>(Declaration);
         if (!Alias || !Alias->getIdentifier() || Alias->getName() != "_Result") continue;
-        if (Result || !family(Alias) || !Alias->getTypeSourceInfo()) return false;
+        if (Result || !family(Alias) || !Alias->getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Result = Alias;
       }
       const auto *ResultType = Result ? dyn_cast<DecltypeType>(Result->getUnderlyingType().getTypePtr()) : nullptr;
@@ -15952,22 +15953,22 @@ public:
           E->isTypeDependent() || E->isValueDependent() ||
           Reference->getExprLoc() != Source->Location ||
           !Context.hasSameType(E->getType(), F->getReturnType().getNonLValueExprType(Context)) ||
-          E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return false;
+          E->getValueKind() != Expr::getValueKindForType(F->getReturnType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       bool Selected = false;
       for (const auto *Selection : Selections) {
-        if (!step()) return false;
+        if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (Selection && Selection->Function == F && Selection->Expression == E &&
             Selection->Location == Source->Location && Selection->FunctionalNotFnConstraint &&
             matchesFunctionalNotFnSelectedSource(S, SM, *Selection, Context)) Selected = true;
       }
-      if (!Selected) return false;
+      if (!Selected) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Return = dyn_cast<DecltypeType>(F->getReturnType().getTypePtr());
       const auto *Invoke = Return ? dyn_cast<CallExpr>(Return->getUnderlyingExpr()->IgnoreParens()) : nullptr;
       if (!Invoke || (OperationDependency
           ? (!NotFnOperationInvokeUses.count(Invoke) ||
              Invoke->getDirectCallee() != NotFnOperationInvokeFunction)
           : (!NotFnInvokeUses.count(Invoke) ||
-             !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())))) return false;
+             !CompletedNotFnInvokeSignatures.count(Invoke->getDirectCallee())))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // This declaration-only probe is used solely by the actual _Result
       // decltype. Close every real signature and member-template ancestor;
       // no runtime body is supplied or approved. The original class arguments
@@ -15975,7 +15976,7 @@ public:
       for (const auto *Template = Primary; Template;
            Template = Template->getInstantiatedFromMemberTemplate()) {
         if (!step() || !family(Template) ||
-            !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/invoke.h")) return false;
+            !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto *Parameters = Template->getTemplateParameters();
         const auto *First = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
         const auto *Rest = Parameters->size() == 2 ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1)) : nullptr;
@@ -15986,13 +15987,13 @@ public:
             (Pattern->getParent() != Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
             !Pattern->isStatic() || Pattern->getNumParams() != 1 || Pattern->isVariadic() ||
             Pattern->hasBody() || Pattern->getParamDecl(0)->hasDefaultArg() ||
-            !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return false;
+            !Context.hasSameType(Pattern->getParamDecl(0)->getType(), Context.IntTy)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (const auto *Declaration : Pattern->redecls()) {
           const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
           if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() || !Prototype ||
               Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
               !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
-              !function(Declaration)) return false;
+              !function(Declaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
       }
       for (const auto *Declaration : F->redecls()) {
@@ -16000,12 +16001,12 @@ public:
         if (!step() || !family(Declaration) || !Declaration->getTypeSourceInfo() || !Prototype ||
             Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
             !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc()) ||
-            !function(Declaration)) return false;
+            !function(Declaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       const CXXMethodDecl *Fallback = nullptr;
       const CXXRecordDecl *Sentinel = nullptr;
       for (const auto *Witness : Sources) {
-        if (!step()) return false;
+        if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto *Candidate = Witness ? dyn_cast_or_null<CXXMethodDecl>(Witness->Declaration) : nullptr;
         if (!Candidate || Candidate->getParent() != Owner || Candidate->getDeclName() != F->getDeclName() ||
             !Candidate->isVariadic() || Candidate->getNumParams() ||
@@ -16021,11 +16022,11 @@ public:
             Witness->Instantiation || Witness->Origin || Witness->WrittenStorageClass || Witness->Selection ||
             !BoundArguments(Witness->Canonical) || !BoundArguments(Witness->Sugared) ||
             !family(Candidate) || !notFnResultSentinelDefinition(R) ||
-            !cstddefOrigin(S, SM, Witness->Location, "libcxx", "__type_traits/invoke.h")) return false;
+            !cstddefOrigin(S, SM, Witness->Location, "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (unsigned I = 0; I < Witness->Canonical->size(); ++I)
           if (!Witness->Canonical->get(I).structurallyEquals(Candidate->getTemplateSpecializationArgs()->get(I)) ||
               !Witness->Canonical->get(I).structurallyEquals(
-                  Context.getCanonicalTemplateArgument(Witness->Sugared->get(I)))) return false;
+                  Context.getCanonicalTemplateArgument(Witness->Sugared->get(I)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         // The unselected ellipsis candidate supplies a type identity only.
         // Its actual packet and every original member-template declaration
         // must close; no call selection or runtime body is invented for it.
@@ -16039,7 +16040,7 @@ public:
               !Rest->isParameterPack() || First->getIndex() != 0 || Rest->getIndex() != 1 ||
               First->hasDefaultArgument() || Rest->hasDefaultArgument() || !family(First) || !family(Rest) ||
               !Pattern || (Pattern->getParent() != Owner && Pattern->getParent() != OwnerPrimary->getTemplatedDecl()) ||
-              !Pattern->isStatic() || !Pattern->isVariadic() || Pattern->getNumParams() || Pattern->hasBody()) return false;
+              !Pattern->isStatic() || !Pattern->isVariadic() || Pattern->getNumParams() || Pattern->hasBody()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           for (const auto *Declaration : Pattern->redecls()) {
             const auto *Info = Declaration->getTypeSourceInfo();
             const auto Location = Info ? Info->getTypeLoc().getAs<FunctionProtoTypeLoc>() : FunctionProtoTypeLoc();
@@ -16048,10 +16049,10 @@ public:
                 !Prototype->isVariadic() || Prototype->getNumParams() ||
                 Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
                 !Context.hasSameType(Info->getType(), Declaration->getType()) ||
-                Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return false;
+                Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
             for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                                     Prototype->getEllipsisLoc()})
-              if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+              if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           }
         }
         const auto *Info = Candidate->getTypeSourceInfo();
@@ -16060,20 +16061,20 @@ public:
         if (!Location || !Prototype || !Prototype->isVariadic() || Prototype->getNumParams() ||
             Prototype->getExceptionSpecType() != EST_None || Prototype->getNoexceptExpr() ||
             !Context.hasSameType(Info->getType(), Candidate->getType()) ||
-            Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return false;
+            Location.getReturnLoc().getType()->getAsCXXRecordDecl() != R) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (const auto Site : {Location.getReturnLoc().getBeginLoc(), Location.getReturnLoc().getEndLoc(),
                                 Prototype->getEllipsisLoc()})
-          if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+          if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Fallback = Candidate;
         Sentinel = R->getCanonicalDecl();
       }
-      if (!Fallback || !Sentinel) return false;
+      if (!Fallback || !Sentinel) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Inserted = NotFnResultSentinels.emplace(Result, Sentinel);
-      if (!Inserted.second && Inserted.first->second != Sentinel) return false;
+      if (!Inserted.second && Inserted.first->second != Sentinel) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Uses.emplace(E, F);
       Functions.insert(F);
     }
-    if (Functions.size() != 1 || Uses.empty() || Failed) return false;
+    if (Functions.size() != 1 || Uses.empty() || Failed) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // The operation dependency has a distinct selected identity and use set.
     // Reuse all original packet, primary, signature and sentinel obligations;
     // a helper name or a matching result type supplies no permission.
@@ -16095,11 +16096,11 @@ public:
         Storage.Tuple != NotFnFactoryDefaults->Selected.Storage.Tuple ||
         !Context.hasSameType(Storage.CallableType, NotFnCallableType) ||
         !Context.hasSameType(Query->getArg(0)->getType(), Context.getRecordType(Storage.Tuple)))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Input = Query->getArg(1)->getType();
     if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage && !NotFnNestedStorage)) {
       if (!Input->isRValueReferenceType() ||
-          !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) return false;
+          !Context.hasSameType(Input.getNonReferenceType(), Storage.CallableType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     } else {
       // The forwarder is reached through the outer inherited initializer;
       // it is not a CXXConstructExpr in SelectedConstructions.
@@ -16109,10 +16110,10 @@ public:
           Forwarder->getParent()->getCanonicalDecl() != Storage.Forwarder->getCanonicalDecl() ||
           Forwarder->getNumParams() != 1 ||
           !Context.hasSameType(Input, Forwarder->getParamDecl(0)->getType()) ||
-          !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), Storage.CallableType)) return false;
+          !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), Storage.CallableType)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const auto Found = OperationTraits.find(Query);
-    if (Found == OperationTraits.end()) return false;
+    if (Found == OperationTraits.end()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Source = Found->second;
     const auto *QueryRoot = Source.Root ? Source.Root->IgnoreParenImpCasts() : nullptr;
     if (const auto *Binding = dyn_cast_or_null<CXXBindTemporaryExpr>(QueryRoot)) {
@@ -16121,7 +16122,7 @@ public:
       if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage && !NotFnNestedStorage) || !Destructor ||
           Destructor->getParent()->getCanonicalDecl() != Storage.Tuple->getCanonicalDecl() ||
           !Context.hasSameType(Binding->getType(), Context.getRecordType(Storage.Tuple)))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // Keep the complete original root for VisitTypeTraitExpr. Its binding
       // and selected destructor still traverse the actual subobject graph.
       QueryRoot = Binding->getSubExpr()->IgnoreParenImpCasts();
@@ -16130,7 +16131,7 @@ public:
     if (!Source.Attempted || !Source.Complete || !Root || Source.Operands.size() != 1 ||
         Source.Destructor || Source.DestructionPrototype || Source.DestructionLookupAttempted ||
         Source.DestructionExceptionAttempted ||
-        !Context.hasSameType(Root->getType(), Query->getArg(0)->getType())) return false;
+        !Context.hasSameType(Root->getType(), Query->getArg(0)->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Constructor = Root->getConstructor();
     bool Selected = false;
     for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions)
@@ -16138,7 +16139,7 @@ public:
           Constructor->getParent()->getCanonicalDecl() == Storage.Tuple->getCanonicalDecl())
         Selected = true;
     if (!Selected || Constructor->getNumParams() != 1 ||
-        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Input)) return false;
+        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Input)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // This is the actual retained query for an already described runtime
     // construction, not a copy/move special member or a generic SDK grant.
     // The callback still authenticates the original variable packet before
@@ -16154,7 +16155,7 @@ public:
   }
   bool withNotFnConstructorDefaultType(const CXXConstructorDecl *Constructor,
       const TemplateTypeParmDecl *Parameter, std::function<bool()> Proof) {
-    if (!Constructor || !Parameter || !Parameter->hasDefaultArgument() || !Proof) return false;
+    if (!Constructor || !Parameter || !Parameter->hasDefaultArgument() || !Proof) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Default = Parameter->getDefaultArgument().getArgument().getAsType();
     if ((!NotFnOwnedCallableRecord && !NotFnReferenceStorage && !NotFnNestedStorage) || !NotFnFactoryDefaults ||
         Constructor->getParent()->getCanonicalDecl() !=
@@ -16167,7 +16168,7 @@ public:
         !Inherited || Inherited->getConstructor() != Constructor || !Parameters ||
         Parameters->size() != 2 || Parameters->getParam(1) != Parameter ||
         Parameter->getIndex() != 1 || Parameter->isParameterPack() || Default.isNull())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Bind this exact default while its primary, written or converted
     // source graph is checked. Each graph still closes independently.
     NotFnConstructorDefaultParameter = Parameter;
@@ -16183,7 +16184,7 @@ public:
   bool TraverseNotFnConstructorParameterTypes(const TemplateUseSource &Source,
       const NonTypeParameterSource &Type) {
     const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Type.Parameter);
-    if (!Parameter || !Parameter->getTypeSourceInfo() || !Type.Type) return false;
+    if (!Parameter || !Parameter->getTypeSourceInfo() || !Type.Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto TraverseSources = [&] {
       return TraverseTypeLoc(Parameter->getTypeSourceInfo()->getTypeLoc()) &&
              TraverseTypeLoc(Type.Type->getTypeLoc()) && !Failed;
@@ -16208,7 +16209,7 @@ public:
         !Source.Canonical || Source.Canonical->size() != 2 || !Arguments || Arguments->size() != 2 ||
         !Context.hasSameType(Type.Type->getType(), Context.IntTy) ||
         !family(Constructor) || !family(Primary) || !family(Parameter) || !family(Pack))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     bool Selected = false;
     for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions)
       Selected |= Construction && Construction->getConstructor() == Constructor;
@@ -16217,14 +16218,14 @@ public:
         Arguments->get(0).pack_elements()[0].getKind() != TemplateArgument::Type ||
         Arguments->get(1).getKind() != TemplateArgument::Integral ||
         !Arguments->get(1).getAsIntegral().isZero() ||
-        !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.IntTy)) return false;
+        !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.IntTy)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I != 2; ++I)
-      if (!Source.Canonical->get(I).structurallyEquals(Arguments->get(I))) return false;
+      if (!Source.Canonical->get(I).structurallyEquals(Arguments->get(I))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Input = Arguments->get(0).pack_elements()[0].getAsType();
     if (Input.isNull() ||
         !Context.hasSameType(Input.getNonReferenceType().getUnqualifiedType(), NotFnCallableType) ||
         !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
-            Input->isReferenceType() ? Input : Context.getRValueReferenceType(Input))) return false;
+            Input->isReferenceType() ? Input : Context.getRValueReferenceType(Input))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // The enclosing factory already matched this retained selected occurrence.
     // Keep both source graphs; this slot grants only the storage owner identity.
     NotFnConstructorTypeParameter = Parameter;
@@ -16237,7 +16238,7 @@ public:
         NotFnConstructorReturn || !Constructor || !Written ||
         Written != Constructor->getTypeSourceInfo() || !family(Constructor) ||
         !Constructor->getPrimaryTemplate() || !Constructor->getReturnType()->isVoidType())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     bool Selected = false;
     for (const auto *Construction : NotFnFactoryDefaults->Selected.SelectedConstructions) {
       const auto *Actual = Construction ? Construction->getConstructor() : nullptr;
@@ -16249,7 +16250,7 @@ public:
     const auto Return = Prototype ? Prototype.getReturnLoc() : TypeLoc();
     if (!Selected || !Prototype || !Return ||
         !Return.getAs<BuiltinTypeLoc>() || !Return.getType()->isVoidType())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Clang's actual selected constructor carries a void return TypeLoc, but
     // constructors have no written return token. Bind only that precise slot;
     // all parameters, defaults, noexcept and other locations keep their proof.
@@ -16264,13 +16265,13 @@ public:
   }
   bool bindNotFnConstraintVariables(std::function<bool(const DeclRefExpr *)> Source) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature ||
-        NotFnConstraintVariableSource || !Source) return false;
+        NotFnConstraintVariableSource || !Source) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     NotFnConstraintVariableSource = std::move(Source);
     return true;
   }
   bool bindNotFnFactoryDefaults(const FunctionalNotFnFactoryTemplateSource &Factory) {
     if (Mode != UtilityTupleQueryMode::NotFnSignature || NotFnFactoryDefaults)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     NotFnFactoryDefaults = &Factory;
     return true;
   }
@@ -16278,10 +16279,10 @@ public:
     if (const auto *Sentinel = bindResultSentinelAlias(T)) {
       (void)Sentinel;
       if (!WalkUpFromTemplateSpecializationType(T) ||
-          !TraverseTemplateName(T->getTemplateName())) return false;
+          !TraverseTemplateName(T->getTemplateName())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Arguments = T->template_arguments();
       for (unsigned I = 0; I < Arguments.size(); ++I)
-        if (!TraverseBindResultArgument(T, I, Arguments[I])) return false;
+        if (!TraverseBindResultArgument(T, I, Arguments[I])) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return !Failed;
     }
     if (isa_and_nonnull<BuiltinTemplateDecl>(T->getTemplateName().getAsTemplateDecl())) {
@@ -16305,18 +16306,18 @@ public:
     if (const auto *Sentinel = notFnResultSentinelAlias(Location.getTypePtr())) {
       if (Location.getNumArgs() != 2 ||
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
-          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return false;
+          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *First = Location.getArgLoc(0).getTypeSourceInfo();
       const auto *Second = Location.getArgLoc(1).getTypeSourceInfo();
       const auto *Record = Second ? Second->getType()->getAsCXXRecordDecl() : nullptr;
       if (!First || !Second || !Record ||
           First->getType() != Location.getTypePtr()->template_arguments()[0].getAsType() ||
           Second->getType() != Location.getTypePtr()->template_arguments()[1].getAsType() ||
-          Record->getCanonicalDecl() != Sentinel) return false;
+          Record->getCanonicalDecl() != Sentinel) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto Site : {Location.getTemplateNameLoc(), Location.getLAngleLoc(), Location.getRAngleLoc(),
                               First->getTypeLoc().getBeginLoc(), First->getTypeLoc().getEndLoc(),
                               Second->getTypeLoc().getBeginLoc(), Second->getTypeLoc().getEndLoc()})
-        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       NotFnResultWrittenArgument = Second;
       NotFnResultWrittenSentinel = Sentinel;
     }
@@ -16329,18 +16330,18 @@ public:
     if (const auto *Sentinel = bindResultSentinelAlias(Location.getTypePtr())) {
       if (Location.getNumArgs() != 2 ||
           Location.getArgLoc(0).getArgument().getKind() != TemplateArgument::Type ||
-          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return false;
+          Location.getArgLoc(1).getArgument().getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *First = Location.getArgLoc(0).getTypeSourceInfo();
       const auto *Second = Location.getArgLoc(1).getTypeSourceInfo();
       const auto *Record = Second ? Second->getType()->getAsCXXRecordDecl() : nullptr;
       if (!First || !Second || !Record ||
           First->getType() != Location.getTypePtr()->template_arguments()[0].getAsType() ||
           Second->getType() != Location.getTypePtr()->template_arguments()[1].getAsType() ||
-          Record->getCanonicalDecl() != Sentinel) return false;
+          Record->getCanonicalDecl() != Sentinel) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto Site : {Location.getTemplateNameLoc(), Location.getLAngleLoc(), Location.getRAngleLoc(),
                               First->getTypeLoc().getBeginLoc(), First->getTypeLoc().getEndLoc(),
                               Second->getTypeLoc().getBeginLoc(), Second->getTypeLoc().getEndLoc()})
-        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return false;
+        if (!cstddefOrigin(S, SM, Site, "libcxx", "__type_traits/invoke.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       BindResultWrittenArgument = Second;
       BindResultWrittenSentinel = Sentinel;
     }
@@ -16386,10 +16387,10 @@ public:
         (T.isVolatileQualified() && !(Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
             !BindWeakResultSignaturePointee.isNull() && T == BindWeakResultSignaturePointee)) ||
         T.isRestrictQualified() || T.getAddressSpace() != LangAS::Default)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedTraitTypeSource)
       if (const auto Complete = BindNestedTraitTypeSource(T)) {
-        if (!*Complete) Failed = true;
+        if (!*Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
         return *Complete && !Failed;
       }
     // Source purpose precedes type memoization. These lazy nested records
@@ -16401,8 +16402,8 @@ public:
             (!BindWeakResultSentinel || !BindWeakResultOriginalSentinel ||
              (Record->getCanonicalDecl() != BindWeakResultSentinel &&
               Record->getCanonicalDecl() != BindWeakResultOriginalSentinel))) {
-          Failed = true;
-          return false;
+          Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
     if (Mode == UtilityTupleQueryMode::PairConstruction && pairSourceTypeSpelling(T))
       return true;
@@ -16414,11 +16415,11 @@ public:
         if (Bound != CatOwnerAtoms.end()) {
           for (const auto &[Owner, Slot] : Bound->second) {
             if (!CatInputOwners.count(Owner->getCanonicalDecl()) ||
-                Slot >= Owner->getTemplateArgs().size()) return false;
+                Slot >= Owner->getTemplateArgs().size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
             const auto &Argument = Owner->getTemplateArgs()[Slot];
             const auto *Input = Argument.getKind() == TemplateArgument::Type
                 ? Context.getBaseElementType(Argument.getAsType())->getAsCXXRecordDecl() : nullptr;
-            if (!Input || Input->getCanonicalDecl() != Record->getCanonicalDecl()) return false;
+            if (!Input || Input->getCanonicalDecl() != Record->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           }
           return true;
         }
@@ -16433,25 +16434,25 @@ public:
               Record->getCanonicalDecl() == BindResultComparisonRecord) &&
             !(BindFallbackSignature && BindFallbackSentinel &&
               Record->getCanonicalDecl() == BindFallbackSentinel)) {
-          Failed = true;
-          return false;
+          Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata)
       if (const auto *Projection = dyn_cast<TemplateSpecializationType>(T.getTypePtr()))
         if (BindTupleElementProjectionAtoms.count(Projection) && !bindTupleElementProjectionType(Projection)) {
-          Failed = true;
-          return false;
+          Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         }
     if (!Types.insert(T.getTypePtr()).second) return true;
     ++Depth;
     auto Restore = llvm::make_scope_exit([&] { --Depth; });
     const bool Complete = RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseType(T);
-    if (!Complete && (NotFnReferenceStorage || Mode == UtilityTupleQueryMode::BindSignature)) Failed = true;
+    if (!Complete && (NotFnReferenceStorage || Mode == UtilityTupleQueryMode::BindSignature)) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
     return Complete && !Failed;
   }
   bool TraverseStmt(Stmt *E) {
     if (!E) return true;
-    if (!step()) return false;
+    if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (!Expressions.insert(E).second) return true;
     // RAV's dataTraverseStmtPre/Post already own this statement's depth.
     // Preserve existing accounting for the other query modes.
@@ -16460,14 +16461,14 @@ public:
     if (OwnDepth) ++Depth;
     auto Restore = llvm::make_scope_exit([&] { if (OwnDepth) --Depth; });
     const bool Complete = RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseStmt(E);
-    if (!Complete && (NotFnReferenceStorage || Mode == UtilityTupleQueryMode::BindSignature)) Failed = true;
+    if (!Complete && (NotFnReferenceStorage || Mode == UtilityTupleQueryMode::BindSignature)) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
     return Complete && !Failed;
   }
   bool TraverseTypeLoc(TypeLoc Location) {
     if (Location.isNull()) return true;
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedTraitTypeLocSource)
       if (const auto Complete = BindNestedTraitTypeLocSource(Location)) {
-        if (!*Complete) Failed = true;
+        if (!*Complete) Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
         return *Complete && !Failed;
       }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindNestedReturnSource)
@@ -16484,12 +16485,12 @@ public:
             // Repair only this authenticated original projection wrapper.
             // The real builtin/alias name token must remain SDK source.
             if (!cstddefOrigin(S, SM, Named.getTemplateNameLoc(), "libcxx",
-                               "__tuple/make_tuple_types.h")) return false;
+                               "__tuple/make_tuple_types.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
             for (const auto L : {Location.getBeginLoc(), Location.getEndLoc()}) {
-              if (L.isInvalid()) return false;
+              if (L.isInvalid()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
               const auto Origin = S.sdkFile(SM, L);
               if ((!Origin || Origin->Root != "libcxx") &&
-                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) return false;
+                  !SM.isWrittenInScratchSpace(SM.getSpellingLoc(L))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
             }
             return TraverseTemplateSpecializationTypeLoc(Named);
           }
@@ -16515,7 +16516,7 @@ public:
           !bindSelectedPartialSplitTypeEnd(Location, L) &&
           !(Mode == UtilityTupleQueryMode::NotFnSignature && NotFnFactoryDefaults &&
             functionalNotFnFactorySplitTypeEnd(
-                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return false;
+                S, SM, Context, *NotFnFactoryDefaults, Location, L))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return TraverseType(Location.getType()) &&
            RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeLoc(Location);
@@ -16559,18 +16560,18 @@ public:
     ++Depth;
     if (step()) return true;
     --Depth;
-    return false; // RAV skips this subtree; Failed still rejects the whole proof.
+    return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); // RAV skips this subtree; Failed still rejects the whole proof.
   }
   bool dataTraverseStmtPost(Stmt *) { --Depth; return true; }
   bool VisitExpr(Expr *E) {
-    if (!step()) return false;
+    if (!step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E))
       return Operands.count(Opaque) && !Opaque->getSourceExpr();
     const auto Origin = S.sdkFile(SM, E->getExprLoc());
     if (!(GeneratedExceptionLiterals.count(E) ||
           (Mode == UtilityTupleQueryMode::PairConstruction &&
            GeneratedPairScalarInitializers.count(E)) ||
-          (Origin && Origin->Root == "libcxx"))) return false;
+          (Origin && Origin->Root == "libcxx"))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // The bound-member placeholder belongs only to one freshly checked SDK
     // signature access. Its original receiver/member children still traverse.
     if (bindMemberSignatureBoundAccess(E)) return step();
@@ -16591,7 +16592,7 @@ public:
           Operation->ResultType != Method->getReturnType() || Operation->Operation != Fresh->Operation.Operation ||
           !cstddefOrigin(S, SM, Query->getExprLoc(), "libcxx", "__type_traits/invoke.h") ||
           !functionalBindStandardCallDeclarationSource(S, SM, Method, *Fresh, Context) ||
-          !approvedFunctionalSignatureQuery(S, SM, Query, Context)) return false;
+          !approvedFunctionalSignatureQuery(S, SM, Query, Context)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // The exact selected SDK method owns this decltype result. The existing
       // operation validator rechecks its original transparent pattern, actual
       // operand parameters and complete one-operation body. Consume that
@@ -16654,11 +16655,11 @@ public:
             TraverseType(Declaration->getUnderlyingType());
       }
     }
-    if (!family(Declaration)) return false;
+    if (!family(Declaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (const auto *Owner = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext())) {
       if (const auto ViewAlias = pairViewCountSizeAlias(Declaration, Owner)) {
-        if (!*ViewAlias) return false;
-      } else if (!record(Owner)) return false;
+        if (!*ViewAlias) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      } else if (!record(Owner)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         BindUnusedResultOperand && Declaration == BindUnusedResultOperand) {
@@ -16686,12 +16687,12 @@ public:
   }
   bool VisitTemplateSpecializationType(TemplateSpecializationType *T) {
     const auto *Template = T->getTemplateName().getAsTemplateDecl();
-    if (!Template || !family(Template)) return false;
+    if (!Template || !family(Template)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         T != BindOriginalConjunctionAlias &&
         !T->isDependentType() && (!BindTypeSource || !BindTypeSource(T))) {
-      Failed = true;
-      return false;
+      Failed = (llvm::errs() << "STL-QUERY-SOURCE-FAILED line=" << __LINE__ << "\n", true);
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     if (T->isTypeAlias()) {
       const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Template);
@@ -16702,7 +16703,7 @@ public:
       if (catMetadataMode() && Alias &&
           Alias->getName() == "__make_indices_imp") return catIndexAlias(T, Alias);
       if (!Declaration || !Declaration->getTypeSourceInfo() ||
-          !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return false;
+          !TraverseTypeLoc(Declaration->getTypeSourceInfo()->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return TraverseType(T->getAliasedType());
     }
     if (Template->getName() == "__make_tuple_types" && !T->isDependentType()) {
@@ -16716,7 +16717,7 @@ public:
       const bool BindTag = Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
           Bind != BindTupleTagSlices.end() && Bind->second.Source == T;
       if (!NotFnTag && !BindTag && (T->template_arguments().size() != 1 ||
-          T->template_arguments()[0].getKind() != TemplateArgument::Type)) return false;
+          T->template_arguments()[0].getKind() != TemplateArgument::Type)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return T->isDependentType() || record(T->getAsCXXRecordDecl());
   }
@@ -16730,10 +16731,10 @@ public:
         return BindVariableSource(E);
     }
     if (const auto *F = dyn_cast<FunctionDecl>(D)) {
-      if (!family(F) || !TraverseType(F->getType())) return false;
+      if (!family(F) || !TraverseType(F->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Arguments = F->getTemplateSpecializationArgs())
         for (const auto &A : Arguments->asArray())
-          if (!TraverseTemplateArgument(A)) return false;
+          if (!TraverseTemplateArgument(A)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return true;
     }
     if (const auto *Parameter = dyn_cast<ParmVarDecl>(D)) {
@@ -16772,14 +16773,14 @@ public:
                 ? !approvedFunctionalOperationImpl(S, SM, E, Context, false)
                 : !approvedFunctionalSignatureQuery(S, SM, E, Context)) ||
             !step() || !VisitExpr(E) || !VisitCallExpr(E) || !step() || !step() ||
-            E->getOperator() != OO_Call || E->getNumArgs() != Method->getNumParams() + 1) return false;
+            E->getOperator() != OO_Call || E->getNumArgs() != Method->getNumParams() + 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         // Fresh->Operation checks the actual selected SDK method, original
         // signature and operation body using the existing functional-object
         // validator. The bind source router separately binds this exact use
         // to its active query/body role. Do not reinterpret the SDK callee's
         // decltype forwarding expressions as ordinary tuple-carrier source.
         // Every actual receiver and argument still traverses in this graph.
-        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return false;
+        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         return !Failed;
       }
     }
@@ -16793,9 +16794,9 @@ public:
             !S.owns(SM, Method->getLocation()) || Method->hasAttrs() ||
             !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__type_traits/invoke.h") ||
             !step() || !VisitExpr(E) || !VisitCallExpr(E) || !step() || !step() ||
-            E->getOperator() != OO_Call || E->getNumArgs() != Method->getNumParams() + 1) return false;
+            E->getOperator() != OO_Call || E->getNumArgs() != Method->getNumParams() + 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         BindOwnedQuerySources->insert(Method);
-        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return false;
+        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         return !Failed;
       }
     }
@@ -16807,10 +16808,10 @@ public:
       if (!step() || !VisitExpr(E) || !step() || !step() || E->getOperator() != OO_Call ||
           E->getDirectCallee() != Child.Invocation.Method || E->getNumArgs() != Child.IncomingForwards.size() + 1 ||
           Child.IncomingForwards.size() > 2 || !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h"))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I < Child.IncomingForwards.size(); ++I)
-        if (E->getArg(I + 1)->IgnoreParenImpCasts() != Child.IncomingForwards[I]) return false;
-      for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return false;
+        if (E->getArg(I + 1)->IgnoreParenImpCasts() != Child.IncomingForwards[I]) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return true;
     }
     if (Mode == UtilityTupleQueryMode::NotFnSignature && notFnQueryTargetMethod()) {
@@ -16824,8 +16825,8 @@ public:
         // Charge the skipped callee nodes without traversing an owned method
         // as though it were an SDK declaration family.
         if (Found->second != notFnQueryTargetMethod() || !step() || !VisitExpr(E) || !step() || !step() ||
-            E->getNumArgs() != notFnQueryTargetMethod()->getNumParams() + 1) return false;
-        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return false;
+            E->getNumArgs() != notFnQueryTargetMethod()->getNumParams() + 1) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+        for (auto *Argument : E->arguments()) if (!TraverseStmt(Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         return true;
       }
     }
@@ -16837,13 +16838,13 @@ public:
     // bound above. Traverse the real receiver and nested invoke; the ordinary
     // source checker independently finishes the selected method signature/body.
     if (!step() || !VisitExpr(E) || !step() || !step() ||
-        E->getNumArgs() != 1 || !Found->second) return false;
+        E->getNumArgs() != 1 || !Found->second) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return TraverseStmt(E->getArg(0));
   }
   bool VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindSourceLookupUses.count(E))
       return bindSourceLookupUse(E);
-    for (const auto *D : E->decls()) if (!family(D)) return false;
+    for (const auto *D : E->decls()) if (!family(D)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return true;
   }
   bool VisitSubstNonTypeTemplateParmExpr(SubstNonTypeTemplateParmExpr *E) {
@@ -16862,7 +16863,7 @@ public:
     if (!step() || !Source.Attempted || !Source.Complete || !Source.Root ||
         Source.Operands.size() != 1 || !Operand || Operand->getSourceExpr() ||
         Source.Operands[0] != Operand || !Operands.count(Operand) || Access->ObjectIsArrow ||
-        !PairInputRecords.count(Access->Wrapper.Record->getCanonicalDecl())) return false;
+        !PairInputRecords.count(Access->Wrapper.Record->getCanonicalDecl())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Only this actual SDK conversion family joins metadata. The SDK access
     // descriptor proves its pointer dereference; the pending ordinary query
     // must still finish the selected call and original exception source.
@@ -16870,7 +16871,7 @@ public:
     std::set<const CXXMethodDecl *> Family;
     while (!Pending.empty()) {
       const auto *Current = Pending.back(); Pending.pop_back();
-      if (!Current || !step()) return false;
+      if (!Current || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(Current).second) continue;
       const auto *Prototype = Current->getType()->getAs<FunctionProtoType>();
       if (!isa<CXXConversionDecl>(Current) || !Current->isConst() || Current->isStatic() ||
@@ -16878,17 +16879,17 @@ public:
           Current->getNumParams() || Current->getPrimaryTemplate() ||
           !Prototype || !Prototype->isNothrow() || Prototype->getNoexceptExpr() ||
           !approvedStandardSDKDeclaration(S, SM, Current) ||
-          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+          !cstddefOrigin(S, SM, Current->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Redeclaration : Current->redecls())
         Pending.push_back(cast<CXXMethodDecl>(Redeclaration));
       if (const auto *Pattern = Current->getTemplateInstantiationPattern()) {
         const auto *Member = dyn_cast<CXXMethodDecl>(Pattern);
-        if (!Member) return false;
+        if (!Member) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Pending.push_back(Member);
       }
       if (const auto *Definition = Current->getDefinition()) {
         if (!approvedStandardSDKDeclaration(S, SM, Definition) ||
-            !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return false;
+            !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", "__functional/reference_wrapper.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
@@ -16913,13 +16914,13 @@ public:
         Types->get(0).pack_size() != Operation->getNumParams() ||
         Call->getNumArgs() != Operation->getNumParams() + 1 ||
         !Context.hasSameType(Call->getType(), Operation->getReturnType().getNonLValueExprType(Context)) ||
-        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return false;
+        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Object = Context.getRecordType(Operation->getParent());
     const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
     if (!Receiver || Receiver->getCastKind() != CK_NoOp || !Receiver->isXValue() ||
-        !Context.hasSameType(Receiver->getType(), Context.getConstType(Object))) return false;
+        !Context.hasSameType(Receiver->getType(), Context.getConstType(Object))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const CallExpr *> Declvals;
-    if (!notFnSignatureDeclval(Receiver->getSubExpr(), Object, Declvals)) return false;
+    if (!notFnSignatureDeclval(Receiver->getSubExpr(), Object, Declvals)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Inputs = Types->get(0).pack_elements();
     for (unsigned I = 0; I < Operation->getNumParams(); ++I) {
       const auto Parameter = Operation->getParamDecl(I)->getType();
@@ -16927,9 +16928,9 @@ public:
       if (Inputs[I].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Operand->getType(), Parameter.getNonLValueExprType(Context)) ||
           Operand->getValueKind() != Expr::getValueKindForType(Parameter) ||
-          !notFnSignatureDeclval(Operand, Inputs[I].getAsType(), Declvals)) return false;
+          !notFnSignatureDeclval(Operand, Inputs[I].getAsType(), Declvals)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
-    if (!family(Operation)) return false;
+    if (!family(Operation)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Exact original SDK declval nodes, owned by this proven metadata query.
     // Their bodies and all user/runtime calls retain their original rules.
     NotFnSignatureDeclvals.insert(Declvals.begin(), Declvals.end());
@@ -16949,7 +16950,7 @@ public:
         Call->getNumArgs() != Operation->getNumParams() + 1 ||
         NotFnInvokeSignature->getNumParams() != Call->getNumArgs() ||
         !Context.hasSameType(Call->getType(), Operation->getReturnType().getNonLValueExprType(Context)) ||
-        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return false;
+        Call->getValueKind() != Expr::getValueKindForType(Operation->getReturnType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Forward = [&](const Expr *Operand, unsigned Index) {
       const auto *Cast = Operand ? dyn_cast<CXXStaticCastExpr>(Operand->IgnoreParens()) : nullptr;
       const auto *Use = Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens()) : nullptr;
@@ -16967,12 +16968,12 @@ public:
     const auto *Receiver = dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
     if (!Receiver || Receiver->getCastKind() != CK_NoOp || !Receiver->isXValue() ||
         !Context.hasSameType(Receiver->getType(), Context.getConstType(Object)) ||
-        !Forward(Receiver->getSubExpr(), 0)) return false;
+        !Forward(Receiver->getSubExpr(), 0)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < Operation->getNumParams(); ++I) {
       const auto Parameter = Operation->getParamDecl(I)->getType();
       if (!Forward(Call->getArg(I + 1), I + 1) ||
           !Context.hasSameType(Call->getArg(I + 1)->getType(), Parameter.getNonLValueExprType(Context)) ||
-          Call->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter)) return false;
+          Call->getArg(I + 1)->getValueKind() != Expr::getValueKindForType(Parameter)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return family(Operation);
   }
@@ -17024,7 +17025,7 @@ public:
           E->getNumArgs() != 1 || !E->isPRValue() ||
           E->getConstructionKind() != CXXConstructionKind::Complete ||
           !Context.hasSameType(E->getType(), BindMetadata->CallableType) ||
-          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return bindFunctionalBindSpecialMember(Constructor) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
@@ -17033,7 +17034,7 @@ public:
           E->getNumArgs() != 1 || !E->isPRValue() ||
           E->getConstructionKind() != CXXConstructionKind::Complete ||
           !Context.hasSameType(E->getType(), BindMetadata->CallableType) ||
-          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return specialMember(Constructor) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindCallMetadata &&
@@ -17052,7 +17053,7 @@ public:
           E->getConstructionKind() != CXXConstructionKind::Complete ||
           !BindMetadataRecords.count(Constructor->getParent()->getCanonicalDecl()) ||
           !Context.hasSameUnqualifiedType(E->getType(), Context.getRecordType(Constructor->getParent())) ||
-          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return BindConstructionSource(E) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindCallMetadata &&
@@ -17070,7 +17071,7 @@ public:
           !E->isPRValue() || E->getConstructionKind() != CXXConstructionKind::Complete ||
           !BindMetadataRecords.count(Constructor->getParent()->getCanonicalDecl()) ||
           !Context.hasSameUnqualifiedType(E->getType(), Context.getRecordType(Constructor->getParent())) ||
-          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+          !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return specialMember(Constructor, 0, true) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata && BindCallMetadata) {
@@ -17092,7 +17093,7 @@ public:
             Constructor->getParent()->getCanonicalDecl() !=
                 Argument.Reference->Wrapper.Record->getCanonicalDecl() ||
             !Context.hasSameUnqualifiedType(E->getType(), Context.getRecordType(Constructor->getParent())) ||
-            !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return false;
+            !cstddefOrigin(S, SM, E->getExprLoc(), "libcxx", "__functional/bind.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         return specialMember(Constructor) && !Failed;
       }
     }
@@ -17110,7 +17111,7 @@ public:
           !Context.hasSameType(Operand->getType(),
               Query->getArg(1)->getType().getNonLValueExprType(Context)) ||
           Operand->getValueKind() != Expr::getValueKindForType(Query->getArg(1)->getType()))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return function(Constructor) && !Failed;
     }
     if (Mode == UtilityTupleQueryMode::PairConstruction &&
@@ -17154,19 +17155,19 @@ public:
       if (!PairFunctions || !PairSelections || !step() ||
           PairConstructionAncestors.size() >= 64 ||
           std::find(PairConstructionAncestors.begin(), PairConstructionAncestors.end(), E) !=
-              PairConstructionAncestors.end()) return false;
+              PairConstructionAncestors.end()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Selected = PairSelections->find(E);
-      if (Selected == PairSelections->end() || Selected->second.empty()) return false;
+      if (Selected == PairSelections->end() || Selected->second.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Selection : Selected->second) {
         if (!Selection || Selection->Expression != E || Selection->Function != Constructor ||
             Selection->Location != PairTraitQuery->getExprLoc() ||
             !approvedUtilityPairTraitSelectionLocation(S, SM, Selection->Location, Constructor))
-          return false;
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto Sources = PairFunctions->find({Constructor, Selection->Location.getRawEncoding()});
-        if (Sources == PairFunctions->end() || Sources->second.empty()) return false;
+        if (Sources == PairFunctions->end() || Sources->second.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (const auto *Source : Sources->second)
           if (!Source || Source->Declaration != Constructor || Source->Written ||
-              Source->Location != Selection->Location) return false;
+              Source->Location != Selection->Location) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       const auto [Entry, Inserted] = PendingPairConstructions.emplace(E, PairTraitQuery);
       if (!Inserted) return Entry->second == PairTraitQuery && !Failed;
@@ -17217,7 +17218,7 @@ public:
           Prototype->getNoexceptExpr() ||
           approvedUtilityStringViewConstruction(S, SM, E, Context) !=
               UtilityStringViewConstruction::PointerAndSize)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (unsigned I = 0; I != 2; ++I) {
         const auto *Operand = dyn_cast<OpaqueValueExpr>(E->getArg(I)->IgnoreParenImpCasts());
         auto Input = PairTraitQuery->getArg(I + 1)->getType();
@@ -17227,7 +17228,7 @@ public:
             Constructor->getParamDecl(I)->hasDefaultArg() ||
             !Context.hasSameType(Operand->getType(), Input.getNonLValueExprType(Context)) ||
             Operand->getValueKind() != Expr::getValueKindForType(Input))
-          return false;
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       return function(Constructor) && !Failed;
     }
@@ -17256,7 +17257,7 @@ public:
           Constructor->getParamDecl(0)->hasDefaultArg() ||
           Constructor->getParamDecl(1)->hasDefaultArg() ||
           !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       return function(Constructor) && !Failed;
     }
     const auto SavedOwnerUse = PairOwnerUse;
@@ -17270,9 +17271,9 @@ public:
         E->getNumArgs() != Constructor->getNumParams() ||
         !Context.hasSameUnqualifiedType(E->getType(),
             Context.getRecordType(Constructor->getParent())) ||
-        !specialMember(Constructor)) return false;
+        !specialMember(Constructor)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Argument : E->arguments())
-      if (isa<CXXDefaultArgExpr>(Argument)) return false;
+      if (isa<CXXDefaultArgExpr>(Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return true;
   }
   bool VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
@@ -17287,7 +17288,7 @@ public:
           Context.hasSameType(E->getType(), Bound->second->getType()) &&
           Result && Result->getCanonicalDecl() == NotFnCallbackResultRecord;
     }
-    if (Operands.empty() || !E->getTemporary()) return false;
+    if (Operands.empty() || !E->getTemporary()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Destructor = E->getTemporary()->getDestructor();
     const auto SavedOwnerUse = PairOwnerUse;
     if (Mode == UtilityTupleQueryMode::PairConstruction && PairTraitConstruction &&
@@ -17298,26 +17299,26 @@ public:
     auto RestoreOwnerUse = llvm::make_scope_exit([&] { PairOwnerUse = SavedOwnerUse; });
     return specialMember(Destructor);
   }
-  bool VisitCXXDefaultArgExpr(CXXDefaultArgExpr *) { return false; }
-  bool VisitCXXDefaultInitExpr(CXXDefaultInitExpr *) { return false; }
-  bool VisitCXXNewExpr(CXXNewExpr *) { return false; }
-  bool VisitCXXDeleteExpr(CXXDeleteExpr *) { return false; }
-  bool VisitLambdaExpr(LambdaExpr *) { return false; }
+  bool VisitCXXDefaultArgExpr(CXXDefaultArgExpr *) { return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); }
+  bool VisitCXXDefaultInitExpr(CXXDefaultInitExpr *) { return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); }
+  bool VisitCXXNewExpr(CXXNewExpr *) { return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); }
+  bool VisitCXXDeleteExpr(CXXDeleteExpr *) { return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); }
+  bool VisitLambdaExpr(LambdaExpr *) { return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false); }
   bool pairDefaultFunctionFamily(const CXXConstructorDecl *Constructor,
                                   llvm::StringRef Path, bool OwnerPointer = false) {
     const auto *Record = Constructor ? Constructor->getParent() : nullptr;
     const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     const auto *Pattern = Instance ? Instance->getTemplateInstantiationPattern() : nullptr;
-    if (!Record || !Primary) return false;
+    if (!Record || !Primary) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const Decl *> Pending{Constructor};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back(); Pending.pop_back();
-      if (!Declaration || !step()) return false;
+      if (!Declaration || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(Declaration).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path)) return false;
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Member = dyn_cast<CXXConstructorDecl>(Declaration)) {
         const auto *Owner = Member->getParent();
         if ((OwnerPointer ? Member->isDefaultConstructor() || Member->getNumParams() != 1 ||
@@ -17326,7 +17327,7 @@ public:
             Member->isDeleted() || Member->isVariadic() ||
             (Owner->getCanonicalDecl() != Record->getCanonicalDecl() &&
              Owner->getCanonicalDecl() != Primary->getTemplatedDecl()->getCanonicalDecl() &&
-             (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()))) return false;
+             (!Pattern || Owner->getCanonicalDecl() != Pattern->getCanonicalDecl()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (const auto *Redeclaration : Member->redecls()) Pending.push_back(Redeclaration);
         if (OwnerPointer) Pending.push_back(Member->getParamDecl(0));
         if (const auto *Template = Member->getPrimaryTemplate()) Pending.push_back(Template);
@@ -17339,8 +17340,8 @@ public:
       } else if (const auto *Parameter = dyn_cast<ParmVarDecl>(Declaration)) {
         const auto *Owner = dyn_cast<CXXConstructorDecl>(Parameter->getDeclContext());
         if (!OwnerPointer || !Owner || Owner->getNumParams() != 1 ||
-            Owner->getParamDecl(0) != Parameter || Parameter->hasDefaultArg()) return false;
-      } else if (!isa<NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return false;
+            Owner->getParamDecl(0) != Parameter || Parameter->hasDefaultArg()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      } else if (!isa<NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     // One exact retained element query supplies these signature identities.
     // A pointer constructor still closes its actual defaults and parameter source;
@@ -17357,7 +17358,7 @@ public:
         !Context.hasSameType(Arguments->get(0).getIntegralType(), Context.BoolTy) ||
         !Arguments->get(0).getAsIntegral().getBoolValue() ||
         Arguments->get(1).getKind() != TemplateArgument::Type ||
-        !Arguments->get(1).getAsType()->isVoidType()) return false;
+        !Arguments->get(1).getAsType()->isVoidType()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Dummy = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
     const auto *Default = dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(1));
     const auto *Info = Default && Default->hasDefaultArgument()
@@ -17374,37 +17375,37 @@ public:
         Alias->getName() != "_EnableIfDeleterDefaultConstructible" ||
         Alias->getDeclContext() != Primary->getDeclContext() ||
         Use->template_arguments().size() != 1 ||
-        Use->template_arguments()[0].getKind() != TemplateArgument::Expression) return false;
+        Use->template_arguments()[0].getKind() != TemplateArgument::Expression) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Reference = dyn_cast<DeclRefExpr>(Use->template_arguments()[0].getAsExpr()->IgnoreParenImpCasts());
     const auto *True = dyn_cast<CXXBoolLiteralExpr>(Dummy->getDefaultArgument().getArgument().getAsExpr());
     if (!Reference || Reference->getDecl() != Dummy || !True || !True->getValue() ||
         True->getBeginLoc().isMacroID() || True->getEndLoc().isMacroID() ||
-        !cstddefOrigin(S, SM, True->getExprLoc(), "libcxx", "__memory/unique_ptr.h")) return false;
+        !cstddefOrigin(S, SM, True->getExprLoc(), "libcxx", "__memory/unique_ptr.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::vector<const Decl *> Pending{Alias};
     std::set<const Decl *> Family;
     while (!Pending.empty()) {
       const auto *Declaration = Pending.back(); Pending.pop_back();
-      if (!Declaration || !step()) return false;
+      if (!Declaration || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!Family.insert(Declaration).second) continue;
       if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h")) return false;
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__memory/unique_ptr.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (const auto *Template = dyn_cast<TypeAliasTemplateDecl>(Declaration)) {
-        if (Template->getTemplateParameters()->size() != 2) return false;
+        if (Template->getTemplateParameters()->size() != 2) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
         if (const auto *Original = Template->getInstantiatedFromMemberTemplate()) Pending.push_back(Original);
         Pending.push_back(Template->getTemplatedDecl());
         for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
-      } else if (!isa<TypeAliasDecl, NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return false;
+      } else if (!isa<TypeAliasDecl, NonTypeTemplateParmDecl, TemplateTypeParmDecl>(Declaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     PairInputFamilies.insert(Family.begin(), Family.end());
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Constructor->getParent()->getDefinition());
     const TypedefNameDecl *Deleter = nullptr;
     if (!Owner || Owner->getTemplateArgs().size() != 2 ||
-        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type) return false;
+        Owner->getTemplateArgs()[1].getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Declaration : Owner->decls())
       if (const auto *Named = dyn_cast<TypedefNameDecl>(Declaration);
           Named && Named->getIdentifier() && Named->getName() == "deleter_type") {
-        if (Deleter) return false;
+        if (Deleter) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Deleter = Named;
       }
     const auto *DeleterInfo = Deleter ? Deleter->getTypeSourceInfo() : nullptr;
@@ -17412,15 +17413,15 @@ public:
         !Context.hasSameType(Deleter->getUnderlyingType(), Owner->getTemplateArgs()[1].getAsType()) ||
         !Context.hasSameType(DeleterInfo->getType(), Deleter->getUnderlyingType()) ||
         !approvedStandardSDKDeclaration(S, SM, Deleter) ||
-        !cstddefOrigin(S, SM, Deleter->getLocation(), "libcxx", "__memory/unique_ptr.h")) return false;
+        !cstddefOrigin(S, SM, Deleter->getLocation(), "libcxx", "__memory/unique_ptr.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // This actual owner default uses its own deleter alias. Authenticate the
     // declaration, substitution and original spelling before its first use.
     PairInputFamilies.insert(Deleter);
     PairStorageUseSource Source(*this);
-    if (!Source.check(DeleterInfo)) return false;
+    if (!Source.check(DeleterInfo)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Parameter : *Alias->getTemplateParameters())
       if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
-          Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) return false;
+          Type && Type->hasDefaultArgument() && !Source.check(Type->getDefaultArgument().getTypeSourceInfo())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     return Source.check(Alias->getTemplatedDecl()->getTypeSourceInfo()) && Source.check(Info) && !Failed;
   }
   bool pairOwnerPointerAlias(const CXXConstructorDecl *Constructor) {
@@ -17430,12 +17431,12 @@ public:
     if (!Record || !PairDefaultOwnerSignature ||
         PairDefaultOwnerSignature->getConstructor() != Constructor ||
         Constructor->getNumParams() != 1 || Record->getTemplateArgs().size() != 2)
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const TypedefNameDecl *Pointer = nullptr;
     for (const auto *Declaration : Record->decls())
       if (const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
           Alias && Alias->getIdentifier() && Alias->getName() == "pointer") {
-        if (Pointer) return false;
+        if (Pointer) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         Pointer = Alias;
       }
     auto Use = [](QualType Type) {
@@ -17463,28 +17464,28 @@ public:
         !cstddefOrigin(S, SM, Pointer->getLocation(), "libcxx", "__memory/unique_ptr.h") ||
         !Alias || Alias->getName() != "__pointer" || !Original || !Original->isTypeAlias() ||
         !Detected || Detected->getName() != "__detected_or_t" || !family(Detected) ||
-        !Member || Member->getName() != "__pointer_member") return false;
+        !Member || Member->getName() != "__pointer_member") return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I != 2; ++I)
       if (Written->template_arguments()[I].getKind() != TemplateArgument::Type ||
           Record->getTemplateArgs()[I].getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Written->template_arguments()[I].getAsType(),
-                               Record->getTemplateArgs()[I].getAsType())) return false;
+                               Record->getTemplateArgs()[I].getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::set<const Decl *> Family{Pointer};
     for (const auto *Template : {Alias, Member}) {
       if (Template->getDeclContext() != Alias->getDeclContext() ||
-          Template->getTemplateParameters()->size() != (Template == Alias ? 2U : 1U)) return false;
+          Template->getTemplateParameters()->size() != (Template == Alias ? 2U : 1U)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Redeclaration : Template->redecls()) {
         for (const auto *D : {static_cast<const Decl *>(Redeclaration),
                               static_cast<const Decl *>(Redeclaration->getTemplatedDecl())}) {
           if (!approvedStandardSDKDeclaration(S, SM, D) ||
-              !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/allocator_traits.h")) return false;
+              !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__memory/allocator_traits.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           Family.insert(D);
         }
         for (const auto *Parameter : *Redeclaration->getTemplateParameters()) {
           const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
           if (!Type || Type->isParameterPack() || Type->hasDefaultArgument() ||
               !approvedStandardSDKDeclaration(S, SM, Type) ||
-              !cstddefOrigin(S, SM, Type->getLocation(), "libcxx", "__memory/allocator_traits.h")) return false;
+              !cstddefOrigin(S, SM, Type->getLocation(), "libcxx", "__memory/allocator_traits.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
           Family.insert(Type);
         }
       }
@@ -17504,10 +17505,10 @@ public:
     if (!Parameters || Parameters->size() != 2 || Parameters->getParam(1) != Parameter ||
         !Parameter->hasDefaultArgument() ||
         Written.getArgument().getKind() != TemplateArgument::Type ||
-        Converted.getArgument().getKind() != TemplateArgument::Type) return false;
+        Converted.getArgument().getKind() != TemplateArgument::Type) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Original = Parameter->getDefaultArgument().getTypeSourceInfo();
     const auto *Dummy = dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(0));
-    if (!Original || !Dummy || !Written.getTypeSourceInfo() || !Converted.getTypeSourceInfo()) return false;
+    if (!Original || !Dummy || !Written.getTypeSourceInfo() || !Converted.getTypeSourceInfo()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     auto Use = [](QualType Type) {
       const auto *Value = Type.getTypePtr();
       if (const auto *Elaborated = dyn_cast<ElaboratedType>(Value)) Value = Elaborated->getNamedType().getTypePtr();
@@ -17516,7 +17517,7 @@ public:
     const auto *Pattern = Use(Original->getType());
     const auto *Alias = Pattern ? dyn_cast_or_null<TypeAliasTemplateDecl>(
         Pattern->getTemplateName().getAsTemplateDecl()) : nullptr;
-    if (!Alias || !Pattern->isTypeAlias()) return false;
+    if (!Alias || !Pattern->isTypeAlias()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Info : {Written.getTypeSourceInfo(), Converted.getTypeSourceInfo()}) {
       const auto *Actual = Use(Info->getType());
       const auto *ActualAlias = Actual ? dyn_cast_or_null<TypeAliasTemplateDecl>(
@@ -17524,14 +17525,14 @@ public:
       if (!Actual || !Actual->isTypeAlias() || !ActualAlias ||
           ActualAlias->getCanonicalDecl() != Alias->getCanonicalDecl() ||
           Actual->template_arguments().size() != 1 ||
-          Actual->template_arguments()[0].getKind() != TemplateArgument::Expression) return false;
+          Actual->template_arguments()[0].getKind() != TemplateArgument::Expression) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Value = Actual->template_arguments()[0].getAsExpr();
       if (const auto *Constant = dyn_cast<ConstantExpr>(Value)) Value = Constant->getSubExpr();
       const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(Value);
       const auto *True = Substitution ? dyn_cast<CXXBoolLiteralExpr>(
           Substitution->getReplacement()->IgnoreParenImpCasts()) : nullptr;
       if (!Substitution || Substitution->getParameter() != Dummy ||
-          !True || !True->getValue() || !Context.hasSameType(True->getType(), Context.BoolTy)) return false;
+          !True || !True->getValue() || !Context.hasSameType(True->getType(), Context.BoolTy)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     PairStorageUseSource Spelling(*this);
     // Sema retains the substituted written/default type here. Its exact
@@ -17556,7 +17557,7 @@ public:
         !Constructor->isDefaulted() || Constructor->getPrimaryTemplate() ||
         !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
         !Definition || !Body || !Body->body_empty() || Definition->getNumCtorInitializers() != 1 ||
-        !pairDefaultFunctionFamily(Constructor, "__memory/allocator.h")) return false;
+        !pairDefaultFunctionFamily(Constructor, "__memory/allocator.h")) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Initializer = *Definition->init_begin();
     const auto *Child = Initializer->isBaseInitializer()
         ? dyn_cast_or_null<CXXConstructExpr>(Initializer->getInit()) : nullptr;
@@ -17573,7 +17574,7 @@ public:
         !Context.hasSameType(Allocator->Record->bases_begin()->getType(), Child->getType()) ||
         !Context.hasSameType(QualType(Initializer->getBaseClass(), 0), Child->getType()) ||
         !pairDefaultFunctionFamily(Selected, "__memory/allocator.h") ||
-        !bindPairInput(Child->getType())) return false;
+        !bindPairInput(Child->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Info = Allocator->Record->bases_begin()->getTypeSourceInfo();
     return Info && TraverseTypeLoc(Info->getTypeLoc()) && !Failed;
   }
@@ -17612,7 +17613,7 @@ public:
         Constructor->isDefaultConstructor() == OwnerPointer ||
         Source.Operands.size() != Construction->getNumArgs() ||
         !Context.hasSameType(Construction->getType(), Target) ||
-        Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) return false;
+        Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (OwnerPointer) {
       // Bind the original opaque argument and selected pointer conversion. The
       // ordinary runtime construction and cleanup retain their separate checks.
@@ -17630,7 +17631,7 @@ public:
           !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Owner->PointerType) ||
           Constructor->getParamDecl(0)->hasDefaultArg() ||
           approvedUtilityUniquePtrConstruction(S, SM, Construction, Context) !=
-              UtilityUniquePtrConstruction::Pointer) return false;
+              UtilityUniquePtrConstruction::Pointer) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const auto *SavedQuery = PairTraitQuery;
     const auto *SavedConstruction = PairTraitConstruction;
@@ -17653,18 +17654,18 @@ public:
       if (!PairFunctions || !PairSelections ||
           !pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h", OwnerPointer) ||
           !pairDefaultOwnerAlias(Constructor) ||
-          (OwnerPointer && !pairOwnerPointerAlias(Constructor))) return false;
+          (OwnerPointer && !pairOwnerPointerAlias(Constructor))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Events = PairSelections->find(Construction);
-      if (Events == PairSelections->end() || Events->second.empty()) return false;
+      if (Events == PairSelections->end() || Events->second.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Event : Events->second) {
         if (!Event || Event->Expression != Construction || Event->Function != Constructor ||
             Event->Location != Query->getExprLoc() ||
-            !approvedUtilityPairTraitSelectionLocation(S, SM, Event->Location, Constructor)) return false;
+            !approvedUtilityPairTraitSelectionLocation(S, SM, Event->Location, Constructor)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto Uses = PairFunctions->find({Constructor, Event->Location.getRawEncoding()});
-        if (Uses == PairFunctions->end() || Uses->second.empty()) return false;
+        if (Uses == PairFunctions->end() || Uses->second.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (const auto *Use : Uses->second)
           if (!Use || Use->Location != Event->Location || Use->Written ||
-              !templateSource(*Use, Constructor, true) || Failed) return false;
+              !templateSource(*Use, Constructor, true) || Failed) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       Complete = true;
     } else if (Allocator) {
@@ -17676,14 +17677,14 @@ public:
           Prototype->getExceptionSpecType() == EST_BasicNoexcept && !Prototype->getNoexceptExpr() &&
           pairDefaultFunctionFamily(Constructor, "__memory/unique_ptr.h");
     }
-    if (!Complete || Failed) return false;
+    if (!Complete || Failed) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Temporary) {
       const auto *Destructor = Temporary->getTemporary() ? Temporary->getTemporary()->getDestructor() : nullptr;
       if (!Destructor || !Record->getDestructor() ||
-          Record->getDestructor()->getCanonicalDecl() != Destructor->getCanonicalDecl()) return false;
+          Record->getDestructor()->getCanonicalDecl() != Destructor->getCanonicalDecl()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (Owner) PairOwnerUse = PairOwnerMemberUse{Destructor, Query, Construction, nullptr, nullptr, Temporary};
-      if (!specialMember(Destructor) || Failed) return false;
-    } else if (!OwnerPointer && !Record->hasTrivialDestructor()) return false;
+      if (!specialMember(Destructor) || Failed) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+    } else if (!OwnerPointer && !Record->hasTrivialDestructor()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // Pointer constructibility retains a constructor-only root with no cleanup;
     // the original OperationTraitSource must have no destructor/lookup request.
     // Actual runtime destruction is still authenticated at its owning boundary.
@@ -17696,12 +17697,12 @@ public:
       return RecursiveASTVisitor<UtilityTupleQueryGraph>::TraverseTypeTraitExpr(E, Queue);
     // Match Clang20's preorder walker, preserving both complete original TSIs.
     // Each operand owns its scope; the first result type cannot use __nat.
-    if (!WalkUpFromTypeTraitExpr(E)) return false;
+    if (!WalkUpFromTypeTraitExpr(E)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < E->getNumArgs(); ++I) {
       const auto *Saved = BindResultComparisonRecord;
       BindResultComparisonRecord = I == 1 ? Sentinel : nullptr;
       auto Restore = llvm::make_scope_exit([&] { BindResultComparisonRecord = Saved; });
-      if (!TraverseTypeLoc(E->getArg(I)->getTypeLoc())) return false;
+      if (!TraverseTypeLoc(E->getArg(I)->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return !Failed;
   }
@@ -17714,7 +17715,7 @@ public:
       const auto *SavedBind = BindResultComparisonRecord;
       BindResultComparisonRecord = I == 1 ? BindSentinel : nullptr;
       auto RestoreBind = llvm::make_scope_exit([&] { BindResultComparisonRecord = SavedBind; });
-      if (!TraverseType(E->getArg(I)->getType())) return false;
+      if (!TraverseType(E->getArg(I)->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     const bool Construction = E->getTrait() == TT_IsConstructible ||
         E->getTrait() == TT_IsNothrowConstructible;
@@ -17722,9 +17723,9 @@ public:
         E->getTrait() == BTT_IsConvertibleTo;
     if (!Construction && !Conversion) return true;
     if (E->isTypeDependent() || E->isValueDependent() || E->isInstantiationDependent())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Found = OperationTraits.find(E);
-    if (Found == OperationTraits.end()) return false;
+    if (Found == OperationTraits.end()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto &Source = Found->second;
     if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata &&
         BindScalarConstraintSource && Conversion && E->getNumArgs() == 2 &&
@@ -17758,7 +17759,7 @@ public:
     if (!Source.Attempted || !Source.Complete || !Source.Root ||
         Source.Operands.size() != Count || Source.Destructor ||
         Source.DestructionPrototype || Source.DestructionLookupAttempted ||
-        Source.DestructionExceptionAttempted) return false;
+        Source.DestructionExceptionAttempted) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && !Count)
       if (const auto Default = pairSelectedDefaultQuery(E, Source)) return *Default;
     if (Mode == UtilityTupleQueryMode::PairConstruction && Construction && Count == 1)
@@ -17771,7 +17772,7 @@ public:
           !Context.hasSameType(Source.Root->getType(), Target) ||
           !Source.Root->isPRValue() || Source.Root->isTypeDependent() ||
           Source.Root->isValueDependent() || Source.Root->isInstantiationDependent())
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       // Sema's exact retained zero-operand scalar root has no written token.
       // Authenticate this source-free node locally; no caller expression,
       // selected body, owner operation or runtime permission is registered.
@@ -17797,31 +17798,31 @@ public:
         T = Context.getRValueReferenceType(T);
       if (!Operand || Operand->getSourceExpr() ||
           !Context.hasSameType(Operand->getType(), T.getNonLValueExprType(Context)) ||
-          Operand->getValueKind() != Expr::getValueKindForType(T)) return false;
+          Operand->getValueKind() != Expr::getValueKindForType(T)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       Operands.insert(Operand);
     }
     return TraverseStmt(const_cast<Expr *>(Source.Root));
   }
   bool function(const FunctionDecl *F) {
-    if (!family(F) || !bindCatInputs(F)) return false;
+    if (!family(F) || !bindCatInputs(F)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (const auto *Method = dyn_cast<CXXMethodDecl>(F))
       if (Method->isImplicit() || Method->isDefaulted()) return specialMember(Method);
     for (const auto *Parameter : F->parameters())
-      if (!family(Parameter) || !TraverseType(Parameter->getType())) return false;
+      if (!family(Parameter) || !TraverseType(Parameter->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Prototype = F->getType()->getAs<FunctionProtoType>();
-    if (!Prototype) return false;
+    if (!Prototype) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     switch (Prototype->getExceptionSpecType()) {
     case EST_None: case EST_BasicNoexcept: break;
     case EST_NoexceptTrue: case EST_NoexceptFalse:
       if (!Prototype->getNoexceptExpr() ||
-          !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) return false;
+          !TraverseStmt(const_cast<Expr *>(Prototype->getNoexceptExpr()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       break;
-    default: return false;
+    default: return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(F)) {
       const auto Explicit = Constructor->getExplicitSpecifier();
       if (Explicit.isInvalid() || Explicit.getKind() == ExplicitSpecKind::Unresolved)
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto *Pattern = dyn_cast_or_null<CXXConstructorDecl>(
           Constructor->getTemplateInstantiationPattern());
       const auto *Primary = Constructor->getPrimaryTemplate();
@@ -17830,8 +17831,8 @@ public:
       if (!Explicit.getExpr() &&
           ((Pattern && Pattern->getExplicitSpecifier().getExpr()) ||
            (PrimaryConstructor && PrimaryConstructor->getExplicitSpecifier().getExpr())))
-        return false;
-      if (!TraverseStmt(const_cast<Expr *>(Explicit.getExpr()))) return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      if (!TraverseStmt(const_cast<Expr *>(Explicit.getExpr()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return !Failed;
   }
@@ -17841,7 +17842,7 @@ public:
     if (OwnerDefault &&
         (Mode != UtilityTupleQueryMode::PairConstruction || !PairDefaultOwnerSignature ||
          PairDefaultOwnerSignature->getConstructor() != Constructor ||
-         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) return false;
+         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Primary = Constructor->getPrimaryTemplate();
     if (!Primary || Source.Kind != TemplateSourceKind::Function ||
         Source.Type || Source.Underlying || Source.Selection || Source.Instantiation ||
@@ -17851,16 +17852,16 @@ public:
         Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
         Source.Canonical->size() != Source.Sugared->size() ||
         Source.Canonical->size() != Primary->getTemplateParameters()->size())
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Selected = Constructor->getTemplateSpecializationArgs();
-    if (!Selected || Selected->size() != Source.Canonical->size()) return false;
+    if (!Selected || Selected->size() != Source.Canonical->size()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < Selected->size(); ++I)
       if (!Selected->get(I).structurallyEquals(Source.Canonical->get(I)) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Arguments : {Source.Canonical, Source.Sugared})
       for (const auto &Argument : Arguments->asArray())
-        if (!TraverseTemplateArgument(Argument)) return false;
+        if (!TraverseTemplateArgument(Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     std::set<unsigned> Defaults, Parameters;
     const auto *Owners = Primary->getTemplateParameters();
     for (const auto &Default : Source.Defaults) {
@@ -17875,8 +17876,8 @@ public:
             !Defaults.insert(1).second || !Original || !Written ||
             Converted.getKind() != TemplateArgument::Type ||
             Source.Canonical->get(1).getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) return false;
-        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) return false;
+            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         continue;
       }
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Default.Parameter);
@@ -17890,7 +17891,7 @@ public:
           Default.Written.getArgument().getAsExpr() !=
               Parameter->getDefaultArgument().getArgument().getAsExpr() ||
           !TraverseTemplateArgument(Default.Written.getArgument()) ||
-          !TraverseTemplateArgument(Default.Converted.getArgument())) return false;
+          !TraverseTemplateArgument(Default.Converted.getArgument())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
       const auto *Converted = Default.Converted.getArgument().getKind() == TemplateArgument::Expression
           ? dyn_cast<ConstantExpr>(Default.Converted.getArgument().getAsExpr()) : nullptr;
@@ -17898,7 +17899,7 @@ public:
           !Context.hasSameType(Converted->getType(), Canonical.getIntegralType()) ||
           Converted->getResultAsAPSInt() != Canonical.getAsIntegral() ||
           Converted->getSubExpr()->IgnoreParens() != Default.Written.getArgument().getAsExpr())
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     for (const auto &ParameterType : Source.ParameterTypes) {
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(ParameterType.Parameter);
@@ -17907,17 +17908,17 @@ public:
           Owners->getParam(Parameter->getIndex()) != Parameter ||
           ParameterType.PackIndex != 0 || !ParameterType.Type ||
           !Parameters.insert(Parameter->getIndex()).second ||
-          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) return false;
+          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
       if (Canonical.getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(ParameterType.Type->getType(), Canonical.getIntegralType()))
-        return false;
+        return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     for (unsigned I = 0; I < Owners->size(); ++I) {
       const auto *Declaration = Owners->getParam(I);
       if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration)) {
         if (!Parameters.count(I) ||
-            (Parameter->hasDefaultArgument() && !Defaults.count(I))) return false;
+            (Parameter->hasDefaultArgument() && !Defaults.count(I))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       } else if (const auto *Parameter = dyn_cast<TemplateTemplateParmDecl>(Declaration)) {
         const auto &Argument = Source.Canonical->get(I);
         if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
@@ -17925,10 +17926,10 @@ public:
             Parameter->getDefaultArgument().getArgument().getKind() != TemplateArgument::Template ||
             !Context.hasSameTemplateName(Argument.getAsTemplate(),
                 Parameter->getDefaultArgument().getArgument().getAsTemplate()) ||
-            !TraverseTemplateName(Argument.getAsTemplate())) return false;
+            !TraverseTemplateName(Argument.getAsTemplate())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       } else if (const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Declaration)) {
-        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) return false;
-      } else return false;
+        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
+      } else return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return function(Constructor);
   }
@@ -17950,37 +17951,37 @@ public:
                  : !S.owns(SM, Source.Location)) ||
         !approvedUtilityPairMetadata(S, SM, Constructor->getParent()) ||
         !Context.hasSameUnqualifiedType(Construction->getType(),
-            Context.getRecordType(Constructor->getParent()))) return false;
+            Context.getRecordType(Constructor->getParent()))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     // A piecewise use binds its exact public/private constructor descriptor.
     // This still grants signature source only; runtime admission requires the
     // separate outer-source, child-operation, lifetime and deferred checks.
     if (!approvedUtilityPairConstruction(S, SM, Construction, Context) &&
         (Factory || !approvedUtilityPairPiecewiseConstruction(
                          S, SM, Construction, Context)))
-      return false;
+      return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     PairConstructor = Constructor;
     PairFunctions = &Functions;
     PairSelections = &Selections;
     for (const auto *Field : Constructor->getParent()->fields())
-      if (!bindPairInput(Field->getType())) return false;
+      if (!bindPairInput(Field->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto Arguments = Factory ? Factory->arguments() : Construction->arguments();
     for (const auto *Argument : Arguments)
-      if (!bindPairInput(Argument->getType())) return false;
+      if (!bindPairInput(Argument->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Argument : Arguments)
-      if (!bindPairReferenceFactory(Argument)) return false;
+      if (!bindPairReferenceFactory(Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (const auto *Argument : Arguments)
-      if (!bindPairCallerValueAdapter(Argument)) return false;
+      if (!bindPairCallerValueAdapter(Argument)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     if (Factory) {
       // Only this authenticated factory's substitutions join this fresh graph.
       // The caller's actual template use and arguments still complete ordinarily.
       std::vector<const Decl *> Pending{Factory->getDirectCallee()};
       while (!Pending.empty()) {
         const auto *Declaration = Pending.back(); Pending.pop_back();
-        if (!Declaration || !step()) return false;
+        if (!Declaration || !step()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (!PairInputFamilies.insert(Declaration).second) continue;
         if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
             !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__utility/pair.h"))
-          return false;
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
           for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
           if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
@@ -17989,7 +17990,7 @@ public:
           for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
           Pending.push_back(Template->getTemplatedDecl());
           for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
-        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return false;
+        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
       // These are the exact two SDK forwarding uses already authenticated by
       // the public factory descriptor. Bind their substitutions, not their bodies.
@@ -17997,9 +17998,9 @@ public:
         if (!bindPairInput(Construction->getArg(I)->getType()) ||
             !bindPairCallerValueAdapter(Construction->getArg(I),
                                        Factory->getDirectCallee()->getParamDecl(I)))
-          return false;
+          return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
-    if (!templateSource(Source, Constructor) || Failed) return false;
+    if (!templateSource(Source, Constructor) || Failed) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (std::size_t I = 0; I < PairConstructionSources.size(); ++I) {
       // Copy the item: its source can append more work to this same vector.
       const auto Work = PairConstructionSources[I];
@@ -18007,21 +18008,21 @@ public:
       if (!step() || Work.Ancestors.empty() || Work.Ancestors.size() > 64 ||
           Work.Ancestors.back() != Work.Construction || !Selected ||
           !PairInputRecords.count(Selected->getParent()->getCanonicalDecl()) ||
-          PendingPairConstructions[Work.Construction] != Work.Query) return false;
+          PendingPairConstructions[Work.Construction] != Work.Query) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       PairConstructor = Selected;
       PairConstructionAncestors = Work.Ancestors;
       for (const auto *Field : Selected->getParent()->fields())
-        if (!bindPairInput(Field->getType())) return false;
+        if (!bindPairInput(Field->getType())) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       const auto Events = PairSelections->find(Work.Construction);
-      if (Events == PairSelections->end() || Events->second.empty()) return false;
+      if (Events == PairSelections->end() || Events->second.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       for (const auto *Event : Events->second) {
         if (!Event || Event->Expression != Work.Construction || Event->Function != Selected ||
-            Event->Location != Work.Query->getExprLoc()) return false;
+            Event->Location != Work.Query->getExprLoc()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         const auto Sources = PairFunctions->find({Selected, Event->Location.getRawEncoding()});
-        if (Sources == PairFunctions->end() || Sources->second.empty()) return false;
+        if (Sources == PairFunctions->end() || Sources->second.empty()) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
         for (const auto *Use : Sources->second)
           if (!Use || Use->Location != Event->Location || Use->Written ||
-              !templateSource(*Use, Selected) || Failed) return false;
+              !templateSource(*Use, Selected) || Failed) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       }
     }
     Queries.assign(PairSourceQueries.begin(), PairSourceQueries.end());
@@ -18030,7 +18031,7 @@ public:
     return true;
   }
   bool catTemplateSource(const FunctionDecl *Function, const TemplateUseSource &Source) {
-    if (!bindCatInputs(Function)) return false;
+    if (!bindCatInputs(Function)) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
     const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
     if (!Primary || !Arguments || Source.Kind != TemplateSourceKind::Function ||
@@ -18040,7 +18041,7 @@ public:
         !Source.Defaults.empty() || !Source.ParameterTypes.empty() ||
         !Source.Canonical || !Source.Sugared || Arguments->size() != 2 ||
         Source.Canonical->size() != 2 || Source.Sugared->size() != 2 ||
-        Primary->getTemplateParameters()->size() != 2) return false;
+        Primary->getTemplateParameters()->size() != 2) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     for (unsigned I = 0; I < 2; ++I) {
       const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(
           Primary->getTemplateParameters()->getParam(I));
@@ -18048,9 +18049,9 @@ public:
           Parameter->isParameterPack() != (I == 1) ||
           !Arguments->get(I).structurallyEquals(Source.Canonical->get(I)) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
       if (!TraverseTemplateArgument(Source.Canonical->get(I)) ||
-          !TraverseTemplateArgument(Source.Sugared->get(I))) return false;
+          !TraverseTemplateArgument(Source.Sugared->get(I))) return (llvm::errs() << "STL-QUERY-SOURCE-REFUSAL line=" << __LINE__ << "\n", false);
     }
     return function(Function) && TraverseType(Function->getReturnType()) && !Failed;
   }

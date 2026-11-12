@@ -23608,7 +23608,16 @@ public:
       for (const auto &Source : Batch.Uses) {
         if (!freshLateTemplateSource(Source)) {
           A.reject(Source.Location, "repeated late template source",
-                   "A retained late use needs a fresh exact source key.");
+                   "A retained late use needs a fresh exact source key. kind=" +
+                   std::to_string(static_cast<unsigned>(Source.Kind)) + " template=" +
+                   (Source.Template ? Source.Template->getQualifiedNameAsString() : "<none>") +
+                   " declaration=" + (Source.Declaration ? Source.Declaration->getDeclKindName() : "<none>") +
+                   " defaults=" + std::to_string(Source.Defaults.size()) +
+                   " parameters=" + std::to_string(Source.ParameterTypes.size()) +
+                   " bind=" + std::to_string(Source.FunctionalBindConstraint) +
+                   " notfn=" + std::to_string(Source.FunctionalNotFnConstraint) +
+                   " pair_roots=" + std::to_string(PairConstructorSelections.size()) +
+                   " bind_factories=" + std::to_string(PendingBindFactories.size()));
           return;
         }
         indexTemplateSources(llvm::ArrayRef<TemplateUseSource>(&Source, 1), {}, {});
@@ -25226,8 +25235,44 @@ public:
     }
     return true;
   }
+  bool lazyConstructorDeclarationSignature(const FunctionDecl *Function) {
+    const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
+    if (!A.S.coreV2() || !Constructor || !owned(Constructor) ||
+        !owned(Constructor->getParent()) || Constructor->isInvalidDecl() ||
+        !supportedConstructor(Constructor) ||
+        Constructor->getParent()->isDependentContext() ||
+        Constructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        Constructor->hasBody() || Constructor->isUsed(/*CheckUsedAttr=*/true) ||
+        Constructor->isImplicit() || Constructor->isDeleted() ||
+        Constructor->isExplicitlyDefaulted() || Constructor->isConsteval() ||
+        !Constructor->getTypeSourceInfo() ||
+        !standardExceptionSpecification(
+            Constructor->getType()->getAs<FunctionProtoType>()))
+      return false;
+    // An overload candidate can affect a construction query without Clang
+    // referencing or odr-using it. Retain only the original signature of an
+    // exact queried owner; the ordinary query checker still closes its actual
+    // Sema result, operands, selected defaults and destruction source.
+    // Any evaluated use of this declaration family still requires a body.
+    for (const auto &[Query, Source] : A.OperationTraits) {
+      if (!Query || !Source.Attempted || Query->isTypeDependent() ||
+          Query->isValueDependent() || Query->isInstantiationDependent() ||
+          !Query->getNumArgs() ||
+          (Query->getTrait() != TT_IsConstructible &&
+           Query->getTrait() != TT_IsNothrowConstructible &&
+           Query->getTrait() != TT_IsTriviallyConstructible))
+        continue;
+      const auto *Owner = Query->getArg(0)->getType()
+                              .getNonReferenceType()->getAsCXXRecordDecl();
+      if (Owner && Owner->getCanonicalDecl() ==
+                       Constructor->getParent()->getCanonicalDecl())
+        return true;
+    }
+    return false;
+  }
   bool lazyFunctionDeclarationSignature(const FunctionDecl *Function) {
-    return functionDeclarationMetadataSource(A, Function);
+    return functionDeclarationMetadataSource(A, Function) ||
+           lazyConstructorDeclarationSignature(Function);
   }
   bool lazyFreeFunctionSignature(const FunctionDecl *Function) {
     if (!A.S.coreV2() || !concreteFreeFunctionTemplate(Function) ||
@@ -28553,7 +28598,12 @@ public:
         (!A.S.project() || D->getFormalLinkage() == Linkage::Internal))
       A.reject(
           D->getLocation(), "function declaration",
-          "Every declared function needs a definition in this source unit.",
+          "Every declared function needs a definition in this source unit. declaration=" +
+              D->getQualifiedNameAsString() + " used=" + std::to_string(D->isUsed(true)) +
+              " referenced=" + std::to_string(D->isReferenced()) +
+              " method=" + std::to_string(isa<CXXMethodDecl>(D)) +
+              " constructor=" + std::to_string(isa<CXXConstructorDecl>(D)) +
+              " operation_queries=" + std::to_string(A.OperationTraits.size()),
           "TR0203");
     if (A.S.project()) {
       auto &Declaration = A.FunctionDeclarations[D->getCanonicalDecl()];
