@@ -42185,23 +42185,34 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
   std::vector<const FieldDecl *> Fields;
   for (const auto *Field : Vector->fields())
     Fields.push_back(Field);
-  if (Fields.size() != 6 || Fields[0]->getName() != "__begin_" ||
+  // The pinned Microsoft ABI omits compressed-pair padding while retaining
+  // the same three-pointer physical carrier and zero-sized allocator.
+  const auto &Triple = Context.getTargetInfo().getTriple();
+  const bool CompactMicrosoft = Triple.isArch64Bit() && Triple.isOSWindows() &&
+      Context.getTargetInfo().getCXXABI().isMicrosoft() && Fields.size() == 4;
+  const auto ExpectedFields = CompactMicrosoft ? 4u : 6u;
+  const auto AllocatorIndex = CompactMicrosoft ? 3u : 4u;
+  if (Fields.size() != ExpectedFields || Fields[0]->getName() != "__begin_" ||
       Fields[1]->getName() != "__end_" ||
       Fields[2]->getName() != "__cap_" ||
-      Fields[3]->getName() != "__padding1_550_" ||
-      Fields[4]->getName() != "__alloc_" ||
-      Fields[5]->getName() != "__padding2_550_" ||
+      Fields[AllocatorIndex]->getName() != "__alloc_" ||
+      (!CompactMicrosoft &&
+       (Fields[3]->getName() != "__padding1_550_" ||
+        Fields[5]->getName() != "__padding2_550_")) ||
       !Context.hasSameType(Fields[0]->getType(), Pointer) ||
       !Context.hasSameType(Fields[1]->getType(), Pointer) ||
       !Context.hasSameType(Fields[2]->getType(), Pointer) ||
-      !Context.hasSameType(Fields[4]->getType(),
-                           Arguments.get(1).getAsType()))
+      !Context.hasSameType(Fields[AllocatorIndex]->getType(),
+                           Arguments.get(1).getAsType()) ||
+      (CompactMicrosoft &&
+       (!Fields[2]->hasAttr<NoUniqueAddressAttr>() ||
+        !Fields[AllocatorIndex]->hasAttr<NoUniqueAddressAttr>())))
     return std::nullopt;
   for (unsigned I = 0; I != Fields.size(); ++I) {
     const auto *Field = Fields[I];
     if (Field->getAccess() != AS_private || Field->isBitField() ||
         Field->isMutable() ||
-        ((I != 3 && I != 5) &&
+        ((CompactMicrosoft || (I != 3 && I != 5)) &&
          (!approvedStandardSDKDeclaration(S, SM, Field) ||
           !cstddefOrigin(S, SM, Field->getLocation(), "libcxx",
                          "__vector/vector.h"))))
@@ -42228,16 +42239,18 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
            Layout.getSize().getQuantity() == 1 &&
            Layout.getAlignment().getQuantity() == 1;
   };
-  if (!Padding(Fields[3], Pointer) ||
-      !Padding(Fields[5], Fields[4]->getType()))
+  if (!CompactMicrosoft &&
+      (!Padding(Fields[3], Pointer) ||
+       !Padding(Fields[5], Fields[AllocatorIndex]->getType())))
     return std::nullopt;
   const auto &Layout = Context.getASTRecordLayout(Vector);
   const uint64_t PointerBits = Context.getTypeSize(Pointer);
-  if (Layout.getFieldCount() != 6 || Layout.getFieldOffset(0) != 0 ||
+  if (Layout.getFieldCount() != ExpectedFields || Layout.getFieldOffset(0) != 0 ||
       Layout.getFieldOffset(1) != PointerBits ||
       Layout.getFieldOffset(2) != 2 * PointerBits ||
-      Layout.getFieldOffset(3) != 0 ||
-      Layout.getFieldOffset(4) != 0 || Layout.getFieldOffset(5) != 0 ||
+      Layout.getFieldOffset(AllocatorIndex) != 0 ||
+      (!CompactMicrosoft &&
+       (Layout.getFieldOffset(3) != 0 || Layout.getFieldOffset(5) != 0)) ||
       uint64_t(Layout.getSize().getQuantity()) * 8 != 3 * PointerBits ||
       uint64_t(Layout.getAlignment().getQuantity()) * 8 !=
           Context.getTypeAlign(Pointer))
