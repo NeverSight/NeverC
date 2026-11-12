@@ -35,6 +35,7 @@
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
 #include <deque>
 #include <set>
@@ -23534,6 +23535,73 @@ public:
     SourceEventsReady = true;
   }
   void sealTemplateSourceEvents() { SourceEventsSealed = true; }
+  void traceRepeatedLateTemplateSource(const TemplateUseSource &Source) const {
+    const char *Enabled = std::getenv("NEVERC_STL_SOURCE_TRACE");
+    if (!Enabled || llvm::StringRef(Enabled) != "1") return;
+    static thread_local unsigned Observed = 0;
+    if (Observed >= 32) return;
+    ++Observed;
+    auto Dump = [&](llvm::StringRef Role, const TemplateUseSource &Use) {
+      auto &Out = llvm::errs();
+      Out << "NEVERC_STL_LATE role=" << Role << " target=" << A.S.Target
+          << " kind=" << unsigned(Use.Kind) << " location=" << Use.Location.getRawEncoding()
+          << " template=" << static_cast<const void *>(Use.Template)
+          << " declaration=" << static_cast<const void *>(Use.Declaration)
+          << " type=" << static_cast<const void *>(Use.Type)
+          << " underlying=" << static_cast<const void *>(Use.Underlying)
+          << " written=" << static_cast<const void *>(Use.Written)
+          << " canonical=" << static_cast<const void *>(Use.Canonical)
+          << " sugared=" << static_cast<const void *>(Use.Sugared)
+          << " selection=" << static_cast<const void *>(Use.Selection)
+          << " origin=" << static_cast<const void *>(Use.Origin)
+          << " defaults=" << Use.Defaults.size() << " parameters=" << Use.ParameterTypes.size()
+          << " instantiation=" << Use.Instantiation << " overflow=" << Use.DefaultsOverflow
+          << " bind=" << Use.FunctionalBindConstraint << " not_fn=" << Use.FunctionalNotFnConstraint;
+      if (Use.Template) {
+        const auto Name = Use.Template->getQualifiedNameAsString();
+        Out << " name=" << llvm::StringRef(Name).take_front(240);
+      }
+      if (Use.Type) {
+        const auto Type = QualType(Use.Type, 0).getAsString();
+        Out << " spelling=" << llvm::StringRef(Type).take_front(300);
+      }
+      Out << '\n';
+    };
+    Dump("incoming", Source);
+    const std::vector<const TemplateUseSource *> *Previous = nullptr;
+    if (Source.Kind == TemplateSourceKind::Type) {
+      auto Found = TypeSources.find({Source.Type, Source.Location.getRawEncoding()});
+      if (Found != TypeSources.end()) Previous = &Found->second;
+    } else if (Source.Kind == TemplateSourceKind::Function) {
+      auto Found = FunctionSources.find({dyn_cast_or_null<FunctionDecl>(Source.Declaration),
+                                         Source.Location.getRawEncoding()});
+      if (Found != FunctionSources.end()) Previous = &Found->second;
+    } else if (Source.Kind == TemplateSourceKind::ClassDeclaration) {
+      auto Found = ClassSources.find(Source.Declaration);
+      if (Found != ClassSources.end()) Previous = &Found->second;
+    } else if (Source.Kind == TemplateSourceKind::PartialDeduction ||
+               Source.Kind == TemplateSourceKind::PartialPattern) {
+      auto Found = PartialSources.find(Source.Selection);
+      if (Found != PartialSources.end()) {
+        if (Found->second.Deduction) Dump("previous-deduction", *Found->second.Deduction);
+        if (Found->second.Pattern) Dump("previous-pattern", *Found->second.Pattern);
+      }
+    }
+    if (Previous)
+      for (unsigned I = 0; I < Previous->size() && I != 2; ++I)
+        Dump("previous", *(*Previous)[I]);
+    if (Source.FunctionalBindConstraint || Source.FunctionalNotFnConstraint) {
+      const auto &Sources = Source.FunctionalBindConstraint ? BindConstraintSources : NotFnConstraintSources;
+      unsigned Scanned = 0, Printed = 0;
+      for (const auto *Candidate : Sources) {
+        if (++Scanned > 512 || Printed == 2) break;
+        if (notFnConstraintKey(*Candidate) == notFnConstraintKey(Source)) {
+          Dump("previous-constraint", *Candidate);
+          ++Printed;
+        }
+      }
+    }
+  }
   bool freshLateTemplateSource(const TemplateUseSource &Source) const {
     if (Source.FunctionalBindConstraint &&
         BindConstraintKeys.count(bindConstraintKey(Source))) return false;
@@ -23607,6 +23675,7 @@ public:
         return;
       for (const auto &Source : Batch.Uses) {
         if (!freshLateTemplateSource(Source)) {
+          traceRepeatedLateTemplateSource(Source);
           A.reject(Source.Location, "repeated late template source",
                    "A retained late use needs a fresh exact source key.");
           return;
@@ -27344,6 +27413,10 @@ public:
               : !ordinaryCallbackPrototype(Prototype) ||
                 !A.Context.hasSameType(operationCalleePrototype(Source->Target), Prototype)))) ||
           !functionalBindCallSourceComplete(*Source)) {
+        llvm::errs() << "BIND-BASELINE-COMPLETE standard=" << bool(Standard)
+            << " prototype=" << bool(Prototype) << " member=" << bool(MemberSource)
+            << " explicit=" << Source->hasExplicitResultOwner()
+            << " args=" << Source->Arguments.size() << "\n";
         A.reject(Call->getExprLoc(), "bind invocation source",
             "The complete original and selected invocation and ordinary callback signature are required.", "TR0203");
         return true;
