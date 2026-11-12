@@ -55,6 +55,17 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.latest_twelve = (ROOT / 'utils/ci/bind-explicit-result-twelve-formal-additions.cpp').read_bytes()
         cls.latest_original = cls.adapter.restore_original_gtests(cls.latest_registered, cls.latest_suffix)
         cls.maintenance = json.loads((ROOT / 'utils/ci/stl-source-maintenance.json').read_text())
+        cls.query_registered, cls.query_original = cls.latest_registered, cls.latest_original
+        cls.query_additions = (ROOT / 'utils/ci/query-constructor-three-formal-additions.cpp').read_bytes()
+        assert hashlib.sha256(cls.query_additions).hexdigest() == '4ece697a138991fb33372736883b19e0859900885037a4cda5b856289f839dbd'
+        assert hashlib.sha256(cls.query_original).hexdigest() == cls.adapter.QUERY_CONSTRUCTOR_MAINTAINED_ORIGINAL_SHA256
+        assert hashlib.sha256(cls.query_registered).hexdigest() == cls.adapter.QUERY_CONSTRUCTOR_REGISTERED_BIND109_SHA256
+        assert cls.query_original.count(cls.query_additions) == 1
+        assert cls.query_registered.count(cls.query_additions) == 1
+        cls.latest_original = cls.query_original.replace(cls.query_additions, b'', 1)
+        cls.latest_registered = cls.query_registered.replace(cls.query_additions, b'', 1)
+        assert hashlib.sha256(cls.latest_original).hexdigest() == cls.maintenance['maintained_original_sha256']
+        assert hashlib.sha256(cls.latest_registered).hexdigest() == cls.adapter.BIND109_REGISTERED_SOURCE_SHA256
         cls.previous_maintained_original = restore_previous_maintenance(
             cls.latest_original, cls.maintenance, cls.extractor)
         cls.registered = cls.previous_maintained_original + cls.additions
@@ -381,6 +392,50 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             with self.subTest(suffix=hashlib.sha256(suffix).hexdigest()):
                 with self.assertRaises(AssertionError):
                     self.adapter.restore_original_gtests(self.latest_registered, suffix)
+
+
+    def test_query_registry_restores_the_exact_new_source_and_keeps_all_history(self):
+        self.assertEqual(self.query_original + self.latest_suffix, self.query_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.query_registered, self.latest_suffix), self.query_original)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.query_original, self.latest_suffix), self.query_original)
+        self.assertEqual(self.query_original, self.latest_original + self.query_additions)
+        self.assertEqual(self.query_additions.count(b'TEST_F('), 3)
+
+    def test_query_registry_extracts_all_three_permanent_guards(self):
+        selected = ['TranslateTest.' + name for name in [
+            'CoreV2QueryOnlyConstructorDeclarationsRunAtBothOptimizations',
+            'CoreV2QueryOnlyConstructorDeclarationsRequireRuntimeDefinitions',
+            'CoreV2QueryOnlyConstructorDeclarationsKeepDefaultSourceChecks']]
+        generated, proof = self.extractor.extract(self.query_original, selected)
+        self.assertEqual(proof['original_test_names'], 7496)
+        self.assertEqual(proof['selected_count'], 3)
+        self.assertEqual(generated.count(b'TEST_F('), 3)
+        self.assertEqual(set(proof['selected_original_test_bodies']), set(selected))
+
+    def test_query_registry_preserves_all_124_historical_selected_bodies(self):
+        manifest = json.loads((ROOT / 'utils/ci/cpp-pair-piecewise-formal-tests.json').read_text())
+        selected = manifest['new'] + manifest['regression']
+        _, old = self.extractor.extract(self.latest_original, selected)
+        _, current = self.extractor.extract(self.query_original, selected)
+        self.assertEqual(old['original_test_names'], 7493)
+        self.assertEqual(current['original_test_names'], 7496)
+        self.assertEqual(old['selected_count'], 124)
+        self.assertEqual(current['selected_count'], 124)
+        self.assertEqual(old['selected_original_test_bodies'], current['selected_original_test_bodies'])
+
+    def test_query_registry_rejects_modified_source_and_unknown_owner(self):
+        selected = ['TranslateTest.CoreV2QueryOnlyConstructorDeclarationsRunAtBothOptimizations']
+        for source in [self.query_original + b'\n',
+                       self.query_original.replace(b'TEST_F(', b'NOT_TEST_F(', 1),
+                       self.query_original.replace(b'return 0;', b'return 1;', 1)]:
+            with self.subTest(source=hashlib.sha256(source).hexdigest()):
+                self.assertNotEqual(source, self.query_original)
+                with self.assertRaises(AssertionError):
+                    self.extractor.extract(source, selected)
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.query_original, selected + ['TranslateTest.UnknownQueryOwner'])
 
 
 if __name__ == '__main__':
