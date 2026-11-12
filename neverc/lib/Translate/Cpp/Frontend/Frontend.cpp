@@ -23692,8 +23692,41 @@ public:
         const bool Fresh = freshLateTemplateSource(Source);
         const bool RepeatedPair = !Fresh && equivalentLatePairTemplateSource(Source);
         if (!Fresh && !RepeatedPair) {
+          const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Source.Declaration);
+          const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration);
+          const auto Origin = A.S.sdkFile(A.Sources, Source.Location);
+          unsigned Alternatives = 0;
+          bool Equivalent = true;
+          if (Constructor) {
+            const auto Found = FunctionSources.find({Constructor, Source.Location.getRawEncoding()});
+            if (Found != FunctionSources.end())
+              for (const auto *Previous : Found->second) {
+                ++Alternatives;
+                Equivalent &= Previous && Previous->Template && Source.Template &&
+                    equivalentUse(*Previous, Source);
+              }
+          }
           A.reject(Source.Location, "repeated late template source",
-                   "A retained late use needs a fresh exact source key.");
+                   "A retained late use needs a fresh exact source key. kind=" +
+                   std::to_string(static_cast<unsigned>(Source.Kind)) + " template=" +
+                   (Source.Template ? Source.Template->getQualifiedNameAsString() : "<none>") +
+                   " written=" + std::to_string(Source.Written != nullptr) +
+                   " pair_metadata=" + std::to_string(Constructor &&
+                       approvedUtilityPairMetadata(A.S, A.Sources, Constructor->getParent())) +
+                   " pair_trait_location=" + std::to_string(Constructor &&
+                       approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Constructor)) +
+                   " alternatives=" + std::to_string(Alternatives) +
+                   " equivalent=" + std::to_string(Equivalent) +
+                   " bind=" + std::to_string(Source.FunctionalBindConstraint) +
+                   " notfn=" + std::to_string(Source.FunctionalNotFnConstraint) +
+                   " sdk_root=" + (Origin ? llvm::StringRef(Origin->Root).str() : std::string("<none>")) +
+                   " sdk_path=" + (Origin ? llvm::StringRef(Origin->Path).str() : std::string("<none>")) +
+                   " declaration=" + (Source.Declaration ? Source.Declaration->getDeclKindName() : "<none>") +
+                   " deleted=" + std::to_string(Function && Function->isDeleted()) +
+                   " invalid=" + std::to_string(Function && Function->isInvalidDecl()) +
+                   " primary=" + std::to_string(Function && Function->getPrimaryTemplate()) +
+                   " defaults=" + std::to_string(Source.Defaults.size()) +
+                   " parameter_types=" + std::to_string(Source.ParameterTypes.size()));
           return;
         }
         indexTemplateSources(llvm::ArrayRef<TemplateUseSource>(&Source, 1), {}, {});
