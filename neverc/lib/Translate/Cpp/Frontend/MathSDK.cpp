@@ -32363,9 +32363,17 @@ class BindSourceProof {
             !matchesFunctionalBindSelectedSource(S, SM, *Selection, Context)) return false;
         const auto Wrapper = Standard
             ? describeFunctionalBindExplicitResultInvocationSource(S, SM, Call, Context) : std::nullopt;
-        const auto Retained = Standard && !Wrapper ? retainedOwnedCallOccurrence(Call) : std::nullopt;
+        const bool OwnedStandard = Standard && S.owns(SM, Call->getExprLoc());
+        const auto Retained = Standard && !Wrapper && !OwnedStandard
+            ? retainedOwnedCallOccurrence(Call) : std::nullopt;
+        // A shared forward specialization can retain the index source of a
+        // different real standard binder. Describe that owned occurrence on
+        // its own storage, rather than requiring the active binder's record.
+        // The exact selected method, index declaration, forward TSI and read
+        // identity below still have to match before its source is traversed.
         const auto StandardOccurrence = Standard
             ? (Wrapper ? describeFunctionalBindStandardCallOccurrence(S, SM, Wrapper->Base, Context)
+                       : OwnedStandard ? describeFunctionalBindStandardCallSource(S, SM, Call, Context)
                        : Retained ? describeFunctionalBindStandardCallOccurrence(S, SM, *Retained, Context)
                                   : std::nullopt) : std::nullopt;
         const auto MemberOccurrence = Member
