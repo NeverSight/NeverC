@@ -23534,6 +23534,46 @@ public:
     SourceEventsReady = true;
   }
   void sealTemplateSourceEvents() { SourceEventsSealed = true; }
+  bool equivalentLatePairTemplateSource(const TemplateUseSource &Source) {
+    const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Source.Declaration);
+    if (Source.Kind != TemplateSourceKind::Function || Source.Written ||
+        Source.FunctionalBindConstraint || Source.FunctionalNotFnConstraint ||
+        !Constructor || !approvedUtilityPairMetadata(A.S, A.Sources,
+                                                     Constructor->getParent()) ||
+        !approvedUtilityPairTraitSelectionLocation(A.S, A.Sources,
+                                                    Source.Location, Constructor))
+      return false;
+    const auto Found = FunctionSources.find(
+        {Constructor, Source.Location.getRawEncoding()});
+    if (Found == FunctionSources.end() || Found->second.empty())
+      return false;
+    for (const auto *Previous : Found->second)
+      if (!Previous || Previous->Kind != Source.Kind ||
+          Previous->Declaration != Constructor || Previous->Location != Source.Location ||
+          Previous->Written || Previous->FunctionalBindConstraint ||
+          Previous->FunctionalNotFnConstraint || !equivalentUse(*Previous, Source))
+        return false;
+    return true;
+  }
+  bool equivalentLatePairSelectedSource(const SelectedTemplateCallSource &Source) {
+    const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Source.Expression);
+    const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+    if (!Constructor || Constructor != Source.Function ||
+        Source.FunctionalBindConstraint || Source.FunctionalNotFnConstraint ||
+        !approvedUtilityPairMetadata(A.S, A.Sources, Constructor->getParent()) ||
+        !approvedUtilityPairTraitSelectionLocation(A.S, A.Sources,
+                                                    Source.Location, Constructor))
+      return false;
+    const auto Found = PairTraitSelections.find(Construction);
+    if (Found == PairTraitSelections.end() || Found->second.empty())
+      return false;
+    for (const auto *Previous : Found->second)
+      if (!Previous || Previous->Expression != Construction ||
+          Previous->Function != Constructor || Previous->Location != Source.Location ||
+          Previous->FunctionalBindConstraint || Previous->FunctionalNotFnConstraint)
+        return false;
+    return true;
+  }
   bool freshLateTemplateSource(const TemplateUseSource &Source) const {
     if (Source.FunctionalBindConstraint &&
         BindConstraintKeys.count(bindConstraintKey(Source))) return false;
@@ -23605,24 +23645,47 @@ public:
       // grant permissions from evidence produced by a failed completion.
       if (!A.S.Diagnostics.empty())
         return;
+      bool ReplayPairSources = false;
       for (const auto &Source : Batch.Uses) {
-        if (!freshLateTemplateSource(Source)) {
+        const bool Fresh = freshLateTemplateSource(Source);
+        const bool RepeatedPair = !Fresh && equivalentLatePairTemplateSource(Source);
+        if (!Fresh && !RepeatedPair) {
           A.reject(Source.Location, "repeated late template source",
                    "A retained late use needs a fresh exact source key.");
           return;
         }
         indexTemplateSources(llvm::ArrayRef<TemplateUseSource>(&Source, 1), {}, {});
+        ReplayPairSources |= RepeatedPair;
       }
       for (const auto &Source : Batch.Calls) {
-        if (SelectedCallSources.count(Source.Expression) ||
+        const bool Repeated = SelectedCallSources.count(Source.Expression) ||
             NotFnSelectedCallSources.count(Source.Expression) ||
             BindSelectedCallSources.count(Source.Expression) ||
-            PairTraitSelections.count(Source.Expression)) {
+            PairTraitSelections.count(Source.Expression);
+        const bool RepeatedPair = Repeated && equivalentLatePairSelectedSource(Source);
+        if (Repeated && !RepeatedPair) {
           A.reject(Source.Location, "repeated late selected source",
                    "A retained late selection needs a fresh exact expression.");
           return;
         }
         indexSelectedTemplateCalls(llvm::ArrayRef<SelectedTemplateCallSource>(&Source, 1));
+        ReplayPairSources |= RepeatedPair;
+      }
+      if (ReplayPairSources) {
+        // SDK query events stay inert until a real pair graph binds them.
+        // Replay every already-bound graph against the complete new index;
+        // canonical equivalence alone never certifies fresh substitutions.
+        // Copy the roots because completion can append more retained events.
+        const auto Selections = PairConstructorSelections;
+        for (const auto &[Key, Selection] : Selections) {
+          A.chargeExpansion(1, Selection ? Selection->Location : SourceLocation());
+          if (!Selection || !pairConstructorTemplateSource(*Selection, Key.second)) {
+            A.reject(Selection ? Selection->Location : SourceLocation(),
+                     "late pair template source",
+                     "Every retained alternative needs a complete fresh pair source traversal.");
+            return;
+          }
+        }
       }
     }
   }
@@ -25226,8 +25289,43 @@ public:
     }
     return true;
   }
+  bool lazyConstructorDeclarationSignature(const FunctionDecl *Function) {
+    const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
+    if (!A.S.coreV2() || !Constructor || !owned(Constructor) ||
+        !owned(Constructor->getParent()) || Constructor->isInvalidDecl() ||
+        !supportedConstructor(Constructor) ||
+        Constructor->getParent()->isDependentContext() ||
+        Constructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        Constructor->hasBody() || Constructor->isUsed(/*CheckUsedAttr=*/true) ||
+        Constructor->isImplicit() || Constructor->isDeleted() ||
+        Constructor->isExplicitlyDefaulted() || Constructor->isConsteval() ||
+        !Constructor->getTypeSourceInfo() ||
+        !standardExceptionSpecification(
+            Constructor->getType()->getAs<FunctionProtoType>()))
+      return false;
+    // An overload candidate can affect a construction query without Clang
+    // referencing or odr-using it. Retain only the original signature of an
+    // exact queried owner; the ordinary query checker still closes its actual
+    // Sema result, operands, selected defaults and destruction source.
+    // Any evaluated use of this declaration family still requires a body.
+    for (const auto &[Query, Source] : A.OperationTraits) {
+      if (!Query || !Source.Attempted || Query->isTypeDependent() ||
+          Query->isValueDependent() || Query->isInstantiationDependent() ||
+          !Query->getNumArgs() ||
+          (Query->getTrait() != TT_IsConstructible &&
+           Query->getTrait() != TT_IsNothrowConstructible &&
+           Query->getTrait() != TT_IsTriviallyConstructible))
+        continue;
+      const auto *Owner = Query->getArg(0)->getType()->getAsCXXRecordDecl();
+      if (Owner && Owner->getCanonicalDecl() ==
+                       Constructor->getParent()->getCanonicalDecl())
+        return true;
+    }
+    return false;
+  }
   bool lazyFunctionDeclarationSignature(const FunctionDecl *Function) {
-    return functionDeclarationMetadataSource(A, Function);
+    return functionDeclarationMetadataSource(A, Function) ||
+           lazyConstructorDeclarationSignature(Function);
   }
   bool lazyFreeFunctionSignature(const FunctionDecl *Function) {
     if (!A.S.coreV2() || !concreteFreeFunctionTemplate(Function) ||

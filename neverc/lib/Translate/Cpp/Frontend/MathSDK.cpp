@@ -7975,6 +7975,9 @@ class UtilityTupleQueryGraph
     std::vector<QualType> Elements;
   };
   std::vector<BindTupleElementProjection> BindTupleElementProjections;
+  // These exact getter/storage/slot projections belong only to this fresh
+  // pair source graph. Its caller still checks the real get and every operand.
+  std::vector<BindTupleElementProjection> PairCallerTupleProjections;
   std::optional<BindTupleElementProjection> BindMemberReturnProjection;
   unsigned BindTupleElementProjectionRoots = 0;
   std::set<const TemplateSpecializationType *> BindTupleElementProjectionAtoms;
@@ -9408,6 +9411,32 @@ class UtilityTupleQueryGraph
     PairInputFamilies.insert(Family.begin(), Family.end());
     return true;
   }
+  bool bindPairCallerTupleSource(const Expr *Argument) {
+    const auto *Get = dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(Argument));
+    const auto *Function = Get ? Get->getDirectCallee() : nullptr;
+    if (!Function || approvedUtilityOperation(S, SM, Get, Context) != UtilityOperation::TupleGet)
+      return true;
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    if (!Arguments || Arguments->size() != 2 ||
+        Arguments->get(0).getKind() != TemplateArgument::Integral)
+      return true;
+    if (Mode != UtilityTupleQueryMode::PairConstruction || !PairConstructor ||
+        !S.owns(SM, Get->getExprLoc()) || Get->getNumArgs() != 1 ||
+        Function->getNumParams() != 1 || !step()) return false;
+    const auto Storage = utilityTupleStorageRecord(
+        S, SM, Get->getArg(0)->getType()->getAsCXXRecordDecl(), Context, 0);
+    if (!Storage || Arguments->get(0).getAsIntegral().isNegative()) return false;
+    const auto Slot = Arguments->get(0).getAsIntegral().getLimitedValue(Storage->Elements.size());
+    if (Slot >= Storage->Elements.size()) return false;
+    const auto Projection = bindTupleElementProjection(Get, *Storage, static_cast<unsigned>(Slot));
+    if (!Projection || PairCallerTupleProjections.size() >= 64) return false;
+    PairCallerTupleProjections.push_back(*Projection);
+    return true;
+  }
+  bool pairCallerTupleSourceActive() const {
+    return Mode == UtilityTupleQueryMode::PairConstruction && PairConstructor &&
+        !PairCallerTupleProjections.empty();
+  }
   bool bindPairCallerValueAdapter(const Expr *Argument,
                                   const ParmVarDecl *FactoryParameter = nullptr) {
     const auto *Call = dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(Argument));
@@ -10565,6 +10594,9 @@ class UtilityTupleQueryGraph
   }
   const BindTupleElementProjection *bindTupleElementProjectionFor(
       const TemplateSpecializationType *Use) const {
+    if (pairCallerTupleSourceActive() && Use)
+      for (const auto &Projection : PairCallerTupleProjections)
+        if (Use == Projection.Actual || Use == Projection.Original) return &Projection;
     if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !Use) return nullptr;
     if (BindMemberReturnProjection &&
         (Use == BindMemberReturnProjection->Actual || Use == BindMemberReturnProjection->Original))
@@ -10626,7 +10658,8 @@ class UtilityTupleQueryGraph
   }
   std::optional<BindTupleElementProjection> bindTupleElementProjectionFromType(
       QualType Current, const UtilityTupleRecord &Storage, unsigned Slot) {
-    if (!BindMetadata || Slot >= Storage.Elements.size() || !step()) return std::nullopt;
+    if ((!BindMetadata && (Mode != UtilityTupleQueryMode::PairConstruction || !PairConstructor)) ||
+        Slot >= Storage.Elements.size() || !step()) return std::nullopt;
     const UtilityTupleLikeSource Tuple{Storage.Elements, nullptr, QualType(), 0};
     std::vector<const TypeAliasDecl *> Aliases;
     const TemplateSpecializationType *Actual = nullptr;
@@ -10718,7 +10751,8 @@ class UtilityTupleQueryGraph
   }
   std::optional<BindTupleElementProjection> bindTupleElementProjection(
       const CallExpr *Get, const UtilityTupleRecord &Storage, unsigned Slot) {
-    if (!BindMetadata || !Storage.Record || Slot >= Storage.Elements.size() || !step()) return std::nullopt;
+    if ((!BindMetadata && (Mode != UtilityTupleQueryMode::PairConstruction || !PairConstructor)) ||
+        !Storage.Record || Slot >= Storage.Elements.size() || !step()) return std::nullopt;
     const auto *Function = Get ? Get->getDirectCallee() : nullptr;
     const auto *Definition = Function ? Function->getDefinition() : nullptr;
     const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
@@ -11673,7 +11707,7 @@ class UtilityTupleQueryGraph
   bool value(const ValueDecl *D, const DeclRefExpr *Reference = nullptr) {
     if (!family(D) || !TraverseType(D->getType())) return false;
     if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(D)) {
-      if (Mode == UtilityTupleQueryMode::BindSignature && BindMetadata)
+      if ((Mode == UtilityTupleQueryMode::BindSignature && BindMetadata) || pairCallerTupleSourceActive())
         if (const auto Found = BindDefinitionParameters.find(Parameter);
             Found != BindDefinitionParameters.end()) {
           // This is a symbolic reference in this exact retained template's
@@ -12184,9 +12218,11 @@ public:
     });
   }
   bool TraverseBindTupleElementProjectionSource(const BindTupleElementProjection &Projection) {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindRecordSource ||
+    const bool PairSource = pairCallerTupleSourceActive() &&
+        bindTupleElementProjectionFor(Projection.Actual) == &Projection;
+    if ((!PairSource && (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata || !BindRecordSource)) ||
         Projection.Elements.empty() || Projection.Slot >= Projection.Elements.size()) return false;
-    if (!BindRecordSource(Projection.Owner)) return false;
+    if (!PairSource && !BindRecordSource(Projection.Owner)) return false;
     for (const auto *Alias : {Projection.OriginalAlias, Projection.Alias})
       if (!Alias || !Alias->getTypeSourceInfo() || !family(Alias) ||
           !TraverseTypeLoc(Alias->getTypeSourceInfo()->getTypeLoc())) return false;
@@ -14784,7 +14820,10 @@ public:
   }
   bool withBindTemplateParameters(const NamedDecl *Template,
       const TemplateParameterList *Parameters, const std::function<bool()> &Proof) {
-    if (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata ||
+    const bool PairSource = pairCallerTupleSourceActive() &&
+        std::any_of(PairCallerTupleProjections.begin(), PairCallerTupleProjections.end(),
+                    [&](const auto &Projection) { return Projection.Partial == Template; });
+    if ((!PairSource && (Mode != UtilityTupleQueryMode::BindSignature || !BindMetadata)) ||
         !Template || !Parameters || !Proof || Failed || !step() ||
         Parameters->size() > 64 || !family(Template)) return false;
     const TemplateParameterList *Declared = nullptr;
@@ -17969,7 +18008,8 @@ public:
     for (const auto *Argument : Arguments)
       if (!bindPairReferenceFactory(Argument)) return false;
     for (const auto *Argument : Arguments)
-      if (!bindPairCallerValueAdapter(Argument)) return false;
+      if (!bindPairCallerTupleSource(Argument) ||
+          !bindPairCallerValueAdapter(Argument)) return false;
     if (Factory) {
       // Only this authenticated factory's substitutions join this fresh graph.
       // The caller's actual template use and arguments still complete ordinarily.
@@ -17999,35 +18039,48 @@ public:
                                        Factory->getDirectCallee()->getParamDecl(I)))
           return false;
     }
-    if (!templateSource(Source, Constructor) || Failed) return false;
-    for (std::size_t I = 0; I < PairConstructionSources.size(); ++I) {
-      // Copy the item: its source can append more work to this same vector.
-      const auto Work = PairConstructionSources[I];
-      const auto *Selected = Work.Construction->getConstructor();
-      if (!step() || Work.Ancestors.empty() || Work.Ancestors.size() > 64 ||
-          Work.Ancestors.back() != Work.Construction || !Selected ||
-          !PairInputRecords.count(Selected->getParent()->getCanonicalDecl()) ||
-          PendingPairConstructions[Work.Construction] != Work.Query) return false;
-      PairConstructor = Selected;
-      PairConstructionAncestors = Work.Ancestors;
-      for (const auto *Field : Selected->getParent()->fields())
-        if (!bindPairInput(Field->getType())) return false;
-      const auto Events = PairSelections->find(Work.Construction);
-      if (Events == PairSelections->end() || Events->second.empty()) return false;
-      for (const auto *Event : Events->second) {
-        if (!Event || Event->Expression != Work.Construction || Event->Function != Selected ||
-            Event->Location != Work.Query->getExprLoc()) return false;
-        const auto Sources = PairFunctions->find({Selected, Event->Location.getRawEncoding()});
-        if (Sources == PairFunctions->end() || Sources->second.empty()) return false;
-        for (const auto *Use : Sources->second)
-          if (!Use || Use->Location != Event->Location || Use->Written ||
-              !templateSource(*Use, Selected) || Failed) return false;
+    std::function<bool(unsigned)> Complete = [&](unsigned I) {
+      if (I < PairCallerTupleProjections.size()) {
+        const auto *Partial = PairCallerTupleProjections[I].Partial;
+        return withBindTemplateParameters(Partial, Partial->getTemplateParameters(),
+            [&] { return Complete(I + 1); });
       }
-    }
-    Queries.assign(PairSourceQueries.begin(), PairSourceQueries.end());
-    TypeSpellings.assign(PairSourceTypeSpellings.begin(), PairSourceTypeSpellings.end());
-    SourceMembers.assign(PairSourceMembers.begin(), PairSourceMembers.end());
-    return true;
+      // Close both the original and actual alias, index/pack substitutions and
+      // bounds assertions before granting the builtin projection any purpose.
+      // No getter body or caller expression is admitted by this metadata proof.
+      for (const auto &Projection : PairCallerTupleProjections)
+        if (!TraverseBindTupleElementProjectionSource(Projection)) return false;
+      if (!templateSource(Source, Constructor) || Failed) return false;
+      for (std::size_t I = 0; I < PairConstructionSources.size(); ++I) {
+        // Copy the item: its source can append more work to this same vector.
+        const auto Work = PairConstructionSources[I];
+        const auto *Selected = Work.Construction->getConstructor();
+        if (!step() || Work.Ancestors.empty() || Work.Ancestors.size() > 64 ||
+            Work.Ancestors.back() != Work.Construction || !Selected ||
+            !PairInputRecords.count(Selected->getParent()->getCanonicalDecl()) ||
+            PendingPairConstructions[Work.Construction] != Work.Query) return false;
+        PairConstructor = Selected;
+        PairConstructionAncestors = Work.Ancestors;
+        for (const auto *Field : Selected->getParent()->fields())
+          if (!bindPairInput(Field->getType())) return false;
+        const auto Events = PairSelections->find(Work.Construction);
+        if (Events == PairSelections->end() || Events->second.empty()) return false;
+        for (const auto *Event : Events->second) {
+          if (!Event || Event->Expression != Work.Construction || Event->Function != Selected ||
+              Event->Location != Work.Query->getExprLoc()) return false;
+          const auto Sources = PairFunctions->find({Selected, Event->Location.getRawEncoding()});
+          if (Sources == PairFunctions->end() || Sources->second.empty()) return false;
+          for (const auto *Use : Sources->second)
+            if (!Use || Use->Location != Event->Location || Use->Written ||
+                !templateSource(*Use, Selected) || Failed) return false;
+        }
+      }
+      Queries.assign(PairSourceQueries.begin(), PairSourceQueries.end());
+      TypeSpellings.assign(PairSourceTypeSpellings.begin(), PairSourceTypeSpellings.end());
+      SourceMembers.assign(PairSourceMembers.begin(), PairSourceMembers.end());
+      return true;
+    };
+    return Complete(0);
   }
   bool catTemplateSource(const FunctionDecl *Function, const TemplateUseSource &Source) {
     if (!bindCatInputs(Function)) return false;
