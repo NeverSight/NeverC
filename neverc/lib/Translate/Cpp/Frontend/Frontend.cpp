@@ -2819,9 +2819,45 @@ static bool operationDefinitionCategory(Adapter &A, const FunctionDecl *Function
          Function->getTemplateInstantiationPattern(/*ForDefinition=*/true) == Origin;
 }
 
+static bool constructorDeclarationMetadataSource(Adapter &A, const FunctionDecl *Function) {
+  const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
+  if (!A.S.coreV2() || !Constructor || !A.S.owns(A.Sources, Constructor->getLocation()) ||
+      !A.S.owns(A.Sources, Constructor->getParent()->getLocation()) || Constructor->isInvalidDecl() ||
+      !supportedConstructor(Constructor) ||
+      Constructor->getParent()->isDependentContext() ||
+      Constructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      Constructor->hasBody() || Constructor->isUsed(/*CheckUsedAttr=*/true) ||
+      Constructor->isImplicit() || Constructor->isDeleted() ||
+      Constructor->isExplicitlyDefaulted() || Constructor->isConsteval() ||
+      !Constructor->getTypeSourceInfo() ||
+      !standardExceptionSpecification(
+          Constructor->getType()->getAs<FunctionProtoType>()))
+    return false;
+  // An overload candidate can affect a construction query without Clang
+  // referencing or odr-using it. Retain only the original signature of an
+  // exact queried owner; the ordinary query checker still closes its actual
+  // Sema result, operands, selected defaults and destruction source.
+  // Any evaluated use of this declaration family still requires a body.
+  for (const auto &[Query, Source] : A.OperationTraits) {
+    if (!Query || !Source.Attempted || Query->isTypeDependent() ||
+        Query->isValueDependent() || Query->isInstantiationDependent() ||
+        !Query->getNumArgs() ||
+        (Query->getTrait() != TT_IsConstructible &&
+         Query->getTrait() != TT_IsNothrowConstructible &&
+         Query->getTrait() != TT_IsTriviallyConstructible))
+      continue;
+    const auto *Owner = Query->getArg(0)->getType()->getAsCXXRecordDecl();
+    if (Owner && Owner->getCanonicalDecl() ==
+                     Constructor->getParent()->getCanonicalDecl())
+      return true;
+  }
+  return false;
+}
+
 static bool lazyQueryConstructorSignature(Adapter &A, const CXXConstructorDecl *Constructor) {
   return Constructor && ordinaryConstructor(Constructor) &&
-         (concreteClassFunction(Constructor) || concreteMemberFunctionTemplate(Constructor)) &&
+         (concreteClassFunction(Constructor) || concreteMemberFunctionTemplate(Constructor) ||
+          constructorDeclarationMetadataSource(A, Constructor)) &&
          Constructor->isReferenced() &&
          !Constructor->isUsed(/*CheckUsedAttr=*/false) && !Constructor->hasBody() &&
          A.S.owns(A.Sources, Constructor->getLocation()) &&
@@ -23650,8 +23686,31 @@ public:
         const bool Fresh = freshLateTemplateSource(Source);
         const bool RepeatedPair = !Fresh && equivalentLatePairTemplateSource(Source);
         if (!Fresh && !RepeatedPair) {
+          const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Source.Declaration);
+          unsigned Alternatives = 0;
+          bool Equivalent = true;
+          if (Constructor) {
+            const auto Found = FunctionSources.find({Constructor, Source.Location.getRawEncoding()});
+            if (Found != FunctionSources.end())
+              for (const auto *Previous : Found->second) {
+                ++Alternatives;
+                Equivalent &= Previous && Previous->Template && Source.Template &&
+                    equivalentUse(*Previous, Source);
+              }
+          }
           A.reject(Source.Location, "repeated late template source",
-                   "A retained late use needs a fresh exact source key.");
+                   "A retained late use needs a fresh exact source key. kind=" +
+                   std::to_string(static_cast<unsigned>(Source.Kind)) + " template=" +
+                   (Source.Template ? Source.Template->getQualifiedNameAsString() : "<none>") +
+                   " written=" + std::to_string(Source.Written != nullptr) +
+                   " pair_metadata=" + std::to_string(Constructor &&
+                       approvedUtilityPairMetadata(A.S, A.Sources, Constructor->getParent())) +
+                   " pair_trait_location=" + std::to_string(Constructor &&
+                       approvedUtilityPairTraitSelectionLocation(A.S, A.Sources, Source.Location, Constructor)) +
+                   " alternatives=" + std::to_string(Alternatives) +
+                   " equivalent=" + std::to_string(Equivalent) +
+                   " bind=" + std::to_string(Source.FunctionalBindConstraint) +
+                   " notfn=" + std::to_string(Source.FunctionalNotFnConstraint));
           return;
         }
         indexTemplateSources(llvm::ArrayRef<TemplateUseSource>(&Source, 1), {}, {});
@@ -25289,43 +25348,9 @@ public:
     }
     return true;
   }
-  bool lazyConstructorDeclarationSignature(const FunctionDecl *Function) {
-    const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
-    if (!A.S.coreV2() || !Constructor || !owned(Constructor) ||
-        !owned(Constructor->getParent()) || Constructor->isInvalidDecl() ||
-        !supportedConstructor(Constructor) ||
-        Constructor->getParent()->isDependentContext() ||
-        Constructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
-        Constructor->hasBody() || Constructor->isUsed(/*CheckUsedAttr=*/true) ||
-        Constructor->isImplicit() || Constructor->isDeleted() ||
-        Constructor->isExplicitlyDefaulted() || Constructor->isConsteval() ||
-        !Constructor->getTypeSourceInfo() ||
-        !standardExceptionSpecification(
-            Constructor->getType()->getAs<FunctionProtoType>()))
-      return false;
-    // An overload candidate can affect a construction query without Clang
-    // referencing or odr-using it. Retain only the original signature of an
-    // exact queried owner; the ordinary query checker still closes its actual
-    // Sema result, operands, selected defaults and destruction source.
-    // Any evaluated use of this declaration family still requires a body.
-    for (const auto &[Query, Source] : A.OperationTraits) {
-      if (!Query || !Source.Attempted || Query->isTypeDependent() ||
-          Query->isValueDependent() || Query->isInstantiationDependent() ||
-          !Query->getNumArgs() ||
-          (Query->getTrait() != TT_IsConstructible &&
-           Query->getTrait() != TT_IsNothrowConstructible &&
-           Query->getTrait() != TT_IsTriviallyConstructible))
-        continue;
-      const auto *Owner = Query->getArg(0)->getType()->getAsCXXRecordDecl();
-      if (Owner && Owner->getCanonicalDecl() ==
-                       Constructor->getParent()->getCanonicalDecl())
-        return true;
-    }
-    return false;
-  }
   bool lazyFunctionDeclarationSignature(const FunctionDecl *Function) {
     return functionDeclarationMetadataSource(A, Function) ||
-           lazyConstructorDeclarationSignature(Function);
+           constructorDeclarationMetadataSource(A, Function);
   }
   bool lazyFreeFunctionSignature(const FunctionDecl *Function) {
     if (!A.S.coreV2() || !concreteFreeFunctionTemplate(Function) ||
