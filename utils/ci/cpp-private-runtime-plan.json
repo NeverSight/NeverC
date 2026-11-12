@@ -1,28 +1,28 @@
 {
-  "component_commit": "ed2a908a91f559358a23ad3e927d836e8dad81ce",
-  "component_run_id": 42404130151,
-  "component_actual_job": 128498065660,
+  "component_commit": "ad8d5b9bb5ba98fc6583cb6e85133bdb27391ab6",
+  "component_run_id": 43129908846,
+  "component_actual_job": 130891169943,
   "component_attempt": 1,
   "component_small_artifact": {
-    "id": 13598389645,
-    "name": "cpp-bind-call-arguments-clean456-ed2a908a91f559358a23ad3e927d836e8dad81ce",
-    "digest": "sha256:3fa925e6a7b877ee064bfb8caef59d8c287a3c02663ed1b30d71237137cf67b0"
+    "id": 13906326923,
+    "name": "cpp-bind-call-arguments-clean456-ad8d5b9bb5ba98fc6583cb6e85133bdb27391ab6",
+    "digest": "sha256:53b553418249a234c2c31bbef042ca3d66ea4ebf480757b6707ed298bfb29c68"
   },
   "component_archive_artifact": {
-    "id": 13598876208,
-    "name": "cpp-current-private-archive-remote-only-ed2a908a91f559358a23ad3e927d836e8dad81ce",
-    "digest": "sha256:2358b188eb9bacea78cb3ed683ff34b89782e3e0b742b5d35b95dae2957ac390"
+    "id": 13906546383,
+    "name": "cpp-current-private-archive-remote-only-ad8d5b9bb5ba98fc6583cb6e85133bdb27391ab6",
+    "digest": "sha256:12e75b9cde77040d170e2c1d50e7ed6b63e695d78b9f169537f3887f2f3f126b"
   },
-  "component_report_sha256": "2788610fb697346d62d80a6cbc35ed184bdd21414a7c671175f631622232f057",
-  "private_archive_sha256": "ba8549b3b208f75cf95bcd45997dddb7725dd624473a7b12e66c8a6fa0c75277",
-  "frontend_build_id": "cpp-frontend-1-45a1a3d8dfc2c96e7669ae9adb58c6be3999d788c58197c4de975bd3dd9dbc81",
+  "component_report_sha256": "5137a1ed74c028c3476a5380189d88f2ac0db4ca287a257ce170d435f717c825",
+  "private_archive_sha256": "525cc4da356b51932ea1abb176e0d55fb63fe487a96598f1f982e85b5712af89",
+  "frontend_build_id": "cpp-frontend-1-952e6d559bfceadeb95a2e2a3415ac6efa235adafabbf2ae40b93f3d661bb2b4",
   "exact_private_input_sha256": {
-    "Frontend.cpp": "1e7589d66f32f33ef00f3c8de67bfc6870e984f75d9c708be7b4fe9f27e5fdb5",
-    "Lowering.cpp": "57d782f1798a859eeac6cf67baf84738fc2fd92c8d912a5e493525a81f90b420",
+    "Frontend.cpp": "069642e00d35a64d12d24b1bca5bff18091539c36358fc831855c035f7ff9464",
+    "Lowering.cpp": "d533d5931629c6b323a4f713193db362840bdac533b210ab07c3d59f42dbc94a",
     "Project.cpp": "ff4aedf2a997d5df0be787f4b1159227081788df4a87450a664d04e3e2f49648",
-    "MathSDK.cpp": "2594dd74308812ea224c9de0eef30d0b0018c5d316df6c18e07452ce083d3d57",
+    "MathSDK.cpp": "ed64c491680c5e3b8e23f53018aa8919ae611aeca986cd1299f1a4436a3b9c57",
     "RandomSDK.cpp": "eaac9732916bcc809fb880344b4ed154b725790facc0e2e53ddbae4b39131ab1",
-    "Frontend.h": "fe4d5a911e925b90a7b093eedf0d62817afe60682d87caa4e96f07c0385a574e",
+    "Frontend.h": "5b6dc69b99cef1e1d9d83bd4e7b7f1d9a2a0985ce1d8e60b75ad4616702ec045",
     "CMakeLists.txt": "9739e2da6c82ca5bccd15e79783be38586ca8723497fee72572e7dcaffef35e4",
     "IsolateSymbols.py": "abdd80c7201981cb9a5e5719accf9d9244de1bda00f2f0b80f3a0571385e0e06",
     "NoCrashReporter.h": "fa1898414c66005d06f72497f4fa46cae3886e412f0e76bd6a2f488e54fcb986",
@@ -48,7 +48,7 @@
   "authenticated_system_libraries_sha256": "1c998ace53fdcebd4e6836bc2f9d50b481b0aa38c2625f9c73fd75c0234f820e",
   "original_tests_file_sha256": "4794d7921206f429cd3418f9f4211c4d25de42a6c296bd8d194665ce5b32a2a0",
   "formal_manifest_sha256": "a4e047df483c770a7dd077e50abad961d8a0833c86e56d1bbcb47e92a6c27979",
-  "required_actual_original_gtest_xml": 124,
+  "required_actual_original_gtest_xml": 0,
   "original_gtest_bodies_modified": false,
   "post_assertion_product_retention_only": true,
   "source_paths": [
@@ -86,13 +86,14 @@
     "utils/ci/bind-seventy-seven-formal-additions.cpp",
     "utils/ci/bind-reference-three-formal-additions.cpp",
     "utils/ci/bind-eighty-four-formal-additions.cpp",
-    "utils/ci/bind-standard-seven-formal-additions.cpp"
+    "utils/ci/bind-standard-seven-formal-additions.cpp",
+    "utils/ci/bind-explicit-result-twelve-formal-additions.cpp"
   ],
   "frontend_execution_timeout_seconds": 60,
   "c23_backend_rebuilt": false,
   "actual_current_translate_owners_required": true,
   "actual_fresh_host_private_abi_audit_required": true,
-  "scope": "Actual original124 plus84 registered STL goldens,168 generated executions and819 current frontend requests",
+  "scope": "Twelve explicit-result bind tests with fourteen generated C23 O0/O2 executions",
   "full_ci_passed": false,
   "published_to_dev": false,
   "goal_complete": false,
@@ -143,531 +144,140 @@
     ],
     "report_sha256": "b001b551aac1d9369795dd118dabb6138cc6264df98e585b78e1dcdb17f80ef8"
   },
-  "not_fn_formal_additions_path": "utils/ci/bind-eighty-four-formal-additions.cpp",
-  "not_fn_formal_additions_sha256": "dd5ac6b2aaae175783f9d51932a89b09d80df9abaeb2e8418b82e30590fead4d",
-  "not_fn_formal_cases": [
-    {
-      "name": "not-fn-function-pointer",
-      "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerRunsAtBothOptimizations",
-      "source_sha256": "ce1ac4c7924c372992ca2c0a78575abf2961643a1324838d0558cdb8eadf71a3",
-      "gtest_body_sha256": "16adf2ed853d627f32496d8f7333f9de774292c4af5040e326142c7c60c92d68"
-    },
-    {
-      "name": "not-fn-reference-arguments",
-      "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerReferencesRunAtBothOptimizations",
-      "source_sha256": "1d5fed7302c89abf23b882a064afce68f4c65bf7cf92118313f28b4499260dbc",
-      "gtest_body_sha256": "0d926d38ad6a40a18f60a2d442cbb3caadfc823e5a94f00caf16ca51328ba6b7"
-    },
-    {
-      "name": "not-fn-pointer-factory-argument-once",
-      "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerFactoryAndArgumentsRunOnce",
-      "source_sha256": "2663fceaf5b2f3c446be6beb918b22f52a8a92981071ec53962d3e12a029cdbf",
-      "gtest_body_sha256": "6501b285bedf04424d90b8fcc00e70e1b0d07b561ebf5919c15762d71a241427"
-    },
-    {
-      "name": "not-fn-pointer-four-cvref",
-      "formal_test_name": "TranslateTest.CoreV2NotFnFunctionPointerFourCvrefCalls",
-      "source_sha256": "898831e9711440b59c6c1b164322388777e677e6e512d1df783f78d2b144630b",
-      "gtest_body_sha256": "f74704e68b91980cfde876bc10b4ea0c383f515d9b03b99bafc7178bcb0aa482"
-    },
-    {
-      "name": "not-fn-signature-queries",
-      "formal_test_name": "TranslateTest.CoreV2NotFnSignatureQueriesRunAtBothOptimizations",
-      "source_sha256": "4ab77980f463d36634275a21544db2fa6aaf9d1d257d05192ff45098aa3649c1",
-      "gtest_body_sha256": "b7bae65635029ff3ba2f6010240ba3d6c5cef18b3d6eadc4131aad61c3515747"
-    },
-    {
-      "name": "not-fn-custom-negation-result",
-      "formal_test_name": "TranslateTest.CoreV2NotFnCustomNegationResultAndEffectsRunAtBothOptimizations",
-      "source_sha256": "81ac40da570ab7c0d60b289888826480455f4900dba474110bd346c67e299bc8",
-      "gtest_body_sha256": "684065558e968288af7d3c8cfa129de22e0d83d06d06ba5b0fd9a267c906ae38"
-    },
-    {
-      "name": "not-fn-copied-state",
-      "formal_test_name": "TranslateTest.CoreV2NotFnOwnedCallableCopiedStateRunAtBothOptimizations",
-      "source_sha256": "8b309d87f8477420b0cae73400b5f2c80e947c2a3305c0cced1463c347a0cb13",
-      "gtest_body_sha256": "efe7270f49a185621311a417ac77f9997c338982a64dd4d93d7702a5c87b3e04"
-    },
-    {
-      "name": "not-fn-four-cvref-calls",
-      "formal_test_name": "TranslateTest.CoreV2NotFnOwnedCallableFourCvrefCallsRunAtBothOptimizations",
-      "source_sha256": "4f46b9139b5d302263428a78e3e5f13cd0167845c2f8ff15590b1d01183030ad",
-      "gtest_body_sha256": "7a2d91f0c71f2105c7b3eb663650393c9a5f82f92edaf234523febeba81a9036"
-    },
-    {
-      "name": "not-fn-move-only-cleanup",
-      "formal_test_name": "TranslateTest.CoreV2NotFnOwnedCallableMoveOnlyCleanupRunAtBothOptimizations",
-      "source_sha256": "eb814a56c100eaaae605686b138f92b687a7112a031d62b49446efb0dcad6bc6",
-      "gtest_body_sha256": "e098a96d603530fb0e99d6473486dd7873dd40381dc3bc1f561213461759c447"
-    },
-    {
-      "name": "not-fn-factory-effects",
-      "formal_test_name": "TranslateTest.CoreV2NotFnOwnedCallableFactoryAndCleanupEffectsRunAtBothOptimizations",
-      "source_sha256": "48f290bdbb5ad43e0c0e0a3bbca4a4d8c274f6e0cce4f25e0bda928cfecebc16",
-      "gtest_body_sha256": "dddacd81732e86bdee92df909ba2677423856a5d41b0ad76956d83b3a5f65c3c"
-    },
-    {
-      "name": "not-fn-reference-wrapper",
-      "formal_test_name": "TranslateTest.CoreV2NotFnReferenceWrapperRunsAtBothOptimizations",
-      "source_sha256": "21e878504d2dece3510c3a45d3b51d7bafa7efb6e142de5ad8ce622c7265a786",
-      "gtest_body_sha256": "51816760fc5b622a7f49bb5fae40ce6a229efac4ab41a597a8775629a8d0b061"
-    },
-    {
-      "name": "not-fn-nested-adapters",
-      "formal_test_name": "TranslateTest.CoreV2NotFnNestedAdaptersRunAtBothOptimizations",
-      "source_sha256": "526ba4898dfa558ee054497bf191b9da4b3a17caf94376edb5c1c51535593b54",
-      "gtest_body_sha256": "509cf8b4685764580ecc54d0a700c8a689e3c4bac126f9f3e58ab28465d7ee58"
-    },
-    {
-      "name": "bind-fully-bound-value-copies",
-      "formal_test_name": "TranslateTest.CoreV2BindFullyBoundValueCopiesRunAtBothOptimizations",
-      "source_sha256": "423b8da11cb05ebbcf04d72addc5d1317818a29ad0438742ef6b86097babd9d1",
-      "gtest_body_sha256": "e9bd0d6af2a7af603f8901bc9622480f548b2827712ea9b3e11f0e3b299143b4"
-    },
-    {
-      "name": "bind-captures-function-pointer-value",
-      "formal_test_name": "TranslateTest.CoreV2BindCapturesFunctionPointerValueRunAtBothOptimizations",
-      "source_sha256": "e4ed0f2db32931da39daedad796df2ba0ec3b55a4188719072b6934dc41e37b0",
-      "gtest_body_sha256": "649a8af5467f43e7c547c7db181c5f7688dea78f746d73d48fa0c33f37139124"
-    },
-    {
-      "name": "bind-bound-expression-effects-once",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundExpressionEffectsOnceRunAtBothOptimizations",
-      "source_sha256": "2ca7e15dd16efb6cdcb2e627d1a7159f0fb45b56cb5704b877a2b6023dbd6aa8",
-      "gtest_body_sha256": "44b6aef4282952297804d31cb5f356c1eef80c271cde9977ed5a4e302f2b605f"
-    },
-    {
-      "name": "bind-borrowed-scalar-argument",
-      "formal_test_name": "TranslateTest.CoreV2BindBorrowedScalarArgumentRunAtBothOptimizations",
-      "source_sha256": "a1a56ec0a672eea6bd79aba1c39efadefaca69b6ba5a17290ce30992d0b40a3b",
-      "gtest_body_sha256": "af3353958f356d670a611e758b7ac84f3e87f863ac9cb1fd5bc598177a219ae2"
-    },
-    {
-      "name": "bind-live-reference-result",
-      "formal_test_name": "TranslateTest.CoreV2BindLiveReferenceResultRunAtBothOptimizations",
-      "source_sha256": "9fe7d9cdd1d857c3e243e18f56b41cc9a1588b6a87e249628af3b1573ebb60db",
-      "gtest_body_sha256": "21d9172db0e2a15d0712d41d9cd0b2b315b62523da4f4283f4120cc2ec567518"
-    },
-    {
-      "name": "bind-void-result",
-      "formal_test_name": "TranslateTest.CoreV2BindVoidResultRunAtBothOptimizations",
-      "source_sha256": "cd12e9224b32d26cdff21fcd9d044031de247975ec22faa232762fa49fa41117",
-      "gtest_body_sha256": "8002b471f5933eadece8f8ad061cf77d32d0b5d67e03fc756ed8193331041c03"
-    },
-    {
-      "name": "bind-result-and-exception-queries",
-      "formal_test_name": "TranslateTest.CoreV2BindResultAndExceptionQueriesRunAtBothOptimizations",
-      "source_sha256": "ebc8e5056c4d6bf0f7517e0ebe1717e79912f5eaa6c7c6e32972cb378472e826",
-      "gtest_body_sha256": "19fea797bfe4272e6b1a50ae10dc89db0712d2ba01abce70deac64cf2c9d5952"
-    },
-    {
-      "name": "bind-lvalue-captures-after-argument-effects",
-      "formal_test_name": "TranslateTest.CoreV2BindLvalueCapturesAfterArgumentEffectsRunAtBothOptimizations",
-      "source_sha256": "36e239740481446b2397da1316fb807dd283b7c502f8f39c9d6e7fb3e2abc9f9",
-      "gtest_body_sha256": "4e1841d360539536bf65309d030631d8aeb32e4047a3cbf701dfbed75037505c"
-    },
-    {
-      "name": "bind-stored-state-and-rvalue-receiver",
-      "formal_test_name": "TranslateTest.CoreV2BindStoredStateAndRvalueReceiverRunAtBothOptimizations",
-      "source_sha256": "967ec76e1957b8b7d653734291d4d30a7cb24b906748e67d5ae57fff030eba15",
-      "gtest_body_sha256": "31375df263bd606f4366a2ecbc9765f3ef7559118175446a22401061e8ec910b"
-    },
-    {
-      "name": "bind-call-unused-prvalue",
-      "formal_test_name": "TranslateTest.CoreV2BindCallUnusedPrvalueRunAtBothOptimizations",
-      "source_sha256": "c694df2b683623de2f5a998b47d3b9c4c5f426d972dadb09a0e48899f7fb2fc0",
-      "gtest_body_sha256": "190222df5541ab9130c39b72d6e9c99ae5a88558e6df47b30a39b2f19b4aa367"
-    },
-    {
-      "name": "bind-call-unused-cv-lvalues",
-      "formal_test_name": "TranslateTest.CoreV2BindCallUnusedCvLvaluesRunAtBothOptimizations",
-      "source_sha256": "1b52d24341568b206cc7b5b4e2676915c20db99f4199ef4c16ae0cfb24a70401",
-      "gtest_body_sha256": "b33341ef905b97912055fb84d18b3a058bca004b8a5663326a51f45679a23e14"
-    },
-    {
-      "name": "bind-call-unused-effects-once",
-      "formal_test_name": "TranslateTest.CoreV2BindCallUnusedEffectsOnceRunAtBothOptimizations",
-      "source_sha256": "1fd27d08fbe1a77ca74378f7ad65b5f475ed25483c9335816d3a02f84ac2b163",
-      "gtest_body_sha256": "a6e2648e7144d15f88ef73dbffcb581032d607b13847278f7eddef116facb93e"
-    },
-    {
-      "name": "bind-call-unused-updates-referent",
-      "formal_test_name": "TranslateTest.CoreV2BindCallUnusedUpdatesReferentRunAtBothOptimizations",
-      "source_sha256": "3139d80b8325c1c087310c7d998bb35c30ebc246d06ef18271aec8c7feb06071",
-      "gtest_body_sha256": "a0d7d9a90360a78343e9e197760d2f6da7fe16b83a786e480d08b11b486e8b67"
-    },
-    {
-      "name": "bind-call-unused-same-bind-reentry",
-      "formal_test_name": "TranslateTest.CoreV2BindCallUnusedSameBindReentryRunAtBothOptimizations",
-      "source_sha256": "24fa424dd2968431825b40690786584361b8ce974e6dae672fc16282ba54b750",
-      "gtest_body_sha256": "8934a538135cba81dcd1978e28d22e4bf5dfafff105ac326eecfc1e0da8671cb"
-    },
-    {
-      "name": "bind-call-unused-const-receiver",
-      "formal_test_name": "TranslateTest.CoreV2BindCallUnusedConstReceiverRunAtBothOptimizations",
-      "source_sha256": "1bf2c714c14e58fb8eef7a734721906652f4fee3fe8dac967d520b1094d014f6",
-      "gtest_body_sha256": "8634f0b982b7ac878d4c793a5538c1d08b588a2115d6e4ee46f9b4a8bf71cf95"
-    },
-    {
-      "name": "bind-call-unused-rvalue-receiver",
-      "formal_test_name": "TranslateTest.CoreV2BindCallUnusedRvalueReceiverRunAtBothOptimizations",
-      "source_sha256": "2e8ea562786c55a2bcf5432f4f691576fba8c88c750679b347ad43c382ebd292",
-      "gtest_body_sha256": "ef868ae2f33bcb1bcb8749bb52a62266e9d73b3afed11f560bc1e7fd793b2ace"
-    },
-    {
-      "name": "bind-call-unused-void-target",
-      "formal_test_name": "TranslateTest.CoreV2BindCallUnusedVoidTargetRunAtBothOptimizations",
-      "source_sha256": "ffc9bc259cc5cd2b85aa032762cf3ac9eeb6baa4e8410b7ef85633e76346cc37",
-      "gtest_body_sha256": "2c0fef6bbe00d70ff064bdb22c9cdea4f2cb98e35bb133e7bbaaf4e40e54ac08"
-    },
-    {
-      "name": "bind-call-unused-reference-result",
-      "formal_test_name": "TranslateTest.CoreV2BindCallUnusedReferenceResultRunAtBothOptimizations",
-      "source_sha256": "a473378fd9fd20d3470e598528894ec5a1c1ac9868b132f588c83ca942eb1250",
-      "gtest_body_sha256": "e21491ccc7d50f1f472d2198a6b42f0abf4111f4ddccfce9bbc0587c59413519"
-    },
-    {
-      "name": "bind-call-receiver-before-unused-effects",
-      "formal_test_name": "TranslateTest.CoreV2BindCallReceiverBeforeUnusedEffectsRunAtBothOptimizations",
-      "source_sha256": "99803201c1f6becb0821d666c235e6d939a2f4951fca33bd50e54053efbfeb3e",
-      "gtest_body_sha256": "119cf41a0cce5e27c4840449c646797c151017904874dacb0e5ff9043819e4c2"
-    },
-    {
-      "name": "bind-call-unused-rvalue-scalar",
-      "formal_test_name": "TranslateTest.CoreV2BindCallUnusedRvalueScalarRunAtBothOptimizations",
-      "source_sha256": "0fac1197a39c14cbeb34f9672d2c7c457bb08217e43f69a01acabdccb671d762",
-      "gtest_body_sha256": "0e971c0a50957c0b06eaa7106eb95d704664b24ae1f355d51d856a23d7433117"
-    },
-    {
-      "name": "bind-zero-bound-value",
-      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundValueRunAtBothOptimizations",
-      "source_sha256": "de9c183a26860cf349390ff7541b895ce21e8528252421584a44eb0848b8c40b",
-      "gtest_body_sha256": "c789d898242de34da7a4a1aa1bdae5fe2f57a6518ba1451581f089c5e222a3d9"
-    },
-    {
-      "name": "bind-zero-bound-designator",
-      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundDesignatorRunAtBothOptimizations",
-      "source_sha256": "d32cbec368c9d84d665f20f76731bacdb957dd38d73de5755b40626aa1dcdf75",
-      "gtest_body_sha256": "e7807db2e30a9086e0255088216d653c649ec4282361384615bafbdcb6a524a8"
-    },
-    {
-      "name": "bind-zero-bound-copy-cvref",
-      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundCopyCvrefRunAtBothOptimizations",
-      "source_sha256": "eca7e15458d8206c7316e8716cec1a9b7d4c265e9915b7e288a8f80885f0fd47",
-      "gtest_body_sha256": "21c326b7599339650ed9e907864be09afafa66b71a04fd039d9c1b58799aa7e3"
-    },
-    {
-      "name": "bind-zero-bound-factory-once",
-      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundFactoryOnceRunAtBothOptimizations",
-      "source_sha256": "42569cbc4e7d2e27ea5c82038af17ff062c84100d12848380c69be3a3a762a6d",
-      "gtest_body_sha256": "ec1e556a6bcac2cbc16ec48ad4244c8bc2ca4437fe0e22e647583c42894b4890"
-    },
-    {
-      "name": "bind-zero-bound-void-target",
-      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundVoidTargetRunAtBothOptimizations",
-      "source_sha256": "692d348f695124bb6001b732d7e9f3684a31128d06a4379df2828d75e1a1153c",
-      "gtest_body_sha256": "127590b4009f4bf598b54ada51365eda93e11617618183cfc08617b5c828a5fa"
-    },
-    {
-      "name": "bind-zero-bound-reference-result",
-      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundReferenceResultRunAtBothOptimizations",
-      "source_sha256": "2dfd7995c72d3cdafe166bf1658c3e870184a3d3e4249c5fd668204a672a7871",
-      "gtest_body_sha256": "2cd2f8ee6d2932f9539b6672d3ac5c00a29524a2ba6ae1837f640f24c057168b"
-    },
-    {
-      "name": "bind-zero-bound-unused-effects",
-      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundUnusedEffectsRunAtBothOptimizations",
-      "source_sha256": "579b4c3c3e8fb036b3a572ab04e41ea6d781aef3651518cffba1af0981cac451",
-      "gtest_body_sha256": "46076b00f1b3b1d80caebdad412bbdaa5e0bda63d601cf16a770957b40441df3"
-    },
-    {
-      "name": "bind-zero-bound-result-kinds",
-      "formal_test_name": "TranslateTest.CoreV2BindZeroBoundResultKindsRunAtBothOptimizations",
-      "source_sha256": "302be284785ab81a26632e0ffc8edc647ca64faf15eb09467588037700be81da",
-      "gtest_body_sha256": "b1563663deb72d6fae1b124b5e36e6de9e561cfcc8ea1ef7b62c2717fcf6cd7e"
-    },
-    {
-      "name": "bind-bound-pack-three-values",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackThreeValuesRunAtBothOptimizations",
-      "source_sha256": "c1f19e90acc41293f21f375cf1337bd95c9644ee75e3d2b988b6744f79b5ccc7",
-      "gtest_body_sha256": "550cdb345c860958a40c09bd953b24a7a50dffa7d975df7c5c806a3c4cedf75c"
-    },
-    {
-      "name": "bind-bound-pack-four-mixed",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackFourMixedRunAtBothOptimizations",
-      "source_sha256": "b93c128ab57c417aca14b8a738f3b08f1b65da46804f8d007a01350821f09fc2",
-      "gtest_body_sha256": "1df27ba28fdcce98fa24a8579273fe5fa489137d63722c4a9992f4854e17cb08"
-    },
-    {
-      "name": "bind-bound-pack-eight-values",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackEightValuesRunAtBothOptimizations",
-      "source_sha256": "3dec1384520f343d4a09b3ed62e269d117db19cb06fffd2f2f4690f1be74377e",
-      "gtest_body_sha256": "b0124a991e47974cafd036d1ca9f05b9de4242d72c240bfb706cef4e4731c12a"
-    },
-    {
-      "name": "bind-bound-pack-third-reference",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackThirdReferenceRunAtBothOptimizations",
-      "source_sha256": "38d2e17f8c0d07d1495c6cd221b78be41905ff20525bd7c60d6b6cc7db11426a",
-      "gtest_body_sha256": "a22b0b38e74b5c6a9decbc0ea379e6d91f2c7f4fb97fe3d69575e7fa5e7a75c2"
-    },
-    {
-      "name": "bind-bound-pack-copied-state",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCopiedStateRunAtBothOptimizations",
-      "source_sha256": "e15b66e3e19ff701280dd00ee12f242a6b0a291a5f8b0543bdbe7cefa3a3d92c",
-      "gtest_body_sha256": "3c839796ca59e13a9079cb1db174120dc55335e67dff8c5507bbe0297671df70"
-    },
-    {
-      "name": "bind-bound-pack-capture-effects",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCaptureEffectsRunAtBothOptimizations",
-      "source_sha256": "dc249ceecf6c93776599f74db9e1272a8abda04fcc44572f8869376529e1f9a7",
-      "gtest_body_sha256": "16ac500e8c66a29c3eeeeec41547da2955b10bd3b4fcf8572c079f6952619283"
-    },
-    {
-      "name": "bind-bound-pack-captured-pointer",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackCapturedPointerRunAtBothOptimizations",
-      "source_sha256": "64339a034b7b5050e0236608ce35bbd1c9e38b415f2a1877689710c6c66fa36e",
-      "gtest_body_sha256": "a50c38a7241369fee8c688c8ab75ab98ff5eb576265c2cead7154ac394fb8ac9"
-    },
-    {
-      "name": "bind-bound-pack-result-kinds",
-      "formal_test_name": "TranslateTest.CoreV2BindBoundPackResultKindsRunAtBothOptimizations",
-      "source_sha256": "b9c0397bb30478fb7af852bf2081416dd36b715bd12cac562829173f4e4e7dc6",
-      "gtest_body_sha256": "be37bb627a7e764974aedcf3763ea3555c1f111d33a5f6dd7563ecc545068660"
-    },
-    {
-      "name": "factory-placeholder-one",
-      "formal_test_name": "TranslateTest.CoreV2FactoryPlaceholderOneRunAtBothOptimizations",
-      "source_sha256": "2bc72d49eff66c701b5f363a4b92e286279a74c952be41d527bab2043dafacee",
-      "gtest_body_sha256": "d53a42ccc0406c8afc50cebe275c8cbe2d530827ef71b5f380f22687d1da8f99"
-    },
-    {
-      "name": "factory-placeholder-parentheses",
-      "formal_test_name": "TranslateTest.CoreV2FactoryPlaceholderParenthesesRunAtBothOptimizations",
-      "source_sha256": "ad78048d644d52b0a7809f527fc43701b4ae28f94380c2beb636911ef57d4bae",
-      "gtest_body_sha256": "61aca104dfe6a07d0c8ed3c143d13abf16e13e4ce6afc68d7a779ef203002019"
-    },
-    {
-      "name": "factory-placeholder-repeated",
-      "formal_test_name": "TranslateTest.CoreV2FactoryPlaceholderRepeatedRunAtBothOptimizations",
-      "source_sha256": "0b82de2fa082badfe0f03826e08fe497391cdac8e01aa02acb59b5a4d60392dc",
-      "gtest_body_sha256": "801a6f0cc8a30d1b1e0fbf61370fb624fd43468b156152467986a879e689053c"
-    },
-    {
-      "name": "factory-placeholder-mixed-reference",
-      "formal_test_name": "TranslateTest.CoreV2FactoryPlaceholderMixedReferenceRunAtBothOptimizations",
-      "source_sha256": "a253f6b47ec769f65ec23a25ea4d8297c6e11204035e484936bcf8196deb7ff7",
-      "gtest_body_sha256": "af5e3480bed070f65b8359ffabb57af80ec71d454b4af6660398364f860adb12"
-    },
-    {
-      "name": "factory-placeholder-effects",
-      "formal_test_name": "TranslateTest.CoreV2FactoryPlaceholderEffectsRunAtBothOptimizations",
-      "source_sha256": "f00b6810b51467cd5e1c66840e6d9c2fdfc9806741eff8f7fbc897440c737961",
-      "gtest_body_sha256": "657eeb8087225c8b261d4c17b30e08c64ed8b3faf9960559f8d3947e6545fd11"
-    },
-    {
-      "name": "bind-placeholder-one",
-      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderOneRunAtBothOptimizations",
-      "source_sha256": "a6b03c381f2203e05ac49ce16bc6b577a3618abc304fec8a6d89f804455403eb",
-      "gtest_body_sha256": "cfeda330e32bf43aea267c63b9e6c49e18f1a351ed1ad4971b8c17cf4471f603"
-    },
-    {
-      "name": "bind-placeholder-reordered",
-      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderReorderedRunAtBothOptimizations",
-      "source_sha256": "ad4bb7d88e15f685a4029bc6d7d148e83fa7256931f67eac773b59dc465f59a8",
-      "gtest_body_sha256": "40c7db517f9e5135d4288d7415f0baf5b34f6c3b7092ecc2507b3dea56854fa8"
-    },
-    {
-      "name": "bind-placeholder-repeated-once",
-      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderRepeatedOnceRunAtBothOptimizations",
-      "source_sha256": "26b218803e06a5aa2472ccdd8690b57523f49826b041f86159b243c3dd3ea2b8",
-      "gtest_body_sha256": "02c37cb3b91cc9b343b9f950f7ecc7f22e68b7b5e9ee5d15b8c845cb9e50c521"
-    },
-    {
-      "name": "bind-placeholder-independent-bound-state",
-      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderIndependentBoundStateRunAtBothOptimizations",
-      "source_sha256": "f022800150530b34a7fcab3342f24506713e7ad2ee76c3f46a01b453bba99101",
-      "gtest_body_sha256": "6e5c3dd5e62dfdce5705ec9f7300d3fb6bd467dea9cd75ca25b1816de7cedafb"
-    },
-    {
-      "name": "bind-placeholder-borrowed-state",
-      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderBorrowedStateRunAtBothOptimizations",
-      "source_sha256": "7d07d17ca105796b4a2989f5fb96eb72848d44ae1d3589b678a3217823438f57",
-      "gtest_body_sha256": "fd0465153f21dafdea29fb9796844aa35ff12d7cadbe61bccdfe054291c6670a"
-    },
-    {
-      "name": "bind-placeholder-unused-effects-before-read",
-      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderUnusedEffectsBeforeReadRunAtBothOptimizations",
-      "source_sha256": "506e0abc9fc6164a153ee625e7dadfb20873d53623fd9a5b66c626cd296ca518",
-      "gtest_body_sha256": "8532dedc3cf67f2eb8b93a8b8ea9e814b64287f0f8b8c064b915043bdc41b570"
-    },
-    {
-      "name": "bind-placeholder-live-reference",
-      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderLiveReferenceRunAtBothOptimizations",
-      "source_sha256": "bda6e3ae690b9ff0c6749a846c160de9b0d7e1f85139d50184cb73ee0c8fc4c6",
-      "gtest_body_sha256": "7265b2b1bc970aaf976d2e325e8d6c02b0e8bd35d4ef6f61833e40b38d745011"
-    },
-    {
-      "name": "bind-placeholder-capture-and-queries",
-      "formal_test_name": "TranslateTest.CoreV2BindPlaceholderCaptureAndQueriesRunAtBothOptimizations",
-      "source_sha256": "2e4b5463256765c309dfe495afc305b5fbb3586834f4927594ac9c49a3967e19",
-      "gtest_body_sha256": "0a5ca6eafbf37bd62b18aa225a6bcd4054a24dc0d898efa6291cc5b21630cff3"
-    },
-    {
-      "name": "bind-nested-nullary",
-      "formal_test_name": "TranslateTest.CoreV2BindNestedNullaryRunAtBothOptimizations",
-      "source_sha256": "0f684c35625cffe3170c61f242a6139ce5cb5bcaf9c6b8b350800e119fb69e4a",
-      "gtest_body_sha256": "4730d6943d71c730864f0786003eca5f8d3cd69f42eee7c689e4c6b97a9fb7c7"
-    },
-    {
-      "name": "bind-nested-one-placeholder",
-      "formal_test_name": "TranslateTest.CoreV2BindNestedOnePlaceholderRunAtBothOptimizations",
-      "source_sha256": "0389f38f661a69c502aac59ec5da26b1ee281ee5b8dab49dc45ca3295a21ac57",
-      "gtest_body_sha256": "41b07b0b9bcb33f6e9b02a2ea198fec6b2648fe8fa0e61d10d17cced56db06fb"
-    },
-    {
-      "name": "bind-nested-reordered",
-      "formal_test_name": "TranslateTest.CoreV2BindNestedReorderedRunAtBothOptimizations",
-      "source_sha256": "a0aa3f7413ffbafe0ed20d8cb991f2817699078d7cacf7cbb7eaaa4bdabc8a38",
-      "gtest_body_sha256": "54cafa016446e6d8aca9b865c2834de62db16b3f32d9842e731af465e638caaf"
-    },
-    {
-      "name": "bind-nested-two-shared-inputs",
-      "formal_test_name": "TranslateTest.CoreV2BindNestedTwoSharedInputsRunAtBothOptimizations",
-      "source_sha256": "f371f7e61d76be87b77bc9bbbbc2372e5e876e69e72831aaaffebb5d3379dece",
-      "gtest_body_sha256": "ec947d001141e514ff714067e6d2a04ac45ae1ebf371e6b18ace3794bcc58c2c"
-    },
-    {
-      "name": "bind-nested-live-reference-result",
-      "formal_test_name": "TranslateTest.CoreV2BindNestedLiveReferenceResultRunAtBothOptimizations",
-      "source_sha256": "ffda91473630ffc78952c5091af7c79e4925a913a96a494072dfdc2b866317cf",
-      "gtest_body_sha256": "9b24e12fa6c92c334ae20f9a186e19b493a8dc533cea7911fb49f6546e72657e"
-    },
-    {
-      "name": "bind-nested-independent-captured-state",
-      "formal_test_name": "TranslateTest.CoreV2BindNestedIndependentCapturedStateRunAtBothOptimizations",
-      "source_sha256": "f9bdd5f8a99dd28961d63bc2e549d5072f47f5063fe54e4498c45379437b8be5",
-      "gtest_body_sha256": "35d6d4ac3368cd02c7c2b2d7baa9c2680f81b9ae84e6fd19ce6b76e7299ce479"
-    },
-    {
-      "name": "bind-nested-unused-effects-before-read",
-      "formal_test_name": "TranslateTest.CoreV2BindNestedUnusedEffectsBeforeReadRunAtBothOptimizations",
-      "source_sha256": "1e548663ded29eaf688c8ef74a9cd0e1d77d1889ec857bfd70eeb01e5beab757",
-      "gtest_body_sha256": "e7aa61b745dc81e9c593e079c1bc9586e06506cf40281cfc01ad68557fc48e66"
-    },
-    {
-      "name": "bind-nested-const-copy-and-temporary",
-      "formal_test_name": "TranslateTest.CoreV2BindNestedConstCopyAndTemporaryRunAtBothOptimizations",
-      "source_sha256": "fff81fb70f6a91e4830a028e313f6325aaf6d42466930543c639e5463447c0a1",
-      "gtest_body_sha256": "caf3f479e786ccc7cd43496e00092965a360b3157d9bd3a83c6f9026273274f8"
-    },
-    {
-      "name": "bind-nested-late-reference-value-read",
-      "formal_test_name": "TranslateTest.CoreV2BindNestedLateReferenceValueReadRunAtBothOptimizations",
-      "source_sha256": "bbbb7dcfe856ae6dbe4754400c9d2296d6aa99994be884cd59c98cd5b5619ea2",
-      "gtest_body_sha256": "68a0aca0a3c2bda9e3910ade25b649636a89557adc29f5e8346393d599d1ff22"
-    },
-    {
-      "name": "bind-nested-late-placeholder-value-read",
-      "formal_test_name": "TranslateTest.CoreV2BindNestedLatePlaceholderValueReadRunAtBothOptimizations",
-      "source_sha256": "296efb30fe0b3a5dd34896e75395c9af3ee403e1173d706f762ee2384278ac4b",
-      "gtest_body_sha256": "f78d221166d220b876e26a305ed715b7402916a235b7bd686e4917acdfe4539d"
-    },
-    {
-      "name": "bind-callable-owned-const",
-      "formal_test_name": "TranslateTest.CoreV2BindOwnedCallableConstRunAtBothOptimizations",
-      "source_sha256": "571b37022bee7a6adad5484be6170d3233b2df9b03f9bb8ee20b34340dbd602e",
-      "gtest_body_sha256": "a0ed358fb10e272c4f59879badbe98c1b30cd86a6996939006ff05e70cee582a"
-    },
-    {
-      "name": "bind-callable-independent-state",
-      "formal_test_name": "TranslateTest.CoreV2BindOwnedCallableIndependentStateRunAtBothOptimizations",
-      "source_sha256": "d2400f0b956c4ef264c84679e8a3d6a2f0636047ca49727c08acd09f28216c01",
-      "gtest_body_sha256": "619b98c1ea608b7792e16754617afb68872bfe9d0a57fd256652c469c92124a3"
-    },
-    {
-      "name": "bind-callable-receiver-cvref",
-      "formal_test_name": "TranslateTest.CoreV2BindOwnedCallableReceiverCvrefRunAtBothOptimizations",
-      "source_sha256": "877d3784fff59f092e33ed05233f9c97fa8aeabd87da46a118565831bc497cc7",
-      "gtest_body_sha256": "b1e5cc96063e5bfb40aef36edbcb30113ae570c4976807626926c8bc0a54a901"
-    },
-    {
-      "name": "bind-callable-reference-target",
-      "formal_test_name": "TranslateTest.CoreV2BindReferenceCallableSharedStateRunAtBothOptimizations",
-      "source_sha256": "394c68f214868d1520a4fe4ac505c12f184363104a4f709e0a472e6192cd9d79",
-      "gtest_body_sha256": "1fd663c2bc499950d7ac85db7fffba1f997be22c311a593afa7c3aeb79ea97af"
-    },
-    {
-      "name": "bind-callable-reference-const-wrapper",
-      "formal_test_name": "TranslateTest.CoreV2BindReferenceCallableConstWrapperRunAtBothOptimizations",
-      "source_sha256": "1563d79c57e9ed983f687cc9439376df662e567177fc7c293f9c752574d53a63",
-      "gtest_body_sha256": "da67dbc5a31cb90b928639130e03b7daf638e8779224f817f606f825e84f3c66"
-    },
-    {
-      "name": "bind-callable-reference-const-referent",
-      "formal_test_name": "TranslateTest.CoreV2BindReferenceCallableConstReferentRunAtBothOptimizations",
-      "source_sha256": "0fba5df1e974e7f88aacbf4abc4fc290f041384dfc8dca122c25dd09b88beb64",
-      "gtest_body_sha256": "b531784c83e14b86e2e0a9e6268ae73ef5cbc960bfd0e7fee2f1e6599ec880e2"
-    },
-    {
-      "name": "bind-callable-standard-arithmetic",
-      "formal_test_name": "TranslateTest.CoreV2BindStandardArithmeticRunAtBothOptimizations",
-      "source_sha256": "0156e55bb58d403a0a03221189ab9a7c5fc63f2aadd512e82d1a96f09f551ece",
-      "gtest_body_sha256": "b04a20a9b505be20b79e0ad21b8ba91208f732556cd8bc99ca0e1638ec3d4117"
-    },
-    {
-      "name": "bind-standard-comparison",
-      "formal_test_name": "TranslateTest.CoreV2BindStandardComparisonRunAtBothOptimizations",
-      "source_sha256": "28bbce5debda1bf4c8550e681777f806abc5d4faacd0c5fee2497eae5042e395",
-      "gtest_body_sha256": "f26b0d2c67a43386abcc8312e02cadcdb7e28fe366ed86ed595114c1fc1e4ac8"
-    },
-    {
-      "name": "bind-standard-logical",
-      "formal_test_name": "TranslateTest.CoreV2BindStandardLogicalRunAtBothOptimizations",
-      "source_sha256": "79e45aa92506259f262ad38f8b718990c6c01bf33ad16c0e8837d9156d73c2dd",
-      "gtest_body_sha256": "20956afcfc151b61acb95c98eca49c00faf6601201dd01650985bf75f9f60f6e"
-    },
-    {
-      "name": "bind-standard-unary",
-      "formal_test_name": "TranslateTest.CoreV2BindStandardUnaryRunAtBothOptimizations",
-      "source_sha256": "b6e33c79a811f94d8995d9c6a86451d4a7c2ed53e46df27adb4a5cf429cc1b45",
-      "gtest_body_sha256": "d9350748c848c24a4a552d79ae4b3ff3aad6d09ded288e0d8e19b8d1c8e312e4"
-    },
-    {
-      "name": "bind-standard-bitwise",
-      "formal_test_name": "TranslateTest.CoreV2BindStandardBitwiseRunAtBothOptimizations",
-      "source_sha256": "9924db5ae593834a70fed0f8bf4097fa88d7f8ddc8c9c2d6471011c2ad2edd06",
-      "gtest_body_sha256": "d0a005f3a6ab6c18e495f7303e6594a6649898ebadecae73be537d8e92a256f9"
-    },
-    {
-      "name": "bind-standard-remaining-operators",
-      "formal_test_name": "TranslateTest.CoreV2BindStandardRemainingOperatorsRunAtBothOptimizations",
-      "source_sha256": "6be959735e91461e928d989dee256d35961517a886dce7b186ed9a45ab295cdb",
-      "gtest_body_sha256": "6d35426ee095e5e9cca8f70479d127ebc94fd91a757a591bb18e6823455d2609"
-    },
-    {
-      "name": "bind-standard-argument-effects",
-      "formal_test_name": "TranslateTest.CoreV2BindStandardArgumentEffectsRunAtBothOptimizations",
-      "source_sha256": "d946cc80cc7057f6be7dd66002af2e7d60cefc36284472380efb9b7eddaec7a0",
-      "gtest_body_sha256": "d3540cbb034d37e706a36f5c5d6988f4121e0a1378bbbcd3e3c2e84929b6e564"
-    }
-  ],
-  "required_actual_total_gtest_xml": 208,
-  "required_actual_not_fn_gtest_xml": 84,
-  "required_actual_not_fn_generated_o0_o2_products": 168,
+  "required_actual_total_gtest_xml": 12,
   "not_fn_registered_previous_additions_path": "utils/ci/bind-eighty-four-formal-additions.cpp",
   "not_fn_registered_previous_additions_sha256": "dd5ac6b2aaae175783f9d51932a89b09d80df9abaeb2e8418b82e30590fead4d",
-  "required_actual_frontend_requests": 819,
-  "actual_new_signature_native_reference_verified": false,
+  "required_actual_frontend_requests": 12,
+  "actual_new_signature_native_reference_verified": true,
   "actual_prior_custom_native_reference_verified": true,
   "preparation_only": false,
   "execution_binding_required": true,
-  "current_clean_syntax6_proof_sha256": "e90ef7244fd923721da77f43a5c9386198ee9afa4f7ad9bb6122c592610c47b0",
+  "current_clean_syntax6_proof_sha256": null,
   "dependency_producer_actual_job": 126378412532,
   "dependency_producer_attempt": 1,
   "dependency_producer_authentication_sha256": "0a2440fc57a6b728293a872375f6d3714b9c6ef2dc2abd6baee3f45c0bed0799",
-  "required_component_accept": 704,
-  "required_component_reject": 264,
-  "required_component_invalid": 32,
-  "required_component_requests": 1000,
-  "current_full456_proof_sha256": "92fb3478dea1c004fe6660514db3f1a84426c6d6cb310a389bfef25f351175b4"
+  "required_component_accept": 42,
+  "required_component_reject": 18,
+  "required_component_invalid": 12,
+  "required_component_requests": 72,
+  "current_full456_proof_sha256": null,
+  "member_formal_additions_path": "utils/ci/bind-explicit-result-twelve-formal-additions.cpp",
+  "member_formal_additions_sha256": "a6aa0f3951328be090c063488afebdb140b69683b8122f60b3b8d4f75f3bad12",
+  "member_formal_cases": [
+    {
+      "name": "bind-result-scalar-conversion",
+      "formal_test_name": "TranslateTest.CoreV2BindResultScalarConversionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3eb83bb89448de56f32ddc908dda324363c2044e7d939d2c93ed3867cd1c643f",
+      "original_case_source_sha256": "21794bc562e53e2d1ba37f61249053b9877003559efa52733b35a5c0cec46d96",
+      "gtest_body_sha256": "62fb06c31bd1746a6d19dcec6885d376940ec3a7ac93a53e95395cd2c3781a43"
+    },
+    {
+      "name": "bind-result-void-discard",
+      "formal_test_name": "TranslateTest.CoreV2BindResultVoidDiscardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "338eb382f2343bb2842bc6f7f07e5c9838a6e166ae91b50c8353cf409ab22a18",
+      "original_case_source_sha256": "6947900a67cc9424a218da685422579135ebe9841b9e9f10430a414e06b4c75a",
+      "gtest_body_sha256": "2bddf91dbea142e141167414b704e4d0795d53d7ff1875e37ba1a4a189a88cc3"
+    },
+    {
+      "name": "bind-result-live-reference",
+      "formal_test_name": "TranslateTest.CoreV2BindResultLiveReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f12db4e4f1d9ea152bd161fb35ee6d1b2eb7aaccf710515aea0e80a5a51099c4",
+      "original_case_source_sha256": "0a72933ffa64ecfa05003e5929f6abece52a1a09032e3ac076d3aae832f75225",
+      "gtest_body_sha256": "c506c3d493aa7669f80b8cf9dfd854d39644b3afb5293ff3f9b34615375b64af"
+    },
+    {
+      "name": "bind-result-nullary-unused-effects",
+      "formal_test_name": "TranslateTest.CoreV2BindResultNullaryUnusedEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0306b0a83173481b91bbe3bb80593313b1edddf3f5e02e19f55f4f0776407396",
+      "original_case_source_sha256": "60d0d0eb0a898d0eaf06013f3bad281c24addf50ed230d28b489ecef32a5714f",
+      "gtest_body_sha256": "ccabdaf7e5df42374d78c029d702df31d13fbc6be5e772cbf0aa634aa4444005"
+    },
+    {
+      "name": "bind-result-owned-callable-copies",
+      "formal_test_name": "TranslateTest.CoreV2BindResultOwnedCallableCopiesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "86f482166e5bbe0f52ca045816c77dc71b824705ef6f55dbded498f17879ff0b",
+      "original_case_source_sha256": "2cf0b444408bc4c5f96cd8736003eb2cfc739b658e6e6bb75c8268bc70673b17",
+      "gtest_body_sha256": "ce24965b23929b59ad313f97c5f3ed865114f5e77f96453c2f1f4009c7bb87ab"
+    },
+    {
+      "name": "bind-result-member-targets",
+      "formal_test_name": "TranslateTest.CoreV2BindResultMemberTargetsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a86562e5a77ddf82ce29c91af022b13451ddfc3ec30e5ca191984a79f906f0b0",
+      "original_case_source_sha256": "4791106f1e55962acbe280b239c599fc0bed35676c413722749222ab40e63c5a",
+      "gtest_body_sha256": "e8ff7e62d94a2fc453f87fc1837f4b69d1e17b96e73a96c73033e9769c737382"
+    },
+    {
+      "name": "bind-result-standard-callables",
+      "formal_test_name": "TranslateTest.CoreV2BindResultStandardCallablesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "435b552a1a9687ffbdd3d90ec982b99ea52e1db083222715e2e751e3990041fc",
+      "original_case_source_sha256": "7f22d5328f4655803fa31ccc245955eb1f3ee065437cb716b1f403bc9387bb18",
+      "gtest_body_sha256": "82060bf05642b8fcb13481b8b8829b5302dcb15b92ebaca1a14fa1bc3552881c"
+    },
+    {
+      "name": "bind-result-ordinary-body-guard",
+      "formal_test_name": "TranslateTest.CoreV2BindResultOrdinaryBodyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "7f9148b9233b92ef9d3b1e46cf1eaad002d6d02a5386d0c94ad3791b0dfbbcb4",
+      "original_case_source_sha256": "7f9148b9233b92ef9d3b1e46cf1eaad002d6d02a5386d0c94ad3791b0dfbbcb4",
+      "gtest_body_sha256": "b4959ab7059e19b9206213840c931de235435824420805dd1882844dc269c37c"
+    },
+    {
+      "name": "bind-result-invalid-conversion",
+      "formal_test_name": "TranslateTest.CoreV2BindResultInvalidConversionRejected",
+      "expected": "invalid",
+      "source_sha256": "1b81a01d2e0d4e8dfec0b12addbb9fdd3a51d06e03a98298f5cd7242d0d19df8",
+      "original_case_source_sha256": "1b81a01d2e0d4e8dfec0b12addbb9fdd3a51d06e03a98298f5cd7242d0d19df8",
+      "gtest_body_sha256": "31580b5553a41333a6e22acd62ce34816190c771a12eeb02cc1cbebbb0dd5fad"
+    },
+    {
+      "name": "bind-result-void-body-guard",
+      "formal_test_name": "TranslateTest.CoreV2BindResultVoidBodyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "2fe9135d868c03b2b0e55c6e847ef51095b7541f97fb7bc2bd6b09696108b61f",
+      "original_case_source_sha256": "2fe9135d868c03b2b0e55c6e847ef51095b7541f97fb7bc2bd6b09696108b61f",
+      "gtest_body_sha256": "887cbfeb8ea380e68a992fc7b1192e7f10d74341ff9d047687d68c7b24d63268"
+    },
+    {
+      "name": "bind-result-invalid-reference",
+      "formal_test_name": "TranslateTest.CoreV2BindResultInvalidReferenceRejected",
+      "expected": "invalid",
+      "source_sha256": "a0b978494494e950807d13b2d9c72c0d129b67eadafb1befa8087d6f66457178",
+      "original_case_source_sha256": "a0b978494494e950807d13b2d9c72c0d129b67eadafb1befa8087d6f66457178",
+      "gtest_body_sha256": "4a50c0419d19f4f874556220c0bf292d5a2857187bd6295b212880a07747f2c7"
+    },
+    {
+      "name": "bind-result-temporary-reference-lifetime-guard",
+      "formal_test_name": "TranslateTest.CoreV2BindResultTemporaryReferenceLifetimeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "52ed187d90354fd31c9381dfb4eb4a9b9ff1b274c0150e8ceab89383928c73bc",
+      "original_case_source_sha256": "52ed187d90354fd31c9381dfb4eb4a9b9ff1b274c0150e8ceab89383928c73bc",
+      "gtest_body_sha256": "c1a71300949c37ad0cb566d79881ce36150952672a9bde8a603c038c6b62f02d"
+    }
+  ],
+  "member_formal_tests": 12,
+  "member_generated_executions": 14,
+  "member_execution_target": "x86_64-unknown-linux-gnu",
+  "target_abis": [
+    "x86_64-apple-macosx15.0.0",
+    "arm64-apple-macosx15.0.0",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc"
+  ],
+  "original124_extracted_for_fixture_provenance_only": true,
+  "required_actual_member_gtest_xml": 12,
+  "required_actual_member_generated_o0_o2_products": 14,
+  "member_runtime_support_verified": false,
+  "full_stl_complete": false,
+  "parent_member_syntax6_sha256": "a072ec788f81452411ed13105bb69b8597dcf21caf8693e94394ffa1b700bb05",
+  "actual_explicit_result_source72_sha256": "06b6f880a296b4991b6f2fc9ec5b5615d1653556716314966b4398a9547855a3",
+  "native_reference_authentication_sha256": "ba47f713419c1cc36b0347c1abd29a44f6bd9b3b4bf43decb21e2fd9f913f8e7"
 }

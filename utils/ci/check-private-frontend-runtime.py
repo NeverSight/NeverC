@@ -76,6 +76,12 @@ def main():
         revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
         plan_path = root / 'utils/ci/cpp-private-runtime-plan.json'
         plan = json.loads(plan_path.read_text())
+        assert plan['preparation_only'] is False and plan['execution_binding_required'] is True
+        assert plan['member_formal_tests'] == 12 and plan['member_generated_executions'] == 14
+        assert plan['member_execution_target'] == 'x86_64-unknown-linux-gnu'
+        assert len(plan['target_abis']) == 6 and all('i686' not in target for target in plan['target_abis'])
+        assert re.fullmatch('[0-9a-f]{64}', plan['parent_member_syntax6_sha256'])
+        assert re.fullmatch('[0-9a-f]{64}', plan['actual_explicit_result_source72_sha256'])
         r['execution_plan_sha256'] = sha(plan_path)
         r['source_sha256'] = {name: sha(root / name) for name in plan['source_paths']}
         shutil.copyfile(plan_path, out / 'execution-plan.json')
@@ -85,10 +91,10 @@ def main():
         assert sha(args.component_report) == args.component_report_sha256
         assert component['revision'] == args.component_revision and component['completed'] and component['passed'] is True and component['not_fn_private_support_complete'] is False
         assert component['all_five_bridge_units_recompiled'] is True
-        assert component['focused_request_contract_passed'] is True and len(component['requests']) == 1000
-        assert sum(row['expected'] == 'accept' and row['expectation_satisfied'] for row in component['requests']) == 704
-        assert sum(row['expected'] == 'reject' and row['expectation_satisfied'] for row in component['requests']) == 264
-        assert sum(row['expected'] == 'invalid' and row['expectation_satisfied'] for row in component['requests']) == 32
+        assert component['focused_request_contract_passed'] is True and len(component['requests']) == 72
+        assert sum(row['expected'] == 'accept' and row['expectation_satisfied'] for row in component['requests']) == 42
+        assert sum(row['expected'] == 'reject' and row['expectation_satisfied'] for row in component['requests']) == 18
+        assert sum(row['expected'] == 'invalid' and row['expectation_satisfied'] for row in component['requests']) == 12
         archive = args.archive.resolve()
         assert archive.is_file() and sha(archive) == component['replayed_archive_sha256']
         assert sha(args.private_prefix) == plan['private_prefix_sha256']
@@ -120,9 +126,9 @@ def main():
         selected = manifest['new'] + manifest['regression']
         assert len(selected) == manifest['expected_total'] == 124
         registered = (root / 'tests/neverc/TranslateTests.cpp').read_bytes()
-        additions_path = root / plan['not_fn_formal_additions_path']
+        additions_path = root / plan['member_formal_additions_path']
         additions = additions_path.read_bytes()
-        assert sha(additions_path) == plan['not_fn_formal_additions_sha256']
+        assert sha(additions_path) == plan['member_formal_additions_sha256']
         previous_additions_path = root / plan['not_fn_registered_previous_additions_path']
         previous_additions = previous_additions_path.read_bytes()
         assert sha(previous_additions_path) == plan['not_fn_registered_previous_additions_sha256']
@@ -131,24 +137,24 @@ def main():
             registered_source_sha256=hashlib.sha256(registered).hexdigest(),
             restored_original_source_sha256=hashlib.sha256(original).hexdigest(),
             original_extractor_and_7493_guard_unchanged=True,
-            registered_goldens_replayed_once_in_formal208=True)
+            original_registration_extracted_for_fixture_only=True,explicit_result12_replayed_once=True)
         generated, source_proof = extract(original, selected)
         original_selected = tuple(selected)
         original_generated_sha256 = hashlib.sha256(generated).hexdigest()
-        additional = plan['not_fn_formal_cases']
-        assert len(additional) == 84 and len({c['formal_test_name'] for c in additional}) == 84
+        additional = plan['member_formal_cases']
+        assert len(additional) == 12 and len({c['formal_test_name'] for c in additional}) == 12
         assert not set(original_selected) & {c['formal_test_name'] for c in additional}
-        assert generated.count(b'TEST_F(') == 124 and additions.count(b'TEST_F(') == 84
+        assert generated.count(b'TEST_F(') == 124 and additions.count(b'TEST_F(') == 12
         registered_additional = ['.'.join(part.decode() for part in match) for match in
             re.findall(rb'TEST_F\(\s*(\w+)\s*,\s*(\w+)\s*\)', additions)]
         assert registered_additional == [case['formal_test_name'] for case in additional]
-        generated += additions
-        selected += [c['formal_test_name'] for c in additional]
-        r['not_fn_formal_extension'] = dict(original_registered_source_names=7493,
+        generated = generated[:generated.index(b'TEST_F(')] + additions
+        selected = [c['formal_test_name'] for c in additional]
+        r['explicit_result_formal_extension'] = dict(original_registered_source_names=7493,
             original_selected_names=list(original_selected),
             original_generated_before_extension_sha256=original_generated_sha256,
             additions_sha256=sha(additions_path), additional_cases=additional,
-            original_extractor_and_124_bodies_unchanged=True)
+            original_extractor_and_124_bodies_unchanged=True,original124_not_executed_in_this_focused_run=True)
         first_test = generated.index(b'TEST_F(')
         prefix_bytes = generated[:first_test]
         cleanup = b'''
@@ -198,7 +204,7 @@ def main():
                 suite = line.strip()
             elif suite and line.startswith('  '):
                 found.append(suite + line.strip().split()[0])
-        assert set(found) == set(selected) and len(found) == 208
+        assert set(found) == set(selected) and len(found) == 12
         xml = out / 'gtest.xml'
         environment = dict(os.environ, NEVERC_PRIVATE_RUNTIME_RETAIN=str(build / 'retained-programs'))
         code = run([tests, '--gtest_filter=' + ':'.join(selected), '--gtest_output=xml:' + str(xml)],
@@ -208,7 +214,7 @@ def main():
         tree = ET.parse(xml).getroot()
         cases = tree.findall('.//testcase')
         names = [case.attrib['classname'] + '.' + case.attrib['name'] for case in cases]
-        assert len(cases) == 208 and set(names) == set(selected)
+        assert len(cases) == 12 and set(names) == set(selected)
         failed = [name for name, case in zip(names, cases) if case.find('failure') is not None]
         skipped = [name for name, case in zip(names, cases) if case.find('skipped') is not None]
         r.update(formal_xml_sha256=sha(xml), actual_formal_tests=len(cases),
@@ -218,7 +224,7 @@ def main():
         r['actual_invocation_inventory'] = [{'path': str(path.relative_to(out)), 'sha256': sha(path),
             'bytes': path.stat().st_size} for path in sorted(invocations.rglob('*')) if path.is_file()]
         requests = sorted((invocations / 'frontend').glob('*/request.json'))
-        assert requests
+        assert len(requests) == 12
         r['actual_frontend_request_count'] = len(requests)
         for request in requests:
             response = json.loads(request.with_name('response.json').read_text())
@@ -243,9 +249,9 @@ def main():
                     not_fn_products.append(dict(name=case['name'], optimization=optimization,
                         path=str(product.relative_to(retained)), bytes=product.stat().st_size,
                         sha256=sha(product), first_64_bytes_hex=header.hex()))
-        r['actual_not_fn_generated_products'] = not_fn_products
+        r['actual_explicit_result_generated_products'] = not_fn_products
         if not failed and not skipped and code == 0:
-            assert len(not_fn_products) == 168
+            assert len(not_fn_products) == 14
             for product in not_fn_products:
                 header = bytes.fromhex(product['first_64_bytes_hex'])
                 assert product['bytes'] > 64 and len(header) == 64
