@@ -26296,7 +26296,8 @@ class FunctionLowering {
       if (Operation == UtilityForwardListOperation::IteratorDereference)
         return forwardListValue(Node, Iterator->Const, L);
       if (Operation == UtilityForwardListOperation::IteratorArrow)
-        return cast(address(forwardListValue(Node, Iterator->Const, L), A.Context.IntTy, L),
+        return cast(address(forwardListValue(Node, Iterator->Const, L),
+            Iterator->Const ? A.Context.IntTy.withConst() : A.Context.IntTy, L),
             Iterator->Const ? "cptr:int" : "ptr:int", L);
       if (Operation == UtilityForwardListOperation::IteratorPreIncrement ||
           Operation == UtilityForwardListOperation::IteratorPostIncrement) {
@@ -26317,7 +26318,8 @@ class FunctionLowering {
         Operation == UtilityForwardListOperation::BeforeBegin) {
       auto Node = Operation == UtilityForwardListOperation::End ? A.zero(A.Context.VoidPtrTy, L)
           : Operation == UtilityForwardListOperation::BeforeBegin
-              ? cast(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), "ptr:void", L)
+              ? cast(address(forwardListMember(Place, false, L),
+                  Method->isConst() ? A.Context.VoidPtrTy.withConst() : A.Context.VoidPtrTy, L), "ptr:void", L)
               : snapshot(forwardListMember(Place, false, L), L);
       return forwardListIterator(Method->getReturnType(), std::move(Node), L);
     }
@@ -26334,7 +26336,7 @@ class FunctionLowering {
       // Position arguments are passed by value. All argument effects complete
       // before any node link or element is read by the method body.
       auto Parent = Insert || Erase
-          ? snapshot(forwardListMember(Operands[0], true, L), L)
+          ? snapshot(forwardListMember(dereference(Operands[0], L), true, L), L)
           : snapshot(cast(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), "ptr:void", L), L);
       if (Insert || Operation == UtilityForwardListOperation::PushFront) {
         auto Next = snapshot(forwardListNext(Parent, L), L);
@@ -35753,8 +35755,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         if (*Kind == UtilityForwardListConstruction::IteratorDefault)
           initializeZero(Target, A.Context.VoidPtrTy, L);
         else {
-          auto Source = C->getConstructor()->getParamDecl(0)->getType()->isReferenceType()
-              ? dereference(Operands[0], L) : Operands[0];
+          auto Source = dereference(Operands[0], L);
           assign(Target, forwardListMember(Source, true, L), L);
         }
         return;
@@ -35766,8 +35767,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
           C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
       if (!List) reject(L, "forward-list initializer", "The pinned integer initializer-list carrier is required.");
-      auto Input = snapshot(fieldStorage(Operands[0], List->Begin, L), L);
-      auto Count = snapshot(fieldStorage(Operands[0], List->Size, L), L);
+      auto Input = snapshot(fieldStorage(dereference(Operands[0], L), List->Begin, L), L);
+      auto Count = snapshot(fieldStorage(dereference(Operands[0], L), List->Size, L), L);
       auto Position = temporary("u64", L);
       assign(Position, quantity(0, "u64", L), L);
       auto First = temporary("ptr:void", L), Last = temporary("ptr:void", L);
