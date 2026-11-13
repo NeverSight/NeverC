@@ -31296,6 +31296,14 @@ static void orderCoreV2Records(Adapter &A) {
     } else if (UtilityUnorderedMap) {
       DependencyTypes.emplace_back(UtilityUnorderedMap->BucketPointerType, R->getLocation());
       DependencyTypes.emplace_back(UtilityUnorderedMap->NodePointerType, R->getLocation());
+    } else if (UtilityDeque || UtilityDequeIterator) {
+      // These SDK layouts export checked pointer/count carriers. Their raw
+      // implementation records are not IR fields or by-value dependencies.
+      for (unsigned I = 0; I != (UtilityDeque ? 4u : 2u); ++I)
+        DependencyTypes.emplace_back(A.Context.VoidPtrTy, R->getLocation());
+      if (UtilityDeque)
+        for (unsigned I = 0; I != 2; ++I)
+          DependencyTypes.emplace_back(A.Context.getSizeType(), R->getLocation());
     } else if (UtilityVector) {
       DependencyTypes.emplace_back(UtilityVector->PointerType,
                                    UtilityVector->Record->getLocation());
