@@ -1,0 +1,204 @@
+{
+  "positive_cases": [
+    {
+      "name": "forward-list-empty-layout",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListIntEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "772f676c8b3ecfe5ecb5a9775bf43f62a1580c172e3ad03b307c8911136bc642",
+      "original_case_source_sha256": "772f676c8b3ecfe5ecb5a9775bf43f62a1580c172e3ad03b307c8911136bc642",
+      "gtest_body_sha256": "7165f45ba6f09cf306fa430e09aa7e3577ee5ce289a89966d9a543a3e38d8d36"
+    },
+    {
+      "name": "forward-list-iterator-layout",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListIntIteratorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0d2c143ba2341c6aae487b34e9be41317f611b719ab8e2cb9a05223b63bd806f",
+      "original_case_source_sha256": "0d2c143ba2341c6aae487b34e9be41317f611b719ab8e2cb9a05223b63bd806f",
+      "gtest_body_sha256": "adb05d9ccf9dbb97fa3d1664e1987a71b7affeeef99374cd39cf51711c9ec661"
+    },
+    {
+      "name": "forward-list-original-runtime",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListIntNodeOperationsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ae01fd670876f545a405f0707b200471ff61e97516129c912c03731bba0eff92",
+      "original_case_source_sha256": "ae01fd670876f545a405f0707b200471ff61e97516129c912c03731bba0eff92",
+      "gtest_body_sha256": "3f4e5f087ddb53ce34fe3fd029879e8408cd632559f0cffd4abaf7658e72b0e1"
+    },
+    {
+      "name": "forward-list-reference-runtime",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListIntReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b866e08b5a0b7f1d180a9eecc6cad2c423fca96db4f96bf1ba66d29bf11c6c62",
+      "original_case_source_sha256": "b866e08b5a0b7f1d180a9eecc6cad2c423fca96db4f96bf1ba66d29bf11c6c62",
+      "gtest_body_sha256": "9c1f5d77ceeb34ea07019ff3c710e4dc62e77783e1bd292e4a7142c65ddd29e1"
+    },
+    {
+      "name": "forward-list-live-allocation-reference",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListIntAllocationReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4cca45fd17c13312d8ede76b8f88c6467404586f7064136bc3ba6ff9d873573a",
+      "original_case_source_sha256": "4cca45fd17c13312d8ede76b8f88c6467404586f7064136bc3ba6ff9d873573a",
+      "gtest_body_sha256": "73579632fd6848c170df7dec8990bc8fcf56e7f91a16a092227bcbfeee43424d"
+    },
+    {
+      "name": "forward-list-selected-delete-order",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListIntDeleteOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "16abd67363e00256fc3f65c62c13915ac9dfb7635b43cc905ed961865050df97",
+      "original_case_source_sha256": "16abd67363e00256fc3f65c62c13915ac9dfb7635b43cc905ed961865050df97",
+      "gtest_body_sha256": "ec34ad3ca86ee58d7caedd81d23fa8ab6a322c6bc2023fc09db271e1b1fc9247"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "forward-list-owned-push-body",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListOwnedPushRejected",
+      "expected": "reject",
+      "source_sha256": "715f7016a29e6cd7d9381059252d22db4207f9adc85c4568b605814e619d4f0a",
+      "original_case_source_sha256": "715f7016a29e6cd7d9381059252d22db4207f9adc85c4568b605814e619d4f0a",
+      "gtest_body_sha256": "d19f41a8a1f1606513b46c5d6667ed930910facd154026abbdaa67b776f52538"
+    },
+    {
+      "name": "forward-list-owned-front-macro",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListOwnedFrontMacroRejected",
+      "expected": "reject",
+      "source_sha256": "7a757ee535f986d58b3d4f91c5c5a8590d1b5482e3b9710cf88840e50385bd35",
+      "original_case_source_sha256": "7a757ee535f986d58b3d4f91c5c5a8590d1b5482e3b9710cf88840e50385bd35",
+      "gtest_body_sha256": "46be81c9109a7c3dc8a374d4a4fe3a291311cc35b1cef1e2ebd5e3e1870a6c7b"
+    },
+    {
+      "name": "forward-list-owned-next-macro",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListOwnedNodeMacroRejected",
+      "expected": "reject",
+      "source_sha256": "2bb9dc16829256412abf84d321b001bc0acb5fb55620a823efec5c30759fbb81",
+      "original_case_source_sha256": "2bb9dc16829256412abf84d321b001bc0acb5fb55620a823efec5c30759fbb81",
+      "gtest_body_sha256": "4857d56433fe005d8a382381f143fd2f36066eb852e388ff849b1f83245935f0"
+    },
+    {
+      "name": "forward-list-owned-empty-body",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListOwnedEmptyRejected",
+      "expected": "reject",
+      "source_sha256": "59dddc15e24e2198cf814338630a0ef4e32083b58980e68ed0c026369e3da342",
+      "original_case_source_sha256": "59dddc15e24e2198cf814338630a0ef4e32083b58980e68ed0c026369e3da342",
+      "gtest_body_sha256": "b78880994ce1c386a859c78c3598539b8b0a61d50fa2dda3acb91c1469b9387b"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ForwardListIntEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListIntIteratorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListIntNodeOperationsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListIntReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListIntAllocationReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListIntDeleteOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListOwnedPushRejected",
+    "TranslateTest.CoreV2ForwardListOwnedFrontMacroRejected",
+    "TranslateTest.CoreV2ForwardListOwnedNodeMacroRejected",
+    "TranslateTest.CoreV2ForwardListOwnedEmptyRejected"
+  ],
+  "native_reference_authentication_sha256": "2affed83e71e40503ca82f09607ef84469ade255813c81c2c3b44cefe8d1359f",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "source_cases": [
+    {
+      "name": "forward-list-empty-layout",
+      "source": "#include <forward_list>\nint main(){std::forward_list<int> v;std::forward_list<int>::iterator i,j;\nconst std::forward_list<int>& c=v;\nreturn sizeof(v)!=8||alignof(std::forward_list<int>)!=8||sizeof(i)!=8||!v.empty()||i!=j||c.begin()!=c.end()||c.before_begin()==c.end();}\n",
+      "source_sha256": "772f676c8b3ecfe5ecb5a9775bf43f62a1580c172e3ad03b307c8911136bc642",
+      "public_header": "forward_list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "forward-list-iterator-layout",
+      "source": "#include <forward_list>\nint main(){std::forward_list<int> v{1,2};auto i=v.begin();\nstd::forward_list<int>::const_iterator c=i;auto d=c++;\nauto j=i;++j;i=j;\nreturn sizeof(c)!=8||alignof(decltype(c))!=8||*d!=1||*c!=2||*i!=2||c==v.cend();}\n",
+      "source_sha256": "0d2c143ba2341c6aae487b34e9be41317f611b719ab8e2cb9a05223b63bd806f",
+      "public_header": "forward_list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "forward-list-original-runtime",
+      "source": "#include <forward_list>\nint main(){std::forward_list<int> v{2,3};v.push_front(1);auto p=v.before_begin();\nv.insert_after(p,0);v.erase_after(p);v.pop_front();\nauto i=v.begin();int a=*i++;int b=*i;return a!=2||b!=3;}\n",
+      "source_sha256": "ae01fd670876f545a405f0707b200471ff61e97516129c912c03731bba0eff92",
+      "public_header": "forward_list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "forward-list-reference-runtime",
+      "source": "#include <forward_list>\nint main(){std::forward_list<int> v{1,2};v.push_front(v.front());\nv.front()=3;auto p=v.cbefore_begin();auto i=v.insert_after(p,4);\nif(*i!=4||v.front()!=4)return 1;\nauto n=v.erase_after(p);if(*n!=3)return 2;\nconst std::forward_list<int>& c=v;if(c.front()!=3)return 3;\nv.clear();v.push_front(9);return v.front()!=9||v.empty();}\n",
+      "source_sha256": "b866e08b5a0b7f1d180a9eecc6cad2c423fca96db4f96bf1ba66d29bf11c6c62",
+      "public_header": "forward_list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "forward-list-live-allocation-reference",
+      "source": "using Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <forward_list>\nstatic int* watched;\nstatic int allocations,releases,changed,bad_size;\nvoid* operator new(Size n){++allocations;if(n!=16)bad_size=1;\nif(watched){*watched=7;changed=1;}return ::malloc(n);}\nvoid operator delete(void* p) noexcept {++releases;::free(p);}\nint main(){int bad=0;{std::forward_list<int> v{1,2};\nwatched=&v.front();v.push_front(v.front());watched=nullptr;\nint expected=changed?7:1;auto i=v.begin();\nif(*i++!=expected||*i++!=expected||*i!=2)bad=1;\n}return bad||bad_size||allocations!=releases||allocations>3;}\n",
+      "source_sha256": "4cca45fd17c13312d8ede76b8f88c6467404586f7064136bc3ba6ff9d873573a",
+      "public_header": "forward_list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "forward-list-selected-delete-order",
+      "source": "using Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <forward_list>\nstatic std::forward_list<int>* observed;\nstatic int mode,bad,allocations,releases,reinserted;\nvoid* operator new(Size n){++allocations;if(n!=16)bad=1;return ::malloc(n);}\nvoid operator delete(void* p) noexcept {++releases;\nif(observed){\nif(mode==1&&(observed->empty()||observed->front()!=2))bad=1;\nif(mode==2){if(observed->empty()||observed->front()!=3)bad=1;\nobserved->push_front(9);reinserted=1;}\nif(mode==3&&observed->empty())bad=1;\n}::free(p);}\nint main(){{std::forward_list<int> v{1,2,3};observed=&v;\nmode=1;v.pop_front();mode=2;auto i=v.erase_after(v.cbefore_begin());\nint expected=reinserted?9:3;if(*i!=expected||v.front()!=expected)bad=1;\nmode=3;v.clear();if(!v.empty())bad=1;\nobserved=nullptr;mode=0;v.push_front(4);\n}return bad||allocations!=releases||allocations>5;}\n",
+      "source_sha256": "16abd67363e00256fc3f65c62c13915ac9dfb7635b43cc905ed961865050df97",
+      "public_header": "forward_list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "forward-list-owned-push-body",
+      "kind": "source-body-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nnamespace std { inline namespace __1 {\ntemplate<> inline void forward_list<int>::push_front(const int&) {}\n}}\nint main(){std::forward_list<int> v;int x=1;v.push_front(x);return v.empty();}\n",
+      "source_sha256": "715f7016a29e6cd7d9381059252d22db4207f9adc85c4568b605814e619d4f0a",
+      "public_header": "forward_list"
+    },
+    {
+      "name": "forward-list-owned-front-macro",
+      "kind": "source-body-guard",
+      "expected": "reject",
+      "source": "#define front owned_front\n#include <forward_list>\nint main(){std::forward_list<int> v{1};return v.front()!=1;}\n",
+      "source_sha256": "7a757ee535f986d58b3d4f91c5c5a8590d1b5482e3b9710cf88840e50385bd35",
+      "public_header": "forward_list"
+    },
+    {
+      "name": "forward-list-owned-next-macro",
+      "kind": "source-body-guard",
+      "expected": "reject",
+      "source": "#define __next_ owned_next\n#include <forward_list>\nint main(){std::forward_list<int> v{1};return v.front()!=1;}\n",
+      "source_sha256": "2bb9dc16829256412abf84d321b001bc0acb5fb55620a823efec5c30759fbb81",
+      "public_header": "forward_list"
+    },
+    {
+      "name": "forward-list-owned-empty-body",
+      "kind": "source-body-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nnamespace std { inline namespace __1 {\ntemplate<> inline bool forward_list<int>::empty() const noexcept {return true;}\n}}\nint main(){std::forward_list<int> v;return !v.empty();}\n",
+      "source_sha256": "59dddc15e24e2198cf814338630a0ef4e32083b58980e68ed0c026369e3da342",
+      "public_header": "forward_list"
+    }
+  ],
+  "previous_registry_count": 7512,
+  "current_registry_count": 7522,
+  "previous_maintained_sha256": "0fef0914482ab677ee540f2ebbf62bed291cc9a49af17e8d08de4d2dd25afc63",
+  "maintained_original_sha256": "99164b5b4e996784afc538467afe5afe2f7205d31a6af5cd9a59d21aa9582d21",
+  "registered_source_sha256": "8c1f94c7ed33bd87b6dd06bb2fcd50953fa5f690c12264bb5a10a656167c1217",
+  "registered_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "historical_7512_and124_extractions_unchanged": true,
+  "all_previous_test_bodies_unchanged": true,
+  "raw109_suffix_unchanged": true,
+  "source48_authentication_sha256": "1cdd9dde81a5f940bee1b9922556d8611c6bf2b5f1edec7b7f0c831e8bca9f5d",
+  "source48_compiler_source": "42954666d1a43481c0d3c3924f3ae4e1797bb29c"
+}
