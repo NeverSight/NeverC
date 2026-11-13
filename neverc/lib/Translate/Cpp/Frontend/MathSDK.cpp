@@ -47443,6 +47443,24 @@ bool valarrayHeapBoundary(const FunctionDecl *F, const ASTContext &Context) {
 
 bool valarraySourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context) {
+
+  static thread_local unsigned TraceBudget = 120;
+  auto Trace = [&](const char *Reason, const FunctionDecl *F) {
+    if (!TraceBudget) return;
+    --TraceBudget;
+    llvm::errs() << "NEVERC_VALARRAY_TRACE_V1611 " << Reason;
+    if (F) {
+      llvm::errs() << " function=" << F->getQualifiedNameAsString()
+                   << " builtin=" << F->getBuiltinID()
+                   << " body=" << F->hasBody() << " implicit=" << F->isImplicit();
+      if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
+        llvm::errs() << " defaulted=" << C->isDefaulted();
+      if (const auto File = S.sdkFile(SM, F->getLocation()))
+        llvm::errs() << " sdk=" << File->Root << "/" << File->Path;
+    }
+    llvm::errs() << "\n";
+  };
+  Trace("root", Root);
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -47453,6 +47471,7 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
+    Trace("visit", F);
     if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return false;
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
@@ -47495,6 +47514,7 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
       for (const auto *Init : C->inits())
         if (!Statement(Init->getInit(), Depth + 1)) return false;
     const auto *Body = F->getBody();
+    if (!Body) Trace("no-body", F);
     return Body && Statement(Body, Depth + 1);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
