@@ -48124,6 +48124,55 @@ bool forwardListScalarDestruction(const State &S, const SourceManager &SM,
          (Function->getName() == "__destroy_at" || Function->getName() == "destroy_at");
 }
 
+
+bool forwardListBuiltinLibraryCast(const State &S, const SourceManager &SM,
+                                   const FunctionDecl *F, const ASTContext &Context) {
+  const auto *Builtin = F ? F->getAttr<BuiltinAttr>() : nullptr;
+  const auto *Primary = F ? F->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Arguments = F ? F->getTemplateSpecializationArgs() : nullptr;
+  const auto *Prototype = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!F || !Builtin || !Builtin->isImplicit() || !Primary || !Pattern || !Pattern->hasBody() ||
+      !Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
+      F->isInvalidDecl() || F->isDeleted() || F->isVariadic() || isa<CXXMethodDecl>(F) || F->isExternC() ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !F->getIdentifier() || !forwardListStd(F->getDeclContext()) || F->getNumParams() != 1 ||
+      F->getParamDecl(0)->hasDefaultArg() || !Prototype || Prototype->isVariadic() ||
+      Prototype->getCallConv() != CC_C || Prototype->hasExtParameterInfos() ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
+      Primary->getTemplateParameters()->size() != 1 ||
+      !isa<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0))) return false;
+  const auto Name = F->getName();
+  llvm::StringRef Header;
+  unsigned ID = 0;
+  if (Name == "addressof") { Header = "__memory/addressof.h"; ID = Builtin::BIaddressof; }
+  else if (Name == "move") { Header = "__utility/move.h"; ID = Builtin::BImove; }
+  else if (Name == "forward") { Header = "__utility/forward.h"; ID = Builtin::BIforward; }
+  else return false;
+  if (Builtin->getID() != ID || F->getBuiltinID() != ID) return false;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D) {
+    return ++Declarations <= 64 && forwardListPinned(S, SM, D, Header);
+  };
+  for (const auto *D : F->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : Primary->redecls())
+    if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+  const auto Argument = Arguments->get(0).getAsType();
+  const auto Parameter = F->getParamDecl(0)->getType();
+  const auto Result = F->getReturnType();
+  if (Name == "addressof")
+    return !Argument->isReferenceType() &&
+        Context.hasSameType(Parameter, Context.getLValueReferenceType(Argument)) &&
+        Context.hasSameType(Result, Context.getPointerType(Argument));
+  if (Name == "move")
+    return Context.hasSameType(Parameter, Context.getRValueReferenceType(Argument)) &&
+        Context.hasSameType(Result, Context.getRValueReferenceType(Argument.getNonReferenceType()));
+  return (Context.hasSameType(Parameter, Context.getLValueReferenceType(Argument.getNonReferenceType())) ||
+          Context.hasSameType(Parameter, Context.getRValueReferenceType(Argument.getNonReferenceType()))) &&
+      Context.hasSameType(Result, Context.getRValueReferenceType(Argument));
+}
+
 bool forwardListSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context,
                          const UtilityForwardListNodeRecord &Owner) {
@@ -48142,6 +48191,7 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (forwardListHeapBoundary(F, Context)) return true;
+    if (forwardListBuiltinLibraryCast(S, SM, F, Context)) return true;
     if (F->getBuiltinID()) {
       if (!F->getIdentifier() || F->hasBody()) return false;
       const auto Name = F->getName();
