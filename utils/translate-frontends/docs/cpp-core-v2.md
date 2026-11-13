@@ -17369,3 +17369,45 @@ Both accepted programs compile and execute as generated C23 at O0 and O2. Native
 reference results, six-target source checks and generated C23 executions are
 separate evidence; the native oracle alone is not a translation-support claim.
 The remaining STL surfaces still require implementation and execution evidence.
+
+## R19 checked integer valarray operations
+
+The private C++17 translation profile admits the pinned `std::valarray<int>`
+specialization with its native begin/end integer-pointer carrier. Default and
+zero-count construction produce an empty object. Count construction initializes
+each integer to zero; scalar-fill construction copies the admitted integer value
+before allocation and initializes the selected count. Count and scalar operand
+effects follow the established argument evaluation and cleanup rules.
+
+`size()` handles the empty null carrier before taking a pointer difference.
+Mutable/const subscripting preserves the selected integer reference. Scalar
+`operator+=` keeps its argument as a live const integer reference throughout the
+loop: for example, `[1,2,3] += v[0]` produces `[2,4,5]`. The argument is evaluated
+once before the loop. `sum()` returns zero for an empty object and otherwise
+starts with the first integer, then adds the remaining integers in order.
+Out-of-range subscripts and signed integer overflow retain their source-language
+preconditions.
+
+Construction and destruction use the existing selected global allocation and
+deallocation lowering. Destruction makes the carrier's observed size zero before
+calling the selected deallocator, then clears both pointers. The selected-heap
+fixture keeps explicit C heap declarations and uses the admitted `<new>` and
+`<valarray>` headers. No runtime libc++ dependency is introduced.
+
+Record fields, class declarations, methods, template declarations and
+redeclarations remain SDK-origin authenticated. The used body graph retains its
+node/depth limits and rejects source-owned macro spelling, replaced declarations
+and unapproved indirect calls. The compiler default-new-alignment macro is
+accepted only at its exact pinned SDK allocation site. Integer pseudo-destruction
+is accepted only for the authenticated valarray clear loop. Four permanent
+negative tests cover a replaced fill constructor, replaced sum body, sum-name
+macro and storage-name macro.
+
+Six exact native-reference programs and their generated C23 counterparts execute
+at both O0 and O2. The programs exercise count/fill initialization, live aliasing,
+owned argument effects, empty/zero-count storage and selected heap functions.
+Native execution and six-target source admission remain separate from generated
+C23 execution evidence. Copy/move construction, resizing, slices, expression
+templates and other element specializations remain outside this increment.
+NeverC's public source frontend remains C23-only; complete STL support still
+requires further implementation and verification.

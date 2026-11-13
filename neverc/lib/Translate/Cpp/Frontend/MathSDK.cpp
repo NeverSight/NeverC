@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
 #include "clang/AST/Expr.h"
@@ -47273,6 +47274,376 @@ bool bitsetDefaultArgument(const State &S, const SourceManager &SM,
   return Value && Value->getValue() && bitsetPinned(S, SM, M, true) &&
          cstddefOrigin(S, SM, Value->getExprLoc(), "libcxx", "bitset") &&
          !Value->getExprLoc().isMacroID();
+}
+
+
+namespace {
+bool valarrayStandardNamespace(const DeclContext *Scope) {
+  for (unsigned Depth = 0; Scope && Depth != 8; ++Depth) {
+    const auto *N = dyn_cast<NamespaceDecl>(Scope);
+    if (!N) return false;
+    if (N->isStdNamespace()) return true;
+    if (!N->isInline()) return false;
+    Scope = N->getParent();
+  }
+  return false;
+}
+bool valarrayPinned(const State &S, const SourceManager &SM, const Decl *D) {
+  const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+  if (!D || !File || File->Root != "libcxx" || File->Path != "valarray" ||
+      !approvedStandardSDKDeclaration(S, SM, D)) return false;
+  if (D->getLocation().isMacroID()) {
+    const auto Spelling = S.sdkFile(SM, SM.getSpellingLoc(D->getLocation()));
+    if (!Spelling || Spelling->Root != "libcxx") return false;
+  }
+  return true;
+}
+}
+
+std::optional<UtilityValarrayRecord> approvedUtilityValarrayRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    const ASTContext &Context) {
+  const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input);
+  const auto *T = R ? R->getSpecializedTemplate() : nullptr;
+  if (!S.coreV2() || !T || T->getName() != "valarray" ||
+      !valarrayStandardNamespace(T->getDeclContext()) || R->isInvalidDecl() ||
+      R->isDependentContext() || R->isUnion() ||
+      R->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Context.getCharWidth() != 8 || Context.getTypeSize(Context.IntTy) != 32 ||
+      Context.getTypeSize(Context.VoidPtrTy) != 64 ||
+      Context.getTypeSize(Context.getSizeType()) != 64) return std::nullopt;
+  for (const auto *D : T->redecls()) {
+    if (!valarrayPinned(S, SM, D)) return std::nullopt;
+    const auto *Parameters = D->getTemplateParameters();
+    const auto *Element = Parameters && Parameters->size() == 1
+        ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+    if (!Element || Element->isParameterPack()) return std::nullopt;
+    for (const auto *Pattern : D->getTemplatedDecl()->redecls())
+      if (!valarrayPinned(S, SM, Pattern)) return std::nullopt;
+  }
+  for (const auto *D : R->redecls())
+    if (!valarrayPinned(S, SM, D)) return std::nullopt;
+  const auto &Arguments = R->getTemplateArgs();
+  if (Arguments.size() != 1 || Arguments[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments[0].getAsType(), Context.IntTy)) return std::nullopt;
+  const auto *Definition = R->getDefinition();
+  if (!Definition || !valarrayPinned(S, SM, Definition) ||
+      Definition->getNumBases() || !Definition->isStandardLayout() ||
+      Definition->isPolymorphic()) return std::nullopt;
+  // A user macro can rename an SDK method token, making that declaration
+  // appear source-owned to the ordinary method path. Such a class is no longer
+  // the pinned carrier, even when its two data fields retain the same layout.
+  unsigned Declarations = 0;
+  for (const auto *D : Definition->decls()) {
+    if (++Declarations > 512 || !valarrayPinned(S, SM, D)) return std::nullopt;
+    if (const auto *M = dyn_cast<CXXMethodDecl>(D))
+      for (const auto *Redeclaration : M->redecls())
+        if (!valarrayPinned(S, SM, Redeclaration)) return std::nullopt;
+    if (const auto *T = dyn_cast<FunctionTemplateDecl>(D))
+      for (const auto *Redeclaration : T->redecls())
+        if (!valarrayPinned(S, SM, Redeclaration) ||
+            !valarrayPinned(S, SM, Redeclaration->getTemplatedDecl())) return std::nullopt;
+  }
+  std::vector<const FieldDecl *> Fields;
+  for (const auto *F : Definition->fields()) {
+    if (!valarrayPinned(S, SM, F) || F->isBitField() ||
+        !Context.hasSameType(F->getType(), Context.getPointerType(Context.IntTy)))
+      return std::nullopt;
+    Fields.push_back(F);
+  }
+  if (Fields.size() != 2 || Fields[0]->getName() != "__begin_" ||
+      Fields[1]->getName() != "__end_") return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(Definition);
+  if (Layout.getSize().getQuantity() != 16 || Layout.getAlignment().getQuantity() != 8 ||
+      Layout.getFieldOffset(0) != 0 || Layout.getFieldOffset(1) != 64) return std::nullopt;
+  return UtilityValarrayRecord{Definition, Fields[0], Fields[1]};
+}
+
+namespace {
+bool valarrayFunctionDeclarations(const State &S, const SourceManager &SM,
+                                  const FunctionDecl *F) {
+  if (!F || F->isInvalidDecl() || F->isVariadic()) return false;
+  for (const auto *D : F->redecls())
+    if (!valarrayPinned(S, SM, D)) return false;
+  if (const auto *Pattern = F->getTemplateInstantiationPattern())
+    for (const auto *D : Pattern->redecls())
+      if (!valarrayPinned(S, SM, D)) return false;
+  if (const auto *T = F->getPrimaryTemplate())
+    for (const auto *D : T->redecls())
+      if (!valarrayPinned(S, SM, D) || !valarrayPinned(S, SM, D->getTemplatedDecl()))
+        return false;
+  return true;
+}
+
+std::optional<UtilityValarrayConstruction> valarrayConstructorSignature(
+    const State &S, const SourceManager &SM, const CXXConstructorDecl *C,
+    const ASTContext &Context) {
+  if (!C || !valarrayFunctionDeclarations(S, SM, C) ||
+      !approvedUtilityValarrayRecord(S, SM, C->getParent(), Context) ||
+      C->getPrimaryTemplate()) return std::nullopt;
+  if (!C->getNumParams()) return UtilityValarrayConstruction::Default;
+  if (C->getNumParams() == 1 &&
+      Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType()))
+    return UtilityValarrayConstruction::Count;
+  if (C->getNumParams() == 2 &&
+      Context.hasSameType(C->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Context.IntTy.withConst())) &&
+      Context.hasSameType(C->getParamDecl(1)->getType(), Context.getSizeType()))
+    return UtilityValarrayConstruction::Fill;
+  return std::nullopt;
+}
+
+std::optional<UtilityValarrayScalarOperation> valarrayMethodSignature(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *M,
+    const ASTContext &Context) {
+  const auto Info = M ? approvedUtilityValarrayRecord(S, SM, M->getParent(), Context)
+                      : std::nullopt;
+  if (!M || !Info || M->isStatic() || M->isVolatile() ||
+      M->getPrimaryTemplate() || !valarrayFunctionDeclarations(S, SM, M))
+    return std::nullopt;
+  if (M->getIdentifier() && M->isConst() && !M->getNumParams()) {
+    if (M->getName() == "size" &&
+        Context.hasSameType(M->getReturnType(), Context.getSizeType()))
+      return UtilityValarrayScalarOperation::Size;
+    if (M->getName() == "sum" &&
+        Context.hasSameType(M->getReturnType(), Context.IntTy))
+      return UtilityValarrayScalarOperation::Sum;
+  }
+  if (!M->isOverloadedOperator() || M->getNumParams() != 1)
+    return std::nullopt;
+  if (M->getOverloadedOperator() == OO_Subscript &&
+      Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) {
+    const auto Element = M->isConst() ? Context.IntTy.withConst() : Context.IntTy;
+    if (Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element)))
+      return UtilityValarrayScalarOperation::Subscript;
+  }
+  if (M->getOverloadedOperator() == OO_PlusEqual && !M->isConst() &&
+      Context.hasSameType(M->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Context.IntTy.withConst())) &&
+      Context.hasSameType(M->getReturnType(),
+          Context.getLValueReferenceType(Context.getRecordType(Info->Record))))
+    return UtilityValarrayScalarOperation::AddAssign;
+  return std::nullopt;
+}
+}
+
+namespace {
+bool valarrayDependencyDeclaration(const State &S, const SourceManager &SM,
+                                   const Decl *D) {
+  const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+  if (!D || !File || File->Root != "libcxx") return false;
+  if (D->getLocation().isMacroID()) {
+    const auto Spelling = S.sdkFile(SM, SM.getSpellingLoc(D->getLocation()));
+    if (!Spelling || (Spelling->Root != "libcxx" && Spelling->Root != "resource"))
+      return false;
+  }
+  return true;
+}
+
+bool valarrayHeapBoundary(const FunctionDecl *F, const ASTContext &Context) {
+  if (!F || F->isInvalidDecl() || F->isVariadic() ||
+      !F->isOverloadedOperator() ||
+      !F->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+  if (F->getOverloadedOperator() == OO_New && F->getNumParams() == 1)
+    return Context.hasSameType(F->getReturnType(), Context.VoidPtrTy) &&
+           Context.hasSameType(F->getParamDecl(0)->getType(), Context.getSizeType());
+  if (F->getOverloadedOperator() != OO_Delete ||
+      (F->getNumParams() != 1 && F->getNumParams() != 2) ||
+      !F->getReturnType()->isVoidType() ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), Context.VoidPtrTy))
+    return false;
+  return F->getNumParams() == 1 ||
+         Context.hasSameType(F->getParamDecl(1)->getType(), Context.getSizeType());
+}
+
+
+bool valarrayCompilerAlignmentMacro(const State &S, const SourceManager &SM,
+                                    SourceLocation L, const ASTContext &Context) {
+  if (!L.isMacroID() || !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(L)) ||
+      Lexer::getImmediateMacroName(L, SM, Context.getLangOpts()) !=
+          "__STDCPP_DEFAULT_NEW_ALIGNMENT__") return false;
+  const auto Site = S.sdkFile(SM, SM.getExpansionLoc(L));
+  return Site && Site->Root == "libcxx" && Site->Path == "__new/allocate.h";
+}
+
+bool valarrayScalarEndDestruction(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call, const ASTContext &Context) {
+  const auto *D = Call && !Call->getNumArgs()
+      ? dyn_cast<CXXPseudoDestructorExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  if (!D || !D->isArrow() || !D->getBase() || !D->getDestroyedTypeInfo() ||
+      !Context.hasSameType(D->getDestroyedType(), Context.IntTy)) return false;
+  const auto File = S.sdkFile(SM, Call->getExprLoc());
+  if (!File || File->Root != "libcxx" || File->Path != "valarray") return false;
+  const auto *Decrement = dyn_cast<UnaryOperator>(D->getBase()->IgnoreParenImpCasts());
+  const auto *Member = Decrement && Decrement->getOpcode() == UO_PreDec
+      ? dyn_cast<MemberExpr>(Decrement->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Field = Member ? dyn_cast<FieldDecl>(Member->getMemberDecl()) : nullptr;
+  const auto Info = Field ? approvedUtilityValarrayRecord(S, SM,
+      dyn_cast<CXXRecordDecl>(Field->getParent()), Context) : std::nullopt;
+  return Info && Field == Info->End && Member->isArrow() &&
+         isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts());
+}
+
+bool valarraySourceGraph(const State &S, const SourceManager &SM,
+                         const FunctionDecl *Root, const ASTContext &Context) {
+  std::set<const FunctionDecl *> Seen;
+  unsigned Nodes = 0;
+  std::function<bool(const FunctionDecl *, unsigned)> Function;
+  std::function<bool(const Stmt *, unsigned)> Statement;
+  auto PinnedMacro = [&](SourceLocation L) {
+    if (!L.isMacroID()) return true;
+    if (valarrayCompilerAlignmentMacro(S, SM, L, Context)) return true;
+    const auto File = S.sdkFile(SM, SM.getSpellingLoc(L));
+    return File && (File->Root == "libcxx" || File->Root == "resource");
+  };
+  Function = [&](const FunctionDecl *F, unsigned Depth) {
+    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return false;
+    // These are selected again by the existing heap helper during lowering.
+    // Its exact overload and source-definition checks remain mandatory.
+    if (valarrayHeapBoundary(F, Context)) return true;
+    if (F->getBuiltinID()) {
+      if (!F->getIdentifier() || F->hasBody()) return false;
+      const auto Name = F->getName();
+      if (Name != "__builtin_is_constant_evaluated" &&
+          Name != "__builtin_operator_new" && Name != "__builtin_operator_delete" &&
+          Name != "__builtin_expect" && Name != "__builtin_assume" &&
+          Name != "__builtin_unreachable") return false;
+      for (const auto *D : F->redecls()) {
+        if (valarrayDependencyDeclaration(S, SM, D)) continue;
+        if (!D->isImplicit() || D->hasBody() ||
+            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+        if (D->getLocation().isValid()) {
+          const auto File = S.sdkFile(SM, D->getLocation());
+          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+        }
+      }
+      return true;
+    }
+    for (const auto *D : F->redecls())
+      if (!valarrayDependencyDeclaration(S, SM, D)) return false;
+    if (const auto *Pattern = F->getTemplateInstantiationPattern())
+      for (const auto *D : Pattern->redecls())
+        if (!valarrayDependencyDeclaration(S, SM, D)) return false;
+    if (const auto *T = F->getPrimaryTemplate())
+      for (const auto *D : T->redecls())
+        if (!valarrayDependencyDeclaration(S, SM, D) ||
+            !valarrayDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+    if (!Seen.insert(F->getCanonicalDecl()).second) return true;
+    // Every admitted construction count has already passed the existing
+    // allocator max-size proof, making this pinned error branch unreachable.
+    if (F->getIdentifier() && F->getName() == "__throw_bad_array_new_length" &&
+        F->getNumParams() == 0 && F->getReturnType()->isVoidType()) return true;
+    if (const auto *M = dyn_cast<CXXMethodDecl>(F);
+        M && M->isImplicit() && M->isTrivial()) return true;
+    if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
+      for (const auto *Init : C->inits())
+        if (!Statement(Init->getInit(), Depth + 1)) return false;
+    const auto *Body = F->getBody();
+    return Body && Statement(Body, Depth + 1);
+  };
+  Statement = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node) return true;
+    if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
+        !PinnedMacro(Node->getEndLoc())) return false;
+    if (const auto *E = dyn_cast<Expr>(Node))
+      if (!PinnedMacro(E->getExprLoc())) return false;
+    if (const auto *E = dyn_cast<MemberExpr>(Node))
+      if (!PinnedMacro(E->getMemberLoc())) return false;
+    if (const auto *D = dyn_cast<DeclStmt>(Node))
+      for (const auto *Declaration : D->decls())
+        if (!PinnedMacro(Declaration->getLocation())) return false;
+    if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
+      if (!valarrayDependencyDeclaration(S, SM, Default->getParam()) ||
+          !Statement(Default->getExpr(), Depth + 1)) return false;
+    }
+    if (const auto *Call = dyn_cast<CallExpr>(Node))
+      if (!valarrayScalarEndDestruction(S, SM, Call, Context) &&
+          !Function(Call->getDirectCallee(), Depth + 1)) return false;
+    if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
+      if (!Function(C->getConstructor(), Depth + 1)) return false;
+    if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
+      if (N->isArray() || !Context.hasSameType(N->getAllocatedType(), Context.IntTy) ||
+          N->getNumPlacementArgs() != 1 ||
+          !Function(N->getOperatorNew(), Depth + 1)) return false;
+      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+    }
+    for (const auto *Child : Node->children())
+      if (!Statement(Child, Depth + 1)) return false;
+    return true;
+  };
+  return Root && valarrayFunctionDeclarations(S, SM, Root) && Function(Root, 0);
+}
+}
+
+std::optional<UtilityValarrayConstruction> approvedUtilityValarrayConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  if (!S.coreV2() || !Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() || Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      !S.owns(SM, Construction->getExprLoc())) return std::nullopt;
+  const auto *C = Construction->getConstructor();
+  const auto Kind = valarrayConstructorSignature(S, SM, C, Context);
+  if (!Kind || Construction->getNumArgs() != C->getNumParams() ||
+      !Context.hasSameUnqualifiedType(Construction->getType(),
+          Context.getRecordType(C->getParent())) ||
+      !valarraySourceGraph(S, SM, C, Context)) return std::nullopt;
+  if (*Kind != UtilityValarrayConstruction::Default) {
+    const unsigned CountIndex = *Kind == UtilityValarrayConstruction::Fill ? 1 : 0;
+    if (!utilityAllocatorSafeCount(Construction->getArg(CountIndex), Context.IntTy, Context))
+      return std::nullopt;
+  }
+  for (unsigned I = 0; I != Construction->getNumArgs(); ++I) {
+    const auto Parameter = C->getParamDecl(I)->getType();
+    const auto Value = Parameter->isReferenceType() ? Parameter->getPointeeType() : Parameter;
+    if (!Context.hasSameUnqualifiedType(Construction->getArg(I)->getType(), Value))
+      return std::nullopt;
+  }
+  return Kind;
+}
+
+bool approvedUtilityValarrayDestructor(const State &S, const SourceManager &SM,
+    const CXXDestructorDecl *D, const ASTContext &Context) {
+  return S.coreV2() && D && !D->isVirtual() && D->getNumParams() == 0 &&
+         approvedUtilityValarrayRecord(S, SM, D->getParent(), Context) &&
+         valarrayFunctionDeclarations(S, SM, D) && valarraySourceGraph(S, SM, D, Context);
+}
+
+std::optional<UtilityValarrayCall> approvedUtilityValarrayCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  if (!S.coreV2() || !Call || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent() || !S.owns(SM, Call->getExprLoc())) return std::nullopt;
+  const CXXMethodDecl *M = nullptr;
+  const Expr *Receiver = nullptr;
+  unsigned Offset = 0;
+  if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
+    M = Member->getMethodDecl();
+    Receiver = Member->getImplicitObjectArgument();
+    const auto *Reference = directMethodReference(Call);
+    if (!Reference || !S.owns(SM, Reference->getExprLoc())) return std::nullopt;
+  } else if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+    M = dyn_cast_or_null<CXXMethodDecl>(Operator->getDirectCallee());
+    if (!Operator->getNumArgs() || !Operator->getCallee() ||
+        !S.owns(SM, Operator->getCallee()->getExprLoc())) return std::nullopt;
+    Receiver = Operator->getArg(0);
+    Offset = 1;
+  } else return std::nullopt;
+  const auto Operation = valarrayMethodSignature(S, SM, M, Context);
+  if (!Operation || !Receiver || Call->getNumArgs() != M->getNumParams() + Offset ||
+      !valarraySourceGraph(S, SM, M, Context)) return std::nullopt;
+  const auto ObjectType = Receiver->getType()->isPointerType()
+      ? Receiver->getType()->getPointeeType() : Receiver->getType();
+  if (ObjectType.isVolatileQualified() ||
+      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(M->getParent())))
+    return std::nullopt;
+  for (unsigned I = 0; I != M->getNumParams(); ++I) {
+    const auto Parameter = M->getParamDecl(I)->getType();
+    const auto Value = Parameter->isReferenceType() ? Parameter->getPointeeType() : Parameter;
+    if (!Context.hasSameUnqualifiedType(Call->getArg(I + Offset)->getType(), Value))
+      return std::nullopt;
+  }
+  return UtilityValarrayCall{*Operation, Receiver, M, Offset};
 }
 
 bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
@@ -112191,6 +112562,7 @@ approvedUtilityPairPiecewiseConstruction(
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
+  if (approvedUtilityValarrayCall(S, SM, Call, Context)) return UtilityOperation::ValarrayScalar;
   if (const auto Bitset = approvedUtilityBitsetCall(S, SM, Call, Context)) return Bitset->Operation;
   if (const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
       M && M->getIdentifier() && M->getName() == "destroy" && Call->getNumArgs() == 1 &&

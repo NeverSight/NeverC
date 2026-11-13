@@ -68,7 +68,7 @@ def body_end(source, opening):
 def extract(source, selected_names):
     pattern = re.compile(rb'(?m)^TEST_F\(\s*(\w+)\s*,\s*(\w+)\s*\)\s*\{')
     matches = list(pattern.finditer(source))
-    expected_count = 7502 if sha(source) == '93fefb63333bea119087a1265f504b3d20f6db1e4ccdf794021a973899d0be50' else (7500 if sha(source) == 'c758bb163adc94a8c5988a3093cddb16c78c0bf500948f9a0c136962088db782' else (7496 if sha(source) in {'748a1966c60985df355d52f5746a7610b155aec2e1480a55144efb52a9c054b8', '7a86aa397d598346ab9ef84f05098452ed0c41c16852586e7ce6ee4f5b1fc31a'} else 7493))
+    expected_count = 7512 if sha(source) == '0fef0914482ab677ee540f2ebbf62bed291cc9a49af17e8d08de4d2dd25afc63' else (7502 if sha(source) == '93fefb63333bea119087a1265f504b3d20f6db1e4ccdf794021a973899d0be50' else (7500 if sha(source) == 'c758bb163adc94a8c5988a3093cddb16c78c0bf500948f9a0c136962088db782' else (7496 if sha(source) in {'748a1966c60985df355d52f5746a7610b155aec2e1480a55144efb52a9c054b8', '7a86aa397d598346ab9ef84f05098452ed0c41c16852586e7ce6ee4f5b1fc31a'} else 7493)))
     assert len(matches) == expected_count
     assert len(set(selected_names)) == len(selected_names)
     selected = set(selected_names)

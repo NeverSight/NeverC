@@ -43,6 +43,17 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.valarray_registered = cls.registered
+        cls.valarray_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.valarray_original = cls.adapter.restore_original_gtests(cls.valarray_registered, cls.valarray_suffix)
+        cls.valarray_manifest = json.loads((ROOT / 'utils/ci/r19-valarray-gtests.json').read_text())
+        assert hashlib.sha256(cls.valarray_registered).hexdigest() == cls.adapter.R19_VALARRAY_REGISTERED_SHA256
+        assert hashlib.sha256(cls.valarray_original).hexdigest() == cls.adapter.R19_VALARRAY_MAINTAINED_SHA256
+        first = cls.valarray_manifest['new_gtest_names'][0].split('.')[1].encode()
+        match, = re.finditer(rb'(?m)^TEST_F\(TranslateTest, ' + re.escape(first) + rb'\) \{', cls.valarray_original)
+        cls.valarray_additions = cls.valarray_original[match.start():]
+        assert cls.valarray_additions.count(b'TEST_F(') == 10
+        cls.registered = cls.valarray_original[:match.start()] + cls.valarray_suffix
         cls.r19_registered = cls.registered
         cls.r19_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.r19_original = cls.adapter.restore_original_gtests(cls.r19_registered, cls.r19_suffix)
@@ -512,6 +523,45 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
                     self.extractor.extract(source, selected)
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.r19_original, selected + ['TranslateTest.UnknownR19Owner'])
+
+
+
+    def test_valarray_registry_preserves_all_previous_r19_bodies(self):
+        selected = self.valarray_manifest['new_gtest_names']
+        generated, proof = self.extractor.extract(self.valarray_original, selected)
+        self.assertEqual(proof['original_test_names'], 7512)
+        self.assertEqual(generated.count(b'TEST_F('), 10)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.valarray_registered, self.valarray_suffix), self.valarray_original)
+        self.assertEqual(self.r19_registered,
+                         self.valarray_original[:-len(self.valarray_additions)] + self.valarray_suffix)
+
+    def test_valarray_tests_keep_the_exact_native_programs_and_all_guards(self):
+        cases = self.valarray_manifest['source_cases']
+        self.assertEqual(len(cases), 10)
+        for case in cases:
+            with self.subTest(case=case['name']):
+                source = case['source'].encode()
+                self.assertEqual(hashlib.sha256(source).hexdigest(), case['source_sha256'])
+                self.assertEqual(self.valarray_additions.count(source), 1)
+        self.assertEqual(self.valarray_additions.count(b'compileGenerated('), 6)
+        self.assertEqual(self.valarray_additions.count(b'{"-O0", "-O2"}'), 6)
+        self.assertEqual(self.valarray_additions.count(b'"--check"'), 4)
+
+    def test_valarray_registry_rejects_changed_bodies_and_suffixes(self):
+        for source, suffix in [
+                (self.valarray_registered + b' ', self.valarray_suffix),
+                (self.valarray_registered[:-1], self.valarray_suffix),
+                (self.valarray_registered + self.valarray_suffix, self.valarray_suffix),
+                (self.valarray_registered, self.valarray_suffix + b' ')]:
+            with self.subTest(size=len(source)):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(source, suffix)
+        for source in [self.valarray_original + b' ',
+                       self.valarray_original.replace(b'TEST_F(', b'NOT_TEST_F(', 1),
+                       self.valarray_original.replace(b'EXPECT_EQ(', b'EXPECT_NE(', 1)]:
+            with self.assertRaises(AssertionError):
+                self.extractor.extract(source, self.valarray_manifest['new_gtest_names'])
 
 
 if __name__ == '__main__':

@@ -26203,9 +26203,106 @@ class FunctionLowering {
     return Place;
   }
 
+
+  Expression valarrayMember(Expression Place, const char *Name, SourceLocation L) {
+    return Expression{{"kind", "member"}, {"type", "ptr:int"}, {"name", Name},
+        {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+  Expression utilityValarrayScalarOperation(const CallExpr *Call) {
+    const auto L = Call->getExprLoc();
+    const auto Proof = approvedUtilityValarrayCall(A.S, A.Sources, Call, A.Context);
+    if (!Proof || !Proof->Receiver || !Proof->Method)
+      reject(L, "valarray operation", "The selected SDK body, layout and receiver are required.");
+    const auto *Object = Proof->Receiver;
+    auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+        : address(lvalue(Object), Object->getType(), L), L);
+    auto Place = dereference(Receiver, L);
+    const auto Operation = Proof->Operation;
+    std::optional<Expression> Operand;
+    if (Operation == UtilityValarrayScalarOperation::AddAssign ||
+        Operation == UtilityValarrayScalarOperation::Subscript) {
+      // Argument effects occur before the method reads receiver storage.
+      // Keep the reference live: v += v[0] rereads the changing first element.
+      Operand = snapshot(argument(Call->getArg(Proof->ArgumentOffset),
+          Proof->Method->getParamDecl(0)->getType()), L);
+    }
+    auto Begin = snapshot(valarrayMember(Place, "nct_valarray_begin", L), L);
+    if (Operation == UtilityValarrayScalarOperation::Subscript) {
+      auto Position = *Operand;
+      const auto Pointer = Proof->Method->isConst() ? "cptr:int" : "ptr:int";
+      return index(cast(std::move(Begin), Pointer, L),
+          cast(std::move(Position), type(A.Context.getPointerDiffType(), L), L), "int", L);
+    }
+    auto End = snapshot(valarrayMember(Place, "nct_valarray_end", L), L);
+    if (Operation == UtilityValarrayScalarOperation::Size) {
+      auto Result = temporary("u64", L);
+      assign(Result, quantity(0, "u64", L), L);
+      const auto Subtract = labelName(), Done = labelName();
+      branch(cast(Begin, "bool", L), Subtract, Done, L);
+      label(Subtract, L);
+      assign(Result, cast(binary("-", End, Begin,
+          type(A.Context.getPointerDiffType(), L), L), "u64", L), L);
+      jump(Done, L); label(Done, L);
+      return Result;
+    }
+    const bool Add = Operation == UtilityValarrayScalarOperation::AddAssign;
+    if (!Add && Operation != UtilityValarrayScalarOperation::Sum)
+      reject(L, "valarray operation", "Unknown checked scalar operation.");
+    const auto Pointer = Add ? "ptr:int" : "cptr:int";
+    auto Current = temporary(Pointer, L);
+    assign(Current, cast(Begin, Pointer, L), L);
+    auto Limit = snapshot(cast(End, Pointer, L), L);
+    auto Result = temporary("int", L);
+    assign(Result, quantity(0, "int", L), L);
+    const auto Check = labelName(), Element = labelName(), Done = labelName();
+    if (!Add) {
+      const auto First = labelName();
+      branch(binary("!=", Current, Limit, "bool", L), First, Done, L);
+      label(First, L);
+      assign(Result, dereference(Current, L), L);
+      assign(Current, binary("+", Current,
+          quantity(1, type(A.Context.getPointerDiffType(), L), L), Pointer, L), L);
+    }
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Current, Limit, "bool", L), Element, Done, L);
+    label(Element, L);
+    auto Value = dereference(Current, L);
+    if (Add)
+      assign(Value, binary("+", Value, dereference(*Operand, L), "int", L), L);
+    else
+      assign(Result, binary("+", Result, Value, "int", L), L);
+    assign(Current, binary("+", Current,
+        quantity(1, type(A.Context.getPointerDiffType(), L), L), Pointer, L), L);
+    jump(Check, L); label(Done, L);
+    return Add ? Place : Result;
+  }
+
+
+  void destroyValarrayStorage(Expression Place, SourceLocation L) {
+    auto Begin = snapshot(valarrayMember(Place, "nct_valarray_begin", L), L);
+    auto End = snapshot(valarrayMember(Place, "nct_valarray_end", L), L);
+    const auto Release = labelName(), Done = labelName();
+    branch(cast(Begin, "bool", L), Release, Done, L);
+    label(Release, L);
+    auto Count = snapshot(cast(binary("-", End, Begin,
+        type(A.Context.getPointerDiffType(), L), L), "u64", L), L);
+    // int destruction has no element effects; global delete selection remains
+    // governed by the existing allocator heap helper and native size policy.
+    // The SDK walks __end_ back to __begin_ before calling that global delete.
+    assign(valarrayMember(Place, "nct_valarray_end", L), Begin, L);
+    unorderedHeapRelease(Begin, A.Context.IntTy,
+        binary("*", Count, quantity(4, "u64", L), "u64", L), L);
+    initializeZero(valarrayMember(Place, "nct_valarray_begin", L),
+        A.Context.getPointerType(A.Context.IntTy), L);
+    initializeZero(valarrayMember(Place, "nct_valarray_end", L),
+        A.Context.getPointerType(A.Context.IntTy), L);
+    jump(Done, L); label(Done, L);
+  }
+
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
+    if (Operation == UtilityOperation::ValarrayScalar) return utilityValarrayScalarOperation(Call);
     if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
         Operation == UtilityOperation::BitsetTest || Operation == UtilityOperation::BitsetSet ||
         Operation == UtilityOperation::BitsetReset || Operation == UtilityOperation::BitsetFlip)
@@ -35493,6 +35590,50 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
 
+
+    if (auto Kind = approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedUtilityValarrayRecord(A.S, A.Sources,
+          T->getAsCXXRecordDecl(), A.Context);
+      if (!Info) reject(L, "valarray construction", "The authenticated two-pointer layout is required.");
+      std::optional<Expression> FillReference, Count;
+      if (*Kind == UtilityValarrayConstruction::Fill) {
+        FillReference = snapshot(argument(C->getArg(0),
+            C->getConstructor()->getParamDecl(0)->getType()), L);
+        Count = snapshot(argument(C->getArg(1),
+            C->getConstructor()->getParamDecl(1)->getType()), L);
+      } else if (*Kind == UtilityValarrayConstruction::Count) {
+        Count = snapshot(argument(C->getArg(0),
+            C->getConstructor()->getParamDecl(0)->getType()), L);
+      }
+      std::optional<Expression> Fill;
+      if (FillReference) Fill = snapshot(dereference(*FillReference, L), L);
+      auto Begin = valarrayMember(Place, "nct_valarray_begin", L);
+      auto End = valarrayMember(Place, "nct_valarray_end", L);
+      initializeZero(Begin, A.Context.getPointerType(A.Context.IntTy), L);
+      initializeZero(End, A.Context.getPointerType(A.Context.IntTy), L);
+      if (*Kind == UtilityValarrayConstruction::Default) return;
+      const auto Allocate = labelName(), Check = labelName(), Store = labelName(), Done = labelName();
+      branch(binary("!=", *Count, quantity(0, "u64", L), "bool", L), Allocate, Done, L);
+      label(Allocate, L);
+      auto Pointer = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy,
+          binary("*", *Count, quantity(4, "u64", L), "u64", L), L), "ptr:int", L), L);
+      auto Limit = snapshot(binary("+", Pointer,
+          cast(*Count, type(A.Context.getPointerDiffType(), L), L), "ptr:int", L), L);
+      assign(Begin, Pointer, L);
+      assign(End, Pointer, L);
+      auto Current = temporary("ptr:int", L);
+      assign(Current, Pointer, L);
+      jump(Check, L); label(Check, L);
+      branch(binary("!=", Current, Limit, "bool", L), Store, Done, L);
+      label(Store, L);
+      assign(dereference(Current, L), Fill ? *Fill : quantity(0, "int", L), L);
+      assign(Current, binary("+", Current,
+          quantity(1, type(A.Context.getPointerDiffType(), L), L), "ptr:int", L), L);
+      assign(End, Current, L);
+      jump(Check, L); label(Done, L);
+      return;
+    }
+
     if (auto Kind = approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context)) {
       auto Vector = approvedUtilityVectorRecord(
@@ -36987,6 +37128,8 @@ public:
         approvedUtilityUniquePtrDestructor(A.S, A.Sources, D, A.Context);
     const bool StringDestructor =
         approvedUtilityStringDestructor(A.S, A.Sources, D, A.Context);
+    const bool ValarrayDestructor =
+        approvedUtilityValarrayDestructor(A.S, A.Sources, D, A.Context);
     const bool VectorDestructor =
         approvedUtilityVectorDestructor(A.S, A.Sources, D, A.Context);
     const bool UnorderedNodeDestructor = unorderedNodeDestructor(A.S, A.Sources, D, A.Context);
@@ -37001,6 +37144,9 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(),
              "unique pointer destructor",
              "The pinned std::unique_ptr destructor definition is required.");
+    if (approvedUtilityValarrayRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !ValarrayDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "valarray destructor",
+             "The selected pinned SDK destruction chain is required.");
     if (approvedUtilityVectorRecord(A.S, A.Sources, DestroyedRecord,
                                     A.Context) && !VectorDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(),
@@ -37016,7 +37162,7 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered map destructor",
              "The authenticated SDK storage destructor chain is required.");
     if (D && NotFnDestructor == A.VerifiedNotFnDestructions.end() &&
-        !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
+        !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
         !UnorderedMapDestructor && !UnorderedNodeDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
@@ -37160,6 +37306,8 @@ public:
       } else if (auto Map = approvedUtilityUnorderedMapRecord(
                      A.S, A.Sources, DestroyedRecord, A.Context)) {
         releaseUnorderedMap(dereference(*ThisPointer, L), *Map, true, L);
+      } else if (approvedUtilityValarrayRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
+        destroyValarrayStorage(dereference(*ThisPointer, L), L);
       } else if (auto Vector = approvedUtilityVectorRecord(
                      A.S, A.Sources,
                      approvedSeedSequenceRecord(A.S, A.Sources, DestroyedRecord, A.Context)

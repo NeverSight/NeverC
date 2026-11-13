@@ -1297,6 +1297,7 @@ enum class UtilityOperation {
   StringFindLastNotOf,
   StringViewSize,
   BitsetCount, BitsetAny, BitsetTest, BitsetSet, BitsetReset, BitsetFlip,
+  ValarrayScalar,
   VectorSize,
   VectorGetAllocator,
   VectorCapacity,
@@ -3674,6 +3675,34 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
 
+
+struct UtilityValarrayRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  const clang::FieldDecl *Begin = nullptr;
+  const clang::FieldDecl *End = nullptr;
+};
+std::optional<UtilityValarrayRecord> approvedUtilityValarrayRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+enum class UtilityValarrayConstruction { Default, Count, Fill };
+enum class UtilityValarrayScalarOperation { Size, Subscript, AddAssign, Sum };
+
+struct UtilityValarrayCall {
+  UtilityValarrayScalarOperation Operation;
+  const clang::Expr *Receiver = nullptr;
+  const clang::CXXMethodDecl *Method = nullptr;
+  unsigned ArgumentOffset = 0;
+};
+std::optional<UtilityValarrayConstruction> approvedUtilityValarrayConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+bool approvedUtilityValarrayDestructor(const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
+std::optional<UtilityValarrayCall> approvedUtilityValarrayCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+
 struct UtilityVectorRecord {
   const clang::CXXRecordDecl *Record;
   clang::QualType ElementType, PointerType;
@@ -4257,6 +4286,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStringViews;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStrings;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityBitsets;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityValarrays;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMapIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMaps;
@@ -4366,6 +4396,7 @@ public:
   bool requireUnorderedNode(const clang::CXXRecordDecl *Record,
       clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityBitset(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
+  bool requireUtilityValarray(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
                             unsigned Depth = 0);

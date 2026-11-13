@@ -438,3 +438,17 @@ four source-origin rejection programs. The bitset runtime case exercises a
 70-bit object across two words. Source admission and rejection checks run for
 the six existing 64-bit target descriptors. This coverage does not establish
 complete STL support. See the [detailed contract](cpp-core-v2.md#r19-checked-allocator-and-bitset-operations).
+
+## R19 checked integer valarray operations
+
+| Private `cpp-core-v2` surface | Admitted operations | Boundary |
+| --- | --- | --- |
+| `std::valarray<int>` | Default, count and scalar-fill construction; destruction; `size()`, mutable/const integer subscripting, scalar `operator+=` and `sum()`. | Exact pinned two-pointer layout and integer specialization. Copy/move construction, resize, slices, expression templates and other element types require further work. |
+
+Six native-matched programs execute as generated C23 at O0 and O2. They cover
+zero initialization, scalar fill, live scalar aliases, owned argument effects,
+empty/zero-count objects and selected global allocation/deallocation. Four
+source-origin guards retain replaced constructor, method and storage rejection.
+The source programs also retain checks across the six existing 64-bit target
+descriptors. See the [detailed contract](cpp-core-v2.md#r19-checked-integer-valarray-operations).
+This bounded increment does not establish complete STL support.
