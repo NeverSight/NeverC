@@ -48161,16 +48161,21 @@ bool forwardListBuiltinLibraryCast(const State &S, const SourceManager &SM,
   const auto Argument = Arguments->get(0).getAsType();
   const auto Parameter = F->getParamDecl(0)->getType();
   const auto Result = F->getReturnType();
+  // ASTContext reference factories preserve the requested outer reference kind.
+  // Apply the language's T& && -> T& rule before comparing the canonical signature.
+  const auto Forwarded = Argument->isLValueReferenceType()
+      ? Context.getLValueReferenceType(Argument.getNonReferenceType())
+      : Context.getRValueReferenceType(Argument.getNonReferenceType());
   if (Name == "addressof")
     return !Argument->isReferenceType() &&
         Context.hasSameType(Parameter, Context.getLValueReferenceType(Argument)) &&
         Context.hasSameType(Result, Context.getPointerType(Argument));
   if (Name == "move")
-    return Context.hasSameType(Parameter, Context.getRValueReferenceType(Argument)) &&
+    return Context.hasSameType(Parameter, Forwarded) &&
         Context.hasSameType(Result, Context.getRValueReferenceType(Argument.getNonReferenceType()));
   return (Context.hasSameType(Parameter, Context.getLValueReferenceType(Argument.getNonReferenceType())) ||
           Context.hasSameType(Parameter, Context.getRValueReferenceType(Argument.getNonReferenceType()))) &&
-      Context.hasSameType(Result, Context.getRValueReferenceType(Argument));
+      Context.hasSameType(Result, Forwarded);
 }
 
 bool forwardListSourceGraph(const State &S, const SourceManager &SM,
