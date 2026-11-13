@@ -49270,6 +49270,26 @@ bool dequeDeclarations(const State &S, const SourceManager &SM,
   }
   return true;
 }
+
+bool dequeTemplateDeclarationOrigin(const State &S, const SourceManager &SM,
+    const Decl *D, llvm::StringRef Name, llvm::StringRef Header) {
+  if (dequePinned(S, SM, D, Header)) return true;
+  llvm::StringRef ForwardHeader;
+  unsigned Line = 0;
+  if (Name == "deque" && Header == "deque") {
+    ForwardHeader = "__fwd/deque.h"; Line = 22;
+  } else if (Name == "allocator" && Header == "__memory/allocator.h") {
+    ForwardHeader = "__fwd/memory.h"; Line = 21;
+  } else return false;
+  const auto *R = dyn_cast_or_null<CXXRecordDecl>(D);
+  if (const auto *T = dyn_cast_or_null<ClassTemplateDecl>(D)) R = T->getTemplatedDecl();
+  if (!R || !R->getIdentifier() || R->getName() != Name || R->isInvalidDecl() ||
+      R->isThisDeclarationADefinition() || !dequeStd(R->getDeclContext()) ||
+      D->getLocation().isMacroID() || SM.getExpansionLineNumber(D->getLocation()) != Line)
+    return false;
+  return dequePinned(S, SM, D, ForwardHeader);
+}
+
 const ClassTemplateSpecializationDecl *dequeSpecialization(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
     llvm::StringRef Name, llvm::StringRef Header) {
@@ -49279,9 +49299,9 @@ const ClassTemplateSpecializationDecl *dequeSpecialization(
       R->isInvalidDecl() || R->isDependentContext() || R->isUnion() ||
       R->getSpecializationKind() != TSK_ImplicitInstantiation) return nullptr;
   for (const auto *D : T->redecls()) {
-    if (!dequePinned(S, SM, D, Header)) return nullptr;
+    if (!dequeTemplateDeclarationOrigin(S, SM, D, Name, Header)) return nullptr;
     for (const auto *Pattern : D->getTemplatedDecl()->redecls())
-      if (!dequePinned(S, SM, Pattern, Header)) return nullptr;
+      if (!dequeTemplateDeclarationOrigin(S, SM, Pattern, Name, Header)) return nullptr;
   }
   const auto *Definition = R->getDefinition();
   if (!Definition || Definition->isPolymorphic() ||
