@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
 #include "clang/AST/Expr.h"
@@ -47441,6 +47442,34 @@ bool valarrayHeapBoundary(const FunctionDecl *F, const ASTContext &Context) {
          Context.hasSameType(F->getParamDecl(1)->getType(), Context.getSizeType());
 }
 
+
+bool valarrayCompilerAlignmentMacro(const State &S, const SourceManager &SM,
+                                    SourceLocation L, const ASTContext &Context) {
+  if (!L.isMacroID() || !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(L)) ||
+      Lexer::getImmediateMacroName(L, SM, Context.getLangOpts()) !=
+          "__STDCPP_DEFAULT_NEW_ALIGNMENT__") return false;
+  const auto Site = S.sdkFile(SM, SM.getExpansionLoc(L));
+  return Site && Site->Root == "libcxx" && Site->Path == "__new/allocate.h";
+}
+
+bool valarrayScalarEndDestruction(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call, const ASTContext &Context) {
+  const auto *D = Call && !Call->getNumArgs()
+      ? dyn_cast<CXXPseudoDestructorExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  if (!D || !D->isArrow() || !D->getBase() || !D->getDestroyedTypeInfo() ||
+      !Context.hasSameType(D->getDestroyedType(), Context.IntTy)) return false;
+  const auto File = S.sdkFile(SM, Call->getExprLoc());
+  if (!File || File->Root != "libcxx" || File->Path != "valarray") return false;
+  const auto *Decrement = dyn_cast<UnaryOperator>(D->getBase()->IgnoreParenImpCasts());
+  const auto *Member = Decrement && Decrement->getOpcode() == UO_PreDec
+      ? dyn_cast<MemberExpr>(Decrement->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Field = Member ? dyn_cast<FieldDecl>(Member->getMemberDecl()) : nullptr;
+  const auto Info = Field ? approvedUtilityValarrayRecord(S, SM,
+      dyn_cast<CXXRecordDecl>(Field->getParent()), Context) : std::nullopt;
+  return Info && Field == Info->End && Member->isArrow() &&
+         isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts());
+}
+
 bool valarraySourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context) {
   std::set<const FunctionDecl *> Seen;
@@ -47449,6 +47478,7 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
   std::function<bool(const Stmt *, unsigned)> Statement;
   auto PinnedMacro = [&](SourceLocation L) {
     if (!L.isMacroID()) return true;
+    if (valarrayCompilerAlignmentMacro(S, SM, L, Context)) return true;
     const auto File = S.sdkFile(SM, SM.getSpellingLoc(L));
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
@@ -47508,8 +47538,13 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
     if (const auto *D = dyn_cast<DeclStmt>(Node))
       for (const auto *Declaration : D->decls())
         if (!PinnedMacro(Declaration->getLocation())) return false;
+    if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
+      if (!valarrayDependencyDeclaration(S, SM, Default->getParam()) ||
+          !Statement(Default->getExpr(), Depth + 1)) return false;
+    }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
-      if (!Function(Call->getDirectCallee(), Depth + 1)) return false;
+      if (!valarrayScalarEndDestruction(S, SM, Call, Context) &&
+          !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
