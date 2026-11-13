@@ -10662,6 +10662,16 @@ static bool utilityUnorderedMapDestructionSource(Adapter &A, const CXXRecordDecl
                                                       Map->Record->getDestructor(), A.Context);
 }
 
+
+static bool utilityValarrayDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Info = approvedUtilityValarrayRecord(A.S, A.Sources, Record, A.Context);
+  if (!Info) return false;
+  const auto *D = Info->Record->getDestructor();
+  A.chargeExpansion(1, Record->getLocation());
+  return D && !D->isDeleted() && D->getAccess() == AS_public &&
+         approvedUtilityValarrayDestructor(A.S, A.Sources, D, A.Context);
+}
+
 static std::optional<UtilityVectorRecord>
 utilityVectorDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Vector =
@@ -11760,6 +11770,7 @@ public:
     if (approvedUtilityUnorderedMapIteratorDestructor(A.S, A.Sources, Record, A.Context)) return true;
     if (utilityUnorderedNodeDestructionSource(A, Record)) return true;
     if (utilityUnorderedMapDestructionSource(A, Record)) return true;
+    if (utilityValarrayDestructionSource(A, Record)) return true;
     if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
       if (const auto *Element = Vector->ElementType->getAsCXXRecordDecl())
         return destruction(Element, Depth + 1);
@@ -13806,6 +13817,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityBitsetRecord(S, Sources, D, Context) &&
                  !requireUtilityBitset(D, L, Depth + 1)) {
         return {};
+      } else if (approvedUtilityValarrayRecord(S, Sources, D, Context) &&
+                 !requireUtilityValarray(D, L, Depth + 1)) {
+        return {};
       } else if (approvedUtilityVectorRecord(S, Sources, D, Context) &&
                  !requireUtilityVector(D, L, Depth + 1)) {
         return {};
@@ -14216,6 +14230,20 @@ bool Adapter::requireUtilityBitset(const CXXRecordDecl *Record,
   return true;
 }
 
+
+bool Adapter::requireUtilityValarray(const CXXRecordDecl *Record,
+                                    SourceLocation L, unsigned Depth) {
+  const auto Info = approvedUtilityValarrayRecord(S, Sources, Record, Context);
+  if (!Info || Depth > 64) {
+    reject(L, "valarray layout", "The pinned integer two-pointer layout is required.", "TR0203");
+    return false;
+  }
+  if (!RequiredUtilityValarrays.insert(Info->Record->getCanonicalDecl()).second) return true;
+  if (type(Context.getPointerType(Context.IntTy), L, false, Depth + 1).empty()) return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Info->Record));
+  return true;
+}
+
 bool Adapter::requireUtilityVector(const CXXRecordDecl *Record,
                                    SourceLocation Location, unsigned Depth) {
   if (Depth > 64) {
@@ -14533,6 +14561,9 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Context.FloatTy, L));
     } else if (auto Bitset = approvedUtilityBitsetRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, Bitset->Words), nullptr, ArraySizeModifier::Normal, 0), L));
+    } else if (approvedUtilityValarrayRecord(S, Sources, R, Context)) {
+      for (unsigned I = 0; I != 2; ++I)
+        Args.push_back(zero(Context.getPointerType(Context.IntTy), L));
     } else if (auto Vector = approvedUtilityVectorRecord(S, Sources, R,
                                                         Context)) {
       for (unsigned I = 0; I != 3; ++I)
@@ -15033,6 +15064,9 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
         json::Array Words;Words.push_back(constant(Storage, Context.getSizeType(), L));
         Args.push_back(json::Object{{"kind", "aggregate"}, {"type", type(Array, L)}, {"args", std::move(Words)}, {"loc", loc(L)}});
       } else Args.push_back(constant(Storage, Array, L));
+    } else if (approvedUtilityValarrayRecord(S, Sources, Record, Context)) {
+      for (unsigned I = 0; I != 2; ++I)
+        Args.push_back(constant(V.getStructField(I), Context.getPointerType(Context.IntTy), L));
     } else if (auto Unique = approvedUtilityUniquePtrRecord(S, Sources, Record,
                                                             Context)) {
       Args.push_back(constant(V.getStructField(0), Unique->PointerType, L));
@@ -18473,6 +18507,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          unorderedNodeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityVectorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                   A.Context) ||
@@ -20931,6 +20966,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
              approvedUtilityUnorderedMapIteratorDestructor(A.S, A.Sources, Destructor->getParent(), A.Context) ||
              utilityUnorderedNodeDestructionSource(A, Destructor->getParent()) ||
              utilityUnorderedMapDestructionSource(A, Destructor->getParent()) ||
+             utilityValarrayDestructionSource(A, Destructor->getParent()) ||
              utilityVectorDestructionSource(A, Destructor->getParent()) ||
              approvedPiecewiseRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
              approvedDiscreteDistributionRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
@@ -21159,6 +21195,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
                                               A.Context)
                 .has_value() ||
             approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
+            approvedUtilityValarrayConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             UniqueSourceConstruction || VectorConstruction.has_value();
         auto Pinned = [&](const FunctionDecl *Function) {
           if (!Function || Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
@@ -23953,6 +23990,7 @@ public:
          unorderedNodeConstruction(A.S, A.Sources, Construction, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedUtilityValarrayConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
            approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
@@ -30801,6 +30839,7 @@ public:
          unorderedNodeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
                    approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
@@ -31024,6 +31063,7 @@ static void orderCoreV2Records(Adapter &A) {
     const auto UtilityVector =
         approvedUtilityVectorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityBitset = approvedUtilityBitsetRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityValarray = approvedUtilityValarrayRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedIterator =
         approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedMap =
@@ -31064,7 +31104,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
                                    UtilityString ||
-                                   UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
+                                   UtilityValarray || UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
                                    UnorderedNode || UnorderedResult ||
                                    UtilityDefaultDelete || UtilityAllocator
                                ? nullptr
@@ -31317,6 +31357,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
         S.coreV2() ? approvedUtilityVectorRecord(S, Sources, R, Context)
                    : std::optional<UtilityVectorRecord>();
     const auto UtilityBitset = approvedUtilityBitsetRecord(S, Sources, R, Context);
+    const auto UtilityValarray = approvedUtilityValarrayRecord(S, Sources, R, Context);
     const auto UtilityUnorderedIterator =
         approvedUtilityUnorderedMapIteratorRecord(S, Sources, R, Context);
     const auto UtilityUnorderedMap =
@@ -31363,7 +31404,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
                                !UtilityUniquePtr && !UtilityString &&
-                               !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
+                               !UtilityValarray && !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
                                !UnorderedNode && !UnorderedResult &&
                                !UtilityDefaultDelete &&
                                !UtilityAllocator
@@ -31404,6 +31445,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       Fields.push_back(json::Object{
           {"name", "nct_unique_ptr_pointer"},
           {"type", type(UtilityUniquePtr->PointerType, R->getLocation())}});
+    } else if (UtilityValarray) {
+      for (const auto *Name : {"nct_valarray_begin", "nct_valarray_end"})
+        Fields.push_back(json::Object{{"name", Name}, {"type", type(Context.getPointerType(Context.IntTy), R->getLocation())}});
     } else if (UtilityBitset) {
       const auto Storage = Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, UtilityBitset->Words), nullptr, ArraySizeModifier::Normal, 0);
       Fields.push_back(json::Object{{"name", "nct_bitset_words"}, {"type", type(Storage, R->getLocation())}});
@@ -31513,6 +31557,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                      : Context.getTypeSize(UtilityVector->PointerType);
         for (unsigned I = 0; I != 3; ++I)
           Offsets.push_back(I * PointerBits);
+      } else if (UtilityValarray) {
+        Offsets.push_back(uint64_t(0)); Offsets.push_back(uint64_t(64));
       } else if (UtilityBitset) {
         Offsets.push_back(uint64_t(0));
       } else if (NotFn || FunctionalObject || UtilityUniquePtr ||
