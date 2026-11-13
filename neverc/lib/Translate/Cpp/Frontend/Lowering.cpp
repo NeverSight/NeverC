@@ -26325,7 +26325,7 @@ class FunctionLowering {
       return forwardListValue(snapshot(forwardListMember(Place, false, L), L), Method->isConst(), L);
     if (Operation == UtilityForwardListOperation::Clear) {
       destroyForwardListStorage(Place, Owner->Node, L);
-      return A.zero(Call->getType(), L);
+      return Expression{};
     }
     const bool Insert = Operation == UtilityForwardListOperation::InsertAfter;
     const bool Erase = Operation == UtilityForwardListOperation::EraseAfter;
@@ -26341,7 +26341,7 @@ class FunctionLowering {
         auto Node = forwardListCreateNode(Operands[Insert ? 1 : 0], Next, Owner->Node, L);
         assign(forwardListNext(Parent, L), Node, L);
         return Insert ? forwardListIterator(Method->getReturnType(),
-            snapshot(forwardListNext(Parent, L), L), L) : A.zero(Call->getType(), L);
+            snapshot(forwardListNext(Parent, L), L), L) : Expression{};
       }
       auto Node = snapshot(forwardListNext(Parent, L), L);
       assign(forwardListNext(Parent, L), snapshot(forwardListNext(Node, L), L), L);
@@ -26349,7 +26349,7 @@ class FunctionLowering {
       // erase_after reloads the link after deletion, including observable
       // source-defined delete callbacks; pop_front has a void result.
       return Erase ? forwardListIterator(Method->getReturnType(),
-          snapshot(forwardListNext(Parent, L), L), L) : A.zero(Call->getType(), L);
+          snapshot(forwardListNext(Parent, L), L), L) : Expression{};
     }
     reject(L, "forward-list operation", "Unknown checked owner operation.");
   }
