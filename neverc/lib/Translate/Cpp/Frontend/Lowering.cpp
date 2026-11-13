@@ -26136,8 +26136,9 @@ class FunctionLowering {
         {"name", "nct_bitset_words"}, {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
   }
   Expression bitsetWord(Expression Place, const UtilityBitsetRecord &Info,
-                        Expression Position, SourceLocation L) {
-    auto Words = decay(bitsetStorage(std::move(Place), Info, L), "ptr:u64", L);
+                        Expression Position, SourceLocation L, bool ReadOnly = false) {
+    auto Words = decay(bitsetStorage(std::move(Place), Info, L),
+                       ReadOnly ? "cptr:u64" : "ptr:u64", L);
     return index(std::move(Words), std::move(Position), "u64", L);
   }
   Expression utilityBitsetOperation(const CallExpr *Call, UtilityOperation Operation) {
@@ -26160,7 +26161,7 @@ class FunctionLowering {
       jump(Check, L);label(Check, L);
       branch(binary("<", Position, quantity(Info->Words, "u64", L), "bool", L), Word, Done, L);
       label(Word, L);
-      auto Bits = snapshot(bitsetWord(Place, *Info, Position, L), L);
+      auto Bits = snapshot(bitsetWord(Place, *Info, Position, L, true), L);
       if (Operation == UtilityOperation::BitsetAny) {
         assign(Result, binary("|", Result, Bits, "u64", L), L);
         jump(Next, L);
@@ -26181,7 +26182,8 @@ class FunctionLowering {
     // A literal, in-range position has no side effects. Evaluate its owned
     // operand slot as well, preserving the receiver-before-arguments rule.
     argument(Call->getArg(0), Member->getMethodDecl()->getParamDecl(0)->getType());
-    auto Word = bitsetWord(Place, *Info, quantity(Proof->Position / 64, "u64", L), L);
+    auto Word = bitsetWord(Place, *Info, quantity(Proof->Position / 64, "u64", L), L,
+                           Operation == UtilityOperation::BitsetTest);
     const uint64_t Mask = uint64_t(1) << (Proof->Position % 64);
     if (Operation == UtilityOperation::BitsetTest)
       return binary("!=", binary("&", Word, quantity(Mask, "u64", L), "u64", L), quantity(0, "u64", L), "bool", L);
