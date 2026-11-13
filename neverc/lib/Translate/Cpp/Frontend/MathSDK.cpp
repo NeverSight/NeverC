@@ -47658,8 +47658,60 @@ bool forwardListStd(const DeclContext *Scope) {
   }
   return false;
 }
+
+bool forwardListGeneratedEmptyPadding(const State &S, const SourceManager &SM,
+                                      const FieldDecl *F) {
+  if (!F || !F->getIdentifier() || F->isBitField() || F->isMutable() ||
+      F->hasInClassInitializer() || !F->hasAttr<NoUniqueAddressAttr>() ||
+      !F->getLocation().isMacroID() ||
+      !SM.isWrittenInScratchSpace(SM.getSpellingLoc(F->getLocation())) ||
+      (F->getName() != "__padding1_502_" && F->getName() != "__padding2_502_")) return false;
+  const auto Site = S.sdkFile(SM, SM.getExpansionLoc(F->getLocation()));
+  const auto *Parent = dyn_cast<CXXRecordDecl>(F->getParent());
+  if (!Site || Site->Root != "libcxx" || Site->Path != "forward_list" ||
+      SM.getExpansionLineNumber(F->getLocation()) != 502 || !Parent ||
+      Parent->getName() != "__forward_list_base" ||
+      !approvedStandardSDKDeclaration(S, SM, Parent)) return false;
+  const auto &Context = F->getASTContext();
+  const auto Type = F->getType();
+  const auto *RecordType = Type->getAs<clang::RecordType>();
+  const auto *R = RecordType ? dyn_cast<ClassTemplateSpecializationDecl>(RecordType->getDecl()) : nullptr;
+  R = R ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(R->getDefinition()) : nullptr;
+  const auto *Template = R ? R->getSpecializedTemplate() : nullptr;
+  if (!R || !Template || Type.isConstQualified() || Type.isVolatileQualified() ||
+      R->isInvalidDecl() || R->isDependentContext() || R->isUnion() || R->getNumBases() ||
+      !R->field_empty() || !R->isEmpty() || !R->hasTrivialDefaultConstructor() ||
+      !R->hasTrivialDestructor() || R->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Template->getName() != "__compressed_pair_padding" ||
+      !forwardListStd(Template->getDeclContext())) return false;
+  const auto &Args = R->getTemplateArgs();
+  if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
+      Args[1].getKind() != TemplateArgument::Integral || Args[1].getAsIntegral().isZero()) return false;
+  auto Pinned = [&](const Decl *D) {
+    const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+    return File && File->Root == "libcxx" && File->Path == "__memory/compressed_pair.h" &&
+        approvedStandardSDKDeclaration(S, SM, D);
+  };
+  for (const auto *D : Template->redecls()) {
+    if (!Pinned(D)) return false;
+    for (const auto *Pattern : D->getTemplatedDecl()->redecls()) if (!Pinned(Pattern)) return false;
+  }
+  for (const auto *D : R->redecls()) if (!Pinned(D)) return false;
+  unsigned Budget = 0;
+  for (const auto *D : R->decls()) {
+    if (++Budget > 64 || !Pinned(D)) return false;
+    if (const auto *Method = dyn_cast<FunctionDecl>(D))
+      for (const auto *Redeclaration : Method->redecls()) if (!Pinned(Redeclaration)) return false;
+  }
+  const auto &Layout = Context.getASTRecordLayout(R);
+  return Layout.getSize().getQuantity() == 1 && Layout.getAlignment().getQuantity() == 1;
+}
+
 bool forwardListPinned(const State &S, const SourceManager &SM, const Decl *D,
                        llvm::StringRef Header = {}) {
+  if (Header.empty())
+    if (const auto *Field = dyn_cast_or_null<FieldDecl>(D))
+      if (forwardListGeneratedEmptyPadding(S, SM, Field)) return true;
   const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
   if (!D || !File || File->Root != "libcxx" ||
       (!Header.empty() && File->Path != Header) ||
