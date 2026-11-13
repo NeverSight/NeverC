@@ -26628,8 +26628,28 @@ class FunctionLowering {
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
-    if (Operation == UtilityOperation::ForwardList) return utilityForwardListOperation(Call);
-    if (Operation == UtilityOperation::List) return utilityListOperation(Call);
+    if (Operation == UtilityOperation::ForwardList) {
+      auto Result = utilityForwardListOperation(Call);
+      if (Destination) {
+        if (!Call->isPRValue() || !Call->getType()->isRecordType() ||
+            Result.getString("type") != Destination->getString("type"))
+          reject(L, "container result destination", "The exact authenticated record prvalue destination is required.");
+        assign(*Destination, std::move(Result), L);
+        return std::move(*Destination);
+      }
+      return Result;
+    }
+    if (Operation == UtilityOperation::List) {
+      auto Result = utilityListOperation(Call);
+      if (Destination) {
+        if (!Call->isPRValue() || !Call->getType()->isRecordType() ||
+            Result.getString("type") != Destination->getString("type"))
+          reject(L, "container result destination", "The exact authenticated record prvalue destination is required.");
+        assign(*Destination, std::move(Result), L);
+        return std::move(*Destination);
+      }
+      return Result;
+    }
     if (Operation == UtilityOperation::ValarrayScalar) return utilityValarrayScalarOperation(Call);
     if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
         Operation == UtilityOperation::BitsetTest || Operation == UtilityOperation::BitsetSet ||
