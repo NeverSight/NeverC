@@ -26296,7 +26296,8 @@ class FunctionLowering {
       if (Operation == UtilityForwardListOperation::IteratorDereference)
         return forwardListValue(Node, Iterator->Const, L);
       if (Operation == UtilityForwardListOperation::IteratorArrow)
-        return cast(address(forwardListValue(Node, Iterator->Const, L), A.Context.IntTy, L),
+        return cast(address(forwardListValue(Node, Iterator->Const, L),
+            Iterator->Const ? A.Context.IntTy.withConst() : A.Context.IntTy, L),
             Iterator->Const ? "cptr:int" : "ptr:int", L);
       if (Operation == UtilityForwardListOperation::IteratorPreIncrement ||
           Operation == UtilityForwardListOperation::IteratorPostIncrement) {
@@ -26317,7 +26318,8 @@ class FunctionLowering {
         Operation == UtilityForwardListOperation::BeforeBegin) {
       auto Node = Operation == UtilityForwardListOperation::End ? A.zero(A.Context.VoidPtrTy, L)
           : Operation == UtilityForwardListOperation::BeforeBegin
-              ? cast(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), "ptr:void", L)
+              ? cast(address(forwardListMember(Place, false, L),
+                  Method->isConst() ? A.Context.VoidPtrTy.withConst() : A.Context.VoidPtrTy, L), "ptr:void", L)
               : snapshot(forwardListMember(Place, false, L), L);
       return forwardListIterator(Method->getReturnType(), std::move(Node), L);
     }
@@ -26334,7 +26336,7 @@ class FunctionLowering {
       // Position arguments are passed by value. All argument effects complete
       // before any node link or element is read by the method body.
       auto Parent = Insert || Erase
-          ? snapshot(forwardListMember(Operands[0], true, L), L)
+          ? snapshot(forwardListMember(dereference(Operands[0], L), true, L), L)
           : snapshot(cast(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), "ptr:void", L), L);
       if (Insert || Operation == UtilityForwardListOperation::PushFront) {
         auto Next = snapshot(forwardListNext(Parent, L), L);
@@ -26369,8 +26371,9 @@ class FunctionLowering {
     return dereference(cast(cast(std::move(Bytes), "ptr:void", L),
         Const ? "cptr:int" : "ptr:int", L), L);
   }
-  Expression listSentinel(Expression Place, SourceLocation L) {
-    return cast(address(listMember(std::move(Place), "nct_list_prev", L), A.Context.VoidPtrTy, L), "ptr:void", L);
+  Expression listSentinel(Expression Place, SourceLocation L, bool ReadOnly = false) {
+    return cast(address(listMember(std::move(Place), "nct_list_prev", L),
+        ReadOnly ? A.Context.VoidPtrTy.withConst() : A.Context.VoidPtrTy, L), "ptr:void", L);
   }
   Expression listIteratorMember(Expression Place, SourceLocation L) {
     return Expression{{"kind", "member"}, {"type", "ptr:void"}, {"name", "nct_list_iterator"},
@@ -26473,7 +26476,8 @@ class FunctionLowering {
       auto Node = snapshot(listIteratorMember(Place, L), L);
       if (Operation == UtilityListOperation::IteratorDereference) return listValue(Node, Iterator->Const, L);
       if (Operation == UtilityListOperation::IteratorArrow)
-        return cast(address(listValue(Node, Iterator->Const, L), A.Context.IntTy, L),
+        return cast(address(listValue(Node, Iterator->Const, L),
+            Iterator->Const ? A.Context.IntTy.withConst() : A.Context.IntTy, L),
             Iterator->Const ? "cptr:int" : "ptr:int", L);
       const bool PreIncrement = Operation == UtilityListOperation::IteratorPreIncrement;
       const bool PostIncrement = Operation == UtilityListOperation::IteratorPostIncrement;
@@ -26495,7 +26499,7 @@ class FunctionLowering {
           quantity(0, type(A.Context.getSizeType(), L), L), "bool", L);
     if (Operation == UtilityListOperation::Begin || Operation == UtilityListOperation::End)
       return listIterator(Method->getReturnType(), Operation == UtilityListOperation::Begin
-          ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L), L);
+          ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L, Method->isConst()), L), L);
     if (Operation == UtilityListOperation::Front || Operation == UtilityListOperation::Back)
       return listValue(snapshot(listMember(Place,
           Operation == UtilityListOperation::Front ? "nct_list_next" : "nct_list_prev", L), L), Method->isConst(), L);
@@ -26506,7 +26510,7 @@ class FunctionLowering {
     const bool Insert = Operation == UtilityListOperation::Insert;
     if (Insert || Operation == UtilityListOperation::PushFront || Operation == UtilityListOperation::PushBack) {
       std::optional<Expression> Position;
-      if (Insert) Position = snapshot(listIteratorMember(Operands[0], L), L);
+      if (Insert) Position = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
       auto Node = listCreateNode(Operands[Insert ? 1 : 0], Owner->Node, L);
       // push_front/back read current owner links after allocation callbacks.
       // insert keeps its by-value position, but reloads that position's prev.
@@ -26517,7 +26521,7 @@ class FunctionLowering {
     }
     const bool Erase = Operation == UtilityListOperation::Erase;
     if (Erase || Operation == UtilityListOperation::PopFront || Operation == UtilityListOperation::PopBack) {
-      auto Node = Erase ? snapshot(listIteratorMember(Operands[0], L), L)
+      auto Node = Erase ? snapshot(listIteratorMember(dereference(Operands[0], L), L), L)
           : snapshot(listMember(Place, Operation == UtilityListOperation::PopFront
               ? "nct_list_next" : "nct_list_prev", L), L);
       auto Next = listEraseNode(Place, Node, Owner->Node, L);
@@ -35926,8 +35930,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         if (*Kind == UtilityForwardListConstruction::IteratorDefault)
           initializeZero(Target, A.Context.VoidPtrTy, L);
         else {
-          auto Source = C->getConstructor()->getParamDecl(0)->getType()->isReferenceType()
-              ? dereference(Operands[0], L) : Operands[0];
+          auto Source = dereference(Operands[0], L);
           assign(Target, forwardListMember(Source, true, L), L);
         }
         return;
@@ -35939,8 +35942,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
           C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
       if (!List) reject(L, "forward-list initializer", "The pinned integer initializer-list carrier is required.");
-      auto Input = snapshot(fieldStorage(Operands[0], List->Begin, L), L);
-      auto Count = snapshot(fieldStorage(Operands[0], List->Size, L), L);
+      auto Input = snapshot(fieldStorage(dereference(Operands[0], L), List->Begin, L), L);
+      auto Count = snapshot(fieldStorage(dereference(Operands[0], L), List->Size, L), L);
       auto Position = temporary("u64", L);
       assign(Position, quantity(0, "u64", L), L);
       auto First = temporary("ptr:void", L), Last = temporary("ptr:void", L);
@@ -35984,8 +35987,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         auto Target = listIteratorMember(Place, L);
         if (*Kind == UtilityListConstruction::IteratorDefault) initializeZero(Target, A.Context.VoidPtrTy, L);
         else {
-          auto Source = C->getConstructor()->getParamDecl(0)->getType()->isReferenceType()
-              ? dereference(Operands[0], L) : Operands[0];
+          auto Source = dereference(Operands[0], L);
           assign(Target, listIteratorMember(Source, L), L);
         }
         return;
@@ -35997,8 +35999,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
           C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
       if (!List) reject(L, "list initializer", "The pinned integer initializer-list carrier is required.");
-      auto Input = snapshot(fieldStorage(Operands[0], List->Begin, L), L);
-      auto Count = snapshot(fieldStorage(Operands[0], List->Size, L), L);
+      auto Input = snapshot(fieldStorage(dereference(Operands[0], L), List->Begin, L), L);
+      auto Count = snapshot(fieldStorage(dereference(Operands[0], L), List->Size, L), L);
       const auto Size = type(A.Context.getSizeType(), L);
       auto Position = temporary(Size, L);
       assign(Position, quantity(0, Size, L), L);
