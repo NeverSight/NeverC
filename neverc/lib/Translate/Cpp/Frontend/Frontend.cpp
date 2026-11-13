@@ -10683,6 +10683,16 @@ static bool utilityListDestructionSource(Adapter &A, const CXXRecordDecl *Record
          approvedUtilityListDestructor(A.S, A.Sources, D, A.Context);
 }
 
+
+static bool utilityDequeDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Info = approvedUtilityDequeRecord(A.S, A.Sources, Record, A.Context);
+  if (!Info) return false;
+  const auto *D = Info->Record->getDestructor();
+  A.chargeExpansion(1, Record->getLocation());
+  return D && !D->isDeleted() && D->getAccess() == AS_public &&
+         approvedUtilityDequeDestructor(A.S, A.Sources, D, A.Context);
+}
+
 static bool utilityValarrayDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Info = approvedUtilityValarrayRecord(A.S, A.Sources, Record, A.Context);
   if (!Info) return false;
@@ -11792,6 +11802,7 @@ public:
     if (utilityUnorderedMapDestructionSource(A, Record)) return true;
     if (utilityForwardListDestructionSource(A, Record)) return true;
     if (utilityListDestructionSource(A, Record)) return true;
+    if (utilityDequeDestructionSource(A, Record)) return true;
     if (utilityValarrayDestructionSource(A, Record)) return true;
     if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
       if (const auto *Element = Vector->ElementType->getAsCXXRecordDecl())
@@ -13847,6 +13858,10 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
                   approvedUtilityListIteratorRecord(S, Sources, D, Context)) &&
                  !requireUtilityList(D, L, Depth + 1)) {
         return {};
+      } else if ((approvedUtilityDequeRecord(S, Sources, D, Context) ||
+                  approvedUtilityDequeIteratorRecord(S, Sources, D, Context)) &&
+                 !requireUtilityDeque(D, L, Depth + 1)) {
+        return {};
       } else if (approvedUtilityValarrayRecord(S, Sources, D, Context) &&
                  !requireUtilityValarray(D, L, Depth + 1)) {
         return {};
@@ -14294,6 +14309,26 @@ bool Adapter::requireUtilityList(const CXXRecordDecl *Record,
   return true;
 }
 
+
+bool Adapter::requireUtilityDeque(const CXXRecordDecl *Record,
+                                       SourceLocation L, unsigned Depth) {
+  const auto Owner = approvedUtilityDequeRecord(S, Sources, Record, Context);
+  const auto Iterator = approvedUtilityDequeIteratorRecord(S, Sources, Record, Context);
+  const auto *R = Owner ? Owner->Record : Iterator ? Iterator->Record : nullptr;
+  if (!R || Depth > 64) {
+    reject(L, "deque layout", "The pinned integer owner or iterator pointer carrier is required.", "TR0203");
+    return false;
+  }
+  if (!RequiredUtilityDeques.insert(R->getCanonicalDecl()).second) return true;
+  if (type(Context.VoidPtrTy, L, false, Depth + 1).empty() ||
+      type(Context.getSizeType(), L, false, Depth + 1).empty() ||
+      type(Context.getPointerDiffType(), L, false, Depth + 1).empty() ||
+      type(Context.getPointerType(Context.IntTy), L, false, Depth + 1).empty() ||
+      type(Context.getPointerType(Context.VoidPtrTy), L, false, Depth + 1).empty()) return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(R));
+  return true;
+}
+
 bool Adapter::requireUtilityValarray(const CXXRecordDecl *Record,
                                     SourceLocation L, unsigned Depth) {
   const auto Info = approvedUtilityValarrayRecord(S, Sources, Record, Context);
@@ -14632,6 +14667,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Context.VoidPtrTy, L));
       Args.push_back(zero(Context.getSizeType(), L));
     } else if (approvedUtilityListIteratorRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Context.VoidPtrTy, L));
+    } else if (approvedUtilityDequeRecord(S, Sources, R, Context)) {
+      for (unsigned I = 0; I != 4; ++I) Args.push_back(zero(Context.VoidPtrTy, L));
+      for (unsigned I = 0; I != 2; ++I) Args.push_back(zero(Context.getSizeType(), L));
+    } else if (approvedUtilityDequeIteratorRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Context.VoidPtrTy, L));
       Args.push_back(zero(Context.VoidPtrTy, L));
     } else if (approvedUtilityValarrayRecord(S, Sources, R, Context)) {
       for (unsigned I = 0; I != 2; ++I)
@@ -15141,6 +15182,9 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
       Args.push_back(constant(V.getStructField(0), Context.VoidPtrTy, L));
     } else if (approvedUtilityListIteratorRecord(S, Sources, Record, Context)) {
       Args.push_back(constant(V.getStructField(0), Context.VoidPtrTy, L));
+    } else if (approvedUtilityDequeIteratorRecord(S, Sources, Record, Context)) {
+      Args.push_back(constant(V.getStructField(0), Context.VoidPtrTy, L));
+      Args.push_back(constant(V.getStructField(1), Context.VoidPtrTy, L));
     } else if (approvedUtilityValarrayRecord(S, Sources, Record, Context)) {
       for (unsigned I = 0; I != 2; ++I)
         Args.push_back(constant(V.getStructField(I), Context.getPointerType(Context.IntTy), L));
@@ -18586,6 +18630,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityVectorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
@@ -21047,6 +21092,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
              utilityUnorderedMapDestructionSource(A, Destructor->getParent()) ||
              utilityForwardListDestructionSource(A, Destructor->getParent()) ||
              utilityListDestructionSource(A, Destructor->getParent()) ||
+             utilityDequeDestructionSource(A, Destructor->getParent()) ||
              utilityValarrayDestructionSource(A, Destructor->getParent()) ||
              utilityVectorDestructionSource(A, Destructor->getParent()) ||
              approvedPiecewiseRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
@@ -21278,6 +21324,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
+            approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedUtilityValarrayConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             UniqueSourceConstruction || VectorConstruction.has_value();
         auto Pinned = [&](const FunctionDecl *Function) {
@@ -24075,6 +24122,7 @@ public:
            approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityValarrayConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
@@ -30926,6 +30974,7 @@ public:
                    approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
@@ -31151,6 +31200,8 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityVectorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityBitset = approvedUtilityBitsetRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityValarray = approvedUtilityValarrayRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityDeque = approvedUtilityDequeRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityDequeIterator = approvedUtilityDequeIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityList = approvedUtilityListRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityListIterator = approvedUtilityListIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityForwardList = approvedUtilityForwardListRecord(A.S, A.Sources, R, A.Context);
@@ -31195,7 +31246,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
                                    UtilityString ||
-                                   UtilityForwardList || UtilityForwardIterator || UtilityList || UtilityListIterator || UtilityValarray || UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
+                                   UtilityForwardList || UtilityForwardIterator || UtilityList || UtilityListIterator || UtilityDeque || UtilityDequeIterator || UtilityValarray || UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
                                    UnorderedNode || UnorderedResult ||
                                    UtilityDefaultDelete || UtilityAllocator
                                ? nullptr
@@ -31449,6 +31500,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                    : std::optional<UtilityVectorRecord>();
     const auto UtilityBitset = approvedUtilityBitsetRecord(S, Sources, R, Context);
     const auto UtilityValarray = approvedUtilityValarrayRecord(S, Sources, R, Context);
+    const auto UtilityDeque = approvedUtilityDequeRecord(S, Sources, R, Context);
+    const auto UtilityDequeIterator = approvedUtilityDequeIteratorRecord(S, Sources, R, Context);
     const auto UtilityList = approvedUtilityListRecord(S, Sources, R, Context);
     const auto UtilityListIterator = approvedUtilityListIteratorRecord(S, Sources, R, Context);
     const auto UtilityForwardList = approvedUtilityForwardListRecord(S, Sources, R, Context);
@@ -31499,7 +31552,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
                                !UtilityUniquePtr && !UtilityString &&
-                               !UtilityForwardList && !UtilityForwardIterator && !UtilityList && !UtilityListIterator && !UtilityValarray && !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
+                               !UtilityForwardList && !UtilityForwardIterator && !UtilityList && !UtilityListIterator && !UtilityDeque && !UtilityDequeIterator && !UtilityValarray && !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
                                !UnorderedNode && !UnorderedResult &&
                                !UtilityDefaultDelete &&
                                !UtilityAllocator
@@ -31550,6 +31603,15 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       Fields.push_back(json::Object{{"name", "nct_list_size"}, {"type", type(Context.getSizeType(), R->getLocation())}});
     } else if (UtilityListIterator) {
       Fields.push_back(json::Object{{"name", "nct_list_iterator"}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
+
+    } else if (UtilityDeque) {
+      for (const char *Name : {"nct_deque_first", "nct_deque_begin", "nct_deque_end", "nct_deque_cap"})
+        Fields.push_back(json::Object{{"name", Name}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
+      for (const char *Name : {"nct_deque_start", "nct_deque_size"})
+        Fields.push_back(json::Object{{"name", Name}, {"type", type(Context.getSizeType(), R->getLocation())}});
+    } else if (UtilityDequeIterator) {
+      for (const char *Name : {"nct_deque_map", "nct_deque_pointer"})
+        Fields.push_back(json::Object{{"name", Name}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
 
     } else if (UtilityValarray) {
       for (const auto *Name : {"nct_valarray_begin", "nct_valarray_end"})
@@ -31670,6 +31732,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
         Offsets.push_back(uint64_t(0)); Offsets.push_back(uint64_t(64)); Offsets.push_back(uint64_t(128));
       } else if (UtilityListIterator) {
         Offsets.push_back(uint64_t(0));
+
+      } else if (UtilityDeque) {
+        for (unsigned I = 0; I != 6; ++I) Offsets.push_back(uint64_t(64 * I));
+      } else if (UtilityDequeIterator) {
+        Offsets.push_back(uint64_t(0)); Offsets.push_back(uint64_t(64));
 
       } else if (UtilityValarray) {
         Offsets.push_back(uint64_t(0)); Offsets.push_back(uint64_t(64));

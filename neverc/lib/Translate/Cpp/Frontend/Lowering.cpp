@@ -26526,6 +26526,580 @@ class FunctionLowering {
     reject(L, "list operation", "Unknown checked owner operation.");
   }
 
+
+  Expression dequeIteratorMember(Expression Place, bool Map, SourceLocation L) {
+    return Expression{{"kind", "member"}, {"type", "ptr:void"},
+        {"name", Map ? "nct_deque_map" : "nct_deque_pointer"},
+        {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+  Expression dequeMapValue(Expression Map, SourceLocation L) {
+    return dereference(cast(std::move(Map), type(A.Context.getPointerType(A.Context.VoidPtrTy), L), L), L);
+  }
+  Expression dequeIterator(QualType T, Expression Map, Expression Pointer, SourceLocation L) {
+    if (!approvedUtilityDequeIteratorRecord(A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context))
+      reject(L, "deque iterator", "The selected two-pointer SDK carrier is required.");
+    auto Result = temporary(type(T, L), L);
+    assign(dequeIteratorMember(Result, true, L), std::move(Map), L);
+    assign(dequeIteratorMember(Result, false, L), std::move(Pointer), L);
+    return Result;
+  }
+  Expression dequeMapOffset(Expression Map, Expression Distance, SourceLocation L) {
+    const auto Pointer = type(A.Context.getPointerType(A.Context.VoidPtrTy), L);
+    return cast(binary("+", cast(std::move(Map), Pointer, L),
+        std::move(Distance), Pointer, L), "ptr:void", L);
+  }
+  Expression dequePointerOffset(Expression Pointer, Expression Distance, SourceLocation L) {
+    const auto PointerType = type(A.Context.getPointerType(A.Context.IntTy), L);
+    return cast(binary("+", cast(std::move(Pointer), PointerType, L),
+        std::move(Distance), PointerType, L), "ptr:void", L);
+  }
+  void advanceDequeIterator(Expression Place, Expression Distance, SourceLocation L) {
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    type(A.Context.getPointerType(A.Context.IntTy), L);
+    auto N = snapshot(std::move(Distance), L);
+    const auto Move = labelName(), Positive = labelName(), Negative = labelName(), Done = labelName();
+    // The SDK's zero-distance path does not inspect a default iterator's map.
+    branch(binary("!=", N, quantity(0, Diff, L), "bool", L), Move, Done, L);
+    label(Move, L);
+    auto Map = snapshot(dequeIteratorMember(Place, true, L), L);
+    auto Pointer = snapshot(dequeIteratorMember(Place, false, L), L);
+    auto Base = snapshot(dequeMapValue(Map, L), L);
+    auto Offset = snapshot(binary("-", cast(Pointer, "ptr:int", L), cast(Base, "ptr:int", L), Diff, L), L);
+    auto Position = snapshot(binary("+", N, Offset, Diff, L), L);
+    branch(binary(">", Position, quantity(0, Diff, L), "bool", L), Positive, Negative, L);
+    label(Positive, L);
+    auto ForwardMap = snapshot(dequeMapOffset(Map,
+        binary("/", Position, quantity(1024, Diff, L), Diff, L), L), L);
+    assign(dequeIteratorMember(Place, true, L), ForwardMap, L);
+    assign(dequeIteratorMember(Place, false, L), dequePointerOffset(dequeMapValue(ForwardMap, L),
+        binary("%", Position, quantity(1024, Diff, L), Diff, L), L), L);
+    jump(Done, L);
+    label(Negative, L);
+    // Preserve the SDK expression for negative positions and exact block edges.
+    auto Z = snapshot(binary("-", quantity(1023, Diff, L), Position, Diff, L), L);
+    auto Backward = snapshot(binary("-", quantity(0, Diff, L),
+        binary("/", Z, quantity(1024, Diff, L), Diff, L), Diff, L), L);
+    auto BackwardMap = snapshot(dequeMapOffset(Map, Backward, L), L);
+    assign(dequeIteratorMember(Place, true, L), BackwardMap, L);
+    assign(dequeIteratorMember(Place, false, L), dequePointerOffset(dequeMapValue(BackwardMap, L),
+        binary("-", quantity(1023, Diff, L), binary("%", Z, quantity(1024, Diff, L), Diff, L), Diff, L), L), L);
+    jump(Done, L); label(Done, L);
+  }
+  Expression dequeIteratorDifference(Expression Left, Expression Right, SourceLocation L) {
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    type(A.Context.getPointerType(A.Context.IntTy), L);
+    type(A.Context.getPointerType(A.Context.VoidPtrTy), L);
+    auto Result = temporary(Diff, L);
+    assign(Result, quantity(0, Diff, L), L);
+    auto LP = snapshot(dequeIteratorMember(Left, false, L), L);
+    auto RP = snapshot(dequeIteratorMember(Right, false, L), L);
+    const auto Different = labelName(), Done = labelName();
+    // Equal pointers, including two default iterators, require no map access.
+    branch(binary("!=", LP, RP, "bool", L), Different, Done, L);
+    label(Different, L);
+    auto LM = snapshot(dequeIteratorMember(Left, true, L), L);
+    auto RM = snapshot(dequeIteratorMember(Right, true, L), L);
+    auto Blocks = snapshot(binary("-", cast(LM, "ptr:ptr:void", L), cast(RM, "ptr:ptr:void", L), Diff, L), L);
+    auto LO = snapshot(binary("-", cast(LP, "ptr:int", L), cast(dequeMapValue(LM, L), "ptr:int", L), Diff, L), L);
+    auto RO = snapshot(binary("-", cast(RP, "ptr:int", L), cast(dequeMapValue(RM, L), "ptr:int", L), Diff, L), L);
+    assign(Result, binary("-", binary("+", binary("*", Blocks, quantity(1024, Diff, L), Diff, L), LO, Diff, L), RO, Diff, L), L);
+    jump(Done, L); label(Done, L);
+    return Result;
+  }
+  Expression dequeIteratorLess(Expression Left, Expression Right, SourceLocation L) {
+    type(A.Context.getPointerType(A.Context.IntTy), L);
+    type(A.Context.getPointerType(A.Context.VoidPtrTy), L);
+    auto Result = temporary("bool", L);
+    auto LM = snapshot(dequeIteratorMember(Left, true, L), L);
+    auto RM = snapshot(dequeIteratorMember(Right, true, L), L);
+    const auto Same = labelName(), Other = labelName(), Done = labelName();
+    branch(binary("==", LM, RM, "bool", L), Same, Other, L);
+    label(Same, L);
+    assign(Result, binary("<", cast(dequeIteratorMember(Left, false, L), "ptr:int", L),
+        cast(dequeIteratorMember(Right, false, L), "ptr:int", L), "bool", L), L);
+    jump(Done, L); label(Other, L);
+    assign(Result, binary("<", cast(LM, "ptr:ptr:void", L), cast(RM, "ptr:ptr:void", L), "bool", L), L);
+    jump(Done, L); label(Done, L);
+    return Result;
+  }
+
+
+  Expression dequeOwnerMember(Expression Place, llvm::StringRef Name, SourceLocation L) {
+    const bool Count = Name == "nct_deque_start" || Name == "nct_deque_size";
+    return Expression{{"kind", "member"}, {"type", Count ? type(A.Context.getSizeType(), L) : "ptr:void"},
+        {"name", Name.str()}, {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+  void initializeDequeStorage(Expression Place, SourceLocation L) {
+    for (const char *Name : {"nct_deque_first", "nct_deque_begin", "nct_deque_end", "nct_deque_cap"})
+      initializeZero(dequeOwnerMember(Place, Name, L), A.Context.VoidPtrTy, L);
+    for (const char *Name : {"nct_deque_start", "nct_deque_size"})
+      initializeZero(dequeOwnerMember(Place, Name, L), A.Context.getSizeType(), L);
+  }
+  Expression dequeOwnerPointer(Expression Place, Expression Index, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    auto Position = snapshot(binary("+", dequeOwnerMember(Place, "nct_deque_start", L),
+        std::move(Index), Size, L), L);
+    auto Map = snapshot(dequeMapOffset(dequeOwnerMember(Place, "nct_deque_begin", L),
+        cast(binary("/", Position, quantity(1024, Size, L), Size, L), Diff, L), L), L);
+    return dequePointerOffset(dequeMapValue(Map, L),
+        cast(binary("%", Position, quantity(1024, Size, L), Size, L), Diff, L), L);
+  }
+  Expression dequeOwnerValue(Expression Place, Expression Index, bool Const, SourceLocation L) {
+    auto Pointer = dequeOwnerPointer(std::move(Place), std::move(Index), L);
+    return dereference(cast(std::move(Pointer), type(A.Context.getPointerType(
+        Const ? A.Context.IntTy.withConst() : A.Context.IntTy), L), L), L);
+  }
+  Expression dequeOwnerIterator(Expression Place, QualType IteratorType, bool End, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    auto Position = snapshot(dequeOwnerMember(Place, "nct_deque_start", L), L);
+    if (End) Position = snapshot(binary("+", Position, dequeOwnerMember(Place, "nct_deque_size", L), Size, L), L);
+    auto Begin = snapshot(dequeOwnerMember(Place, "nct_deque_begin", L), L);
+    auto Map = snapshot(dequeMapOffset(Begin,
+        cast(binary("/", Position, quantity(1024, Size, L), Size, L), Diff, L), L), L);
+    auto Pointer = temporary("ptr:void", L);
+    initializeZero(Pointer, A.Context.VoidPtrTy, L);
+    const auto Stored = labelName(), Done = labelName();
+    branch(binary("!=", Begin, dequeOwnerMember(Place, "nct_deque_end", L), "bool", L), Stored, Done, L);
+    label(Stored, L);
+    assign(Pointer, dequePointerOffset(dequeMapValue(Map, L),
+        cast(binary("%", Position, quantity(1024, Size, L), Size, L), Diff, L), L), L);
+    jump(Done, L); label(Done, L);
+    return dequeIterator(IteratorType, Map, Pointer, L);
+  }
+
+
+  Expression dequeMapCount(Expression Place, bool Capacity, SourceLocation L) {
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Pointer = type(A.Context.getPointerType(A.Context.VoidPtrTy), L);
+    return cast(binary("-", cast(dequeOwnerMember(Place,
+        Capacity ? "nct_deque_cap" : "nct_deque_end", L), Pointer, L),
+        cast(dequeOwnerMember(Place, Capacity ? "nct_deque_first" : "nct_deque_begin", L), Pointer, L),
+        Diff, L), Size, L);
+  }
+  Expression dequeBackSpare(Expression Place, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Count = snapshot(dequeMapCount(Place, false, L), L);
+    auto Capacity = temporary(Size, L);
+    assign(Capacity, quantity(0, Size, L), L);
+    const auto Nonempty = labelName(), Done = labelName();
+    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Nonempty, Done, L);
+    label(Nonempty, L);
+    assign(Capacity, binary("-", binary("*", Count, quantity(1024, Size, L), Size, L),
+        quantity(1, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+    return binary("-", Capacity, binary("+", dequeOwnerMember(Place, "nct_deque_start", L),
+        dequeOwnerMember(Place, "nct_deque_size", L), Size, L), Size, L);
+  }
+  void dequeMapPop(Expression Place, bool Front, SourceLocation L) {
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    const auto Name = Front ? "nct_deque_begin" : "nct_deque_end";
+    auto Distance = Front ? quantity(1, Diff, L)
+        : binary("-", quantity(0, Diff, L), quantity(1, Diff, L), Diff, L);
+    assign(dequeOwnerMember(Place, Name, L),
+        dequeMapOffset(dequeOwnerMember(Place, Name, L), std::move(Distance), L), L);
+  }
+  void dequeShiftMap(Expression Place, Expression Distance, bool Right, SourceLocation L) {
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    auto Begin = snapshot(dequeOwnerMember(Place, "nct_deque_begin", L), L);
+    auto End = snapshot(dequeOwnerMember(Place, "nct_deque_end", L), L);
+    auto N = snapshot(std::move(Distance), L);
+    auto Signed = Right ? N : binary("-", quantity(0, Diff, L), N, Diff, L);
+    auto Cursor = temporary("ptr:void", L);
+    assign(Cursor, Right ? End : Begin, L);
+    const auto Check = labelName(), Move = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Cursor, Right ? Begin : End, "bool", L), Move, Done, L);
+    label(Move, L);
+    if (Right) assign(Cursor, dequeMapOffset(Cursor,
+        binary("-", quantity(0, Diff, L), quantity(1, Diff, L), Diff, L), L), L);
+    assign(dequeMapValue(dequeMapOffset(Cursor, Signed, L), L),
+        snapshot(dequeMapValue(Cursor, L), L), L);
+    if (!Right) assign(Cursor, dequeMapOffset(Cursor, quantity(1, Diff, L), L), L);
+    jump(Check, L); label(Done, L);
+    assign(dequeOwnerMember(Place, "nct_deque_begin", L), dequeMapOffset(Begin, Signed, L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_end", L), dequeMapOffset(End, Signed, L), L);
+  }
+  void dequeMapInsert(Expression Place, Expression Block, bool Front, SourceLocation L) {
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    const auto Pointer = type(A.Context.getPointerType(A.Context.VoidPtrTy), L);
+    auto Value = snapshot(std::move(Block), L);
+    const auto Shift = labelName(), Store = labelName();
+    branch(binary("==", dequeOwnerMember(Place, Front ? "nct_deque_begin" : "nct_deque_end", L),
+        dequeOwnerMember(Place, Front ? "nct_deque_first" : "nct_deque_cap", L), "bool", L), Shift, Store, L);
+    label(Shift, L);
+    auto Spare = snapshot(binary("-",
+        cast(dequeOwnerMember(Place, Front ? "nct_deque_cap" : "nct_deque_begin", L), Pointer, L),
+        cast(dequeOwnerMember(Place, Front ? "nct_deque_end" : "nct_deque_first", L), Pointer, L), Diff, L), L);
+    dequeShiftMap(Place, binary("/", binary("+", Spare, quantity(1, Diff, L), Diff, L),
+        quantity(2, Diff, L), Diff, L), Front, L);
+    jump(Store, L); label(Store, L);
+    if (Front) {
+      auto Slot = snapshot(dequeMapOffset(dequeOwnerMember(Place, "nct_deque_begin", L),
+          binary("-", quantity(0, Diff, L), quantity(1, Diff, L), Diff, L), L), L);
+      assign(dequeMapValue(Slot, L), Value, L);
+      assign(dequeOwnerMember(Place, "nct_deque_begin", L), Slot, L);
+    } else {
+      auto Slot = snapshot(dequeOwnerMember(Place, "nct_deque_end", L), L);
+      assign(dequeMapValue(Slot, L), Value, L);
+      assign(dequeOwnerMember(Place, "nct_deque_end", L), dequeMapOffset(Slot, quantity(1, Diff, L), L), L);
+    }
+  }
+  void dequeSetStartAfterFrontGrowth(Expression Place, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Single = labelName(), Multiple = labelName(), Done = labelName();
+    branch(binary("==", dequeMapCount(Place, false, L), quantity(1, Size, L), "bool", L), Single, Multiple, L);
+    label(Single, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), quantity(512, Size, L), L);
+    jump(Done, L); label(Multiple, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("+",
+        dequeOwnerMember(Place, "nct_deque_start", L), quantity(1024, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+  void dequeGrowOneBlock(Expression Place, bool Front, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    const auto MapElement = A.Context.getPointerType(A.Context.IntTy);
+    const auto Reuse = labelName(), Allocate = labelName(), Room = labelName(),
+        Reallocate = labelName(), Done = labelName();
+    auto Opposite = Front ? dequeBackSpare(Place, L) : dequeOwnerMember(Place, "nct_deque_start", L);
+    branch(binary(">=", std::move(Opposite), quantity(1024, Size, L), "bool", L), Reuse, Allocate, L);
+    label(Reuse, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), binary(Front ? "+" : "-",
+        dequeOwnerMember(Place, "nct_deque_start", L), quantity(1024, Size, L), Size, L), L);
+    auto ReusedSlot = Front ? dequeMapOffset(dequeOwnerMember(Place, "nct_deque_end", L),
+        binary("-", quantity(0, Diff, L), quantity(1, Diff, L), Diff, L), L)
+        : dequeOwnerMember(Place, "nct_deque_begin", L);
+    auto ReusedBlock = snapshot(dequeMapValue(ReusedSlot, L), L);
+    dequeMapPop(Place, !Front, L);
+    dequeMapInsert(Place, ReusedBlock, Front, L);
+    jump(Done, L); label(Allocate, L);
+    branch(binary("<", dequeMapCount(Place, false, L), dequeMapCount(Place, true, L), "bool", L), Room, Reallocate, L);
+    label(Room, L);
+    auto Block = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy, quantity(4096, Size, L), L), "ptr:void", L), L);
+    const auto Direct = labelName(), Rotate = labelName(), Added = labelName();
+    branch(binary("!=", dequeOwnerMember(Place, Front ? "nct_deque_begin" : "nct_deque_end", L),
+        dequeOwnerMember(Place, Front ? "nct_deque_first" : "nct_deque_cap", L), "bool", L), Direct, Rotate, L);
+    label(Direct, L);
+    dequeMapInsert(Place, Block, Front, L);
+    jump(Added, L); label(Rotate, L);
+    dequeMapInsert(Place, Block, !Front, L);
+    dequeMapPop(Place, !Front, L);
+    dequeMapInsert(Place, Block, Front, L);
+    jump(Added, L); label(Added, L);
+    if (Front) dequeSetStartAfterFrontGrowth(Place, L);
+    jump(Done, L); label(Reallocate, L);
+    auto OldCapacity = snapshot(dequeMapCount(Place, true, L), L);
+    auto NewCapacity = temporary(Size, L);
+    assign(NewCapacity, binary("*", OldCapacity, quantity(2, Size, L), Size, L), L);
+    const auto Minimum = labelName(), NewMap = labelName();
+    branch(binary("==", NewCapacity, quantity(0, Size, L), "bool", L), Minimum, NewMap, L);
+    label(Minimum, L); assign(NewCapacity, quantity(1, Size, L), L); jump(NewMap, L); label(NewMap, L);
+    auto InitialCount = snapshot(dequeMapCount(Place, false, L), L);
+    auto Allocation = snapshot(cast(unorderedHeapAllocate(MapElement,
+        binary("*", NewCapacity, quantity(8, Size, L), Size, L), L), "ptr:void", L), L);
+    auto NewBlock = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy, quantity(4096, Size, L), L), "ptr:void", L), L);
+    assign(dequeMapValue(dequeMapOffset(Allocation,
+        Front ? quantity(0, Diff, L) : cast(InitialCount, Diff, L), L), L), NewBlock, L);
+    auto OldFirst = snapshot(dequeOwnerMember(Place, "nct_deque_first", L), L);
+    auto Begin = snapshot(dequeOwnerMember(Place, "nct_deque_begin", L), L);
+    auto Count = snapshot(dequeMapCount(Place, false, L), L);
+    auto Index = temporary(Size, L);
+    assign(Index, Front ? quantity(0, Size, L) : Count, L);
+    const auto Check = labelName(), Copy = labelName(), Commit = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary(Front ? "<" : "!=", Index, Front ? Count : quantity(0, Size, L), "bool", L), Copy, Commit, L);
+    label(Copy, L);
+    if (!Front) assign(Index, binary("-", Index, quantity(1, Size, L), Size, L), L);
+    auto Destination = Front ? binary("+", Index, quantity(1, Size, L), Size, L) : Index;
+    assign(dequeMapValue(dequeMapOffset(Allocation, cast(Destination, Diff, L), L), L),
+        snapshot(dequeMapValue(dequeMapOffset(Begin, cast(Index, Diff, L), L), L), L), L);
+    if (Front) assign(Index, binary("+", Index, quantity(1, Size, L), Size, L), L);
+    jump(Check, L); label(Commit, L);
+    assign(dequeOwnerMember(Place, "nct_deque_first", L), Allocation, L);
+    assign(dequeOwnerMember(Place, "nct_deque_begin", L), Allocation, L);
+    assign(dequeOwnerMember(Place, "nct_deque_end", L), dequeMapOffset(Allocation,
+        cast(binary("+", Count, quantity(1, Size, L), Size, L), Diff, L), L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_cap", L), dequeMapOffset(Allocation, cast(NewCapacity, Diff, L), L), L);
+    if (Front) dequeSetStartAfterFrontGrowth(Place, L);
+    const auto Release = labelName();
+    branch(cast(OldFirst, "bool", L), Release, Done, L);
+    label(Release, L);
+    unorderedHeapRelease(OldFirst, MapElement,
+        binary("*", OldCapacity, quantity(8, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+  void dequeRemoveSpareBlock(Expression Place, bool Front, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    auto Spare = Front ? dequeOwnerMember(Place, "nct_deque_start", L) : dequeBackSpare(Place, L);
+    const auto Release = labelName(), Done = labelName();
+    branch(binary(">=", std::move(Spare), quantity(2048, Size, L), "bool", L), Release, Done, L);
+    label(Release, L);
+    auto Slot = Front ? dequeOwnerMember(Place, "nct_deque_begin", L)
+        : dequeMapOffset(dequeOwnerMember(Place, "nct_deque_end", L),
+            binary("-", quantity(0, Diff, L), quantity(1, Diff, L), Diff, L), L);
+    unorderedHeapRelease(snapshot(dequeMapValue(Slot, L), L), A.Context.IntTy, quantity(4096, Size, L), L);
+    // SDK updates its map/start only after the selected deallocation returns.
+    dequeMapPop(Place, Front, L);
+    if (Front) assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("-",
+        dequeOwnerMember(Place, "nct_deque_start", L), quantity(1024, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+  void clearDequeStorage(Expression Place, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), quantity(0, Size, L), L);
+    const auto Check = labelName(), Release = labelName(), Adjust = labelName(),
+        Single = labelName(), Multiple = labelName(), Two = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary(">", dequeMapCount(Place, false, L), quantity(2, Size, L), "bool", L), Release, Adjust, L);
+    label(Release, L);
+    unorderedHeapRelease(snapshot(dequeMapValue(dequeOwnerMember(Place, "nct_deque_begin", L), L), L),
+        A.Context.IntTy, quantity(4096, Size, L), L);
+    dequeMapPop(Place, true, L);
+    jump(Check, L); label(Adjust, L);
+    branch(binary("==", dequeMapCount(Place, false, L), quantity(1, Size, L), "bool", L), Single, Multiple, L);
+    label(Single, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), quantity(512, Size, L), L);
+    jump(Done, L); label(Multiple, L);
+    branch(binary("==", dequeMapCount(Place, false, L), quantity(2, Size, L), "bool", L), Two, Done, L);
+    label(Two, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), quantity(1024, Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+
+
+  void initializeDequeElements(Expression Place, Expression Input, Expression Length, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    auto Count = snapshot(std::move(Length), L);
+    const auto Allocate = labelName(), Done = labelName();
+    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Allocate, Done, L);
+    label(Allocate, L);
+    // __append_with_size allocates every block before constructing the first int.
+    // The extra slot keeps end() representable at exact 1024-element boundaries.
+    auto Need = snapshot(binary("+", Count, quantity(1, Size, L), Size, L), L);
+    auto Blocks = snapshot(binary("+", binary("/", Need, quantity(1024, Size, L), Size, L),
+        cast(binary("!=", binary("%", Need, quantity(1024, Size, L), Size, L),
+            quantity(0, Size, L), "bool", L), Size, L), Size, L), L);
+    const auto MapElement = A.Context.getPointerType(A.Context.IntTy);
+    auto Map = snapshot(cast(unorderedHeapAllocate(MapElement,
+        binary("*", Blocks, quantity(8, Size, L), Size, L), L), "ptr:void", L), L);
+    auto BlockIndex = temporary(Size, L);
+    assign(BlockIndex, quantity(0, Size, L), L);
+    const auto CheckBlock = labelName(), MakeBlock = labelName(), Commit = labelName();
+    jump(CheckBlock, L); label(CheckBlock, L);
+    branch(binary("<", BlockIndex, Blocks, "bool", L), MakeBlock, Commit, L);
+    label(MakeBlock, L);
+    auto Block = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy, quantity(4096, Size, L), L), "ptr:void", L), L);
+    assign(dequeMapValue(dequeMapOffset(Map, cast(BlockIndex, Diff, L), L), L), Block, L);
+    assign(BlockIndex, binary("+", BlockIndex, quantity(1, Size, L), Size, L), L);
+    jump(CheckBlock, L); label(Commit, L);
+    assign(dequeOwnerMember(Place, "nct_deque_first", L), Map, L);
+    assign(dequeOwnerMember(Place, "nct_deque_begin", L), Map, L);
+    auto End = snapshot(dequeMapOffset(Map, cast(Blocks, Diff, L), L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_end", L), End, L);
+    assign(dequeOwnerMember(Place, "nct_deque_cap", L), End, L);
+    auto Position = temporary(Size, L);
+    assign(Position, quantity(0, Size, L), L);
+    const auto CheckValue = labelName(), Construct = labelName();
+    jump(CheckValue, L); label(CheckValue, L);
+    branch(binary("<", Position, Count, "bool", L), Construct, Done, L);
+    label(Construct, L);
+    assign(dequeOwnerValue(Place, Position, false, L),
+        index(Input, cast(Position, Diff, L), "int", L), L);
+    assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
+    // Integer construction has no callbacks or exceptional exit. This store
+    // agrees with the SDK transaction at each block boundary and at completion.
+    const auto CommitSize = labelName(), Continue = labelName();
+    auto Boundary = binary("==", binary("%", Position, quantity(1024, Size, L), Size, L),
+        quantity(0, Size, L), "bool", L);
+    const auto Final = labelName();
+    branch(Boundary, CommitSize, Final, L);
+    label(Final, L);
+    branch(binary("==", Position, Count, "bool", L), CommitSize, Continue, L);
+    label(CommitSize, L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), Position, L);
+    jump(Continue, L); label(Continue, L);
+    jump(CheckValue, L); label(Done, L);
+  }
+  void destroyDequeStorage(Expression Place, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    clearDequeStorage(Place, L);
+    auto Current = temporary("ptr:void", L);
+    assign(Current, dequeOwnerMember(Place, "nct_deque_begin", L), L);
+    // The pinned destructor snapshots both map iterators before deallocation.
+    auto End = snapshot(dequeOwnerMember(Place, "nct_deque_end", L), L);
+    const auto Check = labelName(), Release = labelName(), Map = labelName(), FreeMap = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Current, End, "bool", L), Release, Map, L);
+    label(Release, L);
+    unorderedHeapRelease(snapshot(dequeMapValue(Current, L), L), A.Context.IntTy, quantity(4096, Size, L), L);
+    assign(Current, dequeMapOffset(Current, quantity(1, Diff, L), L), L);
+    jump(Check, L); label(Map, L);
+    // __split_buffer's member destructor clears its trivial pointer elements
+    // before releasing the allocation; preserve that callback-visible state.
+    assign(dequeOwnerMember(Place, "nct_deque_end", L), dequeOwnerMember(Place, "nct_deque_begin", L), L);
+    auto First = snapshot(dequeOwnerMember(Place, "nct_deque_first", L), L);
+    branch(cast(First, "bool", L), FreeMap, Done, L);
+    label(FreeMap, L);
+    unorderedHeapRelease(First, A.Context.getPointerType(A.Context.IntTy),
+        binary("*", dequeMapCount(Place, true, L), quantity(8, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+
+
+  Expression dequeIteratorOperation(UtilityDequeOperation Operation, Expression Place,
+      const std::vector<Expression> &Operands, const UtilityDequeIteratorRecord &Info, SourceLocation L) {
+    if (Operation == UtilityDequeOperation::IteratorAssign) {
+      auto Source = dereference(Operands[0], L);
+      assign(dequeIteratorMember(Place, true, L), dequeIteratorMember(Source, true, L), L);
+      assign(dequeIteratorMember(Place, false, L), dequeIteratorMember(Source, false, L), L);
+      return Place;
+    }
+    const auto PointerType = type(A.Context.getPointerType(
+        Info.Const ? A.Context.IntTy.withConst() : A.Context.IntTy), L);
+    if (Operation == UtilityDequeOperation::IteratorDereference)
+      return dereference(cast(dequeIteratorMember(Place, false, L), PointerType, L), L);
+    if (Operation == UtilityDequeOperation::IteratorArrow)
+      return cast(dequeIteratorMember(Place, false, L), PointerType, L);
+    const bool PreInc = Operation == UtilityDequeOperation::IteratorPreIncrement;
+    const bool PostInc = Operation == UtilityDequeOperation::IteratorPostIncrement;
+    const bool PreDec = Operation == UtilityDequeOperation::IteratorPreDecrement;
+    const bool PostDec = Operation == UtilityDequeOperation::IteratorPostDecrement;
+    const auto RecordType = A.Context.getRecordType(Info.Record);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    if (PreInc || PostInc || PreDec || PostDec) {
+      std::optional<Expression> Previous;
+      if (PostInc || PostDec) Previous = dequeIterator(RecordType,
+          snapshot(dequeIteratorMember(Place, true, L), L), snapshot(dequeIteratorMember(Place, false, L), L), L);
+      auto Distance = PreInc || PostInc ? quantity(1, Diff, L)
+          : binary("-", quantity(0, Diff, L), quantity(1, Diff, L), Diff, L);
+      advanceDequeIterator(Place, std::move(Distance), L);
+      return Previous ? *Previous : Place;
+    }
+    const bool Advance = Operation == UtilityDequeOperation::IteratorAdvance;
+    const bool Retreat = Operation == UtilityDequeOperation::IteratorRetreat;
+    const bool Add = Operation == UtilityDequeOperation::IteratorAdd;
+    const bool Subtract = Operation == UtilityDequeOperation::IteratorSubtract;
+    const bool Index = Operation == UtilityDequeOperation::IteratorIndex;
+    if (Advance || Retreat || Add || Subtract || Index) {
+      auto Distance = Retreat || Subtract
+          ? binary("-", quantity(0, Diff, L), Operands[0], Diff, L) : Operands[0];
+      if (Advance || Retreat) {
+        advanceDequeIterator(Place, std::move(Distance), L);
+        return Place;
+      }
+      auto Result = dequeIterator(RecordType, snapshot(dequeIteratorMember(Place, true, L), L),
+          snapshot(dequeIteratorMember(Place, false, L), L), L);
+      advanceDequeIterator(Result, std::move(Distance), L);
+      if (Index) return dereference(cast(dequeIteratorMember(Result, false, L), PointerType, L), L);
+      return Result;
+    }
+    reject(L, "deque iterator", "Unknown checked iterator operation.");
+  }
+
+
+  Expression dequeFreeIteratorOperation(UtilityDequeOperation Operation,
+      const std::vector<Expression> &Operands, QualType ReturnType, SourceLocation L) {
+    if (Operation == UtilityDequeOperation::IteratorReverseAdd) {
+      auto Source = dereference(Operands[1], L);
+      auto Result = dequeIterator(ReturnType, snapshot(dequeIteratorMember(Source, true, L), L),
+          snapshot(dequeIteratorMember(Source, false, L), L), L);
+      advanceDequeIterator(Result, Operands[0], L);
+      return Result;
+    }
+    auto Left = dereference(Operands[0], L), Right = dereference(Operands[1], L);
+    if (Operation == UtilityDequeOperation::IteratorEqual || Operation == UtilityDequeOperation::IteratorNotEqual)
+      return binary(Operation == UtilityDequeOperation::IteratorEqual ? "==" : "!=",
+          dequeIteratorMember(Left, false, L), dequeIteratorMember(Right, false, L), "bool", L);
+    if (Operation == UtilityDequeOperation::IteratorDifference) return dequeIteratorDifference(Left, Right, L);
+    if (Operation == UtilityDequeOperation::IteratorLess) return dequeIteratorLess(Left, Right, L);
+    if (Operation == UtilityDequeOperation::IteratorGreater) return dequeIteratorLess(Right, Left, L);
+    if (Operation == UtilityDequeOperation::IteratorLessEqual || Operation == UtilityDequeOperation::IteratorGreaterEqual) {
+      auto Less = Operation == UtilityDequeOperation::IteratorLessEqual
+          ? dequeIteratorLess(Right, Left, L) : dequeIteratorLess(Left, Right, L);
+      return binary("==", std::move(Less), quantity(0, "bool", L), "bool", L);
+    }
+    reject(L, "deque iterator", "Unknown checked free iterator operation.");
+  }
+
+
+  Expression utilityDequeOperation(const CallExpr *Call) {
+    const auto L = Call->getExprLoc();
+    const auto Proof = approvedUtilityDequeCall(A.S, A.Sources, Call, A.Context);
+    if (!Proof || !Proof->Function)
+      reject(L, "deque operation", "The selected SDK body, layout and operands are required.");
+    const auto Operation = Proof->Operation;
+    std::optional<Expression> Receiver;
+    if (Proof->Receiver) {
+      const auto *Object = Proof->Receiver;
+      Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+    }
+    std::vector<Expression> Operands;
+    for (unsigned I = 0; I != Proof->Function->getNumParams(); ++I)
+      Operands.push_back(snapshot(argument(Call->getArg(I + Proof->ArgumentOffset),
+          Proof->Function->getParamDecl(I)->getType()), L));
+    if (!Receiver) return dequeFreeIteratorOperation(Operation, Operands, Call->getType(), L);
+    auto Place = dereference(*Receiver, L);
+    const auto *Method = dyn_cast<CXXMethodDecl>(Proof->Function);
+    if (!Method) reject(L, "deque method", "A checked SDK method is required.");
+    if (const auto Iterator = approvedUtilityDequeIteratorRecord(A.S, A.Sources, Method->getParent(), A.Context))
+      return dequeIteratorOperation(Operation, Place, Operands, *Iterator, L);
+    const auto Owner = approvedUtilityDequeRecord(A.S, A.Sources, Method->getParent(), A.Context);
+    if (!Owner) reject(L, "deque owner", "The selected integer owner layout is required.");
+    const auto Size = type(A.Context.getSizeType(), L);
+    if (Operation == UtilityDequeOperation::Size) return dequeOwnerMember(Place, "nct_deque_size", L);
+    if (Operation == UtilityDequeOperation::Empty) return binary("==", dequeOwnerMember(Place, "nct_deque_size", L),
+        quantity(0, Size, L), "bool", L);
+    if (Operation == UtilityDequeOperation::Begin || Operation == UtilityDequeOperation::End)
+      return dequeOwnerIterator(Place, Method->getReturnType(), Operation == UtilityDequeOperation::End, L);
+    if (Operation == UtilityDequeOperation::Front || Operation == UtilityDequeOperation::Back ||
+        Operation == UtilityDequeOperation::Index) {
+      auto Position = Operation == UtilityDequeOperation::Index ? Operands[0]
+          : Operation == UtilityDequeOperation::Front ? quantity(0, Size, L)
+          : binary("-", dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L);
+      return dequeOwnerValue(Place, Position, Method->isConst(), L);
+    }
+    if (Operation == UtilityDequeOperation::Clear) {
+      clearDequeStorage(Place, L);
+      return Expression{};
+    }
+    const bool PushFront = Operation == UtilityDequeOperation::PushFront;
+    const bool PushBack = Operation == UtilityDequeOperation::PushBack;
+    if (PushFront || PushBack) {
+      const auto Grow = labelName(), Store = labelName();
+      auto Spare = PushFront ? dequeOwnerMember(Place, "nct_deque_start", L) : dequeBackSpare(Place, L);
+      branch(binary("==", std::move(Spare), quantity(0, Size, L), "bool", L), Grow, Store, L);
+      label(Grow, L);
+      dequeGrowOneBlock(Place, PushFront, L);
+      jump(Store, L); label(Store, L);
+      auto Position = PushFront ? binary("-", quantity(0, Size, L), quantity(1, Size, L), Size, L)
+          : dequeOwnerMember(Place, "nct_deque_size", L);
+      // Keep the argument as a reference until capacity allocation has returned.
+      assign(dequeOwnerValue(Place, Position, false, L), dereference(Operands[0], L), L);
+      if (PushFront) assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("-",
+          dequeOwnerMember(Place, "nct_deque_start", L), quantity(1, Size, L), Size, L), L);
+      assign(dequeOwnerMember(Place, "nct_deque_size", L), binary("+",
+          dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L), L);
+      return Expression{};
+    }
+    if (Operation == UtilityDequeOperation::PopFront || Operation == UtilityDequeOperation::PopBack) {
+      const bool Front = Operation == UtilityDequeOperation::PopFront;
+      assign(dequeOwnerMember(Place, "nct_deque_size", L), binary("-",
+          dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L), L);
+      if (Front) assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("+",
+          dequeOwnerMember(Place, "nct_deque_start", L), quantity(1, Size, L), Size, L), L);
+      dequeRemoveSpareBlock(Place, Front, L);
+      return Expression{};
+    }
+    reject(L, "deque operation", "Unknown checked owner operation.");
+  }
+
   Expression valarrayMember(Expression Place, const char *Name, SourceLocation L) {
     return Expression{{"kind", "member"}, {"type", "ptr:int"}, {"name", Name},
         {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
@@ -26626,6 +27200,7 @@ class FunctionLowering {
     auto L = Call->getExprLoc();
     if (Operation == UtilityOperation::ForwardList) return utilityForwardListOperation(Call);
     if (Operation == UtilityOperation::List) return utilityListOperation(Call);
+    if (Operation == UtilityOperation::Deque) return utilityDequeOperation(Call);
     if (Operation == UtilityOperation::ValarrayScalar) return utilityValarrayScalarOperation(Call);
     if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
         Operation == UtilityOperation::BitsetTest || Operation == UtilityOperation::BitsetSet ||
@@ -36015,6 +36590,36 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
 
+
+    if (const auto Kind = approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) {
+      std::vector<Expression> Operands;
+      for (unsigned I = 0; I != C->getNumArgs(); ++I)
+        Operands.push_back(snapshot(argument(C->getArg(I), C->getConstructor()->getParamDecl(I)->getType()), L));
+      const auto *Record = T->getAsCXXRecordDecl();
+      if (approvedUtilityDequeIteratorRecord(A.S, A.Sources, Record, A.Context)) {
+        if (*Kind == UtilityDequeConstruction::IteratorDefault) {
+          initializeZero(dequeIteratorMember(Place, true, L), A.Context.VoidPtrTy, L);
+          initializeZero(dequeIteratorMember(Place, false, L), A.Context.VoidPtrTy, L);
+        } else {
+          auto Source = C->getConstructor()->getParamDecl(0)->getType()->isReferenceType()
+              ? dereference(Operands[0], L) : Operands[0];
+          assign(dequeIteratorMember(Place, true, L), dequeIteratorMember(Source, true, L), L);
+          assign(dequeIteratorMember(Place, false, L), dequeIteratorMember(Source, false, L), L);
+        }
+        return;
+      }
+      if (!approvedUtilityDequeRecord(A.S, A.Sources, Record, A.Context))
+        reject(L, "deque construction", "The checked integer owner layout is required.");
+      initializeDequeStorage(Place, L);
+      if (*Kind != UtilityDequeConstruction::InitializerList) return;
+      const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
+          C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!List) reject(L, "deque initializer", "The pinned integer initializer-list carrier is required.");
+      initializeDequeElements(Place, snapshot(fieldStorage(Operands[0], List->Begin, L), L),
+          snapshot(fieldStorage(Operands[0], List->Size, L), L), L);
+      return;
+    }
+
     if (auto Kind = approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedUtilityValarrayRecord(A.S, A.Sources,
           T->getAsCXXRecordDecl(), A.Context);
@@ -37556,6 +38161,8 @@ public:
         approvedUtilityForwardListDestructor(A.S, A.Sources, D, A.Context);
     const bool ListDestructor =
         approvedUtilityListDestructor(A.S, A.Sources, D, A.Context);
+    const bool DequeDestructor =
+        approvedUtilityDequeDestructor(A.S, A.Sources, D, A.Context);
     const bool ValarrayDestructor =
         approvedUtilityValarrayDestructor(A.S, A.Sources, D, A.Context);
     const bool VectorDestructor =
@@ -37578,6 +38185,9 @@ public:
     if (approvedUtilityListRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !ListDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "list destructor",
              "The selected pinned SDK destruction chain is required.");
+    if (approvedUtilityDequeRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !DequeDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "deque destructor",
+             "The selected pinned SDK destruction chain is required.");
     if (approvedUtilityValarrayRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !ValarrayDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "valarray destructor",
              "The selected pinned SDK destruction chain is required.");
@@ -37596,7 +38206,7 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered map destructor",
              "The authenticated SDK storage destructor chain is required.");
     if (D && NotFnDestructor == A.VerifiedNotFnDestructions.end() &&
-        !ForwardListDestructor && !ListDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
+        !ForwardListDestructor && !ListDestructor && !DequeDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
         !UnorderedMapDestructor && !UnorderedNodeDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
@@ -37744,6 +38354,8 @@ public:
         destroyForwardListStorage(dereference(*ThisPointer, L), Owner->Node, L);
       } else if (auto Owner = approvedUtilityListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyListStorage(dereference(*ThisPointer, L), Owner->Node, L);
+      } else if (auto Owner = approvedUtilityDequeRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
+        destroyDequeStorage(dereference(*ThisPointer, L), L);
       } else if (approvedUtilityValarrayRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyValarrayStorage(dereference(*ThisPointer, L), L);
       } else if (auto Vector = approvedUtilityVectorRecord(

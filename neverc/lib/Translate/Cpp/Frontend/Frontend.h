@@ -1299,6 +1299,7 @@ enum class UtilityOperation {
   BitsetCount, BitsetAny, BitsetTest, BitsetSet, BitsetReset, BitsetFlip,
   ForwardList,
   List,
+  Deque,
   ValarrayScalar,
   VectorSize,
   VectorGetAllocator,
@@ -3775,6 +3776,52 @@ std::optional<UtilityListCall> approvedUtilityListCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
 
+
+struct UtilityDequeRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  const clang::CXXRecordDecl *Map = nullptr;
+  const clang::FieldDecl *First = nullptr;
+  const clang::FieldDecl *Begin = nullptr;
+  const clang::FieldDecl *End = nullptr;
+  const clang::FieldDecl *Cap = nullptr;
+  const clang::FieldDecl *Start = nullptr;
+  const clang::FieldDecl *Size = nullptr;
+};
+struct UtilityDequeIteratorRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  const clang::FieldDecl *MapPointer = nullptr;
+  const clang::FieldDecl *Pointer = nullptr;
+  bool Const = false;
+};
+std::optional<UtilityDequeRecord> approvedUtilityDequeRecord(const State &S,
+    const clang::SourceManager &SM, const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<UtilityDequeIteratorRecord> approvedUtilityDequeIteratorRecord(const State &S,
+    const clang::SourceManager &SM, const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+enum class UtilityDequeConstruction { Default, Allocator, InitializerList,
+  IteratorDefault, IteratorCopy, IteratorConstConversion };
+enum class UtilityDequeOperation { Empty, Size, Begin, End, Front, Back, Index,
+  PushFront, PushBack, PopFront, PopBack, Clear, IteratorDereference, IteratorArrow,
+  IteratorPreIncrement, IteratorPostIncrement, IteratorPreDecrement, IteratorPostDecrement,
+  IteratorAssign, IteratorAdvance, IteratorRetreat, IteratorAdd, IteratorSubtract,
+  IteratorIndex, IteratorEqual, IteratorNotEqual, IteratorLess, IteratorGreater,
+  IteratorLessEqual, IteratorGreaterEqual, IteratorDifference, IteratorReverseAdd };
+
+struct UtilityDequeCall {
+  UtilityDequeOperation Operation;
+  const clang::Expr *Receiver = nullptr;
+  const clang::FunctionDecl *Function = nullptr;
+  unsigned ArgumentOffset = 0;
+};
+std::optional<UtilityDequeConstruction> approvedUtilityDequeConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+bool approvedUtilityDequeDestructor(const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
+std::optional<UtilityDequeCall> approvedUtilityDequeCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+
 struct UtilityValarrayRecord {
   const clang::CXXRecordDecl *Record = nullptr;
   const clang::FieldDecl *Begin = nullptr;
@@ -4387,6 +4434,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityBitsets;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityForwardLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityLists;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityDeques;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityValarrays;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMapIterators;
@@ -4499,6 +4547,7 @@ public:
   bool requireUtilityBitset(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityForwardList(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityList(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
+  bool requireUtilityDeque(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityValarray(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
