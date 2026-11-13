@@ -49809,6 +49809,75 @@ bool dequePinnedMemoryTransfer(const State &S, const SourceManager &SM,
   return true;
 }
 
+
+bool dequePinnedRangeQuery(const State &S, const SourceManager &SM,
+    const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!F || F->isInvalidDecl() || !F->getIdentifier() || !F->getBuiltinID() ||
+      F->getName() != "__builtin_constant_p" || F->hasBody() || Call->getNumArgs() != 1 ||
+      !F->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      !Context.hasSameType(F->getReturnType(),Context.IntTy)) return false;
+  const auto Site = S.sdkFile(SM,Call->getExprLoc());
+  const auto Line = SM.getExpansionLineNumber(Call->getExprLoc());
+  if (!Site || Site->Root != "libcxx" || Call->getExprLoc().isMacroID()) return false;
+  const bool ValidRange = Site->Path == "__utility/is_valid_range.h" && Line == 29;
+  const bool PointerRange = Site->Path == "__utility/is_pointer_in_range.h" && Line == 43;
+  if (!ValidRange && !PointerRange) return false;
+  const char *Header = ValidRange ? "__utility/is_valid_range.h" : "__utility/is_pointer_in_range.h";
+  const auto *Comparison = dyn_cast<BinaryOperator>(Call->getArg(0)->IgnoreParenImpCasts());
+  if (!Comparison || !Context.hasSameType(Comparison->getType(),Context.BoolTy)) return false;
+  auto Parameter = [](const Expr *Value) -> const ParmVarDecl * {
+    const auto *Reference = Value ? dyn_cast<DeclRefExpr>(Value->IgnoreParenImpCasts()) : nullptr;
+    return Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
+  };
+  const ParmVarDecl *First = nullptr, *Last = nullptr, *Probe = nullptr;
+  if (ValidRange) {
+    if (Comparison->getOpcode() != BO_LE) return false;
+    First = Parameter(Comparison->getLHS());
+    Last = Parameter(Comparison->getRHS());
+  } else {
+    if (Comparison->getOpcode() != BO_LAnd) return false;
+    const auto *Lower = dyn_cast<BinaryOperator>(Comparison->getLHS()->IgnoreParenImpCasts());
+    const auto *Upper = dyn_cast<BinaryOperator>(Comparison->getRHS()->IgnoreParenImpCasts());
+    if (!Lower || !Upper || Lower->getOpcode() != BO_LE || Upper->getOpcode() != BO_LT) return false;
+    First = Parameter(Lower->getLHS());
+    Probe = Parameter(Lower->getRHS());
+    Last = Parameter(Upper->getRHS());
+    if (!Probe || Parameter(Upper->getLHS()) != Probe) return false;
+  }
+  const auto *Owner = First ? dyn_cast<FunctionDecl>(First->getDeclContext()) : nullptr;
+  if (!Owner || !Last || Last->getDeclContext() != Owner ||
+      !Owner->getIdentifier() || !dequeStd(Owner->getDeclContext()) ||
+      Owner->getName() != (ValidRange ? "__is_valid_range" : "__is_pointer_in_range") ||
+      Owner->getNumParams() != (ValidRange ? 2u : 3u) ||
+      Owner->getParamDecl(0) != First || Owner->getParamDecl(1) != Last ||
+      (PointerRange && (Probe->getDeclContext() != Owner || Owner->getParamDecl(2) != Probe)) ||
+      Owner->getTemplateSpecializationKind() != TSK_ImplicitInstantiation || !Owner->hasBody() ||
+      !Context.hasSameType(Owner->getReturnType(),Context.BoolTy) ||
+      !First->getType()->isPointerType() || !Context.hasSameType(First->getType(),Last->getType()) ||
+      (PointerRange && !Context.hasSameType(First->getType(),Probe->getType()))) return false;
+  const auto Element = First->getType()->getPointeeType();
+  if (!Element.isConstQualified() || Element.isVolatileQualified() ||
+      (!Context.hasSameUnqualifiedType(Element,Context.IntTy) &&
+       !Context.hasSameUnqualifiedType(Element,Context.getPointerType(Context.IntTy)))) return false;
+  for (const auto *D : Owner->redecls())
+    if (!dequePinned(S,SM,D,Header)) return false;
+  const auto *Pattern = Owner->getTemplateInstantiationPattern();
+  if (!Pattern) return false;
+  for (const auto *D : Pattern->redecls())
+    if (!dequePinned(S,SM,D,Header)) return false;
+  for (const auto *D : F->redecls()) {
+    if (dequeDependencyDeclaration(S,SM,D)) continue;
+    if (!D->isImplicit() || D->hasBody() ||
+        !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+    if (D->getLocation().isValid()) {
+      const auto File = S.sdkFile(SM,D->getLocation());
+      if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+    }
+  }
+  return true;
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context) {
   std::set<const FunctionDecl *> Seen;
@@ -49903,6 +49972,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!dequeScalarDestruction(S, SM, Call, Context) &&
           !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
+          !dequePinnedRangeQuery(S, SM, Call, Context) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
