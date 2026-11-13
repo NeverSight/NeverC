@@ -49279,7 +49279,12 @@ bool dequeTemplateDeclarationOrigin(const State &S, const SourceManager &SM,
   if (Name == "deque" && Header == "deque") {
     ForwardHeader = "__fwd/deque.h"; Line = 22;
   } else if (Name == "allocator" && Header == "__memory/allocator.h") {
-    ForwardHeader = "__fwd/memory.h"; Line = 21;
+    const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+    if (File && File->Path == "__memory/allocator_traits.h") {
+      ForwardHeader = "__memory/allocator_traits.h"; Line = 378;
+    } else {
+      ForwardHeader = "__fwd/memory.h"; Line = 21;
+    }
   } else return false;
   const auto *R = dyn_cast_or_null<CXXRecordDecl>(D);
   if (const auto *T = dyn_cast_or_null<ClassTemplateDecl>(D)) R = T->getTemplatedDecl();
