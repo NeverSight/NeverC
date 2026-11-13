@@ -17330,3 +17330,42 @@ Additional checks satisfy 78 member-bind expectations and 42 translations produc
 Qualified implementation `813a7045ed8b` passes 6 source syntax checks, all 750 expectations across 6 ABIs, 144 native reference executions, 221 selected GTests, 182 translated O0/O2 executions and 832 frontend requests. The unchanged original 606-request regression and its 450-request subset satisfy every expectation. The original 64-level, 200,000-node and 60-second source limits remain. Adapter assignment, address escape, retargeted values, conditional receiver provenance and further STL coverage remain unfinished. NeverC's public source language remains C23-only.
 
 [Placeholder call cases](../../ci/cpp-bind-placeholder-cases.json)
+
+## R19 checked allocator and bitset operations
+
+The private C++17 translation profile admits the pinned
+`std::scoped_allocator_adaptor<std::allocator<int>>` specialization with an empty
+inner allocator pack. Its default construction and integer `allocate`,
+`deallocate`, `construct` and `destroy` operations require the exact SDK storage
+base, outer allocator layout and selected bodies. `allocate` does not accept a
+hint. `construct` accepts zero or one directly admitted scalar argument. Other
+allocator/element types, nonempty inner packs and copy/converting construction
+remain outside this closed surface.
+
+Nonempty `std::bitset<N>` objects use the authenticated native sequence of
+64-bit storage words, with the existing record and array limits. Default and
+unsigned-long-long construction initialize that storage directly; trivial copy
+construction copies the complete carrier. `count()` counts set bits in each
+word, and `any()` reduces words with the existing typed bitwise-OR operation and
+converts the result to Boolean. No logical-OR expression is added to the IR
+protocol. `test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)` require an
+in-range integer-literal position; the omitted `set` value requires the exact
+pinned SDK default argument. Receiver and admitted value-argument effects retain
+their existing evaluation and cleanup rules. Empty bitsets, proxy access,
+whole-object mutation overloads, shifts, string conversion and arbitrary position
+expressions are not part of this increment.
+
+SDK template, specialization and function redeclarations remain authenticated.
+The used body graph rejects source-owned macro spelling, replaced declarations
+and indirect or unapproved calls. Compiler-created implicit popcount declarations
+are admitted only for matching builtin IDs at the pinned `__bit/popcount.h` call
+sites; explicit user redeclarations and source macros remain rejected. Existing
+expansion/node/depth budgets and the C23-only public source-language contract are
+unchanged.
+
+The six permanent regressions include the exact native-reference integer
+allocator program, a 70-bit cross-word program and four source-origin guards.
+Both accepted programs compile and execute as generated C23 at O0 and O2. Native
+reference results, six-target source checks and generated C23 executions are
+separate evidence; the native oracle alone is not a translation-support claim.
+The remaining STL surfaces still require implementation and execution evidence.

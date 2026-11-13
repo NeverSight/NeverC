@@ -420,3 +420,21 @@ Additional checks satisfy 78 member-bind expectations and 42 translations produc
 Qualified implementation `813a7045ed8b` passes 6 source syntax checks, all 750 expectations across 6 ABIs, 144 native reference executions, 221 selected GTests, 182 translated O0/O2 executions and 832 frontend requests. The unchanged original 606-request regression and its 450-request subset satisfy every expectation. The original 64-level, 200,000-node and 60-second source limits remain. Adapter assignment, address escape, retargeted values, conditional receiver provenance and further STL coverage remain unfinished. NeverC's public source language remains C23-only.
 
 [Placeholder call cases](../../ci/cpp-bind-placeholder-cases.json)
+
+## R19 checked allocator and bitset operations
+
+| Private `cpp-core-v2` surface | Admitted operations | Boundary |
+| --- | --- | --- |
+| `std::scoped_allocator_adaptor<std::allocator<int>>` | Default construction, allocation without a hint, deallocation, zero- or one-value integer construction, and integer destruction. | The outer allocator is the pinned default integer allocator and the inner allocator pack is empty. Copying, converting constructors and other element or allocator types require further work. |
+| `std::bitset<N>` | Default, unsigned-long-long and trivial copy construction; `count()`, `any()`, `test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)`. | Nonempty pinned 64-bit-word layouts within existing array limits; position arguments are in-range integer literals. Other overloads, proxies and general position expressions require further work. |
+
+Every selected declaration and used implementation body retains SDK-origin and
+source-owned macro/redeclaration checks. The allocator uses the existing checked
+heap lowering; bitset operations use typed word storage and the existing IR
+operations. Neither surface introduces a runtime libc++ dependency.
+
+Six permanent GTests cover two native-matched runtime programs at O0 and O2 and
+four source-origin rejection programs. The bitset runtime case exercises a
+70-bit object across two words. Source admission and rejection checks run for
+the six existing 64-bit target descriptors. This coverage does not establish
+complete STL support. See the [detailed contract](cpp-core-v2.md#r19-checked-allocator-and-bitset-operations).
