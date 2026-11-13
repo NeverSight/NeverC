@@ -47330,6 +47330,20 @@ std::optional<UtilityValarrayRecord> approvedUtilityValarrayRecord(
   if (!Definition || !valarrayPinned(S, SM, Definition) ||
       Definition->getNumBases() || !Definition->isStandardLayout() ||
       Definition->isPolymorphic()) return std::nullopt;
+  // A user macro can rename an SDK method token, making that declaration
+  // appear source-owned to the ordinary method path. Such a class is no longer
+  // the pinned carrier, even when its two data fields retain the same layout.
+  unsigned Declarations = 0;
+  for (const auto *D : Definition->decls()) {
+    if (++Declarations > 512 || !valarrayPinned(S, SM, D)) return std::nullopt;
+    if (const auto *M = dyn_cast<CXXMethodDecl>(D))
+      for (const auto *Redeclaration : M->redecls())
+        if (!valarrayPinned(S, SM, Redeclaration)) return std::nullopt;
+    if (const auto *T = dyn_cast<FunctionTemplateDecl>(D))
+      for (const auto *Redeclaration : T->redecls())
+        if (!valarrayPinned(S, SM, Redeclaration) ||
+            !valarrayPinned(S, SM, Redeclaration->getTemplatedDecl())) return std::nullopt;
+  }
   std::vector<const FieldDecl *> Fields;
   for (const auto *F : Definition->fields()) {
     if (!valarrayPinned(S, SM, F) || F->isBitField() ||
