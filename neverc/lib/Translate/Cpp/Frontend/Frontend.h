@@ -1297,6 +1297,7 @@ enum class UtilityOperation {
   StringFindLastNotOf,
   StringViewSize,
   BitsetCount, BitsetAny, BitsetTest, BitsetSet, BitsetReset, BitsetFlip,
+  ForwardList,
   ValarrayScalar,
   VectorSize,
   VectorGetAllocator,
@@ -3676,6 +3677,54 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
     const clang::CallExpr *Call, const clang::ASTContext &Context);
 
 
+
+struct UtilityForwardListNodeRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  const clang::CXXRecordDecl *BeginNode = nullptr;
+  const clang::FieldDecl *Next = nullptr;
+  const clang::FieldDecl *Value = nullptr;
+};
+struct UtilityForwardListRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  UtilityForwardListNodeRecord Node;
+};
+struct UtilityForwardListIteratorRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  const clang::FieldDecl *Pointer = nullptr;
+  UtilityForwardListNodeRecord Node;
+  bool Const = false;
+};
+std::optional<UtilityForwardListRecord> approvedUtilityForwardListRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<UtilityForwardListIteratorRecord> approvedUtilityForwardListIteratorRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+enum class UtilityForwardListConstruction {
+  Default, Allocator, InitializerList, IteratorDefault, IteratorCopy, IteratorConstConversion
+};
+enum class UtilityForwardListOperation {
+  Empty, Begin, End, BeforeBegin, Front, PushFront, PopFront, InsertAfter, EraseAfter, Clear,
+  IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement,
+  IteratorEqual, IteratorNotEqual, IteratorAssign
+};
+
+struct UtilityForwardListCall {
+  UtilityForwardListOperation Operation;
+  const clang::Expr *Receiver = nullptr;
+  const clang::FunctionDecl *Function = nullptr;
+  unsigned ArgumentOffset = 0;
+};
+std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+bool approvedUtilityForwardListDestructor(const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
+std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+
 struct UtilityValarrayRecord {
   const clang::CXXRecordDecl *Record = nullptr;
   const clang::FieldDecl *Begin = nullptr;
@@ -4286,6 +4335,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStringViews;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStrings;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityBitsets;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityForwardLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityValarrays;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMapIterators;
@@ -4396,6 +4446,7 @@ public:
   bool requireUnorderedNode(const clang::CXXRecordDecl *Record,
       clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityBitset(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
+  bool requireUtilityForwardList(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityValarray(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,

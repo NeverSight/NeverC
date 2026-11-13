@@ -26204,6 +26204,156 @@ class FunctionLowering {
   }
 
 
+
+  Expression forwardListMember(Expression Place, bool Iterator, SourceLocation L) {
+    return Expression{{"kind", "member"}, {"type", "ptr:void"},
+        {"name", Iterator ? "nct_forward_iterator" : "nct_forward_next"},
+        {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+  Expression forwardListNext(Expression Node, SourceLocation L) {
+    return unorderedNodeField(std::move(Node), A.Context.VoidPtrTy, 0, L);
+  }
+  Expression forwardListValue(Expression Node, bool Const, SourceLocation L) {
+    auto Bytes = binary("+", cast(std::move(Node), "ptr:u8", L),
+        quantity(8, "u64", L), "ptr:u8", L);
+    return dereference(cast(cast(std::move(Bytes), "ptr:void", L),
+        Const ? "cptr:int" : "ptr:int", L), L);
+  }
+  Expression forwardListIterator(QualType T, Expression Node, SourceLocation L) {
+    const auto Info = approvedUtilityForwardListIteratorRecord(A.S, A.Sources,
+        T->getAsCXXRecordDecl(), A.Context);
+    if (!Info) reject(L, "forward-list iterator", "The selected pointer carrier is required.");
+    auto Result = temporary(type(T, L), L);
+    assign(forwardListMember(Result, true, L), std::move(Node), L);
+    return Result;
+  }
+  Expression forwardListCreateNode(Expression ValueReference, Expression Next,
+      const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
+        quantity(16, "u64", L), L), "ptr:void", L), L);
+    assign(forwardListNext(Node, L), std::move(Next), L);
+    // The SDK constructs the int after allocation, so an aliased reference
+    // observes any source-defined allocation callback before this load.
+    assign(forwardListValue(Node, false, L), dereference(ValueReference, L), L);
+    return Node;
+  }
+  void forwardListReleaseNode(Expression Node, const UtilityForwardListNodeRecord &Info,
+                              SourceLocation L) {
+    unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
+        quantity(16, "u64", L), L);
+  }
+  void destroyForwardListStorage(Expression Place, const UtilityForwardListNodeRecord &Info,
+                                  SourceLocation L) {
+    auto Current = temporary("ptr:void", L);
+    assign(Current, forwardListMember(Place, false, L), L);
+    const auto Check = labelName(), Release = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(cast(Current, "bool", L), Release, Done, L);
+    label(Release, L);
+    auto Next = snapshot(forwardListNext(Current, L), L);
+    forwardListReleaseNode(Current, Info, L);
+    assign(Current, Next, L);
+    jump(Check, L); label(Done, L);
+    // Unlike pop_front/erase_after, SDK clear leaves its head unchanged until
+    // the entire deletion loop has finished.
+    initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
+  }
+  Expression utilityForwardListOperation(const CallExpr *Call) {
+    const auto L = Call->getExprLoc();
+    const auto Proof = approvedUtilityForwardListCall(A.S, A.Sources, Call, A.Context);
+    if (!Proof || !Proof->Function)
+      reject(L, "forward-list operation", "The selected SDK body, layout and operands are required.");
+    const auto Operation = Proof->Operation;
+    std::optional<Expression> Receiver;
+    if (Proof->Receiver) {
+      const auto *Object = Proof->Receiver;
+      Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+    }
+    std::vector<Expression> Operands;
+    for (unsigned I = 0; I != Proof->Function->getNumParams(); ++I)
+      Operands.push_back(snapshot(argument(Call->getArg(I + Proof->ArgumentOffset),
+          Proof->Function->getParamDecl(I)->getType()), L));
+    if (Operation == UtilityForwardListOperation::IteratorEqual ||
+        Operation == UtilityForwardListOperation::IteratorNotEqual) {
+      auto Left = forwardListMember(dereference(Operands[0], L), true, L);
+      auto Right = forwardListMember(dereference(Operands[1], L), true, L);
+      return binary(Operation == UtilityForwardListOperation::IteratorEqual ? "==" : "!=",
+          std::move(Left), std::move(Right), "bool", L);
+    }
+    if (!Receiver) reject(L, "forward-list receiver", "A checked receiver is required.");
+    auto Place = dereference(*Receiver, L);
+    const auto *Method = dyn_cast<CXXMethodDecl>(Proof->Function);
+    if (!Method) reject(L, "forward-list method", "A checked SDK method is required.");
+    if (const auto Iterator = approvedUtilityForwardListIteratorRecord(
+            A.S, A.Sources, Method->getParent(), A.Context)) {
+      if (Operation == UtilityForwardListOperation::IteratorAssign) {
+        assign(forwardListMember(Place, true, L),
+            forwardListMember(dereference(Operands[0], L), true, L), L);
+        return Place;
+      }
+      auto Node = snapshot(forwardListMember(Place, true, L), L);
+      if (Operation == UtilityForwardListOperation::IteratorDereference)
+        return forwardListValue(Node, Iterator->Const, L);
+      if (Operation == UtilityForwardListOperation::IteratorArrow)
+        return cast(address(forwardListValue(Node, Iterator->Const, L), A.Context.IntTy, L),
+            Iterator->Const ? "cptr:int" : "ptr:int", L);
+      if (Operation == UtilityForwardListOperation::IteratorPreIncrement ||
+          Operation == UtilityForwardListOperation::IteratorPostIncrement) {
+        std::optional<Expression> Previous;
+        if (Operation == UtilityForwardListOperation::IteratorPostIncrement)
+          Previous = forwardListIterator(A.Context.getRecordType(Iterator->Record), Node, L);
+        assign(forwardListMember(Place, true, L), snapshot(forwardListNext(Node, L), L), L);
+        return Previous ? *Previous : Place;
+      }
+      reject(L, "forward-list iterator", "Unknown checked iterator operation.");
+    }
+    const auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, Method->getParent(), A.Context);
+    if (!Owner) reject(L, "forward-list owner", "The selected integer owner layout is required.");
+    if (Operation == UtilityForwardListOperation::Empty)
+      return binary("==", forwardListMember(Place, false, L), A.zero(A.Context.VoidPtrTy, L), "bool", L);
+    if (Operation == UtilityForwardListOperation::Begin ||
+        Operation == UtilityForwardListOperation::End ||
+        Operation == UtilityForwardListOperation::BeforeBegin) {
+      auto Node = Operation == UtilityForwardListOperation::End ? A.zero(A.Context.VoidPtrTy, L)
+          : Operation == UtilityForwardListOperation::BeforeBegin
+              ? cast(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), "ptr:void", L)
+              : snapshot(forwardListMember(Place, false, L), L);
+      return forwardListIterator(Method->getReturnType(), std::move(Node), L);
+    }
+    if (Operation == UtilityForwardListOperation::Front)
+      return forwardListValue(snapshot(forwardListMember(Place, false, L), L), Method->isConst(), L);
+    if (Operation == UtilityForwardListOperation::Clear) {
+      destroyForwardListStorage(Place, Owner->Node, L);
+      return A.zero(Call->getType(), L);
+    }
+    const bool Insert = Operation == UtilityForwardListOperation::InsertAfter;
+    const bool Erase = Operation == UtilityForwardListOperation::EraseAfter;
+    if (Insert || Erase || Operation == UtilityForwardListOperation::PushFront ||
+        Operation == UtilityForwardListOperation::PopFront) {
+      // Position arguments are passed by value. All argument effects complete
+      // before any node link or element is read by the method body.
+      auto Parent = Insert || Erase
+          ? snapshot(forwardListMember(Operands[0], true, L), L)
+          : snapshot(cast(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), "ptr:void", L), L);
+      if (Insert || Operation == UtilityForwardListOperation::PushFront) {
+        auto Next = snapshot(forwardListNext(Parent, L), L);
+        auto Node = forwardListCreateNode(Operands[Insert ? 1 : 0], Next, Owner->Node, L);
+        assign(forwardListNext(Parent, L), Node, L);
+        return Insert ? forwardListIterator(Method->getReturnType(),
+            snapshot(forwardListNext(Parent, L), L), L) : A.zero(Call->getType(), L);
+      }
+      auto Node = snapshot(forwardListNext(Parent, L), L);
+      assign(forwardListNext(Parent, L), snapshot(forwardListNext(Node, L), L), L);
+      forwardListReleaseNode(Node, Owner->Node, L);
+      // erase_after reloads the link after deletion, including observable
+      // source-defined delete callbacks; pop_front has a void result.
+      return Erase ? forwardListIterator(Method->getReturnType(),
+          snapshot(forwardListNext(Parent, L), L), L) : A.zero(Call->getType(), L);
+    }
+    reject(L, "forward-list operation", "Unknown checked owner operation.");
+  }
+
   Expression valarrayMember(Expression Place, const char *Name, SourceLocation L) {
     return Expression{{"kind", "member"}, {"type", "ptr:int"}, {"name", Name},
         {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
@@ -26302,6 +26452,7 @@ class FunctionLowering {
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
+    if (Operation == UtilityOperation::ForwardList) return utilityForwardListOperation(Call);
     if (Operation == UtilityOperation::ValarrayScalar) return utilityValarrayScalarOperation(Call);
     if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
         Operation == UtilityOperation::BitsetTest || Operation == UtilityOperation::BitsetSet ||
@@ -35591,6 +35742,65 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
 
+
+    if (const auto Kind = approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context)) {
+      std::vector<Expression> Operands;
+      for (unsigned I = 0; I != C->getNumArgs(); ++I)
+        Operands.push_back(snapshot(argument(C->getArg(I), C->getConstructor()->getParamDecl(I)->getType()), L));
+      const auto *Record = T->getAsCXXRecordDecl();
+      if (approvedUtilityForwardListIteratorRecord(A.S, A.Sources, Record, A.Context)) {
+        auto Target = forwardListMember(Place, true, L);
+        if (*Kind == UtilityForwardListConstruction::IteratorDefault)
+          initializeZero(Target, A.Context.VoidPtrTy, L);
+        else {
+          auto Source = C->getConstructor()->getParamDecl(0)->getType()->isReferenceType()
+              ? dereference(Operands[0], L) : Operands[0];
+          assign(Target, forwardListMember(Source, true, L), L);
+        }
+        return;
+      }
+      const auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, Record, A.Context);
+      if (!Owner) reject(L, "forward-list construction", "The checked integer owner layout is required.");
+      initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
+      if (*Kind != UtilityForwardListConstruction::InitializerList) return;
+      const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
+          C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!List) reject(L, "forward-list initializer", "The pinned integer initializer-list carrier is required.");
+      auto Input = snapshot(fieldStorage(Operands[0], List->Begin, L), L);
+      auto Count = snapshot(fieldStorage(Operands[0], List->Size, L), L);
+      auto Position = temporary("u64", L);
+      assign(Position, quantity(0, "u64", L), L);
+      auto First = temporary("ptr:void", L), Last = temporary("ptr:void", L);
+      initializeZero(First, A.Context.VoidPtrTy, L);
+      initializeZero(Last, A.Context.VoidPtrTy, L);
+      const auto Check = labelName(), Add = labelName(), Link = labelName(),
+          SetFirst = labelName(), Advance = labelName(), Built = labelName(),
+          Commit = labelName(), Done = labelName();
+      jump(Check, L); label(Check, L);
+      branch(binary("<", Position, Count, "bool", L), Add, Built, L);
+      label(Add, L);
+      auto Value = address(index(Input, cast(Position, type(A.Context.getPointerDiffType(), L), L), "int", L),
+          A.Context.IntTy.withConst(), L);
+      auto Node = forwardListCreateNode(Value, A.zero(A.Context.VoidPtrTy, L), Owner->Node, L);
+      branch(cast(First, "bool", L), Link, SetFirst, L);
+      label(Link, L);
+      assign(forwardListNext(Last, L), Node, L);
+      jump(Advance, L); label(SetFirst, L);
+      assign(First, Node, L);
+      jump(Advance, L); label(Advance, L);
+      assign(Last, Node, L);
+      assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
+      jump(Check, L); label(Built, L);
+      branch(cast(First, "bool", L), Commit, Done, L);
+      label(Commit, L);
+      // SDK initializer-list construction builds a detached chain first and
+      // exposes it through the owner only after every allocation succeeds.
+      assign(forwardListNext(Last, L), forwardListMember(Place, false, L), L);
+      assign(forwardListMember(Place, false, L), First, L);
+      jump(Done, L); label(Done, L);
+      return;
+    }
+
     if (auto Kind = approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedUtilityValarrayRecord(A.S, A.Sources,
           T->getAsCXXRecordDecl(), A.Context);
@@ -37128,6 +37338,8 @@ public:
         approvedUtilityUniquePtrDestructor(A.S, A.Sources, D, A.Context);
     const bool StringDestructor =
         approvedUtilityStringDestructor(A.S, A.Sources, D, A.Context);
+    const bool ForwardListDestructor =
+        approvedUtilityForwardListDestructor(A.S, A.Sources, D, A.Context);
     const bool ValarrayDestructor =
         approvedUtilityValarrayDestructor(A.S, A.Sources, D, A.Context);
     const bool VectorDestructor =
@@ -37144,6 +37356,9 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(),
              "unique pointer destructor",
              "The pinned std::unique_ptr destructor definition is required.");
+    if (approvedUtilityForwardListRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !ForwardListDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "forward-list destructor",
+             "The selected pinned SDK destruction chain is required.");
     if (approvedUtilityValarrayRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !ValarrayDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "valarray destructor",
              "The selected pinned SDK destruction chain is required.");
@@ -37162,7 +37377,7 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered map destructor",
              "The authenticated SDK storage destructor chain is required.");
     if (D && NotFnDestructor == A.VerifiedNotFnDestructions.end() &&
-        !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
+        !ForwardListDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
         !UnorderedMapDestructor && !UnorderedNodeDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
@@ -37306,6 +37521,8 @@ public:
       } else if (auto Map = approvedUtilityUnorderedMapRecord(
                      A.S, A.Sources, DestroyedRecord, A.Context)) {
         releaseUnorderedMap(dereference(*ThisPointer, L), *Map, true, L);
+      } else if (auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
+        destroyForwardListStorage(dereference(*ThisPointer, L), Owner->Node, L);
       } else if (approvedUtilityValarrayRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyValarrayStorage(dereference(*ThisPointer, L), L);
       } else if (auto Vector = approvedUtilityVectorRecord(

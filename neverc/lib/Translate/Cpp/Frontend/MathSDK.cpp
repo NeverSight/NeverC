@@ -47646,6 +47646,632 @@ std::optional<UtilityValarrayCall> approvedUtilityValarrayCall(
   return UtilityValarrayCall{*Operation, Receiver, M, Offset};
 }
 
+
+namespace {
+bool forwardListStd(const DeclContext *Scope) {
+  for (unsigned Depth = 0; Scope && Depth != 8; ++Depth) {
+    const auto *N = dyn_cast<NamespaceDecl>(Scope);
+    if (!N) return false;
+    if (N->isStdNamespace()) return true;
+    if (!N->isInline()) return false;
+    Scope = N->getParent();
+  }
+  return false;
+}
+bool forwardListPinned(const State &S, const SourceManager &SM, const Decl *D,
+                       llvm::StringRef Header = {}) {
+  const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+  if (!D || !File || File->Root != "libcxx" ||
+      (!Header.empty() && File->Path != Header) ||
+      !approvedStandardSDKDeclaration(S, SM, D)) return false;
+  if (D->getLocation().isMacroID()) {
+    const auto Spelling = S.sdkFile(SM, SM.getSpellingLoc(D->getLocation()));
+    if (!Spelling || Spelling->Root != "libcxx") return false;
+  }
+  return true;
+}
+bool forwardListDeclarations(const State &S, const SourceManager &SM,
+                             const CXXRecordDecl *R, unsigned &Budget) {
+  for (const auto *D : R->redecls())
+    if (!forwardListPinned(S, SM, D)) return false;
+  for (const auto *D : R->decls()) {
+    if (++Budget > 4096 || !forwardListPinned(S, SM, D)) return false;
+    if (const auto *F = dyn_cast<FunctionDecl>(D))
+      for (const auto *Redeclaration : F->redecls())
+        if (!forwardListPinned(S, SM, Redeclaration)) return false;
+    if (const auto *T = dyn_cast<FunctionTemplateDecl>(D)) {
+      for (const auto *Redeclaration : T->redecls())
+        if (!forwardListPinned(S, SM, Redeclaration)) return false;
+      for (const auto *Redeclaration : T->getTemplatedDecl()->redecls())
+        if (!forwardListPinned(S, SM, Redeclaration)) return false;
+    }
+  }
+  return true;
+}
+const ClassTemplateSpecializationDecl *forwardListSpecialization(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    llvm::StringRef Name, llvm::StringRef Header) {
+  const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input);
+  const auto *T = R ? R->getSpecializedTemplate() : nullptr;
+  if (!S.coreV2() || !T || T->getName() != Name || !forwardListStd(T->getDeclContext()) ||
+      R->isInvalidDecl() || R->isDependentContext() || R->isUnion() ||
+      R->getSpecializationKind() != TSK_ImplicitInstantiation) return nullptr;
+  for (const auto *D : T->redecls()) {
+    if (!forwardListPinned(S, SM, D, Header)) return nullptr;
+    for (const auto *Pattern : D->getTemplatedDecl()->redecls())
+      if (!forwardListPinned(S, SM, Pattern, Header)) return nullptr;
+  }
+  const auto *Definition = R->getDefinition();
+  if (!Definition || Definition->isPolymorphic() ||
+      !forwardListPinned(S, SM, Definition, Header)) return nullptr;
+  return dyn_cast<ClassTemplateSpecializationDecl>(Definition);
+}
+const CXXRecordDecl *forwardListRecordType(QualType T) {
+  const auto *Record = T.isNull() ? nullptr : T->getAs<RecordType>();
+  return Record ? dyn_cast<CXXRecordDecl>(Record->getDecl()) : nullptr;
+}
+bool forwardListTarget(const ASTContext &Context) {
+  return Context.getCharWidth() == 8 && Context.getTypeSize(Context.IntTy) == 32 &&
+         Context.getTypeSize(Context.VoidPtrTy) == 64 &&
+         Context.getTypeSize(Context.getSizeType()) == 64;
+}
+struct ForwardListLeaf {
+  const FieldDecl *Field;
+  uint64_t Offset;
+};
+// Only by-value fields and nonvirtual bases are traversed. Pointer edges do not
+// recurse, so a node's next pointer cannot turn this into an unbounded graph.
+bool forwardListLeaves(const State &S, const SourceManager &SM,
+                       const ASTContext &Context, const CXXRecordDecl *Input,
+                       uint64_t Offset, unsigned Depth, unsigned &Budget,
+                       std::vector<ForwardListLeaf> &Leaves) {
+  const auto *R = Input ? Input->getDefinition() : nullptr;
+  if (!R || Depth > 32 || R->isInvalidDecl() || R->isDependentContext() ||
+      R->isPolymorphic() || !forwardListDeclarations(S, SM, R, Budget)) return false;
+  const auto &Layout = Context.getASTRecordLayout(R);
+  if (R->isUnion() && (!R->isAnonymousStructOrUnion() ||
+                      std::distance(R->field_begin(), R->field_end()) != 1)) return false;
+  for (const auto &B : R->bases()) {
+    const auto *Base = forwardListRecordType(B.getType());
+    if (B.isVirtual() || !Base || !forwardListLeaves(S, SM, Context, Base,
+            Offset + Layout.getBaseClassOffset(Base).getQuantity() * Context.getCharWidth(),
+            Depth + 1, Budget, Leaves)) return false;
+  }
+  unsigned Index = 0;
+  for (const auto *F : R->fields()) {
+    if (!forwardListPinned(S, SM, F) || F->isBitField() || ++Budget > 4096) return false;
+    const auto Position = Offset + Layout.getFieldOffset(Index++);
+    if (const auto *Nested = forwardListRecordType(F->getType())) {
+      if (!forwardListLeaves(S, SM, Context, Nested, Position, Depth + 1, Budget, Leaves))
+        return false;
+    } else {
+      if (!F->getType()->isPointerType() && !F->getType()->isIntegerType()) return false;
+      if (Leaves.size() == 8) return false;
+      Leaves.push_back({F, Position});
+    }
+  }
+  return true;
+}
+std::optional<UtilityForwardListNodeRecord> forwardListNode(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    const ASTContext &Context) {
+  const auto *R = forwardListSpecialization(S, SM, Input, "__forward_list_node", "forward_list");
+  if (!R || !forwardListTarget(Context)) return std::nullopt;
+  const auto &Args = R->getTemplateArgs();
+  if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
+      Args[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Args[0].getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Args[1].getAsType(), Context.VoidPtrTy)) return std::nullopt;
+  std::vector<ForwardListLeaf> Leaves;
+  unsigned Budget = 0;
+  if (!forwardListLeaves(S, SM, Context, R, 0, 0, Budget, Leaves) || Leaves.size() != 2)
+    return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(R);
+  if (Layout.getSize().getQuantity() != 16 || Layout.getAlignment().getQuantity() != 8 ||
+      Leaves[0].Offset != 0 || Leaves[1].Offset != 64 ||
+      Leaves[0].Field->getName() != "__next_" || Leaves[1].Field->getName() != "__value_" ||
+      !Context.hasSameType(Leaves[0].Field->getType(), Context.getPointerType(Context.getRecordType(R))) ||
+      !Context.hasSameType(Leaves[1].Field->getType(), Context.IntTy)) return std::nullopt;
+  const auto *Begin = forwardListSpecialization(S, SM,
+      dyn_cast<CXXRecordDecl>(Leaves[0].Field->getParent()), "__forward_begin_node", "forward_list");
+  if (!Begin || Begin->getTemplateArgs().size() != 1 ||
+      Begin->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Begin->getTemplateArgs()[0].getAsType(), Leaves[0].Field->getType()))
+    return std::nullopt;
+  const auto &BeginLayout = Context.getASTRecordLayout(Begin);
+  if (BeginLayout.getSize().getQuantity() != 8 || BeginLayout.getAlignment().getQuantity() != 8)
+    return std::nullopt;
+  return UtilityForwardListNodeRecord{R, Begin, Leaves[0].Field, Leaves[1].Field};
+}
+}
+
+std::optional<UtilityForwardListRecord> approvedUtilityForwardListRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    const ASTContext &Context) {
+  const auto *R = forwardListSpecialization(S, SM, Input, "forward_list", "forward_list");
+  if (!R || !forwardListTarget(Context) || !R->field_empty() || R->getNumBases() != 1)
+    return std::nullopt;
+  const auto &Args = R->getTemplateArgs();
+  if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
+      Args[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Args[0].getAsType(), Context.IntTy)) return std::nullopt;
+  const auto Allocator = approvedUtilityAllocatorRecord(S, SM,
+      forwardListRecordType(Args[1].getAsType()), Context);
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.IntTy)) return std::nullopt;
+  const auto &BaseSpec = *R->bases_begin();
+  const auto *Base = forwardListSpecialization(S, SM, forwardListRecordType(BaseSpec.getType()),
+                                              "__forward_list_base", "forward_list");
+  if (!Base || BaseSpec.isVirtual() || Base->getTemplateArgs().size() != 2 ||
+      Base->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      Base->getTemplateArgs()[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Base->getTemplateArgs()[1].getAsType(), Args[1].getAsType())) return std::nullopt;
+  std::vector<ForwardListLeaf> Leaves;
+  unsigned Budget = 0;
+  if (!forwardListLeaves(S, SM, Context, R, 0, 0, Budget, Leaves) || Leaves.size() != 1 ||
+      Leaves[0].Offset || Leaves[0].Field->getName() != "__next_" ||
+      !Leaves[0].Field->getType()->isPointerType()) return std::nullopt;
+  const auto Node = forwardListNode(S, SM,
+      forwardListRecordType(Leaves[0].Field->getType()->getPointeeType()), Context);
+  const auto &Layout = Context.getASTRecordLayout(R);
+  if (!Node || Node->Next != Leaves[0].Field || Layout.getSize().getQuantity() != 8 ||
+      Layout.getAlignment().getQuantity() != 8) return std::nullopt;
+  return UtilityForwardListRecord{R, *Node};
+}
+
+std::optional<UtilityForwardListIteratorRecord> approvedUtilityForwardListIteratorRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    const ASTContext &Context) {
+  const auto *R = forwardListSpecialization(S, SM, Input, "__forward_list_iterator", "forward_list");
+  bool Const = false;
+  if (!R) {
+    R = forwardListSpecialization(S, SM, Input, "__forward_list_const_iterator", "forward_list");
+    Const = true;
+  }
+  if (!R || !forwardListTarget(Context) || R->getNumBases()) return std::nullopt;
+  const auto &Args = R->getTemplateArgs();
+  if (Args.size() != 1 || Args[0].getKind() != TemplateArgument::Type ||
+      !Args[0].getAsType()->isPointerType()) return std::nullopt;
+  const auto Node = forwardListNode(S, SM,
+      forwardListRecordType(Args[0].getAsType()->getPointeeType()), Context);
+  std::vector<ForwardListLeaf> Leaves;
+  unsigned Budget = 0;
+  if (!Node || !forwardListLeaves(S, SM, Context, R, 0, 0, Budget, Leaves) ||
+      Leaves.size() != 1 || Leaves[0].Offset || Leaves[0].Field->getName() != "__ptr_" ||
+      !Context.hasSameType(Leaves[0].Field->getType(),
+          Context.getPointerType(Context.getRecordType(Node->BeginNode)))) return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(R);
+  if (Layout.getSize().getQuantity() != 8 || Layout.getAlignment().getQuantity() != 8)
+    return std::nullopt;
+  return UtilityForwardListIteratorRecord{R, Leaves[0].Field, *Node, Const};
+}
+
+namespace {
+bool forwardListFunctionDeclarations(const State &S, const SourceManager &SM,
+                                      const FunctionDecl *F) {
+  if (!F || F->isInvalidDecl() || F->isVariadic()) return false;
+  for (const auto *D : F->redecls())
+    if (!forwardListPinned(S, SM, D, "forward_list")) return false;
+  if (const auto *Pattern = F->getTemplateInstantiationPattern())
+    for (const auto *D : Pattern->redecls())
+      if (!forwardListPinned(S, SM, D, "forward_list")) return false;
+  if (const auto *T = F->getPrimaryTemplate())
+    for (const auto *D : T->redecls())
+      if (!forwardListPinned(S, SM, D, "forward_list") ||
+          !forwardListPinned(S, SM, D->getTemplatedDecl(), "forward_list")) return false;
+  return true;
+}
+bool forwardListIntegerValueParameter(QualType T, const ASTContext &Context) {
+  return Context.hasSameType(T, Context.getLValueReferenceType(Context.IntTy.withConst())) ||
+         Context.hasSameType(T, Context.getRValueReferenceType(Context.IntTy));
+}
+bool forwardListIntegerAllocatorParameter(const State &S, const SourceManager &SM,
+                                         QualType T, const ASTContext &Context) {
+  if (!T->isLValueReferenceType() || !T->getPointeeType().isConstQualified() ||
+      T->getPointeeType().isVolatileQualified()) return false;
+  const auto A = approvedUtilityAllocatorRecord(S, SM,
+      forwardListRecordType(T->getPointeeType()), Context);
+  return A && Context.hasSameType(A->ElementType, Context.IntTy);
+}
+bool forwardListIteratorType(const State &S, const SourceManager &SM, QualType T,
+                             const UtilityForwardListNodeRecord &Node, bool Const,
+                             const ASTContext &Context) {
+  if (T.isNull() || T->isReferenceType() || T.isConstQualified() || T.isVolatileQualified())
+    return false;
+  const auto I = approvedUtilityForwardListIteratorRecord(S, SM, forwardListRecordType(T), Context);
+  return I && I->Const == Const && I->Node.Record->getCanonicalDecl() == Node.Record->getCanonicalDecl();
+}
+
+std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
+    const State &S, const SourceManager &SM, const CXXConstructorDecl *C,
+    const ASTContext &Context) {
+  if (!C || C->getPrimaryTemplate() || !forwardListFunctionDeclarations(S, SM, C))
+    return std::nullopt;
+  if (const auto Owner = approvedUtilityForwardListRecord(S, SM, C->getParent(), Context)) {
+    if (!C->getNumParams()) return UtilityForwardListConstruction::Default;
+    if (C->getNumParams() == 1 &&
+        forwardListIntegerAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Context))
+      return UtilityForwardListConstruction::Allocator;
+    if (C->getNumParams() == 1 || C->getNumParams() == 2) {
+      const auto ListType = C->getParamDecl(0)->getType();
+      if (ListType->isReferenceType() || ListType.isVolatileQualified()) return std::nullopt;
+      const auto List = approvedUtilityInitializerListRecord(S, SM, forwardListRecordType(ListType), Context);
+      if (List && Context.hasSameType(List->ElementType, Context.IntTy) &&
+          (C->getNumParams() == 1 || forwardListIntegerAllocatorParameter(S, SM,
+              C->getParamDecl(1)->getType(), Context))) return UtilityForwardListConstruction::InitializerList;
+    }
+    return std::nullopt;
+  }
+  const auto Iterator = approvedUtilityForwardListIteratorRecord(S, SM, C->getParent(), Context);
+  if (!Iterator) return std::nullopt;
+  if (!C->getNumParams()) return UtilityForwardListConstruction::IteratorDefault;
+  if (C->getNumParams() != 1) return std::nullopt;
+  const auto Argument = C->getParamDecl(0)->getType();
+  const auto RecordType = Context.getRecordType(Iterator->Record);
+  if (C->isCopyOrMoveConstructor() &&
+      (Context.hasSameType(Argument, Context.getLValueReferenceType(RecordType.withConst())) ||
+       Context.hasSameType(Argument, Context.getRValueReferenceType(RecordType))))
+    return UtilityForwardListConstruction::IteratorCopy;
+  if (Iterator->Const && forwardListIteratorType(S, SM, Argument, Iterator->Node, false, Context))
+    return UtilityForwardListConstruction::IteratorConstConversion;
+  return std::nullopt;
+}
+
+std::optional<UtilityForwardListOperation> forwardListMethodSignature(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *M,
+    const ASTContext &Context) {
+  if (!M || M->isStatic() || M->isVolatile() || M->getPrimaryTemplate() ||
+      !forwardListFunctionDeclarations(S, SM, M)) return std::nullopt;
+  if (const auto Owner = approvedUtilityForwardListRecord(S, SM, M->getParent(), Context)) {
+    if (!M->getIdentifier()) return std::nullopt;
+    const auto Name = M->getName();
+    if (!M->getNumParams()) {
+      if (Name == "empty" && M->isConst() && Context.hasSameType(M->getReturnType(), Context.BoolTy))
+        return UtilityForwardListOperation::Empty;
+      if ((Name == "begin" || Name == "end" || Name == "before_begin") &&
+          forwardListIteratorType(S, SM, M->getReturnType(), Owner->Node, M->isConst(), Context))
+        return Name == "begin" ? UtilityForwardListOperation::Begin :
+               Name == "end" ? UtilityForwardListOperation::End : UtilityForwardListOperation::BeforeBegin;
+      if ((Name == "cbegin" || Name == "cend" || Name == "cbefore_begin") && M->isConst() &&
+          forwardListIteratorType(S, SM, M->getReturnType(), Owner->Node, true, Context))
+        return Name == "cbegin" ? UtilityForwardListOperation::Begin :
+               Name == "cend" ? UtilityForwardListOperation::End : UtilityForwardListOperation::BeforeBegin;
+      const auto ValueType = M->isConst() ? Context.IntTy.withConst() : Context.IntTy;
+      if (Name == "front" && Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(ValueType)))
+        return UtilityForwardListOperation::Front;
+      if (!M->isConst() && M->getReturnType()->isVoidType()) {
+        if (Name == "clear") return UtilityForwardListOperation::Clear;
+        if (Name == "pop_front") return UtilityForwardListOperation::PopFront;
+      }
+    }
+    if (M->isConst()) return std::nullopt;
+    if (Name == "push_front" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
+        forwardListIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
+      return UtilityForwardListOperation::PushFront;
+    if (!forwardListIteratorType(S, SM, M->getReturnType(), Owner->Node, false, Context)) return std::nullopt;
+    if (Name == "erase_after" && M->getNumParams() == 1 &&
+        forwardListIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context))
+      return UtilityForwardListOperation::EraseAfter;
+    if (Name == "insert_after" && M->getNumParams() == 2 &&
+        forwardListIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context) &&
+        forwardListIntegerValueParameter(M->getParamDecl(1)->getType(), Context))
+      return UtilityForwardListOperation::InsertAfter;
+    return std::nullopt;
+  }
+  const auto I = approvedUtilityForwardListIteratorRecord(S, SM, M->getParent(), Context);
+  if (!I || !M->isOverloadedOperator()) return std::nullopt;
+  const auto IteratorType = Context.getRecordType(I->Record);
+  if (!M->isConst() && M->getOverloadedOperator() == OO_Equal && M->getNumParams() == 1 &&
+      Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(IteratorType)) &&
+      (Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(IteratorType.withConst())) ||
+       Context.hasSameType(M->getParamDecl(0)->getType(), Context.getRValueReferenceType(IteratorType))))
+    return UtilityForwardListOperation::IteratorAssign;
+  const auto Element = I->Const ? Context.IntTy.withConst() : Context.IntTy;
+  if (M->isConst() && !M->getNumParams()) {
+    if (M->getOverloadedOperator() == OO_Star &&
+        Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element)))
+      return UtilityForwardListOperation::IteratorDereference;
+    if (M->getOverloadedOperator() == OO_Arrow &&
+        Context.hasSameType(M->getReturnType(), Context.getPointerType(Element)))
+      return UtilityForwardListOperation::IteratorArrow;
+  }
+  if (M->isConst() || M->getOverloadedOperator() != OO_PlusPlus) return std::nullopt;
+  const auto Type = Context.getRecordType(I->Record);
+  if (!M->getNumParams() && Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Type)))
+    return UtilityForwardListOperation::IteratorPreIncrement;
+  if (M->getNumParams() == 1 && Context.hasSameType(M->getParamDecl(0)->getType(), Context.IntTy) &&
+      Context.hasSameType(M->getReturnType(), Type)) return UtilityForwardListOperation::IteratorPostIncrement;
+  return std::nullopt;
+}
+
+std::optional<UtilityForwardListOperation> forwardListComparisonSignature(
+    const State &S, const SourceManager &SM, const FunctionDecl *F,
+    const ASTContext &Context) {
+  if (!F || isa<CXXMethodDecl>(F) || !F->isOverloadedOperator() || F->getNumParams() != 2 ||
+      F->getPrimaryTemplate() || !Context.hasSameType(F->getReturnType(), Context.BoolTy) ||
+      !forwardListFunctionDeclarations(S, SM, F) ||
+      (F->getOverloadedOperator() != OO_EqualEqual && F->getOverloadedOperator() != OO_ExclaimEqual))
+    return std::nullopt;
+  const auto Left = F->getParamDecl(0)->getType();
+  if (!Left->isLValueReferenceType() || !Left->getPointeeType().isConstQualified() ||
+      Left->getPointeeType().isVolatileQualified() ||
+      !Context.hasSameType(Left, F->getParamDecl(1)->getType())) return std::nullopt;
+  const auto I = approvedUtilityForwardListIteratorRecord(S, SM,
+      forwardListRecordType(Left->getPointeeType()), Context);
+  if (!I) return std::nullopt;
+  return F->getOverloadedOperator() == OO_EqualEqual ? UtilityForwardListOperation::IteratorEqual :
+                                                    UtilityForwardListOperation::IteratorNotEqual;
+}
+}
+
+namespace {
+bool forwardListDependencyDeclaration(const State &S, const SourceManager &SM,
+                                   const Decl *D) {
+  const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+  if (!D || !File || File->Root != "libcxx") return false;
+  if (D->getLocation().isMacroID()) {
+    const auto Spelling = S.sdkFile(SM, SM.getSpellingLoc(D->getLocation()));
+    if (!Spelling || (Spelling->Root != "libcxx" && Spelling->Root != "resource"))
+      return false;
+  }
+  return true;
+}
+
+bool forwardListHeapBoundary(const FunctionDecl *F, const ASTContext &Context) {
+  if (!F || F->isInvalidDecl() || F->isVariadic() ||
+      !F->isOverloadedOperator() ||
+      !F->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+  if (F->getOverloadedOperator() == OO_New && F->getNumParams() == 1)
+    return Context.hasSameType(F->getReturnType(), Context.VoidPtrTy) &&
+           Context.hasSameType(F->getParamDecl(0)->getType(), Context.getSizeType());
+  if (F->getOverloadedOperator() != OO_Delete ||
+      (F->getNumParams() != 1 && F->getNumParams() != 2) ||
+      !F->getReturnType()->isVoidType() ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), Context.VoidPtrTy))
+    return false;
+  return F->getNumParams() == 1 ||
+         Context.hasSameType(F->getParamDecl(1)->getType(), Context.getSizeType());
+}
+
+
+bool forwardListCompilerAlignmentMacro(const State &S, const SourceManager &SM,
+                                      SourceLocation L, const ASTContext &Context) {
+  if (!L.isMacroID() || !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(L)) ||
+      Lexer::getImmediateMacroName(L, SM, Context.getLangOpts()) !=
+          "__STDCPP_DEFAULT_NEW_ALIGNMENT__") return false;
+  const auto Site = S.sdkFile(SM, SM.getExpansionLoc(L));
+  return Site && Site->Root == "libcxx" && Site->Path == "__new/allocate.h";
+}
+bool forwardListScalarDestruction(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call, const ASTContext &Context,
+                                  const UtilityForwardListNodeRecord &Owner) {
+  const auto *D = Call && !Call->getNumArgs()
+      ? dyn_cast<CXXPseudoDestructorExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  if (!D || !D->isArrow() || !D->getBase() || !D->getDestroyedTypeInfo() ||
+      !Context.hasSameType(D->getDestroyedType(), Context.IntTy)) return false;
+  const auto File = S.sdkFile(SM, Call->getExprLoc());
+  if (!File || File->Root != "libcxx" ||
+      (File->Path != "__memory/construct_at.h" && File->Path != "__memory/allocator.h")) return false;
+  const auto *Reference = dyn_cast<DeclRefExpr>(D->getBase()->IgnoreParenImpCasts());
+  const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
+  const auto *Function = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  if (!Function || Function->getNumParams() != 1 || Function->getParamDecl(0) != Parameter ||
+      !Function->getReturnType()->isVoidType() ||
+      !Context.hasSameType(Parameter->getType(), Context.getPointerType(Context.IntTy))) return false;
+  for (const auto *Redeclaration : Function->redecls())
+    if (!forwardListDependencyDeclaration(S, SM, Redeclaration)) return false;
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(Function)) {
+    const auto *Allocator = dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
+    return File->Path == "__memory/allocator.h" && Method->getIdentifier() && Method->getName() == "destroy" &&
+        Allocator && Allocator->getSpecializedTemplate()->getName() == "allocator" &&
+        forwardListStd(Allocator->getDeclContext()) && Allocator->getTemplateArgs().size() == 1 &&
+        Allocator->getTemplateArgs()[0].getKind() == TemplateArgument::Type &&
+        Context.hasSameType(Allocator->getTemplateArgs()[0].getAsType(), Context.getRecordType(Owner.Record));
+  }
+  return File->Path == "__memory/construct_at.h" && Function->getIdentifier() && forwardListStd(Function->getDeclContext()) &&
+         (Function->getName() == "__destroy_at" || Function->getName() == "destroy_at");
+}
+
+bool forwardListSourceGraph(const State &S, const SourceManager &SM,
+                         const FunctionDecl *Root, const ASTContext &Context,
+                         const UtilityForwardListNodeRecord &Owner) {
+  std::set<const FunctionDecl *> Seen;
+  unsigned Nodes = 0;
+  std::function<bool(const FunctionDecl *, unsigned)> Function;
+  std::function<bool(const Stmt *, unsigned)> Statement;
+  auto PinnedMacro = [&](SourceLocation L) {
+    if (!L.isMacroID()) return true;
+    if (forwardListCompilerAlignmentMacro(S, SM, L, Context)) return true;
+    const auto File = S.sdkFile(SM, SM.getSpellingLoc(L));
+    return File && (File->Root == "libcxx" || File->Root == "resource");
+  };
+  Function = [&](const FunctionDecl *F, unsigned Depth) {
+    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return false;
+    // These are selected again by the existing heap helper during lowering.
+    // Its exact overload and source-definition checks remain mandatory.
+    if (forwardListHeapBoundary(F, Context)) return true;
+    if (F->getBuiltinID()) {
+      if (!F->getIdentifier() || F->hasBody()) return false;
+      const auto Name = F->getName();
+      if (Name != "__builtin_is_constant_evaluated" &&
+          Name != "__builtin_addressof" &&
+          Name != "__builtin_operator_new" && Name != "__builtin_operator_delete" &&
+          Name != "__builtin_expect" && Name != "__builtin_assume" &&
+          Name != "__builtin_unreachable") return false;
+      for (const auto *D : F->redecls()) {
+        if (forwardListDependencyDeclaration(S, SM, D)) continue;
+        if (!D->isImplicit() || D->hasBody() ||
+            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+        if (D->getLocation().isValid()) {
+          const auto File = S.sdkFile(SM, D->getLocation());
+          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+        }
+      }
+      return true;
+    }
+    for (const auto *D : F->redecls())
+      if (!forwardListDependencyDeclaration(S, SM, D)) return false;
+    if (const auto *Pattern = F->getTemplateInstantiationPattern())
+      for (const auto *D : Pattern->redecls())
+        if (!forwardListDependencyDeclaration(S, SM, D)) return false;
+    if (const auto *T = F->getPrimaryTemplate())
+      for (const auto *D : T->redecls())
+        if (!forwardListDependencyDeclaration(S, SM, D) ||
+            !forwardListDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+    if (!Seen.insert(F->getCanonicalDecl()).second) return true;
+    // Every admitted construction count has already passed the existing
+    // allocator max-size proof, making this pinned error branch unreachable.
+    if (F->getIdentifier() && F->getName() == "__throw_bad_array_new_length" &&
+        F->getNumParams() == 0 && F->getReturnType()->isVoidType()) return true;
+    if (const auto *M = dyn_cast<CXXMethodDecl>(F);
+        M && M->isImplicit() && M->isTrivial()) return true;
+    if (const auto *D = dyn_cast<CXXDestructorDecl>(F)) {
+      const auto *Parent = D->getParent();
+      for (const auto &Base : Parent->bases()) {
+        const auto *Record = forwardListRecordType(Base.getType());
+        if (!Record || Base.isVirtual()) return false;
+        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return false;
+      }
+      for (const auto *Field : Parent->fields()) {
+        const auto *Record = forwardListRecordType(Field->getType());
+        if (Record && !Record->hasTrivialDestructor() &&
+            !Function(Record->getDestructor(), Depth + 1)) return false;
+      }
+    }
+    if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
+      for (const auto *Init : C->inits())
+        if (!Statement(Init->getInit(), Depth + 1)) return false;
+    const auto *Body = F->getBody();
+    return Body && Statement(Body, Depth + 1);
+  };
+  Statement = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node) return true;
+    if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
+        !PinnedMacro(Node->getEndLoc())) return false;
+    if (const auto *E = dyn_cast<Expr>(Node))
+      if (!PinnedMacro(E->getExprLoc())) return false;
+    if (const auto *E = dyn_cast<MemberExpr>(Node))
+      if (!PinnedMacro(E->getMemberLoc())) return false;
+    if (const auto *D = dyn_cast<DeclStmt>(Node))
+      for (const auto *Declaration : D->decls())
+        if (!PinnedMacro(Declaration->getLocation())) return false;
+    if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node)) {
+      if (!forwardListDependencyDeclaration(S, SM, Default->getField()) ||
+          !Statement(Default->getExpr(), Depth + 1)) return false;
+    }
+    if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
+      if (!forwardListDependencyDeclaration(S, SM, Default->getParam()) ||
+          !Statement(Default->getExpr(), Depth + 1)) return false;
+    }
+    if (const auto *Call = dyn_cast<CallExpr>(Node))
+      if (!forwardListScalarDestruction(S, SM, Call, Context, Owner) &&
+          !Function(Call->getDirectCallee(), Depth + 1)) return false;
+    if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
+      if (!Function(C->getConstructor(), Depth + 1)) return false;
+    if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
+      if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
+           !Context.hasSameType(N->getAllocatedType(), Context.getRecordType(Owner.Record))) ||
+          N->getNumPlacementArgs() != 1 ||
+          !Function(N->getOperatorNew(), Depth + 1)) return false;
+      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+    }
+    for (const auto *Child : Node->children())
+      if (!Statement(Child, Depth + 1)) return false;
+    return true;
+  };
+  return Root && Owner.Record && forwardListFunctionDeclarations(S, SM, Root) && Function(Root, 0);
+}
+}
+
+namespace {
+std::optional<UtilityForwardListNodeRecord> forwardListReceiverNode(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *R,
+    const ASTContext &Context) {
+  if (const auto Owner = approvedUtilityForwardListRecord(S, SM, R, Context)) return Owner->Node;
+  if (const auto Iterator = approvedUtilityForwardListIteratorRecord(S, SM, R, Context)) return Iterator->Node;
+  return std::nullopt;
+}
+bool forwardListOperandTypes(const CallExpr *Call, const FunctionDecl *F,
+                             unsigned Offset, const ASTContext &Context) {
+  if (Call->getNumArgs() != F->getNumParams() + Offset) return false;
+  for (unsigned I = 0; I != F->getNumParams(); ++I) {
+    const auto Parameter = F->getParamDecl(I)->getType();
+    const auto Value = Parameter->isReferenceType() ? Parameter->getPointeeType() : Parameter;
+    if (!Context.hasSameUnqualifiedType(Call->getArg(I + Offset)->getType(), Value)) return false;
+  }
+  return true;
+}
+}
+
+std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  if (!S.coreV2() || !Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() || Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      !S.owns(SM, Construction->getExprLoc())) return std::nullopt;
+  const auto *C = Construction->getConstructor();
+  const auto Kind = forwardListConstructorSignature(S, SM, C, Context);
+  const auto Node = C ? forwardListReceiverNode(S, SM, C->getParent(), Context) : std::nullopt;
+  if (!Kind || !Node || Construction->getNumArgs() != C->getNumParams() ||
+      !Context.hasSameUnqualifiedType(Construction->getType(), Context.getRecordType(C->getParent())) ||
+      !forwardListSourceGraph(S, SM, C, Context, *Node)) return std::nullopt;
+  for (unsigned I = 0; I != C->getNumParams(); ++I) {
+    const auto Parameter = C->getParamDecl(I)->getType();
+    const auto Value = Parameter->isReferenceType() ? Parameter->getPointeeType() : Parameter;
+    if (!Context.hasSameUnqualifiedType(Construction->getArg(I)->getType(), Value)) return std::nullopt;
+  }
+  return Kind;
+}
+
+bool approvedUtilityForwardListDestructor(const State &S, const SourceManager &SM,
+    const CXXDestructorDecl *D, const ASTContext &Context) {
+  if (!S.coreV2() || !D || D->isVirtual() || D->getNumParams() ||
+      !approvedUtilityForwardListRecord(S, SM, D->getParent(), Context) ||
+      !forwardListFunctionDeclarations(S, SM, D)) return false;
+  const auto Owner = approvedUtilityForwardListRecord(S, SM, D->getParent(), Context);
+  return Owner && forwardListSourceGraph(S, SM, D, Context, Owner->Node);
+}
+
+std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  if (!S.coreV2() || !Call || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent() || !S.owns(SM, Call->getExprLoc())) return std::nullopt;
+  const auto *Function = Call->getDirectCallee();
+  if (!Function) return std::nullopt;
+  if (const auto Comparison = forwardListComparisonSignature(S, SM, Function, Context)) {
+    const auto T = Function->getParamDecl(0)->getType()->getPointeeType();
+    const auto Node = forwardListReceiverNode(S, SM, forwardListRecordType(T), Context);
+    if (!Node || !forwardListOperandTypes(Call, Function, 0, Context) ||
+        !Call->getCallee() || !S.owns(SM, Call->getCallee()->getExprLoc()) ||
+        !forwardListSourceGraph(S, SM, Function, Context, *Node)) return std::nullopt;
+    return UtilityForwardListCall{*Comparison, nullptr, Function, 0};
+  }
+  const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+  const auto Operation = forwardListMethodSignature(S, SM, Method, Context);
+  const auto Node = Method ? forwardListReceiverNode(S, SM, Method->getParent(), Context) : std::nullopt;
+  if (!Operation || !Node || !forwardListSourceGraph(S, SM, Method, Context, *Node)) return std::nullopt;
+  const Expr *Receiver = nullptr;
+  unsigned Offset = 0;
+  if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
+    const auto *Reference = directMethodReference(Call);
+    if (!Reference || !S.owns(SM, Reference->getExprLoc())) return std::nullopt;
+    Receiver = Member->getImplicitObjectArgument();
+  } else if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+    if (!Operator->getNumArgs() || !Operator->getCallee() ||
+        !S.owns(SM, Operator->getCallee()->getExprLoc())) return std::nullopt;
+    Receiver = Operator->getArg(0);
+    Offset = 1;
+  }
+  if (!Receiver || !forwardListOperandTypes(Call, Function, Offset, Context)) return std::nullopt;
+  const auto ObjectType = Receiver->getType()->isPointerType()
+      ? Receiver->getType()->getPointeeType() : Receiver->getType();
+  if (ObjectType.isVolatileQualified() ||
+      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent()))) return std::nullopt;
+  return UtilityForwardListCall{*Operation, Receiver, Function, Offset};
+}
+
 bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     const CXXDefaultArgExpr *Default,
                                     const FunctionDecl *Function,
@@ -112562,6 +113188,7 @@ approvedUtilityPairPiecewiseConstruction(
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
+  if (approvedUtilityForwardListCall(S, SM, Call, Context)) return UtilityOperation::ForwardList;
   if (approvedUtilityValarrayCall(S, SM, Call, Context)) return UtilityOperation::ValarrayScalar;
   if (const auto Bitset = approvedUtilityBitsetCall(S, SM, Call, Context)) return Bitset->Operation;
   if (const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
