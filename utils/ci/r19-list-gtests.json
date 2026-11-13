@@ -1,0 +1,204 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-empty-layout",
+      "formal_test_name": "TranslateTest.CoreV2ListIntEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6f6fc8af282edb440a6fe0d95695c93dade3220a9778fdd42c75c14d8043eb9a",
+      "original_case_source_sha256": "6f6fc8af282edb440a6fe0d95695c93dade3220a9778fdd42c75c14d8043eb9a",
+      "gtest_body_sha256": "148de7b087047fa81102062d18d260e001717880779b63b5dc60297deb2ece18"
+    },
+    {
+      "name": "list-iterator-layout",
+      "formal_test_name": "TranslateTest.CoreV2ListIntIteratorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e68e39d93fa3b733ff9c67ac53825dba586116921ee71f93f791d2ecea34329e",
+      "original_case_source_sha256": "e68e39d93fa3b733ff9c67ac53825dba586116921ee71f93f791d2ecea34329e",
+      "gtest_body_sha256": "a712c05b6c2564f81431bb2c0be914e74feed5db54bb48729b029a7083d7991d"
+    },
+    {
+      "name": "list-original-runtime",
+      "formal_test_name": "TranslateTest.CoreV2ListIntNodeOperationsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "be7b336a9da76f187414fefa7debf5685f18545f9440ac262418e145f5190745",
+      "original_case_source_sha256": "be7b336a9da76f187414fefa7debf5685f18545f9440ac262418e145f5190745",
+      "gtest_body_sha256": "b93fca57337b9817f9b66062308fb1d050eb5a344a5dbd4ddbf85f930cea15ab"
+    },
+    {
+      "name": "list-reference-runtime",
+      "formal_test_name": "TranslateTest.CoreV2ListIntReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "85d45975c6b7d6569bf69d1b1f2090f271dcc76824911f49f431b30b7e8f0484",
+      "original_case_source_sha256": "85d45975c6b7d6569bf69d1b1f2090f271dcc76824911f49f431b30b7e8f0484",
+      "gtest_body_sha256": "f9639dc27a6d9f5ed4bf3a1797862618b7ffd215a1d570a64e0affdcd971d949"
+    },
+    {
+      "name": "list-live-allocation-reference",
+      "formal_test_name": "TranslateTest.CoreV2ListIntAllocationReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "321cf3821cab5f90cecbfdfd9fc63f977bf0f54cdde80c29ed240eaca78e2dae",
+      "original_case_source_sha256": "321cf3821cab5f90cecbfdfd9fc63f977bf0f54cdde80c29ed240eaca78e2dae",
+      "gtest_body_sha256": "bcab5ef3220d322cd9a07917828ed9597b091b333d6af36fdd70607342276305"
+    },
+    {
+      "name": "list-selected-delete-order",
+      "formal_test_name": "TranslateTest.CoreV2ListIntDeleteOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b0926ceb1771b5703008c78b4b8552b6d48d32769951f77d1cd94d3d7cfc07db",
+      "original_case_source_sha256": "b0926ceb1771b5703008c78b4b8552b6d48d32769951f77d1cd94d3d7cfc07db",
+      "gtest_body_sha256": "72f57744fa73c8a5d01f59f62dc7dd47c4fa134114053a3100636d585d88ff62"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-owned-push-body",
+      "formal_test_name": "TranslateTest.CoreV2ListOwnedPushRejected",
+      "expected": "reject",
+      "source_sha256": "6bc66ced1b0a81516e0b80c4a2ee97c2d90e33cb78c1cd9b85a80905018b87ec",
+      "original_case_source_sha256": "6bc66ced1b0a81516e0b80c4a2ee97c2d90e33cb78c1cd9b85a80905018b87ec",
+      "gtest_body_sha256": "ffcea14ff95a6733944d03712340e733cb82e6229c649478abe897b5be0e82e3"
+    },
+    {
+      "name": "list-owned-front-macro",
+      "formal_test_name": "TranslateTest.CoreV2ListOwnedFrontMacroRejected",
+      "expected": "reject",
+      "source_sha256": "c70aee489d1a35759bf85f2f22808755c5e517056d39bb73c4e62974dba152b9",
+      "original_case_source_sha256": "c70aee489d1a35759bf85f2f22808755c5e517056d39bb73c4e62974dba152b9",
+      "gtest_body_sha256": "03325da5a4ef08c19dd57d673cb6852701215ed1b2f54d420b57440f8433351a"
+    },
+    {
+      "name": "list-owned-next-macro",
+      "formal_test_name": "TranslateTest.CoreV2ListOwnedNodeMacroRejected",
+      "expected": "reject",
+      "source_sha256": "8d27219a90a93684a78e353cf3b186705ea6b3374ab4310fb3c36b3695f89d11",
+      "original_case_source_sha256": "8d27219a90a93684a78e353cf3b186705ea6b3374ab4310fb3c36b3695f89d11",
+      "gtest_body_sha256": "1e3835e3d91273102b395611b05d5d7a379b2fc517bc60b467747a6e0fb3c68a"
+    },
+    {
+      "name": "list-owned-empty-body",
+      "formal_test_name": "TranslateTest.CoreV2ListOwnedEmptyRejected",
+      "expected": "reject",
+      "source_sha256": "dd21d74d908bd7ecb42014070924d481e4989946645203332c57d98fd0998d05",
+      "original_case_source_sha256": "dd21d74d908bd7ecb42014070924d481e4989946645203332c57d98fd0998d05",
+      "gtest_body_sha256": "fe90ebc6238e7eba8fb0be3ad0ef966e4623c4b086e14e1374ba978d4bdee5af"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListIntEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListIntIteratorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListIntNodeOperationsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListIntReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListIntAllocationReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListIntDeleteOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListOwnedPushRejected",
+    "TranslateTest.CoreV2ListOwnedFrontMacroRejected",
+    "TranslateTest.CoreV2ListOwnedNodeMacroRejected",
+    "TranslateTest.CoreV2ListOwnedEmptyRejected"
+  ],
+  "native_reference_authentication_sha256": "02d855de43516537140f3d75cb1d66a2e13ed41074fd34ac0cf0e838885b197d",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "source_cases": [
+    {
+      "name": "list-empty-layout",
+      "source": "#include <list>\nint main(){std::list<int> v;std::list<int>::iterator i,j;\nstd::list<int>::const_iterator a,b;const std::list<int>& c=v;\nreturn sizeof(v)!=24||alignof(std::list<int>)!=8||sizeof(i)!=8||!v.empty()||v.size()!=0||i!=j||a!=b||c.begin()!=c.end();}\n",
+      "source_sha256": "6f6fc8af282edb440a6fe0d95695c93dade3220a9778fdd42c75c14d8043eb9a",
+      "public_header": "list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "list-iterator-layout",
+      "source": "#include <list>\nint main(){std::list<int> v{1,2,3};auto i=v.begin();*i=4;\nauto a=i++;auto b=v.end();--b;--i;std::list<int>::const_iterator c=i;\nauto d=c++;auto e=c--;auto j=i;j=b;\nreturn sizeof(c)!=8||alignof(decltype(c))!=8||*a!=4||*b!=3||*d!=4||*e!=2||*c!=4||*j!=3;}\n",
+      "source_sha256": "e68e39d93fa3b733ff9c67ac53825dba586116921ee71f93f791d2ecea34329e",
+      "public_header": "list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "list-original-runtime",
+      "source": "#include <list>\nint main(){std::list<int> v{2,3};v.push_front(1);v.push_back(4);v.pop_front();v.pop_back();\nreturn v.size()!=2||v.front()!=2||v.back()!=3;}\n",
+      "source_sha256": "be7b336a9da76f187414fefa7debf5685f18545f9440ac262418e145f5190745",
+      "public_header": "list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "list-reference-runtime",
+      "source": "#include <list>\nint main(){std::list<int> v{2,3};auto i=v.insert(v.cbegin(),1);auto n=v.erase(i);\nif(*n!=2||v.size()!=2)return 1;v.push_front(v.front());v.back()=4;\nconst std::list<int>& c=v;if(c.front()!=2||c.back()!=4)return 2;\nv.clear();v.push_back(8);return v.size()!=1||v.front()!=8||v.back()!=8;}\n",
+      "source_sha256": "85d45975c6b7d6569bf69d1b1f2090f271dcc76824911f49f431b30b7e8f0484",
+      "public_header": "list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "list-live-allocation-reference",
+      "source": "using Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic int* watched;\nstatic int allocations,releases,changed,bad_size;\nvoid* operator new(Size n){++allocations;if(n!=24)bad_size=1;\nif(watched){*watched=7;changed=1;}return ::malloc(n);}\nvoid operator delete(void* p) noexcept {++releases;::free(p);}\nint main(){int bad=0;{std::list<int> v{1,2};\nwatched=&v.front();v.push_front(v.front());watched=nullptr;\nint expected=changed?7:1;auto i=v.begin();\nif(*i++!=expected||*i++!=expected||*i!=2||v.size()!=3)bad=1;\n}return bad||bad_size||allocations!=releases||allocations>3;}\n",
+      "source_sha256": "321cf3821cab5f90cecbfdfd9fc63f977bf0f54cdde80c29ed240eaca78e2dae",
+      "public_header": "list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "list-selected-delete-order",
+      "source": "using Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic std::list<int>* observed;\nstatic int mode,bad,allocations,releases,reinserted,clear_inserted;\nvoid* operator new(Size n){++allocations;if(n!=24)bad=1;return ::malloc(n);}\nvoid operator delete(void* p) noexcept {++releases;\nif(observed){\nif(mode==1&&(observed->size()!=2||observed->front()!=2))bad=1;\nif(mode==2){if(observed->size()!=1||observed->front()!=3)bad=1;\nobserved->push_front(9);reinserted=1;}\nif(mode==3){if(!clear_inserted){if(!observed->empty()||observed->size()!=0)bad=1;\nobserved->push_back(8);clear_inserted=1;}\nelse if(observed->size()!=1||observed->front()!=8)bad=1;}\n}::free(p);}\nint main(){{std::list<int> v{1,2,3};observed=&v;\nmode=1;v.pop_front();mode=2;auto i=v.erase(v.cbegin());\nif(*i!=3||v.front()!=(reinserted?9:3))bad=1;\nmode=3;v.clear();if(clear_inserted){if(v.size()!=1||v.front()!=8||v.back()!=8)bad=1;}\nelse if(!v.empty())bad=1;observed=nullptr;mode=0;\n}return bad||allocations!=releases||allocations>5;}\n",
+      "source_sha256": "b0926ceb1771b5703008c78b4b8552b6d48d32769951f77d1cd94d3d7cfc07db",
+      "public_header": "list",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "list-owned-push-body",
+      "kind": "source-body-guard",
+      "expected": "reject",
+      "source": "#include <list>\nnamespace std { inline namespace __1 {\ntemplate<> inline void list<int>::push_front(const int&) {}\n}}\nint main(){std::list<int> v;int x=1;v.push_front(x);return v.empty();}\n",
+      "source_sha256": "6bc66ced1b0a81516e0b80c4a2ee97c2d90e33cb78c1cd9b85a80905018b87ec",
+      "public_header": "list"
+    },
+    {
+      "name": "list-owned-front-macro",
+      "kind": "source-body-guard",
+      "expected": "reject",
+      "source": "#define front owned_front\n#include <list>\nint main(){std::list<int> v{1};return v.front()!=1;}\n",
+      "source_sha256": "c70aee489d1a35759bf85f2f22808755c5e517056d39bb73c4e62974dba152b9",
+      "public_header": "list"
+    },
+    {
+      "name": "list-owned-next-macro",
+      "kind": "source-body-guard",
+      "expected": "reject",
+      "source": "#define __next_ owned_next\n#include <list>\nint main(){std::list<int> v{1};return v.front()!=1;}\n",
+      "source_sha256": "8d27219a90a93684a78e353cf3b186705ea6b3374ab4310fb3c36b3695f89d11",
+      "public_header": "list"
+    },
+    {
+      "name": "list-owned-empty-body",
+      "kind": "source-body-guard",
+      "expected": "reject",
+      "source": "#include <list>\nnamespace std { inline namespace __1 {\ntemplate<> inline bool list<int>::empty() const noexcept {return true;}\n}}\nint main(){std::list<int> v;return !v.empty();}\n",
+      "source_sha256": "dd21d74d908bd7ecb42014070924d481e4989946645203332c57d98fd0998d05",
+      "public_header": "list"
+    }
+  ],
+  "previous_registry_count": 7522,
+  "current_registry_count": 7532,
+  "previous_maintained_sha256": "99164b5b4e996784afc538467afe5afe2f7205d31a6af5cd9a59d21aa9582d21",
+  "maintained_original_sha256": "be5ce8350e32f64b17b9db709b4721d2cb5923bc5a36171431a5b441d072509f",
+  "registered_source_sha256": "52215bf1cb1ab3a7d5c468f698ae96e15895d849867720708f51c89d6437a0ef",
+  "registered_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "historical_7522_and124_extractions_unchanged": true,
+  "all_previous_test_bodies_unchanged": true,
+  "raw109_suffix_unchanged": true,
+  "source48_authentication_sha256": "7cdaa4db62395b5a357d4cc329dd1e39b2b714a09752bf9b036282048a15f956",
+  "source48_compiler_source": "346179f3b05883ec93b38486be93cfaed2ee8bcf"
+}
