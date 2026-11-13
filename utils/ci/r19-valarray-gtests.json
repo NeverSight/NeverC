@@ -1,0 +1,204 @@
+{
+  "positive_cases": [
+    {
+      "name": "valarray-count-layout",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayIntCountRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "16e1a6e207d6ef0ed4faeff831ea12b5e40987929d73b1edb76804213d079b76",
+      "original_case_source_sha256": "16e1a6e207d6ef0ed4faeff831ea12b5e40987929d73b1edb76804213d079b76",
+      "gtest_body_sha256": "62f260967a66804515fb7d5c7d7d8cfb2ba94faf6659b4822cb366467e4c5fd8"
+    },
+    {
+      "name": "valarray-fill-runtime",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayIntFillRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a13ba8bb6eeb0b02beb4948a3dd8443e6a9166041efb57b8ce2e0529c126bd75",
+      "original_case_source_sha256": "a13ba8bb6eeb0b02beb4948a3dd8443e6a9166041efb57b8ce2e0529c126bd75",
+      "gtest_body_sha256": "2db1ae6cd65a49ff6c97ddda5a39eb041dc394e4efc4350383535361ae6eba1c"
+    },
+    {
+      "name": "valarray-live-alias",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayIntAliasedScalarRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "014f398853d3291518562bf228e258ec82c5fd2c645cfd8fdfed3304f75eb60e",
+      "original_case_source_sha256": "014f398853d3291518562bf228e258ec82c5fd2c645cfd8fdfed3304f75eb60e",
+      "gtest_body_sha256": "7ac230728fea0b000ba7873535d366c3c6997e1569e95fd698e265c48ddd99ab"
+    },
+    {
+      "name": "valarray-owned-argument-effects",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayIntOwnedArgumentEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "638e8032f28c476a17706ca168f23020d0983e05a5ca57c1c6216995b46ce734",
+      "original_case_source_sha256": "638e8032f28c476a17706ca168f23020d0983e05a5ca57c1c6216995b46ce734",
+      "gtest_body_sha256": "e2a73b26853a8534612dd693a1d1df6c9867787e9538052994dc5a9d52e29197"
+    },
+    {
+      "name": "valarray-empty-and-zero-count",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayIntEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8933e9afe0e122ba30436c8c257f987d060179d9c2551ce5c307edaa2b73476a",
+      "original_case_source_sha256": "8933e9afe0e122ba30436c8c257f987d060179d9c2551ce5c307edaa2b73476a",
+      "gtest_body_sha256": "6c7a0fa04888b19a89294f0e27925095c440b7b6d9af34f16444d42e9feb1382"
+    },
+    {
+      "name": "valarray-selected-global-allocation",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayIntSelectedHeapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "488bb49ada05c66f216520aedda155abaf132d35d521344f8525212492e35454",
+      "original_case_source_sha256": "488bb49ada05c66f216520aedda155abaf132d35d521344f8525212492e35454",
+      "gtest_body_sha256": "938656d350417cf385b47d222d0468bf331e8ca605e0690735ca3b4482dcaa74"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "valarray-owned-fill-body",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayOwnedFillConstructorRejected",
+      "expected": "reject",
+      "source_sha256": "78109c04bc249c5eee9b7fe15c9952644fa7cac444e01208d46d5052c1779be8",
+      "original_case_source_sha256": "78109c04bc249c5eee9b7fe15c9952644fa7cac444e01208d46d5052c1779be8",
+      "gtest_body_sha256": "3f227be7e4a7d4bde0a194f51f346796d572c8ef967d94b82399289369f8dc73"
+    },
+    {
+      "name": "valarray-owned-sum-body",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayOwnedSumRejected",
+      "expected": "reject",
+      "source_sha256": "b96c7dd365ae7349b216375bde50baf483a92e9673544c166f7c1fcc03d2f735",
+      "original_case_source_sha256": "b96c7dd365ae7349b216375bde50baf483a92e9673544c166f7c1fcc03d2f735",
+      "gtest_body_sha256": "383d47887f86fbc445f9c5854a39bcf975dbb8ab5a6bb402ed2059ed7497af9f"
+    },
+    {
+      "name": "valarray-owned-sum-macro",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayOwnedSumMacroRejected",
+      "expected": "reject",
+      "source_sha256": "8df176897ba98c6c6d761cce528013766808f62b56fe99e26a2198aa5fae2ada",
+      "original_case_source_sha256": "8df176897ba98c6c6d761cce528013766808f62b56fe99e26a2198aa5fae2ada",
+      "gtest_body_sha256": "4e04c64097b399b5ccdea90e3149881a93ad7c9b8a2f75fd829a2f183a3fb09b"
+    },
+    {
+      "name": "valarray-owned-storage-macro",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayOwnedStorageMacroRejected",
+      "expected": "reject",
+      "source_sha256": "4126edd5e161d07a6dc01fdd880a920892a088f1820add65a3dc89ddddc99179",
+      "original_case_source_sha256": "4126edd5e161d07a6dc01fdd880a920892a088f1820add65a3dc89ddddc99179",
+      "gtest_body_sha256": "fdc1086033211af564a2e29756f9d4b1629f23438ea3df5a4b6ab6f94314426e"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ValarrayIntCountRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayIntFillRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayIntAliasedScalarRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayIntOwnedArgumentEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayIntEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayIntSelectedHeapRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayOwnedFillConstructorRejected",
+    "TranslateTest.CoreV2ValarrayOwnedSumRejected",
+    "TranslateTest.CoreV2ValarrayOwnedSumMacroRejected",
+    "TranslateTest.CoreV2ValarrayOwnedStorageMacroRejected"
+  ],
+  "native_reference_authentication_sha256": "e836ceae668a5cb1d4a3606b55dc901c101e36693f8a8fc726c832996951b382",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "source_cases": [
+    {
+      "name": "valarray-count-layout",
+      "source": "#include <valarray>\nint main(){std::valarray<int> v(3);v[1]=5;\nreturn sizeof(v)!=16||alignof(std::valarray<int>)!=8||v.size()!=3||v.sum()!=5;}\n",
+      "source_sha256": "16e1a6e207d6ef0ed4faeff831ea12b5e40987929d73b1edb76804213d079b76",
+      "public_header": "valarray",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "valarray-fill-runtime",
+      "source": "#include <valarray>\nint main(){std::valarray<int> v(2,3);v[1]=5;v+=1;\nreturn v.size()!=3||v[0]!=3||v[1]!=6||v.sum()!=12;}\n",
+      "source_sha256": "a13ba8bb6eeb0b02beb4948a3dd8443e6a9166041efb57b8ce2e0529c126bd75",
+      "public_header": "valarray",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "valarray-live-alias",
+      "source": "#include <valarray>\nint main() {\n  std::valarray<int> values(1, 3);\n  values[1] = 2;\n  values[2] = 3;\n  values += values[0];\n  const std::valarray<int>& view = values;\n  return view.size() != 3 || view[0] != 2 || view[1] != 4 ||\n         view[2] != 5 || view.sum() != 11;\n}\n",
+      "source_sha256": "014f398853d3291518562bf228e258ec82c5fd2c645cfd8fdfed3304f75eb60e",
+      "public_header": "valarray",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "valarray-owned-argument-effects",
+      "source": "#include <valarray>\nconst int& update_first(std::valarray<int>& values) {\n  values[0] = 3;\n  return values[0];\n}\nint main() {\n  std::valarray<int> values(1, 3);\n  values += update_first(values);\n  return values[0] != 6 || values[1] != 7 || values[2] != 7 || values.sum() != 20;\n}\n",
+      "source_sha256": "638e8032f28c476a17706ca168f23020d0983e05a5ca57c1c6216995b46ce734",
+      "public_header": "valarray",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "valarray-empty-and-zero-count",
+      "source": "#include <valarray>\nint main() {\n  std::valarray<int> empty;\n  std::valarray<int> zero_count(0);\n  empty += 7;\n  const std::valarray<int>& view = empty;\n  return view.size() != 0 || view.sum() != 0 || zero_count.size() != 0 ||\n         zero_count.sum() != 0;\n}\n",
+      "source_sha256": "8933e9afe0e122ba30436c8c257f987d060179d9c2551ce5c307edaa2b73476a",
+      "public_header": "valarray",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "valarray-selected-global-allocation",
+      "source": "using Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <valarray>\n#include <new>\n#include <cstdlib>\nint allocations = 0;\nint releases = 0;\nbool delete_saw_empty = false;\nstd::valarray<int>* watched = nullptr;\nvoid* operator new(std::size_t bytes) {\n  ++allocations;\n  return ::malloc(bytes);\n}\nvoid operator delete(void* pointer) noexcept {\n  ++releases;\n  if (watched) delete_saw_empty = watched->size() == 0;\n  ::free(pointer);\n}\nint main() {\n  {\n    std::valarray<int> values(4, 3);\n    watched = &values;\n    if (values.sum() != 12) return 1;\n  }\n  watched = nullptr;\n  return allocations != releases || allocations > 1 || (allocations && !delete_saw_empty);\n}\n",
+      "source_sha256": "488bb49ada05c66f216520aedda155abaf132d35d521344f8525212492e35454",
+      "public_header": "valarray",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "valarray-owned-fill-body",
+      "source": "#include <valarray>\nnamespace std { inline namespace __1 {\ntemplate<> inline valarray<int>::valarray(const int& x,size_t n)\n  :__begin_(nullptr),__end_(nullptr){resize(n,x);}\n}}\nint main(){std::valarray<int> v(2,3);return v.size()!=3;}\n",
+      "source_sha256": "78109c04bc249c5eee9b7fe15c9952644fa7cac444e01208d46d5052c1779be8",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "valarray"
+    },
+    {
+      "name": "valarray-owned-sum-body",
+      "source": "#include <valarray>\nnamespace std { inline namespace __1 {\ntemplate<> inline int valarray<int>::sum() const{return 6;}\n}}\nint main(){std::valarray<int> v(2,3);return v.sum()!=6;}\n",
+      "source_sha256": "b96c7dd365ae7349b216375bde50baf483a92e9673544c166f7c1fcc03d2f735",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "valarray"
+    },
+    {
+      "name": "valarray-owned-sum-macro",
+      "source": "#define sum owned_sum\n#include <valarray>\nint main(){std::valarray<int> v(2,3);return v.sum()!=6;}\n",
+      "source_sha256": "8df176897ba98c6c6d761cce528013766808f62b56fe99e26a2198aa5fae2ada",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "valarray"
+    },
+    {
+      "name": "valarray-owned-storage-macro",
+      "source": "#define __begin_ owned_begin\n#include <valarray>\nint main(){std::valarray<int> v(2,3);return v.size()!=3;}\n",
+      "source_sha256": "4126edd5e161d07a6dc01fdd880a920892a088f1820add65a3dc89ddddc99179",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "valarray"
+    }
+  ],
+  "previous_registry_count": 7502,
+  "current_registry_count": 7512,
+  "previous_maintained_sha256": "93fefb63333bea119087a1265f504b3d20f6db1e4ccdf794021a973899d0be50",
+  "maintained_original_sha256": "2bcb4c7dbe05ba69d18fdf6149ae60600f12da9da3067c19fee643bc622b1ae6",
+  "registered_source_sha256": "8f54534dacf24890948f08170cb93d55fa8bd6a776ad7911fcb4d93e8c5e0b65",
+  "registered_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "historical_7502_and124_extractions_unchanged": true,
+  "all_previous_test_bodies_unchanged": true,
+  "raw109_suffix_unchanged": true,
+  "source48_authentication_sha256": "ac7e5a1770a4e98763b558460aea3f9a5a8d1e1f60bd4f4f0d5b0d863ad0696a",
+  "source48_compiler_source": "82941c4b4f2270b6d2b124cc09e8f43d480e1074"
+}

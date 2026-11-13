@@ -51,6 +51,9 @@ FIXTURE_MAINTAINED_BIND97_SHA256 = 'cabce24d8eadcc4fd4b384b1f3d92e3536ba884d13af
 BIND109_REGISTERED_SOURCE_SHA256 = '3db5ef196fd52c95dfb7fccfe80b6d5417a723899cf315ef7abbc4b6c2a06f5e'
 BIND109_GOLDEN_SUFFIX_SHA256 = 'b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb'
 
+R19_VALARRAY_MAINTAINED_SHA256 = '2bcb4c7dbe05ba69d18fdf6149ae60600f12da9da3067c19fee643bc622b1ae6'
+R19_VALARRAY_REGISTERED_SHA256 = '8f54534dacf24890948f08170cb93d55fa8bd6a776ad7911fcb4d93e8c5e0b65'
+
 R19_POPCOUNT_MAINTAINED_SHA256 = '93fefb63333bea119087a1265f504b3d20f6db1e4ccdf794021a973899d0be50'
 R19_POPCOUNT_REGISTERED_SHA256 = '7267b21a6e640ede8ecffb05c9971fcd865475b9e4e0fd66c691570fe7ea57aa'
 
@@ -106,6 +109,13 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
+    if source_digest == R19_VALARRAY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VALARRAY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VALARRAY_MAINTAINED_SHA256
+        return original
     if source_digest == R19_POPCOUNT_MAINTAINED_SHA256:
         return source
     if source_digest == R19_POPCOUNT_REGISTERED_SHA256:
