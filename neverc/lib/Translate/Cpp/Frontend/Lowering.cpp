@@ -26354,6 +26354,178 @@ class FunctionLowering {
     reject(L, "forward-list operation", "Unknown checked owner operation.");
   }
 
+
+  Expression listMember(Expression Place, llvm::StringRef Name, SourceLocation L) {
+    return Expression{{"kind", "member"},
+        {"type", Name == "nct_list_size" ? type(A.Context.getSizeType(), L) : "ptr:void"},
+        {"name", Name.str()}, {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+  Expression listLink(Expression Node, bool Prev, SourceLocation L) {
+    return unorderedNodeField(std::move(Node), A.Context.VoidPtrTy, Prev ? 0 : 8, L);
+  }
+  Expression listValue(Expression Node, bool Const, SourceLocation L) {
+    auto Bytes = binary("+", cast(std::move(Node), "ptr:u8", L),
+        quantity(16, type(A.Context.getSizeType(), L), L), "ptr:u8", L);
+    return dereference(cast(cast(std::move(Bytes), "ptr:void", L),
+        Const ? "cptr:int" : "ptr:int", L), L);
+  }
+  Expression listSentinel(Expression Place, SourceLocation L) {
+    return cast(address(listMember(std::move(Place), "nct_list_prev", L), A.Context.VoidPtrTy, L), "ptr:void", L);
+  }
+  Expression listIteratorMember(Expression Place, SourceLocation L) {
+    return Expression{{"kind", "member"}, {"type", "ptr:void"}, {"name", "nct_list_iterator"},
+        {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+  void initializeListStorage(Expression Place, SourceLocation L) {
+    auto Sentinel = snapshot(listSentinel(Place, L), L);
+    assign(listMember(Place, "nct_list_prev", L), Sentinel, L);
+    assign(listMember(Place, "nct_list_next", L), Sentinel, L);
+    initializeZero(listMember(Place, "nct_list_size", L), A.Context.getSizeType(), L);
+  }
+  Expression listIterator(QualType T, Expression Node, SourceLocation L) {
+    if (!approvedUtilityListIteratorRecord(A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context))
+      reject(L, "list iterator", "The selected pinned pointer carrier is required.");
+    auto Result = temporary(type(T, L), L);
+    assign(listIteratorMember(Result, L), std::move(Node), L);
+    return Result;
+  }
+  Expression listCreateNode(Expression ValueReference, const UtilityListNodeRecord &Info, SourceLocation L) {
+    auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
+        quantity(24, type(A.Context.getSizeType(), L), L), L), "ptr:void", L), L);
+    initializeZero(listLink(Node, true, L), A.Context.VoidPtrTy, L);
+    initializeZero(listLink(Node, false, L), A.Context.VoidPtrTy, L);
+    assign(listValue(Node, false, L), dereference(ValueReference, L), L);
+    return Node;
+  }
+  void listReleaseNode(Expression Node, const UtilityListNodeRecord &Info, SourceLocation L) {
+    unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
+        quantity(24, type(A.Context.getSizeType(), L), L), L);
+  }
+  void listInsertNode(Expression Place, Expression Position, Expression Node, SourceLocation L) {
+    auto Prev = snapshot(listLink(Position, true, L), L);
+    assign(listLink(Node, true, L), Prev, L);
+    assign(listLink(Node, false, L), Position, L);
+    assign(listLink(Prev, false, L), Node, L);
+    assign(listLink(Position, true, L), Node, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    assign(listMember(Place, "nct_list_size", L),
+        binary("+", listMember(Place, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+  }
+  Expression listEraseNode(Expression Place, Expression Node,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    auto Prev = snapshot(listLink(Node, true, L), L);
+    auto Next = snapshot(listLink(Node, false, L), L);
+    assign(listLink(Prev, false, L), Next, L);
+    assign(listLink(Next, true, L), Prev, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    assign(listMember(Place, "nct_list_size", L),
+        binary("-", listMember(Place, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+    listReleaseNode(Node, Info, L);
+    return Next;
+  }
+
+  void destroyListStorage(Expression Place, const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Release = labelName(), Check = labelName(), Element = labelName(), Done = labelName();
+    const auto Size = type(A.Context.getSizeType(), L);
+    branch(binary("!=", listMember(Place, "nct_list_size", L), quantity(0, Size, L), "bool", L), Release, Done, L);
+    label(Release, L);
+    auto Current = temporary("ptr:void", L);
+    assign(Current, listMember(Place, "nct_list_next", L), L);
+    auto Sentinel = snapshot(listSentinel(Place, L), L);
+    // SDK clear unlinks the whole chain and zeroes size before deleting nodes.
+    // Nodes added by a source-defined delete callback remain in the live list.
+    initializeListStorage(Place, L);
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Current, Sentinel, "bool", L), Element, Done, L);
+    label(Element, L);
+    auto Node = snapshot(Current, L);
+    assign(Current, snapshot(listLink(Current, false, L), L), L);
+    listReleaseNode(Node, Info, L);
+    jump(Check, L); label(Done, L);
+  }
+
+  Expression utilityListOperation(const CallExpr *Call) {
+    const auto L = Call->getExprLoc();
+    const auto Proof = approvedUtilityListCall(A.S, A.Sources, Call, A.Context);
+    if (!Proof || !Proof->Function) reject(L, "list operation", "The selected SDK body and operands are required.");
+    const auto Operation = Proof->Operation;
+    std::optional<Expression> Receiver;
+    if (const auto *Object = Proof->Receiver)
+      Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+    std::vector<Expression> Operands;
+    for (unsigned I = 0; I != Proof->Function->getNumParams(); ++I)
+      Operands.push_back(snapshot(argument(Call->getArg(I + Proof->ArgumentOffset),
+          Proof->Function->getParamDecl(I)->getType()), L));
+    if (Operation == UtilityListOperation::IteratorEqual || Operation == UtilityListOperation::IteratorNotEqual)
+      return binary(Operation == UtilityListOperation::IteratorEqual ? "==" : "!=",
+          listIteratorMember(dereference(Operands[0], L), L),
+          listIteratorMember(dereference(Operands[1], L), L), "bool", L);
+    if (!Receiver) reject(L, "list receiver", "A checked receiver is required.");
+    auto Place = dereference(*Receiver, L);
+    const auto *Method = dyn_cast<CXXMethodDecl>(Proof->Function);
+    if (!Method) reject(L, "list method", "A checked SDK method is required.");
+    if (const auto Iterator = approvedUtilityListIteratorRecord(A.S, A.Sources, Method->getParent(), A.Context)) {
+      if (Operation == UtilityListOperation::IteratorAssign) {
+        assign(listIteratorMember(Place, L), listIteratorMember(dereference(Operands[0], L), L), L);
+        return Place;
+      }
+      auto Node = snapshot(listIteratorMember(Place, L), L);
+      if (Operation == UtilityListOperation::IteratorDereference) return listValue(Node, Iterator->Const, L);
+      if (Operation == UtilityListOperation::IteratorArrow)
+        return cast(address(listValue(Node, Iterator->Const, L), A.Context.IntTy, L),
+            Iterator->Const ? "cptr:int" : "ptr:int", L);
+      const bool PreIncrement = Operation == UtilityListOperation::IteratorPreIncrement;
+      const bool PostIncrement = Operation == UtilityListOperation::IteratorPostIncrement;
+      const bool PreDecrement = Operation == UtilityListOperation::IteratorPreDecrement;
+      const bool PostDecrement = Operation == UtilityListOperation::IteratorPostDecrement;
+      if (PreIncrement || PostIncrement || PreDecrement || PostDecrement) {
+        std::optional<Expression> Previous;
+        if (PostIncrement || PostDecrement) Previous = listIterator(A.Context.getRecordType(Iterator->Record), Node, L);
+        assign(listIteratorMember(Place, L), snapshot(listLink(Node, PreDecrement || PostDecrement, L), L), L);
+        return Previous ? *Previous : Place;
+      }
+      reject(L, "list iterator", "Unknown checked iterator operation.");
+    }
+    const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Method->getParent(), A.Context);
+    if (!Owner) reject(L, "list owner", "The selected integer owner layout is required.");
+    if (Operation == UtilityListOperation::Size) return listMember(Place, "nct_list_size", L);
+    if (Operation == UtilityListOperation::Empty)
+      return binary("==", listMember(Place, "nct_list_size", L),
+          quantity(0, type(A.Context.getSizeType(), L), L), "bool", L);
+    if (Operation == UtilityListOperation::Begin || Operation == UtilityListOperation::End)
+      return listIterator(Method->getReturnType(), Operation == UtilityListOperation::Begin
+          ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L), L);
+    if (Operation == UtilityListOperation::Front || Operation == UtilityListOperation::Back)
+      return listValue(snapshot(listMember(Place,
+          Operation == UtilityListOperation::Front ? "nct_list_next" : "nct_list_prev", L), L), Method->isConst(), L);
+    if (Operation == UtilityListOperation::Clear) {
+      destroyListStorage(Place, Owner->Node, L);
+      return A.zero(Call->getType(), L);
+    }
+    const bool Insert = Operation == UtilityListOperation::Insert;
+    if (Insert || Operation == UtilityListOperation::PushFront || Operation == UtilityListOperation::PushBack) {
+      std::optional<Expression> Position;
+      if (Insert) Position = snapshot(listIteratorMember(Operands[0], L), L);
+      auto Node = listCreateNode(Operands[Insert ? 1 : 0], Owner->Node, L);
+      // push_front/back read current owner links after allocation callbacks.
+      // insert keeps its by-value position, but reloads that position's prev.
+      if (!Position) Position = Operation == UtilityListOperation::PushFront
+          ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
+      listInsertNode(Place, *Position, Node, L);
+      return Insert ? listIterator(Method->getReturnType(), Node, L) : A.zero(Call->getType(), L);
+    }
+    const bool Erase = Operation == UtilityListOperation::Erase;
+    if (Erase || Operation == UtilityListOperation::PopFront || Operation == UtilityListOperation::PopBack) {
+      auto Node = Erase ? snapshot(listIteratorMember(Operands[0], L), L)
+          : snapshot(listMember(Place, Operation == UtilityListOperation::PopFront
+              ? "nct_list_next" : "nct_list_prev", L), L);
+      auto Next = listEraseNode(Place, Node, Owner->Node, L);
+      return Erase ? listIterator(Method->getReturnType(), Next, L) : A.zero(Call->getType(), L);
+    }
+    reject(L, "list operation", "Unknown checked owner operation.");
+  }
+
   Expression valarrayMember(Expression Place, const char *Name, SourceLocation L) {
     return Expression{{"kind", "member"}, {"type", "ptr:int"}, {"name", Name},
         {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
@@ -26453,6 +26625,7 @@ class FunctionLowering {
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
     if (Operation == UtilityOperation::ForwardList) return utilityForwardListOperation(Call);
+    if (Operation == UtilityOperation::List) return utilityListOperation(Call);
     if (Operation == UtilityOperation::ValarrayScalar) return utilityValarrayScalarOperation(Call);
     if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
         Operation == UtilityOperation::BitsetTest || Operation == UtilityOperation::BitsetSet ||
@@ -35801,6 +35974,47 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
 
+
+    if (const auto Kind = approvedUtilityListConstruction(A.S, A.Sources, C, A.Context)) {
+      std::vector<Expression> Operands;
+      for (unsigned I = 0; I != C->getNumArgs(); ++I)
+        Operands.push_back(snapshot(argument(C->getArg(I), C->getConstructor()->getParamDecl(I)->getType()), L));
+      const auto *Record = T->getAsCXXRecordDecl();
+      if (approvedUtilityListIteratorRecord(A.S, A.Sources, Record, A.Context)) {
+        auto Target = listIteratorMember(Place, L);
+        if (*Kind == UtilityListConstruction::IteratorDefault) initializeZero(Target, A.Context.VoidPtrTy, L);
+        else {
+          auto Source = C->getConstructor()->getParamDecl(0)->getType()->isReferenceType()
+              ? dereference(Operands[0], L) : Operands[0];
+          assign(Target, listIteratorMember(Source, L), L);
+        }
+        return;
+      }
+      const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Record, A.Context);
+      if (!Owner) reject(L, "list construction", "The selected integer owner layout is required.");
+      initializeListStorage(Place, L);
+      if (*Kind != UtilityListConstruction::InitializerList) return;
+      const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
+          C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!List) reject(L, "list initializer", "The pinned integer initializer-list carrier is required.");
+      auto Input = snapshot(fieldStorage(Operands[0], List->Begin, L), L);
+      auto Count = snapshot(fieldStorage(Operands[0], List->Size, L), L);
+      const auto Size = type(A.Context.getSizeType(), L);
+      auto Position = temporary(Size, L);
+      assign(Position, quantity(0, Size, L), L);
+      const auto Check = labelName(), Append = labelName(), Done = labelName();
+      jump(Check, L); label(Check, L);
+      branch(binary("<", Position, Count, "bool", L), Append, Done, L);
+      label(Append, L);
+      auto Value = address(index(Input, cast(Position, type(A.Context.getPointerDiffType(), L), L), "int", L),
+          A.Context.IntTy.withConst(), L);
+      auto Node = listCreateNode(Value, Owner->Node, L);
+      listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
+      assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
+      jump(Check, L); label(Done, L);
+      return;
+    }
+
     if (auto Kind = approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedUtilityValarrayRecord(A.S, A.Sources,
           T->getAsCXXRecordDecl(), A.Context);
@@ -37340,6 +37554,8 @@ public:
         approvedUtilityStringDestructor(A.S, A.Sources, D, A.Context);
     const bool ForwardListDestructor =
         approvedUtilityForwardListDestructor(A.S, A.Sources, D, A.Context);
+    const bool ListDestructor =
+        approvedUtilityListDestructor(A.S, A.Sources, D, A.Context);
     const bool ValarrayDestructor =
         approvedUtilityValarrayDestructor(A.S, A.Sources, D, A.Context);
     const bool VectorDestructor =
@@ -37359,6 +37575,9 @@ public:
     if (approvedUtilityForwardListRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !ForwardListDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "forward-list destructor",
              "The selected pinned SDK destruction chain is required.");
+    if (approvedUtilityListRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !ListDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "list destructor",
+             "The selected pinned SDK destruction chain is required.");
     if (approvedUtilityValarrayRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !ValarrayDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "valarray destructor",
              "The selected pinned SDK destruction chain is required.");
@@ -37377,7 +37596,7 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered map destructor",
              "The authenticated SDK storage destructor chain is required.");
     if (D && NotFnDestructor == A.VerifiedNotFnDestructions.end() &&
-        !ForwardListDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
+        !ForwardListDestructor && !ListDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
         !UnorderedMapDestructor && !UnorderedNodeDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
@@ -37523,6 +37742,8 @@ public:
         releaseUnorderedMap(dereference(*ThisPointer, L), *Map, true, L);
       } else if (auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyForwardListStorage(dereference(*ThisPointer, L), Owner->Node, L);
+      } else if (auto Owner = approvedUtilityListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
+        destroyListStorage(dereference(*ThisPointer, L), Owner->Node, L);
       } else if (approvedUtilityValarrayRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyValarrayStorage(dereference(*ThisPointer, L), L);
       } else if (auto Vector = approvedUtilityVectorRecord(

@@ -10673,6 +10673,16 @@ static bool utilityForwardListDestructionSource(Adapter &A, const CXXRecordDecl 
          approvedUtilityForwardListDestructor(A.S, A.Sources, D, A.Context);
 }
 
+
+static bool utilityListDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Info = approvedUtilityListRecord(A.S, A.Sources, Record, A.Context);
+  if (!Info) return false;
+  const auto *D = Info->Record->getDestructor();
+  A.chargeExpansion(1, Record->getLocation());
+  return D && !D->isDeleted() && D->getAccess() == AS_public &&
+         approvedUtilityListDestructor(A.S, A.Sources, D, A.Context);
+}
+
 static bool utilityValarrayDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Info = approvedUtilityValarrayRecord(A.S, A.Sources, Record, A.Context);
   if (!Info) return false;
@@ -11781,6 +11791,7 @@ public:
     if (utilityUnorderedNodeDestructionSource(A, Record)) return true;
     if (utilityUnorderedMapDestructionSource(A, Record)) return true;
     if (utilityForwardListDestructionSource(A, Record)) return true;
+    if (utilityListDestructionSource(A, Record)) return true;
     if (utilityValarrayDestructionSource(A, Record)) return true;
     if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
       if (const auto *Element = Vector->ElementType->getAsCXXRecordDecl())
@@ -13832,6 +13843,10 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
                   approvedUtilityForwardListIteratorRecord(S, Sources, D, Context)) &&
                  !requireUtilityForwardList(D, L, Depth + 1)) {
         return {};
+      } else if ((approvedUtilityListRecord(S, Sources, D, Context) ||
+                  approvedUtilityListIteratorRecord(S, Sources, D, Context)) &&
+                 !requireUtilityList(D, L, Depth + 1)) {
+        return {};
       } else if (approvedUtilityValarrayRecord(S, Sources, D, Context) &&
                  !requireUtilityValarray(D, L, Depth + 1)) {
         return {};
@@ -14262,6 +14277,23 @@ bool Adapter::requireUtilityForwardList(const CXXRecordDecl *Record,
   return true;
 }
 
+
+bool Adapter::requireUtilityList(const CXXRecordDecl *Record,
+                                       SourceLocation L, unsigned Depth) {
+  const auto Owner = approvedUtilityListRecord(S, Sources, Record, Context);
+  const auto Iterator = approvedUtilityListIteratorRecord(S, Sources, Record, Context);
+  const auto *R = Owner ? Owner->Record : Iterator ? Iterator->Record : nullptr;
+  if (!R || Depth > 64) {
+    reject(L, "list layout", "The pinned integer owner or iterator pointer carrier is required.", "TR0203");
+    return false;
+  }
+  if (!RequiredUtilityLists.insert(R->getCanonicalDecl()).second) return true;
+  if (type(Context.VoidPtrTy, L, false, Depth + 1).empty() ||
+      type(Context.getSizeType(), L, false, Depth + 1).empty()) return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(R));
+  return true;
+}
+
 bool Adapter::requireUtilityValarray(const CXXRecordDecl *Record,
                                     SourceLocation L, unsigned Depth) {
   const auto Info = approvedUtilityValarrayRecord(S, Sources, Record, Context);
@@ -14594,6 +14626,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, Bitset->Words), nullptr, ArraySizeModifier::Normal, 0), L));
     } else if (approvedUtilityForwardListRecord(S, Sources, R, Context) ||
                approvedUtilityForwardListIteratorRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Context.VoidPtrTy, L));
+    } else if (approvedUtilityListRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Context.VoidPtrTy, L));
+      Args.push_back(zero(Context.VoidPtrTy, L));
+      Args.push_back(zero(Context.getSizeType(), L));
+    } else if (approvedUtilityListIteratorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.VoidPtrTy, L));
     } else if (approvedUtilityValarrayRecord(S, Sources, R, Context)) {
       for (unsigned I = 0; I != 2; ++I)
@@ -15100,6 +15138,8 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
       } else Args.push_back(constant(Storage, Array, L));
     } else if (approvedUtilityForwardListRecord(S, Sources, Record, Context) ||
                approvedUtilityForwardListIteratorRecord(S, Sources, Record, Context)) {
+      Args.push_back(constant(V.getStructField(0), Context.VoidPtrTy, L));
+    } else if (approvedUtilityListIteratorRecord(S, Sources, Record, Context)) {
       Args.push_back(constant(V.getStructField(0), Context.VoidPtrTy, L));
     } else if (approvedUtilityValarrayRecord(S, Sources, Record, Context)) {
       for (unsigned I = 0; I != 2; ++I)
@@ -18545,6 +18585,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityVectorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
@@ -21005,6 +21046,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
              utilityUnorderedNodeDestructionSource(A, Destructor->getParent()) ||
              utilityUnorderedMapDestructionSource(A, Destructor->getParent()) ||
              utilityForwardListDestructionSource(A, Destructor->getParent()) ||
+             utilityListDestructionSource(A, Destructor->getParent()) ||
              utilityValarrayDestructionSource(A, Destructor->getParent()) ||
              utilityVectorDestructionSource(A, Destructor->getParent()) ||
              approvedPiecewiseRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
@@ -21235,6 +21277,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
                 .has_value() ||
             approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
+            approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedUtilityValarrayConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             UniqueSourceConstruction || VectorConstruction.has_value();
         auto Pinned = [&](const FunctionDecl *Function) {
@@ -24031,6 +24074,7 @@ public:
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityValarrayConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
@@ -30881,6 +30925,7 @@ public:
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
@@ -31106,6 +31151,8 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityVectorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityBitset = approvedUtilityBitsetRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityValarray = approvedUtilityValarrayRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityList = approvedUtilityListRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityListIterator = approvedUtilityListIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityForwardList = approvedUtilityForwardListRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityForwardIterator = approvedUtilityForwardListIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedIterator =
@@ -31148,7 +31195,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
                                    UtilityString ||
-                                   UtilityForwardList || UtilityForwardIterator || UtilityValarray || UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
+                                   UtilityForwardList || UtilityForwardIterator || UtilityList || UtilityListIterator || UtilityValarray || UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
                                    UnorderedNode || UnorderedResult ||
                                    UtilityDefaultDelete || UtilityAllocator
                                ? nullptr
@@ -31402,6 +31449,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                    : std::optional<UtilityVectorRecord>();
     const auto UtilityBitset = approvedUtilityBitsetRecord(S, Sources, R, Context);
     const auto UtilityValarray = approvedUtilityValarrayRecord(S, Sources, R, Context);
+    const auto UtilityList = approvedUtilityListRecord(S, Sources, R, Context);
+    const auto UtilityListIterator = approvedUtilityListIteratorRecord(S, Sources, R, Context);
     const auto UtilityForwardList = approvedUtilityForwardListRecord(S, Sources, R, Context);
     const auto UtilityForwardIterator = approvedUtilityForwardListIteratorRecord(S, Sources, R, Context);
     const auto UtilityUnorderedIterator =
@@ -31450,7 +31499,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
                                !UtilityUniquePtr && !UtilityString &&
-                               !UtilityForwardList && !UtilityForwardIterator && !UtilityValarray && !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
+                               !UtilityForwardList && !UtilityForwardIterator && !UtilityList && !UtilityListIterator && !UtilityValarray && !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
                                !UnorderedNode && !UnorderedResult &&
                                !UtilityDefaultDelete &&
                                !UtilityAllocator
@@ -31494,6 +31543,13 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     } else if (UtilityForwardList || UtilityForwardIterator) {
       Fields.push_back(json::Object{{"name", UtilityForwardIterator ? "nct_forward_iterator" : "nct_forward_next"},
           {"type", type(Context.VoidPtrTy, R->getLocation())}});
+
+    } else if (UtilityList) {
+      for (const char *Name : {"nct_list_prev", "nct_list_next"})
+        Fields.push_back(json::Object{{"name", Name}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
+      Fields.push_back(json::Object{{"name", "nct_list_size"}, {"type", type(Context.getSizeType(), R->getLocation())}});
+    } else if (UtilityListIterator) {
+      Fields.push_back(json::Object{{"name", "nct_list_iterator"}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
 
     } else if (UtilityValarray) {
       for (const auto *Name : {"nct_valarray_begin", "nct_valarray_end"})
@@ -31608,6 +31664,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
         for (unsigned I = 0; I != 3; ++I)
           Offsets.push_back(I * PointerBits);
       } else if (UtilityForwardList || UtilityForwardIterator) {
+        Offsets.push_back(uint64_t(0));
+
+      } else if (UtilityList) {
+        Offsets.push_back(uint64_t(0)); Offsets.push_back(uint64_t(64)); Offsets.push_back(uint64_t(128));
+      } else if (UtilityListIterator) {
         Offsets.push_back(uint64_t(0));
 
       } else if (UtilityValarray) {

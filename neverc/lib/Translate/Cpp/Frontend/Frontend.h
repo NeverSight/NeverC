@@ -1298,6 +1298,7 @@ enum class UtilityOperation {
   StringViewSize,
   BitsetCount, BitsetAny, BitsetTest, BitsetSet, BitsetReset, BitsetFlip,
   ForwardList,
+  List,
   ValarrayScalar,
   VectorSize,
   VectorGetAllocator,
@@ -3725,6 +3726,55 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
 
+
+struct UtilityListNodeRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  const clang::CXXRecordDecl *Base = nullptr;
+  const clang::FieldDecl *Prev = nullptr;
+  const clang::FieldDecl *Next = nullptr;
+  const clang::FieldDecl *Value = nullptr;
+};
+struct UtilityListRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  UtilityListNodeRecord Node;
+};
+struct UtilityListIteratorRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  const clang::FieldDecl *Pointer = nullptr;
+  UtilityListNodeRecord Node;
+  bool Const = false;
+};
+std::optional<UtilityListRecord> approvedUtilityListRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<UtilityListIteratorRecord> approvedUtilityListIteratorRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+enum class UtilityListConstruction {
+  Default, Allocator, InitializerList, IteratorDefault, IteratorCopy, IteratorConstConversion
+};
+enum class UtilityListOperation {
+  Empty, Size, Begin, End, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, Erase, Clear,
+  IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement, IteratorPreDecrement, IteratorPostDecrement,
+  IteratorEqual, IteratorNotEqual, IteratorAssign
+};
+
+struct UtilityListCall {
+  UtilityListOperation Operation;
+  const clang::Expr *Receiver = nullptr;
+  const clang::FunctionDecl *Function = nullptr;
+  unsigned ArgumentOffset = 0;
+};
+std::optional<UtilityListConstruction> approvedUtilityListConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+bool approvedUtilityListDestructor(const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context);
+std::optional<UtilityListCall> approvedUtilityListCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+
 struct UtilityValarrayRecord {
   const clang::CXXRecordDecl *Record = nullptr;
   const clang::FieldDecl *Begin = nullptr;
@@ -4336,6 +4386,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStrings;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityBitsets;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityForwardLists;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityValarrays;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMapIterators;
@@ -4447,6 +4498,7 @@ public:
       clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityBitset(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityForwardList(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
+  bool requireUtilityList(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityValarray(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
