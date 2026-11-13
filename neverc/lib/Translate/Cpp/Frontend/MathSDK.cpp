@@ -49875,7 +49875,23 @@ bool dequePinnedRangeQuery(const State &S, const SourceManager &SM,
       if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
     }
   }
-  return true;
+  unsigned QueryNodes = 0;
+  std::function<bool(const Stmt *, unsigned)> ClosedExpression;
+  ClosedExpression = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node || Depth > 8 || ++QueryNodes > 32) return false;
+    const auto *E = dyn_cast<Expr>(Node);
+    if (!E || (!isa<BinaryOperator>(E) && !isa<DeclRefExpr>(E) &&
+        !isa<ImplicitCastExpr>(E) && !isa<ParenExpr>(E))) return false;
+    for (const auto Location : {E->getBeginLoc(),E->getEndLoc(),E->getExprLoc()}) {
+      if (!Location.isValid() || Location.isMacroID()) return false;
+      const auto File = S.sdkFile(SM,Location);
+      if (!File || File->Root != "libcxx" || File->Path != Header) return false;
+    }
+    for (const auto *Child : Node->children())
+      if (!ClosedExpression(Child,Depth + 1)) return false;
+    return true;
+  };
+  return ClosedExpression(Call->getArg(0),0);
 }
 
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
@@ -49969,11 +49985,14 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       if (!dequeDependencyDeclaration(S, SM, Default->getParam()) ||
           !Statement(Default->getExpr(), Depth + 1)) return false;
     }
-    if (const auto *Call = dyn_cast<CallExpr>(Node))
+    if (const auto *Call = dyn_cast<CallExpr>(Node)) {
+      // The exact SDK pointer-comparison query has a closed, separately bounded
+      // and authenticated operand tree; its callee has no run-time effects.
+      if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
       if (!dequeScalarDestruction(S, SM, Call, Context) &&
           !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
-          !dequePinnedRangeQuery(S, SM, Call, Context) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
+    }
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
