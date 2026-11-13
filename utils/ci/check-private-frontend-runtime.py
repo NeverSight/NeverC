@@ -81,7 +81,7 @@ def main():
         assert plan['required_actual_frontend_requests'] == 832
         assert plan['required_actual_stl_generated_o0_o2_products'] == 182
         assert len(plan['target_abis']) == 6 and all('i686' not in target for target in plan['target_abis'])
-        for field in ['actual_integrated_syntax6_authentication_sha256', 'actual_member78_authentication_sha256',
+        for field in ['actual_current_source72_authentication_sha256', 'actual_member78_authentication_sha256',
                       'actual_baseline750_authentication_sha256', 'actual_native144_authentication_sha256']:
             assert re.fullmatch('[0-9a-f]{64}', plan[field])
         r['execution_plan_sha256'] = sha(plan_path)
@@ -117,13 +117,19 @@ def main():
             private_prefix_sha256=sha(args.private_prefix),
             baseline_provenance=baseline, focused_component_scope_only=True)
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
-        assert sha(sdk / 'catalog.json') == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
+        assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == 'b4a7b597150882cd93285481cc060d2eab6949b5c8d50b7ce234579cc814bd77'
         catalog = json.loads((sdk / 'catalog.json').read_text())
         rows = catalog['headers'] + catalog['metadata']
-        assert len(rows) == 665
+        assert len(rows) == 687
         for row in rows:
             assert sha(sdk / row['root'] / row['path']) == row['sha256']
-        r['sdk_files_verified'] = 665
+        r['sdk_files_verified'] = 687
+        current_sdk = {p.relative_to(sdk).as_posix(): sha(p) for p in sdk.rglob('*') if p.is_file()}
+        assert current_sdk == plan['sdk_input_sha256'] and len(current_sdk) == 695
+        assert component['exact_sdk_input_sha256'] == current_sdk
+        embedding = component['current_sdk_embedding']
+        assert embedding['generated_in_actions'] and embedding['new_header_sha256'] == plan['expected_embedding_sha256']
+        r['exact_sdk_input_sha256'] = current_sdk
         manifest = json.loads((root / 'utils/ci/cpp-pair-piecewise-formal-tests.json').read_text())
         selected = manifest['new'] + manifest['regression']
         assert len(selected) == manifest['expected_total'] == 124
@@ -138,9 +144,17 @@ def main():
         r['registered_product_source'] = dict(
             registered_source_sha256=hashlib.sha256(registered).hexdigest(),
             restored_original_source_sha256=hashlib.sha256(original).hexdigest(),
-            original_extractor_and_7493_guard_unchanged=True,
+            original_extractor_and_7493_guard_unchanged=False,
+            historical_7493_guard_preserved=True,extractor_logic_preserved=True,
+            exact_current_registry_authenticated=True,
+            extractor_original_sha256=plan['extractor_original_sha256'],
+            extractor_control_sha256=plan['extractor_control_sha256'],
             registered_and_new_goldens_replayed_once_in_formal221=True)
+        assert hashlib.sha256(original).hexdigest()==plan['maintained_original_source_sha256']=='93fefb63333bea119087a1265f504b3d20f6db1e4ccdf794021a973899d0be50'
+        assert plan['expected_restored_gtest_count']==7502
+        assert sha(root/'utils/ci/extract_cpp_gtests.py')==plan['extractor_control_sha256']=='ffca15136092605daaadb27f2a12c7d9fcf0e09fd2d31bd466ec8bf06ecc5216'
         generated, source_proof = extract(original, selected)
+        assert source_proof['original_test_names']==7502
         original_selected = tuple(selected)
         original_generated_sha256 = hashlib.sha256(generated).hexdigest()
         additional = plan['not_fn_formal_cases']
@@ -152,11 +166,11 @@ def main():
         assert registered_additional == [case['formal_test_name'] for case in additional]
         generated += additions
         selected += [c['formal_test_name'] for c in additional]
-        r['stl_formal_extension'] = dict(original_registered_source_names=7493,
+        r['stl_formal_extension'] = dict(original_registered_source_names=7502,
             original_selected_names=list(original_selected),
             original_generated_before_extension_sha256=original_generated_sha256,
             additions_sha256=sha(additions_path), additional_cases=additional,
-            original_extractor_and_124_bodies_unchanged=True)
+            original_extractor_and_124_bodies_unchanged=False,extractor_logic_and_selected_bodies_unchanged=True)
         first_test = generated.index(b'TEST_F(')
         prefix_bytes = generated[:first_test]
         cleanup = b'''
