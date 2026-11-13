@@ -26325,7 +26325,7 @@ class FunctionLowering {
       return forwardListValue(snapshot(forwardListMember(Place, false, L), L), Method->isConst(), L);
     if (Operation == UtilityForwardListOperation::Clear) {
       destroyForwardListStorage(Place, Owner->Node, L);
-      return A.zero(Call->getType(), L);
+      return Expression{};
     }
     const bool Insert = Operation == UtilityForwardListOperation::InsertAfter;
     const bool Erase = Operation == UtilityForwardListOperation::EraseAfter;
@@ -26341,7 +26341,7 @@ class FunctionLowering {
         auto Node = forwardListCreateNode(Operands[Insert ? 1 : 0], Next, Owner->Node, L);
         assign(forwardListNext(Parent, L), Node, L);
         return Insert ? forwardListIterator(Method->getReturnType(),
-            snapshot(forwardListNext(Parent, L), L), L) : A.zero(Call->getType(), L);
+            snapshot(forwardListNext(Parent, L), L), L) : Expression{};
       }
       auto Node = snapshot(forwardListNext(Parent, L), L);
       assign(forwardListNext(Parent, L), snapshot(forwardListNext(Node, L), L), L);
@@ -26349,7 +26349,7 @@ class FunctionLowering {
       // erase_after reloads the link after deletion, including observable
       // source-defined delete callbacks; pop_front has a void result.
       return Erase ? forwardListIterator(Method->getReturnType(),
-          snapshot(forwardListNext(Parent, L), L), L) : A.zero(Call->getType(), L);
+          snapshot(forwardListNext(Parent, L), L), L) : Expression{};
     }
     reject(L, "forward-list operation", "Unknown checked owner operation.");
   }
@@ -26501,7 +26501,7 @@ class FunctionLowering {
           Operation == UtilityListOperation::Front ? "nct_list_next" : "nct_list_prev", L), L), Method->isConst(), L);
     if (Operation == UtilityListOperation::Clear) {
       destroyListStorage(Place, Owner->Node, L);
-      return A.zero(Call->getType(), L);
+      return Expression{};
     }
     const bool Insert = Operation == UtilityListOperation::Insert;
     if (Insert || Operation == UtilityListOperation::PushFront || Operation == UtilityListOperation::PushBack) {
@@ -26513,7 +26513,7 @@ class FunctionLowering {
       if (!Position) Position = Operation == UtilityListOperation::PushFront
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
       listInsertNode(Place, *Position, Node, L);
-      return Insert ? listIterator(Method->getReturnType(), Node, L) : A.zero(Call->getType(), L);
+      return Insert ? listIterator(Method->getReturnType(), Node, L) : Expression{};
     }
     const bool Erase = Operation == UtilityListOperation::Erase;
     if (Erase || Operation == UtilityListOperation::PopFront || Operation == UtilityListOperation::PopBack) {
@@ -26521,7 +26521,7 @@ class FunctionLowering {
           : snapshot(listMember(Place, Operation == UtilityListOperation::PopFront
               ? "nct_list_next" : "nct_list_prev", L), L);
       auto Next = listEraseNode(Place, Node, Owner->Node, L);
-      return Erase ? listIterator(Method->getReturnType(), Next, L) : A.zero(Call->getType(), L);
+      return Erase ? listIterator(Method->getReturnType(), Next, L) : Expression{};
     }
     reject(L, "list operation", "Unknown checked owner operation.");
   }
