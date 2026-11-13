@@ -26162,8 +26162,7 @@ class FunctionLowering {
       label(Word, L);
       auto Bits = snapshot(bitsetWord(Place, *Info, Position, L), L);
       if (Operation == UtilityOperation::BitsetAny) {
-        assign(Result, cast(binary("||", binary("!=", Result, quantity(0, "u64", L), "bool", L),
-            binary("!=", Bits, quantity(0, "u64", L), "bool", L), "bool", L), "u64", L), L);
+        assign(Result, binary("|", Result, Bits, "u64", L), L);
         jump(Next, L);
       } else {
         const auto BitCheck = labelName(), Count = labelName();
