@@ -49757,6 +49757,58 @@ bool dequeBuiltinLibraryCast(const State &S, const SourceManager &SM,
       Context.hasSameType(Result, Forwarded);
 }
 
+
+bool dequePinnedMemoryTransfer(const State &S, const SourceManager &SM,
+    const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!F || !F->getIdentifier() || !F->getBuiltinID() || F->getName() != "__builtin_memmove" ||
+      F->hasBody() || F->isVariadic() || F->getNumParams() != 3 || Call->getNumArgs() != 3 ||
+      !F->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      !Context.hasSameType(F->getReturnType(), Context.VoidPtrTy) ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), Context.VoidPtrTy) ||
+      !Context.hasSameType(F->getParamDecl(1)->getType(), Context.getPointerType(Context.VoidTy.withConst())) ||
+      !Context.hasSameType(F->getParamDecl(2)->getType(), Context.getSizeType()) ||
+      !Context.hasSameType(Call->getArg(2)->getType(), Context.getSizeType())) return false;
+  const auto Site = S.sdkFile(SM, Call->getExprLoc());
+  const auto Line = SM.getExpansionLineNumber(Call->getExprLoc());
+  if (!Site || Site->Root != "libcxx" || Site->Path != "__string/constexpr_c_functions.h" ||
+      Call->getExprLoc().isMacroID() || (Line != 214 && Line != 226)) return false;
+  const auto *To = dyn_cast<DeclRefExpr>(Call->getArg(0)->IgnoreParenImpCasts());
+  const auto *From = dyn_cast<DeclRefExpr>(Call->getArg(1)->IgnoreParenImpCasts());
+  const auto *ToParameter = To ? dyn_cast<ParmVarDecl>(To->getDecl()) : nullptr;
+  const auto *FromParameter = From ? dyn_cast<ParmVarDecl>(From->getDecl()) : nullptr;
+  const auto *Owner = ToParameter ? dyn_cast<FunctionDecl>(ToParameter->getDeclContext()) : nullptr;
+  if (!Owner || !FromParameter || FromParameter->getDeclContext() != Owner ||
+      !Owner->getIdentifier() || Owner->getName() != "__constexpr_memmove" ||
+      !dequeStd(Owner->getDeclContext()) || Owner->getNumParams() != 3 ||
+      Owner->getParamDecl(0) != ToParameter || Owner->getParamDecl(1) != FromParameter ||
+      Owner->getTemplateSpecializationKind() != TSK_ImplicitInstantiation || !Owner->hasBody() ||
+      !ToParameter->getType()->isPointerType() || !FromParameter->getType()->isPointerType() ||
+      !Context.hasSameType(Owner->getReturnType(), ToParameter->getType())) return false;
+  const auto Element = ToParameter->getType()->getPointeeType();
+  const auto SourceElement = FromParameter->getType()->getPointeeType();
+  if (Element.isConstQualified() || Element.isVolatileQualified() || SourceElement.isVolatileQualified() ||
+      (!Context.hasSameType(Element, Context.IntTy) &&
+       !Context.hasSameType(Element, Context.getPointerType(Context.IntTy))) ||
+      !Context.hasSameUnqualifiedType(Element, SourceElement)) return false;
+  for (const auto *D : Owner->redecls())
+    if (!dequePinned(S, SM, D, "__string/constexpr_c_functions.h")) return false;
+  const auto *Pattern = Owner->getTemplateInstantiationPattern();
+  if (!Pattern) return false;
+  for (const auto *D : Pattern->redecls())
+    if (!dequePinned(S, SM, D, "__string/constexpr_c_functions.h")) return false;
+  for (const auto *D : F->redecls()) {
+    if (dequeDependencyDeclaration(S, SM, D)) continue;
+    if (!D->isImplicit() || D->hasBody() ||
+        !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+    if (D->getLocation().isValid()) {
+      const auto File = S.sdkFile(SM, D->getLocation());
+      if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+    }
+  }
+  return true;
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context) {
   std::set<const FunctionDecl *> Seen;
@@ -49850,6 +49902,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!dequeScalarDestruction(S, SM, Call, Context) &&
+          !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
