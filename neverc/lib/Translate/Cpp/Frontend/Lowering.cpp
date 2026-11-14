@@ -36774,7 +36774,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       if (!Info) reject(L, "priority queue construction", "The checked integer storage is required.");
       zeroRandomVector(Place, Info->Container, L);
       assign(Expression{{"kind", "member"}, {"type", "u8"}, {"name", "nct_priority_compare"},
-          {"args", json::Array{Place}}, {"loc", A.loc(L)}}, A.zero(A.Context.UnsignedCharTy, L), L);
+          {"args", json::Array{json::Object(Place)}}, {"loc", A.loc(L)}}, A.zero(A.Context.UnsignedCharTy, L), L);
       return;
     }
 
