@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "priority-value-copy-construction",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntCopyConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d43a1232a80fa8907283c1ba8c9abe9882ec4ba3b0ecfc0879a322107446c323",
+      "original_case_source_sha256": "d43a1232a80fa8907283c1ba8c9abe9882ec4ba3b0ecfc0879a322107446c323",
+      "gtest_body_sha256": "95a226eb5e34cd748d15a3c02c82b2649536168d0337bce6810b03914dab20a6"
+    },
+    {
+      "name": "priority-value-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntCopyAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "03868c5cdaf61e2a5e7f21d23c0f445cd6bed3a861c9bc8f40e0f44ada4a7b94",
+      "original_case_source_sha256": "03868c5cdaf61e2a5e7f21d23c0f445cd6bed3a861c9bc8f40e0f44ada4a7b94",
+      "gtest_body_sha256": "9c43be5699a9147a098e814ba4dbf45f168a609b7a288511b3f33d66dcc29443"
+    },
+    {
+      "name": "priority-value-move-construction",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntMoveConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "744c107ac2b676df56eb1ed047a21d6e4aac8472be8c1a126c14a1f8de9cace3",
+      "original_case_source_sha256": "744c107ac2b676df56eb1ed047a21d6e4aac8472be8c1a126c14a1f8de9cace3",
+      "gtest_body_sha256": "3f0d400d109ae98aafb8e5acce0d5701d915275d9ac58bb5d470268cde5f1d08"
+    },
+    {
+      "name": "priority-value-move-assignment",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntMoveAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b676b4c75f6b81fc08f2c7c685558f8b5f9013586eee23f685f3b32b2821681d",
+      "original_case_source_sha256": "b676b4c75f6b81fc08f2c7c685558f8b5f9013586eee23f685f3b32b2821681d",
+      "gtest_body_sha256": "99caf2a0eb35e3654719949a41024732872439d39befca69ac5096ed9b64cd9a"
+    },
+    {
+      "name": "priority-value-swap-identities",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntSwapIdentitiesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c10a033b80e306677d52c872d563e8583e5f15b8391cd2db137fe1c89fc54f35",
+      "original_case_source_sha256": "c10a033b80e306677d52c872d563e8583e5f15b8391cd2db137fe1c89fc54f35",
+      "gtest_body_sha256": "b02418014ad212eb755e1dd17d89cb81d43f534290403f46649da28f8e3b59d2"
+    },
+    {
+      "name": "priority-value-emplace-growth",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntEmplaceGrowthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bf33729a7500077841d4b0d6dc9d3519df38e6eba303f54053f51de56089ff5a",
+      "original_case_source_sha256": "bf33729a7500077841d4b0d6dc9d3519df38e6eba303f54053f51de56089ff5a",
+      "gtest_body_sha256": "6d7e9f8f0d60964b6f18f3227f5cc59c0e2e9fc714ff60785b1de95fe9192231"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "priority-value-owned-copy-constructor",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueOwnedCopyConstructorRejected",
+      "expected": "reject",
+      "source_sha256": "2a09e6ee5345399cc51eb4ab9f41105959c99e752bbdd88a8ddfc00984fbb3a0",
+      "original_case_source_sha256": "2a09e6ee5345399cc51eb4ab9f41105959c99e752bbdd88a8ddfc00984fbb3a0",
+      "gtest_body_sha256": "acf7f8f48ea427840b82a941647b0cd0d5f106da4b9e2a3c2cf0100932b94925"
+    },
+    {
+      "name": "priority-value-owned-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueOwnedCopyAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "90dff0fcb1dd3730e0b548bb924cdafd69bf1bf5ee81002dae3174d4a6a9a088",
+      "original_case_source_sha256": "90dff0fcb1dd3730e0b548bb924cdafd69bf1bf5ee81002dae3174d4a6a9a088",
+      "gtest_body_sha256": "bcd27b3aa484f0251e920e4ac7235aceab78f7212d93622f82e18a28e897100e"
+    },
+    {
+      "name": "priority-value-owned-swap-body",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueOwnedSwapRejected",
+      "expected": "reject",
+      "source_sha256": "3983d252c35fbafb0dcb582fd3fe081b3f66a415fc0b37bbc545dea529a8da7f",
+      "original_case_source_sha256": "3983d252c35fbafb0dcb582fd3fe081b3f66a415fc0b37bbc545dea529a8da7f",
+      "gtest_body_sha256": "875cc7cc5dc087befec84244f44bd0d2121f9f3ef698af638da734afec389a6c"
+    },
+    {
+      "name": "priority-value-owned-emplace-macro",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueOwnedEmplaceMacroRejected",
+      "expected": "reject",
+      "source_sha256": "228641ec158c37e1dd472a8d136be095f085220f1536df735091b8afb4eedc66",
+      "original_case_source_sha256": "228641ec158c37e1dd472a8d136be095f085220f1536df735091b8afb4eedc66",
+      "gtest_body_sha256": "f95abeaf42a76176ae6c910d40df12d06a631581e65188935364df4aae916145"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2PriorityQueueIntCopyConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntCopyAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntMoveConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntMoveAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntSwapIdentitiesRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntEmplaceGrowthRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueOwnedCopyConstructorRejected",
+    "TranslateTest.CoreV2PriorityQueueOwnedCopyAssignmentRejected",
+    "TranslateTest.CoreV2PriorityQueueOwnedSwapRejected",
+    "TranslateTest.CoreV2PriorityQueueOwnedEmplaceMacroRejected"
+  ],
+  "native_reference_authentication_sha256": "5bb89eb103fc2e8ded293bb401fb7f30890d14753014a9da9802f3348f178e51",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "897b03865b58f06c65a9239e0097bbb0ff0e21c4ce1b23cf81f876e8c553f550",
+  "maintained_original_sha256": "8c9074b42025e91e0d4b9cdec291b890c17877deb6f5f2ecfb185bab4a32abd0",
+  "previous_registered_source_sha256": "a2b8c65bb7affeb36c45d6c9a9101e20987d2e2a5cf186b3797bc7e1e869298f",
+  "previous_maintained_original_sha256": "e918c2f8ee5d9bc260a95fa010842b93572c5c8b844cedab0f9bff6d69ef849d",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7572,
+  "current_python_registry_tests": 62,
+  "previous7562_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "e0c6a269890c191c18bbea6a3c7c9c8beef72343da5bc7aad3dc926f86d7e532",
+  "extractor_sha256": "3b08dc93baf4d51ac0a2a9c0657461aa58b0fd4a133621f68898dcfe2579ecb7",
+  "source_cases": [
+    {
+      "name": "priority-value-copy-construction",
+      "source": "#include <queue>\nint main(){std::priority_queue<int> q;q.push(3);q.push(8);q.push(1);\nconst auto& source=q;std::priority_queue<int> copied(source);\nif(copied.size()!=3||copied.top()!=8||&copied.top()==&source.top())return 1;\nq.pop();copied.push(13);if(q.top()!=3||copied.top()!=13)return 2;\ncopied.pop();copied.pop();if(copied.top()!=3||q.size()!=2)return 3;\nstd::priority_queue<int> empty;const auto& ce=empty;\nstd::priority_queue<int> other(ce);return !other.empty();}\n",
+      "source_sha256": "d43a1232a80fa8907283c1ba8c9abe9882ec4ba3b0ecfc0879a322107446c323",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-value-copy-assignment",
+      "source": "#include <queue>\nint main(){std::priority_queue<int> q;q.push(4);q.push(9);q.push(2);\nstd::priority_queue<int> other;other.push(-1);const auto& source=q;\nauto& assigned=(other=source);if(&assigned!=&other||other.size()!=3||other.top()!=9)return 1;\nq.pop();if(q.top()!=4||other.top()!=9)return 2;\nconst int* before=&other.top();other=other;\nif(other.size()!=3||other.top()!=9||&other.top()!=before)return 3;\nstd::priority_queue<int> empty;other=empty;if(!other.empty())return 4;\nempty=q;return empty.size()!=2||empty.top()!=4;}\n",
+      "source_sha256": "03868c5cdaf61e2a5e7f21d23c0f445cd6bed3a861c9bc8f40e0f44ada4a7b94",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-value-move-construction",
+      "source": "#include <queue>\n#include <utility>\nint main(){std::priority_queue<int> source;source.push(5);source.push(12);source.push(-2);\nconst int* address=&source.top();std::priority_queue<int> target(std::move(source));\nif(!source.empty()||target.size()!=3||target.top()!=12||&target.top()!=address)return 1;\nsource.push(7);target.pop();if(source.top()!=7||target.top()!=5)return 2;\nstd::priority_queue<int> empty;std::priority_queue<int> next(std::move(empty));\nreturn !empty.empty()||!next.empty();}\n",
+      "source_sha256": "744c107ac2b676df56eb1ed047a21d6e4aac8472be8c1a126c14a1f8de9cace3",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-value-move-assignment",
+      "source": "#include <queue>\n#include <utility>\nint main(){std::priority_queue<int> source;source.push(6);source.push(15);source.push(1);\nstd::priority_queue<int> target;target.push(99);target.push(100);\nconst int* address=&source.top();auto& assigned=(target=std::move(source));\nif(&assigned!=&target||!source.empty()||target.size()!=3||target.top()!=15||&target.top()!=address)return 1;\nsource.push(-3);target.pop();if(source.top()!=-3||target.top()!=6)return 2;\nstd::priority_queue<int> empty;target=std::move(empty);\nreturn !target.empty()||!empty.empty();}\n",
+      "source_sha256": "b676b4c75f6b81fc08f2c7c685558f8b5f9013586eee23f685f3b32b2821681d",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-value-swap-identities",
+      "source": "#include <queue>\n#include <utility>\nstatic std::priority_queue<int>* first;static std::priority_queue<int>* second;static int effects;\nstd::priority_queue<int>* receiver(){effects=effects*10+1;return first;}\nstd::priority_queue<int>& argument(){effects=effects*10+2;return *second;}\nint main(){std::priority_queue<int> a;a.push(3);a.push(11);std::priority_queue<int> b;b.push(-2);\nconst int* aa=&a.top();const int* bb=&b.top();first=&a;second=&b;\nreceiver()->swap(argument());if(effects!=12||&a.top()!=bb||&b.top()!=aa)return 1;\nstd::swap(a,b);if(&a.top()!=aa||&b.top()!=bb)return 2;\nusing std::swap;swap(a,b);if(&a.top()!=bb||&b.top()!=aa)return 3;\na.swap(a);return a.size()!=1||a.top()!=-2||b.size()!=2||b.top()!=11;}\n",
+      "source_sha256": "c10a033b80e306677d52c872d563e8583e5f15b8391cd2db137fe1c89fc54f35",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-value-emplace-growth",
+      "source": "#include <queue>\nint main(){std::priority_queue<int> q;q.emplace();if(q.size()!=1||q.top()!=0)return 1;\nint value=17;q.emplace(value);q.emplace(-3);\nfor(int i=0;i!=2048;++i)q.emplace(q.top());\nif(q.size()!=2051||q.top()!=17)return 2;\nfor(int i=0;i!=2049;++i){if(q.top()!=17)return 3;q.pop();}\nif(q.top()!=0)return 4;q.pop();if(q.top()!=-3)return 5;q.pop();return !q.empty();}\n",
+      "source_sha256": "bf33729a7500077841d4b0d6dc9d3519df38e6eba303f54053f51de56089ff5a",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-value-owned-copy-constructor",
+      "source": "#include <queue>\nnamespace std { inline namespace __1 {\ntemplate<> inline priority_queue<int>::priority_queue(const priority_queue&) {}\n}}\nint main(){std::priority_queue<int> source;source.push(3);std::priority_queue<int> copied(source);return copied.empty();}\n",
+      "source_sha256": "2a09e6ee5345399cc51eb4ab9f41105959c99e752bbdd88a8ddfc00984fbb3a0",
+      "public_header": "queue",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "priority-value-owned-copy-assignment",
+      "source": "#include <queue>\nnamespace std { inline namespace __1 {\ntemplate<> inline priority_queue<int>& priority_queue<int>::operator=(const priority_queue&) {return *this;}\n}}\nint main(){std::priority_queue<int> source;source.push(3);std::priority_queue<int> other;other=source;return other.empty();}\n",
+      "source_sha256": "90dff0fcb1dd3730e0b548bb924cdafd69bf1bf5ee81002dae3174d4a6a9a088",
+      "public_header": "queue",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "priority-value-owned-swap-body",
+      "source": "#include <queue>\nnamespace std { inline namespace __1 {\ntemplate<> inline void priority_queue<int>::swap(priority_queue&) noexcept {}\n}}\nint main(){std::priority_queue<int> source;source.push(3);std::priority_queue<int> other;source.swap(other);return !source.empty();}\n",
+      "source_sha256": "3983d252c35fbafb0dcb582fd3fe081b3f66a415fc0b37bbc545dea529a8da7f",
+      "public_header": "queue",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "priority-value-owned-emplace-macro",
+      "source": "#define emplace owned_emplace\n#include <queue>\nint main(){std::priority_queue<int> q;q.emplace(3);return q.empty();}\n",
+      "source_sha256": "228641ec158c37e1dd472a8d136be095f085220f1536df735091b8afb4eedc66",
+      "public_header": "queue",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source48_authentication_sha256": "c2d6b509739688558cfaf3a604be3ff74a0d36caef3ce6f761e8910bdd8c37f5",
+  "source48_compiler_source": "a237a5099ab9ac617ff3818fe5d95234238f57b8"
+}
