@@ -50026,6 +50026,61 @@ bool dequeClosedPointerLess(const State &S, const SourceManager &SM,
   return ClosedBody(Body, 0);
 }
 
+
+bool dequeClosedLessConstruction(const State &S, const SourceManager &SM,
+    const CXXConstructExpr *E, const ASTContext &Context) {
+  const auto *C = E ? E->getConstructor() : nullptr;
+  const auto *R = C ? dyn_cast<ClassTemplateSpecializationDecl>(C->getParent()) : nullptr;
+  const auto *T = R ? R->getSpecializedTemplate() : nullptr;
+  constexpr const char *Header = "__algorithm/comp.h";
+  if (!S.coreV2() || !dequeTarget(Context) || !E || E->getNumArgs() || !C ||
+      C->isInvalidDecl() || C->isDeleted() || !C->isImplicit() || !C->isTrivial() ||
+      !C->isDefaultConstructor() || C->getNumParams() || C->getPrimaryTemplate() ||
+      !R || !R->isCompleteDefinition() || R->getNumBases() || !R->field_empty() ||
+      R->isDynamicClass() || !R->hasTrivialDestructor() ||
+      !T || T->getName() != "__less" || !dequeStd(T->getDeclContext()) ||
+      !dequeStd(R->getDeclContext()) ||
+      R->getTemplateSpecializationKind() != TSK_ExplicitSpecialization ||
+      R->getTemplateArgs().size() != 2 ||
+      !Context.hasSameType(E->getType(), Context.getRecordType(R))) return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto &Arg = R->getTemplateArgs()[I];
+    if (Arg.getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arg.getAsType(), Context.VoidTy)) return false;
+  }
+  for (const auto *D : R->redecls())
+    if (!dequePinned(S, SM, D, Header)) return false;
+  for (const auto *D : T->redecls())
+    if (!dequePinned(S, SM, D, Header) ||
+        !dequePinned(S, SM, D->getTemplatedDecl(), Header)) return false;
+  for (const auto *D : C->redecls())
+    if (!D->isImplicit() || D->getLocation().isMacroID() ||
+        !dequePinned(S, SM, D, Header)) return false;
+  if (const auto *Pattern = C->getTemplateInstantiationPattern())
+    for (const auto *D : Pattern->redecls())
+      if (!dequePinned(S, SM, D, Header)) return false;
+  if (C->init_begin() != C->init_end()) return false;
+  if (const auto *Body = C->getBody()) {
+    const auto *Compound = dyn_cast<CompoundStmt>(Body);
+    if (!Compound || Compound->size()) return false;
+  }
+  const auto &Layout = Context.getASTRecordLayout(R);
+  if (Layout.getSize().getQuantity() != 1 || Layout.getAlignment().getQuantity() != 1)
+    return false;
+  const auto Site = S.sdkFile(SM, E->getExprLoc());
+  if (!Site || Site->Root != "libcxx" ||
+      (Site->Path != "__utility/is_pointer_in_range.h" &&
+       Site->Path != "__utility/is_valid_range.h" && Site->Path != Header)) return false;
+  for (const auto L : {E->getBeginLoc(), E->getEndLoc(), E->getExprLoc()}) {
+    if (!L.isValid() || L.isMacroID()) return false;
+    const auto File = S.sdkFile(SM, L);
+    if (!File || File->Root != "libcxx" || File->Path != Site->Path) return false;
+  }
+  for (const auto *Child : E->children())
+    if (Child) return false;
+  return true;
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context) {
   std::set<const FunctionDecl *> Seen;
@@ -50126,8 +50181,12 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     }
-    if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
+    if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
+      // This exact empty SDK functor has no arguments, initializers or state;
+      // its complete construction proof is a separately authenticated leaf.
+      if (dequeClosedLessConstruction(S, SM, C, Context)) return true;
       if (!Function(C->getConstructor(), Depth + 1)) return false;
+    }
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
            !Context.hasSameType(N->getAllocatedType(), Context.getPointerType(Context.IntTy))) ||
