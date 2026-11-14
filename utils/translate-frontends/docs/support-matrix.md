@@ -467,3 +467,22 @@ from six-target source admission. See the
 Owner copying/moving and assignment, range overloads, emplacing, resizing,
 custom allocators and other element specializations require further work.
 This increment does not establish complete STL support.
+
+## R19 checked integer deque and container adapters
+
+| Private `cpp-core-v2` surface | Admitted operations | Boundary |
+| --- | --- | --- |
+| `std::deque<int>` | Default and initializer-list construction; destruction; `empty`, `size`, front/back access, integer subscripting, front/back insertion/removal and `clear`; checked begin/end iterator operations. | Exact default allocator, pinned segmented owner and mutable/const iterator layouts. |
+| `std::stack<int>` | Default construction, destruction, `empty`, `size`, `top`, `push` and `pop`. | Exact default `std::deque<int>` container; mutable/const access retains live element references. |
+| `std::queue<int>` | Default construction, destruction, `empty`, `size`, `front`, `back`, `push` and `pop`. | Exact default `std::deque<int>` container; pushes append and pops remove the front element. |
+
+Each of the deque and adapter families has six native-reference programs,
+generated C23 executions at O0 and O2, and four source-origin guards. The execution
+fixtures cover segmented block boundaries, surviving element references,
+allocation-time changes through live argument references, and receiver/argument
+effects. Six-target source admission is checked separately from Linux x86-64
+execution. See the [detailed contract](cpp-core-v2.md#r19-checked-integer-deque-and-container-adapters).
+Owner copying/moving and assignment, custom allocators or containers, other
+element types, range overloads, emplacing, positional insertion/erasure and
+resizing require further work. This increment does not establish complete STL
+support.

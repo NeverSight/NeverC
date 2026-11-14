@@ -17459,3 +17459,52 @@ elements, further overloads, range operations, emplacing, resizing and linked
 container splice/sort/merge operations remain outside this increment. NeverC's
 public source frontend remains C23-only; full STL support still requires further
 implementation and verification.
+
+## R19 checked integer deque and container adapters
+
+The private `cpp-core-v2` translation path admits the pinned C++17
+`std::deque<int, std::allocator<int>>` specialization and the default deque-backed
+`std::stack<int>` and `std::queue<int>` adapters on the six existing 64-bit target
+descriptors. NeverC's source frontend remains C23.
+
+Deque owners retain the exact 48-byte, 8-byte-aligned segmented layout. Mutable
+and const iterators retain the checked 16-byte layout, mutable-to-const
+conversion, dereference, indexed access, and the increment/decrement, arithmetic
+and difference forms authenticated by their selected SDK declarations. Default
+and initializer-list construction, destruction, `empty`, `size`, `front`,
+`back`, integer subscripting, `push_front`, `push_back`, `pop_front`, `pop_back`
+and `clear` use the authenticated default integer allocator. The checked block
+growth and front removal paths retain references to surviving elements.
+
+Adapters retain exactly one protected deque container at offset zero. Stack
+`top` reads or aliases the back element; stack `pop` removes that element.
+Queue `front` and `back` read or alias the respective end elements; queue `pop`
+removes the front. Both support default construction, destruction, `empty`,
+`size` and `push`, with const access preserving its selected reference type.
+Live reference arguments are read at the required point after a selected
+allocation, and receiver and argument expressions retain their evaluation
+effects.
+
+Each family has ten permanent GTests: six exact native-reference programs that
+generate and execute C23 at O0 and O2, and four source-origin rejection tests.
+Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
+2049-element block boundaries, saved element references, allocation callbacks
+and receiver/argument sequencing. Source admission and refusal are independently
+checked across the six 64-bit target descriptors; those checks do not assert
+native execution on every target.
+
+The SDK proof checks selected declarations, template and forward origins,
+owned storage, allocator dependencies, and the complete selected operation
+graph. The fixed range-comparator leaves retain complete checks of their types,
+locations and bodies; the general graph depth and node limits are unchanged.
+Replaced operation bodies and owner/storage macros remain rejected.
+
+Owner copying/moving and assignment, custom allocators or adapter containers,
+other element specializations, range overloads, emplacing, positional
+insertion/erasure and resizing require further work. These bounded operations
+do not establish complete STL support.
+
+Selected ordinary constructors must own complete definitions. Operation traits,
+`make_from_tuple`, and aggregate-field construction do not accept a constructor
+declaration as a source proof. Missing selected definitions are rejected with
+TR0203; unselected declarations remain available for overload resolution.
