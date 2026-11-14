@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.priority_registered = cls.registered
+        cls.priority_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.priority_original = cls.adapter.restore_original_gtests(cls.priority_registered,cls.priority_suffix)
+        cls.registered = cls.adapter.restore_priority_queue_history(cls.priority_registered)
         cls.definition_registered = cls.registered
         cls.definition_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.definition_original = cls.adapter.restore_original_gtests(cls.definition_registered, cls.definition_suffix)
@@ -795,6 +799,34 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.definition_original + b' ',
                 ['TranslateTest.CoreV2QueryOnlyConstructorDeclarationsRunAtBothOptimizations'])
+
+    def test_priority_queue_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.priority_original+self.priority_suffix,self.priority_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.priority_original,self.priority_suffix),self.priority_original)
+        self.assertEqual(self.adapter.restore_priority_queue_history(self.priority_registered),self.definition_registered)
+        self.assertEqual(self.adapter.restore_priority_queue_history(self.priority_original),self.definition_original)
+        selected = ['TranslateTest.CoreV2PriorityQueueIntEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueIntExtremesRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueIntAliasedGrowthRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueIntInterleavedRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueIntAllocationReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueIntArgumentEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueOwnedPushRejected', 'TranslateTest.CoreV2PriorityQueueOwnedTopMacroRejected', 'TranslateTest.CoreV2PriorityQueueOwnedComparatorFieldMacroRejected', 'TranslateTest.CoreV2PriorityQueueOwnedEmptyRejected']
+        generated,proof = self.extractor.extract(self.priority_original,selected)
+        self.assertEqual(proof['original_test_names'],7562)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7552)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'q.push(q.top())',generated)
+        self.assertIn(b'*armed=19',generated)
+
+    def test_priority_queue_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.priority_registered+b' ',
+                        self.priority_registered.replace(b'q.push(q.top())',b'q.push(11)',1),
+                        self.priority_registered+self.priority_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.priority_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_priority_queue_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.priority_registered,self.priority_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.priority_original+b' ',['TranslateTest.CoreV2PriorityQueueIntEmptyRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':

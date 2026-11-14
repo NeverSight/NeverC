@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "priority-queue-empty-and-top",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2f9ba13f53e8bb35e8b2838a4f46688d9eb5024e2bfbde5b8a8c8bbf43d780a5",
+      "original_case_source_sha256": "2f9ba13f53e8bb35e8b2838a4f46688d9eb5024e2bfbde5b8a8c8bbf43d780a5",
+      "gtest_body_sha256": "610a42b0ef28cf3b3ac2cbab5d2b316400b5e9693d3e9939d38c0d7618f81957"
+    },
+    {
+      "name": "priority-queue-duplicates-and-extremes",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntExtremesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a19d6225535c5cfbcab821655ef4d7fecd62609cba00a6d2bd4f63d550067780",
+      "original_case_source_sha256": "a19d6225535c5cfbcab821655ef4d7fecd62609cba00a6d2bd4f63d550067780",
+      "gtest_body_sha256": "bd80093e254a37aa5c5f43aa461709d775bbc421fa557fccfad12a86b06c3b3d"
+    },
+    {
+      "name": "priority-queue-growth-alias",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntAliasedGrowthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7b015d5672017a7cfbb7dd778794744f3e2841a125a08207b5af5569ebbc0cf5",
+      "original_case_source_sha256": "7b015d5672017a7cfbb7dd778794744f3e2841a125a08207b5af5569ebbc0cf5",
+      "gtest_body_sha256": "71871a621b3abfc9e7652552d7712e633989606d91af8ffd83866fe42b960685"
+    },
+    {
+      "name": "priority-queue-interleaved-heaps",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntInterleavedRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8ca01a1de5a655027a7514849941d162ede3e90b7a4011c5b4ab9605c5aa8689",
+      "original_case_source_sha256": "8ca01a1de5a655027a7514849941d162ede3e90b7a4011c5b4ab9605c5aa8689",
+      "gtest_body_sha256": "afeb08c5549ee8a307c7e2cc814a4817b8564f402fcac5c81b3b86fcfd4c4815"
+    },
+    {
+      "name": "priority-queue-live-allocation-argument",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntAllocationReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "67b82d38937253d7365a2f446128fa09f2541bb384a92ad943cdea406b6356e0",
+      "original_case_source_sha256": "67b82d38937253d7365a2f446128fa09f2541bb384a92ad943cdea406b6356e0",
+      "gtest_body_sha256": "91be66d877d0b248e3ca9bcdeaf1e11793a488d9e6eece1ba2c2a4db5eed45dc"
+    },
+    {
+      "name": "priority-queue-receiver-argument-effects",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntArgumentEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d9fc8bd9c1e6da1acddc6ba4cd838cce523a78c8efc20a7bca3f37799b315103",
+      "original_case_source_sha256": "d9fc8bd9c1e6da1acddc6ba4cd838cce523a78c8efc20a7bca3f37799b315103",
+      "gtest_body_sha256": "0b4b9f627e45f9def0c57b20a619365a4eedc6b1cf1d959bf92673ca6cfe7e3a"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "priority-queue-owned-push-body",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueOwnedPushRejected",
+      "expected": "reject",
+      "source_sha256": "0367f76bc58b34a4fcc89c21cd712fe4e919a55ea06eb87c618f8389cc2d1c6b",
+      "original_case_source_sha256": "0367f76bc58b34a4fcc89c21cd712fe4e919a55ea06eb87c618f8389cc2d1c6b",
+      "gtest_body_sha256": "478fb380bbdecb63320dac7dd04c7818d2eeee2af8e5b123ff7855a1a38da20b"
+    },
+    {
+      "name": "priority-queue-owned-top-macro",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueOwnedTopMacroRejected",
+      "expected": "reject",
+      "source_sha256": "b30ac3e311565979951f3da0165fbf1ba40fc14ba258c7c3af3ba97faeb0e2a0",
+      "original_case_source_sha256": "b30ac3e311565979951f3da0165fbf1ba40fc14ba258c7c3af3ba97faeb0e2a0",
+      "gtest_body_sha256": "95f692e815f437f5934d171d1934fed1a70f07f7fa05bb23852e4a0f81b38835"
+    },
+    {
+      "name": "priority-queue-owned-comparator-field-macro",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueOwnedComparatorFieldMacroRejected",
+      "expected": "reject",
+      "source_sha256": "0b09c3c719ba8b016617cb62150fa657f0bf8ba55bda2d0d8153b9e94cf00e42",
+      "original_case_source_sha256": "0b09c3c719ba8b016617cb62150fa657f0bf8ba55bda2d0d8153b9e94cf00e42",
+      "gtest_body_sha256": "4db7611bb26d203b4627559d856e420f82b5ed66552e4ea8c9de0634beb9af13"
+    },
+    {
+      "name": "priority-queue-owned-empty-body",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueOwnedEmptyRejected",
+      "expected": "reject",
+      "source_sha256": "87cd7a76e56602ae5153337e03cc68f520282ee61c0754d858d63030c828ccb3",
+      "original_case_source_sha256": "87cd7a76e56602ae5153337e03cc68f520282ee61c0754d858d63030c828ccb3",
+      "gtest_body_sha256": "85df00ac3bbcc72494b079a04f972d40063f04e0ee6d6ad8bd6a8b56bed256e1"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2PriorityQueueIntEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntExtremesRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntAliasedGrowthRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntInterleavedRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntAllocationReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntArgumentEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueOwnedPushRejected",
+    "TranslateTest.CoreV2PriorityQueueOwnedTopMacroRejected",
+    "TranslateTest.CoreV2PriorityQueueOwnedComparatorFieldMacroRejected",
+    "TranslateTest.CoreV2PriorityQueueOwnedEmptyRejected"
+  ],
+  "native_reference_authentication_sha256": "d6598e8c7a86034ef11cbdda02295cab6f28c44bac27fe3cc1107c90c519d301",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "a2b8c65bb7affeb36c45d6c9a9101e20987d2e2a5cf186b3797bc7e1e869298f",
+  "maintained_original_sha256": "e918c2f8ee5d9bc260a95fa010842b93572c5c8b844cedab0f9bff6d69ef849d",
+  "previous_registered_source_sha256": "404564b2e706d0ca9c99a4233b3b99b74feca42149f34357d2d1a8783dacbd4d",
+  "previous_maintained_original_sha256": "6b9f8e9f180e15630e45a9f3a625a106091b021d530e54ac4a8c02a3676171cd",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7562,
+  "current_python_registry_tests": 60,
+  "previous7552_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "7ab954440646969b57b9abc5a1d7296c4aeab2696f019e2af40a0ba429ce26a1",
+  "extractor_sha256": "c6f573aa07cb4d714024bdb756ddbec148304b4a44a6c64f6f27564fb46476d1",
+  "source_cases": [
+    {
+      "name": "priority-queue-empty-and-top",
+      "source": "#include <queue>\nint main(){std::priority_queue<int> q;const auto& c=q;\nif(!c.empty()||c.size()!=0)return 1;q.push(3);q.push(8);q.push(1);\nif(c.empty()||c.size()!=3||c.top()!=8)return 2;\nq.pop();if(c.top()!=3)return 3;q.pop();q.pop();return !c.empty();}\n",
+      "source_sha256": "2f9ba13f53e8bb35e8b2838a4f46688d9eb5024e2bfbde5b8a8c8bbf43d780a5",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-queue-duplicates-and-extremes",
+      "source": "#include <queue>\nint main(){std::priority_queue<int> q;\nint input[]={-2147483647-1,-7,0,7,2147483647,7};\nint expected[]={2147483647,7,7,0,-7,-2147483647-1};\nfor(int i=0;i!=6;++i)q.push(input[i]);\nfor(int i=0;i!=6;++i){if(q.top()!=expected[i])return 1;q.pop();}\nreturn !q.empty();}\n",
+      "source_sha256": "a19d6225535c5cfbcab821655ef4d7fecd62609cba00a6d2bd4f63d550067780",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-queue-growth-alias",
+      "source": "#include <queue>\nint main(){std::priority_queue<int> q;q.push(11);\nfor(int i=0;i!=2048;++i)q.push(q.top());\nif(q.size()!=2049)return 1;\nfor(int i=0;i!=2049;++i){if(q.top()!=11)return 2;q.pop();}\nq.push(-3);return q.size()!=1||q.top()!=-3;}\n",
+      "source_sha256": "7b015d5672017a7cfbb7dd778794744f3e2841a125a08207b5af5569ebbc0cf5",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-queue-interleaved-heaps",
+      "source": "#include <queue>\nint main(){std::priority_queue<int> q;\nfor(int i=0;i!=1025;++i)q.push(i-512);\nfor(int i=512;i!=0;--i){if(q.top()!=i)return 1;q.pop();}\nfor(int i=0;i!=1025;++i)q.push(i+513);\nfor(int i=1537;i!=512;--i){if(q.top()!=i)return 2;q.pop();}\nfor(int i=0;i!=-513;--i){if(q.top()!=i)return 3;q.pop();}\nreturn !q.empty();}\n",
+      "source_sha256": "8ca01a1de5a655027a7514849941d162ede3e90b7a4011c5b4ab9605c5aa8689",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-queue-live-allocation-argument",
+      "source": "using Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <queue>\nstatic int* armed;static int observed;\nvoid* operator new(Size n){void* p=malloc(n);if(armed){++observed;*armed=19;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {free(p);}\nint main(){std::priority_queue<int> q;int value=3;armed=&value;q.push(value);armed=nullptr;\nreturn !observed||value!=19||q.size()!=1||q.top()!=19;}\n",
+      "source_sha256": "67b82d38937253d7365a2f446128fa09f2541bb384a92ad943cdea406b6356e0",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-queue-receiver-argument-effects",
+      "source": "#include <queue>\nstatic std::priority_queue<int>* current;static int effects;\nstd::priority_queue<int>* receiver(){effects=effects*10+1;return current;}\nconst int& argument(){effects=effects*10+2;return current->top();}\nint main(){std::priority_queue<int> q;q.push(7);current=&q;\nreceiver()->push(argument());receiver()->push(argument());\nreturn effects!=1212||q.size()!=3||q.top()!=7;}\n",
+      "source_sha256": "d9fc8bd9c1e6da1acddc6ba4cd838cce523a78c8efc20a7bca3f37799b315103",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-queue-owned-push-body",
+      "source": "#include <queue>\nnamespace std { inline namespace __1 {\ntemplate<> inline void priority_queue<int>::push(const int&) {}\n}}\nint main(){std::priority_queue<int> q;int x=1;q.push(x);return q.empty();}\n",
+      "source_sha256": "0367f76bc58b34a4fcc89c21cd712fe4e919a55ea06eb87c618f8389cc2d1c6b",
+      "public_header": "queue",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "priority-queue-owned-top-macro",
+      "source": "#define top owned_top\n#include <queue>\nint main(){std::priority_queue<int> q;q.push(1);return q.top()!=1;}\n",
+      "source_sha256": "b30ac3e311565979951f3da0165fbf1ba40fc14ba258c7c3af3ba97faeb0e2a0",
+      "public_header": "queue",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "priority-queue-owned-comparator-field-macro",
+      "source": "#define comp owned_comp\n#include <queue>\nint main(){std::priority_queue<int> q;q.push(1);return q.top()!=1;}\n",
+      "source_sha256": "0b09c3c719ba8b016617cb62150fa657f0bf8ba55bda2d0d8153b9e94cf00e42",
+      "public_header": "queue",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "priority-queue-owned-empty-body",
+      "source": "#include <queue>\nnamespace std { inline namespace __1 {\ntemplate<> inline bool priority_queue<int>::empty() const {return true;}\n}}\nint main(){std::priority_queue<int> q;return !q.empty();}\n",
+      "source_sha256": "87cd7a76e56602ae5153337e03cc68f520282ee61c0754d858d63030c828ccb3",
+      "public_header": "queue",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source48_authentication_sha256": "5a6ccff20edb07275686bd7f8a04e27afd0408d2a2bbab4bdba6bb2ab2188917",
+  "source48_compiler_source": "e43d1a5e668206e4cc80ad3d63f985b2ee8c0aff"
+}
