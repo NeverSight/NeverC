@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.priority_ctor_registered = cls.registered
+        cls.priority_ctor_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.priority_ctor_original = cls.adapter.restore_original_gtests(cls.priority_ctor_registered,cls.priority_ctor_suffix)
+        cls.registered = cls.adapter.restore_priority_constructor_history(cls.priority_ctor_registered)
         cls.priority_value_registered = cls.registered
         cls.priority_value_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.priority_value_original = cls.adapter.restore_original_gtests(cls.priority_value_registered,cls.priority_value_suffix)
@@ -859,6 +863,34 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.priority_value_registered,self.priority_value_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.priority_value_original+b' ',['TranslateTest.CoreV2PriorityQueueIntCopyConstructionRunAtBothOptimizations'])
+
+    def test_priority_constructor_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.priority_ctor_original+self.priority_ctor_suffix,self.priority_ctor_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.priority_ctor_original,self.priority_ctor_suffix),self.priority_ctor_original)
+        self.assertEqual(self.adapter.restore_priority_constructor_history(self.priority_ctor_registered),self.priority_value_registered)
+        self.assertEqual(self.adapter.restore_priority_constructor_history(self.priority_ctor_original),self.priority_value_original)
+        selected = ['TranslateTest.CoreV2PriorityQueueIntComparatorConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueIntCopyVectorConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueIntMoveVectorConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueIntPointerRangeConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueIntRangeCopyPrefixRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueIntRangeMovePrefixRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueOwnedComparatorConstructorRejected', 'TranslateTest.CoreV2PriorityQueueOwnedCopyVectorConstructorRejected', 'TranslateTest.CoreV2PriorityQueueOwnedMakeHeapRejected', 'TranslateTest.CoreV2PriorityQueueConstructorOwnedLengthErrorRejected']
+        generated,proof = self.extractor.extract(self.priority_ctor_original,selected)
+        self.assertEqual(proof['original_test_names'],7582)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7572)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'std::priority_queue<int> q(compare',generated)
+        self.assertIn(b'std::move(values)',generated)
+
+    def test_priority_constructor_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.priority_ctor_registered+b' ',
+                        self.priority_ctor_registered.replace(b'std::priority_queue<int> q(compare',b'q.push(11)',1),
+                        self.priority_ctor_registered+self.priority_ctor_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.priority_ctor_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_priority_constructor_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.priority_ctor_registered,self.priority_ctor_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.priority_ctor_original+b' ',['TranslateTest.CoreV2PriorityQueueIntComparatorConstructionRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
