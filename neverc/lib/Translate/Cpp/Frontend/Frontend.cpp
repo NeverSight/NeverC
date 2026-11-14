@@ -2901,8 +2901,7 @@ static bool constructorDeclarationMetadataSource(Adapter &A, const FunctionDecl 
 
 static bool lazyQueryConstructorSignature(Adapter &A, const CXXConstructorDecl *Constructor) {
   return Constructor && ordinaryConstructor(Constructor) &&
-         (concreteClassFunction(Constructor) || concreteMemberFunctionTemplate(Constructor) ||
-          constructorDeclarationMetadataSource(A, Constructor)) &&
+         (concreteClassFunction(Constructor) || concreteMemberFunctionTemplate(Constructor)) &&
          Constructor->isReferenced() &&
          !Constructor->isUsed(/*CheckUsedAttr=*/false) && !Constructor->hasBody() &&
          A.S.owns(A.Sources, Constructor->getLocation()) &&
@@ -11288,6 +11287,14 @@ public:
   }
   bool defined(const FunctionDecl *Function) {
     const auto *Definition = Function ? Function->getDefinition() : nullptr;
+    // A declaration can remain an unselected overload candidate. Once the
+    // operation selects that ordinary constructor, its signature alone cannot
+    // stand in for a completed definition, even in an unevaluated query.
+    if (!Definition && constructorDeclarationMetadataSource(A, Function)) {
+      A.reject(Function->getLocation(), "operation constructor source",
+               "The selected ordinary constructor requires its complete source definition.", "TR0203");
+      return false;
+    }
     return Definitions && Definition && Definitions->count(Definition) &&
            operationDefinitionCategory(A, Function) &&
            operationDefinitionCategory(A, Definition) &&
