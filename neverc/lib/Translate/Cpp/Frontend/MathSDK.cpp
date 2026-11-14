@@ -1,3 +1,4 @@
+#include "llvm/Support/raw_ostream.h"
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/Lex/Lexer.h"
@@ -50896,6 +50897,36 @@ bool priorityQueueComparatorDefaultArgument(const State &S, const SourceManager 
     const CXXDefaultArgExpr *Default, const FunctionDecl *Function, unsigned Index,
     ASTContext &Context) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
+
+  static unsigned DefaultObservations = 0;
+  if (Default && Constructor && Index == 2 && Constructor->getNumParams() == 3 &&
+      Constructor->getParent()->getName() == "priority_queue" && DefaultObservations++ < 24) {
+    const auto *P = Default->getParam();
+    const auto *Owner = P ? dyn_cast<FunctionDecl>(P->getDeclContext()) : nullptr;
+    const auto *Init = selectedDefaultArgument(Default, Context);
+    const auto *Unwrapped = Init ? Init->IgnoreParenImpCasts() : nullptr;
+    const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Unwrapped);
+    const auto *Selected = Construction ? Construction->getConstructor() : nullptr;
+    const auto Info = approvedUtilityPriorityQueueRecord(S, SM, Constructor->getParent(), Context);
+    const auto Origin = Init ? S.sdkFile(SM, Init->getExprLoc()) : std::nullopt;
+    llvm::errs() << "NCPQ-CTOR-DEFAULT specialization=" << unsigned(Constructor->getTemplateSpecializationKind())
+        << " primary=" << bool(Constructor->getPrimaryTemplate())
+        << " range=" << priorityQueuePointerRangeTemplate(S, SM, Constructor, Context)
+        << " declarations=" << priorityQueueFunctionDeclarations(S, SM, Constructor)
+        << " parameter=" << (P == Constructor->getParamDecl(Index))
+        << " slot=" << (P ? P->getFunctionScopeIndex() : 99)
+        << " owner=" << bool(Owner && Owner->getCanonicalDecl() == Constructor->getCanonicalDecl())
+        << " init=" << (Init ? Init->getStmtClassName() : "null")
+        << " unwrapped=" << (Unwrapped ? Unwrapped->getStmtClassName() : "null")
+        << " args=" << (Construction ? Construction->getNumArgs() : 99)
+        << " selected=" << bool(Selected)
+        << " default=" << bool(Selected && Selected->isDefaultConstructor())
+        << " trivial=" << bool(Selected && Selected->isTrivial())
+        << " compare=" << bool(Info && Selected && Selected->getParent()->getCanonicalDecl() == Info->Comparator->getCanonicalDecl())
+        << " macro=" << bool(Init && Init->getExprLoc().isMacroID())
+        << " origin=" << (Origin ? Origin->Path : "none") << "\n";
+    if (Init) llvm::errs() << "NCPQ-CTOR-DEFAULT-TYPE " << Init->getType().getAsString() << "\n";
+  }
   if (!Default || !Constructor || Index != 2 || Constructor->getNumParams() != 3 ||
       !priorityQueuePointerRangeTemplate(S, SM, Constructor, Context) ||
       !priorityQueueFunctionDeclarations(S, SM, Constructor)) return false;
