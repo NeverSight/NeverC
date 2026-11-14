@@ -49278,6 +49278,10 @@ bool dequeTemplateDeclarationOrigin(const State &S, const SourceManager &SM,
   unsigned Line = 0;
   if (Name == "deque" && Header == "deque") {
     ForwardHeader = "__fwd/deque.h"; Line = 22;
+  } else if (Name == "stack" && Header == "stack") {
+    ForwardHeader = "__fwd/stack.h"; Line = 22;
+  } else if (Name == "queue" && Header == "queue") {
+    ForwardHeader = "__fwd/queue.h"; Line = 24;
   } else if (Name == "allocator" && Header == "__memory/allocator.h") {
     const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
     if (File && File->Path == "__memory/allocator_traits.h") {
