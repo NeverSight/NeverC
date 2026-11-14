@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -50256,7 +50257,7 @@ bool priorityCapacityQuery(const State &S, const SourceManager &SM, const Functi
       !Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) ||
       !Context.hasSameType(M->getReturnType(), Context.getSizeType()) ||
       !priorityIntegerVector(S, SM, M->getParent(), Context) ||
-      !priorityVectorDeclarations(S, SM, M) || !B || B->size() != 5) return false;
+      !priorityVectorDeclarations(S, SM, M) || !B || B->size() != 5) { if (Input && Input->getIdentifier() && Input->getName() == "__recommend") { llvm::errs() << "NCPQ-HELPER priorityCapacityQuery stage=1\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (B) B->dump(); } } return /*observed*/ false; }
   const auto *Maximum = priorityCapacityVariable(B->body_begin()[0], Context);
   const auto *Capacity = priorityCapacityVariable(B->body_begin()[2], Context);
   const auto *Overflow = dyn_cast<IfStmt>(B->body_begin()[1]);
@@ -50264,7 +50265,7 @@ bool priorityCapacityQuery(const State &S, const SourceManager &SM, const Functi
   const auto *Result = dyn_cast<ReturnStmt>(B->body_begin()[4]);
   if (!Maximum || !Capacity || !Overflow || !Saturation || !Result ||
       Overflow->getInit() || Overflow->getConditionVariable() || Overflow->getElse() ||
-      Saturation->getInit() || Saturation->getConditionVariable() || Saturation->getElse()) return false;
+      Saturation->getInit() || Saturation->getConditionVariable() || Saturation->getElse()) { if (Input && Input->getIdentifier() && Input->getName() == "__recommend") { llvm::errs() << "NCPQ-HELPER priorityCapacityQuery stage=2\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (B) B->dump(); } } return /*observed*/ false; }
   const auto *GetMaximum = priorityCapacityCall(Maximum->getInit(), M->getParent(), "max_size",
       Context.getSizeType(), Context);
   const auto *GetCapacity = priorityCapacityCall(Capacity->getInit(), M->getParent(), "capacity",
@@ -50278,7 +50279,7 @@ bool priorityCapacityQuery(const State &S, const SourceManager &SM, const Functi
       !priorityQueryReference(Over->getRHS(), Maximum) || !Full || Full->getOpcode() != BO_GE ||
       !priorityQueryReference(Full->getLHS(), Capacity) || !Half || Half->getOpcode() != BO_Div ||
       !priorityQueryReference(Half->getLHS(), Maximum) || !priorityQueryTwo(Half->getRHS()) ||
-      !Saturated || !priorityQueryReference(Saturated->getRetValue(), Maximum)) return false;
+      !Saturated || !priorityQueryReference(Saturated->getRetValue(), Maximum)) { if (Input && Input->getIdentifier() && Input->getName() == "__recommend") { llvm::errs() << "NCPQ-HELPER priorityCapacityQuery stage=3\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (B) B->dump(); } } return /*observed*/ false; }
   const auto *FailureCall = dyn_cast_or_null<CallExpr>(
       priorityQueryOperand(dyn_cast<Expr>(Overflow->getThen())));
   const auto *Failure = FailureCall ? dyn_cast_or_null<CXXMethodDecl>(FailureCall->getDirectCallee()) : nullptr;
@@ -50288,7 +50289,7 @@ bool priorityCapacityQuery(const State &S, const SourceManager &SM, const Functi
       Failure->getNumParams() || FailureCall->getNumArgs() ||
       !Failure->getReturnType()->isVoidType() ||
       Failure->getParent()->getCanonicalDecl() != M->getParent()->getCanonicalDecl() ||
-      !priorityVectorDeclarations(S, SM, Failure) || !FailureBody || FailureBody->size() != 1) return false;
+      !priorityVectorDeclarations(S, SM, Failure) || !FailureBody || FailureBody->size() != 1) { if (Input && Input->getIdentifier() && Input->getName() == "__recommend") { llvm::errs() << "NCPQ-HELPER priorityCapacityQuery stage=4\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (B) B->dump(); } } return /*observed*/ false; }
   const auto *Throw = dyn_cast_or_null<CallExpr>(
       priorityQueryOperand(dyn_cast<Expr>(*FailureBody->body_begin())));
   const auto *ThrowFunction = Throw ? Throw->getDirectCallee() : nullptr;
@@ -50299,9 +50300,9 @@ bool priorityCapacityQuery(const State &S, const SourceManager &SM, const Functi
       !ThrowFunction->getReturnType()->isVoidType() || ThrowFunction->getNumParams() != 1 ||
       !ThrowFunction->hasBody() || ThrowFunction->isVariadic() ||
       !Context.hasSameType(ThrowFunction->getParamDecl(0)->getType(), Context.getPointerType(Context.CharTy.withConst())) ||
-      !Message || Message->getString() != "vector") return false;
+      !Message || Message->getString() != "vector") { if (Input && Input->getIdentifier() && Input->getName() == "__recommend") { llvm::errs() << "NCPQ-HELPER priorityCapacityQuery stage=5\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (B) B->dump(); } } return /*observed*/ false; }
   for (const auto *D : ThrowFunction->redecls())
-    if (!dequePinned(S, SM, D, "stdexcept")) return false;
+    if (!dequePinned(S, SM, D, "stdexcept")) { if (Input && Input->getIdentifier() && Input->getName() == "__recommend") { llvm::errs() << "NCPQ-HELPER priorityCapacityQuery stage=6\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (B) B->dump(); } } return /*observed*/ false; }
   const auto *Max = dyn_cast_or_null<CallExpr>(priorityQueryOperand(Result->getRetValue()));
   const auto *MaxFunction = Max ? Max->getDirectCallee() : nullptr;
   const auto *Double = Max && Max->getNumArgs() == 2
@@ -50311,7 +50312,7 @@ bool priorityCapacityQuery(const State &S, const SourceManager &SM, const Functi
       !dequePinned(S, SM, MaxFunction, "__algorithm/max.h") ||
       !Double || Double->getOpcode() != BO_Mul || !priorityQueryTwo(Double->getLHS()) ||
       !priorityQueryReference(Double->getRHS(), Capacity) ||
-      !priorityQueryReference(Max->getArg(1), M->getParamDecl(0))) return false;
+      !priorityQueryReference(Max->getArg(1), M->getParamDecl(0))) { if (Input && Input->getIdentifier() && Input->getName() == "__recommend") { llvm::errs() << "NCPQ-HELPER priorityCapacityQuery stage=7\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (B) B->dump(); } } return /*observed*/ false; }
   // This exact capacity calculation is used only in the existing nonthrowing
   // allocation domain. Its max_size, capacity and max bodies still need proof;
   // no ordinary or exception constructor gains metadata-only admission.
@@ -50323,10 +50324,10 @@ bool priorityAlignmentAssumption(const State &S, const SourceManager &SM,
   const auto *F = Call ? Call->getDirectCallee() : nullptr;
   if (!F || F->getBuiltinID() != Builtin::BI__builtin_assume_aligned ||
       !F->getIdentifier() || F->getName() != "__builtin_assume_aligned" || F->hasBody() ||
-      Call->getNumArgs() != 2 || Call->getExprLoc().isMacroID()) return false;
+      Call->getNumArgs() != 2 || Call->getExprLoc().isMacroID()) { if (F && F->getBuiltinID() == Builtin::BI__builtin_assume_aligned) { llvm::errs() << "NCPQ-HELPER priorityAlignmentAssumption stage=1\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (Call) Call->dump(); } } return /*observed*/ false; }
   const auto Site = S.sdkFile(SM, Call->getExprLoc());
   if (!Site || Site->Root != "libcxx" || Site->Path != "__vector/vector.h" ||
-      SM.getExpansionLineNumber(Call->getExprLoc()) != 790) return false;
+      SM.getExpansionLineNumber(Call->getExprLoc()) != 790) { if (F && F->getBuiltinID() == Builtin::BI__builtin_assume_aligned) { llvm::errs() << "NCPQ-HELPER priorityAlignmentAssumption stage=2\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (Call) Call->dump(); } } return /*observed*/ false; }
   const auto *R = dyn_cast_or_null<DeclRefExpr>(priorityQueryOperand(Call->getArg(0)));
   const auto *P = R ? dyn_cast<ParmVarDecl>(R->getDecl()) : nullptr;
   const auto *M = P ? dyn_cast<CXXMethodDecl>(P->getDeclContext()) : nullptr;
@@ -50338,11 +50339,11 @@ bool priorityAlignmentAssumption(const State &S, const SourceManager &SM,
       !priorityIntegerVector(S, SM, M->getParent(), Context) ||
       !priorityVectorDeclarations(S, SM, M) || !Alignment || Alignment->getKind() != UETT_AlignOf ||
       !Alignment->isArgumentType() ||
-      !Context.hasSameType(Alignment->getArgumentType().getNonReferenceType(), Context.IntTy)) return false;
+      !Context.hasSameType(Alignment->getArgumentType().getNonReferenceType(), Context.IntTy)) { if (F && F->getBuiltinID() == Builtin::BI__builtin_assume_aligned) { llvm::errs() << "NCPQ-HELPER priorityAlignmentAssumption stage=3\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (Call) Call->dump(); } } return /*observed*/ false; }
   for (const auto *D : F->redecls()) {
     if (dequeDependencyDeclaration(S, SM, D)) continue;
     if (!D->isImplicit() || D->hasBody() || !D->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
-        (D->getLocation().isValid() && !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(D->getLocation())))) return false;
+        (D->getLocation().isValid() && !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(D->getLocation())))) { if (F && F->getBuiltinID() == Builtin::BI__builtin_assume_aligned) { llvm::errs() << "NCPQ-HELPER priorityAlignmentAssumption stage=4\n"; static bool Dumped = false; if (!Dumped) { Dumped = true; if (Call) Call->dump(); } } return /*observed*/ false; }
   }
   return true;
 }
@@ -50359,7 +50360,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     const auto File = S.sdkFile(SM, SM.getSpellingLoc(L));
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
-  Function = [&](const FunctionDecl *F, unsigned Depth) {
+  auto CheckFunction = [&](const FunctionDecl *F, unsigned Depth) {
     if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return false;
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
@@ -50428,7 +50429,16 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     const auto *Body = F->getBody();
     return Body && Statement(Body, Depth + 1);
   };
-  Statement = [&](const Stmt *Node, unsigned Depth) {
+  Function = [&](const FunctionDecl *F, unsigned Depth) {
+    const bool Result = CheckFunction(F, Depth);
+    if (PriorityRoot && !Result) {
+      llvm::errs() << "NCPQ-FUNCTION depth=" << Depth << " nodes=" << Nodes
+          << " name=" << (F ? F->getQualifiedNameAsString() : "<null>")
+          << " body=" << (F && F->hasBody()) << " builtin=" << (F ? F->getBuiltinID() : 0) << "\n";
+    }
+    return Result;
+  };
+  auto CheckStatement = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
     if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
         !PinnedMacro(Node->getEndLoc())) return false;
@@ -50472,6 +50482,19 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     for (const auto *Child : Node->children())
       if (!Statement(Child, Depth + 1)) return false;
     return true;
+  };
+  Statement = [&](const Stmt *Node, unsigned Depth) {
+    const bool Result = CheckStatement(Node, Depth);
+    if (PriorityRoot && !Result) {
+      llvm::errs() << "NCPQ-STATEMENT depth=" << Depth << " nodes=" << Nodes
+          << " kind=" << (Node ? Node->getStmtClassName() : "<null>");
+      if (Node) {
+        const auto L = SM.getPresumedLoc(Node->getBeginLoc());
+        if (L.isValid()) llvm::errs() << " line=" << L.getLine();
+      }
+      llvm::errs() << "\n";
+    }
+    return Result;
   };
   return Root && (PriorityRoot ? priorityQueueFunctionDeclarations(S, SM, Root)
                               : dequeFunctionDeclarations(S, SM, Root)) && Function(Root, 0);
