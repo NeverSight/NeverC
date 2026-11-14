@@ -27115,6 +27115,138 @@ class FunctionLowering {
     }
   }
 
+
+  void priorityQueueMakeHeap(Expression Place, const UtilityVectorRecord &Vector, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Integer = type(Vector.ElementType, L);
+    auto Values = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    auto Count = randomVectorCount(Place, Vector, "nct_vector_end", L);
+    auto At = [&](Expression Position) {
+      return index(Values, cast(std::move(Position), Difference, L), Integer, L);
+    };
+    auto Start = snapshot(binary("/", Count, quantity(2, Size, L), Size, L), L);
+    const auto Outer = labelName(), Parent = labelName(), Finished = labelName();
+    jump(Outer, L); label(Outer, L);
+    branch(binary("!=", Start, quantity(0, Size, L), "bool", L), Parent, Finished, L);
+    label(Parent, L);
+    assign(Start, binary("-", Start, quantity(1, Size, L), Size, L), L);
+    auto Hole = snapshot(Start, L);
+    auto Value = snapshot(At(Hole), L);
+    const auto Check = labelName(), Select = labelName(), RightCheck = labelName();
+    const auto UseRight = labelName(), Compare = labelName(), Shift = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    auto Child = snapshot(binary("+", binary("*", Hole, quantity(2, Size, L), Size, L),
+        quantity(1, Size, L), Size, L), L);
+    branch(binary("<", Child, Count, "bool", L), Select, Done, L);
+    label(Select, L);
+    auto Right = snapshot(binary("+", Child, quantity(1, Size, L), Size, L), L);
+    branch(binary("<", Right, Count, "bool", L), RightCheck, Compare, L);
+    label(RightCheck, L);
+    branch(binary("<", At(Child), At(Right), "bool", L), UseRight, Compare, L);
+    label(UseRight, L);
+    assign(Child, Right, L);
+    jump(Compare, L); label(Compare, L);
+    auto ChildValue = snapshot(At(Child), L);
+    branch(binary("<", Value, ChildValue, "bool", L), Shift, Done, L);
+    label(Shift, L);
+    assign(At(Hole), ChildValue, L);
+    assign(Hole, Child, L);
+    jump(Check, L); label(Done, L);
+    assign(At(Hole), Value, L);
+    jump(Outer, L); label(Finished, L);
+  }
+
+  void priorityQueueAppendPointerRange(Expression Place, Expression First, Expression Last,
+                                       const UtilityVectorRecord &Vector, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Pointer = type(Vector.PointerType, L);
+    const auto InputPointer = type(A.Context.getPointerType(A.Context.IntTy.withConst()), L);
+    const auto Integer = type(Vector.ElementType, L);
+    First = snapshot(cast(First, InputPointer, L), L);
+    Last = snapshot(cast(Last, InputPointer, L), L);
+    const auto Nonempty = labelName(), Grow = labelName(), Append = labelName(), Done = labelName();
+    branch(binary("!=", First, Last, "bool", L), Nonempty, Done, L);
+    label(Nonempty, L);
+    auto Count = snapshot(cast(binary("-", Last, First, Difference, L), Size, L), L);
+    auto Begin = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    auto End = snapshot(randomVectorMember(Place, Vector, "nct_vector_end", L), L);
+    auto OldCount = randomVectorCount(Place, Vector, "nct_vector_end", L);
+    auto OldCapacity = randomVectorCount(Place, Vector, "nct_vector_capacity", L);
+    auto NewCount = snapshot(binary("+", OldCount, Count, Size, L), L);
+    auto Room = snapshot(binary("-", OldCapacity, OldCount, Size, L), L);
+    branch(binary("<=", Count, Room, "bool", L), Append, Grow, L);
+    label(Append, L);
+    auto Input = snapshot(First, L);
+    auto Output = snapshot(End, L);
+    auto Remaining = snapshot(Count, L);
+    const auto AppendCheck = labelName(), AppendValue = labelName(), Appended = labelName();
+    jump(AppendCheck, L); label(AppendCheck, L);
+    branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), AppendValue, Appended, L);
+    label(AppendValue, L);
+    assign(dereference(Output, L), dereference(Input, L), L);
+    assign(Input, binary("+", Input, quantity(1, Difference, L), InputPointer, L), L);
+    assign(Output, binary("+", Output, quantity(1, Difference, L), Pointer, L), L);
+    assign(Remaining, binary("-", Remaining, quantity(1, Size, L), Size, L), L);
+    jump(AppendCheck, L); label(Appended, L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_end", L), Output, L);
+    jump(Done, L);
+    label(Grow, L);
+    auto NewCapacity = snapshot(NewCount, L);
+    // The approved targets have 64-bit size/difference types and four-byte int.
+    // Match default allocator<int>::max_size and vector::__recommend exactly.
+    auto Maximum = quantity(4611686018427387903ULL, Size, L);
+    const auto MaximumCapacity = labelName(), DoubleCapacity = labelName();
+    const auto UseDouble = labelName(), Allocate = labelName();
+    branch(binary(">=", OldCapacity, quantity(2305843009213693951ULL, Size, L), "bool", L),
+        MaximumCapacity, DoubleCapacity, L);
+    label(MaximumCapacity, L);
+    assign(NewCapacity, Maximum, L);
+    jump(Allocate, L); label(DoubleCapacity, L);
+    auto Doubled = snapshot(binary("*", OldCapacity, quantity(2, Size, L), Size, L), L);
+    branch(binary(">", Doubled, NewCount, "bool", L), UseDouble, Allocate, L);
+    label(UseDouble, L);
+    assign(NewCapacity, Doubled, L);
+    jump(Allocate, L); label(Allocate, L);
+    auto Fresh = snapshot(cast(unorderedHeapAllocate(Vector.ElementType,
+        binary("*", NewCapacity, quantity(4, Size, L), Size, L), L), Pointer, L), L);
+    // __insert_with_size first constructs the appended range in fresh storage,
+    // then relocates the existing prefix and releases its allocation.
+    auto AddedInput = snapshot(First, L);
+    auto AddedOutput = snapshot(binary("+", Fresh, cast(OldCount, Difference, L), Pointer, L), L);
+    auto AddedRemaining = snapshot(Count, L);
+    const auto AddedCheck = labelName(), AddedValue = labelName(), Prefix = labelName();
+    jump(AddedCheck, L); label(AddedCheck, L);
+    branch(binary("!=", AddedRemaining, quantity(0, Size, L), "bool", L), AddedValue, Prefix, L);
+    label(AddedValue, L);
+    assign(dereference(AddedOutput, L), dereference(AddedInput, L), L);
+    assign(AddedInput, binary("+", AddedInput, quantity(1, Difference, L), InputPointer, L), L);
+    assign(AddedOutput, binary("+", AddedOutput, quantity(1, Difference, L), Pointer, L), L);
+    assign(AddedRemaining, binary("-", AddedRemaining, quantity(1, Size, L), Size, L), L);
+    jump(AddedCheck, L); label(Prefix, L);
+    auto I = snapshot(quantity(0, Size, L), L);
+    const auto PrefixCheck = labelName(), PrefixValue = labelName(), Install = labelName();
+    jump(PrefixCheck, L); label(PrefixCheck, L);
+    branch(binary("<", I, OldCount, "bool", L), PrefixValue, Install, L);
+    label(PrefixValue, L);
+    assign(index(Fresh, cast(I, Difference, L), Integer, L),
+        index(Begin, cast(I, Difference, L), Integer, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(PrefixCheck, L); label(Install, L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_begin", L), Fresh, L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_end", L),
+        binary("+", Fresh, cast(NewCount, Difference, L), Pointer, L), L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_capacity", L),
+        binary("+", Fresh, cast(NewCapacity, Difference, L), Pointer, L), L);
+    const auto Release = labelName();
+    branch(cast(Begin, "bool", L), Release, Done, L);
+    label(Release, L);
+    unorderedHeapRelease(Begin, Vector.ElementType,
+        binary("*", OldCapacity, quantity(4, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+
   void priorityQueuePush(Expression Place, Expression Source,
                          const UtilityVectorRecord &Vector, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
@@ -36892,18 +37024,52 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
 
-    if (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context)) {
+    if (const auto Kind = approvedUtilityPriorityQueueConstructionKind(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedUtilityPriorityQueueRecord(A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
       if (!Info) reject(L, "priority queue construction", "The checked integer storage is required.");
-      std::optional<Expression> Source;
-      if (C->getNumArgs())
-        Source = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
+      std::vector<std::optional<Expression>> Arguments(C->getNumArgs());
+      for (unsigned I = 0; I != C->getNumArgs(); ++I) {
+        if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(C->getArg(I))) {
+          if (*Kind != UtilityPriorityQueueConstruction::PointerRange || I != 2 ||
+              !approvedUtilityDefaultArgument(A.S, A.Sources, Default, C->getConstructor(), I, A.Context))
+            reject(L, "priority queue default argument", "The pinned empty comparator default is required.");
+          continue;
+        }
+        Arguments[I] = snapshot(argument(C->getArg(I), C->getConstructor()->getParamDecl(I)->getType()), L);
+      }
       zeroRandomVector(Place, Info->Container, L);
-      if (Source) {
-        if (C->getConstructor()->isMoveConstructor())
-          priorityQueueMove(Place, dereference(*Source, L), Info->Container, false, L);
-        else
-          priorityQueueCopy(Place, dereference(*Source, L), Info->Container, false, L);
+      switch (*Kind) {
+      case UtilityPriorityQueueConstruction::Default:
+      case UtilityPriorityQueueConstruction::Comparator:
+        break;
+      case UtilityPriorityQueueConstruction::Copy:
+        priorityQueueCopy(Place, dereference(*Arguments[0], L), Info->Container, false, L);
+        break;
+      case UtilityPriorityQueueConstruction::Move:
+        priorityQueueMove(Place, dereference(*Arguments[0], L), Info->Container, false, L);
+        break;
+      case UtilityPriorityQueueConstruction::CopyContainer:
+        priorityQueueCopy(Place, dereference(*Arguments[1], L), Info->Container, false, L);
+        priorityQueueMakeHeap(Place, Info->Container, L);
+        break;
+      case UtilityPriorityQueueConstruction::MoveContainer:
+        priorityQueueMove(Place, dereference(*Arguments[1], L), Info->Container, false, L);
+        priorityQueueMakeHeap(Place, Info->Container, L);
+        break;
+      case UtilityPriorityQueueConstruction::RangeCopyContainer:
+        priorityQueueCopy(Place, dereference(*Arguments[3], L), Info->Container, false, L);
+        priorityQueueAppendPointerRange(Place, *Arguments[0], *Arguments[1], Info->Container, L);
+        priorityQueueMakeHeap(Place, Info->Container, L);
+        break;
+      case UtilityPriorityQueueConstruction::RangeMoveContainer:
+        priorityQueueMove(Place, dereference(*Arguments[3], L), Info->Container, false, L);
+        priorityQueueAppendPointerRange(Place, *Arguments[0], *Arguments[1], Info->Container, L);
+        priorityQueueMakeHeap(Place, Info->Container, L);
+        break;
+      case UtilityPriorityQueueConstruction::PointerRange:
+        priorityQueueAppendPointerRange(Place, *Arguments[0], *Arguments[1], Info->Container, L);
+        priorityQueueMakeHeap(Place, Info->Container, L);
+        break;
       }
       assign(Expression{{"kind", "member"}, {"type", "u8"}, {"name", "nct_priority_compare"},
           {"args", json::Array{json::Object(Place)}}, {"loc", A.loc(L)}}, A.zero(A.Context.UnsignedCharTy, L), L);

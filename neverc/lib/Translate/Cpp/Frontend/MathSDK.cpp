@@ -50150,6 +50150,41 @@ bool dequeClosedLessConstruction(const State &S, const SourceManager &SM,
 }
 
 
+
+bool priorityQueuePointerRangeTemplate(const State &S, const SourceManager &SM,
+                                        const CXXMethodDecl *Method,
+                                        const ASTContext &Context) {
+  const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
+  if (!Constructor || (Constructor->getNumParams() != 3 && Constructor->getNumParams() != 4) ||
+      Constructor->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+  const auto *Primary = Constructor->getPrimaryTemplate();
+  const auto *Arguments = Constructor->getTemplateSpecializationArgs();
+  if (!Primary || Primary->getTemplateParameters()->size() != 2 ||
+      !Arguments || Arguments->size() != 2) return false;
+  const auto *Input = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
+  const auto *Enable = dyn_cast<NonTypeTemplateParmDecl>(Primary->getTemplateParameters()->getParam(1));
+  if (!Input || Input->isParameterPack() || !Enable || Enable->isParameterPack() ||
+      !Enable->hasDefaultArgument() || Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Integral ||
+      !Arguments->get(1).getAsIntegral().isZero() ||
+      !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.IntTy)) return false;
+  const auto Iterator = Arguments->get(0).getAsType();
+  if (!Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy)) &&
+      !Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy.withConst()))) return false;
+  if (!Context.hasSameType(Constructor->getParamDecl(0)->getType(), Iterator) ||
+      !Context.hasSameType(Constructor->getParamDecl(1)->getType(), Iterator) ||
+      Constructor->getParamDecl(0)->hasDefaultArg() || Constructor->getParamDecl(1)->hasDefaultArg()) return false;
+  const auto Info = approvedUtilityPriorityQueueRecord(S, SM, Constructor->getParent(), Context);
+  if (!Info || !Context.hasSameType(Constructor->getParamDecl(2)->getType(),
+      Context.getLValueReferenceType(Context.getRecordType(Info->Comparator).withConst()))) return false;
+  if (Constructor->getNumParams() == 3) return Constructor->getParamDecl(2)->hasDefaultArg();
+  if (Constructor->getParamDecl(2)->hasDefaultArg() || Constructor->getParamDecl(3)->hasDefaultArg()) return false;
+  const auto Container = Context.getRecordType(Info->Container.Record);
+  const auto Parameter = Constructor->getParamDecl(3)->getType();
+  return Context.hasSameType(Parameter, Context.getLValueReferenceType(Container.withConst())) ||
+      Context.hasSameType(Parameter, Context.getRValueReferenceType(Container));
+}
+
 bool priorityQueueEmplaceTemplate(const CXXMethodDecl *Method, const ASTContext &Context) {
   if (!Method || !Method->getIdentifier() || Method->getName() != "emplace" ||
       Method->isConst() || !Method->getReturnType()->isVoidType() ||
@@ -50185,7 +50220,8 @@ bool priorityQueueFunctionDeclarations(const State &S, const SourceManager &SM,
   const auto &Context = F->getASTContext();
   if (const auto *Method = dyn_cast<CXXMethodDecl>(F)) {
     if (Method->isStatic() || Method->isVolatile() || Method->getRefQualifier() != RQ_None ||
-        (Method->getPrimaryTemplate() && !priorityQueueEmplaceTemplate(Method, Context)) ||
+        (Method->getPrimaryTemplate() && !priorityQueueEmplaceTemplate(Method, Context) &&
+         !priorityQueuePointerRangeTemplate(S, SM, Method, Context)) ||
         !approvedUtilityPriorityQueueRecord(S, SM, Method->getParent(), Context)) return false;
   } else {
     if (!F->getIdentifier() || F->getName() != "swap" || !dequeStd(F->getDeclContext()) ||
@@ -50520,6 +50556,46 @@ bool priorityRelocationTransfer(const State &S, const SourceManager &SM, const C
 }
 
 
+
+std::optional<UtilityPriorityQueueConstruction> priorityQueueConstructorSignature(
+    const State &S, const SourceManager &SM, const CXXConstructorDecl *Constructor,
+    const ASTContext &Context) {
+  if (!Constructor || !priorityQueueFunctionDeclarations(S, SM, Constructor)) return std::nullopt;
+  const auto Info = approvedUtilityPriorityQueueRecord(S, SM, Constructor->getParent(), Context);
+  if (!Info) return std::nullopt;
+  const auto Record = Context.getRecordType(Constructor->getParent());
+  const auto Count = Constructor->getNumParams();
+  if (Constructor->isDefaultConstructor() && !Count)
+    return UtilityPriorityQueueConstruction::Default;
+  if (Count == 1 && !Constructor->getParamDecl(0)->hasDefaultArg()) {
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    if (Constructor->isCopyConstructor() &&
+        Context.hasSameType(Parameter, Context.getLValueReferenceType(Record.withConst())))
+      return UtilityPriorityQueueConstruction::Copy;
+    if (Constructor->isMoveConstructor() &&
+        Context.hasSameType(Parameter, Context.getRValueReferenceType(Record)))
+      return UtilityPriorityQueueConstruction::Move;
+  }
+  const auto Comparator = Context.getLValueReferenceType(Context.getRecordType(Info->Comparator).withConst());
+  const auto Container = Context.getRecordType(Info->Container.Record);
+  if ((Count == 1 || Count == 2) && !Constructor->getPrimaryTemplate() &&
+      !Constructor->getParamDecl(0)->hasDefaultArg() &&
+      Context.hasSameType(Constructor->getParamDecl(0)->getType(), Comparator)) {
+    if (Count == 1) return UtilityPriorityQueueConstruction::Comparator;
+    if (Constructor->getParamDecl(1)->hasDefaultArg()) return std::nullopt;
+    const auto Parameter = Constructor->getParamDecl(1)->getType();
+    if (Context.hasSameType(Parameter, Context.getLValueReferenceType(Container.withConst())))
+      return UtilityPriorityQueueConstruction::CopyContainer;
+    if (Context.hasSameType(Parameter, Context.getRValueReferenceType(Container)))
+      return UtilityPriorityQueueConstruction::MoveContainer;
+  }
+  if (!priorityQueuePointerRangeTemplate(S, SM, Constructor, Context)) return std::nullopt;
+  if (Count == 3) return UtilityPriorityQueueConstruction::PointerRange;
+  return Constructor->getParamDecl(3)->getType()->isRValueReferenceType()
+      ? UtilityPriorityQueueConstruction::RangeMoveContainer
+      : UtilityPriorityQueueConstruction::RangeCopyContainer;
+}
+
 bool priorityCopyLengthError(const State &S, const SourceManager &SM,
                              const FunctionDecl *Function, const ASTContext &Context) {
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
@@ -50561,8 +50637,14 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false) {
   const auto *RootMethod = dyn_cast_or_null<CXXMethodDecl>(Root);
   const auto *RootConstructor = dyn_cast_or_null<CXXConstructorDecl>(Root);
+  const auto PriorityConstruction = PriorityRoot && RootConstructor
+      ? priorityQueueConstructorSignature(S, SM, RootConstructor, Context) : std::nullopt;
   const bool PriorityCopy = PriorityRoot && RootMethod &&
-      ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator());
+      ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator() ||
+       (PriorityConstruction && (*PriorityConstruction == UtilityPriorityQueueConstruction::CopyContainer ||
+        *PriorityConstruction == UtilityPriorityQueueConstruction::PointerRange ||
+        *PriorityConstruction == UtilityPriorityQueueConstruction::RangeCopyContainer ||
+        *PriorityConstruction == UtilityPriorityQueueConstruction::RangeMoveContainer)));
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -50607,10 +50689,11 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       for (const auto *D : T->redecls())
         if (!dequeDependencyDeclaration(S, SM, D) ||
             !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
-    // Copies of the checked default vector take their count from an existing
-    // valid vector. Its size is bounded by the same allocator max_size. Only
-    // this authenticated error boundary is unreachable; other bodies retain
-    // their complete graph proof, including all allocation and copy effects.
+    // Checked vector copies use an existing valid vector's bounded size.
+    // Pointer ranges and combined sizes retain the successful, nonoverflowing
+    // default-allocator precondition. Only this authenticated error boundary
+    // is unreachable in that domain; all other allocation/copy/heap effects
+    // retain the complete source graph proof.
     if (PriorityCopy && priorityCopyLengthError(S, SM, F, Context)) return true;
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
     // Every admitted construction count has already passed the existing
@@ -50779,31 +50862,58 @@ std::optional<UtilityDequeCall> approvedUtilityDequeCall(
 }
 
 
-bool approvedUtilityPriorityQueueConstruction(const State &S,
-    const SourceManager &SM, const CXXConstructExpr *Construction,
+std::optional<UtilityPriorityQueueConstruction> approvedUtilityPriorityQueueConstructionKind(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
   if (!S.coreV2() || !Construction || Construction->isTypeDependent() ||
       Construction->isValueDependent() || Construction->isInstantiationDependent() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
-      !S.owns(SM, Construction->getExprLoc())) return false;
+      !S.owns(SM, Construction->getExprLoc())) return std::nullopt;
   const auto *Constructor = Construction->getConstructor();
-  if (!Constructor || !Context.hasSameUnqualifiedType(Construction->getType(),
-      Context.getRecordType(Constructor->getParent())) ||
-      !priorityQueueFunctionDeclarations(S, SM, Constructor)) return false;
-  bool Signature = Constructor->isDefaultConstructor() && !Constructor->getNumParams() &&
-      !Construction->getNumArgs();
-  if (Constructor->getNumParams() == 1 && Construction->getNumArgs() == 1 &&
-      !Constructor->getParamDecl(0)->hasDefaultArg()) {
-    const auto Record = Context.getRecordType(Constructor->getParent());
-    const auto Parameter = Constructor->getParamDecl(0)->getType();
-    const auto Argument = Construction->getArg(0)->getType();
-    Signature = !Argument.isVolatileQualified() && Context.hasSameUnqualifiedType(Argument, Record) &&
-        ((Constructor->isCopyConstructor() &&
-          Context.hasSameType(Parameter, Context.getLValueReferenceType(Record.withConst()))) ||
-         (Constructor->isMoveConstructor() &&
-          Context.hasSameType(Parameter, Context.getRValueReferenceType(Record))));
+  const auto Kind = priorityQueueConstructorSignature(S, SM, Constructor, Context);
+  if (!Kind || Construction->getNumArgs() != Constructor->getNumParams() ||
+      !Context.hasSameUnqualifiedType(Construction->getType(),
+          Context.getRecordType(Constructor->getParent()))) return std::nullopt;
+  for (unsigned I = 0; I != Construction->getNumArgs(); ++I) {
+    const auto *Argument = Construction->getArg(I);
+    const auto Parameter = Constructor->getParamDecl(I)->getType();
+    if (!Argument || Argument->getType().isVolatileQualified()) return std::nullopt;
+    if (Parameter->isReferenceType()) {
+      if (!Context.hasSameUnqualifiedType(Argument->getType(), Parameter->getPointeeType())) return std::nullopt;
+    } else if (!Context.hasSameType(Argument->getType(), Parameter)) return std::nullopt;
   }
-  return Signature && dequeSourceGraph(S, SM, Constructor, Context, true);
+  if (!dequeSourceGraph(S, SM, Constructor, Context, true)) return std::nullopt;
+  return Kind;
+}
+
+bool approvedUtilityPriorityQueueConstruction(const State &S,
+    const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  return approvedUtilityPriorityQueueConstructionKind(S, SM, Construction, Context).has_value();
+}
+
+bool priorityQueueComparatorDefaultArgument(const State &S, const SourceManager &SM,
+    const CXXDefaultArgExpr *Default, const FunctionDecl *Function, unsigned Index,
+    ASTContext &Context) {
+  const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
+  if (!Default || !Constructor || Index != 2 || Constructor->getNumParams() != 3 ||
+      !priorityQueuePointerRangeTemplate(S, SM, Constructor, Context) ||
+      !priorityQueueFunctionDeclarations(S, SM, Constructor)) return false;
+  const auto *Parameter = Default->getParam();
+  const auto *Owner = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  if (!Parameter || Parameter != Constructor->getParamDecl(Index) ||
+      Parameter->getFunctionScopeIndex() != Index || !Owner ||
+      Owner->getCanonicalDecl() != Constructor->getCanonicalDecl()) return false;
+  const auto *Init = dyn_cast_or_null<CXXConstructExpr>(selectedDefaultArgument(Default, Context));
+  const auto *Selected = Init ? Init->getConstructor() : nullptr;
+  const auto Info = approvedUtilityPriorityQueueRecord(S, SM, Constructor->getParent(), Context);
+  if (!Info || !Init || Init->getExprLoc().isMacroID() || Init->getNumArgs() ||
+      !Selected || !Selected->isDefaultConstructor() || !Selected->isTrivial() ||
+      Selected->getNumParams() || Selected->getParent()->getCanonicalDecl() != Info->Comparator->getCanonicalDecl() ||
+      !Context.hasSameUnqualifiedType(Init->getType(), Context.getRecordType(Info->Comparator))) return false;
+  const auto Origin = S.sdkFile(SM, Init->getExprLoc());
+  return Origin && Origin->Root == "libcxx" && Origin->Path == "queue" &&
+      dequeSourceGraph(S, SM, Constructor, Context, true);
 }
 
 bool approvedUtilityPriorityQueueDestructor(const State &S,
@@ -50860,6 +50970,7 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     unsigned Index, ASTContext &Context) {
   if (!S.coreV2())
     return false;
+  if (priorityQueueComparatorDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
   if (bitsetDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
   if (approvedUtilityUnorderedMapDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;

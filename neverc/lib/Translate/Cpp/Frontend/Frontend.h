@@ -3884,6 +3884,15 @@ struct UtilityPriorityQueueCall {
   const clang::CXXRecordDecl *Record;
   unsigned ArgumentOffset;
 };
+
+enum class UtilityPriorityQueueConstruction {
+  Default, Copy, Move, Comparator, CopyContainer, MoveContainer,
+  PointerRange, RangeCopyContainer, RangeMoveContainer
+};
+std::optional<UtilityPriorityQueueConstruction> approvedUtilityPriorityQueueConstructionKind(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+
 bool approvedUtilityPriorityQueueConstruction(const State &S,
     const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
