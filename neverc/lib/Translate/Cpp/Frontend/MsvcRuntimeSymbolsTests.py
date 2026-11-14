@@ -61,6 +61,25 @@ class MsvcRuntimeSymbolsTests(unittest.TestCase):
                 self.assertFalse(msvc_runtime_definition(name, decoded, kinds))
                 self.assertFalse(msvc_delete_weak_reference(name, decoded, kinds))
 
+    def test_msvc1952_unoptimized_unit_definitions_require_complete_identity(self):
+        rows = (
+            ("??1bad_array_new_length@stdext@@UEAA@XZ",
+             "public: virtual __cdecl stdext::bad_array_new_length::~bad_array_new_length(void)"),
+            ("??2@YAPEAX_KPEAX@Z", "void * __cdecl operator new(unsigned __int64, void *)"),
+        )
+        for name, decoded in rows:
+            with self.subTest(name=name):
+                self.assertTrue(msvc_runtime_definition(name, decoded, {"T"}))
+                for kinds in (set(), {"U"}, {"W"}, {"R"}, {"T", "U"}, {"T", "R"}):
+                    self.assertFalse(msvc_runtime_definition(name, decoded, kinds))
+                for suffix in ("extra", " ", "\n", "\x00"):
+                    self.assertFalse(msvc_runtime_definition(name + suffix, decoded, {"T"}))
+                    self.assertFalse(msvc_runtime_definition(name, decoded + suffix, {"T"}))
+                for changed in ("", decoded.replace("__cdecl", "__stdcall"),
+                                decoded.replace("stdext", "Host") if "stdext" in decoded
+                                else decoded.replace("void *)", "int *)")):
+                    self.assertFalse(msvc_runtime_definition(name, changed, {"T"}))
+
     def test_encoded_constant_widths_and_hex_alphabet(self):
         for name in ("__real@" + "a" * 8, "__real@" + "0" * 16,
                      "__xmm@" + "f" * 32, "__ymm@" + "1" * 64,

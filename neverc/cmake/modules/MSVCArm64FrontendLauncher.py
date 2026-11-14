@@ -32,7 +32,7 @@ def main():
     except ValueError as error:
         parser.error(str(error))
     if rewritten != command:
-        print("NeverC: disable MSVC19.52 ARM64 optimization for private ASTWriterDecl.cpp",
+        print("NeverC: disable MSVC19.52 ARM64 optimization for private ASTWriterDecl.cpp [exact-unit workaround]",
               file=sys.stderr, flush=True)
     return subprocess.call(rewritten)
 

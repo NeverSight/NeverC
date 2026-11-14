@@ -3097,6 +3097,24 @@ public:
         with self.assertRaisesRegex(ValueError, "private/host symbol intersection"):
             self.audit_inventory([(raw, "R", raw)], [(raw, "R", raw)], "nm")
 
+    def test_msvc1952_unit_runtime_definitions_do_not_admit_references(self):
+        rows = (
+            ("??1bad_array_new_length@stdext@@UEAA@XZ", "T",
+             "public: virtual __cdecl stdext::bad_array_new_length::~bad_array_new_length(void)"),
+            ("??2@YAPEAX_KPEAX@Z", "T", "void * __cdecl operator new(unsigned __int64, void *)"),
+        )
+        for row in rows:
+            name, _, decoded = row
+            with self.subTest(name=name):
+                self.audit_inventory([row], [row], "coff-index")
+                with self.assertRaises(ValueError):
+                    self.audit_inventory([row], [row], "nm")
+                for kind in ("U", "W", "R", "B", "D"):
+                    with self.assertRaises(ValueError):
+                        self.audit_inventory([(name, kind, decoded)], [row], "coff-index")
+                with self.assertRaises(ValueError):
+                    self.audit_inventory([row, (name, "U", decoded)], [row], "coff-index")
+
     def test_msvc_runtime_observed_definition_inventory(self):
         fixture = json.loads(Path(__file__).with_name(
             "MsvcRuntimeSymbolsFixture.json").read_text(encoding="utf-8"))

@@ -16,6 +16,12 @@ import re
 # compiler-generated iteration/delete helpers and standard EH descriptors.
 # Keep mutable B/C/D storage distinct from immutable R constants.
 _DEFINITIONS = {
+    # Observed with MSVC 19.52 ARM64's exact /Od serialization unit.
+    # The caller still requires a private T definition and no U reference.
+    "??1bad_array_new_length@stdext@@UEAA@XZ":
+        ("T", "public: virtual __cdecl stdext::bad_array_new_length::~bad_array_new_length(void)"),
+    "??2@YAPEAX_KPEAX@Z":
+        ("T", "void * __cdecl operator new(unsigned __int64, void *)"),
     "??0bad_array_new_length@stdext@@QEAA@XZ":
         ("T", "public: __cdecl stdext::bad_array_new_length::bad_array_new_length(void)"),
     "??0exception@stdext@@QEAA@AEBV01@@Z":
