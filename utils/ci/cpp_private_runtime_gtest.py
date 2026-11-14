@@ -46,6 +46,21 @@ def build_runtime_gtest(root, build, output, backend, archive, system_libraries,
               '    --prefix-header "' + Path(private_prefix).as_posix() + '"',
               '    --host-lib-dir "$<TARGET_FILE_DIR:LLVMCore>" --host-nm /usr/bin/llvm-nm-22 VERBATIM)',
               'add_dependencies(cpp-private-runtime-gtests cpp-private-runtime-driver)']
+    # Build the original SDK fixture translation unit as a separate real GTest
+    # binary, using exactly the existing owner includes, definitions and links.
+    import re
+    sdk_target = 'cpp-private-sdk-gtests'
+    sdk_binary = build / 'private-sdk-regression-gtests'
+    blocks = re.findall(
+        r'(?:set_target_properties|target_include_directories|target_compile_options|target_compile_definitions|target_link_libraries)\(cpp-private-runtime-gtests\b.*?\)',
+        '\n'.join(lines), re.S)
+    assert len(blocks) == 5
+    lines += ['add_executable(' + sdk_target + ' "' +
+              (root / 'tests/neverc/TranslateCppSdkTests.cpp').as_posix() + '"',
+              '  "' + (root / 'tests/neverc/NeverCTestFixture.cpp').as_posix() + '")']
+    lines += [block.replace('cpp-private-runtime-gtests', sdk_target).replace(
+        tests.name, sdk_binary.name) for block in blocks]
+    lines += ['add_dependencies(cpp-private-runtime-gtests ' + sdk_target + ')']
     hook.write_text('\n'.join(lines) + '\n')
     owner = build / 'root-library-owners'
     config = ['cmake', '-S', root / 'llvm', '-B', owner, '-G', 'Ninja',
