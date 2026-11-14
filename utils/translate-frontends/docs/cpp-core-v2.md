@@ -17508,3 +17508,29 @@ Selected ordinary constructors must own complete definitions. Operation traits,
 `make_from_tuple`, and aggregate-field construction do not accept a constructor
 declaration as a source proof. Missing selected definitions are rejected with
 TR0203; unselected declarations remain available for overload resolution.
+
+
+## R19 checked integer priority queues
+
+The pinned C++17 `<queue>` surface admits `std::priority_queue<int>` with its
+exact default vector, allocator and comparison policy on the six approved
+64-bit targets. Default construction, destruction, `empty()`, `size()`,
+`top() const`, both `push` overloads and `pop()` lower to C23 heap operations.
+`top()` retains its const integer reference. Receiver and argument evaluation,
+growth, live aliased input values and element order follow the checked SDK
+operations. Selected declarations, instantiated bodies and relocation helpers
+remain authenticated against the embedded SDK.
+
+The current increment passes ten registered GTests and twelve generated C23
+executions, six each at O0 and O2, against the byte-identical native programs.
+These executions cover empty observers, duplicate and extreme integers,
+growth with an aliased top element, interleaved pushes and pops, argument
+mutation during allocation and receiver/argument sequencing. Runtime evidence
+comes from the Linux x86-64 Actions job; source checks cover the six approved
+64-bit targets. This evidence does not claim native execution on every target.
+
+`top()` and `pop()` retain their nonempty preconditions. Allocation support is
+the existing successful, nonoverflowing default-allocator domain. Copy and move
+operations, assignment, `emplace`, swap, additional constructors, other element
+types and custom policies remain outside this increment. Full C++17/STL
+translation remains unfinished. NeverC's source language remains C23-only.
