@@ -17514,23 +17514,34 @@ TR0203; unselected declarations remain available for overload resolution.
 
 The pinned C++17 `<queue>` surface admits `std::priority_queue<int>` with its
 exact default vector, allocator and comparison policy on the six approved
-64-bit targets. Default construction, destruction, `empty()`, `size()`,
-`top() const`, both `push` overloads and `pop()` lower to C23 heap operations.
-`top()` retains its const integer reference. Receiver and argument evaluation,
-growth, live aliased input values and element order follow the checked SDK
-operations. Selected declarations, instantiated bodies and relocation helpers
-remain authenticated against the embedded SDK.
+64-bit targets. Default, copy and move construction, destruction, copy and move
+assignment, `empty()`, `size()`, `top() const`, both `push` overloads and `pop()`
+lower to C23 heap operations. Member swap, the pinned SDK `std::swap` overload
+and its ADL form are supported. `emplace()` constructs zero; one-argument
+`emplace` accepts the checked integer reference and value forms.
 
-The current increment passes ten registered GTests and twelve generated C23
-executions, six each at O0 and O2, against the byte-identical native programs.
-These executions cover empty observers, duplicate and extreme integers,
-growth with an aliased top element, interleaved pushes and pops, argument
-mutation during allocation and receiver/argument sequencing. Runtime evidence
-comes from the Linux x86-64 Actions job; source checks cover the six approved
-64-bit targets. This evidence does not claim native execution on every target.
+`top()` retains its const integer reference. Copies own independent storage;
+assignment returns its receiver and reuses capacity when sufficient. Moves
+transfer the vector storage and leave the source vector empty. Swaps preserve
+the transferred element addresses. Receiver/argument evaluation, aliased input
+values and construction during allocation follow the checked SDK operations.
+Selected declarations, instantiated bodies, allocation and relocation helpers
+remain authenticated against the embedded SDK. Copy counts are bounded by the
+existing valid vector's allocator limit.
+
+The heap-operation and value-operation regression families each pass ten
+registered GTests and twelve generated C23 executions, six each at O0 and O2,
+against their byte-identical native programs. The heap cases cover empty
+observers, duplicate and extreme integers, aliased growth, interleaved heap
+operations, allocation-time argument mutation and receiver/argument sequencing.
+The value cases cover copy independence, self-copy, assignment reference
+identity, empty sources, moved storage and source refill, member/qualified/ADL
+swap, and aliased `emplace` growth. Runtime evidence comes from Linux x86-64
+Actions jobs; source checks cover the six approved 64-bit targets. This evidence
+does not claim native execution on every target.
 
 `top()` and `pop()` retain their nonempty preconditions. Allocation support is
-the existing successful, nonoverflowing default-allocator domain. Copy and move
-operations, assignment, `emplace`, swap, additional constructors, other element
-types and custom policies remain outside this increment. Full C++17/STL
-translation remains unfinished. NeverC's source language remains C23-only.
+the existing successful, nonoverflowing default-allocator domain. Additional
+constructors, other element types and custom policies remain outside this
+checked surface. Full C++17/STL translation remains unfinished. NeverC's source
+language remains C23-only.

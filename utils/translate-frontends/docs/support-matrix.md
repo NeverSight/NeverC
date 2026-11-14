@@ -475,7 +475,7 @@ This increment does not establish complete STL support.
 | `std::deque<int>` | Default and initializer-list construction; destruction; `empty`, `size`, front/back access, integer subscripting, front/back insertion/removal and `clear`; checked begin/end iterator operations. | Exact default allocator, pinned segmented owner and mutable/const iterator layouts. |
 | `std::stack<int>` | Default construction, destruction, `empty`, `size`, `top`, `push` and `pop`. | Exact default `std::deque<int>` container; mutable/const access retains live element references. |
 | `std::queue<int>` | Default construction, destruction, `empty`, `size`, `front`, `back`, `push` and `pop`. | Exact default `std::deque<int>` container; pushes append and pops remove the front element. |
-| `std::priority_queue<int>` | Default construction, destruction, `empty`, `size`, `top`, both integer `push` forms and `pop`; generated C23 heap operations. | Exact pinned `std::vector<int, std::allocator<int>>` and `std::less<int>`; six approved 64-bit targets. [Scope and execution evidence](cpp-core-v2.md#r19-checked-integer-priority-queues). |
+| `std::priority_queue<int>` | Default/copy/move construction, destruction, copy/move assignment, `empty`, `size`, `top`, both integer `push` forms, `pop`, member/SDK swap and zero/one-int `emplace`; generated C23 heap operations. | Exact pinned `std::vector<int, std::allocator<int>>` and `std::less<int>`; six approved 64-bit targets. [Scope and execution evidence](cpp-core-v2.md#r19-checked-integer-priority-queues). |
 
 Each of the deque and adapter families has six native-reference programs,
 generated C23 executions at O0 and O2, and four source-origin guards. The execution
