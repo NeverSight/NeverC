@@ -43,6 +43,28 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_registered = cls.registered
+        cls.list_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_original = cls.adapter.restore_original_gtests(cls.list_registered, cls.list_suffix)
+        cls.list_manifest = json.loads((ROOT / 'utils/ci/r19-list-gtests.json').read_text())
+        assert hashlib.sha256(cls.list_registered).hexdigest() == cls.adapter.R19_LIST_REGISTERED_SHA256
+        assert hashlib.sha256(cls.list_original).hexdigest() == cls.adapter.R19_LIST_MAINTAINED_SHA256
+        first = cls.list_manifest['new_gtest_names'][0].split('.')[1].encode()
+        match, = re.finditer(rb'(?m)^TEST_F\(TranslateTest, ' + re.escape(first) + rb'\) \{', cls.list_original)
+        cls.list_additions = cls.list_original[match.start():]
+        assert cls.list_additions.count(b'TEST_F(') == 10
+        cls.registered = cls.list_original[:match.start()] + cls.list_suffix
+        cls.forward_list_registered = cls.registered
+        cls.forward_list_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_original = cls.adapter.restore_original_gtests(cls.forward_list_registered, cls.forward_list_suffix)
+        cls.forward_list_manifest = json.loads((ROOT / 'utils/ci/r19-forward-list-gtests.json').read_text())
+        assert hashlib.sha256(cls.forward_list_registered).hexdigest() == cls.adapter.R19_FORWARD_LIST_REGISTERED_SHA256
+        assert hashlib.sha256(cls.forward_list_original).hexdigest() == cls.adapter.R19_FORWARD_LIST_MAINTAINED_SHA256
+        first = cls.forward_list_manifest['new_gtest_names'][0].split('.')[1].encode()
+        match, = re.finditer(rb'(?m)^TEST_F\(TranslateTest, ' + re.escape(first) + rb'\) \{', cls.forward_list_original)
+        cls.forward_list_additions = cls.forward_list_original[match.start():]
+        assert cls.forward_list_additions.count(b'TEST_F(') == 10
+        cls.registered = cls.forward_list_original[:match.start()] + cls.forward_list_suffix
         cls.valarray_registered = cls.registered
         cls.valarray_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.valarray_original = cls.adapter.restore_original_gtests(cls.valarray_registered, cls.valarray_suffix)
@@ -562,6 +584,84 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
                        self.valarray_original.replace(b'EXPECT_EQ(', b'EXPECT_NE(', 1)]:
             with self.assertRaises(AssertionError):
                 self.extractor.extract(source, self.valarray_manifest['new_gtest_names'])
+
+
+
+    def test_forward_list_registry_preserves_all_previous_r19_bodies(self):
+        selected = self.forward_list_manifest['new_gtest_names']
+        generated, proof = self.extractor.extract(self.forward_list_original, selected)
+        self.assertEqual(proof['original_test_names'], 7522)
+        self.assertEqual(generated.count(b'TEST_F('), 10)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.forward_list_registered, self.forward_list_suffix), self.forward_list_original)
+        self.assertEqual(self.valarray_registered,
+                         self.forward_list_original[:-len(self.forward_list_additions)] + self.forward_list_suffix)
+
+    def test_forward_list_tests_keep_the_exact_native_programs_and_all_guards(self):
+        cases = self.forward_list_manifest['source_cases']
+        self.assertEqual(len(cases), 10)
+        for case in cases:
+            with self.subTest(case=case['name']):
+                source = case['source'].encode()
+                self.assertEqual(hashlib.sha256(source).hexdigest(), case['source_sha256'])
+                self.assertEqual(self.forward_list_additions.count(source), 1)
+        self.assertEqual(self.forward_list_additions.count(b'compileGenerated('), 6)
+        self.assertEqual(self.forward_list_additions.count(b'{"-O0", "-O2"}'), 6)
+        self.assertEqual(self.forward_list_additions.count(b'"--check"'), 4)
+
+    def test_forward_list_registry_rejects_changed_bodies_and_suffixes(self):
+        for source, suffix in [
+                (self.forward_list_registered + b' ', self.forward_list_suffix),
+                (self.forward_list_registered[:-1], self.forward_list_suffix),
+                (self.forward_list_registered + self.forward_list_suffix, self.forward_list_suffix),
+                (self.forward_list_registered, self.forward_list_suffix + b' ')]:
+            with self.subTest(size=len(source)):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(source, suffix)
+        for source in [self.forward_list_original + b' ',
+                       self.forward_list_original.replace(b'TEST_F(', b'NOT_TEST_F(', 1),
+                       self.forward_list_original.replace(b'EXPECT_EQ(', b'EXPECT_NE(', 1)]:
+            with self.assertRaises(AssertionError):
+                self.extractor.extract(source, self.forward_list_manifest['new_gtest_names'])
+
+
+
+    def test_list_registry_preserves_all_previous_r19_bodies(self):
+        selected = self.list_manifest['new_gtest_names']
+        generated, proof = self.extractor.extract(self.list_original, selected)
+        self.assertEqual(proof['original_test_names'], 7532)
+        self.assertEqual(generated.count(b'TEST_F('), 10)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.list_registered, self.list_suffix), self.list_original)
+        self.assertEqual(self.forward_list_registered,
+                         self.list_original[:-len(self.list_additions)] + self.list_suffix)
+
+    def test_list_tests_keep_the_exact_native_programs_and_all_guards(self):
+        cases = self.list_manifest['source_cases']
+        self.assertEqual(len(cases), 10)
+        for case in cases:
+            with self.subTest(case=case['name']):
+                source = case['source'].encode()
+                self.assertEqual(hashlib.sha256(source).hexdigest(), case['source_sha256'])
+                self.assertEqual(self.list_additions.count(source), 1)
+        self.assertEqual(self.list_additions.count(b'compileGenerated('), 6)
+        self.assertEqual(self.list_additions.count(b'{"-O0", "-O2"}'), 6)
+        self.assertEqual(self.list_additions.count(b'"--check"'), 4)
+
+    def test_list_registry_rejects_changed_bodies_and_suffixes(self):
+        for source, suffix in [
+                (self.list_registered + b' ', self.list_suffix),
+                (self.list_registered[:-1], self.list_suffix),
+                (self.list_registered + self.list_suffix, self.list_suffix),
+                (self.list_registered, self.list_suffix + b' ')]:
+            with self.subTest(size=len(source)):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(source, suffix)
+        for source in [self.list_original + b' ',
+                       self.list_original.replace(b'TEST_F(', b'NOT_TEST_F(', 1),
+                       self.list_original.replace(b'EXPECT_EQ(', b'EXPECT_NE(', 1)]:
+            with self.assertRaises(AssertionError):
+                self.extractor.extract(source, self.list_manifest['new_gtest_names'])
 
 
 if __name__ == '__main__':
