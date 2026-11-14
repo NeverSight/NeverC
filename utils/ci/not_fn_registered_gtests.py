@@ -79,6 +79,26 @@ QUERY_CONSTRUCTOR_MAINTAINED_ORIGINAL_SHA256 = '748a1966c60985df355d52f5746a7610
 QUERY_CONSTRUCTOR_REGISTERED_BIND109_SHA256 = 'feaff87d9013ab41c4db3920b2377502799cb43b7cf34cbfcdc56aee680d0753'
 
 
+R19_DEFINITION_FIXTURE_REGISTERED_SHA256 = '404564b2e706d0ca9c99a4233b3b99b74feca42149f34357d2d1a8783dacbd4d'
+R19_DEFINITION_FIXTURE_MAINTAINED_SHA256 = '6b9f8e9f180e15630e45a9f3a625a106091b021d530e54ac4a8c02a3676171cd'
+R19_DEFINITION_FIXTURE_OLD_REGISTERED_SHA256 = '40a94203aa58d29437e4c03f871157a4948ba401406cfc93dc6e1103de0cd572'
+R19_DEFINITION_FIXTURE_OLD_MAINTAINED_SHA256 = 'b3aaaaee7a1d4990a2972a247dcd2052352b0170c06b0065567c4cdb0bfcd6f5'
+_R19_DEFINITION_FIXTURE_OLD = b'writeFile(Source, R"cpp(struct C { C(int) noexcept; };\nstatic_assert(__is_constructible(C, int));\nint main() { return 0; }\n)cpp");'
+_R19_DEFINITION_FIXTURE_NEW = b'writeFile(Source, R"cpp(struct C { C(int) noexcept; };\nstatic_assert(__is_constructible(C, int));\nC::C(int) noexcept {}\nint main() { return 0; }\n)cpp");'
+
+def restore_definition_fixture_history(source):
+    """Reconstruct only the exact archived fixture for historical registry checks."""
+    digest = hashlib.sha256(source).hexdigest()
+    assert digest in {R19_DEFINITION_FIXTURE_REGISTERED_SHA256, R19_DEFINITION_FIXTURE_MAINTAINED_SHA256}
+    assert source.count(_R19_DEFINITION_FIXTURE_NEW) == 1
+    restored = source.replace(_R19_DEFINITION_FIXTURE_NEW, _R19_DEFINITION_FIXTURE_OLD, 1)
+    expected = (R19_DEFINITION_FIXTURE_OLD_REGISTERED_SHA256
+                if digest == R19_DEFINITION_FIXTURE_REGISTERED_SHA256
+                else R19_DEFINITION_FIXTURE_OLD_MAINTAINED_SHA256)
+    assert hashlib.sha256(restored).hexdigest() == expected
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -121,6 +141,13 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
+    if source_digest == R19_DEFINITION_FIXTURE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_DEFINITION_FIXTURE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_DEFINITION_FIXTURE_MAINTAINED_SHA256
+        return original
     if source_digest == R19_DEQUE_MAINTAINED_SHA256:
         return source
     if source_digest == R19_DEQUE_REGISTERED_SHA256:

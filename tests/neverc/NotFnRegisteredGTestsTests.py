@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.definition_registered = cls.registered
+        cls.definition_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.definition_original = cls.adapter.restore_original_gtests(cls.definition_registered, cls.definition_suffix)
+        cls.registered = cls.adapter.restore_definition_fixture_history(cls.definition_registered)
         cls.deque_registered = cls.registered
         cls.deque_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.deque_original = cls.adapter.restore_original_gtests(cls.deque_registered, cls.deque_suffix)
@@ -762,6 +766,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
                        self.deque_original.replace(b'EXPECT_EQ(', b'EXPECT_NE(', 1)]:
             with self.assertRaises(AssertionError):
                 self.extractor.extract(source, self.deque_manifest['new_gtest_names'])
+
+    def test_selected_definition_fixture_keeps_exact_current_and_archived_registries(self):
+        self.assertEqual(self.definition_original + self.definition_suffix, self.definition_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(
+            self.definition_original, self.definition_suffix), self.definition_original)
+        self.assertEqual(self.adapter.restore_definition_fixture_history(self.definition_registered), self.deque_registered)
+        self.assertEqual(self.adapter.restore_definition_fixture_history(self.definition_original), self.deque_original)
+        selected = ['TranslateTest.CoreV2QueryOnlyConstructorDeclarationsRunAtBothOptimizations']
+        generated, proof = self.extractor.extract(self.definition_original, selected)
+        self.assertEqual(proof['original_test_names'], 7552)
+        self.assertEqual(proof['selected_count'], 1)
+        self.assertIn(b'C::C(int) noexcept {}', generated)
+        self.assertIn(b'static_assert(__is_constructible(C, int));', generated)
+        self.assertFalse(proof['selected_bodies_modified'])
+
+    def test_selected_definition_fixture_rejects_changed_current_registry_bytes(self):
+        for altered in [self.definition_registered + b' ',
+                        self.definition_registered.replace(b'C::C(int) noexcept {}', b'C::C(int) noexcept { }', 1),
+                        self.definition_registered + self.definition_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered, self.definition_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_definition_fixture_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.definition_registered, self.definition_suffix + b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.definition_original + b' ',
+                ['TranslateTest.CoreV2QueryOnlyConstructorDeclarationsRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':

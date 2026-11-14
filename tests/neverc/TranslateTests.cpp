@@ -371705,6 +371705,7 @@ TEST_F(TranslateTest, CoreV2QueryOnlyConstructorDeclarationsRunAtBothOptimizatio
   const auto Output = tmpFile("query-only-constructor.nc");
   writeFile(Source, R"cpp(struct C { C(int) noexcept; };
 static_assert(__is_constructible(C, int));
+C::C(int) noexcept {}
 int main() { return 0; }
 )cpp");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
