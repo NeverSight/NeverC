@@ -50352,6 +50352,98 @@ bool priorityAlignmentAssumption(const State &S, const SourceManager &SM,
   return true;
 }
 
+
+bool priorityRelocationTransfer(const State &S, const SourceManager &SM, const CallExpr *Call,
+                                const ASTContext &Context, std::vector<const FunctionDecl *> &Dependencies) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!F || F->isInvalidDecl() || !F->getIdentifier() ||
+      F->getBuiltinID() != Builtin::BI__builtin_memcpy || F->getName() != "__builtin_memcpy" ||
+      F->hasBody() || F->isVariadic() || F->getNumParams() != 3 || Call->getNumArgs() != 3 ||
+      !F->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      !Context.hasSameType(F->getReturnType(), Context.VoidPtrTy) ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), Context.VoidPtrTy) ||
+      !Context.hasSameType(F->getParamDecl(1)->getType(), Context.getPointerType(Context.VoidTy.withConst())) ||
+      !Context.hasSameType(F->getParamDecl(2)->getType(), Context.getSizeType())) return false;
+  const auto Site = S.sdkFile(SM, Call->getExprLoc());
+  if (!Site || Site->Root != "libcxx" || Site->Path != "__memory/uninitialized_algorithms.h" ||
+      Call->getExprLoc().isMacroID() || SM.getExpansionLineNumber(Call->getExprLoc()) != 645) return false;
+  const auto *Destination = dyn_cast_or_null<CXXStaticCastExpr>(priorityQueryOperand(Call->getArg(0)));
+  if (!Destination || Destination->getCastKind() != CK_BitCast ||
+      !Context.hasSameType(Destination->getTypeAsWritten(), Context.VoidPtrTy)) return false;
+  const auto *To = dyn_cast_or_null<CallExpr>(priorityQueryOperand(Destination->getSubExpr()));
+  const auto *From = dyn_cast_or_null<CallExpr>(priorityQueryOperand(Call->getArg(1)));
+  auto Parameter = [&](const CallExpr *Address) -> const ParmVarDecl * {
+    const auto *Function = Address ? Address->getDirectCallee() : nullptr;
+    const auto Pointer = Context.getPointerType(Context.IntTy);
+    if (!Function || !Function->getIdentifier() || Function->getName() != "__to_address" ||
+        !dequeStd(Function->getDeclContext()) || Function->getNumParams() != 1 ||
+        Address->getNumArgs() != 1 || !Context.hasSameType(Function->getReturnType(), Pointer) ||
+        !Context.hasSameType(Function->getParamDecl(0)->getType(), Pointer)) return nullptr;
+    unsigned Declarations = 0;
+    auto Pinned = [&](const Decl *D) {
+      return ++Declarations <= 64 && dequePinned(S, SM, D, "__memory/pointer_traits.h");
+    };
+    for (const auto *D : Function->redecls()) if (!Pinned(D)) return nullptr;
+    if (const auto *Pattern = Function->getTemplateInstantiationPattern())
+      for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return nullptr;
+    if (const auto *Primary = Function->getPrimaryTemplate())
+      for (const auto *D : Primary->redecls())
+        if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return nullptr;
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(priorityQueryOperand(Address->getArg(0)));
+    return Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
+  };
+  const auto *Target = Parameter(To), *First = Parameter(From);
+  const auto *Owner = Target ? dyn_cast<FunctionDecl>(Target->getDeclContext()) : nullptr;
+  if (!Owner || !First || First->getDeclContext() != Owner ||
+      !Owner->getIdentifier() || Owner->getName() != "__uninitialized_allocator_relocate" ||
+      !dequeStd(Owner->getDeclContext()) || Owner->getNumParams() != 4 || Owner->isVariadic() ||
+      !Owner->hasBody() || !Owner->getReturnType()->isVoidType() ||
+      Owner->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Owner->getParamDecl(1) != First || Owner->getParamDecl(3) != Target) return false;
+  const auto Pointer = Context.getPointerType(Context.IntTy);
+  for (unsigned I = 1; I != 4; ++I)
+    if (!Context.hasSameType(Owner->getParamDecl(I)->getType(), Pointer) ||
+        Owner->getParamDecl(I)->hasDefaultArg()) return false;
+  const auto AllocatorType = Owner->getParamDecl(0)->getType();
+  if (!AllocatorType->isLValueReferenceType() || AllocatorType->getPointeeType().hasQualifiers() ||
+      Owner->getParamDecl(0)->hasDefaultArg()) return false;
+  const auto Allocator = approvedUtilityAllocatorRecord(S, SM,
+      dequeRecordType(AllocatorType->getPointeeType()), Context);
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.IntTy)) return false;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D) {
+    return ++Declarations <= 64 && dequePinned(S, SM, D, "__memory/uninitialized_algorithms.h");
+  };
+  for (const auto *D : Owner->redecls()) if (!Pinned(D)) return false;
+  const auto *Primary = Owner->getPrimaryTemplate();
+  const auto *Pattern = Owner->getTemplateInstantiationPattern();
+  if (!Primary || !Pattern || Primary->getTemplateParameters()->size() != 2) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : Primary->redecls())
+    if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+  const auto *Bytes = dyn_cast_or_null<BinaryOperator>(priorityQueryOperand(Call->getArg(2)));
+  const auto *Width = Bytes ? dyn_cast_or_null<UnaryExprOrTypeTraitExpr>(priorityQueryOperand(Bytes->getLHS())) : nullptr;
+  const auto *Count = Bytes ? dyn_cast_or_null<BinaryOperator>(priorityQueryOperand(Bytes->getRHS())) : nullptr;
+  if (!Bytes || Bytes->getOpcode() != BO_Mul || !Context.hasSameType(Bytes->getType(), Context.getSizeType()) ||
+      !Width || Width->getKind() != UETT_SizeOf || !Width->isArgumentType() ||
+      !Context.hasSameType(Width->getArgumentType(), Context.IntTy) ||
+      !Count || Count->getOpcode() != BO_Sub ||
+      !priorityQueryReference(Count->getLHS(), Owner->getParamDecl(2)) ||
+      !priorityQueryReference(Count->getRHS(), First)) return false;
+  for (const auto *D : F->redecls()) {
+    if (dequeDependencyDeclaration(S, SM, D)) continue;
+    if (!D->isImplicit() || D->hasBody() ||
+        !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+    if (D->getLocation().isValid() && !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(D->getLocation()))) {
+      const auto File = S.sdkFile(SM, D->getLocation());
+      if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+    }
+  }
+  // The pointer helpers retain their full ordinary source-graph obligations.
+  Dependencies = {To->getDirectCallee(), From->getDirectCallee()};
+  return true;
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false) {
   std::set<const FunctionDecl *> Seen;
@@ -50455,6 +50547,14 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     if (const auto *Call = dyn_cast<CallExpr>(Node)) {
       // The exact SDK pointer-comparison query has a closed, separately bounded
       // and authenticated operand tree; its callee has no run-time effects.
+      if (PriorityRoot) {
+        std::vector<const FunctionDecl *> Dependencies;
+        if (priorityRelocationTransfer(S, SM, Call, Context, Dependencies)) {
+          for (const auto *Dependency : Dependencies)
+            if (!Function(Dependency, Depth + 1)) return false;
+          return true;
+        }
+      }
       if (PriorityRoot && priorityAlignmentAssumption(S, SM, Call, Context)) return true;
       if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
       if (!dequeScalarDestruction(S, SM, Call, Context) &&
