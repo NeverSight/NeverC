@@ -51,6 +51,18 @@ FIXTURE_MAINTAINED_BIND97_SHA256 = 'cabce24d8eadcc4fd4b384b1f3d92e3536ba884d13af
 BIND109_REGISTERED_SOURCE_SHA256 = '3db5ef196fd52c95dfb7fccfe80b6d5417a723899cf315ef7abbc4b6c2a06f5e'
 BIND109_GOLDEN_SUFFIX_SHA256 = 'b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb'
 
+R19_DEQUE_MAINTAINED_SHA256 = 'b3aaaaee7a1d4990a2972a247dcd2052352b0170c06b0065567c4cdb0bfcd6f5'
+R19_DEQUE_REGISTERED_SHA256 = '40a94203aa58d29437e4c03f871157a4948ba401406cfc93dc6e1103de0cd572'
+
+R19_DEQUE_ADAPTER_MAINTAINED_SHA256 = 'f78087a41d7783873f9080d002099fb2289aa8661975da0efc9487c8a74379df'
+R19_DEQUE_ADAPTER_REGISTERED_SHA256 = 'ceeba042dcd503af9834542a9d2abe2ff8db61999fda893b3ab52f45db9ed65d'
+
+R19_LIST_MAINTAINED_SHA256 = 'be5ce8350e32f64b17b9db709b4721d2cb5923bc5a36171431a5b441d072509f'
+R19_LIST_REGISTERED_SHA256 = '52215bf1cb1ab3a7d5c468f698ae96e15895d849867720708f51c89d6437a0ef'
+
+R19_FORWARD_LIST_MAINTAINED_SHA256 = '99164b5b4e996784afc538467afe5afe2f7205d31a6af5cd9a59d21aa9582d21'
+R19_FORWARD_LIST_REGISTERED_SHA256 = '8c1f94c7ed33bd87b6dd06bb2fcd50953fa5f690c12264bb5a10a656167c1217'
+
 R19_VALARRAY_MAINTAINED_SHA256 = '0fef0914482ab677ee540f2ebbf62bed291cc9a49af17e8d08de4d2dd25afc63'
 R19_VALARRAY_REGISTERED_SHA256 = 'def7a355ea477abd045289ddd0af42d44b7f52aa0930123aa1212281aa293fb2'
 
@@ -109,6 +121,34 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
+    if source_digest == R19_DEQUE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_DEQUE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_DEQUE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_DEQUE_ADAPTER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_DEQUE_ADAPTER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_DEQUE_ADAPTER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_FORWARD_LIST_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_FORWARD_LIST_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_FORWARD_LIST_MAINTAINED_SHA256
+        return original
     if source_digest == R19_VALARRAY_MAINTAINED_SHA256:
         return source
     if source_digest == R19_VALARRAY_REGISTERED_SHA256:

@@ -17411,3 +17411,51 @@ C23 execution evidence. Copy/move construction, resizing, slices, expression
 templates and other element specializations remain outside this increment.
 NeverC's public source frontend remains C23-only; complete STL support still
 requires further implementation and verification.
+
+## R19 checked integer linked containers
+
+The private C++17 translation profile admits the fixed SDK's default-allocator
+`std::forward_list<int>` and `std::list<int>` specializations through authenticated
+storage and direct C23 operations. Default construction produces an empty owner.
+Allocator-only forms retain the stateless default allocator and argument effects.
+Initializer-list forms retain integer order and the selected SDK construction
+and allocation order. Destruction releases the owned storage through the existing
+selected global heap functions.
+
+`forward_list` admits `empty()`, mutable/const `front()`, `before_begin()` and
+`cbefore_begin()`, mutable/const `begin()` and `end()`, and `cbegin()`/`cend()`.
+Both integer-reference forms of `push_front` and single-position `insert_after`
+retain live argument values through allocation. `pop_front`, single-position
+`erase_after` and `clear` retain the pinned unlinking and deallocation order.
+Returned positions refer to the actual result object, including temporary
+iterators used in comparisons and further calls.
+
+`list` admits `empty()`, `size()`, mutable/const `front()` and `back()`, the same
+begin/end access forms, front/back insertion and removal, single-position
+`insert`/`erase`, and `clear`. The sentinel and node links retain the pinned
+bidirectional representation. Modifying operations retain the selected source
+heap hooks, integer references, returned positions and SDK ordering.
+
+Mutable and const iterators admit default and same-type copy/move construction,
+assignment, mutable-to-const conversion, dereference, arrow, pre/post increment
+and equality/inequality. The list forms additionally admit pre/post decrement.
+Dereferencing or moving iterators outside their valid ranges and calling
+front/back/pop on an empty owner retain their C++ preconditions.
+
+Class definitions, fields, methods, templates, redeclarations and used body
+graphs remain authenticated against the fixed SDK. Source-owned bodies,
+macro-rewritten members, altered storage declarations and unapproved calls stay
+rejected. The existing source node/depth/time limits remain in force. No runtime
+libc++ dependency is introduced.
+
+Each family's six native-reference programs are also generated as C23 and
+executed at O0 and O2. They exercise owner/iterator layout, container operations,
+references, returned positions and selected heap or argument effects. Four
+negative tests per family retain independent body and macro-origin checks.
+Six-target source admission is a separate credential from those execution results.
+
+Owner copy/move construction and assignment, custom allocators, non-integer
+elements, further overloads, range operations, emplacing, resizing and linked
+container splice/sort/merge operations remain outside this increment. NeverC's
+public source frontend remains C23-only; full STL support still requires further
+implementation and verification.

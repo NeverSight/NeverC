@@ -452,3 +452,18 @@ source-origin guards retain replaced constructor, method and storage rejection.
 The source programs also retain checks across the six existing 64-bit target
 descriptors. See the [detailed contract](cpp-core-v2.md#r19-checked-integer-valarray-operations).
 This bounded increment does not establish complete STL support.
+
+## R19 checked integer linked containers
+
+| Private `cpp-core-v2` surface | Admitted operations | Boundary |
+| --- | --- | --- |
+| `std::forward_list<int>` | Default, allocator-only and initializer-list construction; destruction; `empty`, `front`, before/begin/end iterator access, front insertion/removal, single-position `insert_after`/`erase_after` and `clear`. | Exact default allocator and pinned owner/node layouts. Mutable/const SDK iterators admit copying, conversion, dereference, arrow, increment and equality forms. |
+| `std::list<int>` | Default, allocator-only and initializer-list construction; destruction; `empty`, `size`, front/back access, begin/end iterators, front/back insertion/removal, single-position `insert`/`erase` and `clear`. | Exact default allocator and pinned sentinel/node layouts. Mutable/const SDK iterators additionally admit decrement. |
+
+Each family has six exact native-reference programs and generated C23 executions
+at O0 and O2, plus four source-origin guards. These execution results are distinct
+from six-target source admission. See the
+[linked-container contract](cpp-core-v2.md#r19-checked-integer-linked-containers).
+Owner copying/moving and assignment, range overloads, emplacing, resizing,
+custom allocators and other element specializations require further work.
+This increment does not establish complete STL support.

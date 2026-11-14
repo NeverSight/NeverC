@@ -1,0 +1,204 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-empty-layout",
+      "formal_test_name": "TranslateTest.CoreV2DequeIntEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b0e96d477514a9d4afa8ae35f6c7712420d45f81b94563052b0f9a1fe3fc2595",
+      "original_case_source_sha256": "b0e96d477514a9d4afa8ae35f6c7712420d45f81b94563052b0f9a1fe3fc2595",
+      "gtest_body_sha256": "2755e0feeca231cae670e47569157be2d14036d5cb0d107714da90b166fbbd1b"
+    },
+    {
+      "name": "deque-iterator-layout",
+      "formal_test_name": "TranslateTest.CoreV2DequeIntIteratorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "40c713902d490c1e37a27d0dbf935b8339681bc508968e1f68fbef1325b516a9",
+      "original_case_source_sha256": "40c713902d490c1e37a27d0dbf935b8339681bc508968e1f68fbef1325b516a9",
+      "gtest_body_sha256": "0dd23b8c8c250e0868e847caad9d0dc108977bb274b90bb6c1b212e98df00ca8"
+    },
+    {
+      "name": "deque-original-runtime",
+      "formal_test_name": "TranslateTest.CoreV2DequeIntOperationsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f42c4851689d23ce08e7398e98383a759d7aaaeb35f4b4c4b8efd8316594ff16",
+      "original_case_source_sha256": "f42c4851689d23ce08e7398e98383a759d7aaaeb35f4b4c4b8efd8316594ff16",
+      "gtest_body_sha256": "c7ecf18b894e02bbcbbd6e08ef05af42ac53991bd6308eb0e6f4b1849d3d9f6d"
+    },
+    {
+      "name": "deque-block-boundaries",
+      "formal_test_name": "TranslateTest.CoreV2DequeIntBlockBoundariesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1d87423bc3598ca8d9073c0b90c592a44a863b3d32bdc8682ecf822fc127ff9c",
+      "original_case_source_sha256": "1d87423bc3598ca8d9073c0b90c592a44a863b3d32bdc8682ecf822fc127ff9c",
+      "gtest_body_sha256": "5f147854d4c5ebae6e5339d54be5673c41e4d2c66691ca412e30b88870550a4f"
+    },
+    {
+      "name": "deque-live-allocation-reference",
+      "formal_test_name": "TranslateTest.CoreV2DequeIntAllocationReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9135684bd13618bd69e7ab19c991c0323ec73e2ba2de2389d6a5352e2f488be3",
+      "original_case_source_sha256": "9135684bd13618bd69e7ab19c991c0323ec73e2ba2de2389d6a5352e2f488be3",
+      "gtest_body_sha256": "ad5fe90177ef3d47170c829b814f4a56671303c81f25f0daf4251fc53fc649c8"
+    },
+    {
+      "name": "deque-owned-argument-effects",
+      "formal_test_name": "TranslateTest.CoreV2DequeIntArgumentEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d3ec2ce8dc68bb6ee8cb6c8e0e735d5b1d9f57633832b36558c26f97b804ff14",
+      "original_case_source_sha256": "d3ec2ce8dc68bb6ee8cb6c8e0e735d5b1d9f57633832b36558c26f97b804ff14",
+      "gtest_body_sha256": "3da2eeefd34911018ca154a54ecf066ace73779c2238c019ed4ba4c08b3648f3"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "deque-owned-push-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeOwnedPushRejected",
+      "expected": "reject",
+      "source_sha256": "7f73dc98e8448a5d6f4e2d09427b06717b2ffbba799f3a459b65610ef5691a5e",
+      "original_case_source_sha256": "7f73dc98e8448a5d6f4e2d09427b06717b2ffbba799f3a459b65610ef5691a5e",
+      "gtest_body_sha256": "cf2c3bd2d0b53a3c06d2fb0fef342721da543c20f6d9780e0a6fcd6e9bf03b21"
+    },
+    {
+      "name": "deque-owned-front-macro",
+      "formal_test_name": "TranslateTest.CoreV2DequeOwnedFrontMacroRejected",
+      "expected": "reject",
+      "source_sha256": "a2688fae9c87fe164451b6caddb3283ae1b4df07a21dfedfedb316eaf570e4f2",
+      "original_case_source_sha256": "a2688fae9c87fe164451b6caddb3283ae1b4df07a21dfedfedb316eaf570e4f2",
+      "gtest_body_sha256": "cf1b19f74c267fd3c4cd277784467ee7346b8c6d7c779f99e4c63ea42f125d9f"
+    },
+    {
+      "name": "deque-owned-map-macro",
+      "formal_test_name": "TranslateTest.CoreV2DequeOwnedMapMacroRejected",
+      "expected": "reject",
+      "source_sha256": "c3b2250d2e49b9701889e2a32593ef661d1a365679357a83e4db92db1ccde3b1",
+      "original_case_source_sha256": "c3b2250d2e49b9701889e2a32593ef661d1a365679357a83e4db92db1ccde3b1",
+      "gtest_body_sha256": "2185158f5dd93041be757162a6d1a820d4901523bce4f1dff7fe4318c1264bfa"
+    },
+    {
+      "name": "deque-owned-empty-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeOwnedEmptyRejected",
+      "expected": "reject",
+      "source_sha256": "ec0ce92db03479e2c50e9260a38f4c489ac55557c79226eca830fab2bd47543f",
+      "original_case_source_sha256": "ec0ce92db03479e2c50e9260a38f4c489ac55557c79226eca830fab2bd47543f",
+      "gtest_body_sha256": "33964c6cc21f0a04c17a2b34af1eca59d7f7dc452b2f8c4e1e701ee047accf4a"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeIntEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeIntIteratorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeIntOperationsRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeIntBlockBoundariesRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeIntAllocationReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeIntArgumentEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeOwnedPushRejected",
+    "TranslateTest.CoreV2DequeOwnedFrontMacroRejected",
+    "TranslateTest.CoreV2DequeOwnedMapMacroRejected",
+    "TranslateTest.CoreV2DequeOwnedEmptyRejected"
+  ],
+  "native_reference_authentication_sha256": "6a731ca235b39979cabe7ab849ce4b0f75a4c223d9c830cbd44eee879a1561b9",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "source_cases": [
+    {
+      "name": "deque-empty-layout",
+      "source": "#include <deque>\nint main(){std::deque<int> v;std::deque<int>::iterator i,j;\nstd::deque<int>::const_iterator a,b;\nreturn sizeof(v)!=48||alignof(decltype(v))!=8||sizeof(i)!=16||sizeof(a)!=16||!v.empty()||v.size()!=0||i!=j||a!=b;}\n",
+      "source_sha256": "b0e96d477514a9d4afa8ae35f6c7712420d45f81b94563052b0f9a1fe3fc2595",
+      "public_header": "deque",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "deque-iterator-layout",
+      "source": "#include <deque>\nint main(){std::deque<int> v{1,2,3};auto i=v.begin();i+=2;auto a=i--;*i=5;\nstd::deque<int>::const_iterator c=i;auto b=c+1;auto j=v.end();--j;\nreturn *a!=3||*i!=5||*b!=3||b-c!=1||i-v.begin()!=1||*j!=3||c[1]!=3;}\n",
+      "source_sha256": "40c713902d490c1e37a27d0dbf935b8339681bc508968e1f68fbef1325b516a9",
+      "public_header": "deque",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "deque-original-runtime",
+      "source": "#include <deque>\nint main(){std::deque<int> v{2,3};v.push_front(1);v.push_back(4);v.pop_front();v.pop_back();\nreturn v.size()!=2||v.front()!=2||v.back()!=3;}\n",
+      "source_sha256": "f42c4851689d23ce08e7398e98383a759d7aaaeb35f4b4c4b8efd8316594ff16",
+      "public_header": "deque",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "deque-block-boundaries",
+      "source": "#include <deque>\nint main(){std::deque<int> v;for(int i=0;i!=2049;++i)v.push_back(i);\nint* saved=&v[1500];for(int i=0;i!=1024;++i)v.pop_front();\nfor(int i=0;i!=1024;++i)v.push_front(-i-1);\nif(v.size()!=2049||v.front()!=-1024||v.back()!=2048||*saved!=1500||&v[1500]!=saved)return 1;\n*saved=9;if(v[1500]!=9)return 2;v.clear();v.push_back(7);return v.size()!=1||v.front()!=7||v.back()!=7;}\n",
+      "source_sha256": "1d87423bc3598ca8d9073c0b90c592a44a863b3d32bdc8682ecf822fc127ff9c",
+      "public_header": "deque",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "deque-live-allocation-reference",
+      "source": "using Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic std::deque<int>* current;static int armed,observed;\nvoid* operator new(Size n){void* p=malloc(n);if(armed&&current){++observed;current->front()=9;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {free(p);}\nint main(){std::deque<int> v{3};current=&v;armed=1;\nfor(int i=0;i!=2048&&!observed;++i)v.push_back(v.front());\narmed=0;current=nullptr;int expected=observed?9:3;\nreturn v.size()<2||v.front()!=expected||v.back()!=expected;}\n",
+      "source_sha256": "9135684bd13618bd69e7ab19c991c0323ec73e2ba2de2389d6a5352e2f488be3",
+      "public_header": "deque",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "deque-owned-argument-effects",
+      "source": "#include <deque>\nstatic std::deque<int>* current;static int effects;\nstd::deque<int>* receiver(){effects=effects*10+1;return current;}\nconst int& argument(){effects=effects*10+2;return current->front();}\nint main(){std::deque<int> v{2};current=&v;receiver()->push_back(argument());receiver()->push_front(argument());\nreturn effects!=1212||v.size()!=3||v.front()!=2||v.back()!=2;}\n",
+      "source_sha256": "d3ec2ce8dc68bb6ee8cb6c8e0e735d5b1d9f57633832b36558c26f97b804ff14",
+      "public_header": "deque",
+      "expected_runtime_exit": 0,
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "deque-owned-push-body",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> inline void deque<int>::push_front(const int&) {}\n}}\nint main(){std::deque<int> v;int x=1;v.push_front(x);return v.empty();}\n",
+      "source_sha256": "7f73dc98e8448a5d6f4e2d09427b06717b2ffbba799f3a459b65610ef5691a5e",
+      "public_header": "deque",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-owned-front-macro",
+      "source": "#define front owned_front\n#include <deque>\nint main(){std::deque<int> v{1};return v.front()!=1;}\n",
+      "source_sha256": "a2688fae9c87fe164451b6caddb3283ae1b4df07a21dfedfedb316eaf570e4f2",
+      "public_header": "deque",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-owned-map-macro",
+      "source": "#define __map_ owned_map\n#include <deque>\nint main(){std::deque<int> v{1};return v.front()!=1;}\n",
+      "source_sha256": "c3b2250d2e49b9701889e2a32593ef661d1a365679357a83e4db92db1ccde3b1",
+      "public_header": "deque",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-owned-empty-body",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> inline bool deque<int>::empty() const noexcept {return true;}\n}}\nint main(){std::deque<int> v;return !v.empty();}\n",
+      "source_sha256": "ec0ce92db03479e2c50e9260a38f4c489ac55557c79226eca830fab2bd47543f",
+      "public_header": "deque",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "previous_registry_count": 7542,
+  "current_registry_count": 7552,
+  "previous_maintained_sha256": "f78087a41d7783873f9080d002099fb2289aa8661975da0efc9487c8a74379df",
+  "maintained_original_sha256": "b3aaaaee7a1d4990a2972a247dcd2052352b0170c06b0065567c4cdb0bfcd6f5",
+  "registered_source_sha256": "40a94203aa58d29437e4c03f871157a4948ba401406cfc93dc6e1103de0cd572",
+  "registered_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "historical_7542_and124_extractions_unchanged": true,
+  "all_previous_test_bodies_unchanged": true,
+  "raw109_suffix_unchanged": true,
+  "source48_authentication_sha256": "989c56cb761e802a6ff5867db20e69cf16dc964f34033026f1847cfbbdbbafee",
+  "source48_compiler_source": "6e29bd49fcf0b448d315f392708e3b5d02ad48ea"
+}

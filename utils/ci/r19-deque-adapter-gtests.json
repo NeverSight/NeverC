@@ -1,0 +1,204 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-adapter-empty-layout",
+      "formal_test_name": "TranslateTest.CoreV2DequeAdapterIntEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4051a5a9871fad1015c63adbf0325d966e571ca6e69a6bfc71be636bb4521ec2",
+      "original_case_source_sha256": "4051a5a9871fad1015c63adbf0325d966e571ca6e69a6bfc71be636bb4521ec2",
+      "gtest_body_sha256": "5a4957675047cf24bdd245405c15eb0ae24bb2f34229316d1b44b36d9c039628"
+    },
+    {
+      "name": "stack-lifo-references",
+      "formal_test_name": "TranslateTest.CoreV2StackIntLifoReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "83f6da19b33c6569728d2b64d7e48def17d5db3841a718429791fa7dd673ff01",
+      "original_case_source_sha256": "83f6da19b33c6569728d2b64d7e48def17d5db3841a718429791fa7dd673ff01",
+      "gtest_body_sha256": "b3c020c6dfb4afc3e5901f87eddc166a1fdf0d70f52680f0661073625262c7fa"
+    },
+    {
+      "name": "queue-fifo-references",
+      "formal_test_name": "TranslateTest.CoreV2QueueIntFifoReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d780c57cf244bc0ecc9becfd178a6453e33e227993c972da137e4cf7ee8bc7b0",
+      "original_case_source_sha256": "d780c57cf244bc0ecc9becfd178a6453e33e227993c972da137e4cf7ee8bc7b0",
+      "gtest_body_sha256": "629f5f2cdd40e17d3a764f72921fbfb735e9db619485ec7d9dde5a2cb4ee7c14"
+    },
+    {
+      "name": "queue-block-boundaries",
+      "formal_test_name": "TranslateTest.CoreV2QueueIntBlockBoundariesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7a1c679a862cbe6f5dddef777d7f64107336cdb89d1c59d813f259a47ae0826b",
+      "original_case_source_sha256": "7a1c679a862cbe6f5dddef777d7f64107336cdb89d1c59d813f259a47ae0826b",
+      "gtest_body_sha256": "52cdad1d998e0b743e0a557f43f9f64129febcfbaddb0cbb35e722cc63ba54d8"
+    },
+    {
+      "name": "stack-live-allocation-reference",
+      "formal_test_name": "TranslateTest.CoreV2StackIntAllocationReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e8f6cba919939d3e8e6be7b42b00a467dd53972c8e5aa127ecab4d65ad4d74a4",
+      "original_case_source_sha256": "e8f6cba919939d3e8e6be7b42b00a467dd53972c8e5aa127ecab4d65ad4d74a4",
+      "gtest_body_sha256": "ecc9a530c2b0a947e452b77154714d0cf18f6574d38f0e308c8e7f3866ed0947"
+    },
+    {
+      "name": "queue-owned-argument-effects",
+      "formal_test_name": "TranslateTest.CoreV2QueueIntArgumentEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "772c1efbd937f944d5a4871d30e5e2579b1fd1004753e18ee3f2c22e877256a9",
+      "original_case_source_sha256": "772c1efbd937f944d5a4871d30e5e2579b1fd1004753e18ee3f2c22e877256a9",
+      "gtest_body_sha256": "237f8b0c14e5c4fec00fca3cf44dcce5991f8cb894ac8161e4c6eaa567a34ed7"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "stack-owned-push-body",
+      "formal_test_name": "TranslateTest.CoreV2StackOwnedPushRejected",
+      "expected": "reject",
+      "source_sha256": "480c72ac74690dbd0ad96d60420e70ec71160a2d35808d26b99a5b12530a8b54",
+      "original_case_source_sha256": "480c72ac74690dbd0ad96d60420e70ec71160a2d35808d26b99a5b12530a8b54",
+      "gtest_body_sha256": "c86415c62459bed640082701556472263a18d0ae287aef28c6c56a583164e8e2"
+    },
+    {
+      "name": "queue-owned-front-macro",
+      "formal_test_name": "TranslateTest.CoreV2QueueOwnedFrontMacroRejected",
+      "expected": "reject",
+      "source_sha256": "c8b8ede556c717bdf4b9f2744e9da912526399745f276662310be3efcc985a1f",
+      "original_case_source_sha256": "c8b8ede556c717bdf4b9f2744e9da912526399745f276662310be3efcc985a1f",
+      "gtest_body_sha256": "3438812049cd557f375d30b0d9ab87db346198e6c527ed542322a2925873614e"
+    },
+    {
+      "name": "stack-owned-container-macro",
+      "formal_test_name": "TranslateTest.CoreV2StackOwnedContainerMacroRejected",
+      "expected": "reject",
+      "source_sha256": "d5f39d49446d5c7f7246c3da250c57ef47795e2d9432d6c5cc12390757696780",
+      "original_case_source_sha256": "d5f39d49446d5c7f7246c3da250c57ef47795e2d9432d6c5cc12390757696780",
+      "gtest_body_sha256": "4789ca7289a11497abce3b670286578581c354d5baf28e122e4d46b558e73610"
+    },
+    {
+      "name": "queue-owned-empty-body",
+      "formal_test_name": "TranslateTest.CoreV2QueueOwnedEmptyRejected",
+      "expected": "reject",
+      "source_sha256": "68172e3d309c54408c4b1c12d76688601853649ecbc526935fb4a8de3fcc6229",
+      "original_case_source_sha256": "68172e3d309c54408c4b1c12d76688601853649ecbc526935fb4a8de3fcc6229",
+      "gtest_body_sha256": "dec098537f10a72ab433e04abe87820e17bd92b07d1c354b9efe1767c45b0982"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeAdapterIntEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2StackIntLifoReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2QueueIntFifoReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2QueueIntBlockBoundariesRunAtBothOptimizations",
+    "TranslateTest.CoreV2StackIntAllocationReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2QueueIntArgumentEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2StackOwnedPushRejected",
+    "TranslateTest.CoreV2QueueOwnedFrontMacroRejected",
+    "TranslateTest.CoreV2StackOwnedContainerMacroRejected",
+    "TranslateTest.CoreV2QueueOwnedEmptyRejected"
+  ],
+  "native_reference_authentication_sha256": "3dc287bc07c5c09ce1600b383dd51bc95c02d1b7f1c22740cf33d85b88886e63",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "source_cases": [
+    {
+      "name": "deque-adapter-empty-layout",
+      "source": "#include <stack>\n#include <queue>\nint main(){std::stack<int> s;std::queue<int> q;\nconst auto& cs=s;const auto& cq=q;\nreturn sizeof(s)!=48||sizeof(q)!=48||alignof(decltype(s))!=8||alignof(decltype(q))!=8||\n!cs.empty()||cs.size()!=0||!cq.empty()||cq.size()!=0;}\n",
+      "source_sha256": "4051a5a9871fad1015c63adbf0325d966e571ca6e69a6bfc71be636bb4521ec2",
+      "expected_runtime_exit": 0,
+      "public_header": "stack",
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "stack-lifo-references",
+      "source": "#include <stack>\nint main(){std::stack<int> s;s.push(1);int value=2;s.push(value);s.push(3);\nconst auto& c=s;if(c.size()!=3||c.top()!=3)return 1;\ns.top()=7;if(c.top()!=7)return 2;s.pop();\nif(s.top()!=2||s.size()!=2)return 3;s.pop();s.pop();return !s.empty();}\n",
+      "source_sha256": "83f6da19b33c6569728d2b64d7e48def17d5db3841a718429791fa7dd673ff01",
+      "expected_runtime_exit": 0,
+      "public_header": "stack",
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "queue-fifo-references",
+      "source": "#include <queue>\nint main(){std::queue<int> q;q.push(1);int value=2;q.push(value);q.push(3);\nconst auto& c=q;if(c.size()!=3||c.front()!=1||c.back()!=3)return 1;\nq.front()=5;q.back()=7;if(c.front()!=5||c.back()!=7)return 2;\nq.pop();if(q.front()!=2||q.back()!=7)return 3;q.pop();q.pop();return !q.empty();}\n",
+      "source_sha256": "d780c57cf244bc0ecc9becfd178a6453e33e227993c972da137e4cf7ee8bc7b0",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "queue-block-boundaries",
+      "source": "#include <queue>\nint main(){std::queue<int> q;for(int i=0;i!=2049;++i)q.push(i);\nint* saved=&q.back();for(int i=0;i!=1024;++i){if(q.front()!=i)return 1;q.pop();}\nfor(int i=2049;i!=3073;++i)q.push(i);\nif(q.size()!=2049||q.front()!=1024||q.back()!=3072||*saved!=2048)return 2;\n*saved=9;for(int i=1024;i!=3073;++i){if(q.front()!=(i==2048?9:i))return 3;q.pop();}\nq.push(7);return q.size()!=1||q.front()!=7||q.back()!=7;}\n",
+      "source_sha256": "7a1c679a862cbe6f5dddef777d7f64107336cdb89d1c59d813f259a47ae0826b",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "stack-live-allocation-reference",
+      "source": "using Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <stack>\nstatic std::stack<int>* current;static int armed,observed;\nvoid* operator new(Size n){void* p=malloc(n);if(armed&&current){++observed;current->top()=9;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {free(p);}\nint main(){std::stack<int> s;s.push(3);current=&s;armed=1;\nfor(int i=0;i!=2048&&!observed;++i)s.push(s.top());\narmed=0;current=nullptr;return !observed||s.size()<2||s.top()!=9;}\n",
+      "source_sha256": "e8f6cba919939d3e8e6be7b42b00a467dd53972c8e5aa127ecab4d65ad4d74a4",
+      "expected_runtime_exit": 0,
+      "public_header": "stack",
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "queue-owned-argument-effects",
+      "source": "#include <queue>\nstatic std::queue<int>* current;static int effects;\nstd::queue<int>* receiver(){effects=effects*10+1;return current;}\nconst int& argument(){effects=effects*10+2;return current->front();}\nint main(){std::queue<int> q;q.push(2);current=&q;\nreceiver()->push(argument());receiver()->push(argument());\nreturn effects!=1212||q.size()!=3||q.front()!=2||q.back()!=2;}\n",
+      "source_sha256": "772c1efbd937f944d5a4871d30e5e2579b1fd1004753e18ee3f2c22e877256a9",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept",
+      "kind": "runtime"
+    },
+    {
+      "name": "stack-owned-push-body",
+      "source": "#include <stack>\nnamespace std { inline namespace __1 {\ntemplate<> inline void stack<int>::push(const int&) {}\n}}\nint main(){std::stack<int> s;int x=1;s.push(x);return s.empty();}\n",
+      "source_sha256": "480c72ac74690dbd0ad96d60420e70ec71160a2d35808d26b99a5b12530a8b54",
+      "public_header": "stack",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "queue-owned-front-macro",
+      "source": "#define front owned_front\n#include <queue>\nint main(){std::queue<int> q;q.push(1);return q.front()!=1;}\n",
+      "source_sha256": "c8b8ede556c717bdf4b9f2744e9da912526399745f276662310be3efcc985a1f",
+      "public_header": "queue",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "stack-owned-container-macro",
+      "source": "#define c owned_container\n#include <stack>\nint main(){std::stack<int> s;s.push(1);return s.top()!=1;}\n",
+      "source_sha256": "d5f39d49446d5c7f7246c3da250c57ef47795e2d9432d6c5cc12390757696780",
+      "public_header": "stack",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "queue-owned-empty-body",
+      "source": "#include <queue>\nnamespace std { inline namespace __1 {\ntemplate<> inline bool queue<int>::empty() const {return true;}\n}}\nint main(){std::queue<int> q;q.push(1);return q.empty();}\n",
+      "source_sha256": "68172e3d309c54408c4b1c12d76688601853649ecbc526935fb4a8de3fcc6229",
+      "public_header": "queue",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "previous_registry_count": 7532,
+  "current_registry_count": 7542,
+  "previous_maintained_sha256": "be5ce8350e32f64b17b9db709b4721d2cb5923bc5a36171431a5b441d072509f",
+  "maintained_original_sha256": "f78087a41d7783873f9080d002099fb2289aa8661975da0efc9487c8a74379df",
+  "registered_source_sha256": "ceeba042dcd503af9834542a9d2abe2ff8db61999fda893b3ab52f45db9ed65d",
+  "registered_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "historical_7532_and124_extractions_unchanged": true,
+  "all_previous_test_bodies_unchanged": true,
+  "raw109_suffix_unchanged": true,
+  "source48_authentication_sha256": "83e90066b429eb68c6300430f101b13e3d19f1c27073a94a34e3943be49bc6c9",
+  "source48_compiler_source": "6e29bd49fcf0b448d315f392708e3b5d02ad48ea"
+}
