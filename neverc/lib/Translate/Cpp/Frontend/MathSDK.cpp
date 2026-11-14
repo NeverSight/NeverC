@@ -50926,6 +50926,28 @@ bool priorityQueueComparatorDefaultArgument(const State &S, const SourceManager 
         << " macro=" << bool(Init && Init->getExprLoc().isMacroID())
         << " origin=" << (Origin ? Origin->Path : "none") << "\n";
     if (Init) llvm::errs() << "NCPQ-CTOR-DEFAULT-TYPE " << Init->getType().getAsString() << "\n";
+
+    const bool Ready = P && P->hasDefaultArg() && !P->hasUnparsedDefaultArg() &&
+        !P->hasUninstantiatedDefaultArg();
+    const auto *Raw = Ready ? Default->getExpr() : nullptr;
+    const auto *Declared = Ready ? P->getDefaultArg() : nullptr;
+    llvm::errs() << "NCPQ-CTOR-RAW ready=" << Ready
+        << " implicit=" << bool(P && P->isImplicit()) << " invalid=" << bool(P && P->isInvalidDecl())
+        << " unparsed=" << bool(P && P->hasUnparsedDefaultArg())
+        << " uninstantiated=" << bool(P && P->hasUninstantiatedDefaultArg())
+        << " templated-kind=" << unsigned(Constructor->getTemplatedKind())
+        << " dependent-function=" << Constructor->isDependentContext()
+        << " dependent-parent=" << Constructor->getParent()->isDependentContext()
+        << " raw=" << (Raw ? Raw->getStmtClassName() : "null")
+        << " declared=" << (Declared ? Declared->getStmtClassName() : "null") << "\n";
+    if (Raw) {
+      llvm::errs() << "NCPQ-CTOR-RAW-TYPE " << Raw->getType().getAsString()
+          << " type-dependent=" << Raw->isTypeDependent() << " value-dependent=" << Raw->isValueDependent()
+          << " instantiation-dependent=" << Raw->isInstantiationDependent()
+          << " same-default-type=" << Context.hasSameType(Default->getType(), Raw->getType())
+          << " same-value-kind=" << (Default->getValueKind() == Raw->getValueKind()) << "\n";
+      Raw->dump();
+    }
   }
   if (!Default || !Constructor || Index != 2 || Constructor->getNumParams() != 3 ||
       !priorityQueuePointerRangeTemplate(S, SM, Constructor, Context) ||
