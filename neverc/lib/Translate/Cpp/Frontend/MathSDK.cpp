@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -50356,6 +50357,8 @@ bool priorityAlignmentAssumption(const State &S, const SourceManager &SM,
 bool priorityRelocationTransfer(const State &S, const SourceManager &SM, const CallExpr *Call,
                                 const ASTContext &Context, std::vector<const FunctionDecl *> &Dependencies) {
   const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  const bool SelectedCopy = F && F->getBuiltinID() == Builtin::BI__builtin_memcpy;
+  static bool DumpedCopy = false;
   if (!F || F->isInvalidDecl() || !F->getIdentifier() ||
       F->getBuiltinID() != Builtin::BI__builtin_memcpy || F->getName() != "__builtin_memcpy" ||
       F->hasBody() || F->isVariadic() || F->getNumParams() != 3 || Call->getNumArgs() != 3 ||
@@ -50363,13 +50366,13 @@ bool priorityRelocationTransfer(const State &S, const SourceManager &SM, const C
       !Context.hasSameType(F->getReturnType(), Context.VoidPtrTy) ||
       !Context.hasSameType(F->getParamDecl(0)->getType(), Context.VoidPtrTy) ||
       !Context.hasSameType(F->getParamDecl(1)->getType(), Context.getPointerType(Context.VoidTy.withConst())) ||
-      !Context.hasSameType(F->getParamDecl(2)->getType(), Context.getSizeType())) return false;
+      !Context.hasSameType(F->getParamDecl(2)->getType(), Context.getSizeType())) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=1\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   const auto Site = S.sdkFile(SM, Call->getExprLoc());
   if (!Site || Site->Root != "libcxx" || Site->Path != "__memory/uninitialized_algorithms.h" ||
-      Call->getExprLoc().isMacroID() || SM.getExpansionLineNumber(Call->getExprLoc()) != 645) return false;
+      Call->getExprLoc().isMacroID() || SM.getExpansionLineNumber(Call->getExprLoc()) != 645) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=2\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   const auto *Destination = dyn_cast_or_null<CXXStaticCastExpr>(priorityQueryOperand(Call->getArg(0)));
   if (!Destination || Destination->getCastKind() != CK_BitCast ||
-      !Context.hasSameType(Destination->getTypeAsWritten(), Context.VoidPtrTy)) return false;
+      !Context.hasSameType(Destination->getTypeAsWritten(), Context.VoidPtrTy)) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=3\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   const auto *To = dyn_cast_or_null<CallExpr>(priorityQueryOperand(Destination->getSubExpr()));
   const auto *From = dyn_cast_or_null<CallExpr>(priorityQueryOperand(Call->getArg(1)));
   auto Parameter = [&](const CallExpr *Address) -> const ParmVarDecl * {
@@ -50378,17 +50381,17 @@ bool priorityRelocationTransfer(const State &S, const SourceManager &SM, const C
     if (!Function || !Function->getIdentifier() || Function->getName() != "__to_address" ||
         !dequeStd(Function->getDeclContext()) || Function->getNumParams() != 1 ||
         Address->getNumArgs() != 1 || !Context.hasSameType(Function->getReturnType(), Pointer) ||
-        !Context.hasSameType(Function->getParamDecl(0)->getType(), Pointer)) return nullptr;
+        !Context.hasSameType(Function->getParamDecl(0)->getType(), Pointer)) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY nullptr stage=1\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ nullptr; }
     unsigned Declarations = 0;
     auto Pinned = [&](const Decl *D) {
       return ++Declarations <= 64 && dequePinned(S, SM, D, "__memory/pointer_traits.h");
     };
-    for (const auto *D : Function->redecls()) if (!Pinned(D)) return nullptr;
+    for (const auto *D : Function->redecls()) if (!Pinned(D)) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY nullptr stage=2\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ nullptr; }
     if (const auto *Pattern = Function->getTemplateInstantiationPattern())
-      for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return nullptr;
+      for (const auto *D : Pattern->redecls()) if (!Pinned(D)) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY nullptr stage=3\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ nullptr; }
     if (const auto *Primary = Function->getPrimaryTemplate())
       for (const auto *D : Primary->redecls())
-        if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return nullptr;
+        if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY nullptr stage=4\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ nullptr; }
     const auto *Reference = dyn_cast_or_null<DeclRefExpr>(priorityQueryOperand(Address->getArg(0)));
     return Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
   };
@@ -50399,28 +50402,28 @@ bool priorityRelocationTransfer(const State &S, const SourceManager &SM, const C
       !dequeStd(Owner->getDeclContext()) || Owner->getNumParams() != 4 || Owner->isVariadic() ||
       !Owner->hasBody() || !Owner->getReturnType()->isVoidType() ||
       Owner->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-      Owner->getParamDecl(1) != First || Owner->getParamDecl(3) != Target) return false;
+      Owner->getParamDecl(1) != First || Owner->getParamDecl(3) != Target) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=4\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   const auto Pointer = Context.getPointerType(Context.IntTy);
   for (unsigned I = 1; I != 4; ++I)
     if (!Context.hasSameType(Owner->getParamDecl(I)->getType(), Pointer) ||
-        Owner->getParamDecl(I)->hasDefaultArg()) return false;
+        Owner->getParamDecl(I)->hasDefaultArg()) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=5\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   const auto AllocatorType = Owner->getParamDecl(0)->getType();
   if (!AllocatorType->isLValueReferenceType() || AllocatorType->getPointeeType().hasQualifiers() ||
-      Owner->getParamDecl(0)->hasDefaultArg()) return false;
+      Owner->getParamDecl(0)->hasDefaultArg()) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=6\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   const auto Allocator = approvedUtilityAllocatorRecord(S, SM,
       dequeRecordType(AllocatorType->getPointeeType()), Context);
-  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.IntTy)) return false;
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.IntTy)) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=7\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   unsigned Declarations = 0;
   auto Pinned = [&](const Decl *D) {
     return ++Declarations <= 64 && dequePinned(S, SM, D, "__memory/uninitialized_algorithms.h");
   };
-  for (const auto *D : Owner->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : Owner->redecls()) if (!Pinned(D)) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=8\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   const auto *Primary = Owner->getPrimaryTemplate();
   const auto *Pattern = Owner->getTemplateInstantiationPattern();
-  if (!Primary || !Pattern || Primary->getTemplateParameters()->size() != 2) return false;
-  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  if (!Primary || !Pattern || Primary->getTemplateParameters()->size() != 2) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=9\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=10\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   for (const auto *D : Primary->redecls())
-    if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+    if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=11\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   const auto *Bytes = dyn_cast_or_null<BinaryOperator>(priorityQueryOperand(Call->getArg(2)));
   const auto *Width = Bytes ? dyn_cast_or_null<UnaryExprOrTypeTraitExpr>(priorityQueryOperand(Bytes->getLHS())) : nullptr;
   const auto *Count = Bytes ? dyn_cast_or_null<BinaryOperator>(priorityQueryOperand(Bytes->getRHS())) : nullptr;
@@ -50429,14 +50432,14 @@ bool priorityRelocationTransfer(const State &S, const SourceManager &SM, const C
       !Context.hasSameType(Width->getArgumentType(), Context.IntTy) ||
       !Count || Count->getOpcode() != BO_Sub ||
       !priorityQueryReference(Count->getLHS(), Owner->getParamDecl(2)) ||
-      !priorityQueryReference(Count->getRHS(), First)) return false;
+      !priorityQueryReference(Count->getRHS(), First)) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=12\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
   for (const auto *D : F->redecls()) {
     if (dequeDependencyDeclaration(S, SM, D)) continue;
     if (!D->isImplicit() || D->hasBody() ||
-        !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+        !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=13\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
     if (D->getLocation().isValid() && !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(D->getLocation()))) {
       const auto File = S.sdkFile(SM, D->getLocation());
-      if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+      if (!File || (File->Root != "libcxx" && File->Root != "resource")) { if (SelectedCopy) { llvm::errs() << "NCPQ-COPY false stage=14\n"; if (!DumpedCopy) { DumpedCopy = true; Call->dump(); } } return /*observed*/ false; }
     }
   }
   // The pointer helpers retain their full ordinary source-graph obligations.
