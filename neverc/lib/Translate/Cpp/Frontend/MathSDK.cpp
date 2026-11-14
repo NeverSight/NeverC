@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -50523,6 +50524,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
+  unsigned Observations = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   auto PinnedMacro = [&](SourceLocation L) {
@@ -50531,7 +50533,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     const auto File = S.sdkFile(SM, SM.getSpellingLoc(L));
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
-  Function = [&](const FunctionDecl *F, unsigned Depth) {
+  auto CheckFunction = [&](const FunctionDecl *F, unsigned Depth) {
     if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return false;
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
@@ -50600,7 +50602,16 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     const auto *Body = F->getBody();
     return Body && Statement(Body, Depth + 1);
   };
-  Statement = [&](const Stmt *Node, unsigned Depth) {
+  Function = [&](const FunctionDecl *F, unsigned Depth) {
+    const bool Result = CheckFunction(F, Depth);
+    if (PriorityRoot && !Result && Observations++ < 96) {
+      llvm::errs() << "NCPQ-FUNCTION depth=" << Depth << " nodes=" << Nodes
+          << " name=" << (F ? F->getQualifiedNameAsString() : "<null>")
+          << " body=" << (F && F->hasBody()) << " builtin=" << (F ? F->getBuiltinID() : 0) << "\n";
+    }
+    return Result;
+  };
+  auto CheckStatement = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
     if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
         !PinnedMacro(Node->getEndLoc())) return false;
@@ -50652,6 +50663,28 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     for (const auto *Child : Node->children())
       if (!Statement(Child, Depth + 1)) return false;
     return true;
+  };
+  Statement = [&](const Stmt *Node, unsigned Depth) {
+    const bool Result = CheckStatement(Node, Depth);
+    if (PriorityRoot && !Result && Observations++ < 96) {
+      if (const auto *Call = dyn_cast_or_null<CallExpr>(Node)) {
+        const auto *Callee = Call->getDirectCallee();
+        static bool Dumped = false;
+        if (Callee && Callee->getBuiltinID() && !Dumped) {
+          Dumped = true;
+          llvm::errs() << "NCPQ-VALUE-BUILTIN-AST\n";
+          Call->dump();
+        }
+      }
+      llvm::errs() << "NCPQ-STATEMENT depth=" << Depth << " nodes=" << Nodes
+          << " kind=" << (Node ? Node->getStmtClassName() : "<null>");
+      if (Node) {
+        const auto L = SM.getPresumedLoc(Node->getBeginLoc());
+        if (L.isValid()) llvm::errs() << " line=" << L.getLine();
+      }
+      llvm::errs() << "\n";
+    }
+    return Result;
   };
   return Root && (PriorityRoot ? priorityQueueFunctionDeclarations(S, SM, Root)
                               : dequeFunctionDeclarations(S, SM, Root)) && Function(Root, 0);
