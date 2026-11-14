@@ -27033,6 +27033,88 @@ class FunctionLowering {
 
 
 
+
+  void priorityQueueDeallocate(Expression Place, const UtilityVectorRecord &Vector,
+                               SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Begin = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    auto Capacity = randomVectorCount(Place, Vector, "nct_vector_capacity", L);
+    const auto Release = labelName(), Done = labelName();
+    branch(cast(Begin, "bool", L), Release, Done, L);
+    label(Release, L);
+    // __vdeallocate clears the elements before calling delete, then clears storage.
+    assign(randomVectorMember(Place, Vector, "nct_vector_end", L), Begin, L);
+    unorderedHeapRelease(Begin, Vector.ElementType,
+        binary("*", Capacity, quantity(4, Size, L), Size, L), L);
+    zeroRandomVector(Place, Vector, L);
+    jump(Done, L); label(Done, L);
+  }
+
+  void priorityQueueMove(Expression Place, Expression Source,
+                          const UtilityVectorRecord &Vector, bool Reassign,
+                          SourceLocation L) {
+    if (Reassign) priorityQueueDeallocate(Place, Vector, L);
+    // Read after releasing the destination, as the selected vector move assignment
+    // does. In particular, the selected SDK leaves a self-moved queue empty.
+    for (const char *Name : {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"}) {
+      auto Pointer = snapshot(randomVectorMember(Source, Vector, Name, L), L);
+      assign(randomVectorMember(Place, Vector, Name, L), Pointer, L);
+    }
+    zeroRandomVector(Source, Vector, L);
+  }
+
+  void priorityQueueCopy(Expression Place, Expression Source,
+                          const UtilityVectorRecord &Vector, bool Reassign,
+                          SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Pointer = type(Vector.PointerType, L);
+    auto First = snapshot(randomVectorMember(Source, Vector, "nct_vector_begin", L), L);
+    auto Count = randomVectorCount(Source, Vector, "nct_vector_end", L);
+    const auto Allocate = labelName(), Copy = labelName(), Done = labelName();
+    if (Reassign) {
+      auto Capacity = randomVectorCount(Place, Vector, "nct_vector_capacity", L);
+      branch(binary(">", Count, Capacity, "bool", L), Allocate, Copy, L);
+    } else {
+      branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Allocate, Done, L);
+    }
+    label(Allocate, L);
+    if (Reassign) priorityQueueDeallocate(Place, Vector, L);
+    // The selected __vdeallocate resets capacity before __recommend is called,
+    // so replacement capacity equals the copied element count.
+    auto Fresh = snapshot(cast(unorderedHeapAllocate(Vector.ElementType,
+        binary("*", Count, quantity(4, Size, L), Size, L), L), Pointer, L), L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_begin", L), Fresh, L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_end", L), Fresh, L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_capacity", L),
+        binary("+", Fresh, cast(Count, Difference, L), Pointer, L), L);
+    jump(Copy, L); label(Copy, L);
+    auto Output = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    auto Input = snapshot(First, L);
+    auto Remaining = snapshot(Count, L);
+    const auto Check = labelName(), Element = labelName(), Finish = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Element, Finish, L);
+    label(Element, L);
+    assign(dereference(Output, L), dereference(Input, L), L);
+    assign(Input, binary("+", Input, quantity(1, Difference, L), Pointer, L), L);
+    assign(Output, binary("+", Output, quantity(1, Difference, L), Pointer, L), L);
+    assign(Remaining, binary("-", Remaining, quantity(1, Size, L), Size, L), L);
+    jump(Check, L); label(Finish, L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_end", L), Output, L);
+    jump(Done, L); label(Done, L);
+  }
+
+  void priorityQueueSwap(Expression Left, Expression Right,
+                          const UtilityVectorRecord &Vector, SourceLocation L) {
+    for (const char *Name : {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"}) {
+      auto Saved = snapshot(randomVectorMember(Left, Vector, Name, L), L);
+      auto Other = snapshot(randomVectorMember(Right, Vector, Name, L), L);
+      assign(randomVectorMember(Left, Vector, Name, L), Other, L);
+      assign(randomVectorMember(Right, Vector, Name, L), Saved, L);
+    }
+  }
+
   void priorityQueuePush(Expression Place, Expression Source,
                          const UtilityVectorRecord &Vector, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
@@ -27147,21 +27229,40 @@ class FunctionLowering {
         binary("+", Values, cast(NewCount, Difference, L), Pointer, L), L);
   }
 
+
   Expression utilityPriorityQueueOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityPriorityQueueCall(A.S, A.Sources, Call, A.Context);
-    if (!Proof || !Proof->Receiver || !Proof->Method)
+    if (!Proof || !Proof->Receiver || !Proof->Function || !Proof->Record)
       reject(L, "priority queue operation", "The selected SDK body, integer layout and operands are required.");
-    const auto Info = approvedUtilityPriorityQueueRecord(A.S, A.Sources, Proof->Method->getParent(), A.Context);
+    const auto Info = approvedUtilityPriorityQueueRecord(A.S, A.Sources, Proof->Record, A.Context);
     if (!Info) reject(L, "priority queue layout", "The checked default integer container and comparator are required.");
+    const auto Operation = Proof->Operation;
+    const bool Assignment = Operation == UtilityPriorityQueueOperation::CopyAssign ||
+        Operation == UtilityPriorityQueueOperation::MoveAssign;
+    auto Argument = [&]() {
+      const unsigned Parameter = isa<CXXMethodDecl>(Proof->Function) ? 0 : 1;
+      return snapshot(argument(Call->getArg(Proof->ArgumentOffset),
+          Proof->Function->getParamDecl(Parameter)->getType()), L);
+    };
+    std::optional<Expression> Source;
+    // C++17 assignment notation evaluates the right operand before the receiver;
+    // explicit member calls evaluate the receiver before their argument.
+    if (Assignment && isa<CXXOperatorCallExpr>(Call)) Source = Argument();
     const auto *Object = Proof->Receiver;
     auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
         : address(lvalue(Object), Object->getType(), L), L);
-    std::optional<Expression> Source;
-    if (Proof->Operation == UtilityPriorityQueueOperation::Push)
-      Source = snapshot(argument(Call->getArg(0), Proof->Method->getParamDecl(0)->getType()), L);
+    if (!Source && (Assignment || Operation == UtilityPriorityQueueOperation::Swap ||
+        Operation == UtilityPriorityQueueOperation::Push ||
+        (Operation == UtilityPriorityQueueOperation::Emplace && Proof->Function->getNumParams())))
+      Source = Argument();
+    if (Operation == UtilityPriorityQueueOperation::Emplace && !Proof->Function->getNumParams()) {
+      auto Zero = objectTemporary(A.Context.IntTy, L);
+      assign(Zero, A.zero(A.Context.IntTy, L), L);
+      Source = snapshot(address(Zero, A.Context.IntTy, L), L);
+    }
     auto Place = dereference(Receiver, L);
-    switch (Proof->Operation) {
+    switch (Operation) {
     case UtilityPriorityQueueOperation::Empty: {
       auto Begin = randomVectorMember(Place, Info->Container, "nct_vector_begin", L);
       auto End = randomVectorMember(Place, Info->Container, "nct_vector_end", L);
@@ -27174,10 +27275,26 @@ class FunctionLowering {
       return dereference(cast(std::move(Begin), type(A.Context.getPointerType(A.Context.IntTy.withConst()), L), L), L);
     }
     case UtilityPriorityQueueOperation::Push:
+    case UtilityPriorityQueueOperation::Emplace:
       priorityQueuePush(Place, *Source, Info->Container, L);
       return Expression{};
     case UtilityPriorityQueueOperation::Pop:
       priorityQueuePop(Place, Info->Container, L);
+      return Expression{};
+    case UtilityPriorityQueueOperation::CopyAssign: {
+      const auto Copy = labelName(), Done = labelName();
+      branch(binary("!=", cast(Receiver, type(A.Context.VoidPtrTy, L), L),
+          cast(*Source, type(A.Context.VoidPtrTy, L), L), "bool", L), Copy, Done, L);
+      label(Copy, L);
+      priorityQueueCopy(Place, dereference(*Source, L), Info->Container, true, L);
+      jump(Done, L); label(Done, L);
+      return Place;
+    }
+    case UtilityPriorityQueueOperation::MoveAssign:
+      priorityQueueMove(Place, dereference(*Source, L), Info->Container, true, L);
+      return Place;
+    case UtilityPriorityQueueOperation::Swap:
+      priorityQueueSwap(Place, dereference(*Source, L), Info->Container, L);
       return Expression{};
     }
     reject(L, "priority queue operation", "Unknown checked heap operation.");
@@ -36778,7 +36895,16 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     if (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedUtilityPriorityQueueRecord(A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
       if (!Info) reject(L, "priority queue construction", "The checked integer storage is required.");
+      std::optional<Expression> Source;
+      if (C->getNumArgs())
+        Source = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
       zeroRandomVector(Place, Info->Container, L);
+      if (Source) {
+        if (C->getConstructor()->isMoveConstructor())
+          priorityQueueMove(Place, dereference(*Source, L), Info->Container, false, L);
+        else
+          priorityQueueCopy(Place, dereference(*Source, L), Info->Container, false, L);
+      }
       assign(Expression{{"kind", "member"}, {"type", "u8"}, {"name", "nct_priority_compare"},
           {"args", json::Array{json::Object(Place)}}, {"loc", A.loc(L)}}, A.zero(A.Context.UnsignedCharTy, L), L);
       return;

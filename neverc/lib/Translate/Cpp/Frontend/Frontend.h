@@ -3876,11 +3876,13 @@ std::optional<UtilityPriorityQueueRecord> approvedUtilityPriorityQueueRecord(
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
 
-enum class UtilityPriorityQueueOperation { Empty, Size, Top, Push, Pop };
+enum class UtilityPriorityQueueOperation { Empty, Size, Top, Push, Pop, Emplace, CopyAssign, MoveAssign, Swap };
 struct UtilityPriorityQueueCall {
   UtilityPriorityQueueOperation Operation;
   const clang::Expr *Receiver;
-  const clang::CXXMethodDecl *Method;
+  const clang::FunctionDecl *Function;
+  const clang::CXXRecordDecl *Record;
+  unsigned ArgumentOffset;
 };
 bool approvedUtilityPriorityQueueConstruction(const State &S,
     const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,

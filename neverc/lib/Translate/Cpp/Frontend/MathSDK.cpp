@@ -50150,28 +50150,97 @@ bool dequeClosedLessConstruction(const State &S, const SourceManager &SM,
 }
 
 
+bool priorityQueueEmplaceTemplate(const CXXMethodDecl *Method, const ASTContext &Context) {
+  if (!Method || !Method->getIdentifier() || Method->getName() != "emplace" ||
+      Method->isConst() || !Method->getReturnType()->isVoidType() ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Method->getNumParams() > 1) return false;
+  const auto *Primary = Method->getPrimaryTemplate();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  if (!Primary || Primary->getTemplateParameters()->size() != 1 ||
+      !Arguments || Arguments->size() != 1) return false;
+  const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
+  const auto &Argument = Arguments->get(0);
+  if (!Pack || !Pack->isParameterPack() || Argument.getKind() != TemplateArgument::Pack ||
+      Argument.pack_size() != Method->getNumParams()) return false;
+  if (Method->getNumParams()) {
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    const auto Value = Parameter->isReferenceType() ? Parameter->getPointeeType() : QualType();
+    if (Value.isNull() || Method->getParamDecl(0)->hasDefaultArg() ||
+        (!Context.hasSameType(Value, Context.IntTy) &&
+         !Context.hasSameType(Value, Context.IntTy.withConst()))) return false;
+    const auto &TypeArgument = *Argument.pack_begin();
+    if (TypeArgument.getKind() != TemplateArgument::Type) return false;
+    auto Type = TypeArgument.getAsType();
+    if (Type->isReferenceType()) Type = Type->getPointeeType();
+    if (!Context.hasSameType(Type, Context.IntTy) &&
+        !Context.hasSameType(Type, Context.IntTy.withConst())) return false;
+  }
+  return true;
+}
+
 bool priorityQueueFunctionDeclarations(const State &S, const SourceManager &SM,
                                        const FunctionDecl *F) {
-  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(F);
-  if (!Method || Method->isStatic() || Method->isVariadic() || Method->isInvalidDecl() ||
-      Method->isDeleted() || Method->isVolatile() || Method->getRefQualifier() != RQ_None ||
-      Method->getPrimaryTemplate() ||
-      !approvedUtilityPriorityQueueRecord(S, SM, Method->getParent(), F->getASTContext()))
-    return false;
+  if (!F || F->isVariadic() || F->isInvalidDecl() || F->isDeleted()) return false;
+  const auto &Context = F->getASTContext();
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(F)) {
+    if (Method->isStatic() || Method->isVolatile() || Method->getRefQualifier() != RQ_None ||
+        (Method->getPrimaryTemplate() && !priorityQueueEmplaceTemplate(Method, Context)) ||
+        !approvedUtilityPriorityQueueRecord(S, SM, Method->getParent(), Context)) return false;
+  } else {
+    if (!F->getIdentifier() || F->getName() != "swap" || !dequeStd(F->getDeclContext()) ||
+        !F->getReturnType()->isVoidType() || F->getNumParams() != 2 ||
+        F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+    const auto First = F->getParamDecl(0)->getType();
+    if (!First->isLValueReferenceType() || First->getPointeeType().hasQualifiers() ||
+        !Context.hasSameType(First, F->getParamDecl(1)->getType()) ||
+        F->getParamDecl(0)->hasDefaultArg() || F->getParamDecl(1)->hasDefaultArg() ||
+        !approvedUtilityPriorityQueueRecord(S, SM, First->getPointeeType()->getAsCXXRecordDecl(), Context))
+      return false;
+    const auto *Primary = F->getPrimaryTemplate();
+    if (!Primary || Primary->getTemplateParameters()->size() != 4) return false;
+    for (unsigned I = 0; I != 3; ++I) {
+      const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(I));
+      if (!Parameter || Parameter->isParameterPack()) return false;
+    }
+    const auto *Enable = dyn_cast<NonTypeTemplateParmDecl>(Primary->getTemplateParameters()->getParam(3));
+    if (!Enable || Enable->isParameterPack() || !Enable->hasDefaultArgument()) return false;
+  }
   for (const auto *Declaration : F->redecls())
     if (!dequePinned(S, SM, Declaration, "queue")) return false;
   if (const auto *Pattern = F->getTemplateInstantiationPattern())
     for (const auto *Declaration : Pattern->redecls())
       if (!dequePinned(S, SM, Declaration, "queue")) return false;
+  if (const auto *Primary = F->getPrimaryTemplate())
+    for (const auto *Declaration : Primary->redecls())
+      if (!dequePinned(S, SM, Declaration, "queue") ||
+          !dequePinned(S, SM, Declaration->getTemplatedDecl(), "queue")) return false;
   return true;
 }
 
 std::optional<UtilityPriorityQueueOperation> priorityQueueMethodSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
     const ASTContext &Context) {
-  if (!Method || !Method->getIdentifier() || !priorityQueueFunctionDeclarations(S, SM, Method))
+  if (!Method || !priorityQueueFunctionDeclarations(S, SM, Method)) return std::nullopt;
+  const auto Record = Context.getRecordType(Method->getParent());
+  if (Method->isOverloadedOperator()) {
+    if (Method->getOverloadedOperator() != OO_Equal || Method->isConst() ||
+        Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg() ||
+        !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Record)))
+      return std::nullopt;
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    if (Method->isCopyAssignmentOperator() &&
+        Context.hasSameType(Parameter, Context.getLValueReferenceType(Record.withConst())))
+      return UtilityPriorityQueueOperation::CopyAssign;
+    if (Method->isMoveAssignmentOperator() &&
+        Context.hasSameType(Parameter, Context.getRValueReferenceType(Record)))
+      return UtilityPriorityQueueOperation::MoveAssign;
     return std::nullopt;
+  }
+  if (!Method->getIdentifier()) return std::nullopt;
   const auto Name = Method->getName();
+  if (Name == "emplace" && priorityQueueEmplaceTemplate(Method, Context))
+    return UtilityPriorityQueueOperation::Emplace;
   if (!Method->getNumParams()) {
     if (Method->isConst()) {
       if (Name == "empty" && Context.hasSameType(Method->getReturnType(), Context.BoolTy))
@@ -50184,13 +50253,15 @@ std::optional<UtilityPriorityQueueOperation> priorityQueueMethodSignature(
     } else if (Name == "pop" && Method->getReturnType()->isVoidType())
       return UtilityPriorityQueueOperation::Pop;
   }
-  if (!Method->isConst() && Name == "push" && Method->getNumParams() == 1 &&
-      Method->getReturnType()->isVoidType()) {
+  if (!Method->isConst() && Method->getNumParams() == 1 &&
+      !Method->getParamDecl(0)->hasDefaultArg() && Method->getReturnType()->isVoidType()) {
     const auto Parameter = Method->getParamDecl(0)->getType();
-    if (!Method->getParamDecl(0)->hasDefaultArg() &&
+    if (Name == "push" &&
         (Context.hasSameType(Parameter, Context.getLValueReferenceType(Context.IntTy.withConst())) ||
          Context.hasSameType(Parameter, Context.getRValueReferenceType(Context.IntTy))))
       return UtilityPriorityQueueOperation::Push;
+    if (Name == "swap" && Context.hasSameType(Parameter, Context.getLValueReferenceType(Record)))
+      return UtilityPriorityQueueOperation::Swap;
   }
   return std::nullopt;
 }
@@ -50667,12 +50738,25 @@ bool approvedUtilityPriorityQueueConstruction(const State &S,
   if (!S.coreV2() || !Construction || Construction->isTypeDependent() ||
       Construction->isValueDependent() || Construction->isInstantiationDependent() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
-      !S.owns(SM, Construction->getExprLoc()) || Construction->getNumArgs()) return false;
+      !S.owns(SM, Construction->getExprLoc())) return false;
   const auto *Constructor = Construction->getConstructor();
-  return Constructor && Constructor->isDefaultConstructor() && !Constructor->getNumParams() &&
-      Context.hasSameUnqualifiedType(Construction->getType(), Context.getRecordType(Constructor->getParent())) &&
-      priorityQueueFunctionDeclarations(S, SM, Constructor) &&
-      dequeSourceGraph(S, SM, Constructor, Context, true);
+  if (!Constructor || !Context.hasSameUnqualifiedType(Construction->getType(),
+      Context.getRecordType(Constructor->getParent())) ||
+      !priorityQueueFunctionDeclarations(S, SM, Constructor)) return false;
+  bool Signature = Constructor->isDefaultConstructor() && !Constructor->getNumParams() &&
+      !Construction->getNumArgs();
+  if (Constructor->getNumParams() == 1 && Construction->getNumArgs() == 1 &&
+      !Constructor->getParamDecl(0)->hasDefaultArg()) {
+    const auto Record = Context.getRecordType(Constructor->getParent());
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    const auto Argument = Construction->getArg(0)->getType();
+    Signature = !Argument.isVolatileQualified() && Context.hasSameUnqualifiedType(Argument, Record) &&
+        ((Constructor->isCopyConstructor() &&
+          Context.hasSameType(Parameter, Context.getLValueReferenceType(Record.withConst()))) ||
+         (Constructor->isMoveConstructor() &&
+          Context.hasSameType(Parameter, Context.getRValueReferenceType(Record))));
+  }
+  return Signature && dequeSourceGraph(S, SM, Constructor, Context, true);
 }
 
 bool approvedUtilityPriorityQueueDestructor(const State &S,
@@ -50686,21 +50770,41 @@ bool approvedUtilityPriorityQueueDestructor(const State &S,
 std::optional<UtilityPriorityQueueCall> approvedUtilityPriorityQueueCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
-  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
-  if (!S.coreV2() || !Member || Call->isTypeDependent() || Call->isValueDependent() ||
+  if (!S.coreV2() || !Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent() || !S.owns(SM, Call->getExprLoc())) return std::nullopt;
-  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+  const auto *Function = Call->getDirectCallee();
+  if (!Function) return std::nullopt;
+  const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+  if (!Method) {
+    const auto *Reference = dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
+    if (!Reference || Reference->getDecl()->getCanonicalDecl() != Function->getCanonicalDecl() ||
+        !S.owns(SM, Reference->getExprLoc()) || !priorityQueueFunctionDeclarations(S, SM, Function) ||
+        !dequeOperandTypes(Call, Function, 0, Context) ||
+        !dequeSourceGraph(S, SM, Function, Context, true)) return std::nullopt;
+    const auto *Record = Function->getParamDecl(0)->getType()->getPointeeType()->getAsCXXRecordDecl();
+    return UtilityPriorityQueueCall{UtilityPriorityQueueOperation::Swap, Call->getArg(0), Function, Record, 1};
+  }
   const auto Operation = priorityQueueMethodSignature(S, SM, Method, Context);
-  const auto *Reference = directMethodReference(Call);
-  const auto *Receiver = Member->getImplicitObjectArgument();
-  if (!Operation || !Reference || !S.owns(SM, Reference->getExprLoc()) || !Receiver ||
-      !dequeOperandTypes(Call, Method, 0, Context)) return std::nullopt;
+  if (!Operation || !dequeSourceGraph(S, SM, Method, Context, true)) return std::nullopt;
+  const Expr *Receiver = nullptr;
+  unsigned Offset = 0;
+  if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
+    const auto *Reference = directMethodReference(Call);
+    if (!Reference || !S.owns(SM, Reference->getExprLoc())) return std::nullopt;
+    Receiver = Member->getImplicitObjectArgument();
+  } else if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+    if (!Operator->getNumArgs() || !Operator->getCallee() ||
+        !S.owns(SM, Operator->getCallee()->getExprLoc())) return std::nullopt;
+    Receiver = Operator->getArg(0);
+    Offset = 1;
+  }
+  if (!Receiver || !dequeOperandTypes(Call, Method, Offset, Context)) return std::nullopt;
   const auto ObjectType = Receiver->getType()->isPointerType()
       ? Receiver->getType()->getPointeeType() : Receiver->getType();
   if (ObjectType.isVolatileQualified() ||
-      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent())) ||
-      !dequeSourceGraph(S, SM, Method, Context, true)) return std::nullopt;
-  return UtilityPriorityQueueCall{*Operation, Receiver, Method};
+      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent())))
+    return std::nullopt;
+  return UtilityPriorityQueueCall{*Operation, Receiver, Method, Method->getParent(), Offset};
 }
 
 bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
