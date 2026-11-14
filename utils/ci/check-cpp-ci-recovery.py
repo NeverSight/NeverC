@@ -86,10 +86,10 @@ def main():
     try:
         report["commit"] = run(["git", "rev-parse", "HEAD"], "source revision").stdout.decode().strip()
         sdk = repo / "neverc/lib/Translate/Cpp/SDK"
-        assert sha(sdk / "catalog.json") == "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167"
+        assert sha(sdk / "catalog.json") == "b4a7b597150882cd93285481cc060d2eab6949b5c8d50b7ce234579cc814bd77"
         catalog = json.loads((sdk / "catalog.json").read_text())
         entries = catalog["headers"] + catalog["metadata"]
-        assert len(catalog["headers"]) == 664 and len(entries) == 665
+        assert len(catalog["headers"]) == 686 and len(entries) == 687
         for entry in entries:
             assert sha(sdk / entry["root"] / entry["path"]) == entry["sha256"]
         report["sdk_files_verified"] = len(entries)
