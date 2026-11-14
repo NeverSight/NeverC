@@ -50904,7 +50904,18 @@ bool priorityQueueComparatorDefaultArgument(const State &S, const SourceManager 
   if (!Parameter || Parameter != Constructor->getParamDecl(Index) ||
       Parameter->getFunctionScopeIndex() != Index || !Owner ||
       Owner->getCanonicalDecl() != Constructor->getCanonicalDecl()) return false;
-  const auto *Init = dyn_cast_or_null<CXXConstructExpr>(selectedDefaultArgument(Default, Context));
+  const auto *SelectedDefault = selectedDefaultArgument(Default, Context);
+  const Expr *Initializer = SelectedDefault;
+  if (const auto *Temporary = dyn_cast_or_null<MaterializeTemporaryExpr>(Initializer)) {
+    const auto Origin = S.sdkFile(SM, Temporary->getExprLoc());
+    const auto *Inner = Temporary->getSubExpr();
+    if (Temporary->getStorageDuration() != SD_FullExpression || Temporary->getExtendingDecl() ||
+        Temporary->getExprLoc().isMacroID() || !Origin || Origin->Root != "libcxx" || Origin->Path != "queue" ||
+        !Inner || Inner->isTypeDependent() || Inner->isValueDependent() || Inner->isInstantiationDependent() ||
+        !Context.hasSameUnqualifiedType(Temporary->getType(), Inner->getType())) return false;
+    Initializer = Inner->IgnoreParenImpCasts();
+  }
+  const auto *Init = dyn_cast_or_null<CXXConstructExpr>(Initializer);
   const auto *Selected = Init ? Init->getConstructor() : nullptr;
   const auto Info = approvedUtilityPriorityQueueRecord(S, SM, Constructor->getParent(), Context);
   if (!Info || !Init || Init->getExprLoc().isMacroID() || Init->getNumArgs() ||
