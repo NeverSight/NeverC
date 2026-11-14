@@ -27032,6 +27032,151 @@ class FunctionLowering {
   }
 
 
+
+  void priorityQueuePush(Expression Place, Expression Source,
+                         const UtilityVectorRecord &Vector, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Pointer = type(Vector.PointerType, L);
+    const auto Integer = type(Vector.ElementType, L);
+    auto Member = [&](const char *Name) { return randomVectorMember(Place, Vector, Name, L); };
+    auto Begin = snapshot(Member("nct_vector_begin"), L);
+    auto End = snapshot(Member("nct_vector_end"), L);
+    auto Capacity = snapshot(Member("nct_vector_capacity"), L);
+    auto Count = randomVectorCount(Place, Vector, "nct_vector_end", L);
+    const auto Append = labelName(), Grow = labelName(), Heap = labelName();
+    branch(binary("!=", End, Capacity, "bool", L), Append, Grow, L);
+    label(Append, L);
+    assign(dereference(End, L), dereference(Source, L), L);
+    assign(Member("nct_vector_end"), binary("+", End, quantity(1, Difference, L), Pointer, L), L);
+    jump(Heap, L);
+    label(Grow, L);
+    auto NewCapacity = snapshot(quantity(1, Size, L), L);
+    const auto Double = labelName(), Allocate = labelName();
+    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Double, Allocate, L);
+    label(Double, L);
+    assign(NewCapacity, binary("*", Count, quantity(2, Size, L), Size, L), L);
+    jump(Allocate, L);
+    label(Allocate, L);
+    auto Fresh = snapshot(cast(unorderedHeapAllocate(Vector.ElementType,
+        binary("*", NewCapacity, quantity(4, Size, L), Size, L), L), Pointer, L), L);
+    // The reference remains live across allocation. Construct its value before
+    // moving or releasing old storage, including when it aliases top().
+    assign(index(Fresh, cast(Count, Difference, L), Integer, L), dereference(Source, L), L);
+    auto I = snapshot(quantity(0, Size, L), L);
+    const auto CopyCheck = labelName(), Copy = labelName(), Install = labelName();
+    jump(CopyCheck, L); label(CopyCheck, L);
+    branch(binary("<", I, Count, "bool", L), Copy, Install, L);
+    label(Copy, L);
+    assign(index(Fresh, cast(I, Difference, L), Integer, L),
+           index(Begin, cast(I, Difference, L), Integer, L), L);
+    assign(I, binary("+", I, quantity(1, Size, L), Size, L), L);
+    jump(CopyCheck, L); label(Install, L);
+    assign(Member("nct_vector_begin"), Fresh, L);
+    assign(Member("nct_vector_end"), binary("+", Fresh,
+        cast(binary("+", Count, quantity(1, Size, L), Size, L), Difference, L), Pointer, L), L);
+    assign(Member("nct_vector_capacity"), binary("+", Fresh, cast(NewCapacity, Difference, L), Pointer, L), L);
+    const auto Release = labelName();
+    branch(cast(Begin, "bool", L), Release, Heap, L);
+    label(Release, L);
+    unorderedHeapRelease(Begin, Vector.ElementType,
+        binary("*", Count, quantity(4, Size, L), Size, L), L);
+    jump(Heap, L); label(Heap, L);
+    auto Values = snapshot(Member("nct_vector_begin"), L);
+    auto At = [&](Expression Position) { return index(Values, cast(std::move(Position), Difference, L), Integer, L); };
+    auto Value = snapshot(At(Count), L);
+    auto Hole = snapshot(Count, L);
+    const auto Check = labelName(), Compare = labelName(), Shift = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Hole, quantity(0, Size, L), "bool", L), Compare, Done, L);
+    label(Compare, L);
+    auto Parent = snapshot(binary("/", binary("-", Hole, quantity(1, Size, L), Size, L),
+        quantity(2, Size, L), Size, L), L);
+    auto ParentValue = snapshot(At(Parent), L);
+    branch(binary("<", ParentValue, Value, "bool", L), Shift, Done, L);
+    label(Shift, L);
+    assign(At(Hole), ParentValue, L);
+    assign(Hole, Parent, L);
+    jump(Check, L); label(Done, L);
+    assign(At(Hole), Value, L);
+  }
+
+  void priorityQueuePop(Expression Place, const UtilityVectorRecord &Vector, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Pointer = type(Vector.PointerType, L);
+    const auto Integer = type(Vector.ElementType, L);
+    auto Values = snapshot(randomVectorMember(Place, Vector, "nct_vector_begin", L), L);
+    auto Count = randomVectorCount(Place, Vector, "nct_vector_end", L);
+    auto NewCount = snapshot(binary("-", Count, quantity(1, Size, L), Size, L), L);
+    auto At = [&](Expression Position) { return index(Values, cast(std::move(Position), Difference, L), Integer, L); };
+    const auto Heap = labelName(), Finish = labelName();
+    branch(binary("!=", NewCount, quantity(0, Size, L), "bool", L), Heap, Finish, L);
+    label(Heap, L);
+    auto Value = snapshot(At(NewCount), L);
+    auto Hole = snapshot(quantity(0, Size, L), L);
+    const auto Check = labelName(), Select = labelName(), CompareRight = labelName();
+    const auto UseRight = labelName(), Compare = labelName(), Shift = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    auto Child = snapshot(binary("+", binary("*", Hole, quantity(2, Size, L), Size, L),
+        quantity(1, Size, L), Size, L), L);
+    branch(binary("<", Child, NewCount, "bool", L), Select, Done, L);
+    label(Select, L);
+    auto Right = snapshot(binary("+", Child, quantity(1, Size, L), Size, L), L);
+    branch(binary("<", Right, NewCount, "bool", L), CompareRight, Compare, L);
+    label(CompareRight, L);
+    branch(binary("<", At(Child), At(Right), "bool", L), UseRight, Compare, L);
+    label(UseRight, L);
+    assign(Child, Right, L);
+    jump(Compare, L); label(Compare, L);
+    auto ChildValue = snapshot(At(Child), L);
+    branch(binary("<", Value, ChildValue, "bool", L), Shift, Done, L);
+    label(Shift, L);
+    assign(At(Hole), ChildValue, L);
+    assign(Hole, Child, L);
+    jump(Check, L); label(Done, L);
+    assign(At(Hole), Value, L);
+    jump(Finish, L); label(Finish, L);
+    assign(randomVectorMember(Place, Vector, "nct_vector_end", L),
+        binary("+", Values, cast(NewCount, Difference, L), Pointer, L), L);
+  }
+
+  Expression utilityPriorityQueueOperation(const CallExpr *Call) {
+    const auto L = Call->getExprLoc();
+    const auto Proof = approvedUtilityPriorityQueueCall(A.S, A.Sources, Call, A.Context);
+    if (!Proof || !Proof->Receiver || !Proof->Method)
+      reject(L, "priority queue operation", "The selected SDK body, integer layout and operands are required.");
+    const auto Info = approvedUtilityPriorityQueueRecord(A.S, A.Sources, Proof->Method->getParent(), A.Context);
+    if (!Info) reject(L, "priority queue layout", "The checked default integer container and comparator are required.");
+    const auto *Object = Proof->Receiver;
+    auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+        : address(lvalue(Object), Object->getType(), L), L);
+    std::optional<Expression> Source;
+    if (Proof->Operation == UtilityPriorityQueueOperation::Push)
+      Source = snapshot(argument(Call->getArg(0), Proof->Method->getParamDecl(0)->getType()), L);
+    auto Place = dereference(Receiver, L);
+    switch (Proof->Operation) {
+    case UtilityPriorityQueueOperation::Empty: {
+      auto Begin = randomVectorMember(Place, Info->Container, "nct_vector_begin", L);
+      auto End = randomVectorMember(Place, Info->Container, "nct_vector_end", L);
+      return binary("==", std::move(Begin), std::move(End), "bool", L);
+    }
+    case UtilityPriorityQueueOperation::Size:
+      return randomVectorCount(Place, Info->Container, "nct_vector_end", L);
+    case UtilityPriorityQueueOperation::Top: {
+      auto Begin = randomVectorMember(Place, Info->Container, "nct_vector_begin", L);
+      return dereference(cast(std::move(Begin), type(A.Context.getPointerType(A.Context.IntTy.withConst()), L), L), L);
+    }
+    case UtilityPriorityQueueOperation::Push:
+      priorityQueuePush(Place, *Source, Info->Container, L);
+      return Expression{};
+    case UtilityPriorityQueueOperation::Pop:
+      priorityQueuePop(Place, Info->Container, L);
+      return Expression{};
+    }
+    reject(L, "priority queue operation", "Unknown checked heap operation.");
+  }
+
   Expression utilityDequeOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityDequeCall(A.S, A.Sources, Call, A.Context);
@@ -27224,6 +27369,7 @@ class FunctionLowering {
       }
       return Result;
     }
+    if (Operation == UtilityOperation::PriorityQueue) return utilityPriorityQueueOperation(Call);
     if (Operation == UtilityOperation::Deque) {
       auto Result = utilityDequeOperation(Call);
       if (Destination) {
@@ -36623,6 +36769,15 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
 
+    if (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = approvedUtilityPriorityQueueRecord(A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Info) reject(L, "priority queue construction", "The checked integer storage is required.");
+      zeroRandomVector(Place, Info->Container, L);
+      assign(Expression{{"kind", "member"}, {"type", "u8"}, {"name", "nct_priority_compare"},
+          {"args", json::Array{Place}}, {"loc", A.loc(L)}}, A.zero(A.Context.UnsignedCharTy, L), L);
+      return;
+    }
+
     if (const auto Kind = approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) {
       std::vector<Expression> Operands;
       for (unsigned I = 0; I != C->getNumArgs(); ++I)
@@ -38192,6 +38347,8 @@ public:
         approvedUtilityForwardListDestructor(A.S, A.Sources, D, A.Context);
     const bool ListDestructor =
         approvedUtilityListDestructor(A.S, A.Sources, D, A.Context);
+    const bool PriorityQueueDestructor =
+        approvedUtilityPriorityQueueDestructor(A.S, A.Sources, D, A.Context);
     const bool DequeDestructor =
         approvedUtilityDequeDestructor(A.S, A.Sources, D, A.Context);
     const bool ValarrayDestructor =
@@ -38216,6 +38373,9 @@ public:
     if (approvedUtilityListRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !ListDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "list destructor",
              "The selected pinned SDK destruction chain is required.");
+    if (approvedUtilityPriorityQueueRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !PriorityQueueDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "priority queue destructor",
+             "The selected pinned SDK destruction chain is required.");
     if (approvedUtilityDequeRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !DequeDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "deque destructor",
              "The selected pinned SDK destruction chain is required.");
@@ -38237,7 +38397,7 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered map destructor",
              "The authenticated SDK storage destructor chain is required.");
     if (D && NotFnDestructor == A.VerifiedNotFnDestructions.end() &&
-        !ForwardListDestructor && !ListDestructor && !DequeDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
+        !ForwardListDestructor && !ListDestructor && !PriorityQueueDestructor && !DequeDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
         !UnorderedMapDestructor && !UnorderedNodeDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
@@ -38385,6 +38545,8 @@ public:
         destroyForwardListStorage(dereference(*ThisPointer, L), Owner->Node, L);
       } else if (auto Owner = approvedUtilityListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyListStorage(dereference(*ThisPointer, L), Owner->Node, L);
+      } else if (auto Owner = approvedUtilityPriorityQueueRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
+        releaseRandomVector(dereference(*ThisPointer, L), Owner->Container, L);
       } else if (auto Owner = approvedUtilityDequeRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyDequeStorage(dereference(*ThisPointer, L), L);
       } else if (approvedUtilityValarrayRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {

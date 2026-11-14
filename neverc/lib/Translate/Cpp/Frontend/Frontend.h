@@ -1299,6 +1299,7 @@ enum class UtilityOperation {
   BitsetCount, BitsetAny, BitsetTest, BitsetSet, BitsetReset, BitsetFlip,
   ForwardList,
   List,
+  PriorityQueue,
   Deque,
   ValarrayScalar,
   VectorSize,
@@ -3863,6 +3864,34 @@ std::optional<UtilityVectorRecord>
 approvedUtilityVectorRecord(const State &S, const clang::SourceManager &SM,
                             const clang::CXXRecordDecl *Record,
                             const clang::ASTContext &Context);
+
+struct UtilityPriorityQueueRecord {
+  const clang::CXXRecordDecl *Record;
+  const clang::FieldDecl *ContainerField, *ComparatorField;
+  UtilityVectorRecord Container;
+  const clang::CXXRecordDecl *Comparator;
+};
+std::optional<UtilityPriorityQueueRecord> approvedUtilityPriorityQueueRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
+
+enum class UtilityPriorityQueueOperation { Empty, Size, Top, Push, Pop };
+struct UtilityPriorityQueueCall {
+  UtilityPriorityQueueOperation Operation;
+  const clang::Expr *Receiver;
+  const clang::CXXMethodDecl *Method;
+};
+bool approvedUtilityPriorityQueueConstruction(const State &S,
+    const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+bool approvedUtilityPriorityQueueDestructor(const State &S,
+    const clang::SourceManager &SM, const clang::CXXDestructorDecl *Destructor,
+    const clang::ASTContext &Context);
+std::optional<UtilityPriorityQueueCall> approvedUtilityPriorityQueueCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 const clang::CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
     const State &S, const clang::SourceManager &SM,
     const UtilityVectorRecord &Vector, const clang::CallExpr *Call,
@@ -4434,6 +4463,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityBitsets;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityForwardLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityLists;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityPriorityQueues;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityDeques;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityValarrays;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
@@ -4547,6 +4577,7 @@ public:
   bool requireUtilityBitset(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityForwardList(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityList(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
+  bool requireUtilityPriorityQueue(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityDeque(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityValarray(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,

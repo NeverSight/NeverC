@@ -10683,6 +10683,15 @@ static bool utilityListDestructionSource(Adapter &A, const CXXRecordDecl *Record
 }
 
 
+static bool utilityPriorityQueueDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Info = approvedUtilityPriorityQueueRecord(A.S, A.Sources, Record, A.Context);
+  if (!Info) return false;
+  const auto *D = Info->Record->getDestructor();
+  A.chargeExpansion(1, Record->getLocation());
+  return D && !D->isDeleted() && D->getAccess() == AS_public &&
+         approvedUtilityPriorityQueueDestructor(A.S, A.Sources, D, A.Context);
+}
+
 static bool utilityDequeDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Info = approvedUtilityDequeRecord(A.S, A.Sources, Record, A.Context);
   if (!Info) return false;
@@ -11809,7 +11818,7 @@ public:
     if (utilityUnorderedMapDestructionSource(A, Record)) return true;
     if (utilityForwardListDestructionSource(A, Record)) return true;
     if (utilityListDestructionSource(A, Record)) return true;
-    if (utilityDequeDestructionSource(A, Record)) return true;
+    if ((utilityPriorityQueueDestructionSource(A, Record) || utilityDequeDestructionSource(A, Record))) return true;
     if (utilityValarrayDestructionSource(A, Record)) return true;
     if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
       if (const auto *Element = Vector->ElementType->getAsCXXRecordDecl())
@@ -13865,6 +13874,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
                   approvedUtilityListIteratorRecord(S, Sources, D, Context)) &&
                  !requireUtilityList(D, L, Depth + 1)) {
         return {};
+      } else if (approvedUtilityPriorityQueueRecord(S, Sources, D, Context) &&
+                 !requireUtilityPriorityQueue(D, L, Depth + 1)) {
+        return {};
       } else if ((approvedUtilityDequeRecord(S, Sources, D, Context) ||
                   approvedUtilityDequeIteratorRecord(S, Sources, D, Context)) &&
                  !requireUtilityDeque(D, L, Depth + 1)) {
@@ -14317,6 +14329,23 @@ bool Adapter::requireUtilityList(const CXXRecordDecl *Record,
 }
 
 
+
+bool Adapter::requireUtilityPriorityQueue(const CXXRecordDecl *Record,
+                                         SourceLocation Location, unsigned Depth) {
+  const auto Info = approvedUtilityPriorityQueueRecord(S, Sources, Record, Context);
+  if (!Info || Depth > 64) {
+    reject(Location, "priority queue layout",
+        "The pinned default integer vector and less comparator are required.", "TR0203");
+    return false;
+  }
+  if (!RequiredUtilityPriorityQueues.insert(Info->Record->getCanonicalDecl()).second) return true;
+  if (type(Info->Container.PointerType, Location, false, Depth + 1).empty() ||
+      type(Context.UnsignedCharTy, Location, false, Depth + 1).empty()) return false;
+  S.Module["memory_lifetimes"] = true;
+  Records.push_back(const_cast<CXXRecordDecl *>(Info->Record));
+  return true;
+}
+
 bool Adapter::requireUtilityDeque(const CXXRecordDecl *Record,
                                        SourceLocation L, unsigned Depth) {
   const auto Owner = approvedUtilityDequeRecord(S, Sources, Record, Context);
@@ -14675,6 +14704,10 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Context.getSizeType(), L));
     } else if (approvedUtilityListIteratorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.VoidPtrTy, L));
+    } else if (approvedUtilityPriorityQueueRecord(S, Sources, R, Context)) {
+      for (unsigned I = 0; I != 3; ++I)
+        Args.push_back(zero(Context.getPointerType(Context.IntTy), L));
+      Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (approvedUtilityDequeRecord(S, Sources, R, Context)) {
       for (unsigned I = 0; I != 4; ++I) Args.push_back(zero(Context.VoidPtrTy, L));
       for (unsigned I = 0; I != 2; ++I) Args.push_back(zero(Context.getSizeType(), L));
@@ -18637,7 +18670,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
-         approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context) ||
+         (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
          approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityVectorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
@@ -21099,7 +21132,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
              utilityUnorderedMapDestructionSource(A, Destructor->getParent()) ||
              utilityForwardListDestructionSource(A, Destructor->getParent()) ||
              utilityListDestructionSource(A, Destructor->getParent()) ||
-             utilityDequeDestructionSource(A, Destructor->getParent()) ||
+             (utilityPriorityQueueDestructionSource(A, Destructor->getParent()) || utilityDequeDestructionSource(A, Destructor->getParent())) ||
              utilityValarrayDestructionSource(A, Destructor->getParent()) ||
              utilityVectorDestructionSource(A, Destructor->getParent()) ||
              approvedPiecewiseRecord(A.S, A.Sources, Destructor->getParent(), A.Context) ||
@@ -21331,7 +21364,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
-            approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
+            (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context).has_value()) ||
             approvedUtilityValarrayConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             UniqueSourceConstruction || VectorConstruction.has_value();
         auto Pinned = [&](const FunctionDecl *Function) {
@@ -24129,6 +24162,7 @@ public:
            approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityValarrayConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
@@ -30981,7 +31015,7 @@ public:
                    approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
-                   approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context) ||
+                   (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
                    approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
@@ -31208,6 +31242,7 @@ static void orderCoreV2Records(Adapter &A) {
     const auto UtilityBitset = approvedUtilityBitsetRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityValarray = approvedUtilityValarrayRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityDeque = approvedUtilityDequeRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityPriorityQueue = approvedUtilityPriorityQueueRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityDequeIterator = approvedUtilityDequeIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityList = approvedUtilityListRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityListIterator = approvedUtilityListIteratorRecord(A.S, A.Sources, R, A.Context);
@@ -31253,7 +31288,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
                                    UtilityString ||
-                                   UtilityForwardList || UtilityForwardIterator || UtilityList || UtilityListIterator || UtilityDeque || UtilityDequeIterator || UtilityValarray || UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
+                                   UtilityForwardList || UtilityForwardIterator || UtilityList || UtilityListIterator || UtilityPriorityQueue || UtilityDeque || UtilityDequeIterator || UtilityValarray || UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
                                    UnorderedNode || UnorderedResult ||
                                    UtilityDefaultDelete || UtilityAllocator
                                ? nullptr
@@ -31303,6 +31338,9 @@ static void orderCoreV2Records(Adapter &A) {
     } else if (UtilityUnorderedMap) {
       DependencyTypes.emplace_back(UtilityUnorderedMap->BucketPointerType, R->getLocation());
       DependencyTypes.emplace_back(UtilityUnorderedMap->NodePointerType, R->getLocation());
+    } else if (UtilityPriorityQueue) {
+      DependencyTypes.emplace_back(UtilityPriorityQueue->Container.PointerType, R->getLocation());
+      DependencyTypes.emplace_back(A.Context.UnsignedCharTy, R->getLocation());
     } else if (UtilityDeque || UtilityDequeIterator) {
       // These SDK layouts export checked pointer/count carriers. Their raw
       // implementation records are not IR fields or by-value dependencies.
@@ -31516,6 +31554,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     const auto UtilityBitset = approvedUtilityBitsetRecord(S, Sources, R, Context);
     const auto UtilityValarray = approvedUtilityValarrayRecord(S, Sources, R, Context);
     const auto UtilityDeque = approvedUtilityDequeRecord(S, Sources, R, Context);
+    const auto UtilityPriorityQueue = approvedUtilityPriorityQueueRecord(S, Sources, R, Context);
     const auto UtilityDequeIterator = approvedUtilityDequeIteratorRecord(S, Sources, R, Context);
     const auto UtilityList = approvedUtilityListRecord(S, Sources, R, Context);
     const auto UtilityListIterator = approvedUtilityListIteratorRecord(S, Sources, R, Context);
@@ -31567,7 +31606,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
                                !UtilityUniquePtr && !UtilityString &&
-                               !UtilityForwardList && !UtilityForwardIterator && !UtilityList && !UtilityListIterator && !UtilityDeque && !UtilityDequeIterator && !UtilityValarray && !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
+                               !UtilityForwardList && !UtilityForwardIterator && !UtilityList && !UtilityListIterator && !UtilityPriorityQueue && !UtilityDeque && !UtilityDequeIterator && !UtilityValarray && !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
                                !UnorderedNode && !UnorderedResult &&
                                !UtilityDefaultDelete &&
                                !UtilityAllocator
@@ -31618,6 +31657,12 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       Fields.push_back(json::Object{{"name", "nct_list_size"}, {"type", type(Context.getSizeType(), R->getLocation())}});
     } else if (UtilityListIterator) {
       Fields.push_back(json::Object{{"name", "nct_list_iterator"}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
+
+    } else if (UtilityPriorityQueue) {
+      for (const char *Name : {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"})
+        Fields.push_back(json::Object{{"name", Name},
+            {"type", type(UtilityPriorityQueue->Container.PointerType, R->getLocation())}});
+      Fields.push_back(json::Object{{"name", "nct_priority_compare"}, {"type", "u8"}});
 
     } else if (UtilityDeque) {
       for (const char *Name : {"nct_deque_first", "nct_deque_begin", "nct_deque_end", "nct_deque_cap"})
@@ -31747,6 +31792,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
         Offsets.push_back(uint64_t(0)); Offsets.push_back(uint64_t(64)); Offsets.push_back(uint64_t(128));
       } else if (UtilityListIterator) {
         Offsets.push_back(uint64_t(0));
+
+      } else if (UtilityPriorityQueue) {
+        for (unsigned I = 0; I != 4; ++I) Offsets.push_back(uint64_t(64 * I));
 
       } else if (UtilityDeque) {
         for (unsigned I = 0; I != 6; ++I) Offsets.push_back(uint64_t(64 * I));
