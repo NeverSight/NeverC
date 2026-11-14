@@ -354,8 +354,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'ci-recovery'
       }}
   repair-windows-arm64:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'windows-arm-source-repair'
-      }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'windows-arm-source-repair' }}
     runs-on: windows-11-arm
     env:
       BUILD_TYPE: RelWithDebInfo
@@ -365,11 +364,15 @@ jobs:
       uses: actions/checkout@v4
       with:
         path: neverc
+      env:
+        GIT_CONFIG_COUNT: '1'
+        GIT_CONFIG_KEY_0: core.autocrlf
+        GIT_CONFIG_VALUE_0: 'false'
     - name: Set up CPython 3.12.10 for official artifacts
       id: python
       uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
       with:
-        python-version: "3.12.10"
+        python-version: 3.12.10
         architecture: arm64
     - name: Install ARM64-native CMake & Ninja
       shell: pwsh
@@ -385,8 +388,7 @@ jobs:
 
         $ninjaVer = ''1.13.1''
 
-        Invoke-WebRequest "https://github.com/ninja-build/ninja/releases/download/v$ninjaVer/ninja-winarm64.zip"
-        -OutFile ninja.zip
+        Invoke-WebRequest "https://github.com/ninja-build/ninja/releases/download/v$ninjaVer/ninja-winarm64.zip" -OutFile ninja.zip
 
         Expand-Archive ninja.zip C:\tools\ninja -Force
 
@@ -402,7 +404,13 @@ jobs:
         arch: arm64
     - name: Build neverc
       shell: bash
-      run: 'cmake -GNinja -Bbuild \
+      run: 'set -euo pipefail
+
+        mkdir -p "$RUNNER_TEMP/cpp-msvc-arm64-stl"
+
+        (
+
+        cmake -GNinja -Bbuild \
 
         -DCMAKE_SYSTEM_PROCESSOR=ARM64 \
 
@@ -432,279 +440,30 @@ jobs:
 
         cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
 
-        '
-    - name: Verify native wide integer carry and borrow
-      shell: bash
-      run: '"${{ steps.python.outputs.python-path }}" neverc/utils/ci/check-arm64-wide-integers.py           --repo
-        "$PWD/neverc" --compiler "$PWD/build/bin/neverc.exe"           --output "$RUNNER_TEMP/arm-wide-integers"
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-translate-tests --parallel 4
+
+        ) 2>&1 | tee "$RUNNER_TEMP/cpp-msvc-arm64-stl/build.log"
 
         '
-    - name: Upload wide integer regression evidence
+    - name: Run unchanged native STL, constructor source and SDK GTests
+      if: ${{ !cancelled() }}
+      shell: bash
+      run: '"${{ steps.python.outputs.python-path }}" neverc/utils/ci/check-cpp-msvc-arm64-stl.py --repo "$PWD/neverc" --build
+        "$PWD/build" --output "$RUNNER_TEMP/cpp-msvc-arm64-stl"'
+    - name: Upload native STL build and real GTest evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: arm-wide-integers-${{ github.sha }}
-        path: ${{ runner.temp }}/arm-wide-integers
+        name: cpp-msvc-arm64-stl-${{ github.sha }}
+        path: '${{ runner.temp }}/cpp-msvc-arm64-stl/results.json
+
+          ${{ runner.temp }}/cpp-msvc-arm64-stl/gtest.xml
+
+          ${{ runner.temp }}/cpp-msvc-arm64-stl/gtest.log
+
+          ${{ runner.temp }}/cpp-msvc-arm64-stl/build-context.log'
         if-no-files-found: ignore
         retention-days: 14
-    - name: Verify frozen SDK on eight frontend ABIs and six backends
-      shell: bash
-      run: '"${{ steps.python.outputs.python-path }}" neverc/utils/ci/check-cpp-ci-recovery.py           --repo
-        "$PWD/neverc" --compiler "$PWD/build/bin/neverc.exe"           --output "$RUNNER_TEMP/cpp-ci-recovery"
-
-        '
-    - name: Upload exact frozen SDK recovery evidence
-      if: ${{ always() }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: cpp-ci-recovery-windows-${{ github.sha }}
-        path: ${{ runner.temp }}/cpp-ci-recovery
-        if-no-files-found: ignore
-        retention-days: 14
-    - name: Verify compiled C++ SDK catalog bytes
-      shell: bash
-      run: 'cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-translate-tests
-
-        build/bin/neverc-translate-tests.exe --gtest_filter=TranslateCppSdkTest.CompiledCatalogPreservesSourceBytesAndTrailingNul
-
-        '
-    - name: Build bundled Windows runtime
-      shell: bash
-      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-runtime-arm64-msvc
-        neverc-runtime-shared-msvc
-    - name: Install neverc
-      shell: bash
-      run: 'cmake --build build --config ${{ env.BUILD_TYPE }} --target install
-
-        '
-    - name: Package neverc
-      run: 7z a windows-arm64-neverc.zip install
-    - name: Verify relocated full compiler archive
-      shell: bash
-      run: |
-        "${{ steps.python.outputs.python-path }}" \
-          neverc/utils/release/test-python-plugin-package.py \
-          --archive windows-arm64-neverc.zip
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-arm64-neverc
-        path: windows-arm64-neverc.zip
-    - name: Package neverc compiler (without runtime)
-      shell: bash
-      run: 'mv install/runtime install-runtime-stash
-
-        7z a windows-arm64-neverc-compiler.zip install
-
-        mv install-runtime-stash install/runtime
-
-        '
-    - name: Verify relocated compiler-only archive
-      shell: bash
-      run: |
-        "${{ steps.python.outputs.python-path }}" \
-          neverc/utils/release/test-python-plugin-package.py \
-          --archive windows-arm64-neverc-compiler.zip
-    - name: Upload Compiler Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-arm64-neverc-compiler
-        path: windows-arm64-neverc-compiler.zip
-    - name: Package neverc runtime
-      run: 7z a windows-arm64-neverc-runtime.zip install/runtime
-    - name: Upload Runtime Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-arm64-neverc-runtime
-        path: windows-arm64-neverc-runtime.zip
-    - name: Package PDBs
-      shell: bash
-      run: 7z a windows-arm64-neverc-pdb.zip ./build/bin/*.pdb
-    - name: Upload PDB Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-arm64-neverc-pdb
-        path: windows-arm64-neverc-pdb.zip
-    - name: Build Plugin SDK
-      shell: bash
-      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
-    - name: Build network product examples
-      shell: bash
-      run: neverc/utils/ci/build-network-product-examples.sh "$PWD/build/bin/neverc.exe"
-        "$PWD/neverc" aarch64-pc-windows-msvc
-    - name: Test Plugin SDK (build + load)
-      shell: bash
-      run: "set -e\nmake -C build/pluginsdk/examples \\\n  NEVERC=$PWD/build/bin/neverc\
-        \ \\\n  INCLUDE_DIR=$PWD/build/pluginsdk/include \\\n  HOST_TARGET=aarch64-pc-windows-msvc\n\
-        printf 'int main(void) { return 0; }\\n' > /tmp/plugin_test.c\nfor plugin\
-        \ in ExamplePlugin CrtShimPlugin BenchPlugin; do\n  echo \"--- Testing $plugin\
-        \ ---\"\n  build/bin/neverc \\\n    --target=aarch64-pc-windows-msvc \\\n\
-        \    -fplugin-pass=build/pluginsdk/examples/${plugin}.dll \\\n    -c /tmp/plugin_test.c\
-        \ -o /tmp/plugin_test.obj\n  echo \"--- $plugin OK ---\"\ndone\n"
-    - name: Run neverc tests
-      id: tests
-      shell: bash
-      continue-on-error: true
-      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
-    - name: Run network concurrency gates
-      if: steps.tests.outcome == 'success'
-      shell: bash
-      run: neverc/utils/ci/run-network-core-gates.sh "$PWD/build/bin/neverc.exe" "$PWD/neverc"
-        25
-    - name: Run network transport soak
-      if: steps.tests.outcome == 'success'
-      shell: bash
-      run: neverc/utils/ci/run-network-transport-soak.sh "$PWD/build/bin/neverc.exe"
-        "$PWD/neverc" 5000
-    - name: Diagnose crashes
-      if: steps.tests.outcome == 'failure'
-      shell: bash
-      run: "set -x\nNCC=$(cygpath -m \"$PWD/build/bin/neverc.exe\")\nTESTDIR=$(cygpath\
-        \ -m \"$PWD/neverc/tests/neverc\")\nWDIAG=$(cygpath -m \"$PWD/diag_out\")\n\
-        BDIAG=\"$PWD/diag_out\"\nmkdir -p \"$BDIAG\"\n\n# \u2500\u2500 Environment\
-        \ & SDK diagnostics \u2500\u2500\necho \"=== MSVC / SDK environment ===\"\n\
-        echo \"LIB=$LIB\"\necho \"INCLUDE=$INCLUDE\"\necho \"VCToolsInstallDir=$VCToolsInstallDir\"\
-        \necho \"WindowsSdkDir=$WindowsSdkDir\"\necho \"WindowsSDKVersion=$WindowsSDKVersion\"\
-        \necho \"VSCMD_ARG_TGT_ARCH=$VSCMD_ARG_TGT_ARCH\"\necho \"PROCESSOR_ARCHITECTURE=$PROCESSOR_ARCHITECTURE\"\
-        \n\necho \"=== Check ARM64 CRT & SDK libs exist ===\"\nfor lib in libcmt.lib\
-        \ libvcruntime.lib libucrt.lib kernel32.lib bcryptprimitives.lib; do\n  found=false\n\
-        \  IFS=';' read -ra LIBDIRS <<< \"$LIB\"\n  for dir in \"${LIBDIRS[@]}\";\
-        \ do\n    wdir=$(cygpath -u \"$dir\" 2>/dev/null || echo \"$dir\")\n    if\
-        \ [ -f \"$wdir/$lib\" ]; then\n      echo \"  FOUND: $dir/$lib ($(wc -c <\
-        \ \"$wdir/$lib\") bytes)\"\n      found=true\n      break\n    fi\n  done\n\
-        \  $found || echo \"  MISSING: $lib\"\ndone\n\necho \"=== Linker search paths\
-        \ (neverc -v) ===\"\n\"$NCC\" -std=c11 -v \"$TESTDIR/standards/test_c_stdlib_patterns.c\"\
-        \ \\\n  -o \"$WDIAG/diag_verbose.exe\" 2>&1 | head -80 || true\n\ndiagnose()\
-        \ {\n  local label=$1 src=$2 flags=$3\n  echo \"=== [$label] step 1: compile\
-        \ to .obj ===\"\n  \"$NCC\" $flags -c \"$src\" -o \"$WDIAG/diag_${label}.obj\"\
-        \ 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\n\n  echo \"=== [$label] step 2:\
-        \ link .obj to exe (with .pdata validation) ===\"\n  \"$NCC\" $flags -v \"\
-        $WDIAG/diag_${label}.obj\" -o \"$WDIAG/diag_${label}.exe\" 2>&1 && echo \"\
-        OK\" || echo \"EXIT=$?\"\n\n  echo \"=== [$label] step 3a: compile+link (one\
-        \ shot, LTO) ===\"\n  \"$NCC\" $flags \"$src\" -o \"$WDIAG/diag_${label}_oneshot.exe\"\
-        \ 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\n\n  echo \"=== [$label] step 3b:\
-        \ compile+link (one shot, NO LTO) ===\"\n  \"$NCC\" $flags -fno-lto \"$src\"\
-        \ -o \"$WDIAG/diag_${label}_nolto.exe\" 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\
-        \n\n  echo \"=== [$label] step 3c: compile+link (save LTO temps) ===\"\n \
-        \ \"$NCC\" $flags -save-temps \"$src\" -o \"$WDIAG/diag_${label}_temps.exe\"\
-        \ 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\n  ls -la \"$WDIAG\"/diag_${label}_temps.*.obj\
-        \ 2>/dev/null || echo \"(no LTO temps)\"\n\n  echo \"=== [$label] check output\
-        \ files ===\"\n  ls -la \"$BDIAG\"/diag_${label}* 2>&1 || echo \"NO FILES\
-        \ FOUND\"\n  file \"$BDIAG\"/diag_${label}_oneshot.exe 2>&1 || true\n\n  echo\
-        \ \"=== [$label] DLL dependencies ===\"\n  dumpbin //DEPENDENTS \"$BDIAG/diag_${label}_oneshot.exe\"\
-        \ 2>&1 || true\n\n  echo \"=== [$label] IMPORTS (function names) ===\"\n \
-        \ dumpbin //IMPORTS \"$BDIAG/diag_${label}_oneshot.exe\" 2>&1 || true\n\n\
-        \  echo \"=== [$label] PE headers ===\"\n  dumpbin //HEADERS \"$BDIAG/diag_${label}_oneshot.exe\"\
-        \ 2>&1 | head -60 || true\n\n  echo \"=== [$label] UNWIND INFO (.pdata/.xdata\
-        \ content) ===\"\n  dumpbin //UNWINDINFO \"$BDIAG/diag_${label}_oneshot.exe\"\
-        \ 2>&1 | head -200 || true\n\n  echo \"=== [$label] .pdata raw hex (first\
-        \ 256 bytes) ===\"\n  dumpbin //RAWDATA:.pdata \"$BDIAG/diag_${label}_oneshot.exe\"\
-        \ 2>&1 | head -40 || true\n\n  echo \"=== [$label] step 4: run LTO exe ===\"\
-        \n  powershell.exe -NoProfile -Command \"\n    try {\n      \\$p = Start-Process\
-        \ -FilePath '$WDIAG/diag_${label}_oneshot.exe' \\\n        -NoNewWindow -Wait\
-        \ -PassThru \\\n        -RedirectStandardOutput '$WDIAG/diag_${label}_stdout.txt'\
-        \ \\\n        -RedirectStandardError '$WDIAG/diag_${label}_stderr.txt'\n \
-        \     Write-Host \\\"EXIT_CODE=\\$(\\$p.ExitCode)\\\"\n    } catch {\n   \
-        \   Write-Host \\\"EXCEPTION: \\$_\\\"\n      Write-Host \\\"WIN32_ERROR:\
-        \ \\$([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())\\\"\n\
-        \    }\n  \" 2>&1 || echo \"POWERSHELL_EXIT=$?\"\n  echo \"--- stdout ---\"\
-        \n  cat \"$BDIAG/diag_${label}_stdout.txt\" 2>/dev/null || echo \"(empty)\"\
-        \n  echo \"--- stderr ---\"\n  cat \"$BDIAG/diag_${label}_stderr.txt\" 2>/dev/null\
-        \ || echo \"(empty)\"\n\n  echo \"=== [$label] step 4b: run NO-LTO exe ===\"\
-        \n  powershell.exe -NoProfile -Command \"\n    try {\n      \\$p = Start-Process\
-        \ -FilePath '$WDIAG/diag_${label}_nolto.exe' \\\n        -NoNewWindow -Wait\
-        \ -PassThru \\\n        -RedirectStandardOutput '$WDIAG/diag_${label}_nolto_stdout.txt'\
-        \ \\\n        -RedirectStandardError '$WDIAG/diag_${label}_nolto_stderr.txt'\n\
-        \      Write-Host \\\"NOLTO_EXIT_CODE=\\$(\\$p.ExitCode)\\\"\n    } catch\
-        \ {\n      Write-Host \\\"NOLTO_EXCEPTION: \\$_\\\"\n    }\n  \" 2>&1 || echo\
-        \ \"NOLTO_POWERSHELL_EXIT=$?\"\n\n  echo \"=== [$label] step 4c: compare LTO\
-        \ vs NO-LTO .pdata ===\"\n  echo \"--- LTO exe .pdata entry count ---\"\n\
-        \  dumpbin //UNWINDINFO \"$BDIAG/diag_${label}_oneshot.exe\" 2>&1 | grep -c\
-        \ \"Function:\" || echo \"0\"\n  echo \"--- NO-LTO exe .pdata entry count\
-        \ ---\"\n  dumpbin //UNWINDINFO \"$BDIAG/diag_${label}_nolto.exe\" 2>&1 |\
-        \ grep -c \"Function:\" || echo \"0\"\n  echo \"--- NO-LTO exe IMPORTS (RtlUnwind\
-        \ check) ---\"\n  dumpbin //IMPORTS \"$BDIAG/diag_${label}_nolto.exe\" 2>&1\
-        \ | grep -i \"RtlUnwind\" || echo \"(no RtlUnwind)\"\n\n  echo \"=== [$label]\
-        \ step 5: auto-LTO .obj .pdata analysis (bitcode wrapper, expect none) ===\"\
-        \n  echo \"--- .obj sections with .pdata ---\"\n  dumpbin //SECTIONS \"$WDIAG/diag_${label}.obj\"\
-        \ 2>&1 | grep -i \"pdata\\|xdata\" || echo \"(none)\"\n  echo \"--- .obj symbols\
-        \ (functions) ---\"\n  dumpbin //SYMBOLS \"$WDIAG/diag_${label}.obj\" 2>&1\
-        \ | grep -E \"notype.*\\(\\)|\\.pdata|\\.xdata\" | head -60 || echo \"(none)\"\
-        \n\n  echo \"=== [$label] step 5b: -fno-lto -c REAL machine-code .obj .pdata\
-        \ check ===\"\n  # The auto-LTO .obj above is a bitcode wrapper, so it never\
-        \ has .pdata.\n  # Build a true machine-code object to see whether the AArch64\
-        \ COFF\n  # codegen backend actually emits .pdata/.xdata for user functions.\n\
-        \  \"$NCC\" $flags -fno-lto -c \"$src\" -o \"$WDIAG/diag_${label}_nolto.obj\"\
-        \ 2>&1 && echo \"OK\" || echo \"EXIT=$?\"\n  echo \"--- nolto .obj SECTIONS\
-        \ (head) ---\"\n  dumpbin //SECTIONS \"$WDIAG/diag_${label}_nolto.obj\" 2>&1\
-        \ | head -60 || true\n  echo \"--- nolto .obj .pdata/.xdata present? ---\"\
-        \n  dumpbin //SECTIONS \"$WDIAG/diag_${label}_nolto.obj\" 2>&1 | grep -i \"\
-        pdata\\|xdata\" || echo \"(NONE - codegen not emitting .pdata!)\"\n  echo\
-        \ \"--- nolto .obj UNWINDINFO ---\"\n  dumpbin //UNWINDINFO \"$WDIAG/diag_${label}_nolto.obj\"\
-        \ 2>&1 | head -80 || echo \"(none)\"\n\n  echo \"=== [$label] step 5c: uwtable\
-        \ attribute in LLVM IR ===\"\n  # If the frontend attaches `uwtable` but no\
-        \ .pdata appears, the loss is\n  # in the backend / LTO codegen, not the frontend.\n\
-        \  echo \"--- non-LTO frontend IR ---\"\n  \"$NCC\" $flags -fno-lto -emit-llvm\
-        \ -S \"$src\" -o \"$WDIAG/diag_${label}_nolto.ll\" 2>&1 && echo \"OK\" ||\
-        \ echo \"EXIT=$?\"\n  echo \"non-LTO uwtable occurrences: $(grep -c \"uwtable\"\
-        \ \"$BDIAG/diag_${label}_nolto.ll\" 2>/dev/null)\"\n  grep -E \"^define|^attributes\
-        \ #\" \"$BDIAG/diag_${label}_nolto.ll\" 2>/dev/null | head -40 || echo \"\
-        (none)\"\n  echo \"--- LTO bitcode IR (pre-link, TY_LTO_IR) ---\"\n  \"$NCC\"\
-        \ $flags -flto -S \"$src\" -o \"$WDIAG/diag_${label}_lto.ll\" 2>&1 && echo\
-        \ \"OK\" || echo \"EXIT=$?\"\n  echo \"LTO uwtable occurrences: $(grep -c\
-        \ \"uwtable\" \"$BDIAG/diag_${label}_lto.ll\" 2>/dev/null)\"\n  grep -E \"\
-        ^define|^attributes #\" \"$BDIAG/diag_${label}_lto.ll\" 2>/dev/null | head\
-        \ -40 || echo \"(none)\"\n\n  echo \"=== [$label] step 6: MSVC link.exe comparison\
-        \ ===\"\n  echo \"--- link with MSVC link.exe ---\"\n  link.exe //NOLOGO //MACHINE:ARM64\
-        \ //SUBSYSTEM:CONSOLE \\\n    //DEFAULTLIB:libcmt //DEFAULTLIB:libvcruntime\
-        \ //DEFAULTLIB:libucrt \\\n    //DEFAULTLIB:legacy_stdio_definitions //DEFAULTLIB:oldnames\
-        \ \\\n    \"$WDIAG/diag_${label}.obj\" \\\n    \"//OUT:$WDIAG/diag_${label}_msvc.exe\"\
-        \ 2>&1 && echo \"MSVC_LINK=OK\" || echo \"MSVC_LINK=FAIL\"\n  echo \"--- run\
-        \ MSVC-linked exe ---\"\n  if [ -f \"$BDIAG/diag_${label}_msvc.exe\" ]; then\n\
-        \    powershell.exe -NoProfile -Command \"\n      try {\n        \\$p = Start-Process\
-        \ -FilePath '$WDIAG/diag_${label}_msvc.exe' \\\n          -NoNewWindow -Wait\
-        \ -PassThru \\\n          -RedirectStandardOutput '$WDIAG/diag_${label}_msvc_stdout.txt'\
-        \ \\\n          -RedirectStandardError '$WDIAG/diag_${label}_msvc_stderr.txt'\n\
-        \        Write-Host \\\"MSVC_EXIT_CODE=\\$(\\$p.ExitCode)\\\"\n      } catch\
-        \ {\n        Write-Host \\\"MSVC_EXCEPTION: \\$_\\\"\n      }\n    \" 2>&1\
-        \ || echo \"MSVC_POWERSHELL_EXIT=$?\"\n    echo \"--- MSVC stdout ---\"\n\
-        \    cat \"$BDIAG/diag_${label}_msvc_stdout.txt\" 2>/dev/null || echo \"(empty)\"\
-        \n    echo \"--- compare .pdata: neverc-linked vs MSVC-linked ---\"\n    echo\
-        \ \"neverc .pdata entries:\"\n    dumpbin //UNWINDINFO \"$BDIAG/diag_${label}_nolto.exe\"\
-        \ 2>&1 | grep -c \"Begin\" || echo \"0\"\n    echo \"MSVC .pdata entries:\"\
-        \n    dumpbin //UNWINDINFO \"$BDIAG/diag_${label}_msvc.exe\" 2>&1 | grep -c\
-        \ \"Begin\" || echo \"0\"\n  else\n    echo \"MSVC link failed, skipping run\"\
-        \n  fi\n}\n\ndiagnose \"c_stdlib\" \\\n  \"$TESTDIR/standards/test_c_stdlib_patterns.c\"\
-        \ \\\n  \"-std=c11\"\n\n# Minimal test: just main() { return 0; } to isolate\
-        \ CRT vs codegen\necho 'int main(void) { return 0; }' > \"$BDIAG/diag_minimal.c\"\
-        \ndiagnose \"minimal\" \\\n  \"$(cygpath -m \"$BDIAG/diag_minimal.c\")\" \\\
-        \n  \"-std=c11\"\n\ndiagnose \"mc64bit\" \\\n  \"$TESTDIR/codegen/test_mc_64bit_format.c\"\
-        \ \\\n  \"-std=gnu11 -O2\"\n\ndiagnose \"arch_cleanup_r2\" \\\n  \"$TESTDIR/codegen/test_arch_cleanup_round2.c\"\
-        \ \\\n  \"-std=gnu11 -O2\"\n\n# \u2500\u2500 Frame pointer forced on \u2500\
-        \u2500\n# ARM64 longjmp always does stack unwinding.  If -mframe-pointer=none\n\
-        # causes missing/wrong .pdata entries the forced-fp build will pass.\necho\
-        \ \"=== frame-pointer=all comparison ===\"\ndiagnose \"c_stdlib_fp\" \\\n\
-        \  \"$TESTDIR/standards/test_c_stdlib_patterns.c\" \\\n  \"-std=c11 -mframe-pointer=all\"\
-        \n\n# \u2500\u2500 Pure MSVC cl.exe baseline (eliminates neverc entirely)\
-        \ \u2500\u2500\necho \"=== MSVC cl.exe full compile+link baseline ===\"\n\
-        echo \"cl.exe version:\"\ncl.exe 2>&1 | head -1 || true\ncl.exe //nologo //W3\
-        \ //EHsc //TC \\\n  \"$TESTDIR/standards/test_c_stdlib_patterns.c\" \\\n \
-        \ \"//Fe$WDIAG/diag_c_stdlib_msvc_cl.exe\" \\\n  //link //MACHINE:ARM64 //SUBSYSTEM:CONSOLE\
-        \ 2>&1 \\\n  && echo \"MSVC_CL_BUILD=OK\" || echo \"MSVC_CL_BUILD=FAIL\"\n\
-        if [ -f \"$BDIAG/diag_c_stdlib_msvc_cl.exe\" ]; then\n  echo \"--- run pure-MSVC\
-        \ exe ---\"\n  powershell.exe -NoProfile -Command \"\n    try {\n      \\\
-        $p = Start-Process -FilePath '$WDIAG/diag_c_stdlib_msvc_cl.exe' \\\n     \
-        \   -NoNewWindow -Wait -PassThru \\\n        -RedirectStandardOutput '$WDIAG/diag_c_stdlib_msvc_cl_stdout.txt'\
-        \ \\\n        -RedirectStandardError '$WDIAG/diag_c_stdlib_msvc_cl_stderr.txt'\n\
-        \      Write-Host \\\"MSVC_CL_EXIT_CODE=\\$(\\$p.ExitCode)\\\"\n    } catch\
-        \ {\n      Write-Host \\\"MSVC_CL_EXCEPTION: \\$_\\\"\n    }\n  \" 2>&1 ||\
-        \ echo \"MSVC_CL_POWERSHELL_EXIT=$?\"\n  echo \"--- MSVC cl.exe stdout ---\"\
-        \n  cat \"$BDIAG/diag_c_stdlib_msvc_cl_stdout.txt\" 2>/dev/null || echo \"\
-        (empty)\"\nelse\n  echo \"MSVC cl.exe build failed, skipping run\"\nfi\n"
-    - name: Fail if tests failed
-      if: steps.tests.outcome == 'failure'
-      shell: bash
-      run: exit 1
   inspect-fastlink-request-ownership:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'fastlink-request-ownership'
       }}
