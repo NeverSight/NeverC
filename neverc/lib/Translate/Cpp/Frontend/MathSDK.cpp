@@ -49395,9 +49395,43 @@ std::optional<DequeMapRecord> dequeMap(const State &S, const SourceManager &SM,
 }
 }
 
+namespace {
+std::optional<UtilityDequeRecord> dequeAdapterRecord(const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Input, const ASTContext &Context) {
+  if (!S.coreV2() || !dequeTarget(Context)) return std::nullopt;
+  const auto *R = dequeSpecialization(S, SM, Input, "stack", "stack");
+  llvm::StringRef Header = "stack";
+  if (!R) { R = dequeSpecialization(S, SM, Input, "queue", "queue"); Header = "queue"; }
+  if (!R || R->getNumBases() || R->getTemplateArgs().size() != 2) return std::nullopt;
+  const auto &Args = R->getTemplateArgs();
+  if (Args[0].getKind() != TemplateArgument::Type || Args[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Args[0].getAsType(), Context.IntTy)) return std::nullopt;
+  const auto *Container = dequeSpecialization(S, SM, dequeRecordType(Args[1].getAsType()), "deque", "deque");
+  if (!Container || !Context.hasSameType(Args[1].getAsType(), Context.getRecordType(Container)))
+    return std::nullopt;
+  const auto Owner = approvedUtilityDequeRecord(S, SM, Container, Context);
+  if (!Owner) return std::nullopt;
+  const FieldDecl *Storage = nullptr;
+  for (const auto *F : R->fields()) {
+    if (Storage || !F->getIdentifier() || F->getName() != "c" || F->isMutable() || F->isBitField() ||
+        F->getAccess() != AS_protected || !dequePinned(S, SM, F, Header) ||
+        !Context.hasSameType(F->getType(), Context.getRecordType(Container))) return std::nullopt;
+    Storage = F;
+  }
+  if (!Storage) return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(R);
+  if (Layout.getFieldOffset(0) || Layout.getSize().getQuantity() != 48 ||
+      Layout.getAlignment().getQuantity() != 8) return std::nullopt;
+  auto Result = *Owner;
+  Result.Record = R;
+  return Result;
+}
+}
+
 std::optional<UtilityDequeRecord> approvedUtilityDequeRecord(const State &S,
     const SourceManager &SM, const CXXRecordDecl *Input, const ASTContext &Context) {
   const auto *R = dequeSpecialization(S, SM, Input, "deque", "deque");
+  if (!R) return dequeAdapterRecord(S, SM, Input, Context);
   if (!R || !dequeTarget(Context) || R->getNumBases() || R->getTemplateArgs().size() != 2)
     return std::nullopt;
   const auto &Args = R->getTemplateArgs();
@@ -49465,12 +49499,16 @@ std::optional<UtilityDequeIteratorRecord> approvedUtilityDequeIteratorRecord(con
 namespace {
 bool dequeFunctionDeclarations(const State &S, const SourceManager &SM, const FunctionDecl *F) {
   if (!F || F->isInvalidDecl() || F->isDeleted() || F->isVariadic()) return false;
-  for (const auto *D : F->redecls()) if (!dequePinned(S, SM, D, "deque")) return false;
+  llvm::StringRef Header = "deque";
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(F))
+    if (const auto Adapter = dequeAdapterRecord(S, SM, Method->getParent(), F->getASTContext()))
+      Header = Adapter->Record->getName();
+  for (const auto *D : F->redecls()) if (!dequePinned(S, SM, D, Header)) return false;
   if (const auto *Pattern = F->getTemplateInstantiationPattern())
-    for (const auto *D : Pattern->redecls()) if (!dequePinned(S, SM, D, "deque")) return false;
+    for (const auto *D : Pattern->redecls()) if (!dequePinned(S, SM, D, Header)) return false;
   if (const auto *T = F->getPrimaryTemplate())
     for (const auto *D : T->redecls())
-      if (!dequePinned(S, SM, D, "deque") || !dequePinned(S, SM, D->getTemplatedDecl(), "deque")) return false;
+      if (!dequePinned(S, SM, D, Header) || !dequePinned(S, SM, D->getTemplatedDecl(), Header)) return false;
   return true;
 }
 bool dequeValueParameter(QualType T, const ASTContext &Context) {
@@ -49527,6 +49565,8 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
   if (!M || M->isStatic() || M->isVolatile() || M->getPrimaryTemplate() ||
       !dequeFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (approvedUtilityDequeRecord(S, SM, M->getParent(), Context)) {
+    const bool Stack = M->getParent()->getName() == "stack";
+    const bool Queue = M->getParent()->getName() == "queue";
     const auto Element = M->isConst() ? Context.IntTy.withConst() : Context.IntTy;
     if (M->isOverloadedOperator()) {
       if (M->getOverloadedOperator() == OO_Subscript && M->getNumParams() == 1 &&
@@ -49546,16 +49586,18 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
         return Name == "begin" ? UtilityDequeOperation::Begin : UtilityDequeOperation::End;
       if ((Name == "cbegin" || Name == "cend") && M->isConst() && dequeIteratorType(S, SM, M->getReturnType(), true, Context))
         return Name == "cbegin" ? UtilityDequeOperation::Begin : UtilityDequeOperation::End;
-      if ((Name == "front" || Name == "back") &&
+      if ((Name == "front" || Name == "back" || (Stack && Name == "top")) &&
           Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element)))
         return Name == "front" ? UtilityDequeOperation::Front : UtilityDequeOperation::Back;
       if (!M->isConst() && M->getReturnType()->isVoidType()) {
+        if ((Stack || Queue) && Name == "pop")
+          return Stack ? UtilityDequeOperation::PopBack : UtilityDequeOperation::PopFront;
         if (Name == "clear") return UtilityDequeOperation::Clear;
         if (Name == "pop_front") return UtilityDequeOperation::PopFront;
         if (Name == "pop_back") return UtilityDequeOperation::PopBack;
       }
     }
-    if (!M->isConst() && (Name == "push_front" || Name == "push_back") && M->getNumParams() == 1 &&
+    if (!M->isConst() && (Name == "push_front" || Name == "push_back" || ((Stack || Queue) && Name == "push")) && M->getNumParams() == 1 &&
         M->getReturnType()->isVoidType() && dequeValueParameter(M->getParamDecl(0)->getType(), Context))
       return Name == "push_front" ? UtilityDequeOperation::PushFront : UtilityDequeOperation::PushBack;
     return std::nullopt;
