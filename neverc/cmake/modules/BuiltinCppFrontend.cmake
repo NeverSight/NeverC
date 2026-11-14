@@ -137,6 +137,18 @@ function(neverc_setup_builtin_cpp_frontend)
       list(APPEND _platform_args "-D${_var}:STRING=${_value}")
     endif()
   endforeach()
+  # MSVC 19.52 ARM64 crashes in its optimizer while compiling the pinned
+  # LLVM 20 ASTWriterDecl.cpp. Keep the workaround in the dependency build:
+  # the launcher changes only that exact source command, without patching LLVM
+  # or changing the CRT, iterator ABI, private namespace, or other source flags.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND
+      CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "19.52" AND
+      CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19.53" AND
+      (CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "ARM64" OR
+       CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64|AARCH64)$"))
+    list(APPEND _platform_args
+      "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=${Python3_EXECUTABLE}|${CMAKE_CURRENT_FUNCTION_LIST_DIR}/MSVCArm64FrontendLauncher.py|--source|${_source}/clang/lib/Serialization/ASTWriterDecl.cpp|--")
+  endif()
   if(CMAKE_CROSSCOMPILING)
     list(APPEND _platform_args
       "-DCMAKE_SYSTEM_NAME:STRING=${CMAKE_SYSTEM_NAME}"
