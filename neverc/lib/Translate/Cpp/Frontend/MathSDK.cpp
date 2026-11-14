@@ -50190,6 +50190,163 @@ std::optional<UtilityPriorityQueueOperation> priorityQueueMethodSignature(
   return std::nullopt;
 }
 
+
+const Expr *priorityQueryOperand(const Expr *E) {
+  for (unsigned I = 0; E && I != 8; ++I) {
+    E = E->IgnoreParenImpCasts();
+    if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E)) E = M->getSubExpr();
+    else if (const auto *B = dyn_cast<CXXBindTemporaryExpr>(E)) E = B->getSubExpr();
+    else if (const auto *C = dyn_cast<ExprWithCleanups>(E)) E = C->getSubExpr();
+    else return E;
+  }
+  return nullptr;
+}
+bool priorityQueryReference(const Expr *E, const ValueDecl *D) {
+  const auto *R = dyn_cast_or_null<DeclRefExpr>(priorityQueryOperand(E));
+  return R && D && R->getDecl()->getCanonicalDecl() == D->getCanonicalDecl();
+}
+bool priorityQueryTwo(const Expr *E) {
+  const auto *I = dyn_cast_or_null<IntegerLiteral>(priorityQueryOperand(E));
+  return I && I->getValue() == 2;
+}
+bool priorityVectorDeclarations(const State &S, const SourceManager &SM, const FunctionDecl *F) {
+  unsigned Count = 0;
+  auto Check = [&](const FunctionDecl *D) {
+    return ++Count <= 64 && dequePinned(S, SM, D, "__vector/vector.h");
+  };
+  if (!F) return false;
+  for (const auto *D : F->redecls()) if (!Check(D)) return false;
+  if (const auto *P = F->getTemplateInstantiationPattern())
+    for (const auto *D : P->redecls()) if (!Check(D)) return false;
+  if (const auto *T = F->getPrimaryTemplate())
+    for (const auto *D : T->redecls())
+      if (!dequePinned(S, SM, D, "__vector/vector.h") || !Check(D->getTemplatedDecl())) return false;
+  return true;
+}
+bool priorityIntegerVector(const State &S, const SourceManager &SM,
+                           const CXXRecordDecl *R, const ASTContext &Context) {
+  const auto V = approvedUtilityVectorRecord(S, SM, R, Context);
+  return V && !V->OwningElement && Context.hasSameType(V->ElementType, Context.IntTy) &&
+      Context.hasSameType(V->PointerType, Context.getPointerType(Context.IntTy));
+}
+const VarDecl *priorityCapacityVariable(const Stmt *Statement, const ASTContext &Context) {
+  const auto *D = dyn_cast_or_null<DeclStmt>(Statement);
+  const auto *V = D && D->isSingleDecl() ? dyn_cast<VarDecl>(D->getSingleDecl()) : nullptr;
+  return V && V->hasInit() && V->getType().isConstQualified() &&
+      Context.hasSameUnqualifiedType(V->getType(), Context.getSizeType()) ? V : nullptr;
+}
+const FunctionDecl *priorityCapacityCall(const Expr *E, const CXXRecordDecl *R,
+                                        llvm::StringRef Name, QualType Result,
+                                        const ASTContext &Context) {
+  const auto *C = dyn_cast_or_null<CXXMemberCallExpr>(priorityQueryOperand(E));
+  const auto *M = C ? dyn_cast_or_null<CXXMethodDecl>(C->getDirectCallee()) : nullptr;
+  const auto *Object = C ? priorityQueryOperand(C->getImplicitObjectArgument()) : nullptr;
+  return M && !M->isStatic() && M->isConst() && M->getIdentifier() && M->getName() == Name &&
+      !M->getNumParams() && !C->getNumArgs() && Object && isa<CXXThisExpr>(Object) &&
+      M->getParent()->getCanonicalDecl() == R->getCanonicalDecl() &&
+      Context.hasSameType(M->getReturnType(), Result) ? M : nullptr;
+}
+bool priorityCapacityQuery(const State &S, const SourceManager &SM, const FunctionDecl *Input,
+                           const ASTContext &Context, std::vector<const FunctionDecl *> &Dependencies) {
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(Input ? Input->getDefinition() : nullptr);
+  const auto *B = M ? dyn_cast_or_null<CompoundStmt>(M->getBody()) : nullptr;
+  if (!M || !M->getIdentifier() || M->getName() != "__recommend" || M->isStatic() ||
+      !M->isConst() || M->isVolatile() || M->getRefQualifier() != RQ_None ||
+      M->isVariadic() || M->getNumParams() != 1 || M->getParamDecl(0)->hasDefaultArg() ||
+      !Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) ||
+      !Context.hasSameType(M->getReturnType(), Context.getSizeType()) ||
+      !priorityIntegerVector(S, SM, M->getParent(), Context) ||
+      !priorityVectorDeclarations(S, SM, M) || !B || B->size() != 5) return false;
+  const auto *Maximum = priorityCapacityVariable(B->body_begin()[0], Context);
+  const auto *Capacity = priorityCapacityVariable(B->body_begin()[2], Context);
+  const auto *Overflow = dyn_cast<IfStmt>(B->body_begin()[1]);
+  const auto *Saturation = dyn_cast<IfStmt>(B->body_begin()[3]);
+  const auto *Result = dyn_cast<ReturnStmt>(B->body_begin()[4]);
+  if (!Maximum || !Capacity || !Overflow || !Saturation || !Result ||
+      Overflow->getInit() || Overflow->getConditionVariable() || Overflow->getElse() ||
+      Saturation->getInit() || Saturation->getConditionVariable() || Saturation->getElse()) return false;
+  const auto *GetMaximum = priorityCapacityCall(Maximum->getInit(), M->getParent(), "max_size",
+      Context.getSizeType(), Context);
+  const auto *GetCapacity = priorityCapacityCall(Capacity->getInit(), M->getParent(), "capacity",
+      Context.getSizeType(), Context);
+  const auto *Over = dyn_cast_or_null<BinaryOperator>(priorityQueryOperand(Overflow->getCond()));
+  const auto *Full = dyn_cast_or_null<BinaryOperator>(priorityQueryOperand(Saturation->getCond()));
+  const auto *Half = Full ? dyn_cast_or_null<BinaryOperator>(priorityQueryOperand(Full->getRHS())) : nullptr;
+  const auto *Saturated = dyn_cast<ReturnStmt>(Saturation->getThen());
+  if (!GetMaximum || !GetCapacity || !Over || Over->getOpcode() != BO_GT ||
+      !priorityQueryReference(Over->getLHS(), M->getParamDecl(0)) ||
+      !priorityQueryReference(Over->getRHS(), Maximum) || !Full || Full->getOpcode() != BO_GE ||
+      !priorityQueryReference(Full->getLHS(), Capacity) || !Half || Half->getOpcode() != BO_Div ||
+      !priorityQueryReference(Half->getLHS(), Maximum) || !priorityQueryTwo(Half->getRHS()) ||
+      !Saturated || !priorityQueryReference(Saturated->getRetValue(), Maximum)) return false;
+  const auto *FailureCall = dyn_cast_or_null<CallExpr>(
+      priorityQueryOperand(dyn_cast<Expr>(Overflow->getThen())));
+  const auto *Failure = FailureCall ? dyn_cast_or_null<CXXMethodDecl>(FailureCall->getDirectCallee()) : nullptr;
+  const auto *FailureBody = Failure ? dyn_cast_or_null<CompoundStmt>(Failure->getBody()) : nullptr;
+  if (!Failure || !Failure->isStatic() || !Failure->getIdentifier() ||
+      Failure->getName() != "__throw_length_error" || Failure->isVariadic() ||
+      Failure->getNumParams() || FailureCall->getNumArgs() ||
+      !Failure->getReturnType()->isVoidType() ||
+      Failure->getParent()->getCanonicalDecl() != M->getParent()->getCanonicalDecl() ||
+      !priorityVectorDeclarations(S, SM, Failure) || !FailureBody || FailureBody->size() != 1) return false;
+  const auto *Throw = dyn_cast_or_null<CallExpr>(
+      priorityQueryOperand(dyn_cast<Expr>(*FailureBody->body_begin())));
+  const auto *ThrowFunction = Throw ? Throw->getDirectCallee() : nullptr;
+  const auto *Message = Throw && Throw->getNumArgs() == 1
+      ? dyn_cast_or_null<StringLiteral>(priorityQueryOperand(Throw->getArg(0))) : nullptr;
+  if (!ThrowFunction || isa<CXXMethodDecl>(ThrowFunction) || !ThrowFunction->getIdentifier() ||
+      ThrowFunction->getName() != "__throw_length_error" || !dequeStd(ThrowFunction->getDeclContext()) ||
+      !ThrowFunction->getReturnType()->isVoidType() || ThrowFunction->getNumParams() != 1 ||
+      !ThrowFunction->hasBody() || ThrowFunction->isVariadic() ||
+      !Context.hasSameType(ThrowFunction->getParamDecl(0)->getType(), Context.getPointerType(Context.CharTy.withConst())) ||
+      !Message || Message->getString() != "vector") return false;
+  for (const auto *D : ThrowFunction->redecls())
+    if (!dequePinned(S, SM, D, "stdexcept")) return false;
+  const auto *Max = dyn_cast_or_null<CallExpr>(priorityQueryOperand(Result->getRetValue()));
+  const auto *MaxFunction = Max ? Max->getDirectCallee() : nullptr;
+  const auto *Double = Max && Max->getNumArgs() == 2
+      ? dyn_cast_or_null<BinaryOperator>(priorityQueryOperand(Max->getArg(0))) : nullptr;
+  if (!MaxFunction || !MaxFunction->getIdentifier() || MaxFunction->getName() != "max" ||
+      !dequeStd(MaxFunction->getDeclContext()) || MaxFunction->getNumParams() != 2 ||
+      !dequePinned(S, SM, MaxFunction, "__algorithm/max.h") ||
+      !Double || Double->getOpcode() != BO_Mul || !priorityQueryTwo(Double->getLHS()) ||
+      !priorityQueryReference(Double->getRHS(), Capacity) ||
+      !priorityQueryReference(Max->getArg(1), M->getParamDecl(0))) return false;
+  // This exact capacity calculation is used only in the existing nonthrowing
+  // allocation domain. Its max_size, capacity and max bodies still need proof;
+  // no ordinary or exception constructor gains metadata-only admission.
+  Dependencies = {GetMaximum, GetCapacity, MaxFunction};
+  return true;
+}
+bool priorityAlignmentAssumption(const State &S, const SourceManager &SM,
+                                const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!F || F->getBuiltinID() != Builtin::BI__builtin_assume_aligned ||
+      !F->getIdentifier() || F->getName() != "__builtin_assume_aligned" || F->hasBody() ||
+      Call->getNumArgs() != 2 || Call->getExprLoc().isMacroID()) return false;
+  const auto Site = S.sdkFile(SM, Call->getExprLoc());
+  if (!Site || Site->Root != "libcxx" || Site->Path != "__vector/vector.h" ||
+      SM.getExpansionLineNumber(Call->getExprLoc()) != 790) return false;
+  const auto *R = dyn_cast_or_null<DeclRefExpr>(priorityQueryOperand(Call->getArg(0)));
+  const auto *P = R ? dyn_cast<ParmVarDecl>(R->getDecl()) : nullptr;
+  const auto *M = P ? dyn_cast<CXXMethodDecl>(P->getDeclContext()) : nullptr;
+  const auto *Alignment = dyn_cast_or_null<UnaryExprOrTypeTraitExpr>(priorityQueryOperand(Call->getArg(1)));
+  if (!M || !M->isStatic() || !M->getIdentifier() || M->getName() != "__add_alignment_assumption" ||
+      M->getNumParams() != 1 || M->getParamDecl(0) != P || M->isVariadic() ||
+      !Context.hasSameType(P->getType(), Context.getPointerType(Context.IntTy)) ||
+      !Context.hasSameType(M->getReturnType(), P->getType()) ||
+      !priorityIntegerVector(S, SM, M->getParent(), Context) ||
+      !priorityVectorDeclarations(S, SM, M) || !Alignment || Alignment->getKind() != UETT_AlignOf ||
+      !Alignment->isArgumentType() ||
+      !Context.hasSameType(Alignment->getArgumentType().getNonReferenceType(), Context.IntTy)) return false;
+  for (const auto *D : F->redecls()) {
+    if (dequeDependencyDeclaration(S, SM, D)) continue;
+    if (!D->isImplicit() || D->hasBody() || !D->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+        (D->getLocation().isValid() && !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(D->getLocation())))) return false;
+  }
+  return true;
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false) {
   std::set<const FunctionDecl *> Seen;
@@ -50260,6 +50417,14 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       for (const auto *Init : C->inits())
         if (!Statement(Init->getInit(), Depth + 1)) return false;
     if (dequeClosedPointerLess(S, SM, F, Context)) return true;
+    if (PriorityRoot) {
+      std::vector<const FunctionDecl *> Dependencies;
+      if (priorityCapacityQuery(S, SM, F, Context, Dependencies)) {
+        for (const auto *Dependency : Dependencies)
+          if (!Function(Dependency, Depth + 1)) return false;
+        return true;
+      }
+    }
     const auto *Body = F->getBody();
     return Body && Statement(Body, Depth + 1);
   };
@@ -50285,6 +50450,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     if (const auto *Call = dyn_cast<CallExpr>(Node)) {
       // The exact SDK pointer-comparison query has a closed, separately bounded
       // and authenticated operand tree; its callee has no run-time effects.
+      if (PriorityRoot && priorityAlignmentAssumption(S, SM, Call, Context)) return true;
       if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
       if (!dequeScalarDestruction(S, SM, Call, Context) &&
           !dequePinnedMemoryTransfer(S, SM, Call, Context) &&

@@ -27055,6 +27055,12 @@ class FunctionLowering {
     const auto Double = labelName(), Allocate = labelName();
     branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Double, Allocate, L);
     label(Double, L);
+    const auto Saturate = labelName(), Scale = labelName();
+    const uint64_t Maximum = uint64_t(-1) / 4;
+    branch(binary(">=", Count, quantity(Maximum / 2, Size, L), "bool", L), Saturate, Scale, L);
+    label(Saturate, L);
+    assign(NewCapacity, quantity(Maximum, Size, L), L);
+    jump(Allocate, L); label(Scale, L);
     assign(NewCapacity, binary("*", Count, quantity(2, Size, L), Size, L), L);
     jump(Allocate, L);
     label(Allocate, L);
