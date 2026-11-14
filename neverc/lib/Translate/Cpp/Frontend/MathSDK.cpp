@@ -50220,7 +50220,7 @@ bool priorityVectorDeclarations(const State &S, const SourceManager &SM, const F
     for (const auto *D : P->redecls()) if (!Check(D)) return false;
   if (const auto *T = F->getPrimaryTemplate())
     for (const auto *D : T->redecls())
-      if (!dequePinned(S, SM, D, "__vector/vector.h") || !Check(D->getTemplatedDecl())) return false;
+      if (!dequePinned(S, SM, D, "__vector/vector.h") || !Check(dyn_cast<FunctionDecl>(D->getTemplatedDecl()))) return false;
   return true;
 }
 bool priorityIntegerVector(const State &S, const SourceManager &SM,
