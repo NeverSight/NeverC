@@ -30,7 +30,7 @@ def main():
     count = 0
     sdk_identity = {
         "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r19",
-        "catalog_sha256": "1719fa5a2ac36238726e61e9b1120bcff8e41d2e914760e484cef83d669658fd",
+        "catalog_sha256": "b4a7b597150882cd93285481cc060d2eab6949b5c8d50b7ce234579cc814bd77",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
