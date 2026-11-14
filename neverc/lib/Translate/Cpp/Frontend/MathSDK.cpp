@@ -50519,8 +50519,50 @@ bool priorityRelocationTransfer(const State &S, const SourceManager &SM, const C
   return true;
 }
 
+
+bool priorityCopyLengthError(const State &S, const SourceManager &SM,
+                             const FunctionDecl *Function, const ASTContext &Context) {
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  if (!Method || !Method->getIdentifier() || Method->getName() != "__throw_length_error" ||
+      !Method->isStatic() || Method->isVariadic() || Method->isDeleted() || Method->isInvalidDecl() ||
+      Method->getNumParams() || !Method->getReturnType()->isVoidType() || !Method->hasBody() ||
+      Method->getPrimaryTemplate()) return false;
+  const auto Vector = approvedUtilityVectorRecord(S, SM, Method->getParent(), Context);
+  if (!Vector || !Context.hasSameType(Vector->ElementType, Context.IntTy)) return false;
+  for (const auto *D : Method->redecls())
+    if (!dequePinned(S, SM, D, "__vector/vector.h")) return false;
+  if (const auto *Pattern = Method->getTemplateInstantiationPattern())
+    for (const auto *D : Pattern->redecls())
+      if (!dequePinned(S, SM, D, "__vector/vector.h")) return false;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *Call = Body && Body->size() == 1 ? dyn_cast<CallExpr>(*Body->body_begin()) : nullptr;
+  const auto *Callee = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Literal = Call && Call->getNumArgs() == 1
+      ? dyn_cast<StringLiteral>(Call->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+  if (!Call || Call->getExprLoc().isMacroID() || !Callee || isa<CXXMethodDecl>(Callee) ||
+      !Callee->getIdentifier() || Callee->getName() != "__throw_length_error" ||
+      !dequeStd(Callee->getDeclContext()) || Callee->isVariadic() || Callee->isDeleted() ||
+      Callee->isInvalidDecl() || Callee->getNumParams() != 1 || !Callee->hasBody() ||
+      Callee->getPrimaryTemplate() || !Callee->getReturnType()->isVoidType() ||
+      !Context.hasSameType(Callee->getParamDecl(0)->getType(),
+          Context.getPointerType(Context.CharTy.withConst())) ||
+      !Literal || Literal->getExprLoc().isMacroID() || Literal->getCharByteWidth() != 1 ||
+      Literal->getString() != "vector") return false;
+  const auto CallSite = S.sdkFile(SM, Call->getExprLoc());
+  const auto LiteralSite = S.sdkFile(SM, Literal->getExprLoc());
+  if (!CallSite || !LiteralSite || CallSite->Root != "libcxx" || LiteralSite->Root != "libcxx" ||
+      CallSite->Path != "__vector/vector.h" || LiteralSite->Path != "__vector/vector.h") return false;
+  for (const auto *D : Callee->redecls())
+    if (!dequePinned(S, SM, D, "stdexcept")) return false;
+  return true;
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false) {
+  const auto *RootMethod = dyn_cast_or_null<CXXMethodDecl>(Root);
+  const auto *RootConstructor = dyn_cast_or_null<CXXConstructorDecl>(Root);
+  const bool PriorityCopy = PriorityRoot && RootMethod &&
+      ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator());
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -50565,6 +50607,11 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       for (const auto *D : T->redecls())
         if (!dequeDependencyDeclaration(S, SM, D) ||
             !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+    // Copies of the checked default vector take their count from an existing
+    // valid vector. Its size is bounded by the same allocator max_size. Only
+    // this authenticated error boundary is unreachable; other bodies retain
+    // their complete graph proof, including all allocation and copy effects.
+    if (PriorityCopy && priorityCopyLengthError(S, SM, F, Context)) return true;
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
     // Every admitted construction count has already passed the existing
     // allocator max-size proof, making this pinned error branch unreachable.
