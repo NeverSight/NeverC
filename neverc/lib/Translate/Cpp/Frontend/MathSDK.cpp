@@ -50368,8 +50368,12 @@ bool priorityRelocationTransfer(const State &S, const SourceManager &SM, const C
   if (!Site || Site->Root != "libcxx" || Site->Path != "__memory/uninitialized_algorithms.h" ||
       Call->getExprLoc().isMacroID() || SM.getExpansionLineNumber(Call->getExprLoc()) != 645) return false;
   const auto *Destination = dyn_cast_or_null<CXXStaticCastExpr>(priorityQueryOperand(Call->getArg(0)));
-  if (!Destination || Destination->getCastKind() != CK_BitCast ||
-      !Context.hasSameType(Destination->getTypeAsWritten(), Context.VoidPtrTy)) return false;
+  if (!Destination || !Context.hasSameType(Destination->getTypeAsWritten(), Context.VoidPtrTy)) return false;
+  const auto *Conversion = dyn_cast<ImplicitCastExpr>(Destination->getSubExpr());
+  const bool PointerConversion = Destination->getCastKind() == CK_BitCast ||
+      (Destination->getCastKind() == CK_NoOp && Conversion && Conversion->getCastKind() == CK_BitCast &&
+       Context.hasSameType(Conversion->getType(), Context.VoidPtrTy));
+  if (!PointerConversion) return false;
   const auto *To = dyn_cast_or_null<CallExpr>(priorityQueryOperand(Destination->getSubExpr()));
   const auto *From = dyn_cast_or_null<CallExpr>(priorityQueryOperand(Call->getArg(1)));
   auto Parameter = [&](const CallExpr *Address) -> const ParmVarDecl * {
