@@ -49814,7 +49814,7 @@ bool dequeScalarDestruction(const State &S, const SourceManager &SM,
 
 
 bool dequeBuiltinLibraryCast(const State &S, const SourceManager &SM,
-                                   const FunctionDecl *F, const ASTContext &Context) {
+                                   const FunctionDecl *F, const ASTContext &Context, bool PriorityRoot = false) {
   const auto *Builtin = F ? F->getAttr<BuiltinAttr>() : nullptr;
   const auto *Primary = F ? F->getPrimaryTemplate() : nullptr;
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -49836,6 +49836,7 @@ bool dequeBuiltinLibraryCast(const State &S, const SourceManager &SM,
   if (Name == "addressof") { Header = "__memory/addressof.h"; ID = Builtin::BIaddressof; }
   else if (Name == "move") { Header = "__utility/move.h"; ID = Builtin::BImove; }
   else if (Name == "forward") { Header = "__utility/forward.h"; ID = Builtin::BIforward; }
+  else if (PriorityRoot && Name == "move_if_noexcept") { Header = "__utility/move.h"; ID = Builtin::BImove_if_noexcept; }
   else return false;
   if (Builtin->getID() != ID || F->getBuiltinID() != ID) return false;
   unsigned Declarations = 0;
@@ -49849,6 +49850,10 @@ bool dequeBuiltinLibraryCast(const State &S, const SourceManager &SM,
   const auto Argument = Arguments->get(0).getAsType();
   const auto Parameter = F->getParamDecl(0)->getType();
   const auto Result = F->getReturnType();
+  if (Name == "move_if_noexcept")
+    return Context.hasSameType(Argument, Context.IntTy) &&
+        Context.hasSameType(Parameter, Context.getLValueReferenceType(Context.IntTy)) &&
+        Context.hasSameType(Result, Context.getRValueReferenceType(Context.IntTy));
   // ASTContext reference factories preserve the requested outer reference kind.
   // Apply the language's T& && -> T& rule before comparing the canonical signature.
   const auto Forwarded = Argument->isLValueReferenceType()
@@ -50364,7 +50369,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (dequeHeapBoundary(F, Context)) return true;
-    if (dequeBuiltinLibraryCast(S, SM, F, Context)) return true;
+    if (dequeBuiltinLibraryCast(S, SM, F, Context, PriorityRoot)) return true;
     if (F->getBuiltinID()) {
       if (!F->getIdentifier() || F->hasBody()) return false;
       const auto Name = F->getName();
