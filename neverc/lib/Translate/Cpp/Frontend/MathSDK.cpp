@@ -49894,6 +49894,92 @@ bool dequePinnedRangeQuery(const State &S, const SourceManager &SM,
   return ClosedExpression(Call->getArg(0),0);
 }
 
+
+bool dequeClosedPointerLess(const State &S, const SourceManager &SM,
+    const FunctionDecl *F, const ASTContext &Context) {
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
+  const auto *R = M ? dyn_cast<ClassTemplateSpecializationDecl>(M->getParent()) : nullptr;
+  const auto *T = R ? R->getSpecializedTemplate() : nullptr;
+  constexpr const char *Header = "__algorithm/comp.h";
+  if (!M || M->isInvalidDecl() || M->isStatic() || !M->isConst() || M->isVolatile() ||
+      !M->isOverloadedOperator() || M->getOverloadedOperator() != OO_Call ||
+      M->isVariadic() || M->getNumParams() != 2 || !M->hasBody() ||
+      M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Context.hasSameType(M->getReturnType(), Context.BoolTy) ||
+      !R || !R->isCompleteDefinition() || R->getNumBases() || !R->field_empty() ||
+      !T || T->getName() != "__less" || !dequeStd(T->getDeclContext()) ||
+      R->getTemplateSpecializationKind() != TSK_ExplicitSpecialization ||
+      R->getTemplateArgs().size() != 2) return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto &Arg = R->getTemplateArgs()[I];
+    if (Arg.getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arg.getAsType(), Context.VoidTy)) return false;
+  }
+  for (const auto *D : R->redecls())
+    if (!dequePinned(S, SM, D, Header)) return false;
+  for (const auto *D : T->redecls())
+    if (!dequePinned(S, SM, D, Header) ||
+        !dequePinned(S, SM, D->getTemplatedDecl(), Header)) return false;
+  for (const auto *D : M->redecls())
+    if (!dequePinned(S, SM, D, Header)) return false;
+  const auto *Pattern = M->getTemplateInstantiationPattern();
+  const auto *Primary = M->getPrimaryTemplate();
+  if (!Pattern || !Primary) return false;
+  for (const auto *D : Pattern->redecls())
+    if (!dequePinned(S, SM, D, Header)) return false;
+  for (const auto *D : Primary->redecls())
+    if (!dequePinned(S, SM, D, Header) ||
+        !dequePinned(S, SM, D->getTemplatedDecl(), Header)) return false;
+  const auto *First = M->getParamDecl(0);
+  const auto *Last = M->getParamDecl(1);
+  if (!First->getType()->isLValueReferenceType() ||
+      !Context.hasSameType(First->getType(), Last->getType())) return false;
+  const auto Pointer = First->getType()->getPointeeType();
+  if (!Pointer.isConstQualified() || Pointer.isVolatileQualified() ||
+      !Pointer->isPointerType()) return false;
+  const auto Element = Pointer->getPointeeType();
+  if (!Element.isConstQualified() || Element.isVolatileQualified() ||
+      (!Context.hasSameUnqualifiedType(Element, Context.IntTy) &&
+       !Context.hasSameUnqualifiedType(Element, Context.getPointerType(Context.IntTy)))) return false;
+  const auto *Body = dyn_cast<CompoundStmt>(M->getBody());
+  if (!Body || Body->size() != 1) return false;
+  const auto *Return = dyn_cast<ReturnStmt>(*Body->body_begin());
+  const auto *Comparison = Return && Return->getRetValue()
+      ? dyn_cast<BinaryOperator>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  if (!Comparison || Comparison->getOpcode() != BO_LT ||
+      !Context.hasSameType(Comparison->getType(), Context.BoolTy) ||
+      SM.getExpansionLineNumber(Comparison->getExprLoc()) != 41) return false;
+  auto Parameter = [](const Expr *E) -> const ParmVarDecl * {
+    const auto *Reference = E ? dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts()) : nullptr;
+    return Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
+  };
+  if (Parameter(Comparison->getLHS()) != First || Parameter(Comparison->getRHS()) != Last)
+    return false;
+  unsigned Nodes = 0;
+  std::function<bool(const Stmt *, unsigned)> ClosedBody;
+  ClosedBody = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node || Depth > 6 || ++Nodes > 16) return false;
+    const auto *E = dyn_cast<Expr>(Node);
+    if (Node != Body && Node != Return &&
+        (!E || (!isa<BinaryOperator>(E) && !isa<DeclRefExpr>(E) &&
+          !isa<ImplicitCastExpr>(E) && !isa<ParenExpr>(E)))) return false;
+    if (const auto *B = dyn_cast<BinaryOperator>(Node); B && B != Comparison) return false;
+    if (const auto *Reference = dyn_cast<DeclRefExpr>(Node);
+        Reference && Reference->getDecl() != First && Reference->getDecl() != Last) return false;
+    auto Location = [&](SourceLocation L) {
+      if (!L.isValid() || L.isMacroID()) return false;
+      const auto File = S.sdkFile(SM, L);
+      return File && File->Root == "libcxx" && File->Path == Header;
+    };
+    if (!Location(Node->getBeginLoc()) || !Location(Node->getEndLoc()) ||
+        (E && !Location(E->getExprLoc()))) return false;
+    for (const auto *Child : Node->children())
+      if (!ClosedBody(Child, Depth + 1)) return false;
+    return true;
+  };
+  return ClosedBody(Body, 0);
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context) {
   std::set<const FunctionDecl *> Seen;
@@ -49963,6 +50049,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
       for (const auto *Init : C->inits())
         if (!Statement(Init->getInit(), Depth + 1)) return false;
+    if (dequeClosedPointerLess(S, SM, F, Context)) return true;
     const auto *Body = F->getBody();
     return Body && Statement(Body, Depth + 1);
   };
