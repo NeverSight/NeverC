@@ -17529,6 +17529,13 @@ length and the combined storage size must fit the default allocator's limit.
 The default comparator's full-expression temporary and its trivial selected
 construction remain authenticated against the pinned SDK.
 
+The ten pinned C++17 constructor overloads that take
+`const std::allocator<int>&` are also checked. These cover empty construction,
+comparator forms, copied or moved queues and vectors, and matching pointer
+ranges with optional copied or moved vector prefixes. Copies retain independent
+storage. Moves use the pinned default allocator's equal-allocator storage
+transfer, leave the source empty and retain transferred element addresses.
+
 `top()` retains its const integer reference. Copies own independent storage;
 assignment returns its receiver and reuses capacity when sufficient. Moves
 transfer the vector storage and leave the source vector empty. Swaps preserve
@@ -17538,8 +17545,9 @@ evaluation, aliased input values and construction during allocation follow the
 checked SDK operations. Selected declarations, instantiated bodies, allocation
 and relocation helpers retain their bounded SDK source proofs.
 
-The heap, value-operation and constructor regression families each pass ten
-registered GTests and twelve generated C23 executions, six each at O0 and O2,
+The heap and value operation regressions, and both constructor regression
+families, each pass ten registered GTests and twelve generated C23 executions,
+six each at O0 and O2,
 against their byte-identical native programs. Heap cases cover empty observers,
 duplicate and extreme integers, aliased growth, interleaved operations,
 allocation-time argument mutation and receiver/argument sequencing. Value cases
@@ -17547,11 +17555,13 @@ cover copy independence, self-copy, assignment reference identity, empty
 sources, moved storage and source refill, member/qualified/ADL swap, and aliased
 `emplace` growth. Constructor cases cover comparator-only construction, vector
 copy independence and move storage identity, mutable and const pointer ranges,
-empty ranges, and copied or moved prefixes. Runtime evidence comes from Linux
+empty ranges, and copied or moved prefixes. The allocator cases also check
+all ten overloads, queue copy independence, moved queue storage identity and
+source refill, and prefix insertion with retained capacity. Runtime evidence comes from Linux
 x86-64 Actions jobs; source checks cover the six approved 64-bit targets.
 
 `top()` and `pop()` retain their nonempty preconditions. Allocation support is
-the existing successful, nonoverflowing default-allocator domain. Allocator
-constructor overloads, other iterator and element types, and custom policies
+the existing successful, nonoverflowing default-allocator domain. Other
+allocator types, other iterator and element types, and custom policies
 remain outside this checked surface. Full C++17/STL translation remains
 unfinished. NeverC's source language remains C23-only.
