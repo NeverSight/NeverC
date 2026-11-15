@@ -49462,7 +49462,9 @@ std::optional<UtilityPriorityQueueRecord> approvedUtilityPriorityQueueRecord(
       (Comparator->getName() != "less" && Comparator->getName() != "greater") ||
       Comparator->getTemplateArgs().size() != 1 ||
       Comparator->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Comparator->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
+      !(Context.hasSameType(Comparator->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
+        (Comparator->getName() == "greater" &&
+         Context.hasSameType(Comparator->getTemplateArgs()[0].getAsType(), Context.VoidTy))) ||
       !Comparator->isEmpty() || !Comparator->hasTrivialDefaultConstructor() ||
       !Comparator->hasTrivialCopyConstructor() || !Comparator->hasTrivialDestructor())
     return std::nullopt;
