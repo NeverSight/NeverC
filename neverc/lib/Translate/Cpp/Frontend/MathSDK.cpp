@@ -50742,6 +50742,12 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           << " function=" << (F ? F->getQualifiedNameAsString() : "none")
           << " node=" << (Node ? Node->getStmtClassName() : "none") << "\n";
       if (F) llvm::errs() << "NCPQ-GREATER-RANGE-TYPE " << F->getType().getAsString() << "\n";
+      if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Node)) {
+        const auto *Owner = dyn_cast<FunctionDecl>(Reference->getDecl()->getDeclContext());
+        if (Owner) llvm::errs() << "NCPQ-GREATER-RANGE-OWNER " << Owner->getQualifiedNameAsString()
+            << " type=" << Owner->getType().getAsString()
+            << " line=" << SM.getExpansionLineNumber(Owner->getLocation()) << "\n";
+      }
       if (Node && TraceCount == 1) Node->dump();
     }
     return false;
@@ -50829,7 +50835,12 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       }
     }
     const auto *Body = F->getBody();
-    return Body && Statement(Body, Depth + 1);
+    const bool Accepted = Body && Statement(Body, Depth + 1);
+    if (!Accepted && ObserveRange)
+      llvm::errs() << "NCPQ-GREATER-RANGE-FUNCTION " << F->getQualifiedNameAsString()
+          << " type=" << F->getType().getAsString() << " depth=" << Depth
+          << " line=" << SM.getExpansionLineNumber(F->getLocation()) << "\n";
+    return Accepted;
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
