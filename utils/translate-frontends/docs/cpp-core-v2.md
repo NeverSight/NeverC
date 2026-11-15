@@ -17514,14 +17514,16 @@ TR0203; unselected declarations remain available for overload resolution.
 
 The pinned C++17 `<queue>` surface admits `std::priority_queue<int>` and
 `std::priority_queue<int, std::vector<int>, std::greater<int>>` with the exact
-default vector and allocator on the six approved 64-bit targets. Default, copy and move construction, destruction, copy and move
+default vector and allocator on the six approved 64-bit targets. The same
+integer element and vector policy also accepts the transparent
+`std::greater<void>` comparator. Default, copy and move construction, destruction, copy and move
 assignment, `empty()`, `size()`, `top() const`, both `push` overloads and `pop()`
 lower to C23 heap operations. Member swap, the pinned SDK `std::swap` overload
 and its ADL form are supported. `emplace()` constructs zero; one-argument
 `emplace` accepts the checked integer reference and value forms.
 
-Construction also accepts the pinned `std::less<int>` or `std::greater<int>`
-comparator alone, with a
+Construction also accepts the pinned `std::less<int>`, `std::greater<int>` or
+`std::greater<void>` comparator alone, with a
 copied const vector, or with a moved vector. Pointer ranges accept `int*` or
 `const int*` of one matching type, with an explicit comparator or the pinned
 default comparator. A range can be appended to a copied const vector or a moved
@@ -17547,9 +17549,9 @@ checked SDK operations. Selected declarations, instantiated bodies, allocation
 and relocation helpers retain their bounded SDK source proofs.
 
 The heap and value operation regressions, both constructor regression
-families, and the greater comparator regression family each pass ten registered
-GTests and twelve generated C23 executions, six each at O0 and O2, against their
-byte-identical native programs. Heap cases cover empty observers,
+families, and both typed and transparent greater comparator regression families
+each pass ten registered GTests and twelve generated C23 executions, six each
+at O0 and O2, against their byte-identical native programs. Heap cases cover empty observers,
 duplicate and extreme integers, aliased growth, interleaved operations,
 allocation-time argument mutation and receiver/argument sequencing. Value cases
 cover copy independence, self-copy, assignment reference identity, empty
@@ -17558,8 +17560,9 @@ sources, moved storage and source refill, member/qualified/ADL swap, and aliased
 copy independence and move storage identity, mutable and const pointer ranges,
 empty ranges, and copied or moved prefixes. The allocator cases also check
 all ten overloads, queue copy independence, moved queue storage identity and
-source refill, and prefix insertion with retained capacity. The greater cases
-check small and extreme values, copy and move behavior, assignment, swap,
+source refill, and prefix insertion with retained capacity. Both greater
+comparator families check small and extreme values, copy and move behavior,
+assignment, swap,
 emplacement, vector and pointer-range construction, and all ten default
 allocator overloads. Its generated heap compares elements with the checked
 SDK greater policy, producing a minimum at `top()`; index and range bounds
