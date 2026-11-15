@@ -50713,6 +50713,100 @@ bool priorityCopyLengthError(const State &S, const SourceManager &SM,
   return true;
 }
 
+
+bool priorityClosedMemoryTransfer(const State &S, const SourceManager &SM,
+                                 const CallExpr *Call, const ASTContext &Context) {
+  if (!dequePinnedMemoryTransfer(S, SM, Call, Context)) return false;
+  const auto *Callee = Call->getDirectCallee();
+  auto Reference = [](const Expr *E) -> const DeclRefExpr * {
+    return E ? dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  };
+  const auto *To = Reference(Call->getArg(0));
+  const auto *From = Reference(Call->getArg(1));
+  const auto *Destination = To ? dyn_cast<ParmVarDecl>(To->getDecl()) : nullptr;
+  const auto *Source = From ? dyn_cast<ParmVarDecl>(From->getDecl()) : nullptr;
+  const auto *Owner = Destination ? dyn_cast<FunctionDecl>(Destination->getDeclContext()) : nullptr;
+  if (!Owner || !Source ||
+      !Context.hasSameType(Destination->getType(), Context.getPointerType(Context.IntTy))) return false;
+  const VarDecl *Count = nullptr;
+  auto CountReference = [&](const Expr *E) {
+    const auto *Ref = Reference(E);
+    const auto *V = Ref ? dyn_cast<VarDecl>(Ref->getDecl()) : nullptr;
+    if (!V || isa<ParmVarDecl>(V) || V->getDeclContext() != Owner ||
+        !V->getIdentifier() || V->getName() != "__count" || !V->hasLocalStorage() ||
+        !V->hasInit() || !Context.hasSameType(V->getType(), Context.getSizeType()) ||
+        !dequePinned(S, SM, V, "__string/constexpr_c_functions.h") || (Count && Count != V)) return false;
+    Count = V;
+    return true;
+  };
+  auto Width = [&](const Expr *E) {
+    const auto *Size = E ? dyn_cast<UnaryExprOrTypeTraitExpr>(E->IgnoreParenImpCasts()) : nullptr;
+    return Size && Size->getKind() == UETT_SizeOf && Size->isArgumentType() &&
+        Context.hasSameType(Size->getArgumentType(), Context.IntTy);
+  };
+  const VarTemplateSpecializationDecl *DataSize = nullptr;
+  auto DataWidth = [&](const Expr *E) {
+    const auto *Ref = Reference(E);
+    const auto *V = Ref ? dyn_cast<VarTemplateSpecializationDecl>(Ref->getDecl()) : nullptr;
+    const auto *T = V ? V->getSpecializedTemplate() : nullptr;
+    if (!V || !T || !V->getIdentifier() || V->getName() != "__datasizeof_v" ||
+        !dequeStd(V->getDeclContext()) || !V->hasInit() ||
+        V->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        V->getTemplateArgs().size() != 1 || V->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(V->getTemplateArgs()[0].getAsType(), Context.IntTy)) return false;
+    for (const auto *D : V->redecls()) if (!dequeDependencyDeclaration(S, SM, D)) return false;
+    for (const auto *D : T->redecls())
+      if (!dequeDependencyDeclaration(S, SM, D) ||
+          !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+    Expr::EvalResult Value;
+    if (!E->EvaluateAsInt(Value, Context) || !Value.Val.isInt() ||
+        Value.Val.getInt().getLimitedValue() != Context.getTypeSizeInChars(Context.IntTy).getQuantity())
+      return false;
+    DataSize = V;
+    return true;
+  };
+  const auto *Bytes = dyn_cast<BinaryOperator>(Call->getArg(2)->IgnoreParenImpCasts());
+  const auto Line = SM.getExpansionLineNumber(Call->getExprLoc());
+  if (!Bytes) return false;
+  if (Line == 214) {
+    if (Bytes->getOpcode() != BO_Mul || !CountReference(Bytes->getLHS()) || !Width(Bytes->getRHS())) return false;
+  } else if (Line == 226) {
+    const auto *Product = dyn_cast<BinaryOperator>(Bytes->getLHS()->IgnoreParenImpCasts());
+    const auto *Previous = Product ? dyn_cast<BinaryOperator>(Product->getLHS()->IgnoreParenImpCasts()) : nullptr;
+    const auto *One = Previous ? dyn_cast<IntegerLiteral>(Previous->getRHS()->IgnoreParenImpCasts()) : nullptr;
+    if (Bytes->getOpcode() != BO_Add || !Product || Product->getOpcode() != BO_Mul ||
+        !Previous || Previous->getOpcode() != BO_Sub || !One || !One->getValue().isOne() ||
+        !CountReference(Previous->getLHS()) || !Width(Product->getRHS()) || !DataWidth(Bytes->getRHS())) return false;
+  } else return false;
+  unsigned Nodes = 0;
+  std::function<bool(const Stmt *, unsigned)> Closed;
+  Closed = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node || Depth > 8 || ++Nodes > 32) return false;
+    const auto *E = dyn_cast<Expr>(Node);
+    if (!E || E->isTypeDependent() || E->isValueDependent() || E->isInstantiationDependent()) return false;
+    if (Node != Call && !isa<ImplicitCastExpr>(Node) && !isa<ParenExpr>(Node) &&
+        !isa<ConstantExpr>(Node) && !isa<DeclRefExpr>(Node) && !isa<BinaryOperator>(Node) &&
+        !isa<UnaryExprOrTypeTraitExpr>(Node) && !isa<IntegerLiteral>(Node)) return false;
+    if (const auto *Ref = dyn_cast<DeclRefExpr>(Node)) {
+      const auto *D = Ref->getDecl();
+      if (D != Callee && D != Destination && D != Source && D != Count && D != DataSize) return false;
+    }
+    if (const auto *B = dyn_cast<BinaryOperator>(Node);
+        B && B->getOpcode() != BO_Add && B->getOpcode() != BO_Sub && B->getOpcode() != BO_Mul) return false;
+    auto Location = [&](SourceLocation L) {
+      const auto File = L.isValid() && !L.isMacroID() ? S.sdkFile(SM, L) : std::nullopt;
+      return File && File->Root == "libcxx" && File->Path == "__string/constexpr_c_functions.h";
+    };
+    if (!Location(Node->getBeginLoc()) || !Location(Node->getEndLoc()) || !Location(E->getExprLoc())) return false;
+    for (const auto *Child : Node->children()) if (!Closed(Child, Depth + 1)) return false;
+    return true;
+  };
+  // The owner's preceding local count initializer and remaining body retain
+  // their ordinary source graph checks. Only these closed builtin operands
+  // use a separate small budget, as do the existing pinned query leaves.
+  return Closed(Call, 0);
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false) {
   const auto *RootMethod = dyn_cast_or_null<CXXMethodDecl>(Root);
@@ -50845,6 +50939,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
         }
       }
       if (PriorityRoot && priorityAlignmentAssumption(S, SM, Call, Context)) return true;
+      if (PriorityRoot && priorityClosedMemoryTransfer(S, SM, Call, Context)) return true;
       if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
       if (!dequeScalarDestruction(S, SM, Call, Context) &&
           !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
