@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-emplace-value-reference",
+      "formal_test_name": "TranslateTest.CoreV2DequeEmplaceValueReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "488b7ee82b99a99b90b193b37a20aa2fe53ba1669f603df9117ba43501e5d7a7",
+      "original_case_source_sha256": "488b7ee82b99a99b90b193b37a20aa2fe53ba1669f603df9117ba43501e5d7a7",
+      "gtest_body_sha256": "98e9a91897fe1477b13a16cb9950af3a85ee7333becda54d10c49247458aba8e"
+    },
+    {
+      "name": "deque-emplace-block-boundaries",
+      "formal_test_name": "TranslateTest.CoreV2DequeEmplaceBlockBoundariesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b15ddb715c8098896071599ba922096ceab9d5839f798cffc0f4f7983628f0fe",
+      "original_case_source_sha256": "b15ddb715c8098896071599ba922096ceab9d5839f798cffc0f4f7983628f0fe",
+      "gtest_body_sha256": "ca7b1398234f3500c5043da230ae20ceeeb5b499aa04ba220f1a4f69624abf08"
+    },
+    {
+      "name": "stack-emplace-value-reference",
+      "formal_test_name": "TranslateTest.CoreV2StackEmplaceValueReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "54e3617b768a11b7a81559d11a9709efb8753ede50d6e370cb12655e03bbf695",
+      "original_case_source_sha256": "54e3617b768a11b7a81559d11a9709efb8753ede50d6e370cb12655e03bbf695",
+      "gtest_body_sha256": "1a0e99706505b39cf937d5ff00ae381be69db7c8509870902f40a1c250fddcdc"
+    },
+    {
+      "name": "queue-emplace-value-reference",
+      "formal_test_name": "TranslateTest.CoreV2QueueEmplaceValueReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d5992ee55164a8def0763708d38e88e77728115ef9809f01909509107b829f25",
+      "original_case_source_sha256": "d5992ee55164a8def0763708d38e88e77728115ef9809f01909509107b829f25",
+      "gtest_body_sha256": "8ebc3772c79dd57515b698c568203f820d269d3d77f06d9bc99556814e963a32"
+    },
+    {
+      "name": "deque-emplace-live-allocation-reference",
+      "formal_test_name": "TranslateTest.CoreV2DequeEmplaceLiveAllocationReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c71330bfd4705a54d76061a569d9596868d2d1916973b24c131b9dbf78898eac",
+      "original_case_source_sha256": "c71330bfd4705a54d76061a569d9596868d2d1916973b24c131b9dbf78898eac",
+      "gtest_body_sha256": "0fb144d9930768c33ea621d326eb1d1bd4713b7f28e545e4c5ce57b8e20af31b"
+    },
+    {
+      "name": "deque-emplace-owned-argument-effects",
+      "formal_test_name": "TranslateTest.CoreV2DequeEmplaceOwnedArgumentEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9a26f53957a297e5a299e2fa8df252c5cabb6dea53c61840f82183bd20d637fd",
+      "original_case_source_sha256": "9a26f53957a297e5a299e2fa8df252c5cabb6dea53c61840f82183bd20d637fd",
+      "gtest_body_sha256": "57510f3ac5a996b3b8ca1bf79f3c15febc609f4aba7c8f244723395e22c1f49a"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "deque-emplace-back-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeEmplaceBackOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "6d853c1bf5dc8063aaa4ffa0a37b38e2f0ce78fdead9a438c3524435d6ba20b7",
+      "original_case_source_sha256": "6d853c1bf5dc8063aaa4ffa0a37b38e2f0ce78fdead9a438c3524435d6ba20b7",
+      "gtest_body_sha256": "ec21c0fab2f65d2cce5e81afbe17c4677a20d6c87cbf852f8eb8d741b7ab676c"
+    },
+    {
+      "name": "deque-emplace-front-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeEmplaceFrontOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "0ca82832e2c65116b568df5cdd8460080158a54ade962688890df1f2bc9b25c9",
+      "original_case_source_sha256": "0ca82832e2c65116b568df5cdd8460080158a54ade962688890df1f2bc9b25c9",
+      "gtest_body_sha256": "6f10ba965df347dbfd8d7c6cc130cc1bdd3835258515b6debeb9d75c37e00b3a"
+    },
+    {
+      "name": "stack-emplace-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2StackEmplaceOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "188494ed5ad49f115d064a197cd1eafe7324c83df0cac7fce8232e46cc61802e",
+      "original_case_source_sha256": "188494ed5ad49f115d064a197cd1eafe7324c83df0cac7fce8232e46cc61802e",
+      "gtest_body_sha256": "7d48ee103b55b19166f1c17e134207082f418825b79534780651791d5739b147"
+    },
+    {
+      "name": "queue-emplace-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2QueueEmplaceOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "cdf5e155bd854a63fba2d9a084eb737ce1e2c61b0f7a14bb6704071a1d8435e0",
+      "original_case_source_sha256": "cdf5e155bd854a63fba2d9a084eb737ce1e2c61b0f7a14bb6704071a1d8435e0",
+      "gtest_body_sha256": "209c39950ef59cfb09dfd6033f03196391f10030a93c351becb8f83d81832bb1"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeEmplaceValueReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeEmplaceBlockBoundariesRunAtBothOptimizations",
+    "TranslateTest.CoreV2StackEmplaceValueReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2QueueEmplaceValueReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeEmplaceLiveAllocationReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeEmplaceOwnedArgumentEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeEmplaceBackOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeEmplaceFrontOwnedBodyRejected",
+    "TranslateTest.CoreV2StackEmplaceOwnedBodyRejected",
+    "TranslateTest.CoreV2QueueEmplaceOwnedBodyRejected"
+  ],
+  "native_reference_authentication_sha256": "a302f42ceb84511493c92186d35b3a826a2236c75c778041566b3f32b4760ac8",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "f16a3e3d02d70bbe36fcc652f9cbe4d2a93409f78bd46afa64ab9fda8fc05cfa",
+  "maintained_original_sha256": "fcab2527d50a98b9425902a4897a3e8b5600554947d04516c09173fae697b7d9",
+  "previous_registered_source_sha256": "5915b366844cec5abd8789ef8125eb6b0859157db51a3a5917ed08dba2b03110",
+  "previous_maintained_original_sha256": "b214d59f1b1a42ebb6fad5eb859aecbdda973b596a6ded29a3444bbf1108fb08",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7632,
+  "current_python_registry_tests": 74,
+  "previous7622_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "55342e414549e06fbc3bc344c64d5f239f944f0a1fffb25d004589882fc1f778",
+  "extractor_sha256": "224664980ce3cab3ed6063bd5183e4d6bf19e47dcff2debf3dc2541af2d32fdd",
+  "source_cases": [
+    {
+      "name": "deque-emplace-value-reference",
+      "source": "#include <deque>\nint main(){std::deque<int> d;\nint& first=d.emplace_back();if(first!=0||&first!=&d.back())return 1;\nfirst=7;const int value=3;int& front=d.emplace_front(value);\nif(front!=3||&front!=&d.front()||&first!=&d.back())return 2;\nint& copy=d.emplace_back(d.front());copy=9;\nif(d.size()!=3||d.front()!=3||d[1]!=7||d.back()!=9)return 3;\nint& zero=d.emplace_front();return zero!=0||&zero!=&d.front()||d.size()!=4;\n}\n",
+      "source_sha256": "488b7ee82b99a99b90b193b37a20aa2fe53ba1669f603df9117ba43501e5d7a7",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-emplace-block-boundaries",
+      "source": "#include <deque>\nint main(){std::deque<int> d;int* middle=&d.emplace_back(17);\nfor(int i=1;i!=2050;++i){int& r=d.emplace_back(i);if(&r!=&d.back()||r!=i)return 1;}\nfor(int i=1;i!=2050;++i){int& r=d.emplace_front(-i);if(&r!=&d.front()||r!=-i)return 2;}\nif(d.size()!=4099||*middle!=17||&d[2049]!=middle)return 3;\n*middle=23;for(int i=2049;i!=0;--i){if(d.front()!=-i)return 4;d.pop_front();}\nif(d.front()!=23)return 5;d.pop_front();\nfor(int i=1;i!=2050;++i){if(d.front()!=i)return 6;d.pop_front();}\nreturn !d.empty()||d.emplace_back()!=0;\n}\n",
+      "source_sha256": "b15ddb715c8098896071599ba922096ceab9d5839f798cffc0f4f7983628f0fe",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "stack-emplace-value-reference",
+      "source": "#include <stack>\nint main(){std::stack<int> s;int& first=s.emplace();\nif(first!=0||&first!=&s.top())return 1;first=7;\nconst int value=3;int& second=s.emplace(value);\nif(second!=3||&second!=&s.top())return 2;\nint& copy=s.emplace(s.top());copy=9;\nif(s.size()!=3||s.top()!=9||first!=7)return 3;\ns.pop();if(s.top()!=3)return 4;s.pop();\nif(&s.top()!=&first||s.top()!=7)return 5;s.pop();return !s.empty();\n}\n",
+      "source_sha256": "54e3617b768a11b7a81559d11a9709efb8753ede50d6e370cb12655e03bbf695",
+      "expected_runtime_exit": 0,
+      "public_header": "stack",
+      "expected": "accept"
+    },
+    {
+      "name": "queue-emplace-value-reference",
+      "source": "#include <queue>\nint main(){std::queue<int> q;int& first=q.emplace();\nif(first!=0||&first!=&q.front()||&first!=&q.back())return 1;first=7;\nconst int value=3;int& second=q.emplace(value);\nif(second!=3||&second!=&q.back())return 2;\nint& copy=q.emplace(q.front());copy=9;\nif(q.size()!=3||q.front()!=7||q.back()!=9||second!=3)return 3;\nq.pop();if(q.front()!=3)return 4;q.pop();\nif(&q.front()!=&copy||q.front()!=9)return 5;q.pop();return !q.empty();\n}\n",
+      "source_sha256": "d5992ee55164a8def0763708d38e88e77728115ef9809f01909509107b829f25",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-emplace-live-allocation-reference",
+      "source": "using Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic int* watched;static int armed,observed;\nvoid* operator new(Size n){void* p=malloc(n);if(armed&&watched){++observed;*watched=9;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {free(p);}\nint check(bool front){std::deque<int> d;d.emplace_back(3);watched=&d.front();observed=0;armed=1;\nfor(int i=0;i!=2048&&!observed;++i){int& r=front?d.emplace_front(*watched):d.emplace_back(*watched);\nif(observed&&(r!=9||&r!=(front?&d.front():&d.back()))){armed=0;watched=nullptr;return 1;}}\narmed=0;watched=nullptr;return !observed;}\nint main(){return check(false)||check(true);}\n",
+      "source_sha256": "c71330bfd4705a54d76061a569d9596868d2d1916973b24c131b9dbf78898eac",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-emplace-owned-argument-effects",
+      "source": "#include <deque>\nstatic std::deque<int>* current;static int effects;\nstd::deque<int>* receiver(){effects=effects*10+1;return current;}\nint& argument(){effects=effects*10+2;return current->front();}\nint main(){std::deque<int> d;d.emplace_back(2);current=&d;\nint& back=receiver()->emplace_back(argument());\nint& front=receiver()->emplace_front(argument());\nif(effects!=1212||d.size()!=3||&back!=&d.back()||&front!=&d.front())return 1;\nback=7;front=9;int& zero=receiver()->emplace_front();\nreturn effects!=12121||zero!=0||&zero!=&d.front()||d[1]!=9||d.back()!=7;\n}\n",
+      "source_sha256": "9a26f53957a297e5a299e2fa8df252c5cabb6dea53c61840f82183bd20d637fd",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-emplace-back-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> template<> deque<int>::reference deque<int>::emplace_back<int&>(int& value){return value;}\n}}\nint main(){std::deque<int> d;int value=7;int& result=d.emplace_back(value);return &result!=&value;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "6d853c1bf5dc8063aaa4ffa0a37b38e2f0ce78fdead9a438c3524435d6ba20b7"
+    },
+    {
+      "name": "deque-emplace-front-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> template<> deque<int>::reference deque<int>::emplace_front<int&>(int& value){return value;}\n}}\nint main(){std::deque<int> d;int value=7;int& result=d.emplace_front(value);return &result!=&value;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "0ca82832e2c65116b568df5cdd8460080158a54ade962688890df1f2bc9b25c9"
+    },
+    {
+      "name": "stack-emplace-owned-body",
+      "public_header": "stack",
+      "source": "#include <stack>\nnamespace std { inline namespace __1 {\ntemplate<> template<> decltype(auto) stack<int>::emplace<int&>(int& value){return (value);}\n}}\nint main(){std::stack<int> s;int value=7;int& result=s.emplace(value);return &result!=&value;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "188494ed5ad49f115d064a197cd1eafe7324c83df0cac7fce8232e46cc61802e"
+    },
+    {
+      "name": "queue-emplace-owned-body",
+      "public_header": "queue",
+      "source": "#include <queue>\nnamespace std { inline namespace __1 {\ntemplate<> template<> decltype(auto) queue<int>::emplace<int&>(int& value){return (value);}\n}}\nint main(){std::queue<int> q;int value=7;int& result=q.emplace(value);return &result!=&value;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "cdf5e155bd854a63fba2d9a084eb737ce1e2c61b0f7a14bb6704071a1d8435e0"
+    }
+  ],
+  "source48_authentication_sha256": "83dfc0a794477b2c5e34b0c54a9085db2f20373e5f70939aecbfc4cdc6d404f4",
+  "source48_compiler_source": "099f8f410ac5382afefd5778dbaad9bf3ae133e3"
+}
