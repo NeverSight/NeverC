@@ -99,7 +99,7 @@ def main():
         assert plan['target_abis'] == TARGETS and len(plan['programs']) == 7
         assert runtime['passed'] and runtime['completed'] and runtime['actual_formal_tests'] == 221
         assert runtime['actual_frontend_request_count'] == 832 and len(runtime['actual_stl_generated_products']) == 182
-        assert runtime['sdk_files_verified'] == 665 and runtime['actual_gtest_returncode'] == 0
+        assert runtime['sdk_files_verified'] == 687 and runtime['actual_gtest_returncode'] == 0
         assert not runtime['actual_formal_failed'] and not runtime['actual_formal_skipped']
         assert sha(args.component_report) == runtime['component_report_sha256'] and component['completed'] and component['passed']
         assert component['revision'] == runtime['component_producer_revision'] and len(component['requests']) == 750
@@ -107,9 +107,13 @@ def main():
         assert sha(__file__) == plan['runner_sha256'] and len(plan['exact_private_input_sha256']) == 19
         assert all(sha(root / ('neverc/lib/Translate/Cpp/Frontend/' + name)) == digest for name, digest in plan['exact_private_input_sha256'].items())
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'; catalog = json.loads((sdk / 'catalog.json').read_bytes())
-        assert sha(sdk / 'catalog.json') == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
-        sdk_rows = catalog['headers'] + catalog['metadata']; assert len(sdk_rows) == 665
+        assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == 'b4a7b597150882cd93285481cc060d2eab6949b5c8d50b7ce234579cc814bd77'
+        sdk_rows = catalog['headers'] + catalog['metadata']; assert len(sdk_rows) == 687
         assert all(sha(sdk / row['root'] / row['path']) == row['sha256'] for row in sdk_rows)
+        current_sdk = {p.relative_to(sdk).as_posix():sha(p) for p in sdk.rglob('*') if p.is_file()}
+        assert current_sdk==plan['sdk_input_sha256']==runtime['exact_sdk_input_sha256']==component['exact_sdk_input_sha256']
+        assert len(current_sdk)==695
+        r['exact_sdk_input_sha256']=current_sdk
         owner = runtime['actual_cmake_owners']; old_hook = Path(owner['hook']); old_driver = Path(owner['driver'])
         assert sha(old_hook) == owner['hook_sha256'] and sha(old_driver) == runtime['driver_elf']['sha256']
         archive = args.archive.resolve(); backend = Path(runtime['baseline_provenance']['compiler']).resolve()
@@ -140,7 +144,7 @@ def main():
         assert (out / 'driver-version.log').read_text().strip() == 'neverc-cpp-frontend 20.1.8 protocol 1 ' + runtime['frontend_build_id']
         r.update(revision=runtime['revision'], execution_plan_sha256=sha(args.plan), runtime_report_sha256=old_report_sha,
             output=str(out), build=str(build), driver=str(driver), driver_first64_hex=driver_header.hex(),
-            exact_private_input_sha256=plan['exact_private_input_sha256'], sdk_files_verified=665,
+            exact_private_input_sha256=plan['exact_private_input_sha256'], sdk_files_verified=687,
             original_full221_frontend_requests=832, original_full221_formal_tests=221,
             actual_private_archive_sha256=sha(archive), backend_sha256=sha(backend), driver_sha256=sha(driver),
             original_hook_sha256=sha(old_hook), new_hook_sha256=sha(hook), selected_driver_statements_sha256=hashlib.sha256(before.encode()).hexdigest(),
