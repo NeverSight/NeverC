@@ -17520,28 +17520,38 @@ lower to C23 heap operations. Member swap, the pinned SDK `std::swap` overload
 and its ADL form are supported. `emplace()` constructs zero; one-argument
 `emplace` accepts the checked integer reference and value forms.
 
+Construction also accepts the pinned `std::less<int>` comparator alone, with a
+copied const vector, or with a moved vector. Pointer ranges accept `int*` or
+`const int*` of one matching type, with an explicit comparator or the pinned
+default comparator. A range can be appended to a copied const vector or a moved
+vector before heap construction. The range must be valid and ordered; its
+length and the combined storage size must fit the default allocator's limit.
+The default comparator's full-expression temporary and its trivial selected
+construction remain authenticated against the pinned SDK.
+
 `top()` retains its const integer reference. Copies own independent storage;
 assignment returns its receiver and reuses capacity when sufficient. Moves
 transfer the vector storage and leave the source vector empty. Swaps preserve
-the transferred element addresses. Receiver/argument evaluation, aliased input
-values and construction during allocation follow the checked SDK operations.
-Selected declarations, instantiated bodies, allocation and relocation helpers
-remain authenticated against the embedded SDK. Copy counts are bounded by the
-existing valid vector's allocator limit.
+the transferred element addresses. The constructors preserve vector storage
+transfer, append allocation and heap construction behavior. Receiver/argument
+evaluation, aliased input values and construction during allocation follow the
+checked SDK operations. Selected declarations, instantiated bodies, allocation
+and relocation helpers retain their bounded SDK source proofs.
 
-The heap-operation and value-operation regression families each pass ten
+The heap, value-operation and constructor regression families each pass ten
 registered GTests and twelve generated C23 executions, six each at O0 and O2,
-against their byte-identical native programs. The heap cases cover empty
-observers, duplicate and extreme integers, aliased growth, interleaved heap
-operations, allocation-time argument mutation and receiver/argument sequencing.
-The value cases cover copy independence, self-copy, assignment reference
-identity, empty sources, moved storage and source refill, member/qualified/ADL
-swap, and aliased `emplace` growth. Runtime evidence comes from Linux x86-64
-Actions jobs; source checks cover the six approved 64-bit targets. This evidence
-does not claim native execution on every target.
+against their byte-identical native programs. Heap cases cover empty observers,
+duplicate and extreme integers, aliased growth, interleaved operations,
+allocation-time argument mutation and receiver/argument sequencing. Value cases
+cover copy independence, self-copy, assignment reference identity, empty
+sources, moved storage and source refill, member/qualified/ADL swap, and aliased
+`emplace` growth. Constructor cases cover comparator-only construction, vector
+copy independence and move storage identity, mutable and const pointer ranges,
+empty ranges, and copied or moved prefixes. Runtime evidence comes from Linux
+x86-64 Actions jobs; source checks cover the six approved 64-bit targets.
 
 `top()` and `pop()` retain their nonempty preconditions. Allocation support is
-the existing successful, nonoverflowing default-allocator domain. Additional
-constructors, other element types and custom policies remain outside this
-checked surface. Full C++17/STL translation remains unfinished. NeverC's source
-language remains C23-only.
+the existing successful, nonoverflowing default-allocator domain. Allocator
+constructor overloads, other iterator and element types, and custom policies
+remain outside this checked surface. Full C++17/STL translation remains
+unfinished. NeverC's source language remains C23-only.
