@@ -50747,9 +50747,13 @@ bool priorityIntCopySubgraph(const State &S, const SourceManager &SM,
   for (const auto *D : Primary->redecls())
     if (!Pinned(D, "__algorithm/copy_move_common.h") ||
         !Pinned(D->getTemplatedDecl(), "__algorithm/copy_move_common.h")) return false;
-  for (const auto *D : Pair->redecls()) if (!Pinned(D, "__utility/pair.h")) return false;
+  auto PinnedPair = [&](const Decl *D) {
+    return ++Declarations <= 64 &&
+        (dequePinned(S, SM, D, "__utility/pair.h") || dequePinned(S, SM, D, "__fwd/pair.h"));
+  };
+  for (const auto *D : Pair->redecls()) if (!PinnedPair(D)) return false;
   for (const auto *D : PairTemplate->redecls())
-    if (!Pinned(D, "__utility/pair.h") || !Pinned(D->getTemplatedDecl(), "__utility/pair.h")) return false;
+    if (!PinnedPair(D) || !PinnedPair(D->getTemplatedDecl())) return false;
   return true;
 }
 
