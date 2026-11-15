@@ -17516,14 +17516,14 @@ The pinned C++17 `<queue>` surface admits `std::priority_queue<int>` and
 `std::priority_queue<int, std::vector<int>, std::greater<int>>` with the exact
 default vector and allocator on the six approved 64-bit targets. The same
 integer element and vector policy also accepts the transparent
-`std::greater<void>` comparator. Default, copy and move construction, destruction, copy and move
+`std::less<void>` and `std::greater<void>` comparators. Default, copy and move construction, destruction, copy and move
 assignment, `empty()`, `size()`, `top() const`, both `push` overloads and `pop()`
 lower to C23 heap operations. Member swap, the pinned SDK `std::swap` overload
 and its ADL form are supported. `emplace()` constructs zero; one-argument
 `emplace` accepts the checked integer reference and value forms.
 
-Construction also accepts the pinned `std::less<int>`, `std::greater<int>` or
-`std::greater<void>` comparator alone, with a
+Construction also accepts the pinned `std::less<int>`, `std::greater<int>`,
+`std::less<void>` or `std::greater<void>` comparator alone, with a
 copied const vector, or with a moved vector. Pointer ranges accept `int*` or
 `const int*` of one matching type, with an explicit comparator or the pinned
 default comparator. A range can be appended to a copied const vector or a moved
@@ -17551,7 +17551,10 @@ and relocation helpers retain their bounded SDK source proofs.
 The heap and value operation regressions, both constructor regression
 families, and both typed and transparent greater comparator regression families
 each pass ten registered GTests and twelve generated C23 executions, six each
-at O0 and O2, against their byte-identical native programs. Heap cases cover empty observers,
+at O0 and O2, against their byte-identical native programs. The transparent
+less comparator family separately passes ten registered GTests and twelve
+generated C23 executions against its exact native programs, covering all ten
+allocator constructor forms with max-heap results. Heap cases cover empty observers,
 duplicate and extreme integers, aliased growth, interleaved operations,
 allocation-time argument mutation and receiver/argument sequencing. Value cases
 cover copy independence, self-copy, assignment reference identity, empty
