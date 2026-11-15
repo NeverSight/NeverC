@@ -49459,7 +49459,8 @@ std::optional<UtilityPriorityQueueRecord> approvedUtilityPriorityQueueRecord(
       dequeRecordType(Arguments[2].getAsType()));
   const auto Functional = approvedFunctionalObjectRecord(S, SM, Comparator, Context);
   if (!Comparator || !Functional || Functional->Record != Comparator->getDefinition() ||
-      Comparator->getName() != "less" || Comparator->getTemplateArgs().size() != 1 ||
+      (Comparator->getName() != "less" && Comparator->getName() != "greater") ||
+      Comparator->getTemplateArgs().size() != 1 ||
       Comparator->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Comparator->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
       !Comparator->isEmpty() || !Comparator->hasTrivialDefaultConstructor() ||

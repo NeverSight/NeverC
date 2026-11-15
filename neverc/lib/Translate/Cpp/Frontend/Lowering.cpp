@@ -27116,7 +27116,9 @@ class FunctionLowering {
   }
 
 
-  void priorityQueueMakeHeap(Expression Place, const UtilityVectorRecord &Vector, SourceLocation L) {
+  void priorityQueueMakeHeap(Expression Place, const UtilityPriorityQueueRecord &Info, SourceLocation L) {
+    const auto &Vector = Info.Container;
+    const char *Ordering = Info.Comparator->getName() == "greater" ? ">" : "<";
     const auto Size = type(A.Context.getSizeType(), L);
     const auto Difference = type(A.Context.getPointerDiffType(), L);
     const auto Integer = type(Vector.ElementType, L);
@@ -27143,12 +27145,12 @@ class FunctionLowering {
     auto Right = snapshot(binary("+", Child, quantity(1, Size, L), Size, L), L);
     branch(binary("<", Right, Count, "bool", L), RightCheck, Compare, L);
     label(RightCheck, L);
-    branch(binary("<", At(Child), At(Right), "bool", L), UseRight, Compare, L);
+    branch(binary(Ordering, At(Child), At(Right), "bool", L), UseRight, Compare, L);
     label(UseRight, L);
     assign(Child, Right, L);
     jump(Compare, L); label(Compare, L);
     auto ChildValue = snapshot(At(Child), L);
-    branch(binary("<", Value, ChildValue, "bool", L), Shift, Done, L);
+    branch(binary(Ordering, Value, ChildValue, "bool", L), Shift, Done, L);
     label(Shift, L);
     assign(At(Hole), ChildValue, L);
     assign(Hole, Child, L);
@@ -27248,7 +27250,9 @@ class FunctionLowering {
   }
 
   void priorityQueuePush(Expression Place, Expression Source,
-                         const UtilityVectorRecord &Vector, SourceLocation L) {
+                         const UtilityPriorityQueueRecord &Info, SourceLocation L) {
+    const auto &Vector = Info.Container;
+    const char *Ordering = Info.Comparator->getName() == "greater" ? ">" : "<";
     const auto Size = type(A.Context.getSizeType(), L);
     const auto Difference = type(A.Context.getPointerDiffType(), L);
     const auto Pointer = type(Vector.PointerType, L);
@@ -27313,7 +27317,7 @@ class FunctionLowering {
     auto Parent = snapshot(binary("/", binary("-", Hole, quantity(1, Size, L), Size, L),
         quantity(2, Size, L), Size, L), L);
     auto ParentValue = snapshot(At(Parent), L);
-    branch(binary("<", ParentValue, Value, "bool", L), Shift, Done, L);
+    branch(binary(Ordering, ParentValue, Value, "bool", L), Shift, Done, L);
     label(Shift, L);
     assign(At(Hole), ParentValue, L);
     assign(Hole, Parent, L);
@@ -27321,7 +27325,9 @@ class FunctionLowering {
     assign(At(Hole), Value, L);
   }
 
-  void priorityQueuePop(Expression Place, const UtilityVectorRecord &Vector, SourceLocation L) {
+  void priorityQueuePop(Expression Place, const UtilityPriorityQueueRecord &Info, SourceLocation L) {
+    const auto &Vector = Info.Container;
+    const char *Ordering = Info.Comparator->getName() == "greater" ? ">" : "<";
     const auto Size = type(A.Context.getSizeType(), L);
     const auto Difference = type(A.Context.getPointerDiffType(), L);
     const auto Pointer = type(Vector.PointerType, L);
@@ -27345,12 +27351,12 @@ class FunctionLowering {
     auto Right = snapshot(binary("+", Child, quantity(1, Size, L), Size, L), L);
     branch(binary("<", Right, NewCount, "bool", L), CompareRight, Compare, L);
     label(CompareRight, L);
-    branch(binary("<", At(Child), At(Right), "bool", L), UseRight, Compare, L);
+    branch(binary(Ordering, At(Child), At(Right), "bool", L), UseRight, Compare, L);
     label(UseRight, L);
     assign(Child, Right, L);
     jump(Compare, L); label(Compare, L);
     auto ChildValue = snapshot(At(Child), L);
-    branch(binary("<", Value, ChildValue, "bool", L), Shift, Done, L);
+    branch(binary(Ordering, Value, ChildValue, "bool", L), Shift, Done, L);
     label(Shift, L);
     assign(At(Hole), ChildValue, L);
     assign(Hole, Child, L);
@@ -27408,10 +27414,10 @@ class FunctionLowering {
     }
     case UtilityPriorityQueueOperation::Push:
     case UtilityPriorityQueueOperation::Emplace:
-      priorityQueuePush(Place, *Source, Info->Container, L);
+      priorityQueuePush(Place, *Source, *Info, L);
       return Expression{};
     case UtilityPriorityQueueOperation::Pop:
-      priorityQueuePop(Place, Info->Container, L);
+      priorityQueuePop(Place, *Info, L);
       return Expression{};
     case UtilityPriorityQueueOperation::CopyAssign: {
       const auto Copy = labelName(), Done = labelName();
@@ -37050,25 +37056,25 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         break;
       case UtilityPriorityQueueConstruction::CopyContainer:
         priorityQueueCopy(Place, dereference(*Arguments[1], L), Info->Container, false, L);
-        priorityQueueMakeHeap(Place, Info->Container, L);
+        priorityQueueMakeHeap(Place, *Info, L);
         break;
       case UtilityPriorityQueueConstruction::MoveContainer:
         priorityQueueMove(Place, dereference(*Arguments[1], L), Info->Container, false, L);
-        priorityQueueMakeHeap(Place, Info->Container, L);
+        priorityQueueMakeHeap(Place, *Info, L);
         break;
       case UtilityPriorityQueueConstruction::RangeCopyContainer:
         priorityQueueCopy(Place, dereference(*Arguments[3], L), Info->Container, false, L);
         priorityQueueAppendPointerRange(Place, *Arguments[0], *Arguments[1], Info->Container, L);
-        priorityQueueMakeHeap(Place, Info->Container, L);
+        priorityQueueMakeHeap(Place, *Info, L);
         break;
       case UtilityPriorityQueueConstruction::RangeMoveContainer:
         priorityQueueMove(Place, dereference(*Arguments[3], L), Info->Container, false, L);
         priorityQueueAppendPointerRange(Place, *Arguments[0], *Arguments[1], Info->Container, L);
-        priorityQueueMakeHeap(Place, Info->Container, L);
+        priorityQueueMakeHeap(Place, *Info, L);
         break;
       case UtilityPriorityQueueConstruction::PointerRange:
         priorityQueueAppendPointerRange(Place, *Arguments[0], *Arguments[1], Info->Container, L);
-        priorityQueueMakeHeap(Place, Info->Container, L);
+        priorityQueueMakeHeap(Place, *Info, L);
         break;
       }
       assign(Expression{{"kind", "member"}, {"type", "u8"}, {"name", "nct_priority_compare"},
