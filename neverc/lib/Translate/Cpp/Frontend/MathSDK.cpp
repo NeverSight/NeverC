@@ -50713,8 +50713,51 @@ bool priorityCopyLengthError(const State &S, const SourceManager &SM,
   return true;
 }
 
+
+bool priorityIntCopySubgraph(const State &S, const SourceManager &SM,
+                              const FunctionDecl *F, const ASTContext &Context) {
+  if (!F || !F->getIdentifier() || F->getName() != "__copy_trivial_impl" ||
+      !dequeStd(F->getDeclContext()) || F->isInvalidDecl() || F->isDeleted() ||
+      F->isVariadic() || F->getNumParams() != 3 || !F->hasBody() ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+  const auto *Primary = F->getPrimaryTemplate();
+  const auto *Pattern = F->getTemplateInstantiationPattern();
+  const auto *Arguments = F->getTemplateSpecializationArgs();
+  if (!Primary || !Pattern || !Arguments || Arguments->size() != 2 ||
+      Primary->getTemplateParameters()->size() != 2) return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (Arguments->get(I).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(I).getAsType(), Context.IntTy)) return false;
+  const auto Pointer = Context.getPointerType(Context.IntTy);
+  for (const auto *Parameter : F->parameters())
+    if (Parameter->hasDefaultArg() || !Context.hasSameType(Parameter->getType(), Pointer)) return false;
+  const auto *Pair = dyn_cast_or_null<ClassTemplateSpecializationDecl>(F->getReturnType()->getAsCXXRecordDecl());
+  const auto *PairTemplate = Pair ? Pair->getSpecializedTemplate() : nullptr;
+  if (!Pair || !PairTemplate || !Pair->getIdentifier() || Pair->getName() != "pair" ||
+      !dequeStd(Pair->getDeclContext()) || Pair->getTemplateArgs().size() != 2) return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (Pair->getTemplateArgs()[I].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Pair->getTemplateArgs()[I].getAsType(), Pointer)) return false;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D, llvm::StringRef Header) {
+    return ++Declarations <= 64 && dequePinned(S, SM, D, Header);
+  };
+  for (const auto *D : F->redecls()) if (!Pinned(D, "__algorithm/copy_move_common.h")) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D, "__algorithm/copy_move_common.h")) return false;
+  for (const auto *D : Primary->redecls())
+    if (!Pinned(D, "__algorithm/copy_move_common.h") ||
+        !Pinned(D->getTemplatedDecl(), "__algorithm/copy_move_common.h")) return false;
+  for (const auto *D : Pair->redecls()) if (!Pinned(D, "__utility/pair.h")) return false;
+  for (const auto *D : PairTemplate->redecls())
+    if (!Pinned(D, "__utility/pair.h") || !Pinned(D->getTemplatedDecl(), "__utility/pair.h")) return false;
+  return true;
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
-                         const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false) {
+                         const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false,
+                         const FunctionDecl *ClosedCopyRoot = nullptr, unsigned *SharedNodes = nullptr) {
+  if (ClosedCopyRoot && (Root != ClosedCopyRoot ||
+      !priorityIntCopySubgraph(S, SM, Root, Context))) return false;
   const auto *RootMethod = dyn_cast_or_null<CXXMethodDecl>(Root);
   const auto *RootConstructor = dyn_cast_or_null<CXXConstructorDecl>(Root);
   const auto PriorityConstruction = PriorityRoot && RootConstructor
@@ -50730,7 +50773,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
          (*PriorityConstruction == UtilityPriorityQueueConstruction::Move ||
           *PriorityConstruction == UtilityPriorityQueueConstruction::MoveContainer)))));
   std::set<const FunctionDecl *> Seen;
-  unsigned Nodes = 0;
+  unsigned LocalNodes = 0;
+  unsigned &Nodes = SharedNodes ? *SharedNodes : LocalNodes;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   auto PinnedMacro = [&](SourceLocation L) {
@@ -50803,6 +50847,11 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       for (const auto *Init : C->inits())
         if (!Statement(Init->getInit(), Depth + 1)) return false;
     if (dequeClosedPointerLess(S, SM, F, Context)) return true;
+    // Only this exact SDK leaf gets an independent structural depth origin.
+    // The original function/statement checks and the outer 4096-node ledger
+    // remain shared; nested copies cannot open another such subgraph.
+    if (PriorityRoot && !ClosedCopyRoot && priorityIntCopySubgraph(S, SM, F, Context))
+      return dequeSourceGraph(S, SM, F, Context, true, F, &Nodes);
     if (PriorityRoot) {
       std::vector<const FunctionDecl *> Dependencies;
       if (priorityCapacityQuery(S, SM, F, Context, Dependencies)) {
@@ -50867,8 +50916,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       if (!Statement(Child, Depth + 1)) return false;
     return true;
   };
-  return Root && (PriorityRoot ? priorityQueueFunctionDeclarations(S, SM, Root)
-                              : dequeFunctionDeclarations(S, SM, Root)) && Function(Root, 0);
+  return Root && (ClosedCopyRoot ? Root == ClosedCopyRoot && priorityIntCopySubgraph(S, SM, Root, Context)
+                              : PriorityRoot ? priorityQueueFunctionDeclarations(S, SM, Root)
+                                             : dequeFunctionDeclarations(S, SM, Root)) && Function(Root, 0);
 }
 }
 
