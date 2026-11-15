@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "priority-greatervoid-heap-extremes",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterVoidHeapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cd5f269dbbedaae8c252cc0ce700b4029b991f3892935a35f571c4f8bfa2a887",
+      "original_case_source_sha256": "cd5f269dbbedaae8c252cc0ce700b4029b991f3892935a35f571c4f8bfa2a887",
+      "gtest_body_sha256": "d0d227f7ea683635eb103c2b5b2417df6d75f604f1c6d01c3713bc9038bbd54d"
+    },
+    {
+      "name": "priority-greatervoid-value-operations",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterVoidValuesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bdb64e30bc76f47731fea5d13390ee545cb0c9dfc11bcc359807e749cbb66ee1",
+      "original_case_source_sha256": "bdb64e30bc76f47731fea5d13390ee545cb0c9dfc11bcc359807e749cbb66ee1",
+      "gtest_body_sha256": "ca478f0d38b4d14516bf4857880943d3609a038da345e451f584bfb4171e3bee"
+    },
+    {
+      "name": "priority-greatervoid-vector-constructors",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterVoidVectorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "53b4abd90d6273fd245c2aa22bc295a02fdcc4737b3a757a51541f832ab1d16f",
+      "original_case_source_sha256": "53b4abd90d6273fd245c2aa22bc295a02fdcc4737b3a757a51541f832ab1d16f",
+      "gtest_body_sha256": "c2e0a6978f2aef44be25cb7029e7df7e2808cf80253676e015bfd3c8bb10fe85"
+    },
+    {
+      "name": "priority-greatervoid-pointer-ranges",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterVoidPointerRangesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "91791ed3c615d4db30e60ba6d50aab2b521b31c4cf5bcf679f67b8c3da1d364a",
+      "original_case_source_sha256": "91791ed3c615d4db30e60ba6d50aab2b521b31c4cf5bcf679f67b8c3da1d364a",
+      "gtest_body_sha256": "4cc8202a83fafea0389726225963f1e068ec6fd49c3074e1ed99c78f356f96ef"
+    },
+    {
+      "name": "priority-greatervoid-range-prefixes",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterVoidRangePrefixesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "58c4412cf92daa89d80d0ea385654b4db3583c647a6e42b666d145e59f17048c",
+      "original_case_source_sha256": "58c4412cf92daa89d80d0ea385654b4db3583c647a6e42b666d145e59f17048c",
+      "gtest_body_sha256": "92574654f273ad5a0f7bc67a3d878e56a9b0df6e4332d92b3517fea8fa6104f8"
+    },
+    {
+      "name": "priority-greatervoid-allocator-constructors",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterVoidAllocatorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8aecddd9aecdef98b645302c2fb7f9afce66986cef3e9602e75f01a958d23378",
+      "original_case_source_sha256": "8aecddd9aecdef98b645302c2fb7f9afce66986cef3e9602e75f01a958d23378",
+      "gtest_body_sha256": "4c05616e8192c3ab50001f6d97c896b82972e7f53eb49aedf5414a0f2bd36ca9"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "priority-greatervoid-owned-comparator-body",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterVoidOwnedComparatorRejected",
+      "expected": "reject",
+      "source_sha256": "e57805c560111e68ab71765d0f0bf707d82e30f8e01a43e893426f1060d0b0f6",
+      "original_case_source_sha256": "e57805c560111e68ab71765d0f0bf707d82e30f8e01a43e893426f1060d0b0f6",
+      "gtest_body_sha256": "fde6ebaa632e7e82448d932ad7acc3227088f4b41761698ba5b8f61b1fa2df62"
+    },
+    {
+      "name": "priority-greatervoid-owned-push-body",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterVoidOwnedPushRejected",
+      "expected": "reject",
+      "source_sha256": "314a4a17665566c0953275aa11c54f5e66ef7e7802006ec20a72c5a6e568620d",
+      "original_case_source_sha256": "314a4a17665566c0953275aa11c54f5e66ef7e7802006ec20a72c5a6e568620d",
+      "gtest_body_sha256": "eff9f14ffffb0916b6165dcedc7053825ec07a6117af6ede9be75a93e28ca6ea"
+    },
+    {
+      "name": "priority-greatervoid-owned-make-heap-body",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterVoidOwnedMakeHeapRejected",
+      "expected": "reject",
+      "source_sha256": "7719f275cd26c149ea8b58f7347f5f1d7750e9afaf6161a3dcff2ed55b0e9f98",
+      "original_case_source_sha256": "7719f275cd26c149ea8b58f7347f5f1d7750e9afaf6161a3dcff2ed55b0e9f98",
+      "gtest_body_sha256": "6601fffadd49e8a9d7c40b9312e944a86845e02e2090a5efda5dd11236a4dec3"
+    },
+    {
+      "name": "priority-greatervoid-owned-vector-length-error",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterVoidOwnedLengthErrorRejected",
+      "expected": "reject",
+      "source_sha256": "c25e6024f666c3e26c4b3d50caee12fceab146cc7df405b3162b5aa411b3e90c",
+      "original_case_source_sha256": "c25e6024f666c3e26c4b3d50caee12fceab146cc7df405b3162b5aa411b3e90c",
+      "gtest_body_sha256": "5e3675abee05310fe393c6e690eaf5cad393108f06125ab98ea39dde353e99b8"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2PriorityQueueGreaterVoidHeapRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterVoidValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterVoidVectorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterVoidPointerRangesRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterVoidRangePrefixesRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterVoidAllocatorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterVoidOwnedComparatorRejected",
+    "TranslateTest.CoreV2PriorityQueueGreaterVoidOwnedPushRejected",
+    "TranslateTest.CoreV2PriorityQueueGreaterVoidOwnedMakeHeapRejected",
+    "TranslateTest.CoreV2PriorityQueueGreaterVoidOwnedLengthErrorRejected"
+  ],
+  "native_reference_authentication_sha256": "56f6671046f8a341e7c9dda479f4fa6f944957953f7a7ddb2692d7a28bf17ce4",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "b057ff0fedb49f20e01506f125347ec6ee42aff804404ee3d12ea08b493c002a",
+  "maintained_original_sha256": "ec04f1f8680519bb4ca25a8bd47998c292e4717da44826fccc6b476463b824c9",
+  "previous_registered_source_sha256": "0ad7be7ccffa9996fe7f86363478af191633a9256ba23df48b829959ad3bf368",
+  "previous_maintained_original_sha256": "aa10a69f4c0902212f0c1b08063294e9bb8270dfe708bdc3e0011bafb2eb99f0",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7612,
+  "current_python_registry_tests": 70,
+  "previous7602_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "c02aefa7b3bf4bc007244fdd21fa7a174f679d5d3d0e50ec859f3fdb903020ee",
+  "extractor_sha256": "ce9f37a3170df35750bc78a944eb3ad95e46f6ca63826ef181685bd3a3795f62",
+  "source_cases": [
+    {
+      "name": "priority-greatervoid-heap-extremes",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<void>>;\nint main(){Minimum q;\nif(!q.empty()||q.size()!=0)return 1;int input[6]={7,-3,7,2147483647,-2147483647-1,0};\nfor(int x:input)q.push(x);int expected[6]={-2147483647-1,-3,0,7,7,2147483647};\nfor(int i=0;i!=6;++i){if(q.size()!=static_cast<unsigned>(6-i)||q.top()!=expected[i])return 2;q.pop();}\nreturn !q.empty();}\n",
+      "source_sha256": "cd5f269dbbedaae8c252cc0ce700b4029b991f3892935a35f571c4f8bfa2a887",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greatervoid-value-operations",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<void>>;\nint main(){Minimum q;q.push(9);q.push(-3);q.push(4);\nMinimum copy(q);if(copy.top()!=-3||&copy.top()==&q.top())return 1;\nMinimum assigned;Minimum& reference=(assigned=copy);if(&reference!=&assigned||assigned.size()!=3)return 2;\nconst int* storage=&q.top();Minimum moved(std::move(q));if(!q.empty()||&moved.top()!=storage)return 3;\nMinimum other;other.push(12);other.swap(moved);if(other.top()!=-3||&other.top()!=storage||moved.top()!=12)return 4;\nMinimum final;final=std::move(assigned);if(!assigned.empty()||final.top()!=-3)return 5;\nstd::swap(final,moved);if(final.top()!=12||moved.top()!=-3)return 6;\nq.emplace();q.emplace(-11);q.emplace(q.top());if(q.size()!=3||q.top()!=-11)return 7;\nq.pop();if(q.top()!=-11)return 8;q.pop();return q.top()!=0;}\n",
+      "source_sha256": "bdb64e30bc76f47731fea5d13390ee545cb0c9dfc11bcc359807e749cbb66ee1",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greatervoid-vector-constructors",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<void>>;\nint main(){std::greater<void> compare;\nMinimum empty(compare);if(!empty.empty())return 1;std::vector<int> values{9,-2,6,6};\nconst auto& original=values;Minimum copy(compare,original);values[0]=11;\nconst int* storage=&values[0];Minimum moved(compare,std::move(values));\nif(!values.empty()||&moved.top()!=storage||&copy.top()==storage)return 2;\nint a[4]={-2,6,6,9},b[4]={-2,6,6,11};for(int i=0;i!=4;++i){\nif(copy.top()!=a[i]||moved.top()!=b[i])return 3;copy.pop();moved.pop();}\nvalues.push_back(21);return !copy.empty()||!moved.empty()||values[0]!=21;}\n",
+      "source_sha256": "53b4abd90d6273fd245c2aa22bc295a02fdcc4737b3a757a51541f832ab1d16f",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greatervoid-pointer-ranges",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<void>>;\nint main(){int values[5]={4,-8,17,4,2};const int* first=values;\nMinimum a(first,first+5);std::greater<void> compare;Minimum b(values,values+5,compare);\nMinimum empty(first+5,first+5);if(!empty.empty()||a.size()!=5||b.size()!=5)return 1;\nint expected[5]={-8,2,4,4,17};for(int i=0;i!=5;++i){\nif(a.top()!=expected[i]||b.top()!=expected[i])return 2;a.pop();b.pop();}\nreturn !a.empty()||!b.empty()||values[0]!=4||values[2]!=17;}\n",
+      "source_sha256": "91791ed3c615d4db30e60ba6d50aab2b521b31c4cf5bcf679f67b8c3da1d364a",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greatervoid-range-prefixes",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<void>>;\nint main(){std::greater<void> compare;std::vector<int> prefix{6,2};\nprefix.reserve(16);const int added[3]={8,-1,6};const auto& original=prefix;\nMinimum copy(added,added+3,compare,original);const int* storage=&prefix[0];\nMinimum moved(added,added+3,compare,std::move(prefix));\nif(!prefix.empty()||copy.size()!=5||moved.size()!=5||&moved.top()!=storage||&copy.top()==storage)return 1;\nint expected[5]={-1,2,6,6,8};for(int i=0;i!=5;++i){\nif(copy.top()!=expected[i]||moved.top()!=expected[i])return 2;copy.pop();moved.pop();}\nprefix.push_back(21);return !copy.empty()||!moved.empty()||prefix[0]!=21;}\n",
+      "source_sha256": "58c4412cf92daa89d80d0ea385654b4db3583c647a6e42b666d145e59f17048c",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greatervoid-allocator-constructors",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<void>>;\nint main(){std::allocator<int> alloc;std::greater<void> compare;\nMinimum a(alloc),b(compare,alloc);if(!a.empty()||!b.empty())return 1;\nstd::vector<int> values{5,-1};const auto& original=values;Minimum c(compare,original,alloc);\nMinimum d(compare,std::move(values),alloc);Minimum e(c,alloc);const int* queue_storage=&d.top();\nMinimum f(std::move(d),alloc);if(!values.empty()||!d.empty()||&f.top()!=queue_storage||&e.top()==&c.top())return 2;\nint range[2]={3,-7};Minimum g(range,range+2,alloc),h(range,range+2,compare,alloc);\nstd::vector<int> prefix{8,2},moved_prefix{6,4};moved_prefix.reserve(16);const int* storage=&moved_prefix[0];\nconst auto& constant_prefix=prefix;Minimum i(range,range+2,compare,constant_prefix,alloc);\nMinimum j(range,range+2,compare,std::move(moved_prefix),alloc);\nif(c.top()!=-1||e.top()!=-1||f.top()!=-1||g.top()!=-7||h.top()!=-7||i.top()!=-7||j.top()!=-7)return 3;\nif(c.size()!=2||e.size()!=2||f.size()!=2||g.size()!=2||h.size()!=2||i.size()!=4||j.size()!=4)return 4;\nreturn prefix.size()!=2||prefix[0]!=8||!moved_prefix.empty()||&j.top()!=storage;}\n",
+      "source_sha256": "8aecddd9aecdef98b645302c2fb7f9afce66986cef3e9602e75f01a958d23378",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greatervoid-owned-comparator-body",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<void>>;\nnamespace std { inline namespace __1 {\ntemplate<> inline constexpr auto greater<void>::operator()<int&,int&>(int&,int&) const noexcept -> bool {return false;}\n}}\nint main(){int left=0,right=1;std::greater<void> compare;if(compare(left,right))return 1;\nMinimum q;q.push(3);q.push(-8);return q.top()!=-8;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "e57805c560111e68ab71765d0f0bf707d82e30f8e01a43e893426f1060d0b0f6"
+    },
+    {
+      "name": "priority-greatervoid-owned-push-body",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<void>>;\nnamespace std { inline namespace __1 {\ntemplate<> inline void priority_queue<int,vector<int>,greater<void>>::push(const int&) {}\n}}\nint main(){Minimum q;int value=3;q.push(value);return q.empty();}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "314a4a17665566c0953275aa11c54f5e66ef7e7802006ec20a72c5a6e568620d"
+    },
+    {
+      "name": "priority-greatervoid-owned-make-heap-body",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<void>>;\nnamespace std { inline namespace __1 {\ntemplate<> inline void make_heap<int*,greater<void>>(int*,int*,greater<void>) {}\n}}\nint main(){std::greater<void> compare;std::vector<int> values{3,-8};const auto& original=values;\nMinimum q(compare,original);return q.top()!=-8;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "7719f275cd26c149ea8b58f7347f5f1d7750e9afaf6161a3dcff2ed55b0e9f98"
+    },
+    {
+      "name": "priority-greatervoid-owned-vector-length-error",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<void>>;\nnamespace std { inline namespace __1 {\ntemplate<> inline void vector<int>::__throw_length_error() {__builtin_trap();}\n}}\nint main(){std::greater<void> compare;std::allocator<int> alloc;std::vector<int> values{3,-8};\nconst auto& original=values;Minimum q(compare,original,alloc);return q.empty();}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "c25e6024f666c3e26c4b3d50caee12fceab146cc7df405b3162b5aa411b3e90c"
+    }
+  ],
+  "source48_authentication_sha256": "df68bebbe8eb19e634882aa609d0cfce4e97872bd87576349c0b81fc66307e34",
+  "source48_compiler_source": "dd7cc19c6d18f7ee072aec3ec7b3382258d62fdf"
+}
