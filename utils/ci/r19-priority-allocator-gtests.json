@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "priority-alloc-empty-comparator",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntAllocatorEmptyComparatorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "39bf76ac05706bf0c3f9fd9b402a9386cf3a0053a2235d534f696fbd9b617b4b",
+      "original_case_source_sha256": "39bf76ac05706bf0c3f9fd9b402a9386cf3a0053a2235d534f696fbd9b617b4b",
+      "gtest_body_sha256": "21aefc40d19fa5f03eed165afff291899971cd0377275b104212181245741f88"
+    },
+    {
+      "name": "priority-alloc-copy-vector",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntAllocatorCopyVectorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c3f47e6d248677b3a76d22ff65ea9290bd5c395e55f04daa2f9b17c3bd52f308",
+      "original_case_source_sha256": "c3f47e6d248677b3a76d22ff65ea9290bd5c395e55f04daa2f9b17c3bd52f308",
+      "gtest_body_sha256": "8c3442d1369a4b074caed47254da9272e04b24f061c9e2a141c3a06b434031e9"
+    },
+    {
+      "name": "priority-alloc-move-vector",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntAllocatorMoveVectorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "15ce6263c91a4baad58cf1b3b21c8e7fe2f9c65fe37a85d1f173e35ab9b82730",
+      "original_case_source_sha256": "15ce6263c91a4baad58cf1b3b21c8e7fe2f9c65fe37a85d1f173e35ab9b82730",
+      "gtest_body_sha256": "ad97b40c739730204e9b812a4347470d2267766ecd91564bff06e13d713dedbc"
+    },
+    {
+      "name": "priority-alloc-copy-move-queue",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntAllocatorCopyMoveQueueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cd4c2aecd8c54436d9a1490b907ee7fb7acffb784978b7aef414f312a8f594ee",
+      "original_case_source_sha256": "cd4c2aecd8c54436d9a1490b907ee7fb7acffb784978b7aef414f312a8f594ee",
+      "gtest_body_sha256": "9a04836e8b77bb6fdf6dbb8a29be6443278c3a5f0a6c40cd1e23199ffaca17f1"
+    },
+    {
+      "name": "priority-alloc-pointer-range",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntAllocatorPointerRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f2b3a52ca11c1f5ae75ef65f84151fa2e2f36827a258690e99caee64eaa658fe",
+      "original_case_source_sha256": "f2b3a52ca11c1f5ae75ef65f84151fa2e2f36827a258690e99caee64eaa658fe",
+      "gtest_body_sha256": "074367d9421001804c59fdfc4c5d6a46a62141a8e8d367fe3bac77341bfc17df"
+    },
+    {
+      "name": "priority-alloc-range-copy-move-prefix",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueIntAllocatorRangeCopyMovePrefixRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d34b3a3ea7d243990f674ba751274d51aee87cb94472dac40a2e55b4324415d8",
+      "original_case_source_sha256": "d34b3a3ea7d243990f674ba751274d51aee87cb94472dac40a2e55b4324415d8",
+      "gtest_body_sha256": "7005df648f1919684da0b0657eb9710944d75aeeb12aca7a808da36388160a3d"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "priority-alloc-owned-allocator-constructor",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueOwnedAllocatorConstructorRejected",
+      "expected": "reject",
+      "source_sha256": "d5a82f787ee91cf1721c742f8e9c084d72f26e7c59c3e54a375ba93be8d32922",
+      "original_case_source_sha256": "d5a82f787ee91cf1721c742f8e9c084d72f26e7c59c3e54a375ba93be8d32922",
+      "gtest_body_sha256": "48b66d2293617e143b31a637eb022e2946f1030dc00a0d76e93caf58adf7d147"
+    },
+    {
+      "name": "priority-alloc-owned-vector-copy-constructor",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueAllocatorOwnedVectorCopyConstructorRejected",
+      "expected": "reject",
+      "source_sha256": "44fe7ce8e579bde4d14c7d667a0d2c0e2c074b9d7392d52f030c351729af9c61",
+      "original_case_source_sha256": "44fe7ce8e579bde4d14c7d667a0d2c0e2c074b9d7392d52f030c351729af9c61",
+      "gtest_body_sha256": "6c975474c217882d3b0c91dfafa34b75f69cabeb61a56ed51d343ad4dc24d038"
+    },
+    {
+      "name": "priority-alloc-owned-make-heap-body",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueAllocatorOwnedMakeHeapRejected",
+      "expected": "reject",
+      "source_sha256": "7d07e60583dd0faab41776fc8bfd2675501b524c8d508b5293cfebf2c8026c32",
+      "original_case_source_sha256": "7d07e60583dd0faab41776fc8bfd2675501b524c8d508b5293cfebf2c8026c32",
+      "gtest_body_sha256": "31f50aa44c6c42c04395771085a6709673b23ddafb4c268899f9f889e6f2d23e"
+    },
+    {
+      "name": "priority-alloc-owned-vector-length-error",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueAllocatorOwnedLengthErrorRejected",
+      "expected": "reject",
+      "source_sha256": "886b37f2aa8a830c5ae40eb6f09e6287a0abc0fc9c18020d196a000569cbc0de",
+      "original_case_source_sha256": "886b37f2aa8a830c5ae40eb6f09e6287a0abc0fc9c18020d196a000569cbc0de",
+      "gtest_body_sha256": "e046152e9f8acd50db1a0353b91d2581e30bb25e96da7293b710733e70253621"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2PriorityQueueIntAllocatorEmptyComparatorRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntAllocatorCopyVectorRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntAllocatorMoveVectorRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntAllocatorCopyMoveQueueRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntAllocatorPointerRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueIntAllocatorRangeCopyMovePrefixRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueOwnedAllocatorConstructorRejected",
+    "TranslateTest.CoreV2PriorityQueueAllocatorOwnedVectorCopyConstructorRejected",
+    "TranslateTest.CoreV2PriorityQueueAllocatorOwnedMakeHeapRejected",
+    "TranslateTest.CoreV2PriorityQueueAllocatorOwnedLengthErrorRejected"
+  ],
+  "native_reference_authentication_sha256": "0154ded6550f559be00f9fc940afe55729287bd04b57ac1f80bd4181f5c6d4bb",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "64b1cde205bfeff75a9b6403de8ad540808d947b8f7acc290d961c3a4b2faf04",
+  "maintained_original_sha256": "2f6296ebbabc79f1a74007f41b33557c0e8f068209bcb5deb3c0128953731e4d",
+  "previous_registered_source_sha256": "9cf04e73de91e719833e84ea4b8941387f4a721dad5c90ddb9d51441a6eedb06",
+  "previous_maintained_original_sha256": "290bfbd9b89cb8c15185c13d43b6d559e4d2037a7502e3211a4677d4d9c5a5ec",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7592,
+  "current_python_registry_tests": 66,
+  "previous7582_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "10c6a4f6b8682d29b065bdc3feeb574430f43b79014a7fc53a706f51ac2ea89e",
+  "extractor_sha256": "e1deebc69a78bb8a53007fb74f3361d7336fc8bb1923deaaa085ef8c9f8a9974",
+  "source_cases": [
+    {
+      "name": "priority-alloc-empty-comparator",
+      "source": "#include <queue>\n#include <memory>\nint main(){std::allocator<int> alloc;std::less<int> compare;\nstd::priority_queue<int> a(alloc);std::priority_queue<int> b(compare,alloc);\nif(!a.empty()||!b.empty())return 1;a.push(-4);a.push(9);b.push(3);b.push(12);\nif(a.top()!=9||b.top()!=12)return 2;a.pop();b.pop();return a.top()!=-4||b.top()!=3;}\n",
+      "source_sha256": "39bf76ac05706bf0c3f9fd9b402a9386cf3a0053a2235d534f696fbd9b617b4b",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-alloc-copy-vector",
+      "source": "#include <queue>\n#include <memory>\n#include <vector>\nint main(){std::allocator<int> alloc;std::less<int> compare;std::vector<int> values{3,11,3,-5};\nconst auto& source=values;std::priority_queue<int> q(compare,source,alloc);\nif(q.size()!=4||q.top()!=11||&q.top()==&values[0])return 1;\nvalues[1]=99;if(q.top()!=11)return 2;int expected[4]={11,3,3,-5};\nfor(int i=0;i!=4;++i){if(q.top()!=expected[i])return 3;q.pop();}\nreturn !q.empty()||values.size()!=4||values[1]!=99;}\n",
+      "source_sha256": "c3f47e6d248677b3a76d22ff65ea9290bd5c395e55f04daa2f9b17c3bd52f308",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-alloc-move-vector",
+      "source": "#include <queue>\n#include <memory>\n#include <vector>\n#include <utility>\nint main(){std::allocator<int> alloc;std::less<int> compare;std::vector<int> values{2,14,-3,6};\nconst int* storage=&values[0];std::priority_queue<int> q(compare,std::move(values),alloc);\nif(!values.empty()||q.size()!=4||q.top()!=14||&q.top()!=storage)return 1;\nvalues.push_back(8);if(values[0]!=8||q.top()!=14)return 2;int expected[4]={14,6,2,-3};\nfor(int i=0;i!=4;++i){if(q.top()!=expected[i])return 3;q.pop();}return !q.empty();}\n",
+      "source_sha256": "15ce6263c91a4baad58cf1b3b21c8e7fe2f9c65fe37a85d1f173e35ab9b82730",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-alloc-copy-move-queue",
+      "source": "#include <queue>\n#include <memory>\n#include <utility>\nint main(){std::allocator<int> alloc;std::priority_queue<int> source;\nsource.push(4);source.push(-2);source.push(17);const auto& original=source;\nstd::priority_queue<int> copy(original,alloc);\nif(copy.size()!=3||copy.top()!=17||&copy.top()==&source.top())return 1;\nconst int* storage=&source.top();std::priority_queue<int> moved(std::move(source),alloc);\nif(!source.empty()||moved.size()!=3||&moved.top()!=storage)return 2;\nsource.push(21);if(source.top()!=21||copy.top()!=17||moved.top()!=17)return 3;\nint expected[3]={17,4,-2};for(int i=0;i!=3;++i){\nif(copy.top()!=expected[i]||moved.top()!=expected[i])return 4;copy.pop();moved.pop();}\nreturn !copy.empty()||!moved.empty();}\n",
+      "source_sha256": "cd4c2aecd8c54436d9a1490b907ee7fb7acffb784978b7aef414f312a8f594ee",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-alloc-pointer-range",
+      "source": "#include <queue>\n#include <memory>\nint main(){std::allocator<int> alloc;std::less<int> compare;int values[5]={4,-8,17,4,2};\nconst int* first=values;std::priority_queue<int> a(first,first+5,alloc);\nstd::priority_queue<int> b(values,values+5,compare,alloc);\nstd::priority_queue<int> empty(first+5,first+5,alloc);\nif(!empty.empty()||a.size()!=5||b.size()!=5)return 1;int expected[5]={17,4,4,2,-8};\nfor(int i=0;i!=5;++i){if(a.top()!=expected[i]||b.top()!=expected[i])return 2;a.pop();b.pop();}\nreturn !a.empty()||!b.empty()||values[0]!=4||values[2]!=17;}\n",
+      "source_sha256": "f2b3a52ca11c1f5ae75ef65f84151fa2e2f36827a258690e99caee64eaa658fe",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-alloc-range-copy-move-prefix",
+      "source": "#include <queue>\n#include <memory>\n#include <vector>\n#include <utility>\nint main(){std::allocator<int> alloc;std::less<int> compare;std::vector<int> prefix{6,2};\nprefix.reserve(16);const int added[3]={8,-1,6};const auto& original=prefix;\nstd::priority_queue<int> copy(added,added+3,compare,original,alloc);\nif(copy.size()!=5||prefix.size()!=2||prefix[0]!=6||&copy.top()==&prefix[0])return 1;\nconst int* storage=&prefix[0];std::priority_queue<int> moved(added,added+3,compare,std::move(prefix),alloc);\nif(!prefix.empty()||moved.size()!=5||&moved.top()!=storage)return 2;\nprefix.push_back(21);int expected[5]={8,6,6,2,-1};for(int i=0;i!=5;++i){\nif(copy.top()!=expected[i]||moved.top()!=expected[i])return 3;copy.pop();moved.pop();}\nreturn !copy.empty()||!moved.empty()||prefix.size()!=1||prefix[0]!=21;}\n",
+      "source_sha256": "d34b3a3ea7d243990f674ba751274d51aee87cb94472dac40a2e55b4324415d8",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-alloc-owned-allocator-constructor",
+      "source": "#include <queue>\n#include <memory>\nnamespace std { inline namespace __1 {\ntemplate<> template<> inline priority_queue<int>::priority_queue(const allocator<int>&) : c(), comp() {}\n}}\nint main(){std::allocator<int> alloc;std::priority_queue<int> q(alloc);return !q.empty();}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "d5a82f787ee91cf1721c742f8e9c084d72f26e7c59c3e54a375ba93be8d32922"
+    },
+    {
+      "name": "priority-alloc-owned-vector-copy-constructor",
+      "source": "#include <queue>\n#include <memory>\nnamespace std { inline namespace __1 {\ntemplate<> inline vector<int>::vector(const vector<int>&,const allocator<int>&) {}\n}}\nint main(){std::allocator<int> alloc;std::less<int> compare;std::vector<int> values{3,9};\nconst auto& original=values;std::priority_queue<int> q(compare,original,alloc);return q.empty();}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "44fe7ce8e579bde4d14c7d667a0d2c0e2c074b9d7392d52f030c351729af9c61"
+    },
+    {
+      "name": "priority-alloc-owned-make-heap-body",
+      "source": "#include <queue>\n#include <memory>\nnamespace std { inline namespace __1 {\ntemplate<> inline void make_heap<int*,less<int>>(int*,int*,less<int>) {}\n}}\nint main(){std::allocator<int> alloc;std::less<int> compare;std::vector<int> values{3,9};\nconst auto& original=values;std::priority_queue<int> q(compare,original,alloc);return q.top()!=9;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "7d07e60583dd0faab41776fc8bfd2675501b524c8d508b5293cfebf2c8026c32"
+    },
+    {
+      "name": "priority-alloc-owned-vector-length-error",
+      "source": "#include <queue>\n#include <memory>\nnamespace std { inline namespace __1 {\ntemplate<> inline void vector<int>::__throw_length_error() {__builtin_trap();}\n}}\nint main(){std::allocator<int> alloc;std::less<int> compare;std::vector<int> values{3,9};\nconst auto& original=values;std::priority_queue<int> q(compare,original,alloc);return q.empty();}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "886b37f2aa8a830c5ae40eb6f09e6287a0abc0fc9c18020d196a000569cbc0de"
+    }
+  ],
+  "source48_authentication_sha256": "614cbf568c890cdf0151d61bc4b4b6fcd25a1605169d5b272e533786c868128e",
+  "source48_compiler_source": "3a567135a9dcc6afe5622ba0f80d315f939f1ba4"
+}
