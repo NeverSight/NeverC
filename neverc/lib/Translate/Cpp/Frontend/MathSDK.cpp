@@ -50807,6 +50807,161 @@ bool priorityClosedMemoryTransfer(const State &S, const SourceManager &SM,
   return Closed(Call, 0);
 }
 
+
+bool priorityPinnedHelperDeclarations(const State &S, const SourceManager &SM,
+                                      const FunctionDecl *F, llvm::StringRef Header) {
+  if (!F || F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
+      !F->hasBody() || !dequeStd(F->getDeclContext())) return false;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D) {
+    return ++Declarations <= 64 && dequePinned(S, SM, D, Header);
+  };
+  for (const auto *D : F->redecls()) if (!Pinned(D)) return false;
+  if (const auto *Pattern = F->getTemplateInstantiationPattern())
+    for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  if (const auto *T = F->getPrimaryTemplate())
+    for (const auto *D : T->redecls())
+      if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+  return true;
+}
+
+bool priorityClosedConstantEvaluation(const State &S, const SourceManager &SM,
+                                      const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!F || !F->getIdentifier() || F->getName() != "__libcpp_is_constant_evaluated" ||
+      Call->getNumArgs() || F->getNumParams() || F->getPrimaryTemplate() ||
+      !Context.hasSameType(F->getReturnType(), Context.BoolTy) ||
+      !priorityPinnedHelperDeclarations(S, SM, F, "__type_traits/is_constant_evaluated.h")) return false;
+  const auto *Body = dyn_cast<CompoundStmt>(F->getBody());
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
+  const auto *BuiltinCall = Return && Return->getRetValue()
+      ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  const auto *BuiltinFunction = BuiltinCall ? BuiltinCall->getDirectCallee() : nullptr;
+  if (!BuiltinFunction || BuiltinCall->getNumArgs() || BuiltinFunction->getNumParams() || BuiltinFunction->hasBody() ||
+      BuiltinFunction->isVariadic() || BuiltinFunction->getBuiltinID() != Builtin::BI__builtin_is_constant_evaluated ||
+      !Context.hasSameType(BuiltinFunction->getReturnType(), Context.BoolTy)) return false;
+  for (const auto *D : BuiltinFunction->redecls()) {
+    if (dequeDependencyDeclaration(S, SM, D)) continue;
+    if (!D->isImplicit() || D->hasBody() ||
+        !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+    if (D->getLocation().isValid() && !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(D->getLocation()))) return false;
+  }
+  return true;
+}
+
+bool priorityClosedRangeQuery(const State &S, const SourceManager &SM,
+                              const FunctionDecl *F, const ASTContext &Context) {
+  if (!F || !F->getIdentifier() || !F->getPrimaryTemplate() || !F->getTemplateInstantiationPattern() ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Context.hasSameType(F->getReturnType(), Context.BoolTy)) return false;
+  const bool PointerRange = F->getName() == "__is_pointer_in_range";
+  if (!PointerRange && F->getName() != "__is_valid_range") return false;
+  const char *Header = PointerRange ? "__utility/is_pointer_in_range.h" : "__utility/is_valid_range.h";
+  if (F->getNumParams() != (PointerRange ? 3u : 2u) ||
+      !priorityPinnedHelperDeclarations(S, SM, F, Header)) return false;
+  for (const auto *P : F->parameters())
+    if (P->hasDefaultArg() ||
+        !Context.hasSameType(P->getType(), Context.getPointerType(Context.IntTy.withConst()))) return false;
+  const auto *Body = dyn_cast<CompoundStmt>(F->getBody());
+  if (!Body || Body->size() != (PointerRange ? 3u : 2u)) return false;
+  std::set<const ValueDecl *> References;
+  for (const auto *P : F->parameters()) References.insert(P);
+  unsigned Nodes = 0;
+  std::function<bool(const Stmt *, unsigned)> Closed;
+  Closed = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node || Depth > 16 || ++Nodes > 128) return false;
+    const auto *E = dyn_cast<Expr>(Node);
+    if (E && (E->isTypeDependent() || E->isValueDependent() || E->isInstantiationDependent())) return false;
+    auto Location = [&](SourceLocation L) {
+      const auto File = L.isValid() ? S.sdkFile(SM, SM.getExpansionLoc(L)) : std::nullopt;
+      if (!File || File->Root != "libcxx" || File->Path != Header) return false;
+      if (L.isMacroID()) {
+        const auto Spelling = S.sdkFile(SM, SM.getSpellingLoc(L));
+        if (!Spelling || Spelling->Root != "libcxx" || Spelling->Path != "__assert") return false;
+      }
+      return true;
+    };
+    if (!Location(Node->getBeginLoc()) || !Location(Node->getEndLoc()) ||
+        (E && !Location(E->getExprLoc()))) return false;
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node))
+      return dequeClosedLessConstruction(S, SM, Construction, Context);
+    if (const auto *Call = dyn_cast<CallExpr>(Node)) {
+      if (priorityClosedConstantEvaluation(S, SM, Call, Context) ||
+          dequePinnedRangeQuery(S, SM, Call, Context)) return true;
+      const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Call);
+      const auto *Callee = Call->getDirectCallee();
+      if (!Operation || Operation->getOperator() != OO_Call || Call->getNumArgs() != 3 ||
+          !dequeClosedPointerLess(S, SM, Callee, Context)) return false;
+      for (unsigned I = 1; I != 3; ++I) {
+        const auto *Ref = dyn_cast<DeclRefExpr>(Call->getArg(I)->IgnoreParenImpCasts());
+        const auto *P = Ref ? dyn_cast<ParmVarDecl>(Ref->getDecl()) : nullptr;
+        if (!P || P->getDeclContext() != F || !References.count(P)) return false;
+      }
+      References.insert(Callee);
+    } else if (!isa<CompoundStmt>(Node) && !isa<IfStmt>(Node) && !isa<ReturnStmt>(Node) &&
+               !isa<ParenExpr>(Node) && !isa<ImplicitCastExpr>(Node) && !isa<DeclRefExpr>(Node) &&
+               !isa<BinaryOperator>(Node) && !isa<UnaryOperator>(Node) && !isa<CStyleCastExpr>(Node) &&
+               !isa<IntegerLiteral>(Node) && !isa<CXXBoolLiteralExpr>(Node) &&
+               !isa<ExprWithCleanups>(Node) && !isa<MaterializeTemporaryExpr>(Node)) return false;
+    if (const auto *Ref = dyn_cast<DeclRefExpr>(Node); Ref && !References.count(Ref->getDecl())) return false;
+    if (const auto *B = dyn_cast<BinaryOperator>(Node);
+        B && B->getOpcode() != BO_LAnd && B->getOpcode() != BO_LE && B->getOpcode() != BO_LT) return false;
+    if (const auto *U = dyn_cast<UnaryOperator>(Node); U && U->getOpcode() != UO_LNot) return false;
+    if (const auto *Cast = dyn_cast<CStyleCastExpr>(Node)) {
+      const auto *Zero = dyn_cast<IntegerLiteral>(Cast->getSubExpr()->IgnoreParenImpCasts());
+      if (Cast->getCastKind() != CK_ToVoid || !Cast->getType()->isVoidType() ||
+          !Zero || !Zero->getValue().isZero() || !Cast->getExprLoc().isMacroID()) return false;
+    }
+    if (const auto *Value = dyn_cast<IntegerLiteral>(Node); Value && !Value->getValue().isZero()) return false;
+    if (const auto *Value = dyn_cast<CXXBoolLiteralExpr>(Node); Value && Value->getValue()) return false;
+    for (const auto *Child : Node->children()) if (!Closed(Child, Depth + 1)) return false;
+    return true;
+  };
+  return Closed(Body, 0);
+}
+
+bool priorityClosedIntAssignment(const State &S, const SourceManager &SM,
+                                 const FunctionDecl *F, const ASTContext &Context) {
+  if (!F || !F->getIdentifier() || F->getName() != "__assign_trivially_copyable" ||
+      F->getNumParams() != 2 || !F->getPrimaryTemplate() || !F->getTemplateInstantiationPattern() ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Context.IntTy)) ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), Context.getLValueReferenceType(Context.IntTy)) ||
+      !Context.hasSameType(F->getParamDecl(1)->getType(), Context.getLValueReferenceType(Context.IntTy.withConst())) ||
+      !priorityPinnedHelperDeclarations(S, SM, F, "__string/constexpr_c_functions.h")) return false;
+  const auto *Body = dyn_cast<CompoundStmt>(F->getBody());
+  if (!Body || Body->size() != 2) return false;
+  auto Statement = Body->body_begin();
+  const auto *Assign = dyn_cast<BinaryOperator>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  auto Parameter = [](const Expr *E) -> const ParmVarDecl * {
+    const auto *Ref = E ? dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts()) : nullptr;
+    return Ref ? dyn_cast<ParmVarDecl>(Ref->getDecl()) : nullptr;
+  };
+  if (!Assign || Assign->getOpcode() != BO_Assign ||
+      Parameter(Assign->getLHS()) != F->getParamDecl(0) || Parameter(Assign->getRHS()) != F->getParamDecl(1) ||
+      !Return || Parameter(Return->getRetValue()) != F->getParamDecl(0)) return false;
+  unsigned Nodes = 0;
+  std::function<bool(const Stmt *, unsigned)> Closed;
+  Closed = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node || Depth > 6 || ++Nodes > 16) return false;
+    const auto *E = dyn_cast<Expr>(Node);
+    if (Node != Body && Node != Assign && Node != Return &&
+        !isa<ImplicitCastExpr>(Node) && !isa<DeclRefExpr>(Node)) return false;
+    if (const auto *Ref = dyn_cast<DeclRefExpr>(Node);
+        Ref && Ref->getDecl() != F->getParamDecl(0) && Ref->getDecl() != F->getParamDecl(1)) return false;
+    auto Location = [&](SourceLocation L) {
+      const auto File = L.isValid() && !L.isMacroID() ? S.sdkFile(SM, L) : std::nullopt;
+      return File && File->Root == "libcxx" && File->Path == "__string/constexpr_c_functions.h";
+    };
+    if (!Location(Node->getBeginLoc()) || !Location(Node->getEndLoc()) ||
+        (E && !Location(E->getExprLoc()))) return false;
+    for (const auto *Child : Node->children()) if (!Closed(Child, Depth + 1)) return false;
+    return true;
+  };
+  return Closed(Body, 0);
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false) {
   const auto *RootMethod = dyn_cast_or_null<CXXMethodDecl>(Root);
@@ -50897,6 +51052,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       for (const auto *Init : C->inits())
         if (!Statement(Init->getInit(), Depth + 1)) return false;
     if (dequeClosedPointerLess(S, SM, F, Context)) return true;
+    if (PriorityRoot && (priorityClosedRangeQuery(S, SM, F, Context) ||
+                         priorityClosedIntAssignment(S, SM, F, Context))) return true;
     if (PriorityRoot) {
       std::vector<const FunctionDecl *> Dependencies;
       if (priorityCapacityQuery(S, SM, F, Context, Dependencies)) {
