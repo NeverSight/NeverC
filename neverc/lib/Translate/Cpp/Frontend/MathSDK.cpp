@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -50808,20 +50809,44 @@ bool priorityClosedMemoryTransfer(const State &S, const SourceManager &SM,
 }
 
 
+
+bool priorityQueryTraceFailure(const State &S, const SourceManager &SM,
+                               const FunctionDecl *F, const char *Proof, unsigned Stage) {
+  static unsigned Messages = 0;
+  static std::set<std::string> Dumped;
+  if (F && F->getIdentifier() && Messages < 64) {
+    const auto Name = F->getName();
+    const bool Relevant = (llvm::StringRef(Proof) == "range" &&
+        (Name == "__is_pointer_in_range" || Name == "__is_valid_range")) ||
+        (llvm::StringRef(Proof) == "assignment" && Name == "__assign_trivially_copyable") ||
+        (llvm::StringRef(Proof) == "constant" && Name == "__libcpp_is_constant_evaluated") ||
+        (llvm::StringRef(Proof) == "declarations" && (Name == "__is_pointer_in_range" ||
+         Name == "__is_valid_range" || Name == "__assign_trivially_copyable" || Name == "__libcpp_is_constant_evaluated"));
+    if (Relevant) {
+      ++Messages;
+      llvm::errs() << "NCPQ-QUERY proof=" << Proof << " stage=" << Stage
+          << " function=" << F->getQualifiedNameAsString()
+          << " type=" << F->getType().getAsString() << "\n";
+      if (Dumped.insert(F->getQualifiedNameAsString()).second && F->hasBody()) F->getBody()->dump();
+    }
+  }
+  return false;
+}
+
 bool priorityPinnedHelperDeclarations(const State &S, const SourceManager &SM,
                                       const FunctionDecl *F, llvm::StringRef Header) {
   if (!F || F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
-      !F->hasBody() || !dequeStd(F->getDeclContext())) return false;
+      !F->hasBody() || !dequeStd(F->getDeclContext())) return priorityQueryTraceFailure(S, SM, F, "declarations", 1);
   unsigned Declarations = 0;
   auto Pinned = [&](const Decl *D) {
     return ++Declarations <= 64 && dequePinned(S, SM, D, Header);
   };
-  for (const auto *D : F->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : F->redecls()) if (!Pinned(D)) return priorityQueryTraceFailure(S, SM, F, "declarations", 2);
   if (const auto *Pattern = F->getTemplateInstantiationPattern())
-    for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+    for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return priorityQueryTraceFailure(S, SM, F, "declarations", 3);
   if (const auto *T = F->getPrimaryTemplate())
     for (const auto *D : T->redecls())
-      if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+      if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return priorityQueryTraceFailure(S, SM, F, "declarations", 4);
   return true;
 }
 
@@ -50831,7 +50856,7 @@ bool priorityClosedConstantEvaluation(const State &S, const SourceManager &SM,
   if (!F || !F->getIdentifier() || F->getName() != "__libcpp_is_constant_evaluated" ||
       Call->getNumArgs() || F->getNumParams() || F->getPrimaryTemplate() ||
       !Context.hasSameType(F->getReturnType(), Context.BoolTy) ||
-      !priorityPinnedHelperDeclarations(S, SM, F, "__type_traits/is_constant_evaluated.h")) return false;
+      !priorityPinnedHelperDeclarations(S, SM, F, "__type_traits/is_constant_evaluated.h")) return priorityQueryTraceFailure(S, SM, F, "constant", 1);
   const auto *Body = dyn_cast<CompoundStmt>(F->getBody());
   const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
   const auto *BuiltinCall = Return && Return->getRetValue()
@@ -50839,12 +50864,12 @@ bool priorityClosedConstantEvaluation(const State &S, const SourceManager &SM,
   const auto *BuiltinFunction = BuiltinCall ? BuiltinCall->getDirectCallee() : nullptr;
   if (!BuiltinFunction || BuiltinCall->getNumArgs() || BuiltinFunction->getNumParams() || BuiltinFunction->hasBody() ||
       BuiltinFunction->isVariadic() || BuiltinFunction->getBuiltinID() != Builtin::BI__builtin_is_constant_evaluated ||
-      !Context.hasSameType(BuiltinFunction->getReturnType(), Context.BoolTy)) return false;
+      !Context.hasSameType(BuiltinFunction->getReturnType(), Context.BoolTy)) return priorityQueryTraceFailure(S, SM, F, "constant", 2);
   for (const auto *D : BuiltinFunction->redecls()) {
     if (dequeDependencyDeclaration(S, SM, D)) continue;
     if (!D->isImplicit() || D->hasBody() ||
-        !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
-    if (D->getLocation().isValid() && !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(D->getLocation()))) return false;
+        !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return priorityQueryTraceFailure(S, SM, F, "constant", 3);
+    if (D->getLocation().isValid() && !SM.isWrittenInBuiltinFile(SM.getSpellingLoc(D->getLocation()))) return priorityQueryTraceFailure(S, SM, F, "constant", 4);
   }
   return true;
 }
@@ -50853,36 +50878,36 @@ bool priorityClosedRangeQuery(const State &S, const SourceManager &SM,
                               const FunctionDecl *F, const ASTContext &Context) {
   if (!F || !F->getIdentifier() || !F->getPrimaryTemplate() || !F->getTemplateInstantiationPattern() ||
       F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-      !Context.hasSameType(F->getReturnType(), Context.BoolTy)) return false;
+      !Context.hasSameType(F->getReturnType(), Context.BoolTy)) return priorityQueryTraceFailure(S, SM, F, "range", 1);
   const bool PointerRange = F->getName() == "__is_pointer_in_range";
-  if (!PointerRange && F->getName() != "__is_valid_range") return false;
+  if (!PointerRange && F->getName() != "__is_valid_range") return priorityQueryTraceFailure(S, SM, F, "range", 2);
   const char *Header = PointerRange ? "__utility/is_pointer_in_range.h" : "__utility/is_valid_range.h";
   if (F->getNumParams() != (PointerRange ? 3u : 2u) ||
-      !priorityPinnedHelperDeclarations(S, SM, F, Header)) return false;
+      !priorityPinnedHelperDeclarations(S, SM, F, Header)) return priorityQueryTraceFailure(S, SM, F, "range", 3);
   for (const auto *P : F->parameters())
     if (P->hasDefaultArg() ||
-        !Context.hasSameType(P->getType(), Context.getPointerType(Context.IntTy.withConst()))) return false;
+        !Context.hasSameType(P->getType(), Context.getPointerType(Context.IntTy.withConst()))) return priorityQueryTraceFailure(S, SM, F, "range", 4);
   const auto *Body = dyn_cast<CompoundStmt>(F->getBody());
-  if (!Body || Body->size() != (PointerRange ? 3u : 2u)) return false;
+  if (!Body || Body->size() != (PointerRange ? 3u : 2u)) return priorityQueryTraceFailure(S, SM, F, "range", 5);
   std::set<const ValueDecl *> References;
   for (const auto *P : F->parameters()) References.insert(P);
   unsigned Nodes = 0;
   std::function<bool(const Stmt *, unsigned)> Closed;
   Closed = [&](const Stmt *Node, unsigned Depth) {
-    if (!Node || Depth > 16 || ++Nodes > 128) return false;
+    if (!Node || Depth > 16 || ++Nodes > 128) return priorityQueryTraceFailure(S, SM, F, "range", 6);
     const auto *E = dyn_cast<Expr>(Node);
-    if (E && (E->isTypeDependent() || E->isValueDependent() || E->isInstantiationDependent())) return false;
+    if (E && (E->isTypeDependent() || E->isValueDependent() || E->isInstantiationDependent())) return priorityQueryTraceFailure(S, SM, F, "range", 7);
     auto Location = [&](SourceLocation L) {
       const auto File = L.isValid() ? S.sdkFile(SM, SM.getExpansionLoc(L)) : std::nullopt;
-      if (!File || File->Root != "libcxx" || File->Path != Header) return false;
+      if (!File || File->Root != "libcxx" || File->Path != Header) return priorityQueryTraceFailure(S, SM, F, "range", 8);
       if (L.isMacroID()) {
         const auto Spelling = S.sdkFile(SM, SM.getSpellingLoc(L));
-        if (!Spelling || Spelling->Root != "libcxx" || Spelling->Path != "__assert") return false;
+        if (!Spelling || Spelling->Root != "libcxx" || Spelling->Path != "__assert") return priorityQueryTraceFailure(S, SM, F, "range", 9);
       }
       return true;
     };
     if (!Location(Node->getBeginLoc()) || !Location(Node->getEndLoc()) ||
-        (E && !Location(E->getExprLoc()))) return false;
+        (E && !Location(E->getExprLoc()))) return priorityQueryTraceFailure(S, SM, F, "range", 10);
     if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node))
       return dequeClosedLessConstruction(S, SM, Construction, Context);
     if (const auto *Call = dyn_cast<CallExpr>(Node)) {
@@ -50891,30 +50916,30 @@ bool priorityClosedRangeQuery(const State &S, const SourceManager &SM,
       const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Call);
       const auto *Callee = Call->getDirectCallee();
       if (!Operation || Operation->getOperator() != OO_Call || Call->getNumArgs() != 3 ||
-          !dequeClosedPointerLess(S, SM, Callee, Context)) return false;
+          !dequeClosedPointerLess(S, SM, Callee, Context)) return priorityQueryTraceFailure(S, SM, F, "range", 11);
       for (unsigned I = 1; I != 3; ++I) {
         const auto *Ref = dyn_cast<DeclRefExpr>(Call->getArg(I)->IgnoreParenImpCasts());
         const auto *P = Ref ? dyn_cast<ParmVarDecl>(Ref->getDecl()) : nullptr;
-        if (!P || P->getDeclContext() != F || !References.count(P)) return false;
+        if (!P || P->getDeclContext() != F || !References.count(P)) return priorityQueryTraceFailure(S, SM, F, "range", 12);
       }
       References.insert(Callee);
     } else if (!isa<CompoundStmt>(Node) && !isa<IfStmt>(Node) && !isa<ReturnStmt>(Node) &&
                !isa<ParenExpr>(Node) && !isa<ImplicitCastExpr>(Node) && !isa<DeclRefExpr>(Node) &&
                !isa<BinaryOperator>(Node) && !isa<UnaryOperator>(Node) && !isa<CStyleCastExpr>(Node) &&
                !isa<IntegerLiteral>(Node) && !isa<CXXBoolLiteralExpr>(Node) &&
-               !isa<ExprWithCleanups>(Node) && !isa<MaterializeTemporaryExpr>(Node)) return false;
-    if (const auto *Ref = dyn_cast<DeclRefExpr>(Node); Ref && !References.count(Ref->getDecl())) return false;
+               !isa<ExprWithCleanups>(Node) && !isa<MaterializeTemporaryExpr>(Node)) return priorityQueryTraceFailure(S, SM, F, "range", 13);
+    if (const auto *Ref = dyn_cast<DeclRefExpr>(Node); Ref && !References.count(Ref->getDecl())) return priorityQueryTraceFailure(S, SM, F, "range", 14);
     if (const auto *B = dyn_cast<BinaryOperator>(Node);
-        B && B->getOpcode() != BO_LAnd && B->getOpcode() != BO_LE && B->getOpcode() != BO_LT) return false;
-    if (const auto *U = dyn_cast<UnaryOperator>(Node); U && U->getOpcode() != UO_LNot) return false;
+        B && B->getOpcode() != BO_LAnd && B->getOpcode() != BO_LE && B->getOpcode() != BO_LT) return priorityQueryTraceFailure(S, SM, F, "range", 15);
+    if (const auto *U = dyn_cast<UnaryOperator>(Node); U && U->getOpcode() != UO_LNot) return priorityQueryTraceFailure(S, SM, F, "range", 16);
     if (const auto *Cast = dyn_cast<CStyleCastExpr>(Node)) {
       const auto *Zero = dyn_cast<IntegerLiteral>(Cast->getSubExpr()->IgnoreParenImpCasts());
       if (Cast->getCastKind() != CK_ToVoid || !Cast->getType()->isVoidType() ||
-          !Zero || !Zero->getValue().isZero() || !Cast->getExprLoc().isMacroID()) return false;
+          !Zero || !Zero->getValue().isZero() || !Cast->getExprLoc().isMacroID()) return priorityQueryTraceFailure(S, SM, F, "range", 17);
     }
-    if (const auto *Value = dyn_cast<IntegerLiteral>(Node); Value && !Value->getValue().isZero()) return false;
-    if (const auto *Value = dyn_cast<CXXBoolLiteralExpr>(Node); Value && Value->getValue()) return false;
-    for (const auto *Child : Node->children()) if (!Closed(Child, Depth + 1)) return false;
+    if (const auto *Value = dyn_cast<IntegerLiteral>(Node); Value && !Value->getValue().isZero()) return priorityQueryTraceFailure(S, SM, F, "range", 18);
+    if (const auto *Value = dyn_cast<CXXBoolLiteralExpr>(Node); Value && Value->getValue()) return priorityQueryTraceFailure(S, SM, F, "range", 19);
+    for (const auto *Child : Node->children()) if (!Closed(Child, Depth + 1)) return priorityQueryTraceFailure(S, SM, F, "range", 20);
     return true;
   };
   return Closed(Body, 0);
@@ -50928,9 +50953,9 @@ bool priorityClosedIntAssignment(const State &S, const SourceManager &SM,
       !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Context.IntTy)) ||
       !Context.hasSameType(F->getParamDecl(0)->getType(), Context.getLValueReferenceType(Context.IntTy)) ||
       !Context.hasSameType(F->getParamDecl(1)->getType(), Context.getLValueReferenceType(Context.IntTy.withConst())) ||
-      !priorityPinnedHelperDeclarations(S, SM, F, "__string/constexpr_c_functions.h")) return false;
+      !priorityPinnedHelperDeclarations(S, SM, F, "__string/constexpr_c_functions.h")) return priorityQueryTraceFailure(S, SM, F, "assignment", 1);
   const auto *Body = dyn_cast<CompoundStmt>(F->getBody());
-  if (!Body || Body->size() != 2) return false;
+  if (!Body || Body->size() != 2) return priorityQueryTraceFailure(S, SM, F, "assignment", 2);
   auto Statement = Body->body_begin();
   const auto *Assign = dyn_cast<BinaryOperator>(*Statement++);
   const auto *Return = dyn_cast<ReturnStmt>(*Statement);
@@ -50940,23 +50965,23 @@ bool priorityClosedIntAssignment(const State &S, const SourceManager &SM,
   };
   if (!Assign || Assign->getOpcode() != BO_Assign ||
       Parameter(Assign->getLHS()) != F->getParamDecl(0) || Parameter(Assign->getRHS()) != F->getParamDecl(1) ||
-      !Return || Parameter(Return->getRetValue()) != F->getParamDecl(0)) return false;
+      !Return || Parameter(Return->getRetValue()) != F->getParamDecl(0)) return priorityQueryTraceFailure(S, SM, F, "assignment", 3);
   unsigned Nodes = 0;
   std::function<bool(const Stmt *, unsigned)> Closed;
   Closed = [&](const Stmt *Node, unsigned Depth) {
-    if (!Node || Depth > 6 || ++Nodes > 16) return false;
+    if (!Node || Depth > 6 || ++Nodes > 16) return priorityQueryTraceFailure(S, SM, F, "assignment", 4);
     const auto *E = dyn_cast<Expr>(Node);
     if (Node != Body && Node != Assign && Node != Return &&
-        !isa<ImplicitCastExpr>(Node) && !isa<DeclRefExpr>(Node)) return false;
+        !isa<ImplicitCastExpr>(Node) && !isa<DeclRefExpr>(Node)) return priorityQueryTraceFailure(S, SM, F, "assignment", 5);
     if (const auto *Ref = dyn_cast<DeclRefExpr>(Node);
-        Ref && Ref->getDecl() != F->getParamDecl(0) && Ref->getDecl() != F->getParamDecl(1)) return false;
+        Ref && Ref->getDecl() != F->getParamDecl(0) && Ref->getDecl() != F->getParamDecl(1)) return priorityQueryTraceFailure(S, SM, F, "assignment", 6);
     auto Location = [&](SourceLocation L) {
       const auto File = L.isValid() && !L.isMacroID() ? S.sdkFile(SM, L) : std::nullopt;
       return File && File->Root == "libcxx" && File->Path == "__string/constexpr_c_functions.h";
     };
     if (!Location(Node->getBeginLoc()) || !Location(Node->getEndLoc()) ||
-        (E && !Location(E->getExprLoc()))) return false;
-    for (const auto *Child : Node->children()) if (!Closed(Child, Depth + 1)) return false;
+        (E && !Location(E->getExprLoc()))) return priorityQueryTraceFailure(S, SM, F, "assignment", 7);
+    for (const auto *Child : Node->children()) if (!Closed(Child, Depth + 1)) return priorityQueryTraceFailure(S, SM, F, "assignment", 8);
     return true;
   };
   return Closed(Body, 0);
@@ -50978,6 +51003,28 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
         (priorityQueueAllocatorConstructorKind(S, SM, RootConstructor, Context) &&
          (*PriorityConstruction == UtilityPriorityQueueConstruction::Move ||
           *PriorityConstruction == UtilityPriorityQueueConstruction::MoveContainer)))));
+  const bool ObserveRange = PriorityConstruction && RootConstructor &&
+      *PriorityConstruction == UtilityPriorityQueueConstruction::RangeMoveContainer &&
+      RootConstructor->getNumParams() == 5;
+  unsigned TraceCount = 0;
+  auto TraceFailure = [&](const char *Stage, const FunctionDecl *F,
+                          const Stmt *Node, unsigned Depth) {
+    if (ObserveRange && TraceCount++ < 40) {
+      llvm::errs() << "NCPQ-GREATER-RANGE stage=" << Stage << " depth=" << Depth
+          << " root=" << Root->getQualifiedNameAsString()
+          << " function=" << (F ? F->getQualifiedNameAsString() : "none")
+          << " node=" << (Node ? Node->getStmtClassName() : "none") << "\n";
+      if (F) llvm::errs() << "NCPQ-GREATER-RANGE-TYPE " << F->getType().getAsString() << "\n";
+      if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Node)) {
+        const auto *Owner = dyn_cast<FunctionDecl>(Reference->getDecl()->getDeclContext());
+        if (Owner) llvm::errs() << "NCPQ-GREATER-RANGE-OWNER " << Owner->getQualifiedNameAsString()
+            << " type=" << Owner->getType().getAsString()
+            << " line=" << SM.getExpansionLineNumber(Owner->getLocation()) << "\n";
+      }
+      if (Node && TraceCount == 1) Node->dump();
+    }
+    return false;
+  };
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -50989,39 +51036,39 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
-    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return false;
+    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return TraceFailure("function-1", F, nullptr, Depth);
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (dequeHeapBoundary(F, Context)) return true;
     if (dequeBuiltinLibraryCast(S, SM, F, Context, PriorityRoot)) return true;
     if (F->getBuiltinID()) {
-      if (!F->getIdentifier() || F->hasBody()) return false;
+      if (!F->getIdentifier() || F->hasBody()) return TraceFailure("function-2", F, nullptr, Depth);
       const auto Name = F->getName();
       if (Name != "__builtin_is_constant_evaluated" &&
           Name != "__builtin_addressof" &&
           Name != "__builtin_operator_new" && Name != "__builtin_operator_delete" &&
           Name != "__builtin_expect" && Name != "__builtin_assume" &&
-          Name != "__builtin_unreachable") return false;
+          Name != "__builtin_unreachable") return TraceFailure("function-3", F, nullptr, Depth);
       for (const auto *D : F->redecls()) {
         if (dequeDependencyDeclaration(S, SM, D)) continue;
         if (!D->isImplicit() || D->hasBody() ||
-            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return TraceFailure("function-4", F, nullptr, Depth);
         if (D->getLocation().isValid()) {
           const auto File = S.sdkFile(SM, D->getLocation());
-          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return TraceFailure("function-5", F, nullptr, Depth);
         }
       }
       return true;
     }
     for (const auto *D : F->redecls())
-      if (!dequeDependencyDeclaration(S, SM, D)) return false;
+      if (!dequeDependencyDeclaration(S, SM, D)) return TraceFailure("function-6", F, nullptr, Depth);
     if (const auto *Pattern = F->getTemplateInstantiationPattern())
       for (const auto *D : Pattern->redecls())
-        if (!dequeDependencyDeclaration(S, SM, D)) return false;
+        if (!dequeDependencyDeclaration(S, SM, D)) return TraceFailure("function-7", F, nullptr, Depth);
     if (const auto *T = F->getPrimaryTemplate())
       for (const auto *D : T->redecls())
         if (!dequeDependencyDeclaration(S, SM, D) ||
-            !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+            !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return TraceFailure("function-8", F, nullptr, Depth);
     // Checked vector copies use an existing valid vector's bounded size.
     // Pointer ranges and combined sizes retain the successful, nonoverflowing
     // default-allocator precondition. Only this authenticated error boundary
@@ -51039,18 +51086,18 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       const auto *Parent = D->getParent();
       for (const auto &Base : Parent->bases()) {
         const auto *Record = dequeRecordType(Base.getType());
-        if (!Record || Base.isVirtual()) return false;
-        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return false;
+        if (!Record || Base.isVirtual()) return TraceFailure("function-9", F, nullptr, Depth);
+        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return TraceFailure("function-10", F, nullptr, Depth);
       }
       for (const auto *Field : Parent->fields()) {
         const auto *Record = dequeRecordType(Field->getType());
         if (Record && !Record->hasTrivialDestructor() &&
-            !Function(Record->getDestructor(), Depth + 1)) return false;
+            !Function(Record->getDestructor(), Depth + 1)) return TraceFailure("function-11", F, nullptr, Depth);
       }
     }
     if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
       for (const auto *Init : C->inits())
-        if (!Statement(Init->getInit(), Depth + 1)) return false;
+        if (!Statement(Init->getInit(), Depth + 1)) return TraceFailure("function-12", F, nullptr, Depth);
     if (dequeClosedPointerLess(S, SM, F, Context)) return true;
     if (PriorityRoot && (priorityClosedRangeQuery(S, SM, F, Context) ||
                          priorityClosedIntAssignment(S, SM, F, Context))) return true;
@@ -51058,31 +51105,36 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       std::vector<const FunctionDecl *> Dependencies;
       if (priorityCapacityQuery(S, SM, F, Context, Dependencies)) {
         for (const auto *Dependency : Dependencies)
-          if (!Function(Dependency, Depth + 1)) return false;
+          if (!Function(Dependency, Depth + 1)) return TraceFailure("function-13", F, nullptr, Depth);
         return true;
       }
     }
     const auto *Body = F->getBody();
-    return Body && Statement(Body, Depth + 1);
+    const bool Accepted = Body && Statement(Body, Depth + 1);
+    if (!Accepted && ObserveRange)
+      llvm::errs() << "NCPQ-GREATER-RANGE-FUNCTION " << F->getQualifiedNameAsString()
+          << " type=" << F->getType().getAsString() << " depth=" << Depth
+          << " line=" << SM.getExpansionLineNumber(F->getLocation()) << "\n";
+    return Accepted;
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
     if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
-        !PinnedMacro(Node->getEndLoc())) return false;
+        !PinnedMacro(Node->getEndLoc())) return TraceFailure("statement-1", nullptr, Node, Depth);
     if (const auto *E = dyn_cast<Expr>(Node))
-      if (!PinnedMacro(E->getExprLoc())) return false;
+      if (!PinnedMacro(E->getExprLoc())) return TraceFailure("statement-2", nullptr, Node, Depth);
     if (const auto *E = dyn_cast<MemberExpr>(Node))
-      if (!PinnedMacro(E->getMemberLoc())) return false;
+      if (!PinnedMacro(E->getMemberLoc())) return TraceFailure("statement-3", nullptr, Node, Depth);
     if (const auto *D = dyn_cast<DeclStmt>(Node))
       for (const auto *Declaration : D->decls())
-        if (!PinnedMacro(Declaration->getLocation())) return false;
+        if (!PinnedMacro(Declaration->getLocation())) return TraceFailure("statement-4", nullptr, Node, Depth);
     if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node)) {
       if (!dequeDependencyDeclaration(S, SM, Default->getField()) ||
-          !Statement(Default->getExpr(), Depth + 1)) return false;
+          !Statement(Default->getExpr(), Depth + 1)) return TraceFailure("statement-5", nullptr, Node, Depth);
     }
     if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
       if (!dequeDependencyDeclaration(S, SM, Default->getParam()) ||
-          !Statement(Default->getExpr(), Depth + 1)) return false;
+          !Statement(Default->getExpr(), Depth + 1)) return TraceFailure("statement-6", nullptr, Node, Depth);
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node)) {
       // The exact SDK pointer-comparison query has a closed, separately bounded
@@ -51091,7 +51143,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
         std::vector<const FunctionDecl *> Dependencies;
         if (priorityRelocationTransfer(S, SM, Call, Context, Dependencies)) {
           for (const auto *Dependency : Dependencies)
-            if (!Function(Dependency, Depth + 1)) return false;
+            if (!Function(Dependency, Depth + 1)) return TraceFailure("statement-7", nullptr, Node, Depth);
           return true;
         }
       }
@@ -51100,24 +51152,28 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
       if (!dequeScalarDestruction(S, SM, Call, Context) &&
           !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
-          !Function(Call->getDirectCallee(), Depth + 1)) return false;
+          !Function(Call->getDirectCallee(), Depth + 1)) return TraceFailure("statement-8", nullptr, Node, Depth);
     }
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
       // This exact empty SDK functor has no arguments, initializers or state;
       // its complete construction proof is a separately authenticated leaf.
       if (dequeClosedLessConstruction(S, SM, C, Context)) return true;
-      if (!Function(C->getConstructor(), Depth + 1)) return false;
+      if (!Function(C->getConstructor(), Depth + 1)) return TraceFailure("statement-9", nullptr, Node, Depth);
     }
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
            !Context.hasSameType(N->getAllocatedType(), Context.getPointerType(Context.IntTy))) ||
           N->getNumPlacementArgs() != 1 ||
-          !Function(N->getOperatorNew(), Depth + 1)) return false;
-      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+          !Function(N->getOperatorNew(), Depth + 1)) return TraceFailure("statement-10", nullptr, Node, Depth);
+      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return TraceFailure("statement-11", nullptr, Node, Depth);
     }
+    bool AllChildrenAccepted = true;
     for (const auto *Child : Node->children())
-      if (!Statement(Child, Depth + 1)) return false;
-    return true;
+      if (!Statement(Child, Depth + 1)) {
+        TraceFailure("statement-12", nullptr, Node, Depth);
+        AllChildrenAccepted = false;
+      }
+    return AllChildrenAccepted;
   };
   return Root && (PriorityRoot ? priorityQueueFunctionDeclarations(S, SM, Root)
                               : dequeFunctionDeclarations(S, SM, Root)) && Function(Root, 0);
@@ -51207,6 +51263,12 @@ std::optional<UtilityPriorityQueueConstruction> approvedUtilityPriorityQueueCons
       !S.owns(SM, Construction->getExprLoc())) return std::nullopt;
   const auto *Constructor = Construction->getConstructor();
   const auto Kind = priorityQueueConstructorSignature(S, SM, Constructor, Context);
+  if (Constructor && Constructor->getNumParams() == 5 &&
+      Constructor->getParent()->getName() == "priority_queue") {
+    llvm::errs() << "NCPQ-GREATER-RANGE-SIGNATURE kind=" << bool(Kind)
+        << " args=" << Construction->getNumArgs()
+        << " parameters=" << Constructor->getNumParams() << "\n";
+  }
   if (!Kind || Construction->getNumArgs() != Constructor->getNumParams() ||
       !Context.hasSameUnqualifiedType(Construction->getType(),
           Context.getRecordType(Constructor->getParent()))) return std::nullopt;
