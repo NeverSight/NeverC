@@ -3802,7 +3802,7 @@ std::optional<UtilityDequeIteratorRecord> approvedUtilityDequeIteratorRecord(con
 enum class UtilityDequeConstruction { Default, Allocator, InitializerList,
   IteratorDefault, IteratorCopy, IteratorConstConversion };
 enum class UtilityDequeOperation { Empty, Size, Begin, End, Front, Back, Index,
-  PushFront, PushBack, PopFront, PopBack, Clear, IteratorDereference, IteratorArrow,
+  PushFront, PushBack, EmplaceFront, EmplaceBack, PopFront, PopBack, Clear, IteratorDereference, IteratorArrow,
   IteratorPreIncrement, IteratorPostIncrement, IteratorPreDecrement, IteratorPostDecrement,
   IteratorAssign, IteratorAdvance, IteratorRetreat, IteratorAdd, IteratorSubtract,
   IteratorIndex, IteratorEqual, IteratorNotEqual, IteratorLess, IteratorGreater,

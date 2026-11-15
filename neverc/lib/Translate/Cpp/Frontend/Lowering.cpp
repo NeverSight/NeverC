@@ -27479,8 +27479,12 @@ class FunctionLowering {
       clearDequeStorage(Place, L);
       return Expression{};
     }
-    const bool PushFront = Operation == UtilityDequeOperation::PushFront;
-    const bool PushBack = Operation == UtilityDequeOperation::PushBack;
+    const bool Emplace = Operation == UtilityDequeOperation::EmplaceFront ||
+        Operation == UtilityDequeOperation::EmplaceBack;
+    const bool PushFront = Operation == UtilityDequeOperation::PushFront ||
+        Operation == UtilityDequeOperation::EmplaceFront;
+    const bool PushBack = Operation == UtilityDequeOperation::PushBack ||
+        Operation == UtilityDequeOperation::EmplaceBack;
     if (PushFront || PushBack) {
       const auto Grow = labelName(), Store = labelName();
       auto Spare = PushFront ? dequeOwnerMember(Place, "nct_deque_start", L) : dequeBackSpare(Place, L);
@@ -27491,11 +27495,17 @@ class FunctionLowering {
       auto Position = PushFront ? binary("-", quantity(0, Size, L), quantity(1, Size, L), Size, L)
           : dequeOwnerMember(Place, "nct_deque_size", L);
       // Keep the argument as a reference until capacity allocation has returned.
-      assign(dequeOwnerValue(Place, Position, false, L), dereference(Operands[0], L), L);
+      auto Value = Operands.empty() ? quantity(0, "int", L) : dereference(Operands[0], L);
+      assign(dequeOwnerValue(Place, Position, false, L), std::move(Value), L);
       if (PushFront) assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("-",
           dequeOwnerMember(Place, "nct_deque_start", L), quantity(1, Size, L), Size, L), L);
       assign(dequeOwnerMember(Place, "nct_deque_size", L), binary("+",
           dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L), L);
+      if (Emplace) {
+        auto ResultPosition = PushFront ? quantity(0, Size, L) : binary("-",
+            dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L);
+        return dequeOwnerValue(Place, ResultPosition, false, L);
+      }
       return Expression{};
     }
     if (Operation == UtilityDequeOperation::PopFront || Operation == UtilityDequeOperation::PopBack) {

@@ -49629,9 +49629,42 @@ std::optional<UtilityDequeConstruction> dequeConstructorSignature(const State &S
   return std::nullopt;
 }
 
+bool dequeEmplaceTemplate(const CXXMethodDecl *Method, const ASTContext &Context) {
+  if (!Method || !Method->getIdentifier() || Method->isConst() ||
+      Method->isStatic() || Method->isVolatile() || Method->getRefQualifier() != RQ_None ||
+      (Method->getName() != "emplace" && Method->getName() != "emplace_front" &&
+       Method->getName() != "emplace_back") ||
+      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Context.IntTy)) ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Method->getNumParams() > 1) return false;
+  const auto *Primary = Method->getPrimaryTemplate();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  if (!Primary || Primary->getTemplateParameters()->size() != 1 ||
+      !Arguments || Arguments->size() != 1) return false;
+  const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
+  const auto &Argument = Arguments->get(0);
+  if (!Pack || !Pack->isParameterPack() || Argument.getKind() != TemplateArgument::Pack ||
+      Argument.pack_size() != Method->getNumParams()) return false;
+  if (Method->getNumParams()) {
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    const auto Value = Parameter->isReferenceType() ? Parameter->getPointeeType() : QualType();
+    if (Value.isNull() || Method->getParamDecl(0)->hasDefaultArg() ||
+        (!Context.hasSameType(Value, Context.IntTy) &&
+         !Context.hasSameType(Value, Context.IntTy.withConst()))) return false;
+    const auto &TypeArgument = *Argument.pack_begin();
+    if (TypeArgument.getKind() != TemplateArgument::Type) return false;
+    auto Type = TypeArgument.getAsType();
+    if (Type->isReferenceType()) Type = Type->getPointeeType();
+    if (!Context.hasSameType(Type, Context.IntTy) &&
+        !Context.hasSameType(Type, Context.IntTy.withConst())) return false;
+  }
+  return true;
+}
+
 std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const SourceManager &SM,
     const CXXMethodDecl *M, const ASTContext &Context) {
-  if (!M || M->isStatic() || M->isVolatile() || M->getPrimaryTemplate() ||
+  if (!M || M->isStatic() || M->isVolatile() ||
+      (M->getPrimaryTemplate() && !dequeEmplaceTemplate(M, Context)) ||
       !dequeFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (approvedUtilityDequeRecord(S, SM, M->getParent(), Context)) {
     const bool Stack = M->getParent()->getName() == "stack";
@@ -49646,6 +49679,10 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
     }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
+    if (dequeEmplaceTemplate(M, Context) &&
+        (((Stack || Queue) && Name == "emplace") ||
+         (!Stack && !Queue && (Name == "emplace_front" || Name == "emplace_back"))))
+      return Name == "emplace_front" ? UtilityDequeOperation::EmplaceFront : UtilityDequeOperation::EmplaceBack;
     if (!M->getNumParams()) {
       if (Name == "empty" && M->isConst() && Context.hasSameType(M->getReturnType(), Context.BoolTy))
         return UtilityDequeOperation::Empty;
