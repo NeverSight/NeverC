@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.priority_lessvoid_registered = cls.registered
+        cls.priority_lessvoid_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.priority_lessvoid_original = cls.adapter.restore_original_gtests(cls.priority_lessvoid_registered,cls.priority_lessvoid_suffix)
+        cls.registered = cls.adapter.restore_priority_lessvoid_history(cls.priority_lessvoid_registered)
         cls.priority_greatervoid_registered = cls.registered
         cls.priority_greatervoid_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.priority_greatervoid_original = cls.adapter.restore_original_gtests(cls.priority_greatervoid_registered,cls.priority_greatervoid_suffix)
@@ -987,6 +991,34 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.priority_greatervoid_registered,self.priority_greatervoid_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.priority_greatervoid_original+b' ',['TranslateTest.CoreV2PriorityQueueGreaterVoidHeapRunAtBothOptimizations'])
+
+    def test_priority_lessvoid_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.priority_lessvoid_original+self.priority_lessvoid_suffix,self.priority_lessvoid_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.priority_lessvoid_original,self.priority_lessvoid_suffix),self.priority_lessvoid_original)
+        self.assertEqual(self.adapter.restore_priority_lessvoid_history(self.priority_lessvoid_registered),self.priority_greatervoid_registered)
+        self.assertEqual(self.adapter.restore_priority_lessvoid_history(self.priority_lessvoid_original),self.priority_greatervoid_original)
+        selected = ['TranslateTest.CoreV2PriorityQueueLessVoidAllocatorEmptyComparatorRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueLessVoidAllocatorCopyVectorRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueLessVoidAllocatorMoveVectorRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueLessVoidAllocatorCopyMoveQueueRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueLessVoidAllocatorPointerRangeRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueLessVoidAllocatorRangeCopyMovePrefixRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueLessVoidOwnedComparatorRejected', 'TranslateTest.CoreV2PriorityQueueLessVoidOwnedVectorCopyRejected', 'TranslateTest.CoreV2PriorityQueueLessVoidOwnedMakeHeapRejected', 'TranslateTest.CoreV2PriorityQueueLessVoidOwnedLengthErrorRejected']
+        generated,proof = self.extractor.extract(self.priority_lessvoid_original,selected)
+        self.assertEqual(proof['original_test_names'],7622)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7612)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'std::less<void>',generated)
+        self.assertIn(b'std::move(prefix)',generated)
+
+    def test_priority_lessvoid_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.priority_lessvoid_registered+b' ',
+                        self.priority_lessvoid_registered.replace(b'std::less<void>',b'q.push(11)',1),
+                        self.priority_lessvoid_registered+self.priority_lessvoid_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.priority_lessvoid_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_priority_lessvoid_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.priority_lessvoid_registered,self.priority_lessvoid_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.priority_lessvoid_original+b' ',['TranslateTest.CoreV2PriorityQueueLessVoidAllocatorEmptyComparatorRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
