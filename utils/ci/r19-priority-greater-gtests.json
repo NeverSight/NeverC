@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "priority-greater-heap-extremes",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterIntHeapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "010bc9aa4da164a7ccd369649c50689a78400f7c23ff9de0ee24c8f61c7e3812",
+      "original_case_source_sha256": "010bc9aa4da164a7ccd369649c50689a78400f7c23ff9de0ee24c8f61c7e3812",
+      "gtest_body_sha256": "bea778ff0df9e50cdf38e48631132c882a1dfb4be508c0d96757f202a0513523"
+    },
+    {
+      "name": "priority-greater-value-operations",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterIntValuesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a0aa8df02becd3669464c1278b179050ab521e0e1b50cad8af8a2ec4a02f7ac9",
+      "original_case_source_sha256": "a0aa8df02becd3669464c1278b179050ab521e0e1b50cad8af8a2ec4a02f7ac9",
+      "gtest_body_sha256": "7f1743a1cd22741832f453de950bbfaedb1b6e9f80b8228bb65bd045d15efb2f"
+    },
+    {
+      "name": "priority-greater-vector-constructors",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterIntVectorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9401a08a28005bf835aebee6f1dbd7dfd3b360493f30153a351753cfa2ce35ae",
+      "original_case_source_sha256": "9401a08a28005bf835aebee6f1dbd7dfd3b360493f30153a351753cfa2ce35ae",
+      "gtest_body_sha256": "d034d678bdd2389a5ed50a7ea5df246f9e10ef6ca49f36b3e0bf36e3f16cd8af"
+    },
+    {
+      "name": "priority-greater-pointer-ranges",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterIntPointerRangesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "df7ef2d309cbef604a5177e1214972444dcbf9caff980f3dd9f4750bd45ad069",
+      "original_case_source_sha256": "df7ef2d309cbef604a5177e1214972444dcbf9caff980f3dd9f4750bd45ad069",
+      "gtest_body_sha256": "9c0a2ded794a2eab2cac3f674eafb689dc2731c6ca282ca4a1d3980c292793bb"
+    },
+    {
+      "name": "priority-greater-range-prefixes",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterIntRangePrefixesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "96438e6df8977525f411908a1cff48adec3385a8221d8c7162d479b6a5668e4a",
+      "original_case_source_sha256": "96438e6df8977525f411908a1cff48adec3385a8221d8c7162d479b6a5668e4a",
+      "gtest_body_sha256": "09e197f7ac92502eb1665527769bde30b1099a4bbabab6fed6a3decbcdaed568"
+    },
+    {
+      "name": "priority-greater-allocator-constructors",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterIntAllocatorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3a9ea823b1f60b0628acb71a73a8a5353a2bd5e67717d4257ab89853ad11f583",
+      "original_case_source_sha256": "3a9ea823b1f60b0628acb71a73a8a5353a2bd5e67717d4257ab89853ad11f583",
+      "gtest_body_sha256": "15f0650ed2ca1aa2dd23cb62c92bfa055c78f92a18bbbacf2c70e73876bf7088"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "priority-greater-owned-comparator-body",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterOwnedComparatorRejected",
+      "expected": "reject",
+      "source_sha256": "134e5e5eddc01ca1a67f8e7ba98590bac065ee33d3a43351c5b245d7af123d92",
+      "original_case_source_sha256": "134e5e5eddc01ca1a67f8e7ba98590bac065ee33d3a43351c5b245d7af123d92",
+      "gtest_body_sha256": "507f869352831e7b886da64fd60569988994249e2139d7d0f892cf2aed9852e3"
+    },
+    {
+      "name": "priority-greater-owned-push-body",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterOwnedPushRejected",
+      "expected": "reject",
+      "source_sha256": "411941c5094a686abbec90938fb9e6bf5c0deb09ec5cbd5e59ca4e603a00f3dc",
+      "original_case_source_sha256": "411941c5094a686abbec90938fb9e6bf5c0deb09ec5cbd5e59ca4e603a00f3dc",
+      "gtest_body_sha256": "ff2efe99d2116edcc626ab1af124c2cba7108d300c356b668009bf8ad36b4a8f"
+    },
+    {
+      "name": "priority-greater-owned-make-heap-body",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterOwnedMakeHeapRejected",
+      "expected": "reject",
+      "source_sha256": "c24d4f8c54ca46fdd1ec2b447c26ba77188cc80831b69289a5056c8481e95edd",
+      "original_case_source_sha256": "c24d4f8c54ca46fdd1ec2b447c26ba77188cc80831b69289a5056c8481e95edd",
+      "gtest_body_sha256": "bc6abc7f13d4c120db91b05966943fce3a3c85b672142a762a0f42bf2d45c38f"
+    },
+    {
+      "name": "priority-greater-owned-vector-length-error",
+      "formal_test_name": "TranslateTest.CoreV2PriorityQueueGreaterOwnedLengthErrorRejected",
+      "expected": "reject",
+      "source_sha256": "d2ffdcafcd79d6858facd528bc34ce921b20bc017bb2e8142eb93d3d907f7807",
+      "original_case_source_sha256": "d2ffdcafcd79d6858facd528bc34ce921b20bc017bb2e8142eb93d3d907f7807",
+      "gtest_body_sha256": "d856b91c542fa4ac3e37554ac484255365bb8faba6eb83edba3a70a8a2aec8ad"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2PriorityQueueGreaterIntHeapRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterIntValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterIntVectorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterIntPointerRangesRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterIntRangePrefixesRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterIntAllocatorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2PriorityQueueGreaterOwnedComparatorRejected",
+    "TranslateTest.CoreV2PriorityQueueGreaterOwnedPushRejected",
+    "TranslateTest.CoreV2PriorityQueueGreaterOwnedMakeHeapRejected",
+    "TranslateTest.CoreV2PriorityQueueGreaterOwnedLengthErrorRejected"
+  ],
+  "native_reference_authentication_sha256": "1f3965876b28059f2e4a0017a21f5864c8ac30f26e877976578f0a38f8574c1d",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "0ad7be7ccffa9996fe7f86363478af191633a9256ba23df48b829959ad3bf368",
+  "maintained_original_sha256": "aa10a69f4c0902212f0c1b08063294e9bb8270dfe708bdc3e0011bafb2eb99f0",
+  "previous_registered_source_sha256": "64b1cde205bfeff75a9b6403de8ad540808d947b8f7acc290d961c3a4b2faf04",
+  "previous_maintained_original_sha256": "2f6296ebbabc79f1a74007f41b33557c0e8f068209bcb5deb3c0128953731e4d",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7602,
+  "current_python_registry_tests": 68,
+  "previous7592_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "1fc41f1b8245b3a122209654cc2e2b98179483a458af04c8808b4c7d896d9354",
+  "extractor_sha256": "4b68c08bdb69d996bae974732117d1992c5ce4da63106ccd3c4f8b7a95779152",
+  "source_cases": [
+    {
+      "name": "priority-greater-heap-extremes",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<int>>;\nint main(){Minimum q;\nif(!q.empty()||q.size()!=0)return 1;int input[6]={7,-3,7,2147483647,-2147483647-1,0};\nfor(int x:input)q.push(x);int expected[6]={-2147483647-1,-3,0,7,7,2147483647};\nfor(int i=0;i!=6;++i){if(q.size()!=static_cast<unsigned>(6-i)||q.top()!=expected[i])return 2;q.pop();}\nreturn !q.empty();}\n",
+      "source_sha256": "010bc9aa4da164a7ccd369649c50689a78400f7c23ff9de0ee24c8f61c7e3812",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greater-value-operations",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<int>>;\nint main(){Minimum q;q.push(9);q.push(-3);q.push(4);\nMinimum copy(q);if(copy.top()!=-3||&copy.top()==&q.top())return 1;\nMinimum assigned;Minimum& reference=(assigned=copy);if(&reference!=&assigned||assigned.size()!=3)return 2;\nconst int* storage=&q.top();Minimum moved(std::move(q));if(!q.empty()||&moved.top()!=storage)return 3;\nMinimum other;other.push(12);other.swap(moved);if(other.top()!=-3||&other.top()!=storage||moved.top()!=12)return 4;\nMinimum final;final=std::move(assigned);if(!assigned.empty()||final.top()!=-3)return 5;\nstd::swap(final,moved);if(final.top()!=12||moved.top()!=-3)return 6;\nq.emplace();q.emplace(-11);q.emplace(q.top());if(q.size()!=3||q.top()!=-11)return 7;\nq.pop();if(q.top()!=-11)return 8;q.pop();return q.top()!=0;}\n",
+      "source_sha256": "a0aa8df02becd3669464c1278b179050ab521e0e1b50cad8af8a2ec4a02f7ac9",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greater-vector-constructors",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<int>>;\nint main(){std::greater<int> compare;\nMinimum empty(compare);if(!empty.empty())return 1;std::vector<int> values{9,-2,6,6};\nconst auto& original=values;Minimum copy(compare,original);values[0]=11;\nconst int* storage=&values[0];Minimum moved(compare,std::move(values));\nif(!values.empty()||&moved.top()!=storage||&copy.top()==storage)return 2;\nint a[4]={-2,6,6,9},b[4]={-2,6,6,11};for(int i=0;i!=4;++i){\nif(copy.top()!=a[i]||moved.top()!=b[i])return 3;copy.pop();moved.pop();}\nvalues.push_back(21);return !copy.empty()||!moved.empty()||values[0]!=21;}\n",
+      "source_sha256": "9401a08a28005bf835aebee6f1dbd7dfd3b360493f30153a351753cfa2ce35ae",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greater-pointer-ranges",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<int>>;\nint main(){int values[5]={4,-8,17,4,2};const int* first=values;\nMinimum a(first,first+5);std::greater<int> compare;Minimum b(values,values+5,compare);\nMinimum empty(first+5,first+5);if(!empty.empty()||a.size()!=5||b.size()!=5)return 1;\nint expected[5]={-8,2,4,4,17};for(int i=0;i!=5;++i){\nif(a.top()!=expected[i]||b.top()!=expected[i])return 2;a.pop();b.pop();}\nreturn !a.empty()||!b.empty()||values[0]!=4||values[2]!=17;}\n",
+      "source_sha256": "df7ef2d309cbef604a5177e1214972444dcbf9caff980f3dd9f4750bd45ad069",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greater-range-prefixes",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<int>>;\nint main(){std::greater<int> compare;std::vector<int> prefix{6,2};\nprefix.reserve(16);const int added[3]={8,-1,6};const auto& original=prefix;\nMinimum copy(added,added+3,compare,original);const int* storage=&prefix[0];\nMinimum moved(added,added+3,compare,std::move(prefix));\nif(!prefix.empty()||copy.size()!=5||moved.size()!=5||&moved.top()!=storage||&copy.top()==storage)return 1;\nint expected[5]={-1,2,6,6,8};for(int i=0;i!=5;++i){\nif(copy.top()!=expected[i]||moved.top()!=expected[i])return 2;copy.pop();moved.pop();}\nprefix.push_back(21);return !copy.empty()||!moved.empty()||prefix[0]!=21;}\n",
+      "source_sha256": "96438e6df8977525f411908a1cff48adec3385a8221d8c7162d479b6a5668e4a",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greater-allocator-constructors",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<int>>;\nint main(){std::allocator<int> alloc;std::greater<int> compare;\nMinimum a(alloc),b(compare,alloc);if(!a.empty()||!b.empty())return 1;\nstd::vector<int> values{5,-1};const auto& original=values;Minimum c(compare,original,alloc);\nMinimum d(compare,std::move(values),alloc);Minimum e(c,alloc);const int* queue_storage=&d.top();\nMinimum f(std::move(d),alloc);if(!values.empty()||!d.empty()||&f.top()!=queue_storage||&e.top()==&c.top())return 2;\nint range[2]={3,-7};Minimum g(range,range+2,alloc),h(range,range+2,compare,alloc);\nstd::vector<int> prefix{8,2},moved_prefix{6,4};moved_prefix.reserve(16);const int* storage=&moved_prefix[0];\nconst auto& constant_prefix=prefix;Minimum i(range,range+2,compare,constant_prefix,alloc);\nMinimum j(range,range+2,compare,std::move(moved_prefix),alloc);\nif(c.top()!=-1||e.top()!=-1||f.top()!=-1||g.top()!=-7||h.top()!=-7||i.top()!=-7||j.top()!=-7)return 3;\nif(c.size()!=2||e.size()!=2||f.size()!=2||g.size()!=2||h.size()!=2||i.size()!=4||j.size()!=4)return 4;\nreturn prefix.size()!=2||prefix[0]!=8||!moved_prefix.empty()||&j.top()!=storage;}\n",
+      "source_sha256": "3a9ea823b1f60b0628acb71a73a8a5353a2bd5e67717d4257ab89853ad11f583",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "priority-greater-owned-comparator-body",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<int>>;\nnamespace std { inline namespace __1 {\ntemplate<> inline constexpr bool greater<int>::operator()(const int&,const int&) const {return false;}\n}}\nint main(){Minimum q;q.push(3);q.push(-8);return q.top()!=-8;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "134e5e5eddc01ca1a67f8e7ba98590bac065ee33d3a43351c5b245d7af123d92"
+    },
+    {
+      "name": "priority-greater-owned-push-body",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<int>>;\nnamespace std { inline namespace __1 {\ntemplate<> inline void priority_queue<int,vector<int>,greater<int>>::push(const int&) {}\n}}\nint main(){Minimum q;int value=3;q.push(value);return q.empty();}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "411941c5094a686abbec90938fb9e6bf5c0deb09ec5cbd5e59ca4e603a00f3dc"
+    },
+    {
+      "name": "priority-greater-owned-make-heap-body",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<int>>;\nnamespace std { inline namespace __1 {\ntemplate<> inline void make_heap<int*,greater<int>>(int*,int*,greater<int>) {}\n}}\nint main(){std::greater<int> compare;std::vector<int> values{3,-8};const auto& original=values;\nMinimum q(compare,original);return q.top()!=-8;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "c24d4f8c54ca46fdd1ec2b447c26ba77188cc80831b69289a5056c8481e95edd"
+    },
+    {
+      "name": "priority-greater-owned-vector-length-error",
+      "source": "#include <queue>\n#include <vector>\n#include <functional>\n#include <memory>\n#include <utility>\nusing Minimum=std::priority_queue<int,std::vector<int>,std::greater<int>>;\nnamespace std { inline namespace __1 {\ntemplate<> inline void vector<int>::__throw_length_error() {__builtin_trap();}\n}}\nint main(){std::greater<int> compare;std::allocator<int> alloc;std::vector<int> values{3,-8};\nconst auto& original=values;Minimum q(compare,original,alloc);return q.empty();}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "public_header": "queue",
+      "source_sha256": "d2ffdcafcd79d6858facd528bc34ce921b20bc017bb2e8142eb93d3d907f7807"
+    }
+  ],
+  "source48_authentication_sha256": "fb2251167bb98e6ec5c1a2a79181f4ab13d54ac6e8e7cb30abbdcdcae8e9c7c7",
+  "source48_compiler_source": "3d1e10694d489c449b5f9924aacb4964db27292a"
+}

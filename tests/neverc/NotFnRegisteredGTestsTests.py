@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.priority_greater_registered = cls.registered
+        cls.priority_greater_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.priority_greater_original = cls.adapter.restore_original_gtests(cls.priority_greater_registered,cls.priority_greater_suffix)
+        cls.registered = cls.adapter.restore_priority_greater_history(cls.priority_greater_registered)
         cls.priority_alloc_registered = cls.registered
         cls.priority_alloc_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.priority_alloc_original = cls.adapter.restore_original_gtests(cls.priority_alloc_registered,cls.priority_alloc_suffix)
@@ -923,6 +927,34 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.priority_alloc_registered,self.priority_alloc_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.priority_alloc_original+b' ',['TranslateTest.CoreV2PriorityQueueIntAllocatorEmptyComparatorRunAtBothOptimizations'])
+
+    def test_priority_greater_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.priority_greater_original+self.priority_greater_suffix,self.priority_greater_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.priority_greater_original,self.priority_greater_suffix),self.priority_greater_original)
+        self.assertEqual(self.adapter.restore_priority_greater_history(self.priority_greater_registered),self.priority_alloc_registered)
+        self.assertEqual(self.adapter.restore_priority_greater_history(self.priority_greater_original),self.priority_alloc_original)
+        selected = ['TranslateTest.CoreV2PriorityQueueGreaterIntHeapRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueGreaterIntValuesRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueGreaterIntVectorsRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueGreaterIntPointerRangesRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueGreaterIntRangePrefixesRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueGreaterIntAllocatorsRunAtBothOptimizations', 'TranslateTest.CoreV2PriorityQueueGreaterOwnedComparatorRejected', 'TranslateTest.CoreV2PriorityQueueGreaterOwnedPushRejected', 'TranslateTest.CoreV2PriorityQueueGreaterOwnedMakeHeapRejected', 'TranslateTest.CoreV2PriorityQueueGreaterOwnedLengthErrorRejected']
+        generated,proof = self.extractor.extract(self.priority_greater_original,selected)
+        self.assertEqual(proof['original_test_names'],7602)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7592)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'using Minimum=',generated)
+        self.assertIn(b'std::move(prefix)',generated)
+
+    def test_priority_greater_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.priority_greater_registered+b' ',
+                        self.priority_greater_registered.replace(b'using Minimum=',b'q.push(11)',1),
+                        self.priority_greater_registered+self.priority_greater_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.priority_greater_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_priority_greater_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.priority_greater_registered,self.priority_greater_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.priority_greater_original+b' ',['TranslateTest.CoreV2PriorityQueueGreaterIntHeapRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
