@@ -50958,6 +50958,72 @@ bool dequeMapAddressSubgraph(const State &S, const SourceManager &SM,
   return true;
 }
 
+bool dequeRuntimeMemmoveBranch(const State &S, const SourceManager &SM,
+    const IfStmt *Branch, const FunctionDecl *Owner, const ASTContext &Context) {
+  if (!Branch || !Owner || !Context.getLangOpts().CPlusPlus17 || Context.getLangOpts().CPlusPlus20 ||
+      Branch->getInit() || Branch->getConditionVariable() || Branch->isConstexpr() ||
+      Branch->getIfLoc().isMacroID() || SM.getExpansionLineNumber(Branch->getIfLoc()) != 211 ||
+      isa<CXXMethodDecl>(Owner) || Owner->isInvalidDecl() || Owner->isDeleted() || Owner->isVariadic() ||
+      !Owner->getIdentifier() || Owner->getName() != "__constexpr_memmove" ||
+      !dequeStd(Owner->getDeclContext()) || Owner->getNumParams() != 3 || !Owner->hasBody() ||
+      Owner->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+  const auto Site = S.sdkFile(SM, Branch->getIfLoc());
+  if (!Site || Site->Root != "libcxx" || Site->Path != "__string/constexpr_c_functions.h") return false;
+  for (const auto *Parameter : Owner->parameters()) if (Parameter->hasDefaultArg()) return false;
+  const auto To = Owner->getParamDecl(0)->getType(), From = Owner->getParamDecl(1)->getType();
+  if (!To->isPointerType() || !From->isPointerType() || !Context.hasSameType(Owner->getReturnType(), To)) return false;
+  const auto Element = To->getPointeeType(), SourceElement = From->getPointeeType();
+  if (Element.hasQualifiers() || SourceElement.isVolatileQualified() ||
+      (!Context.hasSameType(Element, Context.IntTy) &&
+       !Context.hasSameType(Element, Context.getPointerType(Context.IntTy))) ||
+      !Context.hasSameUnqualifiedType(Element, SourceElement)) return false;
+  const auto *Count = Owner->getParamDecl(2)->getType()->getAs<EnumType>();
+  const auto *CountDecl = Count ? Count->getDecl() : nullptr;
+  if (!CountDecl || !CountDecl->getIdentifier() || CountDecl->getName() != "__element_count" ||
+      !dequeStd(CountDecl->getDeclContext()) || !CountDecl->isScoped() ||
+      !CountDecl->isCompleteDefinition() || CountDecl->enumerator_begin() != CountDecl->enumerator_end() ||
+      !Context.hasSameType(CountDecl->getIntegerType(), Context.getSizeType())) return false;
+  const auto *Primary = Owner->getPrimaryTemplate();
+  const auto *Pattern = Owner->getTemplateInstantiationPattern();
+  const auto *Arguments = Owner->getTemplateSpecializationArgs();
+  if (!Primary || !Pattern || !Arguments || Arguments->size() != 3 ||
+      Primary->getTemplateParameters()->size() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      Arguments->get(2).getKind() != TemplateArgument::Integral ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Element) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(), SourceElement) ||
+      !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy) ||
+      !Arguments->get(2).getAsIntegral().isZero()) return false;
+  const auto *Call = dyn_cast_or_null<CallExpr>(Branch->getCond()->IgnoreParenImpCasts());
+  const auto *Query = Call ? Call->getDirectCallee() : nullptr;
+  if (!Query || Call->getNumArgs() || !Query->getIdentifier() ||
+      Query->getName() != "__libcpp_is_constant_evaluated" || !dequeStd(Query->getDeclContext()) ||
+      isa<CXXMethodDecl>(Query) || Query->isInvalidDecl() || Query->isDeleted() || Query->isVariadic() ||
+      Query->getNumParams() || !Query->isConstexpr() || Query->getPrimaryTemplate() ||
+      !Context.hasSameType(Query->getReturnType(), Context.BoolTy)) return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Query->getBody());
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
+  const auto *BuiltinCall = Return && Return->getRetValue()
+      ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  const auto *BuiltinFunction = BuiltinCall ? BuiltinCall->getDirectCallee() : nullptr;
+  if (!BuiltinFunction || BuiltinCall->getNumArgs() || BuiltinFunction->getNumParams() ||
+      BuiltinFunction->getBuiltinID() != Builtin::BI__builtin_is_constant_evaluated ||
+      BuiltinFunction->hasBody() || !Context.hasSameType(BuiltinFunction->getReturnType(), Context.BoolTy)) return false;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D, const char *Header) {
+    return ++Declarations <= 64 && dequePinned(S, SM, D, Header);
+  };
+  for (const auto *D : Owner->redecls()) if (!Pinned(D, "__string/constexpr_c_functions.h")) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D, "__string/constexpr_c_functions.h")) return false;
+  for (const auto *D : Primary->redecls())
+    if (!Pinned(D, "__string/constexpr_c_functions.h") ||
+        !Pinned(D->getTemplatedDecl(), "__string/constexpr_c_functions.h")) return false;
+  for (const auto *D : CountDecl->redecls()) if (!Pinned(D, "__utility/element_count.h")) return false;
+  for (const auto *D : Query->redecls()) if (!Pinned(D, "__type_traits/is_constant_evaluated.h")) return false;
+  return true;
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false,
                          const FunctionDecl *ClosedCopyRoot = nullptr, unsigned *SharedNodes = nullptr,
@@ -50990,6 +51056,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   llvm::DenseMap<const Stmt *, unsigned> LocalStatements;
   auto &Statements = SharedStatements ? *SharedStatements : LocalStatements;
   const bool MemoizeStatements = DequeValueCopy || SharedStatements;
+  const FunctionDecl *ActiveFunction = nullptr;
   unsigned LocalNodes = 0;
   unsigned &Nodes = SharedNodes ? *SharedNodes : LocalNodes;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -51001,6 +51068,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
+    const auto *PreviousFunction = ActiveFunction;
+    ActiveFunction = F;
+    auto RestoreFunction = llvm::make_scope_exit([&] { ActiveFunction = PreviousFunction; });
     // The exact non-priority copy proof already shares this canonical
     // function's traversal. Charge that proof only once; depth and all
     // declaration/source checks below still apply to every reference.
@@ -51151,6 +51221,17 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
             N->getNumPlacementArgs() != 1 ||
             !Function(N->getOperatorNew(), Depth + 1)) return false;
         if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+      }
+      if (MemoizeStatements) {
+        const auto *Branch = dyn_cast<IfStmt>(Node);
+        if (dequeRuntimeMemmoveBranch(S, SM, Branch, ActiveFunction, Context)) {
+          // These deque copies run at runtime in C++17. The exact pinned
+          // query returns the compiler builtin and has no other effects.
+          // Keep its full ordinary proof and the entire runtime else branch;
+          // only the constant-evaluation-only then branch is unreachable.
+          if (!Statement(Branch->getCond(), Depth + 1)) return false;
+          return Statement(Branch->getElse(), Depth + 1);
+        }
       }
       for (const auto *Child : Node->children())
         if (!Statement(Child, Depth + 1)) return false;
