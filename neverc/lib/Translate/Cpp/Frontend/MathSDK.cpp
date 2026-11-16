@@ -51700,7 +51700,13 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (dequeHeapBoundary(F, Context)) return true;
-    if (dequeBuiltinLibraryCast(S, SM, F, Context, PriorityRoot)) return true;
+    if (dequeBuiltinLibraryCast(S, SM, F, Context, PriorityRoot)) {
+      // This exact SDK builtin has a complete declaration/signature proof.
+      // Recheck that proof on every reference, but include its canonical
+      // specialization in the copy graph's existing one-charge ledger.
+      if (MemoizeStatements) Seen.insert(F->getCanonicalDecl());
+      return true;
+    }
     if (F->getBuiltinID()) {
       if (!F->getIdentifier() || F->hasBody()) return false;
       const auto Name = F->getName();
