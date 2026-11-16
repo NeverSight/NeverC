@@ -51532,8 +51532,17 @@ bool dequeTransferWrapper(const State &S, const SourceManager &SM,
       if (!dequeDependencyDeclaration(S, SM, Reference->getDecl())) return false;
     } else if (const auto *Member = dyn_cast<MemberExpr>(Node)) {
       if (!Macro(Member->getMemberLoc()) || !dequeDependencyDeclaration(S, SM, Member->getMemberDecl())) return false;
+    } else if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Node)) {
+      if (Cleanup->cleanupsHaveSideEffects() || Cleanup->getNumObjects() || !Cleanup->getSubExpr()) return false;
     } else if (const auto *Cast = dyn_cast<CastExpr>(Node)) {
-      if (Cast->getCastKind() != CK_LValueToRValue && Cast->getCastKind() != CK_NoOp &&
+      if (Cast->getCastKind() == CK_BuiltinFnToFnPtr) {
+        const auto *Reference = dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens());
+        const auto *Builtin = Reference ? dyn_cast<FunctionDecl>(Reference->getDecl()) : nullptr;
+        if (!Builtin || !Builtin->getBuiltinID() || !Cast->getType()->isFunctionPointerType() ||
+            !Context.hasSameType(Cast->getType()->getPointeeType(), Builtin->getType()) ||
+            !dequeDependencyDeclaration(S, SM, Builtin) ||
+            !dequeDependencyDeclaration(S, SM, Reference->getFoundDecl())) return false;
+      } else if (Cast->getCastKind() != CK_LValueToRValue && Cast->getCastKind() != CK_NoOp &&
           Cast->getCastKind() != CK_IntegralCast && Cast->getCastKind() != CK_FunctionToPointerDecay) return false;
     } else if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
       if (!dequeDependencyDeclaration(S, SM, Default->getParam()) || !Wrapper(Default->getExpr(), Depth + 1)) return false;
