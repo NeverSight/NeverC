@@ -17490,6 +17490,17 @@ Live reference arguments are read at the required point after a selected
 allocation, and receiver and argument expressions retain their evaluation
 effects.
 
+The same default integer owners support copy/move construction and assignment,
+member `swap`, and the selected SDK free `swap`. Copies retain independent
+segmented storage. Copy assignment preserves the SDK order of prefix writes,
+allocation, and suffix reads, including callbacks that change the source.
+Copy construction captures the original segmented source range before an
+allocation callback can swap its owner. Moves transfer the existing storage and
+leave the source empty and reusable. Move assignment preserves the selected
+deallocation order; self-move leaves the owner empty and self-swap preserves it.
+Assignment notation evaluates the right operand before the receiver; explicit
+member calls evaluate their receiver before the argument.
+
 Each family has ten permanent GTests: six exact native-reference programs that
 generate and execute C23 at O0 and O2, and four source-origin rejection tests.
 Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
@@ -17501,7 +17512,12 @@ registered GTests and twelve generated C23 executions at O0 and O2 against its
 exact native programs. These cover returned reference identities, front/back
 block growth, stack and queue behavior, allocation callbacks that change a live
 argument, and receiver/argument sequencing. Four source-origin guards reject
-replaced emplacement bodies.
+replaced emplacement bodies. A separate value-operation family passes ten
+registered GTests and twelve generated C23 executions at O0 and O2 against its
+exact native programs. These cover multi-block copy/move construction and
+assignment, swap, self operations, storage identities and reuse, allocation and
+deallocation callbacks, and operator versus explicit-call sequencing. Four
+source-origin guards reject replaced value-operation bodies.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
@@ -17509,7 +17525,7 @@ graph. The fixed range-comparator leaves retain complete checks of their types,
 locations and bodies; the general graph depth and node limits are unchanged.
 Replaced operation bodies and owner/storage macros remain rejected.
 
-Owner copying/moving and assignment, custom allocators or adapter containers,
+Custom allocators or adapter containers,
 other element specializations, range overloads, emplacement with other
 argument types or multiple arguments, positional insertion/erasure and resizing
 require further work. These bounded operations
