@@ -50851,10 +50851,12 @@ bool dequeValueCopySubgraph(const State &S, const SourceManager &SM,
       F->isInvalidDecl() || F->isDeleted() || F->isVariadic() || !F->hasBody() ||
       F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
   const bool Unwrap = F->getName() == "__unwrap_range";
+  const bool Rewrap = F->getName() == "__rewrap_range";
   const bool Transfer = F->getName() == "__copy_trivial_impl" ||
       F->getName() == "__copy_backward_trivial_impl";
   const bool Segmented = F->getName() == "__copy";
-  if ((!Unwrap && !Transfer && !Segmented) || F->getNumParams() != (Unwrap ? 2u : 3u)) return false;
+  if ((!Unwrap && !Rewrap && !Transfer && !Segmented) ||
+      F->getNumParams() != (Unwrap || Rewrap ? 2u : 3u)) return false;
   const auto *Primary = F->getPrimaryTemplate();
   const auto *Pattern = F->getTemplateInstantiationPattern();
   const auto *Arguments = F->getTemplateSpecializationArgs();
@@ -50880,7 +50882,7 @@ bool dequeValueCopySubgraph(const State &S, const SourceManager &SM,
     if (!Context.hasSameType(Input, Context.getPointerType(Context.IntTy.withConst())) ||
         !Context.hasSameType(Input, Arguments->get(1).getAsType()) ||
         !dequeIteratorType(S, SM, Output, false, Context)) return false;
-  } else if (Unwrap) {
+  } else if (Unwrap || Rewrap) {
     Input = Arguments->get(0).getAsType();
     if (!Input->isPointerType() || !Primitive(Input->getPointeeType()) ||
         !Context.hasSameType(Input, Arguments->get(1).getAsType())) return false;
@@ -50898,19 +50900,24 @@ bool dequeValueCopySubgraph(const State &S, const SourceManager &SM,
   if (F->getReturnType().isConstQualified() || F->getReturnType().isVolatileQualified()) return false;
   const auto *Pair = dyn_cast_or_null<ClassTemplateSpecializationDecl>(F->getReturnType()->getAsCXXRecordDecl());
   const auto *PairTemplate = Pair ? Pair->getSpecializedTemplate() : nullptr;
-  if (!Pair || !PairTemplate || !Pair->getIdentifier() || Pair->getName() != "pair" ||
-      !dequeStd(Pair->getDeclContext()) || Pair->getTemplateArgs().size() != 2) return false;
-  for (unsigned I = 0; I != 2; ++I)
-    if (Pair->getTemplateArgs()[I].getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Pair->getTemplateArgs()[I].getAsType(), I ? Output : Input)) return false;
+  if (Rewrap) {
+    if (!Context.hasSameType(F->getReturnType(), Input)) return false;
+  } else {
+    if (!Pair || !PairTemplate || !Pair->getIdentifier() || Pair->getName() != "pair" ||
+        !dequeStd(Pair->getDeclContext()) || Pair->getTemplateArgs().size() != 2) return false;
+    for (unsigned I = 0; I != 2; ++I)
+      if (Pair->getTemplateArgs()[I].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Pair->getTemplateArgs()[I].getAsType(), I ? Output : Input)) return false;
+  }
   unsigned Declarations = 0;
-  const char *Header = Unwrap ? "__algorithm/unwrap_range.h" :
+  const char *Header = (Unwrap || Rewrap) ? "__algorithm/unwrap_range.h" :
       Segmented ? "__algorithm/copy.h" : "__algorithm/copy_move_common.h";
   auto Pinned = [&](const Decl *D) { return ++Declarations <= 64 && dequePinned(S, SM, D, Header); };
   for (const auto *D : F->redecls()) if (!Pinned(D)) return false;
   for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
   for (const auto *D : Primary->redecls())
     if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+  if (Rewrap) return true;
   auto PinnedPair = [&](const Decl *D) {
     return ++Declarations <= 64 &&
         (dequePinned(S, SM, D, "__utility/pair.h") || dequePinned(S, SM, D, "__fwd/pair.h"));
