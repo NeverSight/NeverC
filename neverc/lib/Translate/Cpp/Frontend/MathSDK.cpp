@@ -50921,12 +50921,44 @@ bool dequeValueCopySubgraph(const State &S, const SourceManager &SM,
   return true;
 }
 
+bool dequeMapAddressSubgraph(const State &S, const SourceManager &SM,
+                              const FunctionDecl *F, const ASTContext &Context) {
+  if (!F || isa<CXXMethodDecl>(F) || !F->getIdentifier() || F->getName() != "__to_address" ||
+      !dequeStd(F->getDeclContext()) || F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
+      F->getNumParams() != 1 || F->getParamDecl(0)->hasDefaultArg() || !F->hasBody() ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+  const auto *Primary = F->getPrimaryTemplate();
+  const auto *Pattern = F->getTemplateInstantiationPattern();
+  const auto *Arguments = F->getTemplateSpecializationArgs();
+  if (!Primary || !Pattern || !Arguments || Arguments->size() != 1 ||
+      Primary->getTemplateParameters()->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type) return false;
+  const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
+  const auto IntPointer = Context.getPointerType(Context.IntTy);
+  const auto MapPointer = Context.getPointerType(IntPointer);
+  if (!Parameter || Parameter->isParameterPack() ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), IntPointer) ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), MapPointer) ||
+      !Context.hasSameType(F->getReturnType(), MapPointer)) return false;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D) {
+    return ++Declarations <= 64 && dequePinned(S, SM, D, "__memory/pointer_traits.h");
+  };
+  for (const auto *D : F->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : Primary->redecls())
+    if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+  return true;
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false,
-                         const FunctionDecl *ClosedCopyRoot = nullptr, unsigned *SharedNodes = nullptr) {
+                         const FunctionDecl *ClosedCopyRoot = nullptr, unsigned *SharedNodes = nullptr,
+                          std::set<const FunctionDecl *> *SharedSeen = nullptr) {
+  if (SharedSeen && (PriorityRoot || !ClosedCopyRoot || !SharedNodes)) return false;
   if (ClosedCopyRoot && (Root != ClosedCopyRoot ||
       !(PriorityRoot ? priorityIntCopySubgraph(S, SM, Root, Context)
-                     : dequeValueCopySubgraph(S, SM, Root, Context)))) return false;
+                     : (dequeValueCopySubgraph(S, SM, Root, Context) || dequeMapAddressSubgraph(S, SM, Root, Context))))) return false;
   const auto *RootMethod = dyn_cast_or_null<CXXMethodDecl>(Root);
   const auto *RootConstructor = dyn_cast_or_null<CXXConstructorDecl>(Root);
   const auto PriorityConstruction = PriorityRoot && RootConstructor
@@ -50944,7 +50976,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   const bool DequeValueCopy = !PriorityRoot && RootMethod &&
       approvedUtilityDequeRecord(S, SM, RootMethod->getParent(), Context) &&
       ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator());
-  std::set<const FunctionDecl *> Seen;
+  std::set<const FunctionDecl *> LocalSeen;
+  auto &Seen = SharedSeen ? *SharedSeen : LocalSeen;
   unsigned LocalNodes = 0;
   unsigned &Nodes = SharedNodes ? *SharedNodes : LocalNodes;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -51023,8 +51056,16 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     // under an independent depth origin. The outer 4096-node ledger is shared,
     // and a unit cannot open another subgraph or bypass declaration/body checks.
     if (!ClosedCopyRoot && ((PriorityRoot && priorityIntCopySubgraph(S, SM, F, Context)) ||
-        (DequeValueCopy && dequeValueCopySubgraph(S, SM, F, Context))))
-      return dequeSourceGraph(S, SM, F, Context, PriorityRoot, F, &Nodes);
+        (DequeValueCopy && (dequeValueCopySubgraph(S, SM, F, Context) ||
+                           dequeMapAddressSubgraph(S, SM, F, Context))))) {
+      // This function was just inserted above. Remove only that new entry so
+      // the closed unit must traverse its own complete body before memoization.
+      // Other validated dependencies remain shared; priority proofs retain
+      // their original independent function set and conditional boundaries.
+      if (!PriorityRoot && Seen.erase(F->getCanonicalDecl()) != 1) return false;
+      return dequeSourceGraph(S, SM, F, Context, PriorityRoot, F, &Nodes,
+                              PriorityRoot ? nullptr : &Seen);
+    }
     if (PriorityRoot) {
       std::vector<const FunctionDecl *> Dependencies;
       if (priorityCapacityQuery(S, SM, F, Context, Dependencies)) {
@@ -51091,7 +51132,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   };
   return Root && (ClosedCopyRoot ? Root == ClosedCopyRoot &&
       (PriorityRoot ? priorityIntCopySubgraph(S, SM, Root, Context)
-                    : dequeValueCopySubgraph(S, SM, Root, Context))
+                    : (dequeValueCopySubgraph(S, SM, Root, Context) || dequeMapAddressSubgraph(S, SM, Root, Context)))
                               : PriorityRoot ? priorityQueueFunctionDeclarations(S, SM, Root)
                                              : dequeFunctionDeclarations(S, SM, Root)) && Function(Root, 0);
 }
