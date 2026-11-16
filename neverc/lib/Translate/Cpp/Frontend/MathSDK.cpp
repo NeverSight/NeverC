@@ -50961,8 +50961,10 @@ bool dequeMapAddressSubgraph(const State &S, const SourceManager &SM,
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false,
                          const FunctionDecl *ClosedCopyRoot = nullptr, unsigned *SharedNodes = nullptr,
-                          std::set<const FunctionDecl *> *SharedSeen = nullptr) {
+                          std::set<const FunctionDecl *> *SharedSeen = nullptr,
+                          llvm::DenseMap<const Stmt *, unsigned> *SharedStatements = nullptr) {
   if (SharedSeen && (PriorityRoot || !ClosedCopyRoot || !SharedNodes)) return false;
+  if (SharedStatements && (PriorityRoot || !ClosedCopyRoot || !SharedNodes || !SharedSeen)) return false;
   if (ClosedCopyRoot && (Root != ClosedCopyRoot ||
       !(PriorityRoot ? priorityIntCopySubgraph(S, SM, Root, Context)
                      : (dequeValueCopySubgraph(S, SM, Root, Context) || dequeMapAddressSubgraph(S, SM, Root, Context))))) return false;
@@ -50985,6 +50987,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator());
   std::set<const FunctionDecl *> LocalSeen;
   auto &Seen = SharedSeen ? *SharedSeen : LocalSeen;
+  llvm::DenseMap<const Stmt *, unsigned> LocalStatements;
+  auto &Statements = SharedStatements ? *SharedStatements : LocalStatements;
+  const bool MemoizeStatements = DequeValueCopy || SharedStatements;
   unsigned LocalNodes = 0;
   unsigned &Nodes = SharedNodes ? *SharedNodes : LocalNodes;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -51071,7 +51076,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       // their original independent function set and conditional boundaries.
       if (!PriorityRoot && Seen.erase(F->getCanonicalDecl()) != 1) return false;
       return dequeSourceGraph(S, SM, F, Context, PriorityRoot, F, &Nodes,
-                              PriorityRoot ? nullptr : &Seen);
+                              PriorityRoot ? nullptr : &Seen,
+                              PriorityRoot ? nullptr : &Statements);
     }
     if (PriorityRoot) {
       std::vector<const FunctionDecl *> Dependencies;
@@ -51085,56 +51091,72 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return Body && Statement(Body, Depth + 1);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
-    if (!Node) return true;
-    if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
-        !PinnedMacro(Node->getEndLoc())) return false;
-    if (const auto *E = dyn_cast<Expr>(Node))
-      if (!PinnedMacro(E->getExprLoc())) return false;
-    if (const auto *E = dyn_cast<MemberExpr>(Node))
-      if (!PinnedMacro(E->getMemberLoc())) return false;
-    if (const auto *D = dyn_cast<DeclStmt>(Node))
-      for (const auto *Declaration : D->decls())
-        if (!PinnedMacro(Declaration->getLocation())) return false;
-    if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node)) {
-      if (!dequeDependencyDeclaration(S, SM, Default->getField()) ||
-          !Statement(Default->getExpr(), Depth + 1)) return false;
+    // A shared AST node is reusable only after its entire original proof
+    // succeeded at an equal or greater depth. Keep source/macro checks on
+    // every reuse and never memoize an active or rejected statement.
+    if (MemoizeStatements && Node) {
+      const auto Proven = Statements.find(Node);
+      if (Proven != Statements.end() && Depth <= Proven->second && Depth <= 64 &&
+          PinnedMacro(Node->getBeginLoc()) && PinnedMacro(Node->getEndLoc())) return true;
     }
-    if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
-      if (!dequeDependencyDeclaration(S, SM, Default->getParam()) ||
-          !Statement(Default->getExpr(), Depth + 1)) return false;
-    }
-    if (const auto *Call = dyn_cast<CallExpr>(Node)) {
-      // The exact SDK pointer-comparison query has a closed, separately bounded
-      // and authenticated operand tree; its callee has no run-time effects.
-      if (PriorityRoot) {
-        std::vector<const FunctionDecl *> Dependencies;
-        if (priorityRelocationTransfer(S, SM, Call, Context, Dependencies)) {
-          for (const auto *Dependency : Dependencies)
-            if (!Function(Dependency, Depth + 1)) return false;
-          return true;
-        }
+    auto Prove = [&]() -> bool {
+      if (!Node) return true;
+      if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
+          !PinnedMacro(Node->getEndLoc())) return false;
+      if (const auto *E = dyn_cast<Expr>(Node))
+        if (!PinnedMacro(E->getExprLoc())) return false;
+      if (const auto *E = dyn_cast<MemberExpr>(Node))
+        if (!PinnedMacro(E->getMemberLoc())) return false;
+      if (const auto *D = dyn_cast<DeclStmt>(Node))
+        for (const auto *Declaration : D->decls())
+          if (!PinnedMacro(Declaration->getLocation())) return false;
+      if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node)) {
+        if (!dequeDependencyDeclaration(S, SM, Default->getField()) ||
+            !Statement(Default->getExpr(), Depth + 1)) return false;
       }
-      if (PriorityRoot && priorityAlignmentAssumption(S, SM, Call, Context)) return true;
-      if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
-      if (!dequeScalarDestruction(S, SM, Call, Context) &&
-          !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
-          !Function(Call->getDirectCallee(), Depth + 1)) return false;
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
+        if (!dequeDependencyDeclaration(S, SM, Default->getParam()) ||
+            !Statement(Default->getExpr(), Depth + 1)) return false;
+      }
+      if (const auto *Call = dyn_cast<CallExpr>(Node)) {
+        // The exact SDK pointer-comparison query has a closed, separately bounded
+        // and authenticated operand tree; its callee has no run-time effects.
+        if (PriorityRoot) {
+          std::vector<const FunctionDecl *> Dependencies;
+          if (priorityRelocationTransfer(S, SM, Call, Context, Dependencies)) {
+            for (const auto *Dependency : Dependencies)
+              if (!Function(Dependency, Depth + 1)) return false;
+            return true;
+          }
+        }
+        if (PriorityRoot && priorityAlignmentAssumption(S, SM, Call, Context)) return true;
+        if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
+        if (!dequeScalarDestruction(S, SM, Call, Context) &&
+            !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
+            !Function(Call->getDirectCallee(), Depth + 1)) return false;
+      }
+      if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
+        // This exact empty SDK functor has no arguments, initializers or state;
+        // its complete construction proof is a separately authenticated leaf.
+        if (dequeClosedLessConstruction(S, SM, C, Context)) return true;
+        if (!Function(C->getConstructor(), Depth + 1)) return false;
+      }
+      if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
+        if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
+             !Context.hasSameType(N->getAllocatedType(), Context.getPointerType(Context.IntTy))) ||
+            N->getNumPlacementArgs() != 1 ||
+            !Function(N->getOperatorNew(), Depth + 1)) return false;
+        if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+      }
+      for (const auto *Child : Node->children())
+        if (!Statement(Child, Depth + 1)) return false;
+      return true;
+    };
+    if (!Prove()) return false;
+    if (MemoizeStatements && Node) {
+      auto &ProvenDepth = Statements[Node];
+      if (Depth > ProvenDepth) ProvenDepth = Depth;
     }
-    if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
-      // This exact empty SDK functor has no arguments, initializers or state;
-      // its complete construction proof is a separately authenticated leaf.
-      if (dequeClosedLessConstruction(S, SM, C, Context)) return true;
-      if (!Function(C->getConstructor(), Depth + 1)) return false;
-    }
-    if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
-      if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
-           !Context.hasSameType(N->getAllocatedType(), Context.getPointerType(Context.IntTy))) ||
-          N->getNumPlacementArgs() != 1 ||
-          !Function(N->getOperatorNew(), Depth + 1)) return false;
-      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
-    }
-    for (const auto *Child : Node->children())
-      if (!Statement(Child, Depth + 1)) return false;
     return true;
   };
   return Root && (ClosedCopyRoot ? Root == ClosedCopyRoot &&
