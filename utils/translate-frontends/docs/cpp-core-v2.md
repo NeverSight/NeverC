@@ -17472,15 +17472,20 @@ and const iterators retain the checked 16-byte layout, mutable-to-const
 conversion, dereference, indexed access, and the increment/decrement, arithmetic
 and difference forms authenticated by their selected SDK declarations. Default
 and initializer-list construction, destruction, `empty`, `size`, `front`,
-`back`, integer subscripting, `push_front`, `push_back`, `pop_front`, `pop_back`
-and `clear` use the authenticated default integer allocator. The checked block
+`back`, integer subscripting, `push_front`, `push_back`, `pop_front`, `pop_back`,
+`emplace_front`, `emplace_back` and `clear` use the authenticated default integer
+allocator. The checked block
 growth and front removal paths retain references to surviving elements.
 
 Adapters retain exactly one protected deque container at offset zero. Stack
 `top` reads or aliases the back element; stack `pop` removes that element.
 Queue `front` and `back` read or alias the respective end elements; queue `pop`
 removes the front. Both support default construction, destruction, `empty`,
-`size` and `push`, with const access preserving its selected reference type.
+`size`, `push` and `emplace`, with const access preserving its selected
+reference type. Emplacement accepts no argument or one exact integer value,
+lvalue reference, const reference or rvalue reference. It returns a mutable
+reference to the element stored in the container, with zero-argument
+emplacement storing zero.
 Live reference arguments are read at the required point after a selected
 allocation, and receiver and argument expressions retain their evaluation
 effects.
@@ -17491,7 +17496,12 @@ Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
 2049-element block boundaries, saved element references, allocation callbacks
 and receiver/argument sequencing. Source admission and refusal are independently
 checked across the six 64-bit target descriptors; those checks do not assert
-native execution on every target.
+native execution on every target. A separate emplacement family passes ten
+registered GTests and twelve generated C23 executions at O0 and O2 against its
+exact native programs. These cover returned reference identities, front/back
+block growth, stack and queue behavior, allocation callbacks that change a live
+argument, and receiver/argument sequencing. Four source-origin guards reject
+replaced emplacement bodies.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
@@ -17500,8 +17510,9 @@ locations and bodies; the general graph depth and node limits are unchanged.
 Replaced operation bodies and owner/storage macros remain rejected.
 
 Owner copying/moving and assignment, custom allocators or adapter containers,
-other element specializations, range overloads, emplacing, positional
-insertion/erasure and resizing require further work. These bounded operations
+other element specializations, range overloads, emplacement with other
+argument types or multiple arguments, positional insertion/erasure and resizing
+require further work. These bounded operations
 do not establish complete STL support.
 
 Selected ordinary constructors must own complete definitions. Operation traits,

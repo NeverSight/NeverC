@@ -472,9 +472,9 @@ This increment does not establish complete STL support.
 
 | Private `cpp-core-v2` surface | Admitted operations | Boundary |
 | --- | --- | --- |
-| `std::deque<int>` | Default and initializer-list construction; destruction; `empty`, `size`, front/back access, integer subscripting, front/back insertion/removal and `clear`; checked begin/end iterator operations. | Exact default allocator, pinned segmented owner and mutable/const iterator layouts. |
-| `std::stack<int>` | Default construction, destruction, `empty`, `size`, `top`, `push` and `pop`. | Exact default `std::deque<int>` container; mutable/const access retains live element references. |
-| `std::queue<int>` | Default construction, destruction, `empty`, `size`, `front`, `back`, `push` and `pop`. | Exact default `std::deque<int>` container; pushes append and pops remove the front element. |
+| `std::deque<int>` | Default and initializer-list construction; destruction; `empty`, `size`, front/back access, integer subscripting, front/back insertion/removal, `emplace_front`, `emplace_back` and `clear`; checked begin/end iterator operations. | Exact default allocator, pinned segmented owner and mutable/const iterator layouts. |
+| `std::stack<int>` | Default construction, destruction, `empty`, `size`, `top`, `push`, zero/one-integer `emplace` and `pop`. | Exact default `std::deque<int>` container; mutable/const access retains live element references. |
+| `std::queue<int>` | Default construction, destruction, `empty`, `size`, `front`, `back`, `push`, zero/one-integer `emplace` and `pop`. | Exact default `std::deque<int>` container; pushes append and pops remove the front element. |
 | `std::priority_queue<int>` | Default/copy/move and comparator/vector/pointer-range construction, including pinned default-allocator overloads; destruction, copy/move assignment, `empty`, `size`, `top`, integer `push`, `pop`, member/SDK swap and zero/one-int `emplace`; generated C23 heap operations. | Exact pinned default vector and allocator, with `std::less<int>`, `std::greater<int>` or transparent `std::less<void>` / `std::greater<void>`; `int*`/`const int*` ranges; six approved 64-bit targets. [Scope and execution evidence](cpp-core-v2.md#r19-checked-integer-priority-queues). |
 
 Each of the deque and adapter families has six native-reference programs,
