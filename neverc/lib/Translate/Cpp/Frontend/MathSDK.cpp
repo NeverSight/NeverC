@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -50867,6 +50868,29 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   std::set<const FunctionDecl *> Seen;
   unsigned LocalNodes = 0;
   unsigned &Nodes = SharedNodes ? *SharedNodes : LocalNodes;
+  const bool ObserveCopy = RootMethod &&
+      approvedUtilityDequeRecord(S, SM, RootMethod->getParent(), Context) &&
+      ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator());
+  unsigned CopyTraceCount = 0;
+  auto TraceCopyFailure = [&](const char *Stage, const FunctionDecl *F,
+                              const Stmt *Node, unsigned Depth) {
+    if (ObserveCopy && CopyTraceCount++ < 16) {
+      llvm::errs() << "NCDQ-COPY stage=" << Stage << " depth=" << Depth << " nodes=" << Nodes
+          << " root=" << Root->getQualifiedNameAsString()
+          << " function=" << (F ? F->getQualifiedNameAsString() : "none")
+          << " node=" << (Node ? Node->getStmtClassName() : "none") << "\n";
+      if (F) llvm::errs() << "NCDQ-COPY-FUNCTION type=" << F->getType().getAsString()
+          << " at=" << F->getLocation().printToString(SM) << "\n";
+      if (Node) {
+        llvm::errs() << "NCDQ-COPY-NODE at=" << Node->getBeginLoc().printToString(SM) << "\n";
+        if (const auto *Call = dyn_cast<CallExpr>(Node))
+          if (const auto *Callee = Call->getDirectCallee())
+            llvm::errs() << "NCDQ-COPY-CALLEE name=" << Callee->getQualifiedNameAsString()
+                << " type=" << Callee->getType().getAsString() << "\n";
+      }
+    }
+    return false;
+  };
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   auto PinnedMacro = [&](SourceLocation L) {
@@ -50876,39 +50900,39 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
-    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return false;
+    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return TraceCopyFailure("function-1", F, nullptr, Depth);
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (dequeHeapBoundary(F, Context)) return true;
     if (dequeBuiltinLibraryCast(S, SM, F, Context, PriorityRoot)) return true;
     if (F->getBuiltinID()) {
-      if (!F->getIdentifier() || F->hasBody()) return false;
+      if (!F->getIdentifier() || F->hasBody()) return TraceCopyFailure("function-2", F, nullptr, Depth);
       const auto Name = F->getName();
       if (Name != "__builtin_is_constant_evaluated" &&
           Name != "__builtin_addressof" &&
           Name != "__builtin_operator_new" && Name != "__builtin_operator_delete" &&
           Name != "__builtin_expect" && Name != "__builtin_assume" &&
-          Name != "__builtin_unreachable") return false;
+          Name != "__builtin_unreachable") return TraceCopyFailure("function-3", F, nullptr, Depth);
       for (const auto *D : F->redecls()) {
         if (dequeDependencyDeclaration(S, SM, D)) continue;
         if (!D->isImplicit() || D->hasBody() ||
-            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return TraceCopyFailure("function-4", F, nullptr, Depth);
         if (D->getLocation().isValid()) {
           const auto File = S.sdkFile(SM, D->getLocation());
-          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return TraceCopyFailure("function-5", F, nullptr, Depth);
         }
       }
       return true;
     }
     for (const auto *D : F->redecls())
-      if (!dequeDependencyDeclaration(S, SM, D)) return false;
+      if (!dequeDependencyDeclaration(S, SM, D)) return TraceCopyFailure("function-6", F, nullptr, Depth);
     if (const auto *Pattern = F->getTemplateInstantiationPattern())
       for (const auto *D : Pattern->redecls())
-        if (!dequeDependencyDeclaration(S, SM, D)) return false;
+        if (!dequeDependencyDeclaration(S, SM, D)) return TraceCopyFailure("function-7", F, nullptr, Depth);
     if (const auto *T = F->getPrimaryTemplate())
       for (const auto *D : T->redecls())
         if (!dequeDependencyDeclaration(S, SM, D) ||
-            !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+            !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return TraceCopyFailure("function-8", F, nullptr, Depth);
     // Checked vector copies use an existing valid vector's bounded size.
     // Pointer ranges and combined sizes retain the successful, nonoverflowing
     // default-allocator precondition. Only this authenticated error boundary
@@ -50926,18 +50950,18 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       const auto *Parent = D->getParent();
       for (const auto &Base : Parent->bases()) {
         const auto *Record = dequeRecordType(Base.getType());
-        if (!Record || Base.isVirtual()) return false;
-        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return false;
+        if (!Record || Base.isVirtual()) return TraceCopyFailure("function-9", F, nullptr, Depth);
+        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return TraceCopyFailure("function-10", F, nullptr, Depth);
       }
       for (const auto *Field : Parent->fields()) {
         const auto *Record = dequeRecordType(Field->getType());
         if (Record && !Record->hasTrivialDestructor() &&
-            !Function(Record->getDestructor(), Depth + 1)) return false;
+            !Function(Record->getDestructor(), Depth + 1)) return TraceCopyFailure("function-11", F, nullptr, Depth);
       }
     }
     if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
       for (const auto *Init : C->inits())
-        if (!Statement(Init->getInit(), Depth + 1)) return false;
+        if (!Statement(Init->getInit(), Depth + 1)) return TraceCopyFailure("function-12", F, nullptr, Depth);
     if (dequeClosedPointerLess(S, SM, F, Context)) return true;
     // Only this exact SDK leaf gets an independent structural depth origin.
     // The original function/statement checks and the outer 4096-node ledger
@@ -50948,7 +50972,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       std::vector<const FunctionDecl *> Dependencies;
       if (priorityCapacityQuery(S, SM, F, Context, Dependencies)) {
         for (const auto *Dependency : Dependencies)
-          if (!Function(Dependency, Depth + 1)) return false;
+          if (!Function(Dependency, Depth + 1)) return TraceCopyFailure("function-13", F, nullptr, Depth);
         return true;
       }
     }
@@ -50958,21 +50982,21 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   Statement = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
     if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
-        !PinnedMacro(Node->getEndLoc())) return false;
+        !PinnedMacro(Node->getEndLoc())) return TraceCopyFailure("statement-1", nullptr, Node, Depth);
     if (const auto *E = dyn_cast<Expr>(Node))
-      if (!PinnedMacro(E->getExprLoc())) return false;
+      if (!PinnedMacro(E->getExprLoc())) return TraceCopyFailure("statement-2", nullptr, Node, Depth);
     if (const auto *E = dyn_cast<MemberExpr>(Node))
-      if (!PinnedMacro(E->getMemberLoc())) return false;
+      if (!PinnedMacro(E->getMemberLoc())) return TraceCopyFailure("statement-3", nullptr, Node, Depth);
     if (const auto *D = dyn_cast<DeclStmt>(Node))
       for (const auto *Declaration : D->decls())
-        if (!PinnedMacro(Declaration->getLocation())) return false;
+        if (!PinnedMacro(Declaration->getLocation())) return TraceCopyFailure("statement-4", nullptr, Node, Depth);
     if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node)) {
       if (!dequeDependencyDeclaration(S, SM, Default->getField()) ||
-          !Statement(Default->getExpr(), Depth + 1)) return false;
+          !Statement(Default->getExpr(), Depth + 1)) return TraceCopyFailure("statement-5", nullptr, Node, Depth);
     }
     if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
       if (!dequeDependencyDeclaration(S, SM, Default->getParam()) ||
-          !Statement(Default->getExpr(), Depth + 1)) return false;
+          !Statement(Default->getExpr(), Depth + 1)) return TraceCopyFailure("statement-6", nullptr, Node, Depth);
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node)) {
       // The exact SDK pointer-comparison query has a closed, separately bounded
@@ -50981,7 +51005,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
         std::vector<const FunctionDecl *> Dependencies;
         if (priorityRelocationTransfer(S, SM, Call, Context, Dependencies)) {
           for (const auto *Dependency : Dependencies)
-            if (!Function(Dependency, Depth + 1)) return false;
+            if (!Function(Dependency, Depth + 1)) return TraceCopyFailure("statement-7", nullptr, Node, Depth);
           return true;
         }
       }
@@ -50989,23 +51013,23 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
       if (!dequeScalarDestruction(S, SM, Call, Context) &&
           !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
-          !Function(Call->getDirectCallee(), Depth + 1)) return false;
+          !Function(Call->getDirectCallee(), Depth + 1)) return TraceCopyFailure("statement-8", nullptr, Node, Depth);
     }
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
       // This exact empty SDK functor has no arguments, initializers or state;
       // its complete construction proof is a separately authenticated leaf.
       if (dequeClosedLessConstruction(S, SM, C, Context)) return true;
-      if (!Function(C->getConstructor(), Depth + 1)) return false;
+      if (!Function(C->getConstructor(), Depth + 1)) return TraceCopyFailure("statement-9", nullptr, Node, Depth);
     }
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
            !Context.hasSameType(N->getAllocatedType(), Context.getPointerType(Context.IntTy))) ||
           N->getNumPlacementArgs() != 1 ||
-          !Function(N->getOperatorNew(), Depth + 1)) return false;
-      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+          !Function(N->getOperatorNew(), Depth + 1)) return TraceCopyFailure("statement-10", nullptr, Node, Depth);
+      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return TraceCopyFailure("statement-11", nullptr, Node, Depth);
     }
     for (const auto *Child : Node->children())
-      if (!Statement(Child, Depth + 1)) return false;
+      if (!Statement(Child, Depth + 1)) return TraceCopyFailure("statement-12", nullptr, Node, Depth);
     return true;
   };
   return Root && (ClosedCopyRoot ? Root == ClosedCopyRoot && priorityIntCopySubgraph(S, SM, Root, Context)
