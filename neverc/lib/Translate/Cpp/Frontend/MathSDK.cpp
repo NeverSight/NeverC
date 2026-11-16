@@ -49572,6 +49572,13 @@ bool dequeFunctionDeclarations(const State &S, const SourceManager &SM, const Fu
   if (const auto *Method = dyn_cast<CXXMethodDecl>(F))
     if (const auto Adapter = dequeAdapterRecord(S, SM, Method->getParent(), F->getASTContext()))
       Header = Adapter->Record->getName();
+  if (!isa<CXXMethodDecl>(F) && F->getIdentifier() && F->getName() == "swap" && F->getNumParams() == 2) {
+    const auto Parameter = F->getParamDecl(0)->getType();
+    if (Parameter->isLValueReferenceType())
+      if (const auto Owner = approvedUtilityDequeRecord(S, SM,
+              dequeRecordType(Parameter->getPointeeType()), F->getASTContext()))
+        Header = Owner->Record->getName();
+  }
   for (const auto *D : F->redecls()) if (!dequePinned(S, SM, D, Header)) return false;
   if (const auto *Pattern = F->getTemplateInstantiationPattern())
     for (const auto *D : Pattern->redecls()) if (!dequePinned(S, SM, D, Header)) return false;
@@ -49600,6 +49607,16 @@ std::optional<UtilityDequeConstruction> dequeConstructorSignature(const State &S
   if (!C || !dequeFunctionDeclarations(S, SM, C)) return std::nullopt;
   if (approvedUtilityDequeRecord(S, SM, C->getParent(), Context)) {
     if (C->getPrimaryTemplate()) return std::nullopt;
+    if (C->getNumParams() == 1 && !C->getParamDecl(0)->hasDefaultArg()) {
+      const auto Record = Context.getRecordType(C->getParent());
+      const auto Parameter = C->getParamDecl(0)->getType();
+      if (C->isCopyConstructor() &&
+          Context.hasSameType(Parameter, Context.getLValueReferenceType(Record.withConst())))
+        return UtilityDequeConstruction::Copy;
+      if (C->isMoveConstructor() &&
+          Context.hasSameType(Parameter, Context.getRValueReferenceType(Record)))
+        return UtilityDequeConstruction::Move;
+    }
     if (!C->getNumParams()) return UtilityDequeConstruction::Default;
     if (C->getNumParams() == 1 && dequeAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Context))
       return UtilityDequeConstruction::Allocator;
@@ -49671,6 +49688,19 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
     const bool Queue = M->getParent()->getName() == "queue";
     const auto Element = M->isConst() ? Context.IntTy.withConst() : Context.IntTy;
     if (M->isOverloadedOperator()) {
+      const auto Record = Context.getRecordType(M->getParent());
+      if (M->getOverloadedOperator() == OO_Equal && !M->isConst() &&
+          M->getRefQualifier() == RQ_None && M->getNumParams() == 1 &&
+          !M->getParamDecl(0)->hasDefaultArg() &&
+          Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Record))) {
+        const auto Parameter = M->getParamDecl(0)->getType();
+        if (M->isCopyAssignmentOperator() &&
+            Context.hasSameType(Parameter, Context.getLValueReferenceType(Record.withConst())))
+          return UtilityDequeOperation::CopyAssign;
+        if (M->isMoveAssignmentOperator() &&
+            Context.hasSameType(Parameter, Context.getRValueReferenceType(Record)))
+          return UtilityDequeOperation::MoveAssign;
+      }
       if (M->getOverloadedOperator() == OO_Subscript && M->getNumParams() == 1 &&
           Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) &&
           Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element)))
@@ -49679,6 +49709,12 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
     }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
+    if (Name == "swap" && M->getNumParams() == 1 && !M->isConst() &&
+        M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType() &&
+        !M->getParamDecl(0)->hasDefaultArg() &&
+        Context.hasSameType(M->getParamDecl(0)->getType(),
+            Context.getLValueReferenceType(Context.getRecordType(M->getParent()))))
+      return UtilityDequeOperation::Swap;
     if (dequeEmplaceTemplate(M, Context) &&
         (((Stack || Queue) && Name == "emplace") ||
          (!Stack && !Queue && (Name == "emplace_front" || Name == "emplace_back"))))
@@ -49750,6 +49786,20 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
 
 std::optional<UtilityDequeOperation> dequeFreeSignature(const State &S, const SourceManager &SM,
     const FunctionDecl *F, const ASTContext &Context) {
+  if (F && F->getIdentifier() && F->getName() == "swap" && dequeStd(F->getDeclContext()) &&
+      F->getNumParams() == 2 && F->getReturnType()->isVoidType() &&
+      F->getPrimaryTemplate() && F->getTemplateSpecializationKind() == TSK_ImplicitInstantiation &&
+      !F->isVariadic() && !F->isDeleted() && !F->isInvalidDecl()) {
+    const auto First = F->getParamDecl(0)->getType();
+    if (First->isLValueReferenceType() && !First->getPointeeType().isConstQualified() &&
+        !First->getPointeeType().isVolatileQualified() &&
+        !F->getParamDecl(0)->hasDefaultArg() && !F->getParamDecl(1)->hasDefaultArg() &&
+        Context.hasSameType(First, F->getParamDecl(1)->getType()) &&
+        approvedUtilityDequeRecord(S, SM, dequeRecordType(First->getPointeeType()), Context) &&
+        dequeFunctionDeclarations(S, SM, F))
+      return UtilityDequeOperation::Swap;
+  }
+
   if (!F || isa<CXXMethodDecl>(F) || !F->isOverloadedOperator() || F->getPrimaryTemplate() ||
       F->getNumParams() != 2 || !dequeFunctionDeclarations(S, SM, F)) return std::nullopt;
   auto IteratorReference = [&](QualType T) -> std::optional<UtilityDequeIteratorRecord> {

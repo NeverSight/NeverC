@@ -26875,7 +26875,18 @@ class FunctionLowering {
   }
 
 
-  void initializeDequeElements(Expression Place, Expression Input, Expression Length, SourceLocation L) {
+  Expression dequeSegmentedValue(Expression Map, Expression Start, Expression Index, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    auto Position = snapshot(binary("+", std::move(Start), std::move(Index), Size, L), L);
+    auto Slot = snapshot(dequeMapOffset(std::move(Map),
+        cast(binary("/", Position, quantity(1024, Size, L), Size, L), Diff, L), L), L);
+    return dereference(cast(dequePointerOffset(dequeMapValue(Slot, L),
+        cast(binary("%", Position, quantity(1024, Size, L), Size, L), Diff, L), L),
+        type(A.Context.getPointerType(A.Context.IntTy.withConst()), L), L), L);
+  }
+  void initializeDequeElements(Expression Place, Expression Input, Expression Length, SourceLocation L,
+      std::optional<Expression> InputStart = std::nullopt) {
     const auto Size = type(A.Context.getSizeType(), L);
     const auto Diff = type(A.Context.getPointerDiffType(), L);
     auto Count = snapshot(std::move(Length), L);
@@ -26912,8 +26923,9 @@ class FunctionLowering {
     jump(CheckValue, L); label(CheckValue, L);
     branch(binary("<", Position, Count, "bool", L), Construct, Done, L);
     label(Construct, L);
-    assign(dequeOwnerValue(Place, Position, false, L),
-        index(Input, cast(Position, Diff, L), "int", L), L);
+    auto Value = InputStart ? dequeSegmentedValue(Input, *InputStart, Position, L)
+        : index(Input, cast(Position, Diff, L), "int", L);
+    assign(dequeOwnerValue(Place, Position, false, L), std::move(Value), L);
     assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
     // Integer construction has no callbacks or exceptional exit. This store
     // agrees with the SDK transaction at each block boundary and at completion.
@@ -27438,23 +27450,223 @@ class FunctionLowering {
     reject(L, "priority queue operation", "Unknown checked heap operation.");
   }
 
+  void dequeGrowBackBy(Expression Place, Expression Extra, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    const auto MapElement = A.Context.getPointerType(A.Context.IntTy);
+    auto Need = snapshot(binary("+", std::move(Extra),
+        cast(binary("==", dequeMapCount(Place, false, L), quantity(0, Size, L), "bool", L), Size, L), Size, L), L);
+    auto Blocks = temporary(Size, L);
+    assign(Blocks, binary("+", binary("/", Need, quantity(1024, Size, L), Size, L),
+        cast(binary("!=", binary("%", Need, quantity(1024, Size, L), Size, L),
+            quantity(0, Size, L), "bool", L), Size, L), Size, L), L);
+    auto Front = temporary(Size, L);
+    assign(Front, binary("/", dequeOwnerMember(Place, "nct_deque_start", L), quantity(1024, Size, L), Size, L), L);
+    const auto Clamp = labelName(), Counted = labelName();
+    branch(binary(">", Front, Blocks, "bool", L), Clamp, Counted, L);
+    label(Clamp, L); assign(Front, Blocks, L); jump(Counted, L); label(Counted, L);
+    assign(Blocks, binary("-", Blocks, Front, Size, L), L);
+    const auto Room = labelName(), Reallocate = labelName(), Select = labelName(), Rotate = labelName(), Done = labelName();
+    branch(binary("==", Blocks, quantity(0, Size, L), "bool", L), Rotate, Select, L);
+    label(Select, L);
+    branch(binary("<=", Blocks, binary("-", dequeMapCount(Place, true, L),
+        dequeMapCount(Place, false, L), Size, L), "bool", L), Room, Reallocate, L);
+    label(Room, L);
+    const auto CheckBack = labelName(), CheckSlot = labelName(), MakeBack = labelName(), CheckFront = labelName(), MakeFront = labelName();
+    jump(CheckBack, L); label(CheckBack, L);
+    branch(binary("!=", Blocks, quantity(0, Size, L), "bool", L), CheckSlot, Rotate, L);
+    label(CheckSlot, L);
+    branch(binary("!=", dequeOwnerMember(Place, "nct_deque_end", L),
+        dequeOwnerMember(Place, "nct_deque_cap", L), "bool", L), MakeBack, CheckFront, L);
+    label(MakeBack, L);
+    auto BackBlock = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy, quantity(4096, Size, L), L), "ptr:void", L), L);
+    dequeMapInsert(Place, BackBlock, false, L);
+    assign(Blocks, binary("-", Blocks, quantity(1, Size, L), Size, L), L);
+    jump(CheckBack, L); label(CheckFront, L);
+    branch(binary("!=", Blocks, quantity(0, Size, L), "bool", L), MakeFront, Rotate, L);
+    label(MakeFront, L);
+    auto FrontBlock = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy, quantity(4096, Size, L), L), "ptr:void", L), L);
+    dequeMapInsert(Place, FrontBlock, true, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("+", dequeOwnerMember(Place, "nct_deque_start", L),
+        binary("-", quantity(1024, Size, L), cast(binary("==", dequeMapCount(Place, false, L),
+            quantity(1, Size, L), "bool", L), Size, L), Size, L), Size, L), L);
+    assign(Blocks, binary("-", Blocks, quantity(1, Size, L), Size, L), L);
+    assign(Front, binary("+", Front, quantity(1, Size, L), Size, L), L);
+    jump(CheckFront, L);
+    label(Rotate, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("-", dequeOwnerMember(Place, "nct_deque_start", L),
+        binary("*", Front, quantity(1024, Size, L), Size, L), Size, L), L);
+    const auto CheckRotate = labelName(), Reuse = labelName();
+    jump(CheckRotate, L); label(CheckRotate, L);
+    branch(binary("!=", Front, quantity(0, Size, L), "bool", L), Reuse, Done, L);
+    label(Reuse, L);
+    auto Reused = snapshot(dequeMapValue(dequeOwnerMember(Place, "nct_deque_begin", L), L), L);
+    dequeMapPop(Place, true, L); dequeMapInsert(Place, Reused, false, L);
+    assign(Front, binary("-", Front, quantity(1, Size, L), Size, L), L);
+    jump(CheckRotate, L);
+    label(Reallocate, L);
+    auto OldCapacity = snapshot(dequeMapCount(Place, true, L), L);
+    auto OldCount = snapshot(dequeMapCount(Place, false, L), L);
+    auto Capacity = temporary(Size, L);
+    assign(Capacity, binary("*", OldCapacity, quantity(2, Size, L), Size, L), L);
+    auto Required = snapshot(binary("+", Blocks, OldCount, Size, L), L);
+    const auto Enlarge = labelName(), Allocate = labelName();
+    branch(binary("<", Capacity, Required, "bool", L), Enlarge, Allocate, L);
+    label(Enlarge, L); assign(Capacity, Required, L); jump(Allocate, L); label(Allocate, L);
+    auto Initial = snapshot(binary("-", OldCount, Front, Size, L), L);
+    auto Shift = snapshot(binary("*", Front, quantity(1024, Size, L), Size, L), L);
+    auto Allocation = snapshot(cast(unorderedHeapAllocate(MapElement,
+        binary("*", Capacity, quantity(8, Size, L), Size, L), L), "ptr:void", L), L);
+    auto End = temporary(Size, L); assign(End, Initial, L);
+    const auto CheckNew = labelName(), MakeNew = labelName(), CheckReuse = labelName(), AppendReuse = labelName();
+    jump(CheckNew, L); label(CheckNew, L);
+    branch(binary("!=", Blocks, quantity(0, Size, L), "bool", L), MakeNew, CheckReuse, L);
+    label(MakeNew, L);
+    auto NewBlock = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy, quantity(4096, Size, L), L), "ptr:void", L), L);
+    assign(dequeMapValue(dequeMapOffset(Allocation, cast(End, Diff, L), L), L), NewBlock, L);
+    assign(End, binary("+", End, quantity(1, Size, L), Size, L), L);
+    assign(Blocks, binary("-", Blocks, quantity(1, Size, L), Size, L), L);
+    jump(CheckNew, L); label(CheckReuse, L);
+    const auto PrepareCopy = labelName();
+    branch(binary("!=", Front, quantity(0, Size, L), "bool", L), AppendReuse, PrepareCopy, L);
+    label(AppendReuse, L);
+    assign(dequeMapValue(dequeMapOffset(Allocation, cast(End, Diff, L), L), L),
+        snapshot(dequeMapValue(dequeOwnerMember(Place, "nct_deque_begin", L), L), L), L);
+    dequeMapPop(Place, true, L);
+    assign(End, binary("+", End, quantity(1, Size, L), Size, L), L);
+    assign(Front, binary("-", Front, quantity(1, Size, L), Size, L), L);
+    jump(CheckReuse, L); label(PrepareCopy, L);
+    auto OldFirst = snapshot(dequeOwnerMember(Place, "nct_deque_first", L), L);
+    auto OldBegin = snapshot(dequeOwnerMember(Place, "nct_deque_begin", L), L);
+    auto Index = temporary(Size, L); assign(Index, Initial, L);
+    const auto CheckCopy = labelName(), Copy = labelName(), Commit = labelName();
+    jump(CheckCopy, L); label(CheckCopy, L);
+    branch(binary("!=", Index, quantity(0, Size, L), "bool", L), Copy, Commit, L);
+    label(Copy, L); assign(Index, binary("-", Index, quantity(1, Size, L), Size, L), L);
+    assign(dequeMapValue(dequeMapOffset(Allocation, cast(Index, Diff, L), L), L),
+        snapshot(dequeMapValue(dequeMapOffset(OldBegin, cast(Index, Diff, L), L), L), L), L);
+    jump(CheckCopy, L); label(Commit, L);
+    assign(dequeOwnerMember(Place, "nct_deque_first", L), Allocation, L);
+    assign(dequeOwnerMember(Place, "nct_deque_begin", L), Allocation, L);
+    assign(dequeOwnerMember(Place, "nct_deque_end", L), dequeMapOffset(Allocation, cast(End, Diff, L), L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_cap", L), dequeMapOffset(Allocation, cast(Capacity, Diff, L), L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("-", dequeOwnerMember(Place, "nct_deque_start", L), Shift, Size, L), L);
+    const auto ReleaseMap = labelName();
+    branch(cast(OldFirst, "bool", L), ReleaseMap, Done, L);
+    label(ReleaseMap, L);
+    unorderedHeapRelease(OldFirst, MapElement, binary("*", OldCapacity, quantity(8, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+  void copyDequeValues(Expression Place, Expression Map, Expression Start, Expression First,
+      Expression Limit, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Position = temporary(Size, L); assign(Position, First, L);
+    const auto Check = labelName(), Copy = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("<", Position, Limit, "bool", L), Copy, Done, L);
+    label(Copy, L);
+    auto Value = dequeSegmentedValue(Map, Start, Position, L);
+    assign(dequeOwnerValue(Place, Position, false, L), std::move(Value), L);
+    assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
+    jump(Check, L); label(Done, L);
+  }
+  void copyAssignDequeStorage(Expression Place, Expression Source, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Count = snapshot(dequeOwnerMember(Source, "nct_deque_size", L), L);
+    auto Map = snapshot(dequeOwnerMember(Source, "nct_deque_begin", L), L);
+    auto Start = snapshot(dequeOwnerMember(Source, "nct_deque_start", L), L);
+    auto OldSize = snapshot(dequeOwnerMember(Place, "nct_deque_size", L), L);
+    auto Common = temporary(Size, L); assign(Common, Count, L);
+    const auto Clamp = labelName(), Prefix = labelName();
+    branch(binary(">", Common, OldSize, "bool", L), Clamp, Prefix, L);
+    label(Clamp, L); assign(Common, OldSize, L); jump(Prefix, L); label(Prefix, L);
+    copyDequeValues(Place, Map, Start, quantity(0, Size, L), Common, L);
+    const auto Append = labelName(), Shrink = labelName(), Done = labelName();
+    branch(binary(">", Count, OldSize, "bool", L), Append, Shrink, L);
+    label(Append, L);
+    auto Added = snapshot(binary("-", Count, OldSize, Size, L), L);
+    auto Spare = snapshot(dequeBackSpare(Place, L), L);
+    const auto Grow = labelName(), Suffix = labelName();
+    branch(binary(">", Added, Spare, "bool", L), Grow, Suffix, L);
+    label(Grow, L); dequeGrowBackBy(Place, binary("-", Added, Spare, Size, L), L);
+    jump(Suffix, L); label(Suffix, L);
+    copyDequeValues(Place, Map, Start, OldSize, Count, L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), Count, L);
+    jump(Done, L); label(Shrink, L);
+    const auto Erase = labelName(), Check = labelName(), Release = labelName();
+    branch(binary("<", Count, OldSize, "bool", L), Erase, Done, L);
+    label(Erase, L); assign(dequeOwnerMember(Place, "nct_deque_size", L), Count, L);
+    jump(Check, L); label(Check, L);
+    branch(binary(">=", dequeBackSpare(Place, L), quantity(2048, Size, L), "bool", L), Release, Done, L);
+    label(Release, L); dequeRemoveSpareBlock(Place, false, L); jump(Check, L);
+    label(Done, L);
+  }
+  void releaseDequeForMove(Expression Place, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    clearDequeStorage(Place, L);
+    const auto Check = labelName(), Release = labelName(), Map = labelName(), FreeMap = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", dequeMapCount(Place, false, L), quantity(0, Size, L), "bool", L), Release, Map, L);
+    label(Release, L);
+    auto Last = snapshot(dequeMapOffset(dequeOwnerMember(Place, "nct_deque_end", L),
+        binary("-", quantity(0, Diff, L), quantity(1, Diff, L), Diff, L), L), L);
+    unorderedHeapRelease(snapshot(dequeMapValue(Last, L), L), A.Context.IntTy, quantity(4096, Size, L), L);
+    dequeMapPop(Place, false, L); jump(Check, L); label(Map, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), quantity(0, Size, L), L);
+    auto First = snapshot(dequeOwnerMember(Place, "nct_deque_first", L), L);
+    auto Capacity = snapshot(dequeMapCount(Place, true, L), L);
+    for (const char *Name : {"nct_deque_first", "nct_deque_begin", "nct_deque_end", "nct_deque_cap"})
+      initializeZero(dequeOwnerMember(Place, Name, L), A.Context.VoidPtrTy, L);
+    branch(cast(First, "bool", L), FreeMap, Done, L); label(FreeMap, L);
+    unorderedHeapRelease(First, A.Context.getPointerType(A.Context.IntTy),
+        binary("*", Capacity, quantity(8, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+  void moveDequeStorage(Expression Place, Expression Source, SourceLocation L) {
+    for (const char *Name : {"nct_deque_first", "nct_deque_begin", "nct_deque_end", "nct_deque_cap",
+                            "nct_deque_start", "nct_deque_size"})
+      assign(dequeOwnerMember(Place, Name, L), dequeOwnerMember(Source, Name, L), L);
+    initializeDequeStorage(Source, L);
+  }
+  void swapDequeStorage(Expression Place, Expression Other, SourceLocation L) {
+    for (const char *Name : {"nct_deque_first", "nct_deque_begin", "nct_deque_end", "nct_deque_cap",
+                            "nct_deque_start", "nct_deque_size"}) {
+      auto Saved = snapshot(dequeOwnerMember(Place, Name, L), L);
+      assign(dequeOwnerMember(Place, Name, L), dequeOwnerMember(Other, Name, L), L);
+      assign(dequeOwnerMember(Other, Name, L), Saved, L);
+    }
+  }
+
   Expression utilityDequeOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityDequeCall(A.S, A.Sources, Call, A.Context);
     if (!Proof || !Proof->Function)
       reject(L, "deque operation", "The selected SDK body, layout and operands are required.");
     const auto Operation = Proof->Operation;
+    std::vector<Expression> Operands;
+    auto ReadOperands = [&] {
+      for (unsigned I = 0; I != Proof->Function->getNumParams(); ++I)
+        Operands.push_back(snapshot(argument(Call->getArg(I + Proof->ArgumentOffset),
+            Proof->Function->getParamDecl(I)->getType()), L));
+    };
+    const bool RightFirst = isa<CXXOperatorCallExpr>(Call) &&
+        (Operation == UtilityDequeOperation::CopyAssign || Operation == UtilityDequeOperation::MoveAssign);
+    if (RightFirst) ReadOperands();
     std::optional<Expression> Receiver;
     if (Proof->Receiver) {
       const auto *Object = Proof->Receiver;
       Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
           : address(lvalue(Object), Object->getType(), L), L);
     }
-    std::vector<Expression> Operands;
-    for (unsigned I = 0; I != Proof->Function->getNumParams(); ++I)
-      Operands.push_back(snapshot(argument(Call->getArg(I + Proof->ArgumentOffset),
-          Proof->Function->getParamDecl(I)->getType()), L));
-    if (!Receiver) return dequeFreeIteratorOperation(Operation, Operands, Call->getType(), L);
+    if (!RightFirst) ReadOperands();
+    if (!Receiver) {
+      if (Operation == UtilityDequeOperation::Swap) {
+        swapDequeStorage(dereference(Operands[0], L), dereference(Operands[1], L), L);
+        return Expression{};
+      }
+      return dequeFreeIteratorOperation(Operation, Operands, Call->getType(), L);
+    }
     auto Place = dereference(*Receiver, L);
     const auto *Method = dyn_cast<CXXMethodDecl>(Proof->Function);
     if (!Method) reject(L, "deque method", "A checked SDK method is required.");
@@ -27462,6 +27674,20 @@ class FunctionLowering {
       return dequeIteratorOperation(Operation, Place, Operands, *Iterator, L);
     const auto Owner = approvedUtilityDequeRecord(A.S, A.Sources, Method->getParent(), A.Context);
     if (!Owner) reject(L, "deque owner", "The selected integer owner layout is required.");
+    if (Operation == UtilityDequeOperation::CopyAssign) {
+      const auto Copy = labelName(), Done = labelName();
+      branch(binary("!=", cast(*Receiver, "ptr:void", L), cast(Operands[0], "ptr:void", L), "bool", L), Copy, Done, L);
+      label(Copy, L); copyAssignDequeStorage(Place, dereference(Operands[0], L), L);
+      jump(Done, L); label(Done, L); return Place;
+    }
+    if (Operation == UtilityDequeOperation::MoveAssign) {
+      releaseDequeForMove(Place, L);
+      moveDequeStorage(Place, dereference(Operands[0], L), L);
+      return Place;
+    }
+    if (Operation == UtilityDequeOperation::Swap) {
+      swapDequeStorage(Place, dereference(Operands[0], L), L); return Expression{};
+    }
     const auto Size = type(A.Context.getSizeType(), L);
     if (Operation == UtilityDequeOperation::Size) return dequeOwnerMember(Place, "nct_deque_size", L);
     if (Operation == UtilityDequeOperation::Empty) return binary("==", dequeOwnerMember(Place, "nct_deque_size", L),
@@ -37111,6 +37337,16 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       if (!approvedUtilityDequeRecord(A.S, A.Sources, Record, A.Context))
         reject(L, "deque construction", "The checked integer owner layout is required.");
       initializeDequeStorage(Place, L);
+      if (*Kind == UtilityDequeConstruction::Move) {
+        moveDequeStorage(Place, dereference(Operands[0], L), L); return;
+      }
+      if (*Kind == UtilityDequeConstruction::Copy) {
+        auto Source = dereference(Operands[0], L);
+        auto Map = snapshot(dequeOwnerMember(Source, "nct_deque_begin", L), L);
+        auto Start = snapshot(dequeOwnerMember(Source, "nct_deque_start", L), L);
+        auto Count = snapshot(dequeOwnerMember(Source, "nct_deque_size", L), L);
+        initializeDequeElements(Place, Map, Count, L, Start); return;
+      }
       if (*Kind != UtilityDequeConstruction::InitializerList) return;
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
           C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
