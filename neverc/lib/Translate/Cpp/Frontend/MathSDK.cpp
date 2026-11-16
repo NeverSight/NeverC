@@ -51237,7 +51237,8 @@ bool dequeClosedIteratorPrimitive(const State &S, const SourceManager &SM,
 }
 
 bool dequeClosedOwnerQuery(const State &S, const SourceManager &SM,
-    const FunctionDecl *Function, const ASTContext &Context) {
+    const FunctionDecl *Function, const ASTContext &Context,
+    std::set<const FunctionDecl *> *ProvenQueries = nullptr) {
   unsigned Nodes = 0, Declarations = 0, Functions = 0;
   std::set<const FunctionDecl *> Active, Complete;
   auto Pinned = [&](const Decl *D) { return ++Declarations <= 64 && dequePinned(S, SM, D, "deque"); };
@@ -51401,7 +51402,7 @@ bool dequeClosedOwnerQuery(const State &S, const SourceManager &SM,
     if (!Pattern) return false;
     for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
     const auto *Canonical = Method->getCanonicalDecl();
-    if (Complete.count(Canonical)) return true;
+    if (Complete.count(Canonical) || (ProvenQueries && ProvenQueries->count(Canonical))) return true;
     if (!Active.insert(Canonical).second) return false;
     auto Restore = llvm::make_scope_exit([&] { Active.erase(Canonical); });
     if (!Pure(Method->getBody(), Method, Depth + 1)) return false;
@@ -51411,7 +51412,11 @@ bool dequeClosedOwnerQuery(const State &S, const SourceManager &SM,
   // The complete query graph is closed over primitive expressions, other
   // completely checked queries and two-field iterator value construction.
   // Allocation, general calls, mutation and all other construction are absent.
-  return Query(Function, 0);
+  if (!Query(Function, 0)) return false;
+  // Publish only after this entire pure query proof succeeds. Every reuse
+  // above still checks its exact signature, owner and all SDK declarations.
+  if (ProvenQueries) ProvenQueries->insert(Complete.begin(), Complete.end());
+  return true;
 }
 
 bool dequeTransferWrapper(const State &S, const SourceManager &SM,
@@ -51559,13 +51564,92 @@ bool dequeTransferWrapper(const State &S, const SourceManager &SM,
   return true;
 }
 
+bool dequeAnnotationWrapper(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const ASTContext &Context,
+    std::vector<const FunctionDecl *> &Dependencies) {
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  if (!Method || Method->isInvalidDecl() || Method->isDeleted() || Method->isVariadic() ||
+      Method->isStatic() || !Method->isConst() || Method->isVolatile() || Method->getPrimaryTemplate() ||
+      !Method->getIdentifier() || !Method->hasBody() || !Method->getReturnType()->isVoidType() ||
+      Method->getNumParams() > 4 || !approvedUtilityDequeRecord(S, SM, Method->getParent(), Context)) return false;
+  const auto Name = Method->getName();
+  const bool New = Name == "__annotate_new";
+  const bool Delete = Name == "__annotate_delete";
+  const bool Increase = Name == "__annotate_increase_front" || Name == "__annotate_increase_back";
+  const bool Shrink = Name == "__annotate_shrink_front" || Name == "__annotate_shrink_back";
+  const bool Whole = Name == "__annotate_whole_block";
+  const bool Poison = Name == "__annotate_poison_block";
+  const bool Range = Name == "__annotate_from_to";
+  if (!New && !Delete && !Increase && !Shrink && !Whole && !Poison && !Range) return false;
+  const unsigned Expected = Delete ? 0 : (New || Increase) ? 1 : Range ? 4 : 2;
+  if (Method->getNumParams() != Expected) return false;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D) { return ++Declarations <= 64 && dequePinned(S, SM, D, "deque"); };
+  for (const auto *D : Method->redecls()) if (!Pinned(D)) return false;
+  const auto *Pattern = Method->getTemplateInstantiationPattern();
+  if (!Pattern) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  for (unsigned I = 0; I != Expected; ++I) {
+    const auto *Parameter = Method->getParamDecl(I);
+    if (Parameter->hasDefaultArg() || !Pinned(Parameter)) return false;
+    const bool EnumParameter = (Whole && I == 1) || (Range && I >= 2);
+    if (EnumParameter) {
+      const auto *Type = Parameter->getType()->getAs<EnumType>();
+      const auto *Enum = Type ? Type->getDecl() : nullptr;
+      const char *EnumName = Range && I == 3 ? "__asan_annotation_place" : "__asan_annotation_type";
+      if (!Enum || !Enum->getIdentifier() || Enum->getName() != EnumName ||
+          Enum->getDeclContext() != Method->getParent()) return false;
+      for (const auto *D : Enum->redecls()) if (!Pinned(D)) return false;
+      for (const auto *Enumerator : Enum->enumerators()) if (!Pinned(Enumerator)) return false;
+    } else if (!Context.hasSameType(Parameter->getType(), Poison
+        ? Context.getPointerType(Context.VoidTy.withConst()) : Context.getSizeType())) return false;
+  }
+  auto Macro = [&](SourceLocation Location) {
+    if (!Location.isMacroID()) return true;
+    const auto File = S.sdkFile(SM, SM.getSpellingLoc(Location));
+    return File && (File->Root == "libcxx" || File->Root == "resource");
+  };
+  std::set<const FunctionDecl *> Callees;
+  std::vector<const FunctionDecl *> Required;
+  unsigned Nodes = 0;
+  std::function<bool(const Stmt *, unsigned)> Wrapper;
+  Wrapper = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node) return true;
+    if (Depth > 8 || ++Nodes > 64 || !Macro(Node->getBeginLoc()) || !Macro(Node->getEndLoc())) return false;
+    if (const auto *Value = dyn_cast<Expr>(Node)) if (!Macro(Value->getExprLoc())) return false;
+    if (const auto *Call = dyn_cast<CallExpr>(Node)) {
+      const auto *Callee = Call->getDirectCallee();
+      if (!Callee || !dequeDependencyDeclaration(S, SM, Callee)) return false;
+      if (Callees.insert(Callee->getCanonicalDecl()).second) Required.push_back(Callee);
+      if (Required.size() > 8) return false;
+    } else if (const auto *Reference = dyn_cast<DeclRefExpr>(Node)) {
+      if (const auto *Parameter = dyn_cast<ParmVarDecl>(Reference->getDecl())) {
+        if (Parameter->getDeclContext() != Method || !Pinned(Parameter)) return false;
+      } else if (!isa<FunctionDecl>(Reference->getDecl()) ||
+                 !dequeDependencyDeclaration(S, SM, Reference->getDecl())) return false;
+    } else if (const auto *Cast = dyn_cast<CastExpr>(Node)) {
+      if (Cast->getCastKind() != CK_ToVoid && Cast->getCastKind() != CK_NoOp &&
+          Cast->getCastKind() != CK_LValueToRValue && Cast->getCastKind() != CK_FunctionToPointerDecay) return false;
+    } else if (!isa<CompoundStmt>(Node) && !isa<ReturnStmt>(Node) && !isa<ParenExpr>(Node)) return false;
+    for (const auto *Child : Node->children()) if (!Wrapper(Child, Depth + 1)) return false;
+    return true;
+  };
+  if (!Wrapper(Method->getBody(), 0)) return false;
+  // Empty annotation bodies are proved completely. A forwarding annotation
+  // still retains the original proof of its actual selected callee.
+  Dependencies = std::move(Required);
+  return true;
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false,
                          const FunctionDecl *ClosedCopyRoot = nullptr, unsigned *SharedNodes = nullptr,
                           std::set<const FunctionDecl *> *SharedSeen = nullptr,
-                          llvm::DenseMap<const Stmt *, unsigned> *SharedStatements = nullptr) {
+                          llvm::DenseMap<const Stmt *, unsigned> *SharedStatements = nullptr,
+                          std::set<const FunctionDecl *> *SharedQueries = nullptr) {
   if (SharedSeen && (PriorityRoot || !ClosedCopyRoot || !SharedNodes)) return false;
   if (SharedStatements && (PriorityRoot || !ClosedCopyRoot || !SharedNodes || !SharedSeen)) return false;
+  if (SharedQueries && (PriorityRoot || !ClosedCopyRoot || !SharedNodes || !SharedSeen || !SharedStatements)) return false;
   if (ClosedCopyRoot && (Root != ClosedCopyRoot ||
       !(PriorityRoot ? priorityIntCopySubgraph(S, SM, Root, Context)
                      : (dequeValueCopySubgraph(S, SM, Root, Context) || dequeMapAddressSubgraph(S, SM, Root, Context))))) return false;
@@ -51591,6 +51675,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   llvm::DenseMap<const Stmt *, unsigned> LocalStatements;
   auto &Statements = SharedStatements ? *SharedStatements : LocalStatements;
   const bool MemoizeStatements = DequeValueCopy || SharedStatements;
+  std::set<const FunctionDecl *> LocalQueries;
+  auto &Queries = SharedQueries ? *SharedQueries : LocalQueries;
   const FunctionDecl *ActiveFunction = nullptr;
   unsigned LocalNodes = 0;
   unsigned &Nodes = SharedNodes ? *SharedNodes : LocalNodes;
@@ -51651,10 +51737,11 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     if (PriorityCopy && priorityCopyLengthError(S, SM, F, Context)) return true;
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
     if (MemoizeStatements && (dequePointerMapQuery(S, SM, F, Context) ||
-        dequeClosedIteratorPrimitive(S, SM, F, Context) || dequeClosedOwnerQuery(S, SM, F, Context))) return true;
+        dequeClosedIteratorPrimitive(S, SM, F, Context) || dequeClosedOwnerQuery(S, SM, F, Context, &Queries))) return true;
     if (MemoizeStatements) {
       std::vector<const FunctionDecl *> Dependencies;
-      if (dequeTransferWrapper(S, SM, F, Context, Dependencies)) {
+      if (dequeTransferWrapper(S, SM, F, Context, Dependencies) ||
+          dequeAnnotationWrapper(S, SM, F, Context, Dependencies)) {
         for (const auto *Dependency : Dependencies)
           if (!Function(Dependency, Depth + 1)) return false;
         return true;
@@ -51696,7 +51783,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       if (!PriorityRoot && Seen.erase(F->getCanonicalDecl()) != 1) return false;
       return dequeSourceGraph(S, SM, F, Context, PriorityRoot, F, &Nodes,
                               PriorityRoot ? nullptr : &Seen,
-                              PriorityRoot ? nullptr : &Statements);
+                              PriorityRoot ? nullptr : &Statements,
+                              PriorityRoot ? nullptr : &Queries);
     }
     if (PriorityRoot) {
       std::vector<const FunctionDecl *> Dependencies;
