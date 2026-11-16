@@ -483,7 +483,7 @@ fixtures cover segmented block boundaries, surviving element references,
 allocation-time changes through live argument references, and receiver/argument
 effects. Six-target source admission is checked separately from Linux x86-64
 execution. See the [detailed contract](cpp-core-v2.md#r19-checked-integer-deque-and-container-adapters).
-Owner copying/moving and assignment, custom allocators or containers, other
-element types, range overloads, emplacing, positional insertion/erasure and
+Custom allocators or adapter containers, other element types, count and range
+overloads, other emplacement argument forms, positional insertion/erasure and
 resizing require further work. This increment does not establish complete STL
 support.
