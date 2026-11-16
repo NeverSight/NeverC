@@ -51422,26 +51422,32 @@ bool dequeClosedOwnerQuery(const State &S, const SourceManager &SM,
 bool dequeTransferWrapper(const State &S, const SourceManager &SM,
     const FunctionDecl *Function, const ASTContext &Context,
     std::vector<const FunctionDecl *> &Dependencies) {
-  if (!Function || isa<CXXMethodDecl>(Function) || Function->isInvalidDecl() || Function->isDeleted() ||
-      Function->isVariadic() || !Function->getIdentifier() || !dequeStd(Function->getDeclContext()) ||
-      Function->getNumParams() != 3 || !Function->hasBody() ||
+  if (!Function || Function->isInvalidDecl() || Function->isDeleted() ||
+      Function->isVariadic() || !Function->getIdentifier() || !Function->hasBody() ||
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
   const auto Name = Function->getName();
+  const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+  const bool Assign = Method && Name == "assign";
+  if (Method) {
+    if (!Assign || Method->isStatic() || Method->isConst() || Method->isVolatile() ||
+        Method->getRefQualifier() != RQ_None || Method->getNumParams() != 2 ||
+        !approvedUtilityDequeRecord(S, SM, Method->getParent(), Context)) return false;
+  } else if (!dequeStd(Function->getDeclContext()) || Function->getNumParams() != 3) return false;
   const bool Unwrap = Name == "__copy_move_unwrap_iters";
   const bool Public = Name == "copy" || Name == "move" || Name == "move_backward";
   const bool Internal = Name == "__copy" || Name == "__move" || Name == "__move_backward";
-  if (!Unwrap && !Public && !Internal) return false;
-  const char *Header = Unwrap ? "__algorithm/copy_move_common.h" :
+  if (!Assign && !Unwrap && !Public && !Internal) return false;
+  const char *Header = Assign ? "deque" : Unwrap ? "__algorithm/copy_move_common.h" :
       (Name == "copy" || Name == "__copy") ? "__algorithm/copy.h" :
       (Name == "move" || Name == "__move") ? "__algorithm/move.h" : "__algorithm/move_backward.h";
   const auto *Primary = Function->getPrimaryTemplate();
   const auto *Pattern = Function->getTemplateInstantiationPattern();
   const auto *Arguments = Function->getTemplateSpecializationArgs();
-  const unsigned Count = Public ? 2 : Unwrap ? 5 : (Name == "__move" || Name == "__move_backward") ? 4 : 3;
+  const unsigned Count = (Assign || Public) ? 2 : Unwrap ? 5 : (Name == "__move" || Name == "__move_backward") ? 4 : 3;
   if (!Primary || !Pattern || !Arguments || Arguments->size() != Count ||
       Primary->getTemplateParameters()->size() != Count) return false;
   for (unsigned I = 0; I != Count; ++I) {
-    if (Unwrap && I == 4) {
+    if ((Assign && I == 1) || (Unwrap && I == 4)) {
       if (Arguments->get(I).getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(Arguments->get(I).getIntegralType(), Context.IntTy) ||
           !Arguments->get(I).getAsIntegral().isZero()) return false;
@@ -51455,11 +51461,15 @@ bool dequeTransferWrapper(const State &S, const SourceManager &SM,
         Context.hasSameType(Type, Context.getPointerType(IntPointer.withConst())) ||
         dequeIteratorType(S, SM, Type, false, Context) || dequeIteratorType(S, SM, Type, true, Context);
   };
-  const auto Input = Function->getParamDecl(0)->getType(), Output = Function->getParamDecl(2)->getType();
+  const auto Input = Function->getParamDecl(0)->getType();
+  const auto Output = Function->getParamDecl(Assign ? 1 : 2)->getType();
+  if (Assign && !dequeIteratorType(S, SM, Input, true, Context)) return false;
   if (!ValueType(Input) || !ValueType(Output) ||
       !Context.hasSameType(Input, Function->getParamDecl(1)->getType())) return false;
   for (const auto *Parameter : Function->parameters()) if (Parameter->hasDefaultArg()) return false;
-  if (Public) {
+  if (Assign) {
+    if (!Context.hasSameType(Arguments->get(0).getAsType(), Input)) return false;
+  } else if (Public) {
     if (!Context.hasSameType(Arguments->get(0).getAsType(), Input) ||
         !Context.hasSameType(Arguments->get(1).getAsType(), Output)) return false;
   } else {
@@ -51487,7 +51497,9 @@ bool dequeTransferWrapper(const State &S, const SourceManager &SM,
       if (!Pinned(D, "__utility/pair.h") && !Pinned(D, "__fwd/pair.h")) return false;
     return true;
   };
-  if (Public) {
+  if (Assign) {
+    if (!Function->getReturnType()->isVoidType()) return false;
+  } else if (Public) {
     if (!Context.hasSameType(Function->getReturnType(), Output)) return false;
   } else if (!Pair(Function->getReturnType(), Input, Output)) return false;
   if (Unwrap) {
@@ -51524,6 +51536,9 @@ bool dequeTransferWrapper(const State &S, const SourceManager &SM,
     } else if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node)) {
       const auto *Constructor = Construction->getConstructor();
       if (!Constructor->getParent()->hasTrivialDestructor() || !Require(Constructor)) return false;
+    } else if (const auto *This = dyn_cast<CXXThisExpr>(Node)) {
+      if (!Assign || !Context.hasSameType(This->getType(),
+          Context.getPointerType(Context.getRecordType(Method->getParent())))) return false;
     } else if (const auto *Declaration = dyn_cast<DeclStmt>(Node)) {
       for (const auto *D : Declaration->decls()) {
         if (!dequeDependencyDeclaration(S, SM, D)) return false;
