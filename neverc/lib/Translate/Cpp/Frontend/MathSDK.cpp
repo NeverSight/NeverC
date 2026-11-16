@@ -49617,6 +49617,16 @@ std::optional<UtilityDequeConstruction> dequeConstructorSignature(const State &S
           Context.hasSameType(Parameter, Context.getRValueReferenceType(Record)))
         return UtilityDequeConstruction::Move;
     }
+    if (C->getParent()->getIdentifier() && C->getParent()->getName() == "deque" &&
+        (C->getNumParams() == 1 || C->getNumParams() == 2) &&
+        !C->getParamDecl(0)->hasDefaultArg() &&
+        Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType())) {
+      if (C->getNumParams() == 1) return UtilityDequeConstruction::Count;
+      if (!C->getParamDecl(1)->hasDefaultArg() &&
+          Context.hasSameType(C->getParamDecl(1)->getType(),
+              Context.getLValueReferenceType(Context.IntTy.withConst())))
+        return UtilityDequeConstruction::CountFill;
+    }
     if (!C->getNumParams()) return UtilityDequeConstruction::Default;
     if (C->getNumParams() == 1 && dequeAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Context))
       return UtilityDequeConstruction::Allocator;
@@ -49709,6 +49719,21 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
     }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
+    if (M->getParent()->getIdentifier() && M->getParent()->getName() == "deque" &&
+        !M->isConst() && !M->isVolatile() && !M->isStatic() &&
+        M->getRefQualifier() == RQ_None && !M->getPrimaryTemplate() &&
+        M->getReturnType()->isVoidType() &&
+        (M->getNumParams() == 1 || M->getNumParams() == 2) &&
+        !M->getParamDecl(0)->hasDefaultArg() &&
+        Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) {
+      if (Name == "resize" && M->getNumParams() == 1) return UtilityDequeOperation::Resize;
+      if (M->getNumParams() == 2 && !M->getParamDecl(1)->hasDefaultArg() &&
+          Context.hasSameType(M->getParamDecl(1)->getType(),
+              Context.getLValueReferenceType(Context.IntTy.withConst()))) {
+        if (Name == "resize") return UtilityDequeOperation::ResizeFill;
+        if (Name == "assign") return UtilityDequeOperation::AssignCount;
+      }
+    }
     if (Name == "swap" && M->getNumParams() == 1 && !M->isConst() &&
         M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType() &&
         !M->getParamDecl(0)->hasDefaultArg() &&

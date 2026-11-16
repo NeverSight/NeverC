@@ -27638,6 +27638,59 @@ class FunctionLowering {
     }
   }
 
+  void fillCountedDequeRange(Expression Place, Expression First, Expression Limit,
+      std::optional<Expression> FillReference, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Position = temporary(Size, L); assign(Position, First, L);
+    const auto Check = labelName(), Store = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("<", Position, Limit, "bool", L), Store, Done, L);
+    label(Store, L);
+    auto Value = FillReference ? dereference(*FillReference, L) : quantity(0, "int", L);
+    assign(dequeOwnerValue(Place, Position, false, L), std::move(Value), L);
+    assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
+    jump(Check, L); label(Done, L);
+  }
+  void trimCountedDequeStorage(Expression Place, Expression Count, Expression OldSize, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Erase = labelName(), Check = labelName(), Release = labelName(), Done = labelName();
+    branch(binary("<", Count, OldSize, "bool", L), Erase, Done, L);
+    label(Erase, L);
+    // The SDK commits the new size before any back-spare deallocation callback.
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), Count, L);
+    jump(Check, L); label(Check, L);
+    branch(binary(">=", dequeBackSpare(Place, L), quantity(2048, Size, L), "bool", L), Release, Done, L);
+    label(Release, L); dequeRemoveSpareBlock(Place, false, L); jump(Check, L);
+    label(Done, L);
+  }
+  void resizeCountedDequeStorage(Expression Place, Expression Count,
+      std::optional<Expression> FillReference, bool AssignPrefix, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto OldSize = snapshot(dequeOwnerMember(Place, "nct_deque_size", L), L);
+    if (AssignPrefix) {
+      auto Common = temporary(Size, L); assign(Common, Count, L);
+      const auto Clamp = labelName(), Prefix = labelName();
+      branch(binary(">", Common, OldSize, "bool", L), Clamp, Prefix, L);
+      label(Clamp, L); assign(Common, OldSize, L); jump(Prefix, L); label(Prefix, L);
+      fillCountedDequeRange(Place, quantity(0, Size, L), Common, FillReference, L);
+    }
+    const auto Append = labelName(), Shrink = labelName(), Done = labelName();
+    branch(binary(">", Count, OldSize, "bool", L), Append, Shrink, L);
+    label(Append, L);
+    auto Added = snapshot(binary("-", Count, OldSize, Size, L), L);
+    auto Spare = snapshot(dequeBackSpare(Place, L), L);
+    const auto Grow = labelName(), Suffix = labelName();
+    branch(binary(">", Added, Spare, "bool", L), Grow, Suffix, L);
+    label(Grow, L); dequeGrowBackBy(Place, binary("-", Added, Spare, Size, L), L);
+    jump(Suffix, L); label(Suffix, L);
+    // Preserve a fill argument as a reference through all capacity callbacks.
+    fillCountedDequeRange(Place, OldSize, Count, FillReference, L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), Count, L);
+    jump(Done, L); label(Shrink, L);
+    trimCountedDequeStorage(Place, Count, OldSize, L);
+    jump(Done, L); label(Done, L);
+  }
+
   Expression utilityDequeOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityDequeCall(A.S, A.Sources, Call, A.Context);
@@ -27700,6 +27753,14 @@ class FunctionLowering {
           : Operation == UtilityDequeOperation::Front ? quantity(0, Size, L)
           : binary("-", dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L);
       return dequeOwnerValue(Place, Position, Method->isConst(), L);
+    }
+    if (Operation == UtilityDequeOperation::Resize || Operation == UtilityDequeOperation::ResizeFill ||
+        Operation == UtilityDequeOperation::AssignCount) {
+      std::optional<Expression> FillReference;
+      if (Operation != UtilityDequeOperation::Resize) FillReference = Operands[1];
+      resizeCountedDequeStorage(Place, Operands[0], FillReference,
+          Operation == UtilityDequeOperation::AssignCount, L);
+      return Expression{};
     }
     if (Operation == UtilityDequeOperation::Clear) {
       clearDequeStorage(Place, L);
@@ -37346,6 +37407,11 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         auto Start = snapshot(dequeOwnerMember(Source, "nct_deque_start", L), L);
         auto Count = snapshot(dequeOwnerMember(Source, "nct_deque_size", L), L);
         initializeDequeElements(Place, Map, Count, L, Start); return;
+      }
+      if (*Kind == UtilityDequeConstruction::Count || *Kind == UtilityDequeConstruction::CountFill) {
+        std::optional<Expression> FillReference;
+        if (*Kind == UtilityDequeConstruction::CountFill) FillReference = Operands[1];
+        resizeCountedDequeStorage(Place, Operands[0], FillReference, false, L); return;
       }
       if (*Kind != UtilityDequeConstruction::InitializerList) return;
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
