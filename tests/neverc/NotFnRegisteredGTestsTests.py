@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.deque_value_registered = cls.registered
+        cls.deque_value_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.deque_value_original = cls.adapter.restore_original_gtests(cls.deque_value_registered,cls.deque_value_suffix)
+        cls.registered = cls.adapter.restore_deque_value_history(cls.deque_value_registered)
         cls.deque_emplace_registered = cls.registered
         cls.deque_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.deque_emplace_original = cls.adapter.restore_original_gtests(cls.deque_emplace_registered,cls.deque_emplace_suffix)
@@ -1051,6 +1055,34 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.deque_emplace_registered,self.deque_emplace_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.deque_emplace_original+b' ',['TranslateTest.CoreV2DequeEmplaceValueReferenceRunAtBothOptimizations'])
+
+    def test_deque_value_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.deque_value_original+self.deque_value_suffix,self.deque_value_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.deque_value_original,self.deque_value_suffix),self.deque_value_original)
+        self.assertEqual(self.adapter.restore_deque_value_history(self.deque_value_registered),self.deque_emplace_registered)
+        self.assertEqual(self.adapter.restore_deque_value_history(self.deque_value_original),self.deque_emplace_original)
+        selected = ['TranslateTest.CoreV2DequeValueCopyConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2DequeValueCopyAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2DequeValueMoveConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2DequeValueMoveAssignmentAndSwapRunAtBothOptimizations', 'TranslateTest.CoreV2StackValueCopyMoveAndSwapRunAtBothOptimizations', 'TranslateTest.CoreV2QueueValueCopyMoveAndSwapRunAtBothOptimizations', 'TranslateTest.CoreV2DequeValueCopyConstructorOwnedBodyRejected', 'TranslateTest.CoreV2DequeValueCopyAssignmentOwnedBodyRejected', 'TranslateTest.CoreV2DequeValueMoveConstructorOwnedBodyRejected', 'TranslateTest.CoreV2DequeValueSwapOwnedBodyRejected']
+        generated,proof = self.extractor.extract(self.deque_value_original,selected)
+        self.assertEqual(proof['original_test_names'],7642)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7632)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19dqvalue',generated)
+        self.assertIn(b'std::move',generated)
+
+    def test_deque_value_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.deque_value_registered+b' ',
+                        self.deque_value_registered.replace(b'r19dqvalue',b'q.push(11)',1),
+                        self.deque_value_registered+self.deque_value_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.deque_value_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_deque_value_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.deque_value_registered,self.deque_value_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.deque_value_original+b' ',['TranslateTest.CoreV2DequeValueCopyConstructionRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':

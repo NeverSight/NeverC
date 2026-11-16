@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-value-copy-construction",
+      "formal_test_name": "TranslateTest.CoreV2DequeValueCopyConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "81f5629c21481bf2fc9cd3bbd323ebf6f8cb1b5562632479ae104da18d2950d0",
+      "original_case_source_sha256": "81f5629c21481bf2fc9cd3bbd323ebf6f8cb1b5562632479ae104da18d2950d0",
+      "gtest_body_sha256": "671ab28f4aa9eb30e0a7af9e92fb9048fe0e5f67b5cb8106f681b01b5c8197b9"
+    },
+    {
+      "name": "deque-value-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2DequeValueCopyAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d4403d09a7bb10a2e518429c562bd630437d812767fe68205cc7a971e33c34b9",
+      "original_case_source_sha256": "d4403d09a7bb10a2e518429c562bd630437d812767fe68205cc7a971e33c34b9",
+      "gtest_body_sha256": "5af4767bfebcc1dfa115457cca6947c70bbf1280fb2291fab27285fdde59a79f"
+    },
+    {
+      "name": "deque-value-move-construction",
+      "formal_test_name": "TranslateTest.CoreV2DequeValueMoveConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c03740a4370584998e82d07b995183037ec9ea59e77c8c250b99808ab372eb3c",
+      "original_case_source_sha256": "c03740a4370584998e82d07b995183037ec9ea59e77c8c250b99808ab372eb3c",
+      "gtest_body_sha256": "56c4d99ad881159ee2ca337002f3ac6ee2ec142c3644f768c9476f796d29bfe6"
+    },
+    {
+      "name": "deque-value-move-assignment-swap",
+      "formal_test_name": "TranslateTest.CoreV2DequeValueMoveAssignmentAndSwapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d011278a8460c1ebed450affc871bb92f6374508873866e3c7c251b7a6c6f0ac",
+      "original_case_source_sha256": "d011278a8460c1ebed450affc871bb92f6374508873866e3c7c251b7a6c6f0ac",
+      "gtest_body_sha256": "c4e63c3d21c910c70445e040e58ccf85a5e5df80ce1596303ff9baff39f8250c"
+    },
+    {
+      "name": "stack-value-copy-move-swap",
+      "formal_test_name": "TranslateTest.CoreV2StackValueCopyMoveAndSwapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "18f7881ea4eaf014ac7a76910f42b18e84805e4216ac93d35eb1ee252ea17297",
+      "original_case_source_sha256": "18f7881ea4eaf014ac7a76910f42b18e84805e4216ac93d35eb1ee252ea17297",
+      "gtest_body_sha256": "e2d8af8091cfdc462501d27f1b8032d286690a4b83f4cb4d39185b8a837e0bba"
+    },
+    {
+      "name": "queue-value-copy-move-swap",
+      "formal_test_name": "TranslateTest.CoreV2QueueValueCopyMoveAndSwapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "213dad48a56a608e891bde69079f71daf832c0fa0b2677ba79e37203a02c26be",
+      "original_case_source_sha256": "213dad48a56a608e891bde69079f71daf832c0fa0b2677ba79e37203a02c26be",
+      "gtest_body_sha256": "c9ee8a11c3b01a6f5d770a875c28564cbc0c2a5cc8cfeff282ed76b36cf7c81e"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "deque-copy-constructor-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeValueCopyConstructorOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "cb684b67d70fdfb2b647861f14da0aaa94f93c40831b063d5155e6de5a30b00b",
+      "original_case_source_sha256": "cb684b67d70fdfb2b647861f14da0aaa94f93c40831b063d5155e6de5a30b00b",
+      "gtest_body_sha256": "13544ead914f3ac87f77c2014934558676db70ae4ddeb4bfdc0652a3b3c87f58"
+    },
+    {
+      "name": "deque-copy-assignment-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeValueCopyAssignmentOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "cfa46590347def95c83d2d0042c4e90553facc254db6cbd0b993d240a7ffbc1f",
+      "original_case_source_sha256": "cfa46590347def95c83d2d0042c4e90553facc254db6cbd0b993d240a7ffbc1f",
+      "gtest_body_sha256": "5d4e6ba48f319eb897d0fdd62e74e933798a082744947a91fa0a3d2347e549c8"
+    },
+    {
+      "name": "deque-move-constructor-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeValueMoveConstructorOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "b5d6fc84d068e43f32a915d062fb462e51ab1b2b1fea9f1310a859ce8903ecbc",
+      "original_case_source_sha256": "b5d6fc84d068e43f32a915d062fb462e51ab1b2b1fea9f1310a859ce8903ecbc",
+      "gtest_body_sha256": "57fcbd3f71ef62fecbc5f8b4b2d6b020b0cda57642dd7a5f8ccd4d6e0c5cafd0"
+    },
+    {
+      "name": "deque-swap-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeValueSwapOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "a7f68155c10d2bfe1eca525f3a66e9a00d769aa09a749bc51bae24dbdd567a9f",
+      "original_case_source_sha256": "a7f68155c10d2bfe1eca525f3a66e9a00d769aa09a749bc51bae24dbdd567a9f",
+      "gtest_body_sha256": "b215265693396578a9d86831f35543558eb2209af9687021f8cc02270da3ab01"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeValueCopyConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeValueCopyAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeValueMoveConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeValueMoveAssignmentAndSwapRunAtBothOptimizations",
+    "TranslateTest.CoreV2StackValueCopyMoveAndSwapRunAtBothOptimizations",
+    "TranslateTest.CoreV2QueueValueCopyMoveAndSwapRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeValueCopyConstructorOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeValueCopyAssignmentOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeValueMoveConstructorOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeValueSwapOwnedBodyRejected"
+  ],
+  "native_reference_authentication_sha256": "0854d7dd8a9237429cdbf57b5a3bb150424a760863036de338f3a20e6dbbd72e",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "bde1aba40beae0304af26d8fc5e56c03309b212f4ceca8860953932871896f39",
+  "maintained_original_sha256": "5b6c619e94bccfa7327ded8c23e3ceb0cba594ecf8650acdbf7429c72bb9cf5c",
+  "previous_registered_source_sha256": "f16a3e3d02d70bbe36fcc652f9cbe4d2a93409f78bd46afa64ab9fda8fc05cfa",
+  "previous_maintained_original_sha256": "fcab2527d50a98b9425902a4897a3e8b5600554947d04516c09173fae697b7d9",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7642,
+  "current_python_registry_tests": 76,
+  "previous7632_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "f9a1bad6c39560bac150d9e5027899b7a1378f88bfa31955754d44e27fac9487",
+  "extractor_sha256": "7b1c74d8d3db1fef7c4fd52d49e44f01765d32120df2f51598e57e5eea6cc935",
+  "source_cases": [
+    {
+      "name": "deque-value-copy-construction",
+      "source": "#include <deque>\n#include <utility>\nint basic_value_contract(){std::deque<int> a;for(int i=0;i!=2050;++i)a.push_back(i);\nfor(int i=1;i!=1030;++i)a.push_front(-i);\nconst std::deque<int>& source=a;std::deque<int> b(source);\nif(b.size()!=a.size()||b.front()!=-1029||b.back()!=2049)return 1;\nfor(unsigned i=0;i!=a.size();++i)if(b[i]!=a[i]||&b[i]==&a[i])return 2;\nb.front()=91;b.back()=93;if(a.front()!=-1029||a.back()!=2049)return 3;\nstd::deque<int> c(std::move(source));\nif(c.size()!=a.size()||c.front()!=a.front()||&c.front()==&a.front())return 4;\nstd::deque<int> empty;std::deque<int> copied(empty);copied.push_back(7);\nreturn !empty.empty()||copied.front()!=7;\n}\n\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic std::deque<int>* copy_source;static std::deque<int>* replacement;\nstatic int copy_armed,copy_swaps;\nvoid* operator new(Size n){void* p=malloc(n);if(copy_armed){copy_armed=0;copy_source->swap(*replacement);++copy_swaps;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {free(p);}\nint observable_value_contract(){std::deque<int> source,other;for(int i=0;i!=2050;++i)source.push_back(i);\nother.push_back(77);copy_source=&source;replacement=&other;copy_armed=1;\nstd::deque<int> copied(source);copy_armed=0;\nif(copy_swaps!=1||source.size()!=1||source.front()!=77||other.size()!=2050||copied.size()!=2050)return 1;\nfor(int i=0;i!=2050;++i)if(copied[i]!=i||&copied[i]==&other[i])return 2;\nreturn 0;}\n\nint main(){int r=basic_value_contract();return r?r:observable_value_contract();}\n",
+      "source_sha256": "81f5629c21481bf2fc9cd3bbd323ebf6f8cb1b5562632479ae104da18d2950d0",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-value-copy-assignment",
+      "source": "#include <deque>\nint basic_value_contract(){std::deque<int> a,b;for(int i=0;i!=2050;++i)a.push_back(i);\nb.push_back(-1);std::deque<int>& result=(b=a);\nif(&result!=&b||b.size()!=2050||b.back()!=2049||&b.front()==&a.front())return 1;\nb.front()=7;if(a.front()!=0)return 2;\na.pop_back();a.pop_front();b=a;\nif(b.size()!=2048||b.front()!=1||b.back()!=2048)return 3;\nstd::deque<int>* self=&b;b=*self;if(b.size()!=2048||b.front()!=1)return 4;\nstd::deque<int> empty;b=empty;if(!b.empty()||!empty.empty())return 5;\nempty=a;if(empty.size()!=2048||empty.front()!=1)return 6;\nreturn &empty.front()==&a.front();\n}\n\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic std::deque<int>* assign_source;static int assign_armed,assign_changes;\nvoid* operator new(Size n){void* p=malloc(n);if(assign_armed){assign_armed=0;(*assign_source)[0]=99;(*assign_source)[1]=88;(*assign_source)[2049]=93;++assign_changes;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {free(p);}\nint observable_value_contract(){std::deque<int> source,target;for(int i=0;i!=2050;++i)source.push_back(i);\ntarget.push_back(-1);int* retained=&target.front();assign_source=&source;assign_armed=1;\ntarget=source;assign_armed=0;\nif(assign_changes!=1||target.size()!=2050||&target.front()!=retained)return 1;\nreturn target[0]!=0||target[1]!=88||target.back()!=93||source.front()!=99;}\n\nint main(){int r=basic_value_contract();return r?r:observable_value_contract();}\n",
+      "source_sha256": "d4403d09a7bb10a2e518429c562bd630437d812767fe68205cc7a971e33c34b9",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-value-move-construction",
+      "source": "#include <deque>\n#include <utility>\nint basic_value_contract(){std::deque<int> a;for(int i=0;i!=2050;++i)a.push_back(i);\nfor(int i=1;i!=1030;++i)a.push_front(-i);\nint* first=&a.front();int* middle=&a[1029];int* last=&a.back();\nstd::deque<int> b(std::move(a));\nif(!a.empty()||b.size()!=3079||&b.front()!=first||&b[1029]!=middle||&b.back()!=last)return 1;\n*middle=31;if(b[1029]!=31)return 2;a.push_back(7);\nif(a.front()!=7||b.front()!=-1029)return 3;\nstd::deque<int> empty;std::deque<int> c(std::move(empty));\nc.push_front(9);return !empty.empty()||c.front()!=9;\n}\n\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic std::deque<int>* allocation_target;static Size allocation_bytes[16],allocation_sizes[16];\nstatic int allocation_armed,allocation_count;\nvoid* operator new(Size n){void* p=malloc(n);if(allocation_armed){int i=allocation_count++;if(i<16){allocation_bytes[i]=n;allocation_sizes[i]=allocation_target->size();}}return p;}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {free(p);}\nint observable_value_contract(){std::deque<int> source,target;for(int i=0;i!=2050;++i)source.push_back(i);\nallocation_target=&target;allocation_armed=1;target=source;allocation_armed=0;\nif(allocation_count!=4||allocation_bytes[0]!=24||target.size()!=2050)return 1;\nfor(int i=0;i!=4;++i)if(allocation_sizes[i]!=0||(i&&allocation_bytes[i]!=4096))return 2;\nreturn target.front()!=0||target.back()!=2049;}\n\nint main(){int r=basic_value_contract();return r?r:observable_value_contract();}\n",
+      "source_sha256": "c03740a4370584998e82d07b995183037ec9ea59e77c8c250b99808ab372eb3c",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-value-move-assignment-swap",
+      "source": "#include <deque>\n#include <utility>\nint basic_value_contract(){std::deque<int> a,b;for(int i=0;i!=2050;++i)a.push_back(i);\nfor(int i=0;i!=1030;++i)b.push_front(-i-1);\nint* old=&a[1024];std::deque<int>& result=(b=std::move(a));\nif(&result!=&b||!a.empty()||b.size()!=2050||&b[1024]!=old)return 1;\na.push_back(7);int* seven=&a.front();b.swap(a);\nif(a.size()!=2050||&a[1024]!=old||b.size()!=1||&b.front()!=seven)return 2;\nstd::swap(a,b);if(a.size()!=1||&a.front()!=seven||&b[1024]!=old)return 3;\nb.swap(b);if(b.size()!=2050||&b[1024]!=old)return 4;\nstd::deque<int> empty;b=std::move(empty);\nif(!b.empty()||!empty.empty())return 5;b.push_back(11);\nreturn b.front()!=11||*seven!=7;\n}\n\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\n#include <utility>\nstatic void* release_blocks[16];static int release_collect,release_armed,release_block_count,release_count,release_order[16];\nvoid* operator new(Size n){void* p=malloc(n);if(release_collect&&n==4096){int i=release_block_count++;if(i<16)release_blocks[i]=p;}return p;}\nvoid release_record(void* p){if(release_armed)for(int i=0;i!=release_block_count&&i<16;++i)if(p==release_blocks[i]){int n=release_count++;if(n<16)release_order[n]=i;}free(p);}\nvoid operator delete(void* p) noexcept {release_record(p);}\nvoid operator delete(void* p,Size) noexcept {release_record(p);}\nint observable_value_contract(){std::deque<int> source,target;source.push_back(7);source.push_back(9);int* retained=&source.front();\nrelease_collect=1;for(int i=0;i!=2050;++i)target.push_back(i);release_collect=0;\nif(release_block_count!=3)return 1;release_armed=1;target=std::move(source);release_armed=0;\nif(release_count!=3||release_order[0]!=0||release_order[1]!=2||release_order[2]!=1)return 2;\nreturn !source.empty()||target.size()!=2||&target.front()!=retained||target.back()!=9;}\n\nint main(){int r=basic_value_contract();return r?r:observable_value_contract();}\n",
+      "source_sha256": "d011278a8460c1ebed450affc871bb92f6374508873866e3c7c251b7a6c6f0ac",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "stack-value-copy-move-swap",
+      "source": "#include <stack>\n#include <utility>\nint basic_value_contract(){std::stack<int> a;for(int i=0;i!=2050;++i)a.push(i);\nstd::stack<int> b(a);if(b.size()!=2050||b.top()!=2049||&a.top()==&b.top())return 1;\nb.top()=7;if(a.top()!=2049)return 2;\nint* top=&a.top();std::stack<int> c(std::move(a));\nif(!a.empty()||&c.top()!=top)return 3;a.push(11);b=c;\nif(b.size()!=2050||b.top()!=2049||&b.top()==top)return 4;\nstd::stack<int>& assigned=(b=std::move(c));\nif(&assigned!=&b||!c.empty()||&b.top()!=top)return 5;\na.swap(b);if(&a.top()!=top||b.top()!=11)return 6;\nstd::swap(a,b);if(a.top()!=11||&b.top()!=top)return 7;\nfor(int i=2049;i>=0;--i){if(b.top()!=i)return 8;b.pop();}\nreturn !b.empty()||a.size()!=1;\n}\n\n#include <deque>\n#include <utility>\nstatic std::deque<int>* sequence_left;static std::deque<int>* sequence_right;static int sequence_effects;\nstd::deque<int>* left_deque(){sequence_effects=sequence_effects*10+1;return sequence_left;}\nstd::deque<int>* right_deque(){sequence_effects=sequence_effects*10+2;return sequence_right;}\nint observable_value_contract(){std::deque<int> left,right;left.push_back(1);right.push_back(7);sequence_left=&left;sequence_right=&right;\nstd::deque<int>& first=(*left_deque()=*right_deque());if(sequence_effects!=21||&first!=&left||left.front()!=7)return 1;\nsequence_effects=0;left_deque()->operator=(*right_deque());if(sequence_effects!=12)return 2;\nsequence_effects=0;*left_deque()=std::move(*right_deque());if(sequence_effects!=21||!right.empty()||left.front()!=7)return 3;\nright.push_back(9);sequence_effects=0;left_deque()->operator=(std::move(*right_deque()));\nif(sequence_effects!=12||!right.empty()||left.front()!=9)return 4;\nstd::deque<int>* alias=&left;left=std::move(*alias);if(!left.empty())return 5;\nleft.push_back(11);int* retained=&left.front();left.swap(*alias);std::swap(left,*alias);\nreturn left.size()!=1||left.front()!=11||&left.front()!=retained;}\n\nint main(){int r=basic_value_contract();return r?r:observable_value_contract();}\n",
+      "source_sha256": "18f7881ea4eaf014ac7a76910f42b18e84805e4216ac93d35eb1ee252ea17297",
+      "expected_runtime_exit": 0,
+      "public_header": "stack",
+      "expected": "accept"
+    },
+    {
+      "name": "queue-value-copy-move-swap",
+      "source": "#include <queue>\n#include <utility>\nint basic_value_contract(){std::queue<int> a;for(int i=0;i!=2050;++i)a.push(i);\nstd::queue<int> b(a);if(b.size()!=2050||b.front()!=0||b.back()!=2049||&a.front()==&b.front())return 1;\nb.front()=7;if(a.front()!=0)return 2;\nint* front=&a.front();int* back=&a.back();std::queue<int> c(std::move(a));\nif(!a.empty()||&c.front()!=front||&c.back()!=back)return 3;a.push(11);b=c;\nif(b.size()!=2050||b.front()!=0||&b.front()==front)return 4;\nstd::queue<int>& assigned=(b=std::move(c));\nif(&assigned!=&b||!c.empty()||&b.front()!=front)return 5;\na.swap(b);if(&a.front()!=front||b.front()!=11)return 6;\nstd::swap(a,b);if(a.front()!=11||&b.back()!=back)return 7;\nfor(int i=0;i!=2050;++i){if(b.front()!=i)return 8;b.pop();}\nreturn !b.empty()||a.size()!=1;\n}\n\n#include <stack>\n#include <queue>\n#include <utility>\nstatic std::stack<int>* sl;static std::stack<int>* sr;static std::queue<int>* ql;static std::queue<int>* qr;static int adapter_effects;\nstd::stack<int>* left_stack(){adapter_effects=adapter_effects*10+1;return sl;}\nstd::stack<int>* right_stack(){adapter_effects=adapter_effects*10+2;return sr;}\nstd::queue<int>* left_queue(){adapter_effects=adapter_effects*10+1;return ql;}\nstd::queue<int>* right_queue(){adapter_effects=adapter_effects*10+2;return qr;}\nint observable_value_contract(){std::stack<int> a,b;a.push(1);b.push(7);sl=&a;sr=&b;\nstd::stack<int>& s=(*left_stack()=*right_stack());if(adapter_effects!=21||&s!=&a||a.top()!=7)return 1;\nadapter_effects=0;left_stack()->operator=(std::move(*right_stack()));if(adapter_effects!=12||!b.empty()||a.top()!=7)return 2;\nstd::queue<int> c,d;c.push(1);d.push(9);ql=&c;qr=&d;adapter_effects=0;\nstd::queue<int>& q=(*left_queue()=*right_queue());if(adapter_effects!=21||&q!=&c||c.front()!=9)return 3;\nadapter_effects=0;left_queue()->operator=(std::move(*right_queue()));\nreturn adapter_effects!=12||!d.empty()||c.size()!=1||c.front()!=9;}\n\nint main(){int r=basic_value_contract();return r?r:observable_value_contract();}\n",
+      "source_sha256": "213dad48a56a608e891bde69079f71daf832c0fa0b2677ba79e37203a02c26be",
+      "expected_runtime_exit": 0,
+      "public_header": "queue",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-copy-constructor-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::deque(const deque& value) : deque() {}\n}}\nint main(){std::deque<int> a;std::deque<int> b(a);return b.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "cb684b67d70fdfb2b647861f14da0aaa94f93c40831b063d5155e6de5a30b00b"
+    },
+    {
+      "name": "deque-copy-assignment-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>& deque<int>::operator=(const deque& value){return *this;}\n}}\nint main(){std::deque<int> a,b;return &(b=a)!=&b;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "cfa46590347def95c83d2d0042c4e90553facc254db6cbd0b993d240a7ffbc1f"
+    },
+    {
+      "name": "deque-move-constructor-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\n#include <utility>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::deque(deque&& value) noexcept : deque() {}\n}}\nint main(){std::deque<int> a;std::deque<int> b(std::move(a));return b.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "b5d6fc84d068e43f32a915d062fb462e51ab1b2b1fea9f1310a859ce8903ecbc"
+    },
+    {
+      "name": "deque-swap-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> void deque<int>::swap(deque& value) noexcept {}\n}}\nint main(){std::deque<int> a,b;a.swap(b);return 0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "a7f68155c10d2bfe1eca525f3a66e9a00d769aa09a749bc51bae24dbdd567a9f"
+    }
+  ],
+  "source48_authentication_sha256": "cf74460e41c65e481825dec8edf5f9c23d76a70cea831422c4a33e719a4d1405",
+  "source48_compiler_source": "5b1b12cdc65d7c6cd8f7adb3053e6e891eed33ab"
+}
