@@ -19,6 +19,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include <cstdio>
 #include <deque>
 #include <functional>
 #include <set>
@@ -51806,6 +51807,11 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   const FunctionDecl *ActiveFunction = nullptr;
   unsigned LocalNodes = 0;
   unsigned &Nodes = SharedNodes ? *SharedNodes : LocalNodes;
+  const bool TraceCount = !PriorityRoot && RootMethod && RootMethod->getIdentifier() &&
+      (RootMethod->getName() == "resize" || RootMethod->getName() == "assign");
+  unsigned MaxFunctionDepth = 0, MaxStatementDepth = 0;
+  std::string MaxFunctionName, MaxStatementFunction;
+  const char *MaxStatementClass = "none";
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   auto PinnedMacro = [&](SourceLocation L) {
@@ -51815,6 +51821,10 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
+    if (TraceCount && Depth >= MaxFunctionDepth) {
+      MaxFunctionDepth = Depth;
+      MaxFunctionName = F ? F->getQualifiedNameAsString() : "null";
+    }
     const auto *PreviousFunction = ActiveFunction;
     ActiveFunction = F;
     auto RestoreFunction = llvm::make_scope_exit([&] { ActiveFunction = PreviousFunction; });
@@ -51931,6 +51941,11 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return Body && Statement(Body, Depth + 1);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
+    if (TraceCount && Depth >= MaxStatementDepth) {
+      MaxStatementDepth = Depth;
+      MaxStatementClass = Node ? Node->getStmtClassName() : "null";
+      MaxStatementFunction = ActiveFunction ? ActiveFunction->getQualifiedNameAsString() : "null";
+    }
     // A shared AST node is reusable only after its entire original proof
     // succeeded at an equal or greater depth. Keep source/macro checks on
     // every reuse and never memoize an active or rejected statement.
@@ -52010,11 +52025,17 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     }
     return true;
   };
-  return Root && (ClosedCopyRoot ? Root == ClosedCopyRoot &&
+  const bool Proven = Root && (ClosedCopyRoot ? Root == ClosedCopyRoot &&
       (PriorityRoot ? priorityIntCopySubgraph(S, SM, Root, Context)
                     : (dequeValueCopySubgraph(S, SM, Root, Context) || dequeMapAddressSubgraph(S, SM, Root, Context)))
                               : PriorityRoot ? priorityQueueFunctionDeclarations(S, SM, Root)
                                              : dequeFunctionDeclarations(S, SM, Root)) && Function(Root, 0);
+  if (TraceCount)
+    std::fprintf(stderr, "NCT_COUNT_GRAPH result=%d root=%s nodes=%u function_depth=%u statement_depth=%u function=%s statement_function=%s statement=%s\n",
+        Proven ? 1 : 0, Root->getQualifiedNameAsString().c_str(), Nodes,
+        MaxFunctionDepth, MaxStatementDepth, MaxFunctionName.c_str(),
+        MaxStatementFunction.c_str(), MaxStatementClass);
+  return Proven;
 }
 }
 
