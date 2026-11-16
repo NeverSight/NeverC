@@ -51001,7 +51001,11 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
-    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return false;
+    // The exact non-priority copy proof already shares this canonical
+    // function's traversal. Charge that proof only once; depth and all
+    // declaration/source checks below still apply to every reference.
+    if (!F || F->isInvalidDecl() || Depth > 64 ||
+        ((!MemoizeStatements || !Seen.count(F->getCanonicalDecl())) && ++Nodes > 4096)) return false;
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (dequeHeapBoundary(F, Context)) return true;
