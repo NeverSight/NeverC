@@ -51113,6 +51113,129 @@ bool dequePointerMapQuery(const State &S, const SourceManager &SM,
       Macro(Return->getBeginLoc()) && Macro(Return->getEndLoc()) && Pure(Return->getRetValue(), 0);
 }
 
+bool dequeClosedIteratorPrimitive(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const ASTContext &Context) {
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  if (!Method || Method->isStatic() || Method->isVolatile() || Method->isVariadic() ||
+      Method->isInvalidDecl() || Method->isDeleted() || Method->getPrimaryTemplate() ||
+      !Method->hasBody() || !Method->isOverloadedOperator() || Method->getRefQualifier() != RQ_None) return false;
+  const auto Iterator = approvedUtilityDequeIteratorRecord(S, SM, Method->getParent(), Context);
+  if (!Iterator) return false;
+  const auto RecordType = Context.getRecordType(Method->getParent());
+  const auto Element = Iterator->Const ? Context.IntTy.withConst() : Context.IntTy;
+  const auto Pointer = Context.getPointerType(Element);
+  const auto MapPointer = Iterator->Const ? Context.getPointerType(Pointer.withConst()) : Context.getPointerType(Pointer);
+  const auto Operator = Method->getOverloadedOperator();
+  if (Operator == OO_Star || Operator == OO_Arrow) {
+    if (!Method->isConst() || Method->getNumParams() ||
+        !Context.hasSameType(Method->getReturnType(), Operator == OO_Star
+            ? Context.getLValueReferenceType(Element) : Pointer)) return false;
+  } else {
+    if (Method->isConst() ||
+        !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(RecordType))) return false;
+    if (Operator == OO_PlusPlus || Operator == OO_MinusMinus) {
+      if (Method->getNumParams()) return false;
+    } else if (Operator == OO_PlusEqual) {
+      if (Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg() ||
+          !Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getPointerDiffType())) return false;
+    } else return false;
+  }
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D) { return ++Declarations <= 64 && dequePinned(S, SM, D, "deque"); };
+  for (const auto *D : Method->redecls()) if (!Pinned(D)) return false;
+  const auto *Pattern = Method->getTemplateInstantiationPattern();
+  if (!Pattern) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  auto Macro = [&](SourceLocation Location) {
+    if (!Location.isMacroID()) return true;
+    const auto File = S.sdkFile(SM, SM.getSpellingLoc(Location));
+    return File && (File->Root == "libcxx" || File->Root == "resource");
+  };
+  auto Local = [&](const ValueDecl *Declaration) {
+    if (const auto *Parameter = dyn_cast<ParmVarDecl>(Declaration))
+      return Parameter->getDeclContext() == Method &&
+          Context.hasSameType(Parameter->getType(), Context.getPointerDiffType());
+    const auto *Variable = dyn_cast<VarDecl>(Declaration);
+    return Variable && Variable->getDeclContext() == Method && !Variable->hasGlobalStorage() &&
+        Context.hasSameType(Variable->getType(), Context.getPointerDiffType());
+  };
+  auto Writable = [&](const Expr *Value) {
+    Value = Value->IgnoreParenImpCasts();
+    if (const auto *Reference = dyn_cast<DeclRefExpr>(Value)) return Local(Reference->getDecl());
+    const auto *Member = dyn_cast<MemberExpr>(Value);
+    const auto *Field = Member ? dyn_cast<FieldDecl>(Member->getMemberDecl()) : nullptr;
+    return Field && Field->getParent()->getCanonicalDecl() == Method->getParent()->getCanonicalDecl() &&
+        (Field->getName() == "__m_iter_" || Field->getName() == "__ptr_") &&
+        isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts());
+  };
+  unsigned Nodes = 0;
+  std::function<bool(const Stmt *, unsigned)> Closed;
+  Closed = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node) return true;
+    if (Depth > 16 || ++Nodes > 128 || !Macro(Node->getBeginLoc()) || !Macro(Node->getEndLoc())) return false;
+    if (const auto *Value = dyn_cast<Expr>(Node)) if (!Macro(Value->getExprLoc())) return false;
+    if (const auto *This = dyn_cast<CXXThisExpr>(Node))
+      return Context.hasSameUnqualifiedType(This->getType()->getPointeeType(), RecordType);
+    if (const auto *Member = dyn_cast<MemberExpr>(Node)) {
+      const auto *Field = dyn_cast<FieldDecl>(Member->getMemberDecl());
+      if (!Field || !Field->getIdentifier() || !Pinned(Field) || !Macro(Member->getMemberLoc()) ||
+          Field->getParent()->getCanonicalDecl() != Method->getParent()->getCanonicalDecl() ||
+          !isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts()) ||
+          !Context.hasSameType(Field->getType(), Field->getName() == "__m_iter_" ? MapPointer : Pointer) ||
+          (Field->getName() != "__m_iter_" && Field->getName() != "__ptr_")) return false;
+    } else if (const auto *Reference = dyn_cast<DeclRefExpr>(Node)) {
+      const auto *Declaration = Reference->getDecl();
+      if (!Pinned(Declaration)) return false;
+      if (!Local(Declaration)) {
+        const auto *Block = dyn_cast<VarDecl>(Declaration);
+        const VarDecl *Definition = nullptr;
+        const auto *Value = Block ? Block->getAnyInitializer(Definition) : nullptr;
+        Expr::EvalResult Evaluated;
+        if (!Block || !Block->isStaticDataMember() || !Block->getIdentifier() || Block->getName() != "__block_size" ||
+            Block->getDeclContext() != Method->getParent() || !Definition || !Pinned(Definition) ||
+            !Value || Value->HasSideEffects(Context) || !Value->EvaluateAsInt(Evaluated, Context) ||
+            !Evaluated.Val.isInt() || Evaluated.HasSideEffects || Evaluated.HasUndefinedBehavior ||
+            Evaluated.Val.getInt() != 1024) return false;
+      }
+    } else if (const auto *Declaration = dyn_cast<DeclStmt>(Node)) {
+      for (const auto *D : Declaration->decls()) {
+        const auto *Variable = dyn_cast<VarDecl>(D);
+        if (!Variable || !Local(Variable) || !Pinned(Variable) || !Variable->hasInit() ||
+            !Closed(Variable->getInit(), Depth + 1)) return false;
+      }
+      return true;
+    } else if (const auto *Literal = dyn_cast<IntegerLiteral>(Node)) {
+      if (Literal->getValue().getActiveBits() > 11 || Literal->getValue().ugt(1024)) return false;
+    } else if (const auto *Cast = dyn_cast<CastExpr>(Node)) {
+      if (Cast->getCastKind() != CK_LValueToRValue && Cast->getCastKind() != CK_IntegralCast &&
+          Cast->getCastKind() != CK_NoOp && Cast->getCastKind() != CK_IntegralToBoolean) return false;
+    } else if (const auto *Unary = dyn_cast<UnaryOperator>(Node)) {
+      const auto Opcode = Unary->getOpcode();
+      if (Opcode == UO_PreInc || Opcode == UO_PreDec || Opcode == UO_PostInc || Opcode == UO_PostDec) {
+        if (!Writable(Unary->getSubExpr())) return false;
+      } else if (Opcode != UO_Deref && Opcode != UO_Minus && Opcode != UO_Plus) return false;
+    } else if (const auto *Binary = dyn_cast<BinaryOperator>(Node)) {
+      switch (Binary->getOpcode()) {
+      case BO_Assign: case BO_AddAssign: case BO_SubAssign:
+        if (!Writable(Binary->getLHS())) return false;
+        break;
+      case BO_Add: case BO_Sub: case BO_Mul: case BO_Div: case BO_Rem:
+      case BO_EQ: case BO_NE: case BO_LT: case BO_LE: case BO_GT: case BO_GE:
+        break;
+      default: return false;
+      }
+    } else if (const auto *Branch = dyn_cast<IfStmt>(Node)) {
+      if (Branch->getInit() || Branch->getConditionVariable() || Branch->isConstexpr()) return false;
+    } else if (!isa<CompoundStmt>(Node) && !isa<ReturnStmt>(Node) && !isa<ParenExpr>(Node)) return false;
+    for (const auto *Child : Node->children()) if (!Closed(Child, Depth + 1)) return false;
+    return true;
+  };
+  // This is the complete body, not a name-based assumption. All writes are
+  // confined to this iterator or its local difference count; calls, allocation,
+  // construction and writes through map/data pointers are rejected.
+  return Closed(Method->getBody(), 0);
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false,
                          const FunctionDecl *ClosedCopyRoot = nullptr, unsigned *SharedNodes = nullptr,
@@ -51204,7 +51327,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     // retain the complete source graph proof.
     if (PriorityCopy && priorityCopyLengthError(S, SM, F, Context)) return true;
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
-    if (MemoizeStatements && dequePointerMapQuery(S, SM, F, Context)) return true;
+    if (MemoizeStatements && (dequePointerMapQuery(S, SM, F, Context) ||
+        dequeClosedIteratorPrimitive(S, SM, F, Context))) return true;
     // Every admitted construction count has already passed the existing
     // allocator max-size proof, making this pinned error branch unreachable.
     if (F->getIdentifier() && F->getName() == "__throw_bad_array_new_length" &&
