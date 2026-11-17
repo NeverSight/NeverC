@@ -51841,7 +51841,10 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   auto &Seen = SharedSeen ? *SharedSeen : LocalSeen;
   llvm::DenseMap<const Stmt *, unsigned> LocalStatements;
   auto &Statements = SharedStatements ? *SharedStatements : LocalStatements;
-  const bool ClosedCopyProof = DequeValueCopy || SharedStatements;
+  // Pointer assignment traverses the same pinned integer transfer and
+  // segmented-owner queries as value copying. Reuse their complete
+  // existing closed proofs; keep the shared node ledger and depth limit.
+  const bool ClosedCopyProof = DequeValueCopy || DequePointerAssign || SharedStatements;
   const bool DequePointerRange = !PriorityRoot && RootMethod &&
       dequePointerRangeTemplate(S, SM, RootMethod, Context);
   const bool MemoizeStatements = ClosedCopyProof || DequeCountUpdate || DequePointerRange;
