@@ -17501,6 +17501,16 @@ deallocation order; self-move leaves the owner empty and self-swap preserves it.
 Assignment notation evaluates the right operand before the receiver; explicit
 member calls evaluate their receiver before the argument.
 
+The exact default-allocator integer deque also supports `deque(n)`,
+`deque(n, value)`, `resize(n)`, `resize(n, value)` and `assign(n, value)`.
+Default construction and growth initialize added integers to zero; fill forms
+read the live integer reference at the SDK-required point after allocation.
+The count is captured before an allocation callback can change its source.
+Assignment fills the retained prefix before allocating and filling a new suffix.
+Shrinking preserves surviving element addresses and publishes the new size before
+releasing unused blocks in SDK order. Calls retain receiver and argument
+evaluation order, including callbacks that change the fill referent.
+
 Each family has ten permanent GTests: six exact native-reference programs that
 generate and execute C23 at O0 and O2, and four source-origin rejection tests.
 Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
@@ -17517,7 +17527,13 @@ registered GTests and twelve generated C23 executions at O0 and O2 against its
 exact native programs. These cover multi-block copy/move construction and
 assignment, swap, self operations, storage identities and reuse, allocation and
 deallocation callbacks, and operator versus explicit-call sequencing. Four
-source-origin guards reject replaced value-operation bodies.
+source-origin guards reject replaced value-operation bodies. A separate
+counted-operation family has ten registered GTests and twelve generated C23
+executions at O0 and O2 against the exact native programs. It covers zero and
+multi-block counts, block/map boundaries, zero initialization, live fill values,
+captured counts, surviving reference identities, prefix-write/allocation order,
+shrink-release callbacks and receiver/argument sequencing. Four source-origin
+guards reject replaced counted constructor, resize and assignment bodies.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
@@ -17525,10 +17541,10 @@ graph. The fixed range-comparator leaves retain complete checks of their types,
 locations and bodies; the general graph depth and node limits are unchanged.
 Replaced operation bodies and owner/storage macros remain rejected.
 
-Custom allocators or adapter containers,
-other element specializations, range overloads, emplacement with other
-argument types or multiple arguments, positional insertion/erasure and resizing
-require further work. These bounded operations
+Custom allocators or adapter containers, other element specializations,
+additional allocator and range overloads, emplacement with other argument types
+or multiple arguments and positional insertion/erasure require further work.
+These bounded operations
 do not establish complete STL support.
 
 Selected ordinary constructors must own complete definitions. Operation traits,
