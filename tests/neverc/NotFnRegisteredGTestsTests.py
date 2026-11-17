@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.deque_count_insert_registered = cls.registered
+        cls.deque_count_insert_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.deque_count_insert_original = cls.adapter.restore_original_gtests(cls.deque_count_insert_registered,cls.deque_count_insert_suffix)
+        cls.registered = cls.adapter.restore_deque_count_insert_history(cls.deque_count_insert_registered)
         cls.deque_insert_registered = cls.registered
         cls.deque_insert_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.deque_insert_original = cls.adapter.restore_original_gtests(cls.deque_insert_registered,cls.deque_insert_suffix)
@@ -1275,6 +1279,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.deque_insert_registered,self.deque_insert_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.deque_insert_original+b' ',['TranslateTest.CoreV2DequeInsertSingleRunAtBothOptimizations'])
+
+    def test_deque_count_insert_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.deque_count_insert_original+self.deque_count_insert_suffix,self.deque_count_insert_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.deque_count_insert_original,self.deque_count_insert_suffix),self.deque_count_insert_original)
+        self.assertEqual(self.adapter.restore_deque_count_insert_history(self.deque_count_insert_registered),self.deque_insert_registered)
+        self.assertEqual(self.adapter.restore_deque_count_insert_history(self.deque_count_insert_original),self.deque_insert_original)
+        selected = ['TranslateTest.CoreV2DequeCountInsertBasicRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountInsertFrontGrowthRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountInsertBackGrowthRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountInsertAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountInsertAllocationEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountInsertCallSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountInsertOwnedEmptyBodyRejected', 'TranslateTest.CoreV2DequeCountInsertOwnedForwardingBodyRejected', 'TranslateTest.CoreV2DequeCountInsertOwnedCountForwardingBodyRejected', 'TranslateTest.CoreV2DequeCountInsertOwnedConditionalForwardingBodyRejected']
+        generated,proof = self.extractor.extract(self.deque_count_insert_original,selected)
+        self.assertEqual(proof['original_test_names'],7712)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7702)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19dqcntinsert',generated)
+        self.assertIn(b'deque-count-insert-',generated)
+        self.assertIn(b'insert(',generated)
+
+    def test_deque_count_insert_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.deque_count_insert_registered+b' ',
+                        self.deque_count_insert_registered.replace(b'r19dqcntinsert',b'q.push(11)',1),
+                        self.deque_count_insert_registered+self.deque_count_insert_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.deque_count_insert_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_deque_count_insert_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.deque_count_insert_registered,self.deque_count_insert_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.deque_count_insert_original+b' ',['TranslateTest.CoreV2DequeCountInsertBasicRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':

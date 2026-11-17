@@ -1,0 +1,205 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-count-insert-basic",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountInsertBasicRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5c399473b95b8b0085012fa77720e7225e8da065c3a7135213b19b45c8372f68",
+      "original_case_source_sha256": "5c399473b95b8b0085012fa77720e7225e8da065c3a7135213b19b45c8372f68",
+      "gtest_body_sha256": "bccf11b807e3a3f084955845d05af65a17040670e02dbd26bb3917cd80f41827"
+    },
+    {
+      "name": "deque-count-insert-front-growth",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountInsertFrontGrowthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "918ef526075863672cc0cc428b3a9484e9f8e87794b6b8c52692b290a5059246",
+      "original_case_source_sha256": "918ef526075863672cc0cc428b3a9484e9f8e87794b6b8c52692b290a5059246",
+      "gtest_body_sha256": "083c10427884618cbee68eaf8a046c41768190547e50a3da9c2187860d3d86d9"
+    },
+    {
+      "name": "deque-count-insert-back-growth",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountInsertBackGrowthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "28d62bd712f2bf440922bdabc727e1010322320796a47ececa27968f26e17e89",
+      "original_case_source_sha256": "28d62bd712f2bf440922bdabc727e1010322320796a47ececa27968f26e17e89",
+      "gtest_body_sha256": "dd5faeb471edc675325cb2f09455c0eeeac606d279d6a0ad4005488cacc4fca2"
+    },
+    {
+      "name": "deque-count-insert-aliases",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountInsertAliasesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d873ff6fcad52c5b93e0563686aea72dd8d082f0bf133a9f96f84dfc500eb3c1",
+      "original_case_source_sha256": "d873ff6fcad52c5b93e0563686aea72dd8d082f0bf133a9f96f84dfc500eb3c1",
+      "gtest_body_sha256": "eed2996aa10406e9579feda5b314ead23451f761499ae12bc8309c8c0e271d4b"
+    },
+    {
+      "name": "deque-count-insert-allocation-effects",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountInsertAllocationEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "143ed1bd376d68eb89672e76a61ef3c6e538f9ea349ba1a6a078973ddcd18eec",
+      "original_case_source_sha256": "143ed1bd376d68eb89672e76a61ef3c6e538f9ea349ba1a6a078973ddcd18eec",
+      "gtest_body_sha256": "00898ae9dcd21d6ee8f9244b5ac26cab5566fd96f8b979c44fa3039bd408b5a3"
+    },
+    {
+      "name": "deque-count-insert-call-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountInsertCallSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4cba57613b22b881397bcb94a835c3f60b91982419a6dfb8345df8370e9cdd39",
+      "original_case_source_sha256": "4cba57613b22b881397bcb94a835c3f60b91982419a6dfb8345df8370e9cdd39",
+      "gtest_body_sha256": "032f09c694d1a685a20d9abf6a10fd8aa712b333eeef04d95f537f976a921ed1"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "deque-count-insert-owned-empty",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountInsertOwnedEmptyBodyRejected",
+      "expected": "reject",
+      "source_sha256": "f6732a1e006b55a163c1fd5c3070476b50f62ef56d9065522e1b5953cfddb185",
+      "original_case_source_sha256": "f6732a1e006b55a163c1fd5c3070476b50f62ef56d9065522e1b5953cfddb185",
+      "gtest_body_sha256": "aa5f36240d6839679a95a347cf1d5780e9041624399288e6eb1cdf2b685b1d21"
+    },
+    {
+      "name": "deque-count-insert-owned-forwarding",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountInsertOwnedForwardingBodyRejected",
+      "expected": "reject",
+      "source_sha256": "ab9638e22072ce44b0ac98238ffcd59890fae7a6daaecf4e3f9d95815051f392",
+      "original_case_source_sha256": "ab9638e22072ce44b0ac98238ffcd59890fae7a6daaecf4e3f9d95815051f392",
+      "gtest_body_sha256": "b87c93e19ac1934ca1b9e7765b410e18c6c0f0c15538c6b00aee8a4dc1b765a2"
+    },
+    {
+      "name": "deque-count-insert-owned-count-forwarding",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountInsertOwnedCountForwardingBodyRejected",
+      "expected": "reject",
+      "source_sha256": "c28b3e657c13ef88b16a76e531e10d0b0dca5027aae1a649ad2fe7d1daf040f0",
+      "original_case_source_sha256": "c28b3e657c13ef88b16a76e531e10d0b0dca5027aae1a649ad2fe7d1daf040f0",
+      "gtest_body_sha256": "6c58fe817a39ac652db1888ac0cef7bfc5219f474f0cb925188c5e1894bf6c1c"
+    },
+    {
+      "name": "deque-count-insert-owned-conditional-forwarding",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountInsertOwnedConditionalForwardingBodyRejected",
+      "expected": "reject",
+      "source_sha256": "f05441b17339804671daf0b0471ce27d4c59665e67ebaa538948a1821e3520df",
+      "original_case_source_sha256": "f05441b17339804671daf0b0471ce27d4c59665e67ebaa538948a1821e3520df",
+      "gtest_body_sha256": "83739725e814b0982fbd2e90156980f5a8cbf6b5322a4cb0bfc2bb60459b48d2"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeCountInsertBasicRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountInsertFrontGrowthRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountInsertBackGrowthRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountInsertAliasesRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountInsertAllocationEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountInsertCallSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountInsertOwnedEmptyBodyRejected",
+    "TranslateTest.CoreV2DequeCountInsertOwnedForwardingBodyRejected",
+    "TranslateTest.CoreV2DequeCountInsertOwnedCountForwardingBodyRejected",
+    "TranslateTest.CoreV2DequeCountInsertOwnedConditionalForwardingBodyRejected"
+  ],
+  "native_reference_authentication_sha256": "b0a96ba5fd456a24884022703c962686f85d8e050bd4d9aa9223d8f705c13ec7",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "e76f25f61b551e61a11282a5d115de4d4a283ef75598fc2694ff81f0cb7c9382",
+  "maintained_original_sha256": "89763d0ef80e1d5c1601500e6d1f6e581caf82301292ca249f6ebeb89ee08d26",
+  "previous_registered_source_sha256": "9a8e47ade9557d15e34716329a587d562fc5e0246d22ce15c49f64ae62773556",
+  "previous_maintained_original_sha256": "24c4a41ce4f2c53230d3c2db1383cf11c4093b03665132d9f7e4088f8a7ac6dc",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7712,
+  "current_python_registry_tests": 90,
+  "previous7702_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "e69b5c3c1d68474209bac62785a7ac2f5fce045a9ba7f4b0babab9ab9acdf6bf",
+  "extractor_sha256": "baf1dbe0ff8fe1d6d39525576ff9bc490db1ad676993faec38918451fcb2adbd",
+  "source_cases": [
+    {
+      "name": "deque-count-insert-basic",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a;\nauto empty=a.insert(a.cbegin(),0,7);if(empty!=a.end()||!a.empty())return 1;\nauto first=a.insert(a.cend(),3,4);if(first!=a.begin()||*first!=4||a.size()!=3)return 2;\nint* original=&a.front();auto back=a.insert(a.cend(),2,8);\nif(back!=a.begin()+3||*back!=8||&a.front()!=original)return 3;\nint* tail=&a.back();auto front=a.insert(a.cbegin(),2,1);\nif(front!=a.begin()||*front!=1||&a.back()!=tail)return 4;\nauto middle=a.insert(a.cbegin()+3,2,6);const int expected[9]={1,1,4,6,6,4,4,8,8};\nif(middle!=a.begin()+3||a.size()!=9)return 5;\nfor(unsigned i=0;i!=9;++i)if(a[i]!=expected[i])return 6;\nint* stable=&a.front();auto zero=a.insert(a.cbegin()+4,0,99);\nif(zero!=a.begin()+4||a.size()!=9||&a.front()!=stable)return 7;\na.clear();a.insert(a.end(),1,9);return a.size()!=1||a.front()!=9;}\n",
+      "source_sha256": "5c399473b95b8b0085012fa77720e7225e8da065c3a7135213b19b45c8372f68",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-count-insert-front-growth",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a(2050);\nfor(unsigned i=0;i!=2050;++i)a[i]=(int)i;auto next=a.insert(a.cbegin()+2,3073,-1);\nif(a.size()!=5123||next!=a.begin()+2||*next!=-1||a.front()!=0||a.back()!=2049)return 1;\nfor(unsigned i=0;i!=5123;++i)if(a[i]!=(i<2?(int)i:i<3075?-1:(int)i-3073))return 2;\na.push_front(-2);a.push_back(2050);return a.front()!=-2||a.back()!=2050||a.size()!=5125;}\n",
+      "source_sha256": "918ef526075863672cc0cc428b3a9484e9f8e87794b6b8c52692b290a5059246",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-count-insert-back-growth",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a(2050);\nfor(unsigned i=0;i!=2050;++i)a[i]=(int)i;auto next=a.insert(a.cbegin()+2048,3073,-2);\nif(a.size()!=5123||next!=a.begin()+2048||*next!=-2||a.front()!=0||a.back()!=2049)return 1;\nfor(unsigned i=0;i!=5123;++i)if(a[i]!=(i<2048?(int)i:i<5121?-2:(int)i-3073))return 2;\na.push_front(-3);a.push_back(2050);return a.front()!=-3||a.back()!=2050||a.size()!=5125;}\n",
+      "source_sha256": "28d62bd712f2bf440922bdabc727e1010322320796a47ececa27968f26e17e89",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-count-insert-aliases",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a={0,1,2,3,4,5,6,7};\nauto first=a.insert(a.cbegin()+2,3,a.front());const int one[11]={0,1,0,0,0,2,3,4,5,6,7};\nif(first!=a.begin()+2||a.size()!=11)return 1;for(unsigned i=0;i!=11;++i)if(a[i]!=one[i])return 2;\nauto second=a.insert(a.cend()-2,5,a.back());\nif(second!=a.begin()+9||a.size()!=16||a.back()!=7||a[14]!=6)return 3;\nfor(unsigned i=0;i!=9;++i)if(a[i]!=one[i])return 4;\nfor(unsigned i=9;i!=14;++i)if(a[i]!=7)return 5;\nstd::deque<int> b(1023);for(unsigned i=0;i!=1023;++i)b[i]=(int)i;\nauto third=b.insert(b.cbegin()+1,2049,b[2]);\nif(third!=b.begin()+1||*third!=2||b.size()!=3072||b.front()!=0||b.back()!=1022)return 6;\nfor(unsigned i=1;i!=2050;++i)if(b[i]!=2)return 7;\nfor(unsigned i=2050;i!=3072;++i)if(b[i]!=(int)i-2049)return 8;return 0;}\n",
+      "source_sha256": "d873ff6fcad52c5b93e0563686aea72dd8d082f0bf133a9f96f84dfc500eb3c1",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-count-insert-allocation-effects",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic std::deque<int>* owner;static int* input;\nstatic int stage,calls,bad;\nvoid* operator new(Size n){if(stage){++calls;if(owner->size()!=1023)bad=1;*input=77;}return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::deque<int> a(1023,8);owner=&a;input=&a.front();stage=1;\nauto front=a.insert(a.cbegin(),2050,*input);stage=0;\nif(!calls||bad||front!=a.begin()||a.size()!=3073||a[2050]!=77||a.back()!=8)return 1;\nfor(unsigned i=0;i!=2050;++i)if(a[i]!=77)return 2;\nstd::deque<int> b(1023,9);owner=&b;input=&b.front();calls=0;stage=1;\nauto back=b.insert(b.cend(),2050,*input);stage=0;\nif(!calls||bad||back!=b.begin()+1023||b.size()!=3073||b.front()!=77||b[1022]!=9)return 3;\nfor(unsigned i=1023;i!=3073;++i)if(b[i]!=77)return 4;return 0;}\n",
+      "source_sha256": "143ed1bd376d68eb89672e76a61ef3c6e538f9ea349ba1a6a078973ddcd18eec",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-count-insert-call-sequencing",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nusing It=std::deque<int>::const_iterator;\nstatic std::deque<int>* owner;static const It* position_value;\nstatic int receivers,positions,counts,values,bad,number=2;static Size amount=2;\nstd::deque<int>& receiver(){++receivers;return *owner;}\nIt position(){++positions;if(receivers!=positions)bad=1;return *position_value;}\nSize count(){++counts;if(receivers!=counts)bad=1;return amount;}\nconst int& value(){++values;if(receivers!=values)bad=1;return number;}\nint main(){std::deque<int> a={1,4};owner=&a;It p=a.cbegin()+1;position_value=&p;\nauto one=receiver().insert(position(),count(),value());\nif(bad||receivers!=1||positions!=1||counts!=1||values!=1||one!=a.begin()+1||a.size()!=4)return 1;\nconst int expected[4]={1,2,2,4};for(unsigned i=0;i!=4;++i)if(a[i]!=expected[i])return 2;\np=a.cend();amount=0;auto zero=receiver().insert(position(),count(),value());\nreturn bad||receivers!=2||positions!=2||counts!=2||values!=2||zero!=a.end()||a.size()!=4;}\n",
+      "source_sha256": "4cba57613b22b881397bcb94a835c3f60b91982419a6dfb8345df8370e9cdd39",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-count-insert-owned-empty",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::iterator deque<int>::insert(const_iterator position,size_type count,const value_type& value) {return begin();}\n}}\nint main(){std::deque<int> a={4,5,6};int value=7;a.insert(a.cbegin()+1,2,value);return 0;}\n",
+      "source_sha256": "f6732a1e006b55a163c1fd5c3070476b50f62ef56d9065522e1b5953cfddb185",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-count-insert-owned-forwarding",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::iterator deque<int>::insert(const_iterator position,size_type count,const value_type& value) {return insert(position,value);}\n}}\nint main(){std::deque<int> a={4,5,6};int value=7;a.insert(a.cbegin()+1,2,value);return 0;}\n",
+      "source_sha256": "ab9638e22072ce44b0ac98238ffcd59890fae7a6daaecf4e3f9d95815051f392",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-count-insert-owned-count-forwarding",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::iterator deque<int>::insert(const_iterator position,size_type count,const value_type& value) {assign(count,value);return begin();}\n}}\nint main(){std::deque<int> a={4,5,6};int value=7;a.insert(a.cbegin()+1,2,value);return 0;}\n",
+      "source_sha256": "c28b3e657c13ef88b16a76e531e10d0b0dca5027aae1a649ad2fe7d1daf040f0",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-count-insert-owned-conditional-forwarding",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::iterator deque<int>::insert(const_iterator position,size_type count,const value_type& value) {if(count==0)return begin();return insert(position,value);}\n}}\nint main(){std::deque<int> a={4,5,6};int value=7;a.insert(a.cbegin()+1,2,value);return 0;}\n",
+      "source_sha256": "f05441b17339804671daf0b0471ce27d4c59665e67ebaa538948a1821e3520df",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source48_authentication_sha256": "fcd788b088ec025a3cbe327ce99ff0255e7a0f4bedb5bb2272d165447cac2543",
+  "source48_compiler_source": "1a204db00a02d1b1e80bae3e81a86a53ac945252"
+}
