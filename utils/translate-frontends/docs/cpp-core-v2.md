@@ -17522,6 +17522,15 @@ publishes the new size before releasing unused blocks in SDK order. Empty ranges
 retain endpoint effects without reading any input element. Member calls evaluate
 the receiver before either argument.
 
+The count, count/value, raw pointer range, copy and move constructors also admit
+an explicit `const std::allocator<int>&` argument for this exact specialization.
+Every argument is evaluated once. Counts and range endpoints are captured before
+allocation while fill and copy inputs retain their live reads at the SDK-required
+point. Copying owns independent segmented storage; moving with the equal default
+allocator transfers the original storage without allocation, preserves element
+addresses and leaves the source empty and reusable. These overloads retain the
+same valid-range, nonoverflowing-size and successful-allocation domain.
+
 Each family has ten permanent GTests: six exact native-reference programs that
 generate and execute C23 at O0 and O2, and four source-origin rejection tests.
 Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
@@ -17551,15 +17560,28 @@ and const pointers, empty and multiple-block ranges, captured endpoints, live so
 values, assignment prefix/allocation order, shrink-release callbacks, surviving
 references and receiver/argument sequencing. Four source-origin guards reject
 replaced mutable/const pointer range constructors and assignment bodies.
+A separate explicit default allocator constructor family has ten registered GTests
+and twelve generated C23 executions at O0 and O2 against the exact native programs.
+It covers count and block boundaries, live fill and copy values after allocation,
+captured mutable/const pointer endpoints, argument evaluation counts, independent
+copies, storage-transfer identities, empty moves and source reuse. Four source-origin
+guards reject replaced count, fill, range and copy/move allocator constructor bodies.
+Separate six-target source checks reject owned allocator equality bodies for both
+`allocator<int>` and its internal `allocator<int*>` rebind, whether the replaced
+body returns true or false.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
 graph. The fixed range-comparator leaves retain complete checks of their types,
 locations and bodies; the general graph depth and node limits are unchanged.
 Replaced operation bodies and owner/storage macros remain rejected.
+The two pinned explicit-allocator move branches require the exact default
+allocator specializations, constructor signatures and literal-true SDK comparison
+body. Their complete conditions and reachable statements keep the original graph
+checks and budgets; this reachability proof does not admit custom allocators.
 
 Custom allocators or adapter containers, other element specializations,
-additional allocator and other iterator range overloads, emplacement with other argument types
+other allocator and iterator range overloads, emplacement with other argument types
 or multiple arguments and positional insertion/erasure require further work.
 These bounded operations
 do not establish complete STL support.
