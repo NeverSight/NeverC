@@ -49778,6 +49778,22 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
   if (approvedUtilityDequeRecord(S, SM, M->getParent(), Context)) {
     if (!isa<CXXConstructorDecl>(M) && dequePointerRangeTemplate(S, SM, M, Context))
       return UtilityDequeOperation::AssignPointerRange;
+    if (!isa<CXXConstructorDecl>(M) &&
+        M->getParent()->getIdentifier() && M->getParent()->getName() == "deque" &&
+        !M->isConst() && M->getRefQualifier() == RQ_None && !M->getPrimaryTemplate() &&
+        M->getNumParams() == 1 && !M->getParamDecl(0)->hasDefaultArg()) {
+      const auto Parameter = M->getParamDecl(0)->getType();
+      if (!Parameter->isReferenceType() && !Parameter.hasLocalQualifiers()) {
+        const auto List = approvedUtilityInitializerListRecord(S, SM, dequeRecordType(Parameter), Context);
+        const auto Record = Context.getRecordType(M->getParent());
+        const bool Assignment = M->isOverloadedOperator() && M->getOverloadedOperator() == OO_Equal &&
+            Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Record));
+        const bool Assign = M->getIdentifier() && M->getName() == "assign" && M->getReturnType()->isVoidType();
+        if (List && Context.hasSameType(List->ElementType, Context.IntTy) &&
+            Context.hasSameType(Parameter, Context.getRecordType(List->Record)) && (Assignment || Assign))
+          return UtilityDequeOperation::AssignInitializerList;
+      }
+    }
     const bool Stack = M->getParent()->getName() == "stack";
     const bool Queue = M->getParent()->getName() == "queue";
     const auto Element = M->isConst() ? Context.IntTy.withConst() : Context.IntTy;
@@ -51958,7 +51974,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   const auto CountOperation = !PriorityRoot && RootMethod
       ? dequeMethodSignature(S, SM, RootMethod, Context) : std::nullopt;
   const bool DequePointerAssign = CountOperation &&
-      *CountOperation == UtilityDequeOperation::AssignPointerRange;
+      (*CountOperation == UtilityDequeOperation::AssignPointerRange ||
+       *CountOperation == UtilityDequeOperation::AssignInitializerList);
   const bool DequeCountUpdate = CountOperation &&
       (*CountOperation == UtilityDequeOperation::Resize ||
        *CountOperation == UtilityDequeOperation::ResizeFill ||

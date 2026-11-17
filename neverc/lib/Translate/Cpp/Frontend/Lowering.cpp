@@ -27706,11 +27706,8 @@ class FunctionLowering {
     assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
     jump(Check, L); label(Done, L);
   }
-  void assignPointerDequeRange(Expression Place, Expression First, Expression Last, SourceLocation L) {
+  void assignCountedDequeRange(Expression Place, Expression First, Expression Count, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
-    const auto Difference = type(A.Context.getPointerDiffType(), L);
-    // Both endpoint values were captured before any allocation callback.
-    auto Count = snapshot(cast(binary("-", Last, First, Difference, L), Size, L), L);
     auto OldSize = snapshot(dequeOwnerMember(Place, "nct_deque_size", L), L);
     auto Common = temporary(Size, L); assign(Common, Count, L);
     const auto Clamp = labelName(), Prefix = labelName();
@@ -27735,6 +27732,14 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
   }
 
+  void assignPointerDequeRange(Expression Place, Expression First, Expression Last, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    // Both endpoint values were captured before any allocation callback.
+    auto Count = snapshot(cast(binary("-", Last, First, Difference, L), Size, L), L);
+    assignCountedDequeRange(Place, First, Count, L);
+  }
+
   Expression utilityDequeOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityDequeCall(A.S, A.Sources, Call, A.Context);
@@ -27748,7 +27753,8 @@ class FunctionLowering {
             Proof->Function->getParamDecl(I)->getType()), L));
     };
     const bool RightFirst = isa<CXXOperatorCallExpr>(Call) &&
-        (Operation == UtilityDequeOperation::CopyAssign || Operation == UtilityDequeOperation::MoveAssign);
+        (Operation == UtilityDequeOperation::CopyAssign || Operation == UtilityDequeOperation::MoveAssign ||
+         Operation == UtilityDequeOperation::AssignInitializerList);
     if (RightFirst) ReadOperands();
     std::optional<Expression> Receiver;
     if (Proof->Receiver) {
@@ -27797,6 +27803,17 @@ class FunctionLowering {
           : Operation == UtilityDequeOperation::Front ? quantity(0, Size, L)
           : binary("-", dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L);
       return dequeOwnerValue(Place, Position, Method->isConst(), L);
+    }
+    if (Operation == UtilityDequeOperation::AssignInitializerList) {
+      const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
+          Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!List) reject(L, "deque initializer assignment", "The pinned integer initializer-list carrier is required.");
+      // argument() already copied the by-value carrier at the correct call
+      // sequencing point. Capture both fields before allocation callbacks.
+      auto Input = snapshot(fieldStorage(dereference(Operands[0], L), List->Begin, L), L);
+      auto Count = snapshot(fieldStorage(dereference(Operands[0], L), List->Size, L), L);
+      assignCountedDequeRange(Place, Input, Count, L);
+      return Method->getReturnType()->isVoidType() ? Expression{} : Place;
     }
     if (Operation == UtilityDequeOperation::AssignPointerRange) {
       assignPointerDequeRange(Place, Operands[0], Operands[1], L); return Expression{};
