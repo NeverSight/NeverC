@@ -19,6 +19,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include <cstdio>
 #include <deque>
 #include <functional>
 #include <set>
@@ -49771,6 +49772,16 @@ bool dequeEmplaceTemplate(const CXXMethodDecl *Method, const ASTContext &Context
 
 std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const SourceManager &SM,
     const CXXMethodDecl *M, const ASTContext &Context) {
+  if (M && M->getIdentifier() && M->getName() == "assign" && M->getParent()->getName() == "deque") {
+    const auto *Primary = M->getPrimaryTemplate();
+    const auto *Arguments = M->getTemplateSpecializationArgs();
+    std::fprintf(stderr, "NCT_RANGE_SIGNATURE params=%u template_params=%u arguments=%u kind=%u range=%d first=%s second=%s\n",
+        M->getNumParams(), Primary ? Primary->getTemplateParameters()->size() : 0,
+        Arguments ? Arguments->size() : 0, static_cast<unsigned>(M->getTemplateSpecializationKind()),
+        dequePointerRangeTemplate(S, SM, M, Context) ? 1 : 0,
+        M->getNumParams() ? M->getParamDecl(0)->getType().getAsString().c_str() : "none",
+        M->getNumParams() > 1 ? M->getParamDecl(1)->getType().getAsString().c_str() : "none");
+  }
   if (!M || M->isStatic() || M->isVolatile() ||
       (M->getPrimaryTemplate() && !dequeEmplaceTemplate(M, Context) &&
        !dequePointerRangeTemplate(S, SM, M, Context)) ||
@@ -51913,6 +51924,29 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   const FunctionDecl *ActiveFunction = nullptr;
   unsigned LocalNodes = 0;
   unsigned &Nodes = SharedNodes ? *SharedNodes : LocalNodes;
+  const bool TraceCount = !PriorityRoot &&
+      ((RootConstructor && RootConstructor->getNumParams() == 2) || ClosedCopyRoot);
+  if (TraceCount && RootConstructor)
+    std::fprintf(stderr, "NCT_ALLOCATOR_ROOT params=%u kind=%d first=%s second=%s\n",
+        RootConstructor->getNumParams(), DequeAllocatorConstruction ? static_cast<int>(*DequeAllocatorConstruction) : -1,
+        RootConstructor->getParamDecl(0)->getType().getAsString().c_str(),
+        RootConstructor->getParamDecl(1)->getType().getAsString().c_str());
+  unsigned MaxFunctionDepth = 0, MaxStatementDepth = 0;
+  std::string MaxFunctionName, MaxStatementFunction;
+  const char *MaxStatementClass = "none";
+  unsigned FirstRejectLine = 0;
+  std::string FirstRejectFunction, FirstRejectStatement, FirstRejectCallee;
+  const Stmt *TraceStatement = nullptr;
+  auto TraceReject = [&](unsigned Line) {
+    if (TraceCount && !FirstRejectLine) {
+      FirstRejectLine = Line;
+      FirstRejectFunction = ActiveFunction ? ActiveFunction->getQualifiedNameAsString() : "none";
+      FirstRejectStatement = TraceStatement ? TraceStatement->getStmtClassName() : "none";
+      if (const auto *Call = dyn_cast_or_null<CallExpr>(TraceStatement))
+        if (const auto *Callee = Call->getDirectCallee()) FirstRejectCallee = Callee->getQualifiedNameAsString();
+    }
+    return false;
+  };
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   auto PinnedMacro = [&](SourceLocation L) {
@@ -51922,6 +51956,10 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
+    if (TraceCount && Depth >= MaxFunctionDepth) {
+      MaxFunctionDepth = Depth;
+      MaxFunctionName = F ? F->getQualifiedNameAsString() : "null";
+    }
     const auto *PreviousFunction = ActiveFunction;
     ActiveFunction = F;
     auto RestoreFunction = llvm::make_scope_exit([&] { ActiveFunction = PreviousFunction; });
@@ -51929,7 +51967,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     // function's traversal. Charge that proof only once; depth and all
     // declaration/source checks below still apply to every reference.
     if (!F || F->isInvalidDecl() || Depth > 64 ||
-        ((!MemoizeStatements || !Seen.count(F->getCanonicalDecl())) && ++Nodes > 4096)) return false;
+        ((!MemoizeStatements || !Seen.count(F->getCanonicalDecl())) && ++Nodes > 4096)) return TraceReject(__LINE__);
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (dequeHeapBoundary(F, Context)) return true;
@@ -51941,33 +51979,33 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       return true;
     }
     if (F->getBuiltinID()) {
-      if (!F->getIdentifier() || F->hasBody()) return false;
+      if (!F->getIdentifier() || F->hasBody()) return TraceReject(__LINE__);
       const auto Name = F->getName();
       if (Name != "__builtin_is_constant_evaluated" &&
           Name != "__builtin_addressof" &&
           Name != "__builtin_operator_new" && Name != "__builtin_operator_delete" &&
           Name != "__builtin_expect" && Name != "__builtin_assume" &&
-          Name != "__builtin_unreachable") return false;
+          Name != "__builtin_unreachable") return TraceReject(__LINE__);
       for (const auto *D : F->redecls()) {
         if (dequeDependencyDeclaration(S, SM, D)) continue;
         if (!D->isImplicit() || D->hasBody() ||
-            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return TraceReject(__LINE__);
         if (D->getLocation().isValid()) {
           const auto File = S.sdkFile(SM, D->getLocation());
-          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return TraceReject(__LINE__);
         }
       }
       return true;
     }
     for (const auto *D : F->redecls())
-      if (!dequeDependencyDeclaration(S, SM, D)) return false;
+      if (!dequeDependencyDeclaration(S, SM, D)) return TraceReject(__LINE__);
     if (const auto *Pattern = F->getTemplateInstantiationPattern())
       for (const auto *D : Pattern->redecls())
-        if (!dequeDependencyDeclaration(S, SM, D)) return false;
+        if (!dequeDependencyDeclaration(S, SM, D)) return TraceReject(__LINE__);
     if (const auto *T = F->getPrimaryTemplate())
       for (const auto *D : T->redecls())
         if (!dequeDependencyDeclaration(S, SM, D) ||
-            !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+            !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return TraceReject(__LINE__);
     // Checked vector copies use an existing valid vector's bounded size.
     // Pointer ranges and combined sizes retain the successful, nonoverflowing
     // default-allocator precondition. Only this authenticated error boundary
@@ -51983,7 +52021,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           dequeAnnotationWrapper(S, SM, F, Context, Dependencies) ||
           dequeIteratorDistance(S, SM, F, Context, Dependencies)) {
         for (const auto *Dependency : Dependencies)
-          if (!Function(Dependency, Depth + 1)) return false;
+          if (!Function(Dependency, Depth + 1)) return TraceReject(__LINE__);
         return true;
       }
     }
@@ -51997,18 +52035,18 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       const auto *Parent = D->getParent();
       for (const auto &Base : Parent->bases()) {
         const auto *Record = dequeRecordType(Base.getType());
-        if (!Record || Base.isVirtual()) return false;
-        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return false;
+        if (!Record || Base.isVirtual()) return TraceReject(__LINE__);
+        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return TraceReject(__LINE__);
       }
       for (const auto *Field : Parent->fields()) {
         const auto *Record = dequeRecordType(Field->getType());
         if (Record && !Record->hasTrivialDestructor() &&
-            !Function(Record->getDestructor(), Depth + 1)) return false;
+            !Function(Record->getDestructor(), Depth + 1)) return TraceReject(__LINE__);
       }
     }
     if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
       for (const auto *Init : C->inits())
-        if (!Statement(Init->getInit(), Depth + 1)) return false;
+        if (!Statement(Init->getInit(), Depth + 1)) return TraceReject(__LINE__);
     if (dequeClosedPointerLess(S, SM, F, Context)) return true;
     // Exact SDK primitive and segmented copy units retain the complete walker
     // under an independent depth origin. The outer 4096-node ledger is shared,
@@ -52020,7 +52058,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       // the closed unit must traverse its own complete body before memoization.
       // Other validated dependencies remain shared; priority proofs retain
       // their original independent function set and conditional boundaries.
-      if (!PriorityRoot && Seen.erase(F->getCanonicalDecl()) != 1) return false;
+      if (!PriorityRoot && Seen.erase(F->getCanonicalDecl()) != 1) return TraceReject(__LINE__);
       return dequeSourceGraph(S, SM, F, Context, PriorityRoot, F, &Nodes,
                               PriorityRoot ? nullptr : &Seen,
                               PriorityRoot ? nullptr : &Statements,
@@ -52030,7 +52068,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       std::vector<const FunctionDecl *> Dependencies;
       if (priorityCapacityQuery(S, SM, F, Context, Dependencies)) {
         for (const auto *Dependency : Dependencies)
-          if (!Function(Dependency, Depth + 1)) return false;
+          if (!Function(Dependency, Depth + 1)) return TraceReject(__LINE__);
         return true;
       }
     }
@@ -52038,6 +52076,14 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return Body && Statement(Body, Depth + 1);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
+    const auto *PreviousTraceStatement = TraceStatement;
+    TraceStatement = Node;
+    auto RestoreTraceStatement = llvm::make_scope_exit([&] { TraceStatement = PreviousTraceStatement; });
+    if (TraceCount && Depth >= MaxStatementDepth) {
+      MaxStatementDepth = Depth;
+      MaxStatementClass = Node ? Node->getStmtClassName() : "null";
+      MaxStatementFunction = ActiveFunction ? ActiveFunction->getQualifiedNameAsString() : "null";
+    }
     // A shared AST node is reusable only after its entire original proof
     // succeeded at an equal or greater depth. Keep source/macro checks on
     // every reuse and never memoize an active or rejected statement.
@@ -52049,21 +52095,21 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     auto Prove = [&]() -> bool {
       if (!Node) return true;
       if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
-          !PinnedMacro(Node->getEndLoc())) return false;
+          !PinnedMacro(Node->getEndLoc())) return TraceReject(__LINE__);
       if (const auto *E = dyn_cast<Expr>(Node))
-        if (!PinnedMacro(E->getExprLoc())) return false;
+        if (!PinnedMacro(E->getExprLoc())) return TraceReject(__LINE__);
       if (const auto *E = dyn_cast<MemberExpr>(Node))
-        if (!PinnedMacro(E->getMemberLoc())) return false;
+        if (!PinnedMacro(E->getMemberLoc())) return TraceReject(__LINE__);
       if (const auto *D = dyn_cast<DeclStmt>(Node))
         for (const auto *Declaration : D->decls())
-          if (!PinnedMacro(Declaration->getLocation())) return false;
+          if (!PinnedMacro(Declaration->getLocation())) return TraceReject(__LINE__);
       if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node)) {
         if (!dequeDependencyDeclaration(S, SM, Default->getField()) ||
-            !Statement(Default->getExpr(), Depth + 1)) return false;
+            !Statement(Default->getExpr(), Depth + 1)) return TraceReject(__LINE__);
       }
       if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
         if (!dequeDependencyDeclaration(S, SM, Default->getParam()) ||
-            !Statement(Default->getExpr(), Depth + 1)) return false;
+            !Statement(Default->getExpr(), Depth + 1)) return TraceReject(__LINE__);
       }
       if (const auto *Call = dyn_cast<CallExpr>(Node)) {
         // The exact SDK pointer-comparison query has a closed, separately bounded
@@ -52072,7 +52118,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           std::vector<const FunctionDecl *> Dependencies;
           if (priorityRelocationTransfer(S, SM, Call, Context, Dependencies)) {
             for (const auto *Dependency : Dependencies)
-              if (!Function(Dependency, Depth + 1)) return false;
+              if (!Function(Dependency, Depth + 1)) return TraceReject(__LINE__);
             return true;
           }
         }
@@ -52080,20 +52126,20 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
         if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
         if (!dequeScalarDestruction(S, SM, Call, Context) &&
             !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
-            !Function(Call->getDirectCallee(), Depth + 1)) return false;
+            !Function(Call->getDirectCallee(), Depth + 1)) return TraceReject(__LINE__);
       }
       if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
         // This exact empty SDK functor has no arguments, initializers or state;
         // its complete construction proof is a separately authenticated leaf.
         if (dequeClosedLessConstruction(S, SM, C, Context)) return true;
-        if (!Function(C->getConstructor(), Depth + 1)) return false;
+        if (!Function(C->getConstructor(), Depth + 1)) return TraceReject(__LINE__);
       }
       if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
         if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
              !Context.hasSameType(N->getAllocatedType(), Context.getPointerType(Context.IntTy))) ||
             N->getNumPlacementArgs() != 1 ||
-            !Function(N->getOperatorNew(), Depth + 1)) return false;
-        if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+            !Function(N->getOperatorNew(), Depth + 1)) return TraceReject(__LINE__);
+        if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return TraceReject(__LINE__);
       }
       if (ClosedCopyProof || DequePointerAssign) {
         const auto *Branch = dyn_cast<IfStmt>(Node);
@@ -52102,26 +52148,35 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           // query returns the compiler builtin and has no other effects.
           // Keep its full ordinary proof and the entire runtime else branch;
           // only the constant-evaluation-only then branch is unreachable.
-          if (!Statement(Branch->getCond(), Depth + 1)) return false;
+          if (!Statement(Branch->getCond(), Depth + 1)) return TraceReject(__LINE__);
           return Statement(Branch->getElse(), Depth + 1);
         }
       }
       for (const auto *Child : Node->children())
-        if (!Statement(Child, Depth + 1)) return false;
+        if (!Statement(Child, Depth + 1)) return TraceReject(__LINE__);
       return true;
     };
-    if (!Prove()) return false;
+    if (!Prove()) return TraceReject(__LINE__);
     if (MemoizeStatements && Node) {
       auto &ProvenDepth = Statements[Node];
       if (Depth > ProvenDepth) ProvenDepth = Depth;
     }
     return true;
   };
-  return Root && (ClosedCopyRoot ? Root == ClosedCopyRoot &&
+  const bool Proven = Root && (ClosedCopyRoot ? Root == ClosedCopyRoot &&
       (PriorityRoot ? priorityIntCopySubgraph(S, SM, Root, Context)
                     : (dequeValueCopySubgraph(S, SM, Root, Context) || dequeMapAddressSubgraph(S, SM, Root, Context)))
                               : PriorityRoot ? priorityQueueFunctionDeclarations(S, SM, Root)
                                              : dequeFunctionDeclarations(S, SM, Root)) && Function(Root, 0);
+  if (TraceCount)
+    std::fprintf(stderr, "NCT_COUNT_GRAPH result=%d root=%s nodes=%u function_depth=%u statement_depth=%u function=%s statement_function=%s statement=%s\n",
+        Proven ? 1 : 0, Root->getQualifiedNameAsString().c_str(), Nodes,
+        MaxFunctionDepth, MaxStatementDepth, MaxFunctionName.c_str(),
+        MaxStatementFunction.c_str(), MaxStatementClass);
+  if (TraceCount && !Proven)
+    std::fprintf(stderr, "NCT_RANGE_REJECT line=%u function=%s statement=%s callee=%s\n",
+        FirstRejectLine, FirstRejectFunction.c_str(), FirstRejectStatement.c_str(), FirstRejectCallee.c_str());
+  return Proven;
 }
 }
 
