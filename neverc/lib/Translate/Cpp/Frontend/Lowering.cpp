@@ -27450,6 +27450,119 @@ class FunctionLowering {
     reject(L, "priority queue operation", "Unknown checked heap operation.");
   }
 
+  void dequeGrowFrontBy(Expression Place, Expression Extra, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    const auto MapElement = A.Context.getPointerType(A.Context.IntTy);
+    auto Need = snapshot(binary("+", std::move(Extra),
+        cast(binary("==", dequeMapCount(Place, false, L), quantity(0, Size, L), "bool", L), Size, L), Size, L), L);
+    auto Blocks = temporary(Size, L);
+    assign(Blocks, binary("+", binary("/", Need, quantity(1024, Size, L), Size, L),
+        cast(binary("!=", binary("%", Need, quantity(1024, Size, L), Size, L),
+            quantity(0, Size, L), "bool", L), Size, L), Size, L), L);
+    auto Back = temporary(Size, L);
+    assign(Back, binary("/", dequeBackSpare(Place, L), quantity(1024, Size, L), Size, L), L);
+    const auto Clamp = labelName(), Counted = labelName();
+    branch(binary(">", Back, Blocks, "bool", L), Clamp, Counted, L);
+    label(Clamp, L); assign(Back, Blocks, L); jump(Counted, L); label(Counted, L);
+    assign(Blocks, binary("-", Blocks, Back, Size, L), L);
+    const auto Room = labelName(), Reallocate = labelName(), Select = labelName(), Rotate = labelName(), Done = labelName();
+    branch(binary("==", Blocks, quantity(0, Size, L), "bool", L), Rotate, Select, L);
+    label(Select, L);
+    branch(binary("<=", Blocks, binary("-", dequeMapCount(Place, true, L),
+        dequeMapCount(Place, false, L), Size, L), "bool", L), Room, Reallocate, L);
+    label(Room, L);
+    const auto CheckFront = labelName(), CheckSlot = labelName(), MakeFront = labelName(), CheckBack = labelName(), MakeBack = labelName();
+    jump(CheckFront, L); label(CheckFront, L);
+    branch(binary("!=", Blocks, quantity(0, Size, L), "bool", L), CheckSlot, Rotate, L);
+    label(CheckSlot, L);
+    branch(binary("!=", dequeOwnerMember(Place, "nct_deque_begin", L),
+        dequeOwnerMember(Place, "nct_deque_first", L), "bool", L), MakeFront, CheckBack, L);
+    label(MakeFront, L);
+    auto FrontBlock = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy, quantity(4096, Size, L), L), "ptr:void", L), L);
+    dequeMapInsert(Place, FrontBlock, true, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("+", dequeOwnerMember(Place, "nct_deque_start", L),
+        binary("-", quantity(1024, Size, L), cast(binary("==", dequeMapCount(Place, false, L),
+            quantity(1, Size, L), "bool", L), Size, L), Size, L), Size, L), L);
+    assign(Blocks, binary("-", Blocks, quantity(1, Size, L), Size, L), L);
+    jump(CheckFront, L); label(CheckBack, L);
+    branch(binary("!=", Blocks, quantity(0, Size, L), "bool", L), MakeBack, Rotate, L);
+    label(MakeBack, L);
+    auto BackBlock = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy, quantity(4096, Size, L), L), "ptr:void", L), L);
+    dequeMapInsert(Place, BackBlock, false, L);
+    assign(Blocks, binary("-", Blocks, quantity(1, Size, L), Size, L), L);
+    assign(Back, binary("+", Back, quantity(1, Size, L), Size, L), L);
+    jump(CheckBack, L);
+    label(Rotate, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("+", dequeOwnerMember(Place, "nct_deque_start", L),
+        binary("*", Back, quantity(1024, Size, L), Size, L), Size, L), L);
+    const auto CheckRotate = labelName(), Reuse = labelName();
+    jump(CheckRotate, L); label(CheckRotate, L);
+    branch(binary("!=", Back, quantity(0, Size, L), "bool", L), Reuse, Done, L);
+    label(Reuse, L);
+    auto Reused = snapshot(dequeMapValue(dequeMapOffset(dequeOwnerMember(Place, "nct_deque_end", L),
+        binary("-", quantity(0, Diff, L), quantity(1, Diff, L), Diff, L), L), L), L);
+    dequeMapPop(Place, false, L); dequeMapInsert(Place, Reused, true, L);
+    assign(Back, binary("-", Back, quantity(1, Size, L), Size, L), L);
+    jump(CheckRotate, L);
+    label(Reallocate, L);
+    auto OldCapacity = snapshot(dequeMapCount(Place, true, L), L);
+    auto OldCount = snapshot(dequeMapCount(Place, false, L), L);
+    auto Capacity = temporary(Size, L);
+    assign(Capacity, binary("*", OldCapacity, quantity(2, Size, L), Size, L), L);
+    auto Required = snapshot(binary("+", Blocks, OldCount, Size, L), L);
+    const auto Enlarge = labelName(), Allocate = labelName();
+    branch(binary("<", Capacity, Required, "bool", L), Enlarge, Allocate, L);
+    label(Enlarge, L); assign(Capacity, Required, L); jump(Allocate, L); label(Allocate, L);
+    auto Shift = snapshot(binary("-", binary("*", binary("+", Blocks, Back, Size, L),
+        quantity(1024, Size, L), Size, L), cast(binary("==", OldCount, quantity(0, Size, L), "bool", L), Size, L), Size, L), L);
+    auto Allocation = snapshot(cast(unorderedHeapAllocate(MapElement,
+        binary("*", Capacity, quantity(8, Size, L), Size, L), L), "ptr:void", L), L);
+    auto End = temporary(Size, L); assign(End, quantity(0, Size, L), L);
+    const auto CheckNew = labelName(), MakeNew = labelName(), CheckReuse = labelName(), AppendReuse = labelName();
+    jump(CheckNew, L); label(CheckNew, L);
+    branch(binary("!=", Blocks, quantity(0, Size, L), "bool", L), MakeNew, CheckReuse, L);
+    label(MakeNew, L);
+    auto NewBlock = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy, quantity(4096, Size, L), L), "ptr:void", L), L);
+    assign(dequeMapValue(dequeMapOffset(Allocation, cast(End, Diff, L), L), L), NewBlock, L);
+    assign(End, binary("+", End, quantity(1, Size, L), Size, L), L);
+    assign(Blocks, binary("-", Blocks, quantity(1, Size, L), Size, L), L);
+    jump(CheckNew, L); label(CheckReuse, L);
+    const auto PrepareCopy = labelName();
+    branch(binary("!=", Back, quantity(0, Size, L), "bool", L), AppendReuse, PrepareCopy, L);
+    label(AppendReuse, L);
+    assign(dequeMapValue(dequeMapOffset(Allocation, cast(End, Diff, L), L), L),
+        snapshot(dequeMapValue(dequeMapOffset(dequeOwnerMember(Place, "nct_deque_end", L),
+            binary("-", quantity(0, Diff, L), quantity(1, Diff, L), Diff, L), L), L), L), L);
+    dequeMapPop(Place, false, L);
+    assign(End, binary("+", End, quantity(1, Size, L), Size, L), L);
+    assign(Back, binary("-", Back, quantity(1, Size, L), Size, L), L);
+    jump(CheckReuse, L); label(PrepareCopy, L);
+    auto OldFirst = snapshot(dequeOwnerMember(Place, "nct_deque_first", L), L);
+    auto OldBegin = snapshot(dequeOwnerMember(Place, "nct_deque_begin", L), L);
+    auto Remaining = snapshot(dequeMapCount(Place, false, L), L);
+    auto Index = temporary(Size, L); assign(Index, quantity(0, Size, L), L);
+    const auto CheckCopy = labelName(), Copy = labelName(), Commit = labelName();
+    jump(CheckCopy, L); label(CheckCopy, L);
+    branch(binary("<", Index, Remaining, "bool", L), Copy, Commit, L);
+    label(Copy, L);
+    assign(dequeMapValue(dequeMapOffset(Allocation, cast(End, Diff, L), L), L),
+        snapshot(dequeMapValue(dequeMapOffset(OldBegin, cast(Index, Diff, L), L), L), L), L);
+    assign(Index, binary("+", Index, quantity(1, Size, L), Size, L), L);
+    assign(End, binary("+", End, quantity(1, Size, L), Size, L), L);
+    jump(CheckCopy, L); label(Commit, L);
+    assign(dequeOwnerMember(Place, "nct_deque_first", L), Allocation, L);
+    assign(dequeOwnerMember(Place, "nct_deque_begin", L), Allocation, L);
+    assign(dequeOwnerMember(Place, "nct_deque_end", L), dequeMapOffset(Allocation, cast(End, Diff, L), L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_cap", L), dequeMapOffset(Allocation, cast(Capacity, Diff, L), L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L), binary("+", dequeOwnerMember(Place, "nct_deque_start", L), Shift, Size, L), L);
+    const auto ReleaseMap = labelName();
+    branch(cast(OldFirst, "bool", L), ReleaseMap, Done, L);
+    label(ReleaseMap, L);
+    unorderedHeapRelease(OldFirst, MapElement, binary("*", OldCapacity, quantity(8, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+
   void dequeGrowBackBy(Expression Place, Expression Extra, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     const auto Diff = type(A.Context.getPointerDiffType(), L);
@@ -27792,6 +27905,72 @@ class FunctionLowering {
     return Result;
   }
 
+  Expression insertDequeCount(Expression Place, Expression Position, Expression Count,
+      Expression Reference, QualType IteratorType, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    auto OldSize = snapshot(dequeOwnerMember(Place, "nct_deque_size", L), L);
+    auto NewSize = snapshot(binary("+", OldSize, Count, Size, L), L);
+    auto Cursor = temporary(Size, L);
+    auto Value = temporary("int", L);
+    const auto Nonempty = labelName(), Front = labelName(), Back = labelName(), Fill = labelName(), Done = labelName();
+    // Evaluated arguments remain live for count zero, but no value is read.
+    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Nonempty, Done, L);
+    label(Nonempty, L);
+    branch(binary("<", Position, binary("-", OldSize, Position, Size, L), "bool", L), Front, Back, L);
+    label(Front, L);
+    const auto FrontGrow = labelName(), FrontReady = labelName();
+    branch(binary(">", Count, dequeOwnerMember(Place, "nct_deque_start", L), "bool", L), FrontGrow, FrontReady, L);
+    label(FrontGrow, L);
+    dequeGrowFrontBy(Place, binary("-", Count, dequeOwnerMember(Place, "nct_deque_start", L), Size, L), L);
+    jump(FrontReady, L); label(FrontReady, L);
+    // Read after all allocation callbacks and before integer-only shifts.
+    // This preserves the value that the SDK's alias tracking retargets.
+    assign(Value, dereference(Reference, L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L),
+        binary("-", dequeOwnerMember(Place, "nct_deque_start", L), Count, Size, L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), NewSize, L);
+    assign(Cursor, quantity(0, Size, L), L);
+    const auto FrontCheck = labelName(), FrontMove = labelName();
+    jump(FrontCheck, L); label(FrontCheck, L);
+    branch(binary("<", Cursor, Position, "bool", L), FrontMove, Fill, L);
+    label(FrontMove, L);
+    assign(dequeOwnerValue(Place, Cursor, false, L),
+        dequeOwnerValue(Place, binary("+", Cursor, Count, Size, L), false, L), L);
+    assign(Cursor, binary("+", Cursor, quantity(1, Size, L), Size, L), L);
+    jump(FrontCheck, L);
+    label(Back, L);
+    auto Spare = snapshot(dequeBackSpare(Place, L), L);
+    const auto BackGrow = labelName(), BackReady = labelName();
+    branch(binary(">", Count, Spare, "bool", L), BackGrow, BackReady, L);
+    label(BackGrow, L); dequeGrowBackBy(Place, binary("-", Count, Spare, Size, L), L);
+    jump(BackReady, L); label(BackReady, L);
+    assign(Value, dereference(Reference, L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), NewSize, L);
+    assign(Cursor, OldSize, L);
+    const auto BackCheck = labelName(), BackMove = labelName();
+    jump(BackCheck, L); label(BackCheck, L);
+    branch(binary(">", Cursor, Position, "bool", L), BackMove, Fill, L);
+    label(BackMove, L);
+    assign(Cursor, binary("-", Cursor, quantity(1, Size, L), Size, L), L);
+    assign(dequeOwnerValue(Place, binary("+", Cursor, Count, Size, L), false, L),
+        dequeOwnerValue(Place, Cursor, false, L), L);
+    jump(BackCheck, L);
+    label(Fill, L);
+    assign(Cursor, Position, L);
+    const auto FillCheck = labelName(), Store = labelName();
+    jump(FillCheck, L); label(FillCheck, L);
+    branch(binary("<", Cursor, binary("+", Position, Count, Size, L), "bool", L), Store, Done, L);
+    label(Store, L);
+    assign(dequeOwnerValue(Place, Cursor, false, L), Value, L);
+    assign(Cursor, binary("+", Cursor, quantity(1, Size, L), Size, L), L);
+    jump(FillCheck, L);
+    jump(Done, L); label(Done, L);
+    auto Result = dequeOwnerIterator(Place, IteratorType, false, L);
+    advanceDequeIterator(Result, cast(Position, Diff, L), L);
+    return Result;
+  }
+
   Expression insertDequeValue(Expression Place, Expression Position, Expression Reference,
       QualType IteratorType, bool Copy, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
@@ -27914,6 +28093,11 @@ class FunctionLowering {
           : Operation == UtilityDequeOperation::Front ? quantity(0, Size, L)
           : binary("-", dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L);
       return dequeOwnerValue(Place, Position, Method->isConst(), L);
+    }
+    if (Operation == UtilityDequeOperation::InsertCount) {
+      auto Begin = dequeOwnerIterator(Place, Method->getReturnType(), false, L);
+      auto Position = snapshot(cast(dequeIteratorDifference(dereference(Operands[0], L), Begin, L), Size, L), L);
+      return insertDequeCount(Place, Position, Operands[1], Operands[2], Method->getReturnType(), L);
     }
     if (Operation == UtilityDequeOperation::InsertCopy || Operation == UtilityDequeOperation::InsertMove) {
       auto Begin = dequeOwnerIterator(Place, Method->getReturnType(), false, L);
