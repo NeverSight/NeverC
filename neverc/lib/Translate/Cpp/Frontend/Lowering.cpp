@@ -26570,13 +26570,19 @@ class FunctionLowering {
     if (!Proof || !Proof->Function) reject(L, "list operation", "The selected SDK body and operands are required.");
     const auto Operation = Proof->Operation;
     std::optional<Expression> Receiver;
-    if (const auto *Object = Proof->Receiver)
-      Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
+    const bool AssignmentSyntax = isa<CXXOperatorCallExpr>(Call) &&
+        (Operation == UtilityListOperation::CopyAssign || Operation == UtilityListOperation::MoveAssign);
+    auto CaptureReceiver = [&] {
+      if (const auto *Object = Proof->Receiver)
+        Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+            : address(lvalue(Object), Object->getType(), L), L);
+    };
+    if (!AssignmentSyntax) CaptureReceiver();
     std::vector<Expression> Operands;
     for (unsigned I = 0; I != Proof->Function->getNumParams(); ++I)
       Operands.push_back(snapshot(argument(Call->getArg(I + Proof->ArgumentOffset),
           Proof->Function->getParamDecl(I)->getType()), L));
+    if (AssignmentSyntax) CaptureReceiver();
     if (Operation == UtilityListOperation::IteratorEqual || Operation == UtilityListOperation::IteratorNotEqual)
       return binary(Operation == UtilityListOperation::IteratorEqual ? "==" : "!=",
           listIteratorMember(dereference(Operands[0], L), L),
