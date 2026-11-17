@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.deque_initializer_assignment_registered = cls.registered
+        cls.deque_initializer_assignment_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.deque_initializer_assignment_original = cls.adapter.restore_original_gtests(cls.deque_initializer_assignment_registered,cls.deque_initializer_assignment_suffix)
+        cls.registered = cls.adapter.restore_deque_initializer_assignment_history(cls.deque_initializer_assignment_registered)
         cls.deque_explicit_allocator_registered = cls.registered
         cls.deque_explicit_allocator_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.deque_explicit_allocator_original = cls.adapter.restore_original_gtests(cls.deque_explicit_allocator_registered,cls.deque_explicit_allocator_suffix)
@@ -1179,6 +1183,34 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.deque_explicit_allocator_registered,self.deque_explicit_allocator_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.deque_explicit_allocator_original+b' ',['TranslateTest.CoreV2DequeExplicitAllocatorCountRunAtBothOptimizations'])
+
+    def test_deque_initializer_assignment_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.deque_initializer_assignment_original+self.deque_initializer_assignment_suffix,self.deque_initializer_assignment_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.deque_initializer_assignment_original,self.deque_initializer_assignment_suffix),self.deque_initializer_assignment_original)
+        self.assertEqual(self.adapter.restore_deque_initializer_assignment_history(self.deque_initializer_assignment_registered),self.deque_explicit_allocator_registered)
+        self.assertEqual(self.adapter.restore_deque_initializer_assignment_history(self.deque_initializer_assignment_original),self.deque_explicit_allocator_original)
+        selected = ['TranslateTest.CoreV2DequeInitializerAssignmentBasicRunAtBothOptimizations', 'TranslateTest.CoreV2DequeInitializerAssignmentGrowthRunAtBothOptimizations', 'TranslateTest.CoreV2DequeInitializerAssignmentShrinkEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2DequeInitializerAssignmentEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2DequeInitializerAssignmentPrefixAllocationRunAtBothOptimizations', 'TranslateTest.CoreV2DequeInitializerAssignmentSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2DequeInitializerAssignOwnedEmptyBodyRejected', 'TranslateTest.CoreV2DequeInitializerAssignOwnedForwardingBodyRejected', 'TranslateTest.CoreV2DequeInitializerOperatorOwnedEmptyBodyRejected', 'TranslateTest.CoreV2DequeInitializerOperatorOwnedForwardingBodyRejected']
+        generated,proof = self.extractor.extract(self.deque_initializer_assignment_original,selected)
+        self.assertEqual(proof['original_test_names'],7682)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7672)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19dqinitassign',generated)
+        self.assertIn(b'assign',generated)
+
+    def test_deque_initializer_assignment_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.deque_initializer_assignment_registered+b' ',
+                        self.deque_initializer_assignment_registered.replace(b'r19dqinitassign',b'q.push(11)',1),
+                        self.deque_initializer_assignment_registered+self.deque_initializer_assignment_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.deque_initializer_assignment_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_deque_initializer_assignment_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.deque_initializer_assignment_registered,self.deque_initializer_assignment_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.deque_initializer_assignment_original+b' ',['TranslateTest.CoreV2DequeInitializerAssignmentBasicRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':

@@ -1,0 +1,205 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-initializer-assignment-basic",
+      "formal_test_name": "TranslateTest.CoreV2DequeInitializerAssignmentBasicRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "61f306bad3b1bdcc9dee6354c5ee6ff2314aeab37667d29c195dd3802f3c9838",
+      "original_case_source_sha256": "61f306bad3b1bdcc9dee6354c5ee6ff2314aeab37667d29c195dd3802f3c9838",
+      "gtest_body_sha256": "fd57dc14f4eb1b948463976fb6cd0957dd510d9d2b74c8ad0c322f3f574851b7"
+    },
+    {
+      "name": "deque-initializer-assignment-growth",
+      "formal_test_name": "TranslateTest.CoreV2DequeInitializerAssignmentGrowthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "76ee97dde547e956ad1d102ea5e691a9fa90a9bc44ec32ca8d690b46d8f7ffe4",
+      "original_case_source_sha256": "76ee97dde547e956ad1d102ea5e691a9fa90a9bc44ec32ca8d690b46d8f7ffe4",
+      "gtest_body_sha256": "3b6cb0d5f8d8ae53bccea8af3527d6607c9ed1a851585ed05c1715e00545c755"
+    },
+    {
+      "name": "deque-initializer-assignment-shrink-effects",
+      "formal_test_name": "TranslateTest.CoreV2DequeInitializerAssignmentShrinkEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "411efcabeb1b3c7b46255b5ca41685f9cc0738b4920e4850251561fc7cc676c2",
+      "original_case_source_sha256": "411efcabeb1b3c7b46255b5ca41685f9cc0738b4920e4850251561fc7cc676c2",
+      "gtest_body_sha256": "b47b13fd1d1ca1a9c4913ccf3a3c2459e4aa42fc4f7e44380314b918028d6da8"
+    },
+    {
+      "name": "deque-initializer-assignment-empty",
+      "formal_test_name": "TranslateTest.CoreV2DequeInitializerAssignmentEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9992b473b5eef26e05acaff11f5a2136266ca3a65a0143fdbd545db45da4c4b4",
+      "original_case_source_sha256": "9992b473b5eef26e05acaff11f5a2136266ca3a65a0143fdbd545db45da4c4b4",
+      "gtest_body_sha256": "c0fbd00cca8199c8ab5f9c78d79761bfcbbf90fbf79d1110a6aec91a6ad8e71b"
+    },
+    {
+      "name": "deque-initializer-assignment-prefix-allocation",
+      "formal_test_name": "TranslateTest.CoreV2DequeInitializerAssignmentPrefixAllocationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "26d15c6b2c9b905a267cbc178fc2fde4513e3c80dc533b838dc9946ef4fcabe4",
+      "original_case_source_sha256": "26d15c6b2c9b905a267cbc178fc2fde4513e3c80dc533b838dc9946ef4fcabe4",
+      "gtest_body_sha256": "0f9b6d499b680066268b79d1fa0cf210ce1e9aa887bdc18035749a8a6e20f295"
+    },
+    {
+      "name": "deque-initializer-assignment-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2DequeInitializerAssignmentSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "14f197fbbeeee36d26460bb97ee436373442a723a809717a72630a77097ef1a1",
+      "original_case_source_sha256": "14f197fbbeeee36d26460bb97ee436373442a723a809717a72630a77097ef1a1",
+      "gtest_body_sha256": "c9e567312b30524470bb48a57911c30257b7ac75e2d2dae2265deff390e2cf5f"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "deque-initializer-owned-assign-empty",
+      "formal_test_name": "TranslateTest.CoreV2DequeInitializerAssignOwnedEmptyBodyRejected",
+      "expected": "reject",
+      "source_sha256": "2bcf02686a9e60a49adb5a375a8cc36f7311204e61bc9fde6dde2f2796abed6f",
+      "original_case_source_sha256": "2bcf02686a9e60a49adb5a375a8cc36f7311204e61bc9fde6dde2f2796abed6f",
+      "gtest_body_sha256": "bbb8c7a9e1051f20b6021a4e3e54599e14eb3c77ab51ae96b24f132a4e48fe00"
+    },
+    {
+      "name": "deque-initializer-owned-assign-forwarding",
+      "formal_test_name": "TranslateTest.CoreV2DequeInitializerAssignOwnedForwardingBodyRejected",
+      "expected": "reject",
+      "source_sha256": "2c1b4b66f3648eaca2614b30a2d2d9de08b41795a614559d5b49b6a598599a3c",
+      "original_case_source_sha256": "2c1b4b66f3648eaca2614b30a2d2d9de08b41795a614559d5b49b6a598599a3c",
+      "gtest_body_sha256": "2dde80ae0c29fe92464585af302c8c52cdbe50b0e9afd409fab14ceaadcffc70"
+    },
+    {
+      "name": "deque-initializer-owned-operator-empty",
+      "formal_test_name": "TranslateTest.CoreV2DequeInitializerOperatorOwnedEmptyBodyRejected",
+      "expected": "reject",
+      "source_sha256": "b4ac0e05212d534ce5bff4f1fce902e7d40d369fe2dbe352aec1d3091fba58e1",
+      "original_case_source_sha256": "b4ac0e05212d534ce5bff4f1fce902e7d40d369fe2dbe352aec1d3091fba58e1",
+      "gtest_body_sha256": "c5509ca39519b58669d7e26d6ca56280dd823fb03f46dc572ead829fea0c98f2"
+    },
+    {
+      "name": "deque-initializer-owned-operator-forwarding",
+      "formal_test_name": "TranslateTest.CoreV2DequeInitializerOperatorOwnedForwardingBodyRejected",
+      "expected": "reject",
+      "source_sha256": "df49bcbe692b3768bf049cdcfacfaf511ae9f82e13f91fdac24c2f7cc149f53b",
+      "original_case_source_sha256": "df49bcbe692b3768bf049cdcfacfaf511ae9f82e13f91fdac24c2f7cc149f53b",
+      "gtest_body_sha256": "cd04791d6bb7f55ff63b667470ae258405863b5d4c88d4d8ade6fe151b9dfac5"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeInitializerAssignmentBasicRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeInitializerAssignmentGrowthRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeInitializerAssignmentShrinkEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeInitializerAssignmentEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeInitializerAssignmentPrefixAllocationRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeInitializerAssignmentSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeInitializerAssignOwnedEmptyBodyRejected",
+    "TranslateTest.CoreV2DequeInitializerAssignOwnedForwardingBodyRejected",
+    "TranslateTest.CoreV2DequeInitializerOperatorOwnedEmptyBodyRejected",
+    "TranslateTest.CoreV2DequeInitializerOperatorOwnedForwardingBodyRejected"
+  ],
+  "native_reference_authentication_sha256": "fc79e3fa440e1bd002687aca6006c12df8da078edd4102edd018aab1dbbcc114",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "580357f779dd5c76bb23a67955b6c1206768ac9427814a2c9be56b006d866677",
+  "maintained_original_sha256": "a7bfc90042c2c08510081c8e46c3ae612ac3de3d6de3f331c4750888d6d55d02",
+  "previous_registered_source_sha256": "5c918ba161e3bd404699e44a64ee9fc1812ed1fc274563d36355a8703681f514",
+  "previous_maintained_original_sha256": "55e1ef9b846da39792666567def634fef22a7aed0e15bac74e3e6b91459e43ae",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7682,
+  "current_python_registry_tests": 84,
+  "previous7672_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "4c5cc9496b325aabeff5a15be5d86c8f944c6fbc8a3f469c8a90022b53d47067",
+  "extractor_sha256": "e6ea648b8e1a70694b9d9f091f30fddf02f297d1a2cf3133366bf0c5d5ddd62f",
+  "source_cases": [
+    {
+      "name": "deque-initializer-assignment-basic",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <initializer_list>\n#include <new>\nusing Size=decltype(sizeof(0));using List=std::initializer_list<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a(8,7);List values={4,5,6};\nint* saved=&a.front();a.assign(values);\nif(a.size()!=3||a.front()!=4||a.back()!=6||&a.front()!=saved)return 1;\nstd::deque<int>& result=(a=values);if(&result!=&a||a.size()!=3||a[1]!=5)return 2;\nstd::deque<int>& explicit_result=a.operator=({8,9});\nif(&explicit_result!=&a||a.size()!=2||a.front()!=8||a.back()!=9)return 3;\na={-3,-2,-1,0};return a.size()!=4||a.front()!=-3||a.back()!=0;}\n",
+      "source_sha256": "61f306bad3b1bdcc9dee6354c5ee6ff2314aeab37667d29c195dd3802f3c9838",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-initializer-assignment-growth",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <initializer_list>\n#include <new>\nusing Size=decltype(sizeof(0));using List=std::initializer_list<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){List values={-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6};\nstd::deque<int> a(3,77);int* saved=&a.front();\na.assign(values);if(a.size()!=2050||&a.front()!=saved)return 1;\nfor(unsigned i=0;i!=2050;++i)if(a[i]!=(int)((i*7)%29)-11)return 2;\na={41,42};if(a.size()!=2||a.front()!=41||a.back()!=42)return 3;\na=values;if(a.size()!=2050)return 4;\nfor(unsigned i=0;i!=2050;++i)if(a[i]!=(int)((i*7)%29)-11)return 5;\nreturn 0;}\n",
+      "source_sha256": "76ee97dde547e956ad1d102ea5e691a9fa90a9bc44ec32ca8d690b46d8f7ffe4",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-initializer-assignment-shrink-effects",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <initializer_list>\n#include <new>\nusing Size=decltype(sizeof(0));using List=std::initializer_list<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic std::deque<int>* owner;static int armed,calls,bad;\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {if(armed){++calls;if(owner->size()!=3||owner->front()!=4||owner->back()!=6)bad=1;}free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::deque<int> a(3073,17);owner=&a;int* first=&a.front();int* third=&a[2];\nList values={4,5,6};armed=1;a.assign(values);armed=0;\nif(!calls||bad||a.size()!=3||&a.front()!=first||&a[2]!=third||a[1]!=5)return 1;\na.push_back(7);a.push_front(3);return a.size()!=5||a.front()!=3||a.back()!=7;}\n",
+      "source_sha256": "411efcabeb1b3c7b46255b5ca41685f9cc0738b4920e4850251561fc7cc676c2",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-initializer-assignment-empty",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <initializer_list>\n#include <new>\nusing Size=decltype(sizeof(0));using List=std::initializer_list<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){List empty;std::deque<int> a(2050,7);\na.assign(empty);if(!a.empty())return 1;\na.push_back(8);a=empty;if(!a.empty())return 2;\na.push_front(9);std::deque<int>& result=(a={});if(&result!=&a||!a.empty())return 3;\na.assign({});a.push_back(11);a.push_front(10);return a.size()!=2||a.front()!=10||a.back()!=11;}\n",
+      "source_sha256": "9992b473b5eef26e05acaff11f5a2136266ca3a65a0143fdbd545db45da4c4b4",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-initializer-assignment-prefix-allocation",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <initializer_list>\n#include <new>\nusing Size=decltype(sizeof(0));using List=std::initializer_list<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic std::deque<int>* owner;static int armed,calls,bad;\nvoid* operator new(Size n){void* p=malloc(n);if(armed){++calls;\nif(owner->size()!=3||owner->front()!=-11||(*owner)[1]!=-4||owner->back()!=3)bad=1;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint main(){List values={-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6,13,-9,-2,5,12,-10,-3,4,11,-11,-4,3,10,17,-5,2,9,16,-6,1,8,15,-7,0,7,14,-8,-1,6};\nstd::deque<int> a(3,77);owner=&a;int* saved=&a.front();\narmed=1;a=values;armed=0;\nif(!calls||bad||a.size()!=2050||&a.front()!=saved)return 1;\nfor(unsigned i=0;i!=2050;++i)if(a[i]!=(int)((i*7)%29)-11)return 2;\nreturn 0;}\n",
+      "source_sha256": "26d15c6b2c9b905a267cbc178fc2fde4513e3c80dc533b838dc9946ef4fcabe4",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-initializer-assignment-sequencing",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <initializer_list>\n#include <new>\nusing Size=decltype(sizeof(0));using List=std::initializer_list<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic std::deque<int>* owner;static const List* input_list;\nstatic int trace,receivers,inputs;\nstd::deque<int>* receiver(){trace=trace*10+1;++receivers;return owner;}\nList input(){trace=trace*10+2;++inputs;return *input_list;}\nint main(){std::deque<int> a(8,7);List values={4,5,6};owner=&a;input_list=&values;\nstd::deque<int>& first=(*receiver()=input());\nif(trace!=21||receivers!=1||inputs!=1||&first!=&a||a.front()!=4||a.back()!=6)return 1;\ntrace=0;std::deque<int>& second=receiver()->operator=(input());\nif(trace!=12||receivers!=2||inputs!=2||&second!=&a||a.size()!=3)return 2;\ntrace=0;receiver()->assign(input());\nreturn trace!=12||receivers!=3||inputs!=3||a.size()!=3||a.front()!=4||a.back()!=6;}\n",
+      "source_sha256": "14f197fbbeeee36d26460bb97ee436373442a723a809717a72630a77097ef1a1",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-initializer-owned-assign-empty",
+      "public_header": "deque",
+      "source": "#include <deque>\n#include <initializer_list>\nnamespace std { inline namespace __1 {\ntemplate<> void deque<int>::assign(initializer_list<int> values) {}\n}}\nint main(){std::deque<int> a;std::initializer_list<int> values={4,5,6};a.assign(values);return 0;}\n",
+      "source_sha256": "2bcf02686a9e60a49adb5a375a8cc36f7311204e61bc9fde6dde2f2796abed6f",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-initializer-owned-assign-forwarding",
+      "public_header": "deque",
+      "source": "#include <deque>\n#include <initializer_list>\nnamespace std { inline namespace __1 {\ntemplate<> void deque<int>::assign(initializer_list<int> values) {assign(values.begin(),values.end());}\n}}\nint main(){std::deque<int> a;std::initializer_list<int> values={4,5,6};a.assign(values);return 0;}\n",
+      "source_sha256": "2c1b4b66f3648eaca2614b30a2d2d9de08b41795a614559d5b49b6a598599a3c",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-initializer-owned-operator-empty",
+      "public_header": "deque",
+      "source": "#include <deque>\n#include <initializer_list>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>& deque<int>::operator=(initializer_list<int> values) {return *this;}\n}}\nint main(){std::deque<int> a;std::initializer_list<int> values={4,5,6};a=values;return 0;}\n",
+      "source_sha256": "b4ac0e05212d534ce5bff4f1fce902e7d40d369fe2dbe352aec1d3091fba58e1",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-initializer-owned-operator-forwarding",
+      "public_header": "deque",
+      "source": "#include <deque>\n#include <initializer_list>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>& deque<int>::operator=(initializer_list<int> values) {assign(values.begin(),values.end());return *this;}\n}}\nint main(){std::deque<int> a;std::initializer_list<int> values={4,5,6};a=values;return 0;}\n",
+      "source_sha256": "df49bcbe692b3768bf049cdcfacfaf511ae9f82e13f91fdac24c2f7cc149f53b",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source48_authentication_sha256": "8138b250a2529db08c66e853cb88548ec7851c410c20cc3e8637c123a5788894",
+  "source48_compiler_source": "98591f101a7c4dba31e97d9595911b95ace83351"
+}
