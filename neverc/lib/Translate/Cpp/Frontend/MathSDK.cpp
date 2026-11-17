@@ -47537,9 +47537,10 @@ bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
     if (!Context.hasSameType(Argument, Expected) ||
         !Context.hasSameType(F->getReturnType(), Context.getRValueReferenceType(Element))) return false;
   } else {
+    const bool Integer = Context.hasSameUnqualifiedType(Element, Context.IntTy);
     const auto Owner = approvedUtilityValarrayRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
-    if (Deduced->isReferenceType() || !Owner ||
-        !Context.hasSameUnqualifiedType(Element, Context.getRecordType(Owner->Record)) ||
+    if (Deduced->isReferenceType() || (!Integer && (!Owner ||
+        !Context.hasSameUnqualifiedType(Element, Context.getRecordType(Owner->Record)))) ||
         !Context.hasSameType(Argument, Context.getLValueReferenceType(Element)) ||
         !Context.hasSameType(F->getReturnType(), Context.getPointerType(Element))) return false;
   }
