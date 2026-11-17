@@ -27740,6 +27740,58 @@ class FunctionLowering {
     assignCountedDequeRange(Place, First, Count, L);
   }
 
+  Expression eraseDequeRange(Expression Place, Expression Position, Expression Count,
+      QualType IteratorType, bool Single, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    auto OldSize = snapshot(dequeOwnerMember(Place, "nct_deque_size", L), L);
+    auto NewSize = snapshot(binary("-", OldSize, Count, Size, L), L);
+    const auto Nonempty = labelName(), Front = labelName(), Back = labelName(), Done = labelName();
+    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Nonempty, Done, L);
+    label(Nonempty, L);
+    branch(binary("<=", Position, binary("/", NewSize, quantity(2, Size, L), Size, L), "bool", L), Front, Back, L);
+    label(Front, L);
+    // The pinned SDK moves the shorter prefix backwards into the erased gap.
+    auto Cursor = temporary(Size, L); assign(Cursor, Position, L);
+    const auto FrontCheck = labelName(), FrontMove = labelName(), FrontCommit = labelName();
+    jump(FrontCheck, L); label(FrontCheck, L);
+    branch(binary("!=", Cursor, quantity(0, Size, L), "bool", L), FrontMove, FrontCommit, L);
+    label(FrontMove, L);
+    assign(Cursor, binary("-", Cursor, quantity(1, Size, L), Size, L), L);
+    assign(dequeOwnerValue(Place, binary("+", Cursor, Count, Size, L), false, L),
+        dequeOwnerValue(Place, Cursor, false, L), L);
+    jump(FrontCheck, L); label(FrontCommit, L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), NewSize, L);
+    assign(dequeOwnerMember(Place, "nct_deque_start", L),
+        binary("+", dequeOwnerMember(Place, "nct_deque_start", L), Count, Size, L), L);
+    const auto FrontRelease = labelName(), FrontFree = labelName();
+    jump(FrontRelease, L); label(FrontRelease, L);
+    branch(binary(">=", dequeOwnerMember(Place, "nct_deque_start", L), quantity(2048, Size, L), "bool", L), FrontFree, Done, L);
+    label(FrontFree, L); dequeRemoveSpareBlock(Place, true, L);
+    jump(Single ? Done : FrontRelease, L);
+    label(Back, L);
+    // The other branch moves the surviving suffix forwards over the gap.
+    assign(Cursor, Position, L);
+    const auto BackCheck = labelName(), BackMove = labelName(), BackCommit = labelName();
+    jump(BackCheck, L); label(BackCheck, L);
+    branch(binary("<", Cursor, NewSize, "bool", L), BackMove, BackCommit, L);
+    label(BackMove, L);
+    assign(dequeOwnerValue(Place, Cursor, false, L),
+        dequeOwnerValue(Place, binary("+", Cursor, Count, Size, L), false, L), L);
+    assign(Cursor, binary("+", Cursor, quantity(1, Size, L), Size, L), L);
+    jump(BackCheck, L); label(BackCommit, L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), NewSize, L);
+    const auto BackRelease = labelName(), BackFree = labelName();
+    jump(BackRelease, L); label(BackRelease, L);
+    branch(binary(">=", dequeBackSpare(Place, L), quantity(2048, Size, L), "bool", L), BackFree, Done, L);
+    label(BackFree, L); dequeRemoveSpareBlock(Place, false, L);
+    jump(Single ? Done : BackRelease, L);
+    label(Done, L);
+    auto Result = dequeOwnerIterator(Place, IteratorType, false, L);
+    advanceDequeIterator(Result, cast(Position, Diff, L), L);
+    return Result;
+  }
+
   Expression utilityDequeOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityDequeCall(A.S, A.Sources, Call, A.Context);
@@ -27803,6 +27855,14 @@ class FunctionLowering {
           : Operation == UtilityDequeOperation::Front ? quantity(0, Size, L)
           : binary("-", dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L);
       return dequeOwnerValue(Place, Position, Method->isConst(), L);
+    }
+    if (Operation == UtilityDequeOperation::Erase || Operation == UtilityDequeOperation::EraseRange) {
+      auto Begin = dequeOwnerIterator(Place, Method->getReturnType(), false, L);
+      auto Position = snapshot(cast(dequeIteratorDifference(dereference(Operands[0], L), Begin, L), Size, L), L);
+      auto Count = Operation == UtilityDequeOperation::Erase ? quantity(1, Size, L)
+          : snapshot(cast(dequeIteratorDifference(dereference(Operands[1], L), dereference(Operands[0], L), L), Size, L), L);
+      return eraseDequeRange(Place, Position, Count, Method->getReturnType(),
+          Operation == UtilityDequeOperation::Erase, L);
     }
     if (Operation == UtilityDequeOperation::AssignInitializerList) {
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,

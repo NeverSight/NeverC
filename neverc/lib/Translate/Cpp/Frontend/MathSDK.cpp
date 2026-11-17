@@ -49819,6 +49819,18 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
     }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
+    if (Name == "erase" && !Stack && !Queue && !M->isConst() &&
+        M->getRefQualifier() == RQ_None && !M->getPrimaryTemplate() &&
+        (M->getNumParams() == 1 || M->getNumParams() == 2) &&
+        !M->getReturnType()->isReferenceType() &&
+        dequeIteratorType(S, SM, M->getReturnType(), false, Context)) {
+      for (const auto *Parameter : M->parameters()) {
+        const auto Type = Parameter->getType();
+        if (Parameter->hasDefaultArg() || Type->isReferenceType() || Type.hasLocalQualifiers() ||
+            !dequeIteratorType(S, SM, Type, true, Context)) return std::nullopt;
+      }
+      return M->getNumParams() == 1 ? UtilityDequeOperation::Erase : UtilityDequeOperation::EraseRange;
+    }
     if (M->getParent()->getIdentifier() && M->getParent()->getName() == "deque" &&
         !M->isConst() && !M->isVolatile() && !M->isStatic() &&
         M->getRefQualifier() == RQ_None && !M->getPrimaryTemplate() &&
@@ -51987,7 +51999,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   // Pointer assignment traverses the same pinned integer transfer and
   // segmented-owner queries as value copying. Reuse their complete
   // existing closed proofs; keep the shared node ledger and depth limit.
-  const bool ClosedCopyProof = DequeValueCopy || DequePointerAssign || SharedStatements;
+  const bool DequeErase = CountOperation &&
+      (*CountOperation == UtilityDequeOperation::Erase || *CountOperation == UtilityDequeOperation::EraseRange);
+  const bool ClosedCopyProof = DequeValueCopy || DequePointerAssign || DequeErase || SharedStatements;
   const bool DequePointerRange = !PriorityRoot && RootMethod &&
       dequePointerRangeTemplate(S, SM, RootMethod, Context);
   const bool MemoizeStatements = ClosedCopyProof || DequeCountUpdate || DequePointerRange ||
