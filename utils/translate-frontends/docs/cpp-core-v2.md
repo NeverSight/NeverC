@@ -17511,6 +17511,17 @@ Shrinking preserves surviving element addresses and publishes the new size befor
 releasing unused blocks in SDK order. Calls retain receiver and argument
 evaluation order, including callbacks that change the fill referent.
 
+The same integer deque admits `deque(first, last)` and `assign(first, last)`
+for two `int*` or two `const int*` endpoints. The endpoints denote a valid,
+ordered range in the same source array within the existing successful-allocation
+and nonoverflowing-size domain. Each endpoint value is captured once before
+allocation. Construction allocates the required segmented capacity before reading
+the live source integers. Assignment writes the retained prefix before allocating
+and reading a new suffix; it preserves surviving element addresses. Shrinking
+publishes the new size before releasing unused blocks in SDK order. Empty ranges
+retain endpoint effects without reading any input element. Member calls evaluate
+the receiver before either argument.
+
 Each family has ten permanent GTests: six exact native-reference programs that
 generate and execute C23 at O0 and O2, and four source-origin rejection tests.
 Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
@@ -17534,6 +17545,12 @@ multi-block counts, block/map boundaries, zero initialization, live fill values,
 captured counts, surviving reference identities, prefix-write/allocation order,
 shrink-release callbacks and receiver/argument sequencing. Four source-origin
 guards reject replaced counted constructor, resize and assignment bodies.
+A separate raw pointer range family has ten registered GTests and twelve generated
+C23 executions at O0 and O2 against the exact native programs. It covers mutable
+and const pointers, empty and multiple-block ranges, captured endpoints, live source
+values, assignment prefix/allocation order, shrink-release callbacks, surviving
+references and receiver/argument sequencing. Four source-origin guards reject
+replaced mutable/const pointer range constructors and assignment bodies.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
@@ -17542,7 +17559,7 @@ locations and bodies; the general graph depth and node limits are unchanged.
 Replaced operation bodies and owner/storage macros remain rejected.
 
 Custom allocators or adapter containers, other element specializations,
-additional allocator and range overloads, emplacement with other argument types
+additional allocator and other iterator range overloads, emplacement with other argument types
 or multiple arguments and positional insertion/erasure require further work.
 These bounded operations
 do not establish complete STL support.
