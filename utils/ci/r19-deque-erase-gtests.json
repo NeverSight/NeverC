@@ -1,0 +1,205 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-erase-single",
+      "formal_test_name": "TranslateTest.CoreV2DequeEraseSingleRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "eef10fd67194a6289a7cda3f9b8bd76313d8e861bc025fbe18e71a27df159ce8",
+      "original_case_source_sha256": "eef10fd67194a6289a7cda3f9b8bd76313d8e861bc025fbe18e71a27df159ce8",
+      "gtest_body_sha256": "6645621af74e2d736e7dd3e9182785ef2425f8ee8674f100596c883c702824ed"
+    },
+    {
+      "name": "deque-erase-front-range",
+      "formal_test_name": "TranslateTest.CoreV2DequeEraseFrontRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cd2189702fb121219687dd4795ad3ce6db4b26b7be35b79e774012703caf5ff7",
+      "original_case_source_sha256": "cd2189702fb121219687dd4795ad3ce6db4b26b7be35b79e774012703caf5ff7",
+      "gtest_body_sha256": "1306623ebf10de9ca0e4170536ad7558c71c227c40c0450c65831c5d096d3557"
+    },
+    {
+      "name": "deque-erase-back-range",
+      "formal_test_name": "TranslateTest.CoreV2DequeEraseBackRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "42d73fc1168c3ba4b6a84075145e33c30481ec0025fcf29c8a2965d2ca3421ae",
+      "original_case_source_sha256": "42d73fc1168c3ba4b6a84075145e33c30481ec0025fcf29c8a2965d2ca3421ae",
+      "gtest_body_sha256": "594f8a0e3f2d1c3dd7a8a1eaec832cce87f74ccf6afc1b79ba694a8fa816a433"
+    },
+    {
+      "name": "deque-erase-empty-and-reuse",
+      "formal_test_name": "TranslateTest.CoreV2DequeEraseEmptyAndReuseRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d0f3f579d1de2f52e03fa3e9ccbc9932d69eb4d86f41b197bd088dc34fb4b774",
+      "original_case_source_sha256": "d0f3f579d1de2f52e03fa3e9ccbc9932d69eb4d86f41b197bd088dc34fb4b774",
+      "gtest_body_sha256": "c0e864d3ffd6191a2d342dc1eec8743a8e757790305e11c2e4eeb1d27749b660"
+    },
+    {
+      "name": "deque-erase-release-effects",
+      "formal_test_name": "TranslateTest.CoreV2DequeEraseReleaseEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b04e78ea4baa93831c2c3950ce59db5b880b7917c1175ee86607987a67efce58",
+      "original_case_source_sha256": "b04e78ea4baa93831c2c3950ce59db5b880b7917c1175ee86607987a67efce58",
+      "gtest_body_sha256": "baf7bbe5598e84b5e4dc71fb12d1f35faa19e8f595bcaa8311bab40ce24ff977"
+    },
+    {
+      "name": "deque-erase-call-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2DequeEraseCallSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "06c8fa8b3012270d29a7661d1d41cfd201dbcb48990d1b2b177d4afbe9ad9b57",
+      "original_case_source_sha256": "06c8fa8b3012270d29a7661d1d41cfd201dbcb48990d1b2b177d4afbe9ad9b57",
+      "gtest_body_sha256": "78f900c7a11c16e3d8dd042841feafe5ba51b209183289788ad510dc4f31e985"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "deque-erase-owned-single-empty",
+      "formal_test_name": "TranslateTest.CoreV2DequeEraseSingleOwnedEmptyBodyRejected",
+      "expected": "reject",
+      "source_sha256": "dc97d52a46a6de4faa0fc7fbb25583bf6650377f658e8f234604720322beff23",
+      "original_case_source_sha256": "dc97d52a46a6de4faa0fc7fbb25583bf6650377f658e8f234604720322beff23",
+      "gtest_body_sha256": "74224e50100f790e2348674ce25a69a653f452f9e749d337368e73efae844358"
+    },
+    {
+      "name": "deque-erase-owned-single-forwarding",
+      "formal_test_name": "TranslateTest.CoreV2DequeEraseSingleOwnedForwardingBodyRejected",
+      "expected": "reject",
+      "source_sha256": "c14f9295f3970d5faf1571b58deab015fdd0863dff89f869fde82d5f5fd8df41",
+      "original_case_source_sha256": "c14f9295f3970d5faf1571b58deab015fdd0863dff89f869fde82d5f5fd8df41",
+      "gtest_body_sha256": "ececc808851a730e7b1bc7539f2b4be0fee961bf6262809d2e981c7371712b21"
+    },
+    {
+      "name": "deque-erase-owned-range-empty",
+      "formal_test_name": "TranslateTest.CoreV2DequeEraseRangeOwnedEmptyBodyRejected",
+      "expected": "reject",
+      "source_sha256": "fd3ee6622ea1f51d8cce8c0651e0ef0ee318be2d0722f4ec2e85b3e1ee065087",
+      "original_case_source_sha256": "fd3ee6622ea1f51d8cce8c0651e0ef0ee318be2d0722f4ec2e85b3e1ee065087",
+      "gtest_body_sha256": "82572cf56cbb552933e893a8e8c34798c8b8f35306186a5427b5a1505f0e785d"
+    },
+    {
+      "name": "deque-erase-owned-range-forwarding",
+      "formal_test_name": "TranslateTest.CoreV2DequeEraseRangeOwnedForwardingBodyRejected",
+      "expected": "reject",
+      "source_sha256": "3f14cf813da83738e51bd2281ca7bb5651ee21432948c9591e8d92ac7736c9ea",
+      "original_case_source_sha256": "3f14cf813da83738e51bd2281ca7bb5651ee21432948c9591e8d92ac7736c9ea",
+      "gtest_body_sha256": "d943ee6998760a43d9b11124aa05922912d3d6e5efc29e1d7f35e600b130ee7f"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeEraseSingleRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeEraseFrontRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeEraseBackRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeEraseEmptyAndReuseRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeEraseReleaseEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeEraseCallSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeEraseSingleOwnedEmptyBodyRejected",
+    "TranslateTest.CoreV2DequeEraseSingleOwnedForwardingBodyRejected",
+    "TranslateTest.CoreV2DequeEraseRangeOwnedEmptyBodyRejected",
+    "TranslateTest.CoreV2DequeEraseRangeOwnedForwardingBodyRejected"
+  ],
+  "native_reference_authentication_sha256": "bc04025847e1feda3dfb70adb3ae09c450dbd206b6d1d18ebc12a1590c9788a4",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "ef4efdf066b713b50dcb867ba736da1af2163868668ae9df4ad47b9ea32d3350",
+  "maintained_original_sha256": "2b947d22f6a442a9dda86fa3bc2f54668ef50106e208a40460830d32f32131a3",
+  "previous_registered_source_sha256": "580357f779dd5c76bb23a67955b6c1206768ac9427814a2c9be56b006d866677",
+  "previous_maintained_original_sha256": "a7bfc90042c2c08510081c8e46c3ae612ac3de3d6de3f331c4750888d6d55d02",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7692,
+  "current_python_registry_tests": 86,
+  "previous7682_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "6eeadaa0c518a7e9713af63f571c5c707049a79a8e18ad66ecccce8c06e80941",
+  "extractor_sha256": "737e952939039fba70c177b61c43b45e8abf31d9f3575b72bdce38675f15c25d",
+  "source_cases": [
+    {
+      "name": "deque-erase-single",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a={0,1,2,3,4,5,6,7,8};\nint* tail=&a.back();auto first=a.erase(a.cbegin());\nif(first!=a.begin()||*first!=1||a.size()!=8||&a.back()!=tail)return 1;\nauto middle=a.erase(a.begin()+2);if(middle!=a.begin()+2||*middle!=4||a.size()!=7)return 2;\nint* front=&a.front();auto end=a.erase(a.cend()-1);\nif(end!=a.end()||a.size()!=6||a.back()!=7||&a.front()!=front)return 3;\nconst int expected[6]={1,2,4,5,6,7};for(unsigned i=0;i!=6;++i)if(a[i]!=expected[i])return 4;\nreturn 0;}\n",
+      "source_sha256": "eef10fd67194a6289a7cda3f9b8bd76313d8e861bc025fbe18e71a27df159ce8",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-erase-front-range",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a(4097);for(unsigned i=0;i!=4097;++i)a[i]=(int)i;\nint* tail=&a.back();int* following=&a[1027];auto next=a.erase(a.cbegin()+2,a.cbegin()+1027);\nif(a.size()!=3072||next!=a.begin()+2||*next!=1027||&*next!=following||&a.back()!=tail)return 1;\nfor(unsigned i=0;i!=3072;++i)if(a[i]!=(int)(i<2?i:i+1025))return 2;\na.push_front(-1);a.push_back(4097);return a.front()!=-1||a.back()!=4097||a.size()!=3074;}\n",
+      "source_sha256": "cd2189702fb121219687dd4795ad3ce6db4b26b7be35b79e774012703caf5ff7",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-erase-back-range",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a(4097);for(unsigned i=0;i!=4097;++i)a[i]=(int)i;\nint* first=&a.front();auto next=a.erase(a.begin()+3070,a.begin()+4094);\nif(a.size()!=3073||next!=a.begin()+3070||*next!=4094||&a.front()!=first)return 1;\nfor(unsigned i=0;i!=3073;++i)if(a[i]!=(int)(i<3070?i:i+1024))return 2;\nauto end=a.erase(a.cbegin()+3070,a.cend());if(end!=a.end()||a.size()!=3070||a.back()!=3069)return 3;\na.push_front(-1);a.push_back(5000);return a.front()!=-1||a.back()!=5000||&a[1]!=first;}\n",
+      "source_sha256": "42d73fc1168c3ba4b6a84075145e33c30481ec0025fcf29c8a2965d2ca3421ae",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-erase-empty-and-reuse",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a;\nauto empty=a.erase(a.cbegin(),a.cend());if(empty!=a.end()||!a.empty())return 1;\na.resize(2050,7);int* first=&a.front();auto middle=a.erase(a.cbegin()+1024,a.cbegin()+1024);\nif(middle!=a.begin()+1024||*middle!=7||a.size()!=2050||&a.front()!=first)return 2;\nauto end=a.erase(a.end(),a.end());if(end!=a.end()||a.size()!=2050)return 3;\nauto all=a.erase(a.cbegin(),a.cend());if(all!=a.end()||!a.empty())return 4;\na.push_front(8);auto one=a.erase(a.cbegin());if(one!=a.end()||!a.empty())return 5;\na.push_front(9);a.push_back(10);return a.size()!=2||a.front()!=9||a.back()!=10;}\n",
+      "source_sha256": "d0f3f579d1de2f52e03fa3e9ccbc9932d69eb4d86f41b197bd088dc34fb4b774",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-erase-release-effects",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic std::deque<int>* owner;static int stage,calls,bad;\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {if(stage){++calls;\nif(owner->size()!=1024||owner->front()!=(stage==1?3073:0)||owner->back()!=(stage==1?4096:1023))bad=1;}free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::deque<int> a(4097);owner=&a;for(unsigned i=0;i!=4097;++i)a[i]=(int)i;\nint* last=&a.back();stage=1;auto front=a.erase(a.cbegin(),a.cbegin()+3073);stage=0;\nif(!calls||bad||front!=a.begin()||*front!=3073||&a.back()!=last)return 1;\na.resize(4097);for(unsigned i=0;i!=4097;++i)a[i]=(int)i;\nint* first=&a.front();calls=0;stage=2;auto end=a.erase(a.cbegin()+1024,a.cend());stage=0;\nif(!calls||bad||end!=a.end()||&a.front()!=first||a.size()!=1024)return 2;\na.push_back(1024);return a.back()!=1024||a.size()!=1025;}\n",
+      "source_sha256": "b04e78ea4baa93831c2c3950ce59db5b880b7917c1175ee86607987a67efce58",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-erase-call-sequencing",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nusing It=std::deque<int>::const_iterator;\nstatic std::deque<int>* owner;static const It* first_value;static const It* last_value;\nstatic int receivers,firsts,lasts,bad;\nstd::deque<int>& receiver(){++receivers;return *owner;}\nIt first(){++firsts;if(receivers!=firsts)bad=1;return *first_value;}\nIt last(){++lasts;if(receivers!=2)bad=1;return *last_value;}\nint main(){std::deque<int> a={0,1,2,3,4,5};owner=&a;It f=a.cbegin()+1;first_value=&f;\nauto one=receiver().erase(first());if(bad||receivers!=1||firsts!=1||*one!=2||a.size()!=5)return 1;\nf=a.cbegin()+1;It l=a.cbegin()+3;last_value=&l;auto two=receiver().erase(first(),last());\nreturn bad||receivers!=2||firsts!=2||lasts!=1||two!=a.begin()+1||*two!=4||a.size()!=3||a.front()!=0||a.back()!=5;}\n",
+      "source_sha256": "06c8fa8b3012270d29a7661d1d41cfd201dbcb48990d1b2b177d4afbe9ad9b57",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-erase-owned-single-empty",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::iterator deque<int>::erase(const_iterator first) {return begin();}\n}}\nint main(){std::deque<int> a={4,5,6};a.erase(a.cbegin());return 0;}\n",
+      "source_sha256": "dc97d52a46a6de4faa0fc7fbb25583bf6650377f658e8f234604720322beff23",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-erase-owned-single-forwarding",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::iterator deque<int>::erase(const_iterator first) {return erase(first,first+1);}\n}}\nint main(){std::deque<int> a={4,5,6};a.erase(a.cbegin());return 0;}\n",
+      "source_sha256": "c14f9295f3970d5faf1571b58deab015fdd0863dff89f869fde82d5f5fd8df41",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-erase-owned-range-empty",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::iterator deque<int>::erase(const_iterator first,const_iterator last) {return begin();}\n}}\nint main(){std::deque<int> a={4,5,6};a.erase(a.cbegin(),a.cbegin()+1);return 0;}\n",
+      "source_sha256": "fd3ee6622ea1f51d8cce8c0651e0ef0ee318be2d0722f4ec2e85b3e1ee065087",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-erase-owned-range-forwarding",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::iterator deque<int>::erase(const_iterator first,const_iterator last) {return erase(first,last);}\n}}\nint main(){std::deque<int> a={4,5,6};a.erase(a.cbegin(),a.cbegin()+1);return 0;}\n",
+      "source_sha256": "3f14cf813da83738e51bd2281ca7bb5651ee21432948c9591e8d92ac7736c9ea",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source48_authentication_sha256": "f501d4dfef26a257958acecb89bd75a5016bb07c103fb3a3da123c1b5f0dea2b",
+  "source48_compiler_source": "923bb941d4f882f3ad490e54e6f63957cb77b92a"
+}
