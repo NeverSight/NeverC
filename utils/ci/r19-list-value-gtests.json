@@ -1,0 +1,193 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-value-constructors",
+      "formal_test_name": "TranslateTest.CoreV2ListValueConstructorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "913e59c840819b9e004f98860841b330c5c878151395a266962e63d67ba19819",
+      "original_case_source_sha256": "913e59c840819b9e004f98860841b330c5c878151395a266962e63d67ba19819",
+      "gtest_body_sha256": "4ee4feb1f3989f19d2256b7c9e6a58e6f61fc955770097a06a61e08c47e28499"
+    },
+    {
+      "name": "list-value-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2ListValueCopyAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6063847daa0d6faca5847e919232efd39ba823a180dc59402d317fadbfd3d1da",
+      "original_case_source_sha256": "6063847daa0d6faca5847e919232efd39ba823a180dc59402d317fadbfd3d1da",
+      "gtest_body_sha256": "39f7d8aac42a8be6d52d031d8f3681f256675e85ca54ca12bdc9b0fa884d6b81"
+    },
+    {
+      "name": "list-value-move-assignment",
+      "formal_test_name": "TranslateTest.CoreV2ListValueMoveAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "788317dd0ac81368dec7fc5a9c60e73938c55def9378d6d694814bf83e3e642c",
+      "original_case_source_sha256": "788317dd0ac81368dec7fc5a9c60e73938c55def9378d6d694814bf83e3e642c",
+      "gtest_body_sha256": "d94eeeab3722489153ed6a33bcb4253e413bb09ea083fc492e31509640a9ea8d"
+    },
+    {
+      "name": "list-value-swap",
+      "formal_test_name": "TranslateTest.CoreV2ListValueSwapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5c2080494e0af1197b28964ef2ce32d550a852b801f39982271be1ae49cc98b1",
+      "original_case_source_sha256": "5c2080494e0af1197b28964ef2ce32d550a852b801f39982271be1ae49cc98b1",
+      "gtest_body_sha256": "3a33e87ef77e95746716f82ae42a917ea9735396178d9b4454d8238caa929978"
+    },
+    {
+      "name": "list-value-allocation-effects",
+      "formal_test_name": "TranslateTest.CoreV2ListValueAllocationEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "311398640d73b02299dd446211e2bb5e8a85a8196b621da316f2dd3ac99947fe",
+      "original_case_source_sha256": "311398640d73b02299dd446211e2bb5e8a85a8196b621da316f2dd3ac99947fe",
+      "gtest_body_sha256": "e0d2145a6b081fcd348c011345e7180c23507c978c7a66b2d0e99aef92d0ea87"
+    },
+    {
+      "name": "list-value-explicit-allocator-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2ListValueExplicitAllocatorSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6616c028d35a36ddd7843d7a6d4da26e51fa6dc7be5eb96ccaba4244407694a1",
+      "original_case_source_sha256": "6616c028d35a36ddd7843d7a6d4da26e51fa6dc7be5eb96ccaba4244407694a1",
+      "gtest_body_sha256": "6a15e306965e8145f2aa4f2433f000a7a8eaa085d905459ef8b7c61069a57fbb"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-value-owned-copy-constructor",
+      "formal_test_name": "TranslateTest.CoreV2ListValueOwnedCopyConstructorRejected",
+      "expected": "reject",
+      "source_sha256": "8882c0da61de90cbe63e6d9f0120bb7f6d148118d672cacc8f0bb7a64eda5ada",
+      "original_case_source_sha256": "8882c0da61de90cbe63e6d9f0120bb7f6d148118d672cacc8f0bb7a64eda5ada",
+      "gtest_body_sha256": "eedb6418364f683b3fbec047463da40ea6ba4d66ad1db80988380348fbc65b4a"
+    },
+    {
+      "name": "list-value-owned-move-constructor",
+      "formal_test_name": "TranslateTest.CoreV2ListValueOwnedMoveConstructorRejected",
+      "expected": "reject",
+      "source_sha256": "649c9071c5207721514e4a641a415204479bc42300a92438882e66e4814bdc63",
+      "original_case_source_sha256": "649c9071c5207721514e4a641a415204479bc42300a92438882e66e4814bdc63",
+      "gtest_body_sha256": "9385bd67da092b7595e661ac0114be7a1daf1b5c59882dac326c8739d5098a28"
+    },
+    {
+      "name": "list-value-owned-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2ListValueOwnedCopyAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "6cbfa18ada0d7e65a657d4bbc3404e0689178e414a5ad306f9b8da31f6ee80af",
+      "original_case_source_sha256": "6cbfa18ada0d7e65a657d4bbc3404e0689178e414a5ad306f9b8da31f6ee80af",
+      "gtest_body_sha256": "7787ff1a450c76f486a7411ee46e2232147939e7831ba77a4e72250b5821e78f"
+    },
+    {
+      "name": "list-value-owned-move-assignment",
+      "formal_test_name": "TranslateTest.CoreV2ListValueOwnedMoveAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "fb90b2d74198bb742fcd416e4521117755440b6861b64cc09ff2f6d3bd14be18",
+      "original_case_source_sha256": "fb90b2d74198bb742fcd416e4521117755440b6861b64cc09ff2f6d3bd14be18",
+      "gtest_body_sha256": "89ba94efce73df1db48def5fe05a9013edcf49f2ff04791784325bcaaecd69b7"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListValueConstructorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListValueCopyAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListValueMoveAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListValueSwapRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListValueAllocationEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListValueExplicitAllocatorSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListValueOwnedCopyConstructorRejected",
+    "TranslateTest.CoreV2ListValueOwnedMoveConstructorRejected",
+    "TranslateTest.CoreV2ListValueOwnedCopyAssignmentRejected",
+    "TranslateTest.CoreV2ListValueOwnedMoveAssignmentRejected"
+  ],
+  "native_reference_authentication_sha256": "4f37c0ff1f4ff4d1778cf9b5aabcd40d7b943a6f79607bcd7f30a7b1f4090b30",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "3d43915e8284d80acd117273b0fbfb072f4a473e3817b6e23eeedc901bbce989",
+  "maintained_original_sha256": "f076b6edbe240ad23e2ef860ee0491e11bcd0e859726bc5e208d0853841d236c",
+  "previous_registered_source_sha256": "9a8e47ade9557d15e34716329a587d562fc5e0246d22ce15c49f64ae62773556",
+  "previous_maintained_original_sha256": "24c4a41ce4f2c53230d3c2db1383cf11c4093b03665132d9f7e4088f8a7ac6dc",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7712,
+  "current_python_registry_tests": 90,
+  "previous7702_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "0f1d8480d2b1d57dea650723b4114354bd9b83c7fa5efb4782ec90cb5cf59b50",
+  "extractor_sha256": "db2830ca0edceaf0a14636154117e01465de57926b851486e8cff2b3b48f2fa2",
+  "source_cases": [
+    {
+      "name": "list-value-constructors",
+      "public_header": "list",
+      "source": "#include <list>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::list<int> a={1,2,3};std::list<int> b(a);\nif(b.size()!=3||b.front()!=1||b.back()!=3||&b.front()==&a.front())return 1;\nb.front()=9;if(a.front()!=1)return 2;int* identity=&a.front();\nstd::list<int> c(std::move(a));if(!a.empty()||c.size()!=3||&c.front()!=identity)return 3;\na.push_back(7);if(a.size()!=1||a.front()!=7)return 4;\nstd::list<int> empty;std::list<int> copy(empty);std::list<int> moved(std::move(empty));\nreturn !copy.empty()||!moved.empty()||!empty.empty();}\n",
+      "source_sha256": "913e59c840819b9e004f98860841b330c5c878151395a266962e63d67ba19819",
+      "expected": "accept"
+    },
+    {
+      "name": "list-value-copy-assignment",
+      "public_header": "list",
+      "source": "#include <list>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nstatic std::list<int>* assignment_left;static std::list<int>* assignment_right;static int assignment_events;\nstd::list<int>& assignment_receiver(){assignment_events=assignment_events*10+1;return *assignment_left;}\nconst std::list<int>& assignment_argument(){assignment_events=assignment_events*10+2;return *assignment_right;}\nint main(){std::list<int> a={1,2,3};std::list<int> b={8,9,10,11};\nint* reused=&b.front();std::list<int>& result=(b=a);\nif(&result!=&b||b.size()!=3||b.front()!=1||b.back()!=3||&b.front()!=reused)return 1;\nb.front()=7;if(a.front()!=1)return 2;b=b;if(b.front()!=7||b.size()!=3)return 3;\nstd::list<int> empty;b=empty;if(!b.empty())return 4;\nempty=a;if(empty.size()!=3||empty.front()!=1||empty.back()!=3)return 5;\nassignment_left=&b;assignment_right=&a;assignment_events=0;\nassignment_receiver()=assignment_argument();if(assignment_events!=21||b.size()!=3||b.front()!=1)return 6;\nassignment_events=0;assignment_receiver().operator=(assignment_argument());\nif(assignment_events!=12||b.size()!=3||b.back()!=3)return 7;\na.clear();return empty.size()!=3||empty.front()!=1;}\n",
+      "source_sha256": "6063847daa0d6faca5847e919232efd39ba823a180dc59402d317fadbfd3d1da",
+      "expected": "accept"
+    },
+    {
+      "name": "list-value-move-assignment",
+      "public_header": "list",
+      "source": "#include <list>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nstatic std::list<int>* assignment_left;static std::list<int>* assignment_right;static int assignment_events;\nstd::list<int>& assignment_receiver(){assignment_events=assignment_events*10+1;return *assignment_left;}\nstd::list<int>&& assignment_argument(){assignment_events=assignment_events*10+2;return static_cast<std::list<int>&&>(*assignment_right);}\nint main(){std::list<int> a={2,4,6};std::list<int> b={8,10};\nint* identity=&a.front();std::list<int>& result=(b=std::move(a));\nif(&result!=&b||!a.empty()||b.size()!=3||b.back()!=6||&b.front()!=identity)return 1;\na.push_front(9);if(a.size()!=1||a.front()!=9)return 2;\nstd::list<int> empty;b=std::move(empty);if(!b.empty()||!empty.empty())return 3;\nempty=std::move(a);if(!a.empty()||empty.size()!=1||empty.front()!=9)return 4;\nstd::list<int> c={1,2};std::list<int> d={3};assignment_left=&c;assignment_right=&d;assignment_events=0;\nassignment_receiver()=assignment_argument();if(assignment_events!=21||c.size()!=1||c.front()!=3||!d.empty())return 5;\nd.push_back(11);assignment_events=0;assignment_receiver().operator=(assignment_argument());\nreturn assignment_events!=12||c.size()!=1||c.front()!=11||!d.empty();}\n",
+      "source_sha256": "788317dd0ac81368dec7fc5a9c60e73938c55def9378d6d694814bf83e3e642c",
+      "expected": "accept"
+    },
+    {
+      "name": "list-value-swap",
+      "public_header": "list",
+      "source": "#include <list>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::list<int> a={1,2};std::list<int> b={3,4,5};\nint* first=&a.front();int* second=&b.front();auto iterator=a.begin();\na.swap(b);if(a.size()!=3||b.size()!=2||&a.front()!=second||&b.front()!=first||*iterator!=1)return 1;\n++iterator;if(*iterator!=2)return 2;std::swap(a,b);\nif(a.size()!=2||b.size()!=3||&a.front()!=first||&b.front()!=second)return 3;\nstd::list<int> empty;empty.swap(a);if(!a.empty()||empty.size()!=2||&empty.front()!=first)return 4;\na.push_back(7);return a.size()!=1||a.back()!=7||empty.back()!=2;}\n",
+      "source_sha256": "5c2080494e0af1197b28964ef2ce32d550a852b801f39982271be1ae49cc98b1",
+      "expected": "accept"
+    },
+    {
+      "name": "list-value-allocation-effects",
+      "public_header": "list",
+      "source": "#include <list>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic std::list<int>* owner;static int* input;static int stage,calls,bad,write_value;\nvoid* operator new(Size n){if(stage){++calls;if(owner->size()!=3)bad=1;*input=write_value;}return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::list<int> a={1,2,3};owner=&a;input=&a.front();write_value=77;stage=1;\nstd::list<int> b(a);stage=0;if(calls!=3||bad||b.front()!=77||b.back()!=3||a.front()!=77)return 1;\nstd::list<int> c={4,5,6};std::list<int> d={8,9};owner=&c;input=&c.back();write_value=99;calls=0;stage=1;\nd=c;stage=0;return calls!=1||bad||d.size()!=3||d.front()!=4||d.back()!=99||c.back()!=99;}\n",
+      "source_sha256": "311398640d73b02299dd446211e2bb5e8a85a8196b621da316f2dd3ac99947fe",
+      "expected": "accept"
+    },
+    {
+      "name": "list-value-explicit-allocator-sequencing",
+      "public_header": "list",
+      "source": "#include <list>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nstatic std::list<int>* owner;static int sources,allocators;\nstd::list<int>& source(){++sources;return *owner;}\nstd::allocator<int> allocator(){++allocators;return std::allocator<int>{};}\nint main(){std::list<int> a={5,6,7};owner=&a;\nstd::list<int> b(source(),allocator());\nif(sources!=1||allocators!=1||b.size()!=3||b.front()!=5||&b.front()==&a.front())return 1;\nint* identity=&a.front();std::list<int> c(std::move(source()),allocator());\nif(sources!=2||allocators!=2||!a.empty()||c.size()!=3||&c.front()!=identity)return 2;\na.push_back(9);return a.front()!=9||b.back()!=7||c.back()!=7;}\n",
+      "source_sha256": "6616c028d35a36ddd7843d7a6d4da26e51fa6dc7be5eb96ccaba4244407694a1",
+      "expected": "accept"
+    },
+    {
+      "name": "list-value-owned-copy-constructor",
+      "public_header": "list",
+      "source": "#include <list>\nnamespace std { inline namespace __1 {\ntemplate<> list<int>::list(const list<int>& source) {}\n}}\nint main(){std::list<int> a={1,2,3};std::list<int> b(a);return 0;}\n",
+      "source_sha256": "8882c0da61de90cbe63e6d9f0120bb7f6d148118d672cacc8f0bb7a64eda5ada",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-value-owned-move-constructor",
+      "public_header": "list",
+      "source": "#include <list>\nnamespace std { inline namespace __1 {\ntemplate<> list<int>::list(list<int>&& source) noexcept {}\n}}\nint main(){std::list<int> a={1,2,3};std::list<int> b(static_cast<std::list<int>&&>(a));return 0;}\n",
+      "source_sha256": "649c9071c5207721514e4a641a415204479bc42300a92438882e66e4814bdc63",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-value-owned-copy-assignment",
+      "public_header": "list",
+      "source": "#include <list>\nnamespace std { inline namespace __1 {\ntemplate<> list<int>& list<int>::operator=(const list<int>& source) {return *this;}\n}}\nint main(){std::list<int> a={1,2,3};std::list<int> b;b=a;return 0;}\n",
+      "source_sha256": "6cbfa18ada0d7e65a657d4bbc3404e0689178e414a5ad306f9b8da31f6ee80af",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-value-owned-move-assignment",
+      "public_header": "list",
+      "source": "#include <list>\nnamespace std { inline namespace __1 {\ntemplate<> list<int>& list<int>::operator=(list<int>&& source) noexcept {return *this;}\n}}\nint main(){std::list<int> a={1,2,3};std::list<int> b;b=static_cast<std::list<int>&&>(a);return 0;}\n",
+      "source_sha256": "fb90b2d74198bb742fcd416e4521117755440b6861b64cc09ff2f6d3bd14be18",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source48_authentication_sha256": "b61d87f0d17ae573de007a837981be51d4167cd92b07ecbf22be1ce5e5b8d9b9",
+  "source48_compiler_source": "cd9a2eaf86f45bbadab424f5247e0feb9b558848"
+}
