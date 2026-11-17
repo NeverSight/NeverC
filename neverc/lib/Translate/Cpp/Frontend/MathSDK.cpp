@@ -49602,10 +49602,40 @@ bool dequeIteratorType(const State &S, const SourceManager &SM, QualType T, bool
   const auto I = approvedUtilityDequeIteratorRecord(S, SM, dequeRecordType(T), Context);
   return I && I->Const == Const;
 }
+bool dequePointerRangeTemplate(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const ASTContext &Context) {
+  if (!Method || Method->isStatic() || Method->isConst() || Method->isVolatile() ||
+      Method->getRefQualifier() != RQ_None || Method->getNumParams() != 2 ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Method->getParent()->getIdentifier() || Method->getParent()->getName() != "deque" ||
+      !approvedUtilityDequeRecord(S, SM, Method->getParent(), Context)) return false;
+  if (!isa<CXXConstructorDecl>(Method) &&
+      (!Method->getIdentifier() || Method->getName() != "assign" ||
+       !Method->getReturnType()->isVoidType())) return false;
+  const auto *Primary = Method->getPrimaryTemplate();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  if (!Primary || Primary->getTemplateParameters()->size() != 2 ||
+      !Arguments || Arguments->size() != 2) return false;
+  const auto *Input = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
+  const auto *Enable = dyn_cast<NonTypeTemplateParmDecl>(Primary->getTemplateParameters()->getParam(1));
+  if (!Input || Input->isParameterPack() || !Enable || Enable->isParameterPack() ||
+      !Enable->hasDefaultArgument() || Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Integral ||
+      !Arguments->get(1).getAsIntegral().isZero() ||
+      !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.IntTy)) return false;
+  const auto Iterator = Arguments->get(0).getAsType();
+  if (!Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy)) &&
+      !Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy.withConst()))) return false;
+  return Context.hasSameType(Method->getParamDecl(0)->getType(), Iterator) &&
+      Context.hasSameType(Method->getParamDecl(1)->getType(), Iterator) &&
+      !Method->getParamDecl(0)->hasDefaultArg() && !Method->getParamDecl(1)->hasDefaultArg();
+}
+
 std::optional<UtilityDequeConstruction> dequeConstructorSignature(const State &S, const SourceManager &SM,
     const CXXConstructorDecl *C, const ASTContext &Context) {
   if (!C || !dequeFunctionDeclarations(S, SM, C)) return std::nullopt;
   if (approvedUtilityDequeRecord(S, SM, C->getParent(), Context)) {
+    if (dequePointerRangeTemplate(S, SM, C, Context)) return UtilityDequeConstruction::PointerRange;
     if (C->getPrimaryTemplate()) return std::nullopt;
     if (C->getNumParams() == 1 && !C->getParamDecl(0)->hasDefaultArg()) {
       const auto Record = Context.getRecordType(C->getParent());
@@ -49691,9 +49721,12 @@ bool dequeEmplaceTemplate(const CXXMethodDecl *Method, const ASTContext &Context
 std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const SourceManager &SM,
     const CXXMethodDecl *M, const ASTContext &Context) {
   if (!M || M->isStatic() || M->isVolatile() ||
-      (M->getPrimaryTemplate() && !dequeEmplaceTemplate(M, Context)) ||
+      (M->getPrimaryTemplate() && !dequeEmplaceTemplate(M, Context) &&
+       !dequePointerRangeTemplate(S, SM, M, Context)) ||
       !dequeFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (approvedUtilityDequeRecord(S, SM, M->getParent(), Context)) {
+    if (!isa<CXXConstructorDecl>(M) && dequePointerRangeTemplate(S, SM, M, Context))
+      return UtilityDequeOperation::AssignPointerRange;
     const bool Stack = M->getParent()->getName() == "stack";
     const bool Queue = M->getParent()->getName() == "queue";
     const auto Element = M->isConst() ? Context.IntTy.withConst() : Context.IntTy;
@@ -51807,7 +51840,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   llvm::DenseMap<const Stmt *, unsigned> LocalStatements;
   auto &Statements = SharedStatements ? *SharedStatements : LocalStatements;
   const bool ClosedCopyProof = DequeValueCopy || SharedStatements;
-  const bool MemoizeStatements = ClosedCopyProof || DequeCountUpdate;
+  const bool DequePointerRange = !PriorityRoot && RootMethod &&
+      dequePointerRangeTemplate(S, SM, RootMethod, Context);
+  const bool MemoizeStatements = ClosedCopyProof || DequeCountUpdate || DequePointerRange;
   std::set<const FunctionDecl *> LocalQueries;
   auto &Queries = SharedQueries ? *SharedQueries : LocalQueries;
   const FunctionDecl *ActiveFunction = nullptr;

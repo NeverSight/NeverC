@@ -27691,6 +27691,50 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
   }
 
+  void copyPointerDequeRange(Expression Place, Expression First, Expression Begin,
+      Expression Limit, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Pointer = First.getString("type")->str();
+    auto Position = temporary(Size, L); assign(Position, Begin, L);
+    const auto Check = labelName(), Store = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("<", Position, Limit, "bool", L), Store, Done, L);
+    label(Store, L);
+    auto Input = binary("+", First, cast(Position, Difference, L), Pointer, L);
+    assign(dequeOwnerValue(Place, Position, false, L), dereference(Input, L), L);
+    assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
+    jump(Check, L); label(Done, L);
+  }
+  void assignPointerDequeRange(Expression Place, Expression First, Expression Last, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    // Both endpoint values were captured before any allocation callback.
+    auto Count = snapshot(cast(binary("-", Last, First, Difference, L), Size, L), L);
+    auto OldSize = snapshot(dequeOwnerMember(Place, "nct_deque_size", L), L);
+    auto Common = temporary(Size, L); assign(Common, Count, L);
+    const auto Clamp = labelName(), Prefix = labelName();
+    branch(binary(">", Common, OldSize, "bool", L), Clamp, Prefix, L);
+    label(Clamp, L); assign(Common, OldSize, L); jump(Prefix, L); label(Prefix, L);
+    // The SDK copies the retained prefix before allocating the new suffix.
+    copyPointerDequeRange(Place, First, quantity(0, Size, L), Common, L);
+    const auto Append = labelName(), Shrink = labelName(), Done = labelName();
+    branch(binary(">", Count, OldSize, "bool", L), Append, Shrink, L);
+    label(Append, L);
+    auto Added = snapshot(binary("-", Count, OldSize, Size, L), L);
+    auto Spare = snapshot(dequeBackSpare(Place, L), L);
+    const auto Grow = labelName(), Suffix = labelName();
+    branch(binary(">", Added, Spare, "bool", L), Grow, Suffix, L);
+    label(Grow, L); dequeGrowBackBy(Place, binary("-", Added, Spare, Size, L), L);
+    jump(Suffix, L); label(Suffix, L);
+    // Read the source elements after all capacity callbacks have completed.
+    copyPointerDequeRange(Place, First, OldSize, Count, L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), Count, L);
+    jump(Done, L); label(Shrink, L);
+    trimCountedDequeStorage(Place, Count, OldSize, L);
+    jump(Done, L); label(Done, L);
+  }
+
   Expression utilityDequeOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityDequeCall(A.S, A.Sources, Call, A.Context);
@@ -27753,6 +27797,9 @@ class FunctionLowering {
           : Operation == UtilityDequeOperation::Front ? quantity(0, Size, L)
           : binary("-", dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L);
       return dequeOwnerValue(Place, Position, Method->isConst(), L);
+    }
+    if (Operation == UtilityDequeOperation::AssignPointerRange) {
+      assignPointerDequeRange(Place, Operands[0], Operands[1], L); return Expression{};
     }
     if (Operation == UtilityDequeOperation::Resize || Operation == UtilityDequeOperation::ResizeFill ||
         Operation == UtilityDequeOperation::AssignCount) {
@@ -37407,6 +37454,9 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         auto Start = snapshot(dequeOwnerMember(Source, "nct_deque_start", L), L);
         auto Count = snapshot(dequeOwnerMember(Source, "nct_deque_size", L), L);
         initializeDequeElements(Place, Map, Count, L, Start); return;
+      }
+      if (*Kind == UtilityDequeConstruction::PointerRange) {
+        assignPointerDequeRange(Place, Operands[0], Operands[1], L); return;
       }
       if (*Kind == UtilityDequeConstruction::Count || *Kind == UtilityDequeConstruction::CountFill) {
         std::optional<Expression> FillReference;
