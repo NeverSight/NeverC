@@ -51882,7 +51882,12 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   const bool DequeValueCopy = !PriorityRoot && RootMethod &&
       approvedUtilityDequeRecord(S, SM, RootMethod->getParent(), Context) &&
       ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator() ||
-       (DequeAllocatorConstruction && *DequeAllocatorConstruction == UtilityDequeConstruction::CopyAllocator));
+       // The allocator move constructor's generic unequal-allocator branch
+       // uses the same pinned integer transfer graph. Retain its complete
+       // existing closed proofs and shared node/depth budgets.
+       (DequeAllocatorConstruction &&
+        (*DequeAllocatorConstruction == UtilityDequeConstruction::CopyAllocator ||
+         *DequeAllocatorConstruction == UtilityDequeConstruction::MoveAllocator)));
   const auto CountOperation = !PriorityRoot && RootMethod
       ? dequeMethodSignature(S, SM, RootMethod, Context) : std::nullopt;
   const bool DequePointerAssign = CountOperation &&
