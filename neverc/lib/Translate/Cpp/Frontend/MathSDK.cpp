@@ -51796,11 +51796,18 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   const bool DequeValueCopy = !PriorityRoot && RootMethod &&
       approvedUtilityDequeRecord(S, SM, RootMethod->getParent(), Context) &&
       ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator());
+  const auto CountOperation = !PriorityRoot && RootMethod
+      ? dequeMethodSignature(S, SM, RootMethod, Context) : std::nullopt;
+  const bool DequeCountUpdate = CountOperation &&
+      (*CountOperation == UtilityDequeOperation::Resize ||
+       *CountOperation == UtilityDequeOperation::ResizeFill ||
+       *CountOperation == UtilityDequeOperation::AssignCount);
   std::set<const FunctionDecl *> LocalSeen;
   auto &Seen = SharedSeen ? *SharedSeen : LocalSeen;
   llvm::DenseMap<const Stmt *, unsigned> LocalStatements;
   auto &Statements = SharedStatements ? *SharedStatements : LocalStatements;
-  const bool MemoizeStatements = DequeValueCopy || SharedStatements;
+  const bool ClosedCopyProof = DequeValueCopy || SharedStatements;
+  const bool MemoizeStatements = ClosedCopyProof || DequeCountUpdate;
   std::set<const FunctionDecl *> LocalQueries;
   auto &Queries = SharedQueries ? *SharedQueries : LocalQueries;
   const FunctionDecl *ActiveFunction = nullptr;
@@ -51818,7 +51825,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     const auto *PreviousFunction = ActiveFunction;
     ActiveFunction = F;
     auto RestoreFunction = llvm::make_scope_exit([&] { ActiveFunction = PreviousFunction; });
-    // The exact non-priority copy proof already shares this canonical
+    // Exact non-priority copy and counted-update proofs share this canonical
     // function's traversal. Charge that proof only once; depth and all
     // declaration/source checks below still apply to every reference.
     if (!F || F->isInvalidDecl() || Depth > 64 ||
@@ -51868,9 +51875,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     // retain the complete source graph proof.
     if (PriorityCopy && priorityCopyLengthError(S, SM, F, Context)) return true;
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
-    if (MemoizeStatements && (dequePointerMapQuery(S, SM, F, Context) ||
+    if (ClosedCopyProof && (dequePointerMapQuery(S, SM, F, Context) ||
         dequeClosedIteratorPrimitive(S, SM, F, Context) || dequeClosedOwnerQuery(S, SM, F, Context, &Queries))) return true;
-    if (MemoizeStatements) {
+    if (ClosedCopyProof) {
       std::vector<const FunctionDecl *> Dependencies;
       if (dequeTransferWrapper(S, SM, F, Context, Dependencies) ||
           dequeAnnotationWrapper(S, SM, F, Context, Dependencies) ||
@@ -51988,7 +51995,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
             !Function(N->getOperatorNew(), Depth + 1)) return false;
         if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
       }
-      if (MemoizeStatements) {
+      if (ClosedCopyProof) {
         const auto *Branch = dyn_cast<IfStmt>(Node);
         if (dequeRuntimeMemmoveBranch(S, SM, Branch, ActiveFunction, Context)) {
           // These deque copies run at runtime in C++17. The exact pinned
