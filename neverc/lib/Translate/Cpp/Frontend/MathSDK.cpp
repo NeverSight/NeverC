@@ -19,6 +19,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include <cstdio>
 #include <deque>
 #include <functional>
 #include <set>
@@ -49771,6 +49772,16 @@ bool dequeEmplaceTemplate(const CXXMethodDecl *Method, const ASTContext &Context
 
 std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const SourceManager &SM,
     const CXXMethodDecl *M, const ASTContext &Context) {
+  if (M && M->getIdentifier() && M->getName() == "insert" && M->getParent()->getName() == "deque") {
+    const auto *Primary = M->getPrimaryTemplate();
+    const auto *Arguments = M->getTemplateSpecializationArgs();
+    std::fprintf(stderr, "NCT_INSERT_SIGNATURE params=%u template_params=%u arguments=%u kind=%u range=%d first=%s second=%s\n",
+        M->getNumParams(), Primary ? Primary->getTemplateParameters()->size() : 0,
+        Arguments ? Arguments->size() : 0, static_cast<unsigned>(M->getTemplateSpecializationKind()),
+        dequePointerRangeTemplate(S, SM, M, Context) ? 1 : 0,
+        M->getNumParams() ? M->getParamDecl(0)->getType().getAsString().c_str() : "none",
+        M->getNumParams() > 1 ? M->getParamDecl(1)->getType().getAsString().c_str() : "none");
+  }
   if (!M || M->isStatic() || M->isVolatile() ||
       (M->getPrimaryTemplate() && !dequeEmplaceTemplate(M, Context) &&
        !dequePointerRangeTemplate(S, SM, M, Context)) ||
@@ -51575,43 +51586,64 @@ bool dequeIntegerMoveDispatcher(const State &S, const SourceManager &SM,
     const FunctionDecl *Function, const ASTContext &Context,
     std::vector<const FunctionDecl *> &Dependencies) {
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  const bool TraceDispatcher = Method && Method->getParent()->getIdentifier() &&
+      (Method->getParent()->getName() == "__move_impl" || Method->getParent()->getName() == "__move_backward_impl");
+  unsigned TraceDispatcherReject = 0, TraceDispatcherNodes = 0;
+  bool TraceDispatcherProven = false;
+  auto TraceDispatcherFailure = [&](unsigned Line) {
+    if (!TraceDispatcherReject) TraceDispatcherReject = Line;
+    return false;
+  };
+  auto TraceDispatcherFinish = llvm::make_scope_exit([&] {
+    if (TraceDispatcher) {
+      const auto *Primary = Method->getPrimaryTemplate();
+      const auto *Arguments = Method->getTemplateSpecializationArgs();
+      std::fprintf(stderr, "NCT_INSERT_DISPATCH result=%d reject=%u nodes=%u function=%s params=%u template_params=%u arguments=%u specialization=%u input=%s output=%s\n",
+          TraceDispatcherProven ? 1 : 0, TraceDispatcherReject, TraceDispatcherNodes,
+          Method->getQualifiedNameAsString().c_str(), Method->getNumParams(),
+          Primary ? Primary->getTemplateParameters()->size() : 0, Arguments ? Arguments->size() : 0,
+          static_cast<unsigned>(Method->getTemplateSpecializationKind()),
+          Method->getNumParams() ? Method->getParamDecl(0)->getType().getAsString().c_str() : "none",
+          Method->getNumParams() > 2 ? Method->getParamDecl(2)->getType().getAsString().c_str() : "none");
+    }
+  });
   if (!Method || Method->isInvalidDecl() || Method->isDeleted() || Method->isVariadic() ||
       Method->isStatic() || !Method->isConst() || Method->isVolatile() ||
       Method->getRefQualifier() != RQ_None || !Method->isOverloadedOperator() ||
       Method->getOverloadedOperator() != OO_Call || !Method->hasBody() ||
       Method->getNumParams() != 3 ||
-      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return TraceDispatcherFailure(__LINE__);
   const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
   if (!Owner || !Owner->getIdentifier() || !dequeStd(Owner->getDeclContext()) ||
-      !Owner->isEmpty() || !Owner->hasTrivialDestructor() || Owner->getTemplateArgs().size() != 1) return false;
+      !Owner->isEmpty() || !Owner->hasTrivialDestructor() || Owner->getTemplateArgs().size() != 1) return TraceDispatcherFailure(__LINE__);
   const auto Name = Owner->getName();
   const char *Header = Name == "__move_impl" ? "__algorithm/move.h" :
       Name == "__move_backward_impl" ? "__algorithm/move_backward.h" : nullptr;
-  if (!Header) return false;
+  if (!Header) return TraceDispatcherFailure(__LINE__);
   unsigned Declarations = 0;
   auto Pinned = [&](const Decl *D, const char *File) {
     return ++Declarations <= 128 && dequePinned(S, SM, D, File);
   };
-  for (const auto *D : Owner->redecls()) if (!Pinned(D, Header)) return false;
+  for (const auto *D : Owner->redecls()) if (!Pinned(D, Header)) return TraceDispatcherFailure(__LINE__);
   const auto *OwnerTemplate = Owner->getSpecializedTemplate();
-  if (!OwnerTemplate || OwnerTemplate->getTemplateParameters()->size() != 1) return false;
+  if (!OwnerTemplate || OwnerTemplate->getTemplateParameters()->size() != 1) return TraceDispatcherFailure(__LINE__);
   for (const auto *D : OwnerTemplate->redecls())
-    if (!Pinned(D, Header) || !Pinned(D->getTemplatedDecl(), Header)) return false;
+    if (!Pinned(D, Header) || !Pinned(D->getTemplatedDecl(), Header)) return TraceDispatcherFailure(__LINE__);
   const auto &PolicyArgument = Owner->getTemplateArgs()[0];
-  if (PolicyArgument.getKind() != TemplateArgument::Type) return false;
+  if (PolicyArgument.getKind() != TemplateArgument::Type) return TraceDispatcherFailure(__LINE__);
   const auto *Policy = dequeRecordType(PolicyArgument.getAsType());
   if (!Policy || !Policy->getIdentifier() || Policy->getName() != "_ClassicAlgPolicy" ||
-      !dequeStd(Policy->getDeclContext()) || !Policy->isEmpty() || !Policy->hasTrivialDestructor()) return false;
-  for (const auto *D : Policy->redecls()) if (!Pinned(D, "__algorithm/iterator_operations.h")) return false;
+      !dequeStd(Policy->getDeclContext()) || !Policy->isEmpty() || !Policy->hasTrivialDestructor()) return TraceDispatcherFailure(__LINE__);
+  for (const auto *D : Policy->redecls()) if (!Pinned(D, "__algorithm/iterator_operations.h")) return TraceDispatcherFailure(__LINE__);
   const auto *Primary = Method->getPrimaryTemplate();
   const auto *Pattern = Method->getTemplateInstantiationPattern();
   const auto *Arguments = Method->getTemplateSpecializationArgs();
   if (!Primary || !Pattern || !Arguments || Arguments->size() != 3 ||
-      Primary->getTemplateParameters()->size() != 3) return false;
-  for (const auto *D : Method->redecls()) if (!Pinned(D, Header)) return false;
-  for (const auto *D : Pattern->redecls()) if (!Pinned(D, Header)) return false;
+      Primary->getTemplateParameters()->size() != 3) return TraceDispatcherFailure(__LINE__);
+  for (const auto *D : Method->redecls()) if (!Pinned(D, Header)) return TraceDispatcherFailure(__LINE__);
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D, Header)) return TraceDispatcherFailure(__LINE__);
   for (const auto *D : Primary->redecls())
-    if (!Pinned(D, Header) || !Pinned(D->getTemplatedDecl(), Header)) return false;
+    if (!Pinned(D, Header) || !Pinned(D->getTemplatedDecl(), Header)) return TraceDispatcherFailure(__LINE__);
   const auto Input = Method->getParamDecl(0)->getType();
   const auto Output = Method->getParamDecl(2)->getType();
   const auto IntPointer = Context.getPointerType(Context.IntTy);
@@ -51621,18 +51653,18 @@ bool dequeIntegerMoveDispatcher(const State &S, const SourceManager &SM,
         dequeIteratorType(S, SM, Type, false, Context) || dequeIteratorType(S, SM, Type, true, Context);
   };
   if (!InputType(Input) || !Context.hasSameType(Input, Method->getParamDecl(1)->getType()) ||
-      !(Context.hasSameType(Output, IntPointer) || dequeIteratorType(S, SM, Output, false, Context))) return false;
-  for (const auto *Parameter : Method->parameters()) if (Parameter->hasDefaultArg()) return false;
+      !(Context.hasSameType(Output, IntPointer) || dequeIteratorType(S, SM, Output, false, Context))) return TraceDispatcherFailure(__LINE__);
+  for (const auto *Parameter : Method->parameters()) if (Parameter->hasDefaultArg()) return TraceDispatcherFailure(__LINE__);
   if (Arguments->get(2).getKind() == TemplateArgument::Type) {
     for (unsigned I = 0; I != 3; ++I)
       if (Arguments->get(I).getKind() != TemplateArgument::Type ||
-          !Context.hasSameType(Arguments->get(I).getAsType(), Method->getParamDecl(I)->getType())) return false;
+          !Context.hasSameType(Arguments->get(I).getAsType(), Method->getParamDecl(I)->getType())) return TraceDispatcherFailure(__LINE__);
   } else {
     if (Arguments->get(0).getKind() != TemplateArgument::Type ||
         Arguments->get(1).getKind() != TemplateArgument::Type ||
         Arguments->get(2).getKind() != TemplateArgument::Integral ||
         !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy) ||
-        !Arguments->get(2).getAsIntegral().isZero()) return false;
+        !Arguments->get(2).getAsIntegral().isZero()) return TraceDispatcherFailure(__LINE__);
     const bool Segmented = Context.hasSameType(Arguments->get(0).getAsType(), Input) &&
         Context.hasSameType(Arguments->get(1).getAsType(), Output) &&
         (dequeIteratorType(S, SM, Input, false, Context) || dequeIteratorType(S, SM, Input, true, Context) ||
@@ -51640,26 +51672,26 @@ bool dequeIntegerMoveDispatcher(const State &S, const SourceManager &SM,
     const bool Pointer = Input->isPointerType() && Output->isPointerType() &&
         Context.hasSameType(Arguments->get(0).getAsType(), Input->getPointeeType()) &&
         Context.hasSameType(Arguments->get(1).getAsType(), Output->getPointeeType());
-    if (!Segmented && !Pointer) return false;
+    if (!Segmented && !Pointer) return TraceDispatcherFailure(__LINE__);
   }
   const auto *Pair = dyn_cast_or_null<ClassTemplateSpecializationDecl>(dequeRecordType(Method->getReturnType()));
   if (Method->getReturnType()->isReferenceType() || !Pair || !Pair->getIdentifier() || Pair->getName() != "pair" ||
-      !dequeStd(Pair->getDeclContext()) || !Pair->hasTrivialDestructor() || Pair->getTemplateArgs().size() != 2) return false;
+      !dequeStd(Pair->getDeclContext()) || !Pair->hasTrivialDestructor() || Pair->getTemplateArgs().size() != 2) return TraceDispatcherFailure(__LINE__);
   const auto &PairArguments = Pair->getTemplateArgs();
   if (PairArguments[0].getKind() != TemplateArgument::Type || PairArguments[1].getKind() != TemplateArgument::Type ||
       !Context.hasSameType(PairArguments[0].getAsType(), Input) ||
-      !Context.hasSameType(PairArguments[1].getAsType(), Output)) return false;
+      !Context.hasSameType(PairArguments[1].getAsType(), Output)) return TraceDispatcherFailure(__LINE__);
   for (const auto *D : Pair->redecls())
-    if (!Pinned(D, "__utility/pair.h") && !Pinned(D, "__fwd/pair.h")) return false;
+    if (!Pinned(D, "__utility/pair.h") && !Pinned(D, "__fwd/pair.h")) return TraceDispatcherFailure(__LINE__);
   auto SegmentedTraits = [&](QualType Type) {
     const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(dequeRecordType(Type));
     if (!Record || !Record->getIdentifier() || Record->getName() != "__segmented_iterator_traits" ||
-        !dequeStd(Record->getDeclContext()) || Record->getTemplateArgs().size() != 1) return false;
+        !dequeStd(Record->getDeclContext()) || Record->getTemplateArgs().size() != 1) return TraceDispatcherFailure(__LINE__);
     const auto &Argument = Record->getTemplateArgs()[0];
     if (Argument.getKind() != TemplateArgument::Type ||
-        (!Context.hasSameType(Argument.getAsType(), Input) && !Context.hasSameType(Argument.getAsType(), Output))) return false;
+        (!Context.hasSameType(Argument.getAsType(), Input) && !Context.hasSameType(Argument.getAsType(), Output))) return TraceDispatcherFailure(__LINE__);
     for (const auto *D : Record->redecls())
-      if (!Pinned(D, "deque") && !Pinned(D, "__iterator/segmented_iterator.h")) return false;
+      if (!Pinned(D, "deque") && !Pinned(D, "__iterator/segmented_iterator.h")) return TraceDispatcherFailure(__LINE__);
     return true;
   };
   const bool Assign = false;
@@ -51671,7 +51703,7 @@ bool dequeIntegerMoveDispatcher(const State &S, const SourceManager &SM,
   std::set<const FunctionDecl *> Callees;
   std::vector<const FunctionDecl *> Required;
   auto Require = [&](const FunctionDecl *Callee) {
-    if (!Callee || !dequeDependencyDeclaration(S, SM, Callee)) return false;
+    if (!Callee || !dequeDependencyDeclaration(S, SM, Callee)) return TraceDispatcherFailure(__LINE__);
     if (Callees.insert(Callee->getCanonicalDecl()).second) Required.push_back(Callee);
     return Required.size() <= 32;
   };
@@ -51679,33 +51711,33 @@ bool dequeIntegerMoveDispatcher(const State &S, const SourceManager &SM,
   std::function<bool(const Stmt *, unsigned)> Wrapper;
   Wrapper = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
-    if (Depth > 16 || ++Nodes > 128 || !Macro(Node->getBeginLoc()) || !Macro(Node->getEndLoc())) return false;
-    if (const auto *Value = dyn_cast<Expr>(Node)) if (!Macro(Value->getExprLoc())) return false;
+    if (Depth > 16 || ++Nodes > 128 || !Macro(Node->getBeginLoc()) || !Macro(Node->getEndLoc())) return TraceDispatcherFailure(__LINE__);
+    if (const auto *Value = dyn_cast<Expr>(Node)) if (!Macro(Value->getExprLoc())) return TraceDispatcherFailure(__LINE__);
     if (const auto *Call = dyn_cast<CallExpr>(Node)) {
-      if (!Require(Call->getDirectCallee())) return false;
+      if (!Require(Call->getDirectCallee())) return TraceDispatcherFailure(__LINE__);
     } else if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node)) {
       const auto *Constructor = Construction->getConstructor();
-      if (!Constructor->getParent()->hasTrivialDestructor() || !Require(Constructor)) return false;
+      if (!Constructor->getParent()->hasTrivialDestructor() || !Require(Constructor)) return TraceDispatcherFailure(__LINE__);
     } else if (const auto *This = dyn_cast<CXXThisExpr>(Node)) {
       if (!Assign || !Context.hasSameType(This->getType(),
-          Context.getPointerType(Context.getRecordType(Method->getParent())))) return false;
+          Context.getPointerType(Context.getRecordType(Method->getParent())))) return TraceDispatcherFailure(__LINE__);
     } else if (const auto *Declaration = dyn_cast<DeclStmt>(Node)) {
       for (const auto *D : Declaration->decls()) {
-        if (!dequeDependencyDeclaration(S, SM, D)) return false;
+        if (!dequeDependencyDeclaration(S, SM, D)) return TraceDispatcherFailure(__LINE__);
         if (const auto *Variable = dyn_cast<VarDecl>(D)) {
-          if (Variable->getDeclContext() != Function || Variable->hasGlobalStorage() || !Variable->hasInit()) return false;
+          if (Variable->getDeclContext() != Function || Variable->hasGlobalStorage() || !Variable->hasInit()) return TraceDispatcherFailure(__LINE__);
           if (const auto *Record = dequeRecordType(Variable->getType()))
-            if (!Record->hasTrivialDestructor() || !dequeDependencyDeclaration(S, SM, Record)) return false;
+            if (!Record->hasTrivialDestructor() || !dequeDependencyDeclaration(S, SM, Record)) return TraceDispatcherFailure(__LINE__);
         } else if (const auto *Alias = dyn_cast<TypeAliasDecl>(D)) {
-          if (Alias->getDeclContext() != Function || !SegmentedTraits(Alias->getUnderlyingType())) return false;
-        } else if (!isa<StaticAssertDecl>(D)) return false;
+          if (Alias->getDeclContext() != Function || !SegmentedTraits(Alias->getUnderlyingType())) return TraceDispatcherFailure(__LINE__);
+        } else if (!isa<StaticAssertDecl>(D)) return TraceDispatcherFailure(__LINE__);
       }
     } else if (const auto *Reference = dyn_cast<DeclRefExpr>(Node)) {
-      if (!dequeDependencyDeclaration(S, SM, Reference->getDecl())) return false;
+      if (!dequeDependencyDeclaration(S, SM, Reference->getDecl())) return TraceDispatcherFailure(__LINE__);
     } else if (const auto *Member = dyn_cast<MemberExpr>(Node)) {
-      if (!Macro(Member->getMemberLoc()) || !dequeDependencyDeclaration(S, SM, Member->getMemberDecl())) return false;
+      if (!Macro(Member->getMemberLoc()) || !dequeDependencyDeclaration(S, SM, Member->getMemberDecl())) return TraceDispatcherFailure(__LINE__);
     } else if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Node)) {
-      if (Cleanup->cleanupsHaveSideEffects() || Cleanup->getNumObjects() || !Cleanup->getSubExpr()) return false;
+      if (Cleanup->cleanupsHaveSideEffects() || Cleanup->getNumObjects() || !Cleanup->getSubExpr()) return TraceDispatcherFailure(__LINE__);
     } else if (const auto *Cast = dyn_cast<CastExpr>(Node)) {
       if (Cast->getCastKind() == CK_BuiltinFnToFnPtr) {
         const auto *Reference = dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens());
@@ -51713,28 +51745,31 @@ bool dequeIntegerMoveDispatcher(const State &S, const SourceManager &SM,
         if (!Builtin || !Builtin->getBuiltinID() || !Cast->getType()->isFunctionPointerType() ||
             !Context.hasSameType(Cast->getType()->getPointeeType(), Builtin->getType()) ||
             !dequeDependencyDeclaration(S, SM, Builtin) ||
-            !dequeDependencyDeclaration(S, SM, Reference->getFoundDecl())) return false;
+            !dequeDependencyDeclaration(S, SM, Reference->getFoundDecl())) return TraceDispatcherFailure(__LINE__);
       } else if (Cast->getCastKind() != CK_LValueToRValue && Cast->getCastKind() != CK_NoOp &&
-          Cast->getCastKind() != CK_IntegralCast && Cast->getCastKind() != CK_FunctionToPointerDecay) return false;
+          Cast->getCastKind() != CK_IntegralCast && Cast->getCastKind() != CK_FunctionToPointerDecay) return TraceDispatcherFailure(__LINE__);
     } else if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
-      if (!dequeDependencyDeclaration(S, SM, Default->getParam()) || !Wrapper(Default->getExpr(), Depth + 1)) return false;
+      if (!dequeDependencyDeclaration(S, SM, Default->getParam()) || !Wrapper(Default->getExpr(), Depth + 1)) return TraceDispatcherFailure(__LINE__);
     } else if (const auto *Unary = dyn_cast<UnaryOperator>(Node)) {
       const auto Op = Unary->getOpcode();
-      if (Op != UO_PreInc && Op != UO_PostInc && Op != UO_PreDec && Op != UO_PostDec && Op != UO_Deref) return false;
+      if (Op != UO_PreInc && Op != UO_PostInc && Op != UO_PreDec && Op != UO_PostDec && Op != UO_Deref) return TraceDispatcherFailure(__LINE__);
     } else if (const auto *Binary = dyn_cast<BinaryOperator>(Node)) {
       const auto Op = Binary->getOpcode();
-      if (Op != BO_Assign && Op != BO_NE && Op != BO_EQ && Op != BO_Sub && Op != BO_SubAssign && Op != BO_Add) return false;
+      if (Op != BO_Assign && Op != BO_NE && Op != BO_EQ && Op != BO_Sub && Op != BO_SubAssign && Op != BO_Add) return TraceDispatcherFailure(__LINE__);
     } else if (!isa<IfStmt>(Node) && !isa<WhileStmt>(Node) && !isa<CXXBoolLiteralExpr>(Node) &&
                !isa<CompoundStmt>(Node) && !isa<ReturnStmt>(Node) && !isa<ParenExpr>(Node) &&
                !isa<MaterializeTemporaryExpr>(Node) && !isa<CXXScalarValueInitExpr>(Node) &&
-               !isa<IntegerLiteral>(Node)) return false;
-    for (const auto *Child : Node->children()) if (!Wrapper(Child, Depth + 1)) return false;
+               !isa<IntegerLiteral>(Node)) return TraceDispatcherFailure(__LINE__);
+    for (const auto *Child : Node->children()) if (!Wrapper(Child, Depth + 1)) return TraceDispatcherFailure(__LINE__);
     return true;
   };
-  if (!Wrapper(Function->getBody(), 0)) return false;
+  const bool TraceBodyProven = Wrapper(Function->getBody(), 0);
+  TraceDispatcherNodes = Nodes;
+  if (!TraceBodyProven) return TraceDispatcherFailure(__LINE__);
   // The wrapper's complete AST and every call edge were checked. Actual copy,
   // move, construction and rewrapping callees still need the original walker.
   Dependencies = std::move(Required);
+  TraceDispatcherProven = true;
   return true;
 }
 
@@ -52195,6 +52230,28 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   const FunctionDecl *ActiveFunction = nullptr;
   unsigned LocalNodes = 0;
   unsigned &Nodes = SharedNodes ? *SharedNodes : LocalNodes;
+  unsigned TraceFunctionCharges = 0, TraceStatementCharges = 0, TraceRevalidatedStatements = 0;
+  std::set<const FunctionDecl *> TraceUniqueFunctions;
+  std::set<const Stmt *> TraceUniqueStatements;
+  llvm::DenseMap<const FunctionDecl *, unsigned> TraceNodeFunctions;
+  const bool TraceCount = !PriorityRoot && RootMethod && RootMethod->getIdentifier() &&
+      (RootMethod->getName() == "insert");
+  unsigned MaxFunctionDepth = 0, MaxStatementDepth = 0;
+  std::string MaxFunctionName, MaxStatementFunction;
+  const char *MaxStatementClass = "none";
+  unsigned FirstRejectLine = 0;
+  std::string FirstRejectFunction, FirstRejectStatement, FirstRejectCallee;
+  const Stmt *TraceStatement = nullptr;
+  auto TraceReject = [&](unsigned Line) {
+    if (TraceCount && !FirstRejectLine) {
+      FirstRejectLine = Line;
+      FirstRejectFunction = ActiveFunction ? ActiveFunction->getQualifiedNameAsString() : "none";
+      FirstRejectStatement = TraceStatement ? TraceStatement->getStmtClassName() : "none";
+      if (const auto *Call = dyn_cast_or_null<CallExpr>(TraceStatement))
+        if (const auto *Callee = Call->getDirectCallee()) FirstRejectCallee = Callee->getQualifiedNameAsString();
+    }
+    return false;
+  };
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   auto PinnedMacro = [&](SourceLocation L) {
@@ -52204,6 +52261,14 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
+    if (TraceCount && F) {
+      TraceUniqueFunctions.insert(F->getCanonicalDecl());
+      if (!MemoizeStatements || !Seen.count(F->getCanonicalDecl())) ++TraceFunctionCharges;
+    }
+    if (TraceCount && Depth >= MaxFunctionDepth) {
+      MaxFunctionDepth = Depth;
+      MaxFunctionName = F ? F->getQualifiedNameAsString() : "null";
+    }
     const auto *PreviousFunction = ActiveFunction;
     ActiveFunction = F;
     auto RestoreFunction = llvm::make_scope_exit([&] { ActiveFunction = PreviousFunction; });
@@ -52211,7 +52276,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     // function's traversal. Charge that proof only once; depth and all
     // declaration/source checks below still apply to every reference.
     if (!F || F->isInvalidDecl() || Depth > 64 ||
-        ((!MemoizeStatements || !Seen.count(F->getCanonicalDecl())) && ++Nodes > 4096)) return false;
+        ((!MemoizeStatements || !Seen.count(F->getCanonicalDecl())) && ++Nodes > 4096)) return TraceReject(__LINE__);
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (dequeHeapBoundary(F, Context)) return true;
@@ -52223,33 +52288,33 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       return true;
     }
     if (F->getBuiltinID()) {
-      if (!F->getIdentifier() || F->hasBody()) return false;
+      if (!F->getIdentifier() || F->hasBody()) return TraceReject(__LINE__);
       const auto Name = F->getName();
       if (Name != "__builtin_is_constant_evaluated" &&
           Name != "__builtin_addressof" &&
           Name != "__builtin_operator_new" && Name != "__builtin_operator_delete" &&
           Name != "__builtin_expect" && Name != "__builtin_assume" &&
-          Name != "__builtin_unreachable") return false;
+          Name != "__builtin_unreachable") return TraceReject(__LINE__);
       for (const auto *D : F->redecls()) {
         if (dequeDependencyDeclaration(S, SM, D)) continue;
         if (!D->isImplicit() || D->hasBody() ||
-            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return TraceReject(__LINE__);
         if (D->getLocation().isValid()) {
           const auto File = S.sdkFile(SM, D->getLocation());
-          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return TraceReject(__LINE__);
         }
       }
       return true;
     }
     for (const auto *D : F->redecls())
-      if (!dequeDependencyDeclaration(S, SM, D)) return false;
+      if (!dequeDependencyDeclaration(S, SM, D)) return TraceReject(__LINE__);
     if (const auto *Pattern = F->getTemplateInstantiationPattern())
       for (const auto *D : Pattern->redecls())
-        if (!dequeDependencyDeclaration(S, SM, D)) return false;
+        if (!dequeDependencyDeclaration(S, SM, D)) return TraceReject(__LINE__);
     if (const auto *T = F->getPrimaryTemplate())
       for (const auto *D : T->redecls())
         if (!dequeDependencyDeclaration(S, SM, D) ||
-            !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+            !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return TraceReject(__LINE__);
     // Checked vector copies use an existing valid vector's bounded size.
     // Pointer ranges and combined sizes retain the successful, nonoverflowing
     // default-allocator precondition. Only this authenticated error boundary
@@ -52266,7 +52331,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           dequeAnnotationWrapper(S, SM, F, Context, Dependencies) ||
           dequeIteratorDistance(S, SM, F, Context, Dependencies)) {
         for (const auto *Dependency : Dependencies)
-          if (!Function(Dependency, Depth + 1)) return false;
+          if (!Function(Dependency, Depth + 1)) return TraceReject(__LINE__);
         return true;
       }
     }
@@ -52280,18 +52345,18 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       const auto *Parent = D->getParent();
       for (const auto &Base : Parent->bases()) {
         const auto *Record = dequeRecordType(Base.getType());
-        if (!Record || Base.isVirtual()) return false;
-        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return false;
+        if (!Record || Base.isVirtual()) return TraceReject(__LINE__);
+        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return TraceReject(__LINE__);
       }
       for (const auto *Field : Parent->fields()) {
         const auto *Record = dequeRecordType(Field->getType());
         if (Record && !Record->hasTrivialDestructor() &&
-            !Function(Record->getDestructor(), Depth + 1)) return false;
+            !Function(Record->getDestructor(), Depth + 1)) return TraceReject(__LINE__);
       }
     }
     if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
       for (const auto *Init : C->inits())
-        if (!Statement(Init->getInit(), Depth + 1)) return false;
+        if (!Statement(Init->getInit(), Depth + 1)) return TraceReject(__LINE__);
     if (dequeClosedPointerLess(S, SM, F, Context)) return true;
     // Exact SDK primitive and segmented copy units retain the complete walker
     // under an independent depth origin. The outer 4096-node ledger is shared,
@@ -52303,7 +52368,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       // the closed unit must traverse its own complete body before memoization.
       // Other validated dependencies remain shared; priority proofs retain
       // their original independent function set and conditional boundaries.
-      if (!PriorityRoot && Seen.erase(F->getCanonicalDecl()) != 1) return false;
+      if (!PriorityRoot && Seen.erase(F->getCanonicalDecl()) != 1) return TraceReject(__LINE__);
       return dequeSourceGraph(S, SM, F, Context, PriorityRoot, F, &Nodes,
                               PriorityRoot ? nullptr : &Seen,
                               PriorityRoot ? nullptr : &Statements,
@@ -52313,7 +52378,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       std::vector<const FunctionDecl *> Dependencies;
       if (priorityCapacityQuery(S, SM, F, Context, Dependencies)) {
         for (const auto *Dependency : Dependencies)
-          if (!Function(Dependency, Depth + 1)) return false;
+          if (!Function(Dependency, Depth + 1)) return TraceReject(__LINE__);
         return true;
       }
     }
@@ -52321,6 +52386,15 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return Body && Statement(Body, Depth + 1);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
+    if (TraceCount && Node) TraceUniqueStatements.insert(Node);
+    const auto *PreviousTraceStatement = TraceStatement;
+    TraceStatement = Node;
+    auto RestoreTraceStatement = llvm::make_scope_exit([&] { TraceStatement = PreviousTraceStatement; });
+    if (TraceCount && Depth >= MaxStatementDepth) {
+      MaxStatementDepth = Depth;
+      MaxStatementClass = Node ? Node->getStmtClassName() : "null";
+      MaxStatementFunction = ActiveFunction ? ActiveFunction->getQualifiedNameAsString() : "null";
+    }
     // A shared AST node is reusable only after its entire original proof
     // succeeded at an equal or greater depth. Keep source/macro checks on
     // every reuse and never memoize an active or rejected statement.
@@ -52336,22 +52410,26 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       // Only successful proofs enter Statements; active and rejected nodes
       // retain the ordinary charge. Depth and source checks run every time.
       const bool RevalidatedInsertNode = DequeInsert && Statements.count(Node);
+      if (TraceCount) {
+        if (RevalidatedInsertNode) ++TraceRevalidatedStatements;
+        else { ++TraceStatementCharges; ++TraceNodeFunctions[ActiveFunction]; }
+      }
       if (Depth > 64 || (!RevalidatedInsertNode && ++Nodes > 4096) || !PinnedMacro(Node->getBeginLoc()) ||
-          !PinnedMacro(Node->getEndLoc())) return false;
+          !PinnedMacro(Node->getEndLoc())) return TraceReject(__LINE__);
       if (const auto *E = dyn_cast<Expr>(Node))
-        if (!PinnedMacro(E->getExprLoc())) return false;
+        if (!PinnedMacro(E->getExprLoc())) return TraceReject(__LINE__);
       if (const auto *E = dyn_cast<MemberExpr>(Node))
-        if (!PinnedMacro(E->getMemberLoc())) return false;
+        if (!PinnedMacro(E->getMemberLoc())) return TraceReject(__LINE__);
       if (const auto *D = dyn_cast<DeclStmt>(Node))
         for (const auto *Declaration : D->decls())
-          if (!PinnedMacro(Declaration->getLocation())) return false;
+          if (!PinnedMacro(Declaration->getLocation())) return TraceReject(__LINE__);
       if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node)) {
         if (!dequeDependencyDeclaration(S, SM, Default->getField()) ||
-            !Statement(Default->getExpr(), Depth + 1)) return false;
+            !Statement(Default->getExpr(), Depth + 1)) return TraceReject(__LINE__);
       }
       if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
         if (!dequeDependencyDeclaration(S, SM, Default->getParam()) ||
-            !Statement(Default->getExpr(), Depth + 1)) return false;
+            !Statement(Default->getExpr(), Depth + 1)) return TraceReject(__LINE__);
       }
       if (const auto *Call = dyn_cast<CallExpr>(Node)) {
         // The exact SDK pointer-comparison query has a closed, separately bounded
@@ -52360,7 +52438,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           std::vector<const FunctionDecl *> Dependencies;
           if (priorityRelocationTransfer(S, SM, Call, Context, Dependencies)) {
             for (const auto *Dependency : Dependencies)
-              if (!Function(Dependency, Depth + 1)) return false;
+              if (!Function(Dependency, Depth + 1)) return TraceReject(__LINE__);
             return true;
           }
         }
@@ -52368,20 +52446,20 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
         if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
         if (!dequeScalarDestruction(S, SM, Call, Context) &&
             !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
-            !Function(Call->getDirectCallee(), Depth + 1)) return false;
+            !Function(Call->getDirectCallee(), Depth + 1)) return TraceReject(__LINE__);
       }
       if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
         // This exact empty SDK functor has no arguments, initializers or state;
         // its complete construction proof is a separately authenticated leaf.
         if (dequeClosedLessConstruction(S, SM, C, Context)) return true;
-        if (!Function(C->getConstructor(), Depth + 1)) return false;
+        if (!Function(C->getConstructor(), Depth + 1)) return TraceReject(__LINE__);
       }
       if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
         if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
              !Context.hasSameType(N->getAllocatedType(), Context.getPointerType(Context.IntTy))) ||
             N->getNumPlacementArgs() != 1 ||
-            !Function(N->getOperatorNew(), Depth + 1)) return false;
-        if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+            !Function(N->getOperatorNew(), Depth + 1)) return TraceReject(__LINE__);
+        if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return TraceReject(__LINE__);
       }
       if (DequeAllocatorConstruction &&
           *DequeAllocatorConstruction == UtilityDequeConstruction::MoveAllocator) {
@@ -52390,7 +52468,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           // Only the exact pinned allocator<int>/allocator<int*> comparison
           // returns the literal true. Prove every condition effect and the
           // complete reachable branch with the original shared ledger.
-          if (!Statement(Branch->getCond(), Depth + 1)) return false;
+          if (!Statement(Branch->getCond(), Depth + 1)) return TraceReject(__LINE__);
           return Statement(Branch->getThen(), Depth + 1);
         }
       }
@@ -52401,26 +52479,50 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           // query returns the compiler builtin and has no other effects.
           // Keep its full ordinary proof and the entire runtime else branch;
           // only the constant-evaluation-only then branch is unreachable.
-          if (!Statement(Branch->getCond(), Depth + 1)) return false;
+          if (!Statement(Branch->getCond(), Depth + 1)) return TraceReject(__LINE__);
           return Statement(Branch->getElse(), Depth + 1);
         }
       }
       for (const auto *Child : Node->children())
-        if (!Statement(Child, Depth + 1)) return false;
+        if (!Statement(Child, Depth + 1)) return TraceReject(__LINE__);
       return true;
     };
-    if (!Prove()) return false;
+    if (!Prove()) return TraceReject(__LINE__);
     if (MemoizeStatements && Node) {
       auto &ProvenDepth = Statements[Node];
       if (Depth > ProvenDepth) ProvenDepth = Depth;
     }
     return true;
   };
-  return Root && (ClosedCopyRoot ? Root == ClosedCopyRoot &&
+  const bool Proven = Root && (ClosedCopyRoot ? Root == ClosedCopyRoot &&
       (PriorityRoot ? priorityIntCopySubgraph(S, SM, Root, Context)
                     : (dequeValueCopySubgraph(S, SM, Root, Context) || dequeMapAddressSubgraph(S, SM, Root, Context)))
                               : PriorityRoot ? priorityQueueFunctionDeclarations(S, SM, Root)
                                              : dequeFunctionDeclarations(S, SM, Root)) && Function(Root, 0);
+  if (TraceCount)
+    std::fprintf(stderr, "NCT_INSERT_GRAPH result=%d root=%s nodes=%u function_depth=%u statement_depth=%u function=%s statement_function=%s statement=%s\n",
+        Proven ? 1 : 0, Root->getQualifiedNameAsString().c_str(), Nodes,
+        MaxFunctionDepth, MaxStatementDepth, MaxFunctionName.c_str(),
+        MaxStatementFunction.c_str(), MaxStatementClass);
+  if (TraceCount && !Proven)
+    std::fprintf(stderr, "NCT_INSERT_REJECT line=%u function=%s statement=%s callee=%s\n",
+        FirstRejectLine, FirstRejectFunction.c_str(), FirstRejectStatement.c_str(), FirstRejectCallee.c_str());
+  if (TraceCount)
+    std::fprintf(stderr, "NCT_INSERT_LEDGER function_charges=%u statement_charges=%u deeper_revalidations=%u unique_functions=%zu unique_statements=%zu completed_functions=%zu completed_statements=%zu queries=%zu\n",
+        TraceFunctionCharges, TraceStatementCharges, TraceRevalidatedStatements,
+        TraceUniqueFunctions.size(), TraceUniqueStatements.size(), Seen.size(), Statements.size(), Queries.size());
+  if (TraceCount) {
+    std::vector<std::pair<unsigned, std::string>> TraceCosts;
+    for (const auto &Item : TraceNodeFunctions)
+      TraceCosts.emplace_back(Item.second, Item.first ? Item.first->getQualifiedNameAsString() : "none");
+    std::sort(TraceCosts.begin(), TraceCosts.end(), [](const auto &A, const auto &B) { return A.first > B.first; });
+    unsigned Printed = 0;
+    for (const auto &Item : TraceCosts) {
+      if (++Printed > 12) break;
+      std::fprintf(stderr, "NCT_INSERT_NODE_OWNER nodes=%u function=%s\n", Item.first, Item.second.c_str());
+    }
+  }
+  return Proven;
 }
 }
 
@@ -52476,8 +52578,20 @@ std::optional<UtilityDequeCall> approvedUtilityDequeCall(
   }
   const auto *Method = dyn_cast<CXXMethodDecl>(Function);
   const auto Operation = dequeMethodSignature(S, SM, Method, Context);
-  if (!Operation || !Method || !dequeReceiverRecord(S, SM, Method->getParent(), Context) ||
-      !dequeSourceGraph(S, SM, Method, Context)) return std::nullopt;
+  const bool TraceInsertCall = Method && Method->getIdentifier() &&
+      Method->getName() == "insert" && Method->getParent()->getName() == "deque";
+  bool TraceReceiverValid = false, TraceGraphValid = false, TraceOperandsValid = false;
+  auto TraceInsertResult = llvm::make_scope_exit([&] {
+    if (TraceInsertCall)
+      std::fprintf(stderr, "NCT_INSERT_CALL operation=%u receiver=%d graph=%d operands=%d return=%s first=%s second=%s\n",
+          Operation ? static_cast<unsigned>(*Operation) : 999u, TraceReceiverValid ? 1 : 0,
+          TraceGraphValid ? 1 : 0, TraceOperandsValid ? 1 : 0,
+          Method->getReturnType().getAsString().c_str(),
+          Method->getNumParams() ? Method->getParamDecl(0)->getType().getAsString().c_str() : "none",
+          Method->getNumParams() > 1 ? Method->getParamDecl(1)->getType().getAsString().c_str() : "none");
+  });
+  if (!Operation || !Method || !(TraceReceiverValid = dequeReceiverRecord(S, SM, Method->getParent(), Context)) ||
+      !(TraceGraphValid = dequeSourceGraph(S, SM, Method, Context))) return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
   if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
@@ -52490,7 +52604,7 @@ std::optional<UtilityDequeCall> approvedUtilityDequeCall(
     Receiver = Operator->getArg(0);
     Offset = 1;
   }
-  if (!Receiver || !dequeOperandTypes(Call, Function, Offset, Context)) return std::nullopt;
+  if (!Receiver || !(TraceOperandsValid = dequeOperandTypes(Call, Function, Offset, Context))) return std::nullopt;
   const auto ObjectType = Receiver->getType()->isPointerType() ? Receiver->getType()->getPointeeType() : Receiver->getType();
   if (ObjectType.isVolatileQualified() ||
       !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent()))) return std::nullopt;
