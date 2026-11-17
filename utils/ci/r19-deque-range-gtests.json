@@ -1,0 +1,205 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-range-mutable-construction",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeMutableConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d07b11ae032e359cd2fd7aeb31403777059200c0fc93ac3e08bf22026816ab42",
+      "original_case_source_sha256": "d07b11ae032e359cd2fd7aeb31403777059200c0fc93ac3e08bf22026816ab42",
+      "gtest_body_sha256": "0d5c312aff011f2ba656e37696675b236ef0730299b96fa5a50118ec16bc847c"
+    },
+    {
+      "name": "deque-range-const-construction",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeConstConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "971730744ac6e51c48ec8e77bc5d7d590fbaf353bde22856e808791ade1e92ca",
+      "original_case_source_sha256": "971730744ac6e51c48ec8e77bc5d7d590fbaf353bde22856e808791ade1e92ca",
+      "gtest_body_sha256": "1bffedfeea25779728b79c73d12b1495aeba4c3a988cb734c5dc5bb64a04a4ea"
+    },
+    {
+      "name": "deque-range-assign-grow",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeAssignmentGrowRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "87fe4dfb0d92a47066bbeccabfe14962c487a28e5254d98315294bd6ba96d06f",
+      "original_case_source_sha256": "87fe4dfb0d92a47066bbeccabfe14962c487a28e5254d98315294bd6ba96d06f",
+      "gtest_body_sha256": "95ceededc613500bcc6144cd0d97c42e1657a20885e8ab1d88c56fda64cc8f5e"
+    },
+    {
+      "name": "deque-range-assign-shrink",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeAssignmentShrinkRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3ea66fc58afef24750fe5ac272d577ac7685ce279db800dcda306f7a0909c12d",
+      "original_case_source_sha256": "3ea66fc58afef24750fe5ac272d577ac7685ce279db800dcda306f7a0909c12d",
+      "gtest_body_sha256": "404ae076816bd683578993190e732645edb9a7b87f8687ebb5ca9e34f620ec7a"
+    },
+    {
+      "name": "deque-range-const-assignment",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeConstAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "da5352be289f22af941511ebfed17ad581dc80c795babefd78f65b07570c1bee",
+      "original_case_source_sha256": "da5352be289f22af941511ebfed17ad581dc80c795babefd78f65b07570c1bee",
+      "gtest_body_sha256": "d529f41cf0cdbe47dfcc44a1544286062054bb1d28f97d4da60669be28439d3b"
+    },
+    {
+      "name": "deque-range-call-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeCallSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8b1f18dc0ffeea2f6950a65adc4c14b72e087a9777875826070bc0855ddc112b",
+      "original_case_source_sha256": "8b1f18dc0ffeea2f6950a65adc4c14b72e087a9777875826070bc0855ddc112b",
+      "gtest_body_sha256": "ac526e3777aad74392d572e7ed53f102c31defe3642baf52fec46866093df6ee"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "deque-range-mutable-constructor-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeMutableConstructorOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "7a6e088310b2ce08033a9ab2a5c67470c8ec078a15fe91e2adca00da232268e6",
+      "original_case_source_sha256": "7a6e088310b2ce08033a9ab2a5c67470c8ec078a15fe91e2adca00da232268e6",
+      "gtest_body_sha256": "2ab84c3dace2c5af24140d40ffb79de16f0855330a63e73511c92661fab1c712"
+    },
+    {
+      "name": "deque-range-mutable-assign-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeMutableAssignmentOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "7c44e7f3e8b37cb693d1c51264a0b72dff51b0b4306c63b3cb99dd3e5f99fdb2",
+      "original_case_source_sha256": "7c44e7f3e8b37cb693d1c51264a0b72dff51b0b4306c63b3cb99dd3e5f99fdb2",
+      "gtest_body_sha256": "c89eeb40e5144824ee18e3893f2571e6699c2fcc24a84ddd4b808b3b267a9e87"
+    },
+    {
+      "name": "deque-range-const-constructor-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeConstConstructorOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "fc2e45b7ebb3986b6950cab8716ecb8533ad7c74de455be32392aefaccd32ac9",
+      "original_case_source_sha256": "fc2e45b7ebb3986b6950cab8716ecb8533ad7c74de455be32392aefaccd32ac9",
+      "gtest_body_sha256": "29f72014e018255cddb947baaf62db8a89b60ee04b4f8d10a673edf6db784fda"
+    },
+    {
+      "name": "deque-range-const-assign-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeConstAssignmentOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "1d8a79c1306f0724914438dcbe24d26c564fb945767214e4fddc63c6a224de91",
+      "original_case_source_sha256": "1d8a79c1306f0724914438dcbe24d26c564fb945767214e4fddc63c6a224de91",
+      "gtest_body_sha256": "661242b2beaf64e7d15b71f671eceda4f3adb9831ea476a056cb117d08b39554"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeRangeMutableConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeConstConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeAssignmentGrowRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeAssignmentShrinkRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeConstAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeCallSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeMutableConstructorOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeRangeMutableAssignmentOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeRangeConstConstructorOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeRangeConstAssignmentOwnedBodyRejected"
+  ],
+  "native_reference_authentication_sha256": "86f9d63182e0f7ed858c8bd5f9ea7ccd5caef3a255007d2fa399829fdc5d9f00",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "8e59c90635b513a5a5e01e5beed95562546a7130fe2791e72147705759dc7ab8",
+  "maintained_original_sha256": "1986f8a1b8783949442396a0e757c52d73af54ca7d425014375598d6501a19a4",
+  "previous_registered_source_sha256": "d79764eca772b991bfc2830db11925635359cb7a24cd7be5abfbd59000ed93e8",
+  "previous_maintained_original_sha256": "46331fdc4f910d1edb51e9a6801151cb8339a60885f4b346500310858e38c56b",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7662,
+  "current_python_registry_tests": 80,
+  "previous7652_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "23290dd134b4d6518db8c512172b885c91d35c5095d3a66b4f02ac68e19efc28",
+  "extractor_sha256": "de438c14ba5034b2324983791b862edecbca16993ce102663b07724be09ee106",
+  "source_cases": [
+    {
+      "name": "deque-range-mutable-construction",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\nint main(){\nint values[3074];for(unsigned i=0;i!=3074;++i)values[i]=(int)i-17;\nunsigned counts[7]={0,1,1023,1024,1025,2049,3073};\nfor(unsigned t=0;t!=7;++t){unsigned n=counts[t];std::deque<int> a(values,values+n);\nif(a.size()!=n)return 1;for(unsigned i=0;i!=n;++i)if(a[i]!=values[i])return 2;\nif(n){int old=a.front();values[0]=999;if(a.front()!=old)return 3;values[0]=-17;\nint* saved=&a.front();a.push_back(23);if(&a.front()!=saved||a.back()!=23)return 4;}}\nreturn 0;}\n",
+      "source_sha256": "d07b11ae032e359cd2fd7aeb31403777059200c0fc93ac3e08bf22026816ab42",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-const-construction",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\nstatic int armed,calls;static int data[2050];\nstatic const int* first;static const int* last;\nvoid* operator new(Size n){void* p=malloc(n);if(armed){++calls;first=data+10;last=data+11;\nfor(unsigned i=0;i!=2050;++i)data[i]=40+(int)i;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint main(){for(unsigned i=0;i!=2050;++i)data[i]=(int)i;first=data;last=data+2050;\narmed=1;std::deque<int> a(first,last);armed=0;\nif(a.size()!=2050||calls!=4||first!=data+10||last!=data+11)return 1;\nfor(unsigned i=0;i!=2050;++i)if(a[i]!=40+(int)i)return 2;\nconst int* b=data+7;std::deque<int> empty(b,b);if(!empty.empty())return 3;\nreturn 0;}\n",
+      "source_sha256": "971730744ac6e51c48ec8e77bc5d7d590fbaf353bde22856e808791ade1e92ca",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-assign-grow",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\nstatic std::deque<int>* owner;static int values[2050];\nstatic int armed,calls,bad;\nvoid* operator new(Size n){void* p=malloc(n);if(armed){\nif(owner->size()!=1||owner->front()!=7)bad=1;++calls;\nfor(unsigned i=1;i!=2050;++i)values[i]=70+(int)i;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint main(){for(unsigned i=0;i!=2050;++i)values[i]=7+(int)i;\nstd::deque<int> a;a.push_back(5);int* saved=&a.front();owner=&a;armed=1;\na.assign(values,values+2050);armed=0;\nif(bad||!calls||a.size()!=2050||a.front()!=7||&a.front()!=saved)return 1;\nfor(unsigned i=1;i!=2050;++i)if(a[i]!=70+(int)i)return 2;\nreturn 0;}\n",
+      "source_sha256": "87fe4dfb0d92a47066bbeccabfe14962c487a28e5254d98315294bd6ba96d06f",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-assign-shrink",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\nstatic std::deque<int>* owner;static void* blocks[8];\nstatic int collect,armed,count,releases,bad,order[8];\nvoid* operator new(Size n){void* p=malloc(n);if(collect&&n==4096){if(count<8)blocks[count]=p;++count;}return p;}\nvoid release(void* p){if(armed)for(int i=0;i!=count&&i<8;++i)if(p==blocks[i]){\nif(releases<8)order[releases]=i;++releases;\nif(owner->size()!=1||owner->front()!=99)bad=1;}free(p);}\nvoid operator delete(void* p) noexcept {release(p);}void operator delete(void* p,Size) noexcept {release(p);}\nint main(){collect=1;std::deque<int> a(4100,7);collect=0;if(count!=5)return 1;\nconst int values[2]={99,100};int* saved=&a.front();owner=&a;armed=1;\na.assign(values,values+1);armed=0;\nif(bad||a.size()!=1||a.front()!=99||&a.front()!=saved||releases!=3)return 2;\nfor(int i=0;i!=3;++i)if(order[i]!=4-i)return 3;\na.assign(values,values);return !a.empty();}\n",
+      "source_sha256": "3ea66fc58afef24750fe5ac272d577ac7685ce279db800dcda306f7a0909c12d",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-const-assignment",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\nint main(){int storage[3075];\nfor(unsigned i=0;i!=3075;++i)storage[i]=3*(int)i-40;const int* values=storage;\nstd::deque<int> a;unsigned counts[8]={0,1,1023,1024,2049,3073,1025,0};\nfor(unsigned t=0;t!=8;++t){unsigned n=counts[t];a.assign(values+1,values+1+n);\nif(a.size()!=n)return 1;for(unsigned i=0;i!=n;++i)if(a[i]!=storage[i+1])return 2;}\na.assign(values+4,values+9);int* saved=&a.front();a.assign(values+5,values+10);\nif(&a.front()!=saved||a.size()!=5||a.front()!=storage[5]||a.back()!=storage[9])return 3;\nreturn 0;}\n",
+      "source_sha256": "da5352be289f22af941511ebfed17ad581dc80c795babefd78f65b07570c1bee",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-call-sequencing",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\nstatic std::deque<int>* owner;\nstatic int values[3]={4,5,6};static int receivers,firsts,lasts,bad;\nstd::deque<int>& receiver(){++receivers;return *owner;}\nint* begin_argument(){++firsts;if(receivers!=1)bad=1;return values;}\nint* end_argument(){++lasts;if(receivers!=1)bad=1;return values+3;}\nconst int* empty_begin(){++firsts;return values+1;}\nconst int* empty_end(){++lasts;return values+1;}\nint main(){std::deque<int> target;owner=&target;receiver().assign(begin_argument(),end_argument());\nif(bad||receivers!=1||firsts!=1||lasts!=1||owner->size()!=3||owner->front()!=4||owner->back()!=6)return 1;\nstd::deque<int> empty(empty_begin(),empty_end());\nif(firsts!=2||lasts!=2||!empty.empty())return 2;\nowner->assign(values,values);return !owner->empty();}\n",
+      "source_sha256": "8b1f18dc0ffeea2f6950a65adc4c14b72e087a9777875826070bc0855ddc112b",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-mutable-constructor-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> template<> deque<int>::deque(int* first,int* last) : deque() {}\n}}\nint main(){int values[3]={1,2,3};int* first=values;\nstd::deque<int> a(first,first+3);return a.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "7a6e088310b2ce08033a9ab2a5c67470c8ec078a15fe91e2adca00da232268e6"
+    },
+    {
+      "name": "deque-range-mutable-assign-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> template<> void deque<int>::assign<int*,0>(int* first,int* last) {}\n}}\nint main(){int values[3]={1,2,3};int* first=values;\nstd::deque<int> a;a.assign(first,first+3);return a.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "7c44e7f3e8b37cb693d1c51264a0b72dff51b0b4306c63b3cb99dd3e5f99fdb2"
+    },
+    {
+      "name": "deque-range-const-constructor-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> template<> deque<int>::deque(const int* first,const int* last) : deque() {}\n}}\nint main(){int values[3]={1,2,3};const int* first=values;\nstd::deque<int> a(first,first+3);return a.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "fc2e45b7ebb3986b6950cab8716ecb8533ad7c74de455be32392aefaccd32ac9"
+    },
+    {
+      "name": "deque-range-const-assign-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> template<> void deque<int>::assign<const int*,0>(const int* first,const int* last) {}\n}}\nint main(){int values[3]={1,2,3};const int* first=values;\nstd::deque<int> a;a.assign(first,first+3);return a.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "1d8a79c1306f0724914438dcbe24d26c564fb945767214e4fddc63c6a224de91"
+    }
+  ],
+  "source48_authentication_sha256": "1990ea9f1a31c489763c3a44bff995f65441084ad185bdb83899d6c79c274298",
+  "source48_compiler_source": "5d92114c4002718abf3d6ff1d7e633003722c1b2"
+}
