@@ -51677,8 +51677,17 @@ bool dequeIntegerMapEmplacement(const State &S, const SourceManager &SM,
         !Macro(Value->getEndLoc()) || !Macro(Value->getExprLoc())) return false;
     if (const auto *Paren = dyn_cast<ParenExpr>(Value)) return Reference(Paren->getSubExpr(), Expected, Depth + 1, Nodes);
     if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Value)) {
-      if (Cast->getCastKind() != CK_FunctionToPointerDecay && Cast->getCastKind() != CK_NoOp &&
-          Cast->getCastKind() != CK_LValueToRValue) return false;
+      if (Cast->getCastKind() == CK_BuiltinFnToFnPtr) {
+        if (!Expected || !Expected->getIdentifier() || Expected->getName() != "forward" ||
+            !dequeStd(Expected->getDeclContext()) || Expected->getNumParams() != 1 ||
+            !dequePinned(S, SM, Expected, "__utility/forward.h")) return false;
+        const auto Parameter = Expected->getParamDecl(0)->getType();
+        const auto Return = Expected->getReturnType();
+        if (!Parameter->isReferenceType() || !Return->isReferenceType() ||
+            !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), Pointer) ||
+            !Context.hasSameUnqualifiedType(Return->getPointeeType(), Pointer)) return false;
+      } else if (Cast->getCastKind() != CK_FunctionToPointerDecay && Cast->getCastKind() != CK_NoOp &&
+                 Cast->getCastKind() != CK_LValueToRValue) return false;
       return Reference(Cast->getSubExpr(), Expected, Depth + 1, Nodes);
     }
     if (const auto *Name = dyn_cast<DeclRefExpr>(Value)) {
