@@ -52163,7 +52163,12 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     }
     auto Prove = [&]() -> bool {
       if (!Node) return true;
-      if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
+      // A deeper insertion path must reprove the complete statement, but
+      // its already completed AST node belongs to the same bounded graph.
+      // Only successful proofs enter Statements; active and rejected nodes
+      // retain the ordinary charge. Depth and source checks run every time.
+      const bool RevalidatedInsertNode = DequeInsert && Statements.count(Node);
+      if (Depth > 64 || (!RevalidatedInsertNode && ++Nodes > 4096) || !PinnedMacro(Node->getBeginLoc()) ||
           !PinnedMacro(Node->getEndLoc())) return false;
       if (const auto *E = dyn_cast<Expr>(Node))
         if (!PinnedMacro(E->getExprLoc())) return false;
