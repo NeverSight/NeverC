@@ -51851,6 +51851,73 @@ bool dequeIteratorDistance(const State &S, const SourceManager &SM,
   return true;
 }
 
+bool dequeDefaultAllocatorMoveBranch(const State &S, const SourceManager &SM,
+    const IfStmt *Branch, const FunctionDecl *Owner, const ASTContext &Context) {
+  const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Owner);
+  if (!Branch || !Constructor || Branch->getInit() || Branch->getConditionVariable() ||
+      Branch->isConstexpr() || !Branch->getThen() || !Branch->getElse() ||
+      Branch->getIfLoc().isMacroID() || Constructor->isInvalidDecl() || Constructor->isDeleted() ||
+      Constructor->isVariadic() || Constructor->getNumParams() != 2 ||
+      !dequeFunctionDeclarations(S, SM, Constructor)) return false;
+  const bool IsDeque = approvedUtilityDequeRecord(S, SM, Constructor->getParent(), Context).has_value();
+  const auto Map = IsDeque ? std::nullopt : dequeMap(S, SM, Constructor->getParent(), Context);
+  if (!IsDeque && !Map) return false;
+  const auto Element = IsDeque ? Context.IntTy : Context.getPointerType(Context.IntTy);
+  const auto Record = Context.getRecordType(Constructor->getParent());
+  if (!Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getRValueReferenceType(Record)) ||
+      Constructor->getParamDecl(0)->hasDefaultArg() || Constructor->getParamDecl(1)->hasDefaultArg() ||
+      SM.getExpansionLineNumber(Branch->getIfLoc()) != (IsDeque ? 1368u : 358u) ||
+      !cstddefOrigin(S, SM, Branch->getIfLoc(), "libcxx", IsDeque ? "deque" : "__split_buffer")) return false;
+  const auto AllocatorReference = Constructor->getParamDecl(1)->getType();
+  if (!AllocatorReference->isLValueReferenceType() ||
+      !AllocatorReference->getPointeeType().isConstQualified() ||
+      AllocatorReference->getPointeeType().isVolatileQualified()) return false;
+  const auto AllocatorType = AllocatorReference->getPointeeType().getUnqualifiedType();
+  const auto *AllocatorDecl = dequeSpecialization(S, SM, dequeRecordType(AllocatorType),
+      "allocator", "__memory/allocator.h");
+  const auto Allocator = approvedUtilityAllocatorRecord(S, SM, AllocatorDecl, Context);
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Element) ||
+      !Context.hasSameType(AllocatorType, Context.getRecordType(Allocator->Record))) return false;
+  const auto *Call = dyn_cast_or_null<CXXOperatorCallExpr>(Branch->getCond()->IgnoreParenImpCasts());
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Call || Call->getOperator() != OO_EqualEqual || Call->getNumArgs() != 2 ||
+      !Function || isa<CXXMethodDecl>(Function) || !Function->isOverloadedOperator() ||
+      Function->getOverloadedOperator() != OO_EqualEqual || !dequeStd(Function->getDeclContext()) ||
+      Function->isInvalidDecl() || Function->isDeleted() || Function->isVariadic() ||
+      Function->getNumParams() != 2 || !Context.hasSameType(Function->getReturnType(), Context.BoolTy) ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+  const auto *Primary = Function->getPrimaryTemplate();
+  const auto *Pattern = Function->getTemplateInstantiationPattern();
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  if (!Primary || !Pattern || !Arguments || Primary->getTemplateParameters()->size() != 2 ||
+      Arguments->size() != 2) return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(I));
+    if (!Parameter || Parameter->isParameterPack() || Parameter->hasDefaultArgument() ||
+        Arguments->get(I).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(I).getAsType(), Element) ||
+        Function->getParamDecl(I)->hasDefaultArg() ||
+        !Context.hasSameType(Function->getParamDecl(I)->getType(), AllocatorReference) ||
+        !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(), AllocatorType)) return false;
+  }
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D) {
+    return ++Declarations <= 64 && dequePinned(S, SM, D, "__memory/allocator.h");
+  };
+  for (const auto *D : Function->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : Primary->redecls())
+    if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
+  const auto *Value = Return && Return->getRetValue()
+      ? dyn_cast<CXXBoolLiteralExpr>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  return Value && Value->getValue() &&
+      !Body->getBeginLoc().isMacroID() && !Body->getEndLoc().isMacroID() &&
+      !Return->getBeginLoc().isMacroID() && !Value->getExprLoc().isMacroID() &&
+      cstddefOrigin(S, SM, Value->getExprLoc(), "libcxx", "__memory/allocator.h");
+}
+
 bool dequeSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context, bool PriorityRoot = false,
                          const FunctionDecl *ClosedCopyRoot = nullptr, unsigned *SharedNodes = nullptr,
@@ -52094,6 +52161,17 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
             N->getNumPlacementArgs() != 1 ||
             !Function(N->getOperatorNew(), Depth + 1)) return false;
         if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+      }
+      if (DequeAllocatorConstruction &&
+          *DequeAllocatorConstruction == UtilityDequeConstruction::MoveAllocator) {
+        const auto *Branch = dyn_cast<IfStmt>(Node);
+        if (dequeDefaultAllocatorMoveBranch(S, SM, Branch, ActiveFunction, Context)) {
+          // Only the exact pinned allocator<int>/allocator<int*> comparison
+          // returns the literal true. Prove every condition effect and the
+          // complete reachable branch with the original shared ledger.
+          if (!Statement(Branch->getCond(), Depth + 1)) return false;
+          return Statement(Branch->getThen(), Depth + 1);
+        }
       }
       if (ClosedCopyProof || DequePointerAssign) {
         const auto *Branch = dyn_cast<IfStmt>(Node);
