@@ -47506,6 +47506,104 @@ bool valarrayScalarEndDestruction(const State &S, const SourceManager &SM,
          isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts());
 }
 
+bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
+    const FunctionDecl *F, const ASTContext &Context) {
+  if (!F || !F->getBuiltinID() || F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
+      isa<CXXMethodDecl>(F) || !F->getIdentifier() || F->getNumParams() != 1 ||
+      F->getParamDecl(0)->hasDefaultArg() || !valarrayStandardNamespace(F->getDeclContext()) ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+  const bool Move = F->getName() == "move";
+  const bool Address = F->getName() == "addressof";
+  if (!Move && !Address) return false;
+  const char *Header = Move ? "__utility/move.h" : "__memory/addressof.h";
+  auto Pinned = [&](const Decl *D) {
+    const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+    return File && File->Root == "libcxx" && File->Path == Header && valarrayDependencyDeclaration(S, SM, D);
+  };
+  const auto *Primary = F->getPrimaryTemplate();
+  const auto *Arguments = F->getTemplateSpecializationArgs();
+  if (!Primary || Primary->getTemplateParameters()->size() != 1 || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type) return false;
+  const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
+  if (!Parameter || Parameter->isParameterPack() || !Pinned(Parameter)) return false;
+  const auto Deduced = Arguments->get(0).getAsType();
+  const auto Element = Deduced.getNonReferenceType();
+  if (Element.isVolatileQualified()) return false;
+  const auto Argument = F->getParamDecl(0)->getType();
+  if (Move) {
+    if (!Context.hasSameUnqualifiedType(Element, Context.getPointerType(Context.IntTy)) &&
+        !Context.hasSameUnqualifiedType(Element, Context.getPointerType(Context.IntTy.withConst()))) return false;
+    const auto Expected = Deduced->isReferenceType() ? Deduced : Context.getRValueReferenceType(Deduced);
+    if (!Context.hasSameType(Argument, Expected) ||
+        !Context.hasSameType(F->getReturnType(), Context.getRValueReferenceType(Element))) return false;
+  } else {
+    const auto Owner = approvedUtilityValarrayRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
+    if (Deduced->isReferenceType() || !Owner ||
+        !Context.hasSameUnqualifiedType(Element, Context.getRecordType(Owner->Record)) ||
+        !Context.hasSameType(Argument, Context.getLValueReferenceType(Element)) ||
+        !Context.hasSameType(F->getReturnType(), Context.getPointerType(Element))) return false;
+  }
+  for (const auto *D : F->redecls()) if (!Pinned(D)) return false;
+  if (!Pinned(F->getParamDecl(0))) return false;
+  for (const auto *D : Primary->redecls())
+    if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+  const auto *Pattern = F->getTemplateInstantiationPattern();
+  if (!Pattern) Pattern = Primary->getTemplatedDecl();
+  if (!Pattern || Pattern->getNumParams() != 1 || !Pinned(Pattern->getParamDecl(0))) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Pattern->getBody());
+  if (!Body || Body->size() != (Move ? 2U : 1U)) return false;
+  auto ParameterReference = [&](const Expr *Value) {
+    const auto *Name = Value ? dyn_cast<DeclRefExpr>(Value->IgnoreParenImpCasts()) : nullptr;
+    return Name && Name->getDecl()->getCanonicalDecl() == Pattern->getParamDecl(0)->getCanonicalDecl();
+  };
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  if (!Return || !Return->getRetValue()) return false;
+  if (Move) {
+    const auto *Declaration = dyn_cast<DeclStmt>(Body->body_front());
+    const auto *Alias = Declaration && Declaration->isSingleDecl()
+        ? dyn_cast<TypeAliasDecl>(Declaration->getSingleDecl()) : nullptr;
+    const auto *Cast = dyn_cast<CXXStaticCastExpr>(Return->getRetValue()->IgnoreParens());
+    if (!Alias || !Pinned(Alias) || !Cast ||
+        (Cast->getCastKind() != CK_NoOp && (Cast->getCastKind() != CK_Dependent ||
+            !Pattern->isDependentContext() || !Alias->getUnderlyingType()->isDependentType())) ||
+        !Cast->getTypeAsWritten()->isRValueReferenceType() || !ParameterReference(Cast->getSubExpr())) return false;
+    const auto *AliasType = Cast->getTypeAsWritten()->getPointeeType()->getAs<TypedefType>();
+    if (!AliasType || AliasType->getDecl()->getCanonicalDecl() != Alias->getCanonicalDecl()) return false;
+  } else {
+    const auto *Call = dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts());
+    const auto *Builtin = Call ? Call->getDirectCallee() : nullptr;
+    if (!Builtin || !Builtin->getBuiltinID() || Builtin->hasBody() || !Builtin->getIdentifier() ||
+        Builtin->getName() != "__builtin_addressof" || Call->getNumArgs() != 1 ||
+        !Builtin->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+        !ParameterReference(Call->getArg(0))) return false;
+    for (const auto *D : Builtin->redecls()) {
+      if (valarrayDependencyDeclaration(S, SM, D)) continue;
+      if (!D->isImplicit() || D->hasBody() || !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+      if (D->getLocation().isValid()) {
+        const auto File = S.sdkFile(SM, D->getLocation());
+        if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+      }
+    }
+  }
+  auto Location = [&](SourceLocation L) {
+    if (!L.isValid()) return false;
+    const auto File = S.sdkFile(SM, SM.getSpellingLoc(L));
+    return File && (L.isMacroID() ? (File->Root == "libcxx" || File->Root == "resource")
+        : File->Root == "libcxx" && File->Path == Header);
+  };
+  unsigned Nodes = 0;
+  std::function<bool(const Stmt *, unsigned)> PureSource;
+  PureSource = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node) return true;
+    if (Depth > 8 || ++Nodes > 32 || !Location(Node->getBeginLoc()) || !Location(Node->getEndLoc())) return false;
+    if (const auto *Value = dyn_cast<Expr>(Node)) if (!Location(Value->getExprLoc())) return false;
+    for (const auto *Child : Node->children()) if (!PureSource(Child, Depth + 1)) return false;
+    return true;
+  };
+  return PureSource(Body, 0);
+}
+
 bool valarraySourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context) {
   std::set<const FunctionDecl *> Seen;
@@ -47523,6 +47621,7 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (valarrayHeapBoundary(F, Context)) return true;
+    if (valarrayBuiltinUtility(S, SM, F, Context)) return true;
     if (F->getBuiltinID()) {
       if (!F->getIdentifier() || F->hasBody()) return false;
       const auto Name = F->getName();
