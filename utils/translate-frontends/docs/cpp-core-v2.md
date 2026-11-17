@@ -17549,6 +17549,15 @@ denotes the first surviving element after the erased range, or `end()`. Empty
 ranges leave storage unchanged, including an empty default container. Receiver
 and iterator arguments are evaluated once with ordinary member-call sequencing.
 
+The same specialization admits `insert(const_iterator, const int&)` and
+`insert(const_iterator, int&&)` at valid same-container positions from `cbegin()`
+through `cend()`. The lowering preserves the pinned SDK's shorter-side choice,
+segmented capacity growth and mutable iterator result. Required allocation
+callbacks run before the argument value is read. The const-reference overload
+preserves an aliased source through integer shifts; the rvalue overload retains
+its reference until the selected store. Receiver and argument expressions are
+evaluated once with ordinary member-call sequencing.
+
 Each family has ten permanent GTests: six exact native-reference programs that
 generate and execute C23 at O0 and O2, and four source-origin rejection tests.
 Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
@@ -17600,6 +17609,12 @@ multi-block front and back ranges, returned iterators, retained addresses,
 deallocation callbacks, empty ranges, whole-container erasure, reuse and argument
 sequencing. Four source-origin guards reject replaced single and range bodies,
 including forwarding replacements.
+A separate single-insert family has ten registered GTests and twelve generated
+C23 executions at O0 and O2 against exact native programs. It covers front,
+middle and back insertion, returned iterators, multi-block growth, integer
+aliases, allocation callbacks, empty-container reuse and argument sequencing.
+Four source-origin guards reject replaced const-reference and rvalue-reference
+insert bodies, including forwarding replacements.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
@@ -17613,7 +17628,7 @@ checks and budgets; this reachability proof does not admit custom allocators.
 
 Custom allocators or adapter containers, other element specializations,
 other allocator and iterator range overloads, emplacement with other argument types
-or multiple arguments and positional insertion require further work.
+or multiple arguments and counted, range and initializer-list insertion and positional emplacement require further work.
 These bounded operations
 do not establish complete STL support.
 
