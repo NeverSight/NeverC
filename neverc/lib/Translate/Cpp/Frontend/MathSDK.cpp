@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/Lex/Lexer.h"
@@ -47510,6 +47511,15 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
+  const FunctionDecl *TraceFunction = nullptr, *TraceRejectedFunction = nullptr;
+  const Stmt *TraceStatement = nullptr, *TraceRejectedStatement = nullptr;
+  unsigned TraceLine = 0;
+  auto TraceFailure = [&](unsigned Line) {
+    if (!TraceLine) {
+      TraceLine = Line; TraceRejectedFunction = TraceFunction; TraceRejectedStatement = TraceStatement;
+    }
+    return false;
+  };
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   auto PinnedMacro = [&](SourceLocation L) {
@@ -47519,37 +47529,39 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
-    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return false;
+    const auto *PreviousFunction = TraceFunction; TraceFunction = F;
+    auto RestoreFunction = llvm::make_scope_exit([&] { TraceFunction = PreviousFunction; });
+    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return TraceFailure(__LINE__);
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (valarrayHeapBoundary(F, Context)) return true;
     if (F->getBuiltinID()) {
-      if (!F->getIdentifier() || F->hasBody()) return false;
+      if (!F->getIdentifier() || F->hasBody()) return TraceFailure(__LINE__);
       const auto Name = F->getName();
       if (Name != "__builtin_is_constant_evaluated" &&
           Name != "__builtin_operator_new" && Name != "__builtin_operator_delete" &&
           Name != "__builtin_expect" && Name != "__builtin_assume" &&
-          Name != "__builtin_unreachable") return false;
+          Name != "__builtin_unreachable") return TraceFailure(__LINE__);
       for (const auto *D : F->redecls()) {
         if (valarrayDependencyDeclaration(S, SM, D)) continue;
         if (!D->isImplicit() || D->hasBody() ||
-            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return TraceFailure(__LINE__);
         if (D->getLocation().isValid()) {
           const auto File = S.sdkFile(SM, D->getLocation());
-          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return TraceFailure(__LINE__);
         }
       }
       return true;
     }
     for (const auto *D : F->redecls())
-      if (!valarrayDependencyDeclaration(S, SM, D)) return false;
+      if (!valarrayDependencyDeclaration(S, SM, D)) return TraceFailure(__LINE__);
     if (const auto *Pattern = F->getTemplateInstantiationPattern())
       for (const auto *D : Pattern->redecls())
-        if (!valarrayDependencyDeclaration(S, SM, D)) return false;
+        if (!valarrayDependencyDeclaration(S, SM, D)) return TraceFailure(__LINE__);
     if (const auto *T = F->getPrimaryTemplate())
       for (const auto *D : T->redecls())
         if (!valarrayDependencyDeclaration(S, SM, D) ||
-            !valarrayDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+            !valarrayDependencyDeclaration(S, SM, D->getTemplatedDecl())) return TraceFailure(__LINE__);
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
     // Every admitted construction count has already passed the existing
     // allocator max-size proof, making this pinned error branch unreachable.
@@ -47559,41 +47571,52 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
         M && M->isImplicit() && M->isTrivial()) return true;
     if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
       for (const auto *Init : C->inits())
-        if (!Statement(Init->getInit(), Depth + 1)) return false;
+        if (!Statement(Init->getInit(), Depth + 1)) return TraceFailure(__LINE__);
     const auto *Body = F->getBody();
     return Body && Statement(Body, Depth + 1);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
+    const auto *PreviousStatement = TraceStatement; TraceStatement = Node;
+    auto RestoreStatement = llvm::make_scope_exit([&] { TraceStatement = PreviousStatement; });
     if (!Node) return true;
     if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
-        !PinnedMacro(Node->getEndLoc())) return false;
+        !PinnedMacro(Node->getEndLoc())) return TraceFailure(__LINE__);
     if (const auto *E = dyn_cast<Expr>(Node))
-      if (!PinnedMacro(E->getExprLoc())) return false;
+      if (!PinnedMacro(E->getExprLoc())) return TraceFailure(__LINE__);
     if (const auto *E = dyn_cast<MemberExpr>(Node))
-      if (!PinnedMacro(E->getMemberLoc())) return false;
+      if (!PinnedMacro(E->getMemberLoc())) return TraceFailure(__LINE__);
     if (const auto *D = dyn_cast<DeclStmt>(Node))
       for (const auto *Declaration : D->decls())
-        if (!PinnedMacro(Declaration->getLocation())) return false;
+        if (!PinnedMacro(Declaration->getLocation())) return TraceFailure(__LINE__);
     if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
       if (!valarrayDependencyDeclaration(S, SM, Default->getParam()) ||
-          !Statement(Default->getExpr(), Depth + 1)) return false;
+          !Statement(Default->getExpr(), Depth + 1)) return TraceFailure(__LINE__);
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!valarrayScalarEndDestruction(S, SM, Call, Context) &&
-          !Function(Call->getDirectCallee(), Depth + 1)) return false;
+          !Function(Call->getDirectCallee(), Depth + 1)) return TraceFailure(__LINE__);
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
-      if (!Function(C->getConstructor(), Depth + 1)) return false;
+      if (!Function(C->getConstructor(), Depth + 1)) return TraceFailure(__LINE__);
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || !Context.hasSameType(N->getAllocatedType(), Context.IntTy) ||
           N->getNumPlacementArgs() != 1 ||
-          !Function(N->getOperatorNew(), Depth + 1)) return false;
-      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+          !Function(N->getOperatorNew(), Depth + 1)) return TraceFailure(__LINE__);
+      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return TraceFailure(__LINE__);
     }
     for (const auto *Child : Node->children())
-      if (!Statement(Child, Depth + 1)) return false;
+      if (!Statement(Child, Depth + 1)) return TraceFailure(__LINE__);
     return true;
   };
-  return Root && valarrayFunctionDeclarations(S, SM, Root) && Function(Root, 0);
+  const bool Proven = Root && valarrayFunctionDeclarations(S, SM, Root) && Function(Root, 0);
+  if (!Proven)
+    std::fprintf(stderr, "NCT_VALARRAY_GRAPH result=0 nodes=%u line=%u root=%s function=%s builtin=%u statement=%s parameter=%s\n",
+        Nodes, TraceLine, Root ? Root->getQualifiedNameAsString().c_str() : "none",
+        TraceRejectedFunction ? TraceRejectedFunction->getQualifiedNameAsString().c_str() : "none",
+        TraceRejectedFunction ? TraceRejectedFunction->getBuiltinID() : 0,
+        TraceRejectedStatement ? TraceRejectedStatement->getStmtClassName() : "none",
+        TraceRejectedFunction && TraceRejectedFunction->getNumParams() ?
+            TraceRejectedFunction->getParamDecl(0)->getType().getAsString().c_str() : "none");
+  return Proven;
 }
 }
 
