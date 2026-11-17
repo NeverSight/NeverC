@@ -27792,6 +27792,65 @@ class FunctionLowering {
     return Result;
   }
 
+  Expression insertDequeValue(Expression Place, Expression Position, Expression Reference,
+      QualType IteratorType, bool Copy, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    auto OldSize = snapshot(dequeOwnerMember(Place, "nct_deque_size", L), L);
+    auto NewSize = snapshot(binary("+", OldSize, quantity(1, Size, L), Size, L), L);
+    auto Cursor = temporary(Size, L);
+    std::optional<Expression> CopyValue;
+    if (Copy) CopyValue = temporary("int", L);
+    auto CaptureCopy = [&] {
+      // Retargeting the SDK's const-reference alias preserves the value read
+      // after capacity callbacks. Integer moves cannot call user code.
+      if (CopyValue) assign(*CopyValue, dereference(Reference, L), L);
+    };
+    auto StoreValue = [&] {
+      assign(dequeOwnerValue(Place, Position, false, L),
+          CopyValue ? *CopyValue : dereference(Reference, L), L);
+    };
+    const auto Front = labelName(), Back = labelName(), Done = labelName();
+    branch(binary("<", Position, binary("-", OldSize, Position, Size, L), "bool", L), Front, Back, L);
+    label(Front, L);
+    const auto FrontGrow = labelName(), FrontReady = labelName();
+    branch(binary("==", dequeOwnerMember(Place, "nct_deque_start", L), quantity(0, Size, L), "bool", L),
+        FrontGrow, FrontReady, L);
+    label(FrontGrow, L); dequeGrowOneBlock(Place, true, L); jump(FrontReady, L); label(FrontReady, L);
+    CaptureCopy();
+    assign(dequeOwnerMember(Place, "nct_deque_start", L),
+        binary("-", dequeOwnerMember(Place, "nct_deque_start", L), quantity(1, Size, L), Size, L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), NewSize, L);
+    assign(Cursor, quantity(0, Size, L), L);
+    const auto FrontCheck = labelName(), FrontMove = labelName(), FrontStore = labelName();
+    jump(FrontCheck, L); label(FrontCheck, L);
+    branch(binary("<", Cursor, Position, "bool", L), FrontMove, FrontStore, L);
+    label(FrontMove, L);
+    assign(dequeOwnerValue(Place, Cursor, false, L),
+        dequeOwnerValue(Place, binary("+", Cursor, quantity(1, Size, L), Size, L), false, L), L);
+    assign(Cursor, binary("+", Cursor, quantity(1, Size, L), Size, L), L);
+    jump(FrontCheck, L); label(FrontStore, L); StoreValue(); jump(Done, L);
+    label(Back, L);
+    const auto BackGrow = labelName(), BackReady = labelName();
+    branch(binary("==", dequeBackSpare(Place, L), quantity(0, Size, L), "bool", L), BackGrow, BackReady, L);
+    label(BackGrow, L); dequeGrowOneBlock(Place, false, L); jump(BackReady, L); label(BackReady, L);
+    CaptureCopy();
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), NewSize, L);
+    assign(Cursor, OldSize, L);
+    const auto BackCheck = labelName(), BackMove = labelName(), BackStore = labelName();
+    jump(BackCheck, L); label(BackCheck, L);
+    branch(binary(">", Cursor, Position, "bool", L), BackMove, BackStore, L);
+    label(BackMove, L);
+    assign(dequeOwnerValue(Place, Cursor, false, L),
+        dequeOwnerValue(Place, binary("-", Cursor, quantity(1, Size, L), Size, L), false, L), L);
+    assign(Cursor, binary("-", Cursor, quantity(1, Size, L), Size, L), L);
+    jump(BackCheck, L); label(BackStore, L); StoreValue(); jump(Done, L);
+    label(Done, L);
+    auto Result = dequeOwnerIterator(Place, IteratorType, false, L);
+    advanceDequeIterator(Result, cast(Position, Diff, L), L);
+    return Result;
+  }
+
   Expression utilityDequeOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityDequeCall(A.S, A.Sources, Call, A.Context);
@@ -27855,6 +27914,12 @@ class FunctionLowering {
           : Operation == UtilityDequeOperation::Front ? quantity(0, Size, L)
           : binary("-", dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L);
       return dequeOwnerValue(Place, Position, Method->isConst(), L);
+    }
+    if (Operation == UtilityDequeOperation::InsertCopy || Operation == UtilityDequeOperation::InsertMove) {
+      auto Begin = dequeOwnerIterator(Place, Method->getReturnType(), false, L);
+      auto Position = snapshot(cast(dequeIteratorDifference(dereference(Operands[0], L), Begin, L), Size, L), L);
+      return insertDequeValue(Place, Position, Operands[1], Method->getReturnType(),
+          Operation == UtilityDequeOperation::InsertCopy, L);
     }
     if (Operation == UtilityDequeOperation::Erase || Operation == UtilityDequeOperation::EraseRange) {
       auto Begin = dequeOwnerIterator(Place, Method->getReturnType(), false, L);

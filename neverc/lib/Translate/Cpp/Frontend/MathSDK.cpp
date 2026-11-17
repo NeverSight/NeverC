@@ -49819,6 +49819,21 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
     }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
+    if (Name == "insert" && !Stack && !Queue && !M->isConst() &&
+        M->getRefQualifier() == RQ_None && !M->getPrimaryTemplate() && M->getNumParams() == 2 &&
+        !M->getReturnType()->isReferenceType() &&
+        dequeIteratorType(S, SM, M->getReturnType(), false, Context)) {
+      const auto Position = M->getParamDecl(0)->getType();
+      const auto Value = M->getParamDecl(1)->getType();
+      if (M->getParamDecl(0)->hasDefaultArg() || M->getParamDecl(1)->hasDefaultArg() ||
+          Position->isReferenceType() || Position.hasLocalQualifiers() ||
+          !dequeIteratorType(S, SM, Position, true, Context)) return std::nullopt;
+      if (Value->isLValueReferenceType() && Context.hasSameType(Value.getNonReferenceType(),
+              Context.IntTy.withConst())) return UtilityDequeOperation::InsertCopy;
+      if (Value->isRValueReferenceType() && Context.hasSameType(Value.getNonReferenceType(),
+              Context.IntTy)) return UtilityDequeOperation::InsertMove;
+      return std::nullopt;
+    }
     if (Name == "erase" && !Stack && !Queue && !M->isConst() &&
         M->getRefQualifier() == RQ_None && !M->getPrimaryTemplate() &&
         (M->getNumParams() == 1 || M->getNumParams() == 2) &&
@@ -52001,7 +52016,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   // existing closed proofs; keep the shared node ledger and depth limit.
   const bool DequeErase = CountOperation &&
       (*CountOperation == UtilityDequeOperation::Erase || *CountOperation == UtilityDequeOperation::EraseRange);
-  const bool ClosedCopyProof = DequeValueCopy || DequePointerAssign || DequeErase || SharedStatements;
+  const bool DequeInsert = CountOperation &&
+      (*CountOperation == UtilityDequeOperation::InsertCopy || *CountOperation == UtilityDequeOperation::InsertMove);
+  const bool ClosedCopyProof = DequeValueCopy || DequePointerAssign || DequeErase || DequeInsert || SharedStatements;
   const bool DequePointerRange = !PriorityRoot && RootMethod &&
       dequePointerRangeTemplate(S, SM, RootMethod, Context);
   const bool MemoizeStatements = ClosedCopyProof || DequeCountUpdate || DequePointerRange ||

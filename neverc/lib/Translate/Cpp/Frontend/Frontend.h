@@ -3801,7 +3801,7 @@ std::optional<UtilityDequeIteratorRecord> approvedUtilityDequeIteratorRecord(con
 
 enum class UtilityDequeConstruction { Default, Allocator, InitializerList, Copy, Move, Count, CountFill, PointerRange, CountAllocator, CountFillAllocator, PointerRangeAllocator, CopyAllocator, MoveAllocator,
   IteratorDefault, IteratorCopy, IteratorConstConversion };
-enum class UtilityDequeOperation { Empty, Size, Begin, End, Front, Back, Index, CopyAssign, MoveAssign, Swap, Resize, ResizeFill, AssignCount, AssignPointerRange, AssignInitializerList, Erase, EraseRange,
+enum class UtilityDequeOperation { Empty, Size, Begin, End, Front, Back, Index, CopyAssign, MoveAssign, Swap, Resize, ResizeFill, AssignCount, AssignPointerRange, AssignInitializerList, Erase, EraseRange, InsertCopy, InsertMove,
   PushFront, PushBack, EmplaceFront, EmplaceBack, PopFront, PopBack, Clear, IteratorDereference, IteratorArrow,
   IteratorPreIncrement, IteratorPostIncrement, IteratorPreDecrement, IteratorPostDecrement,
   IteratorAssign, IteratorAdvance, IteratorRetreat, IteratorAdd, IteratorSubtract,
