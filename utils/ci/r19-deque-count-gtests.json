@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-count-default-construction",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountDefaultConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "44aa9b7fa834a32e3634c07b81db36d70a235a8f7c2d166797557f5beb816377",
+      "original_case_source_sha256": "44aa9b7fa834a32e3634c07b81db36d70a235a8f7c2d166797557f5beb816377",
+      "gtest_body_sha256": "a45aedf14975d30f38108a321f9a108a4f3a5f92d703da31c004c98b53069cdf"
+    },
+    {
+      "name": "deque-count-fill-construction",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountFillConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "15313850be3f2f63da4ee10fbc8ae6ae8c309ee8dd43322900f2556f94943e82",
+      "original_case_source_sha256": "15313850be3f2f63da4ee10fbc8ae6ae8c309ee8dd43322900f2556f94943e82",
+      "gtest_body_sha256": "e49f701832c0b93e546e7f32e31f91e3fde069f31449b27b28c0fac52e3b2e2b"
+    },
+    {
+      "name": "deque-count-resize-default",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountResizeDefaultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7dc8da70dce0f3c421fa183407b0588fdbed8ce772d55df59c3ae069d4bd4313",
+      "original_case_source_sha256": "7dc8da70dce0f3c421fa183407b0588fdbed8ce772d55df59c3ae069d4bd4313",
+      "gtest_body_sha256": "b73a1eda676cb2f50cd0b0fad97649fafeefa8bd03af70c86297f04643774165"
+    },
+    {
+      "name": "deque-count-resize-fill",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountResizeFillRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fe3b8fd6f8b1bc2417e5a4320440f1f883d98fa1913f5742dda11eea1d067224",
+      "original_case_source_sha256": "fe3b8fd6f8b1bc2417e5a4320440f1f883d98fa1913f5742dda11eea1d067224",
+      "gtest_body_sha256": "9a7c0c57188c3411a7a4e6859798ea86e6aa62d46546a686b8c2ad3b33cf3763"
+    },
+    {
+      "name": "deque-count-assign-fill",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountAssignFillRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "be6640c345c12e10f8463f7f10060acd949a4b41c01f86823e7f65472b401293",
+      "original_case_source_sha256": "be6640c345c12e10f8463f7f10060acd949a4b41c01f86823e7f65472b401293",
+      "gtest_body_sha256": "0ec02607120032734f2d0f826c4fbdc22a017fe6771c4a83213923aae278d9f7"
+    },
+    {
+      "name": "deque-count-call-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountCallSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d7c3d204676f34fc266da398c34f5b4d8903ee467f3676d59eef7d9d7fe35fdc",
+      "original_case_source_sha256": "d7c3d204676f34fc266da398c34f5b4d8903ee467f3676d59eef7d9d7fe35fdc",
+      "gtest_body_sha256": "b99785fcfaa8d200b4e04c8eb6db03c48b2bacf174be7fba7896c0688d36fea8"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "deque-count-constructor-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountConstructorOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "9095cf67cfe7ecdc9ae87b62875e377b32aed3c112beaf9276e146645e08b058",
+      "original_case_source_sha256": "9095cf67cfe7ecdc9ae87b62875e377b32aed3c112beaf9276e146645e08b058",
+      "gtest_body_sha256": "e902e403ef49cb49a93c32b6192dc6d44e7ace445fda792c185a39f500970efa"
+    },
+    {
+      "name": "deque-count-fill-constructor-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountFillConstructorOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "a79665e8240cf6c5697cd30d90e0ce331aef4a1029cb3789c2e196eac1c50918",
+      "original_case_source_sha256": "a79665e8240cf6c5697cd30d90e0ce331aef4a1029cb3789c2e196eac1c50918",
+      "gtest_body_sha256": "e4ec4583b7bbe1a46e737bb58f6bef9b895de9ec9131bf876a7e1346d44f3e63"
+    },
+    {
+      "name": "deque-count-resize-owned-bodies",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountResizeOwnedBodiesRejected",
+      "expected": "reject",
+      "source_sha256": "3c503a041e6cc58e0f01ce8ec4c2929e86781c28e12a8f5929ee269b9bcdbddb",
+      "original_case_source_sha256": "3c503a041e6cc58e0f01ce8ec4c2929e86781c28e12a8f5929ee269b9bcdbddb",
+      "gtest_body_sha256": "313c25d8bc705769a1d78062db881c5498f495996a5225650a301aee10d6523f"
+    },
+    {
+      "name": "deque-count-assign-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeCountAssignOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "43622367dcfe8406d3155084aa5e4fc233fb1566585c34bfcaaa3ab04aa084a6",
+      "original_case_source_sha256": "43622367dcfe8406d3155084aa5e4fc233fb1566585c34bfcaaa3ab04aa084a6",
+      "gtest_body_sha256": "18cb411ad180dc4e327c62f793cf17ff79d6000188ad34c34370c8742921c2d7"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeCountDefaultConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountFillConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountResizeDefaultRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountResizeFillRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountAssignFillRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountCallSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeCountConstructorOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeCountFillConstructorOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeCountResizeOwnedBodiesRejected",
+    "TranslateTest.CoreV2DequeCountAssignOwnedBodyRejected"
+  ],
+  "native_reference_authentication_sha256": "a9895b8f18d1ed2137951674250000cea234792061b299bc09cf29544161eb20",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "d79764eca772b991bfc2830db11925635359cb7a24cd7be5abfbd59000ed93e8",
+  "maintained_original_sha256": "46331fdc4f910d1edb51e9a6801151cb8339a60885f4b346500310858e38c56b",
+  "previous_registered_source_sha256": "bde1aba40beae0304af26d8fc5e56c03309b212f4ceca8860953932871896f39",
+  "previous_maintained_original_sha256": "5b6c619e94bccfa7327ded8c23e3ceb0cba594ecf8650acdbf7429c72bb9cf5c",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7652,
+  "current_python_registry_tests": 78,
+  "previous7642_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "b29636776f7be2b744ea511bb5b9360af673875bbbb9cb31ef24ffe8e8495944",
+  "extractor_sha256": "197b0ce1986a6064dcb57e606569bb0e4a0d9002d8aa83089fa054a3316041cb",
+  "source_cases": [
+    {
+      "name": "deque-count-default-construction",
+      "source": "#include <deque>\nint basic_count_contract(){unsigned counts[]={0,1,1023,1024,1025,2049,3073};\nfor(unsigned k=0;k!=7;++k){std::deque<int> a(counts[k]);\nif(a.size()!=counts[k])return 1;\nfor(unsigned i=0;i!=counts[k];++i)if(a[i]!=0)return 2;\nif(!a.empty()){a.front()=7;a.back()=9;if(a.back()!=9)return 3;}\na.push_back(31);if(a.back()!=31||a.size()!=counts[k]+1)return 4;}\nreturn 0;}\n\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic unsigned countfx_size=2050;static int countfx_armed,countfx_calls;static Size countfx_bytes[16];\nvoid* operator new(Size n){void* p=malloc(n);if(countfx_armed){int i=countfx_calls++;if(i<16)countfx_bytes[i]=n;countfx_size=1;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint observable_count_contract(){countfx_armed=1;std::deque<int> a(countfx_size);countfx_armed=0;\nif(countfx_size!=1||a.size()!=2050||countfx_calls!=4||countfx_bytes[0]!=24)return 1;\nfor(int i=1;i!=4;++i)if(countfx_bytes[i]!=4096)return 2;\nfor(unsigned i=0;i!=a.size();++i)if(a[i]!=0)return 3;\nreturn 0;}\n\nint main(){int r=basic_count_contract();return r?r:observable_count_contract();}\n",
+      "source_sha256": "44aa9b7fa834a32e3634c07b81db36d70a235a8f7c2d166797557f5beb816377",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-count-fill-construction",
+      "source": "#include <deque>\nint basic_count_contract(){unsigned counts[]={0,1,1023,1024,1025,2049,3073};\nfor(unsigned k=0;k!=7;++k){int value=-31-int(k);const int& fill=value;\nstd::deque<int> a(counts[k],fill);value=77;\nif(a.size()!=counts[k])return 1;\nfor(unsigned i=0;i!=counts[k];++i)if(a[i]!=-31-int(k))return 2;\na.push_front(41);if(a.front()!=41||a.size()!=counts[k]+1)return 3;}\nreturn 0;}\n\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic int countfx_armed,countfx_calls,countfx_value=13,countfx_arguments;\nconst int& countfx_argument(){++countfx_arguments;return countfx_value;}\nvoid* operator new(Size n){void* p=malloc(n);if(countfx_armed)countfx_value=100+countfx_calls++;return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint observable_count_contract(){countfx_armed=1;std::deque<int> empty(0,countfx_argument());countfx_armed=0;\nif(countfx_calls||countfx_arguments!=1||!empty.empty())return 1;\ncountfx_armed=1;std::deque<int> a(2050,countfx_argument());countfx_armed=0;\nif(countfx_calls!=4||countfx_arguments!=2||countfx_value!=103||a.size()!=2050)return 2;\nfor(unsigned i=0;i!=a.size();++i)if(a[i]!=103)return 3;\nreturn 0;}\n\nint main(){int r=basic_count_contract();return r?r:observable_count_contract();}\n",
+      "source_sha256": "15313850be3f2f63da4ee10fbc8ae6ae8c309ee8dd43322900f2556f94943e82",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-count-resize-default",
+      "source": "#include <deque>\nint basic_count_contract(){std::deque<int> a;a.resize(2050);\nfor(unsigned i=0;i!=2050;++i){if(a[i]!=0)return 1;a[i]=int(i)+1;}\nint* first=&a.front();int* middle=&a[1023];\na.resize(1024);if(a.size()!=1024||&a.front()!=first||&a[1023]!=middle)return 2;\na.resize(3073);if(a.size()!=3073||&a.front()!=first||&a[1023]!=middle)return 3;\nfor(unsigned i=0;i!=1024;++i)if(a[i]!=int(i)+1)return 4;\nfor(unsigned i=1024;i!=3073;++i)if(a[i]!=0)return 5;\na.resize(0);if(!a.empty())return 6;a.resize(1);\nreturn a.front()!=0||a.size()!=1;}\n\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic std::deque<int>* countfx_owner;\nstatic void* countfx_blocks[16];static int countfx_collect,countfx_armed,countfx_block_count,countfx_releases,countfx_bad;\nstatic int countfx_order[16];static unsigned countfx_expected_size;static int countfx_check_front;\nvoid* operator new(Size n){void* p=malloc(n);if(countfx_collect&&n==4096){int i=countfx_block_count++;if(i<16)countfx_blocks[i]=p;}return p;}\nvoid countfx_release(void* p){if(countfx_armed)for(int i=0;i!=countfx_block_count&&i<16;++i)if(p==countfx_blocks[i]){\nint n=countfx_releases++;if(n<16)countfx_order[n]=i;\nif(countfx_owner->size()!=countfx_expected_size)countfx_bad=1;\nif(countfx_check_front&&countfx_owner->front()!=99)countfx_bad=2;}free(p);}\nvoid operator delete(void* p) noexcept {countfx_release(p);}\nvoid operator delete(void* p,Size) noexcept {countfx_release(p);}\nint observable_count_contract(){countfx_collect=1;std::deque<int> a(4100);countfx_collect=0;\nif(countfx_block_count!=5)return 1;countfx_owner=&a;countfx_expected_size=0;countfx_armed=1;\na.resize(0);countfx_armed=0;\nif(countfx_bad||!a.empty()||countfx_releases!=3)return 2;\nfor(int i=0;i!=3;++i)if(countfx_order[i]!=4-i)return 3;\na.resize(1);return a.front()!=0;}\n\nint main(){int r=basic_count_contract();return r?r:observable_count_contract();}\n",
+      "source_sha256": "7dc8da70dce0f3c421fa183407b0588fdbed8ce772d55df59c3ae069d4bd4313",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-count-resize-fill",
+      "source": "#include <deque>\nint basic_count_contract(){std::deque<int> a;for(int i=0;i!=2050;++i)a.push_back(i);\nfor(int i=1;i!=18;++i)a.push_front(-i);\nint* first=&a.front();int* middle=&a[1041];int value=-71;\na.resize(4101,value);value=9;\nif(a.size()!=4101||&a.front()!=first||&a[1041]!=middle)return 1;\nfor(unsigned i=0;i!=2067;++i)if(a[i]!=int(i)-17)return 2;\nfor(unsigned i=2067;i!=4101;++i)if(a[i]!=-71)return 3;\na.resize(1025,a[1041]);if(a.size()!=1025||&a.front()!=first)return 4;\na.resize(3074,a[1024]);\nfor(unsigned i=1025;i!=3074;++i)if(a[i]!=1007)return 5;\na.resize(0,33);a.resize(2,44);\nreturn a.size()!=2||a.front()!=44||a.back()!=44;}\n\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic std::deque<int>* countfx_owner;static int countfx_armed,countfx_calls,countfx_bad;\nvoid* operator new(Size n){void* p=malloc(n);if(countfx_armed){\nif(countfx_owner->size()!=1||countfx_owner->front()!=(countfx_calls?47:5))countfx_bad=1;\n++countfx_calls;countfx_owner->front()=47;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint observable_count_contract(){std::deque<int> a;a.push_back(5);int* first=&a.front();countfx_owner=&a;countfx_armed=1;\na.resize(2050,a.front());countfx_armed=0;\nif(countfx_bad||!countfx_calls||a.size()!=2050||&a.front()!=first)return 1;\nfor(unsigned i=0;i!=a.size();++i)if(a[i]!=47)return 2;\nreturn 0;}\n\nint main(){int r=basic_count_contract();return r?r:observable_count_contract();}\n",
+      "source_sha256": "fe3b8fd6f8b1bc2417e5a4320440f1f883d98fa1913f5742dda11eea1d067224",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-count-assign-fill",
+      "source": "#include <deque>\nint basic_count_contract(){std::deque<int> a;\na.assign(2050,13);if(a.size()!=2050)return 1;\nfor(unsigned i=0;i!=a.size();++i)if(a[i]!=13)return 2;\nfor(int i=0;i!=1031;++i)a.pop_front();\na.assign(3073,-19);if(a.size()!=3073)return 3;\nfor(unsigned i=0;i!=a.size();++i)if(a[i]!=-19)return 4;\na[1024]=23;a.assign(1025,a[1024]);\nfor(unsigned i=0;i!=a.size();++i)if(a[i]!=23)return 5;\na.assign(0,77);if(!a.empty())return 6;\nint value=31;a.assign(1,value);value=9;\nreturn a.size()!=1||a.front()!=31;}\n\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic std::deque<int>* countfx_owner;static int countfx_armed,countfx_calls,countfx_bad,countfx_fill=7;\nvoid* operator new(Size n){void* p=malloc(n);if(countfx_armed){\nif(countfx_owner->size()!=1||countfx_owner->front()!=7)countfx_bad=1;\n++countfx_calls;countfx_fill=41;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint observable_count_contract(){std::deque<int> a;a.push_back(5);int* first=&a.front();countfx_owner=&a;countfx_armed=1;\na.assign(2050,countfx_fill);countfx_armed=0;\nif(countfx_bad||!countfx_calls||a.size()!=2050||&a.front()!=first||a.front()!=7)return 1;\nfor(unsigned i=1;i!=a.size();++i)if(a[i]!=41)return 2;\nreturn 0;}\n\nint main(){int r=basic_count_contract();return r?r:observable_count_contract();}\n",
+      "source_sha256": "be6640c345c12e10f8463f7f10060acd949a4b41c01f86823e7f65472b401293",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-count-call-sequencing",
+      "source": "#include <deque>\nstd::deque<int>* owner;int receivers,counts,values,bad,next_count=1025,fill=17;\nstd::deque<int>& receive(){++receivers;return *owner;}\nunsigned count(){if(receivers!=1)bad=1;++counts;return unsigned(next_count);}\nconst int& value(){if(receivers!=1)bad=2;++values;return fill;}\nint basic_count_contract(){std::deque<int> a;owner=&a;\nreceive().resize(count(),value());\nif(bad||receivers!=1||counts!=1||values!=1||a.size()!=1025)return 1;\nfor(unsigned i=0;i!=a.size();++i)if(a[i]!=17)return 2;\nreceivers=counts=values=0;next_count=0;\nreceive().resize(count(),value());\nif(bad||receivers!=1||counts!=1||values!=1||!a.empty())return 3;\nreceivers=counts=values=0;next_count=2049;fill=-9;\nreceive().assign(count(),value());\nif(bad||receivers!=1||counts!=1||values!=1||a.size()!=2049)return 4;\nfor(unsigned i=0;i!=a.size();++i)if(a[i]!=-9)return 5;\nreceivers=counts=values=0;next_count=0;\nreceive().assign(count(),value());\nreturn bad||receivers!=1||counts!=1||values!=1||!a.empty();}\n\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\n#include <new>\n#include <deque>\nstatic std::deque<int>* countfx_owner;\nstatic void* countfx_blocks[16];static int countfx_collect,countfx_armed,countfx_block_count,countfx_releases,countfx_bad;\nstatic int countfx_order[16];static unsigned countfx_expected_size;static int countfx_check_front;\nvoid* operator new(Size n){void* p=malloc(n);if(countfx_collect&&n==4096){int i=countfx_block_count++;if(i<16)countfx_blocks[i]=p;}return p;}\nvoid countfx_release(void* p){if(countfx_armed)for(int i=0;i!=countfx_block_count&&i<16;++i)if(p==countfx_blocks[i]){\nint n=countfx_releases++;if(n<16)countfx_order[n]=i;\nif(countfx_owner->size()!=countfx_expected_size)countfx_bad=1;\nif(countfx_check_front&&countfx_owner->front()!=99)countfx_bad=2;}free(p);}\nvoid operator delete(void* p) noexcept {countfx_release(p);}\nvoid operator delete(void* p,Size) noexcept {countfx_release(p);}\nint observable_count_contract(){countfx_collect=1;std::deque<int> a(4100,7);countfx_collect=0;\nif(countfx_block_count!=5)return 1;int* first=&a.front();countfx_owner=&a;\ncountfx_expected_size=1;countfx_check_front=1;countfx_armed=1;\na.assign(1,99);countfx_armed=0;\nif(countfx_bad||a.size()!=1||a.front()!=99||&a.front()!=first||countfx_releases!=3)return 2;\nfor(int i=0;i!=3;++i)if(countfx_order[i]!=4-i)return 3;\nreturn 0;}\n\nint main(){int r=basic_count_contract();return r?r:observable_count_contract();}\n",
+      "source_sha256": "d7c3d204676f34fc266da398c34f5b4d8903ee467f3676d59eef7d9d7fe35fdc",
+      "expected_runtime_exit": 0,
+      "public_header": "deque",
+      "expected": "accept"
+    },
+    {
+      "name": "deque-count-constructor-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::deque(decltype(sizeof(0)) n) : deque() {}\n}}\nint main(){std::deque<int> a(3);return a.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "9095cf67cfe7ecdc9ae87b62875e377b32aed3c112beaf9276e146645e08b058"
+    },
+    {
+      "name": "deque-count-fill-constructor-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::deque(decltype(sizeof(0)) n,const int& value) : deque() {}\n}}\nint main(){std::deque<int> a(3,7);return a.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "a79665e8240cf6c5697cd30d90e0ce331aef4a1029cb3789c2e196eac1c50918"
+    },
+    {
+      "name": "deque-count-resize-owned-bodies",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> void deque<int>::resize(decltype(sizeof(0)) n) {}\ntemplate<> void deque<int>::resize(decltype(sizeof(0)) n,const int& value) {}\n}}\nint main(){std::deque<int> a;a.resize(3);a.resize(5,7);return a.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "3c503a041e6cc58e0f01ce8ec4c2929e86781c28e12a8f5929ee269b9bcdbddb"
+    },
+    {
+      "name": "deque-count-assign-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> void deque<int>::assign(decltype(sizeof(0)) n,const int& value) {}\n}}\nint main(){std::deque<int> a;a.assign(3,7);return a.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "43622367dcfe8406d3155084aa5e4fc233fb1566585c34bfcaaa3ab04aa084a6"
+    }
+  ],
+  "source48_authentication_sha256": "115c01299c6a882057998cdefbe3ddc0e30e5f18255b20fe30f4ea982533b99e",
+  "source48_compiler_source": "9ea7d355637563147c720e31c86e2edf60dca4b1"
+}

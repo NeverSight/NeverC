@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.deque_count_registered = cls.registered
+        cls.deque_count_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.deque_count_original = cls.adapter.restore_original_gtests(cls.deque_count_registered,cls.deque_count_suffix)
+        cls.registered = cls.adapter.restore_deque_count_history(cls.deque_count_registered)
         cls.deque_value_registered = cls.registered
         cls.deque_value_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.deque_value_original = cls.adapter.restore_original_gtests(cls.deque_value_registered,cls.deque_value_suffix)
@@ -1083,6 +1087,34 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.deque_value_registered,self.deque_value_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.deque_value_original+b' ',['TranslateTest.CoreV2DequeValueCopyConstructionRunAtBothOptimizations'])
+
+    def test_deque_count_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.deque_count_original+self.deque_count_suffix,self.deque_count_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.deque_count_original,self.deque_count_suffix),self.deque_count_original)
+        self.assertEqual(self.adapter.restore_deque_count_history(self.deque_count_registered),self.deque_value_registered)
+        self.assertEqual(self.adapter.restore_deque_count_history(self.deque_count_original),self.deque_value_original)
+        selected = ['TranslateTest.CoreV2DequeCountDefaultConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountFillConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountResizeDefaultRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountResizeFillRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountAssignFillRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountCallSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2DequeCountConstructorOwnedBodyRejected', 'TranslateTest.CoreV2DequeCountFillConstructorOwnedBodyRejected', 'TranslateTest.CoreV2DequeCountResizeOwnedBodiesRejected', 'TranslateTest.CoreV2DequeCountAssignOwnedBodyRejected']
+        generated,proof = self.extractor.extract(self.deque_count_original,selected)
+        self.assertEqual(proof['original_test_names'],7652)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7642)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19dqcount',generated)
+        self.assertIn(b'resize',generated)
+
+    def test_deque_count_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.deque_count_registered+b' ',
+                        self.deque_count_registered.replace(b'r19dqcount',b'q.push(11)',1),
+                        self.deque_count_registered+self.deque_count_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.deque_count_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_deque_count_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.deque_count_registered,self.deque_count_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.deque_count_original+b' ',['TranslateTest.CoreV2DequeCountDefaultConstructionRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
