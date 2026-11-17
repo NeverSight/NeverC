@@ -51831,6 +51831,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator());
   const auto CountOperation = !PriorityRoot && RootMethod
       ? dequeMethodSignature(S, SM, RootMethod, Context) : std::nullopt;
+  const bool DequePointerAssign = CountOperation &&
+      *CountOperation == UtilityDequeOperation::AssignPointerRange;
   const bool DequeCountUpdate = CountOperation &&
       (*CountOperation == UtilityDequeOperation::Resize ||
        *CountOperation == UtilityDequeOperation::ResizeFill ||
@@ -52030,7 +52032,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
             !Function(N->getOperatorNew(), Depth + 1)) return false;
         if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
       }
-      if (ClosedCopyProof) {
+      if (ClosedCopyProof || DequePointerAssign) {
         const auto *Branch = dyn_cast<IfStmt>(Node);
         if (dequeRuntimeMemmoveBranch(S, SM, Branch, ActiveFunction, Context)) {
           // These deque copies run at runtime in C++17. The exact pinned
