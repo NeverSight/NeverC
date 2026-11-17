@@ -27965,7 +27965,7 @@ class FunctionLowering {
     assign(dequeOwnerValue(Place, Cursor, false, L), Value, L);
     assign(Cursor, binary("+", Cursor, quantity(1, Size, L), Size, L), L);
     jump(FillCheck, L);
-    jump(Done, L); label(Done, L);
+    label(Done, L);
     auto Result = dequeOwnerIterator(Place, IteratorType, false, L);
     advanceDequeIterator(Result, cast(Position, Diff, L), L);
     return Result;
