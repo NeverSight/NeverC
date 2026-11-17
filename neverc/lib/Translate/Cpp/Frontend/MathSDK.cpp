@@ -47381,6 +47381,13 @@ std::optional<UtilityValarrayConstruction> valarrayConstructorSignature(
   if (!C || !valarrayFunctionDeclarations(S, SM, C) ||
       !approvedUtilityValarrayRecord(S, SM, C->getParent(), Context) ||
       C->getPrimaryTemplate()) return std::nullopt;
+  const auto Owner = Context.getRecordType(C->getParent());
+  if (C->getNumParams() == 1 && C->isCopyConstructor() &&
+      Context.hasSameType(C->getParamDecl(0)->getType(), Context.getLValueReferenceType(Owner.withConst())))
+    return UtilityValarrayConstruction::Copy;
+  if (C->getNumParams() == 1 && C->isMoveConstructor() &&
+      Context.hasSameType(C->getParamDecl(0)->getType(), Context.getRValueReferenceType(Owner)))
+    return UtilityValarrayConstruction::Move;
   if (!C->getNumParams()) return UtilityValarrayConstruction::Default;
   if (C->getNumParams() == 1 &&
       Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType()))
@@ -47401,6 +47408,21 @@ std::optional<UtilityValarrayScalarOperation> valarrayMethodSignature(
   if (!M || !Info || M->isStatic() || M->isVolatile() ||
       M->getPrimaryTemplate() || !valarrayFunctionDeclarations(S, SM, M))
     return std::nullopt;
+  const auto Owner = Context.getRecordType(Info->Record);
+  if (!M->isConst() && M->getIdentifier() && M->getName() == "resize" && M->getNumParams() == 2 &&
+      M->getReturnType()->isVoidType() && Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) &&
+      Context.hasSameType(M->getParamDecl(1)->getType(), Context.IntTy)) return UtilityValarrayScalarOperation::Resize;
+  if (!M->isConst() && M->getIdentifier() && M->getName() == "swap" && M->getNumParams() == 1 &&
+      M->getReturnType()->isVoidType() && Context.hasSameType(M->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Owner))) return UtilityValarrayScalarOperation::Swap;
+  if (!M->isConst() && M->isOverloadedOperator() && M->getOverloadedOperator() == OO_Equal &&
+      M->getNumParams() == 1 && Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Owner))) {
+    const auto Parameter = M->getParamDecl(0)->getType();
+    if (Context.hasSameType(Parameter, Context.getLValueReferenceType(Owner.withConst())))
+      return UtilityValarrayScalarOperation::CopyAssign;
+    if (Context.hasSameType(Parameter, Context.getRValueReferenceType(Owner)))
+      return UtilityValarrayScalarOperation::MoveAssign;
+  }
   if (M->getIdentifier() && M->isConst() && !M->getNumParams()) {
     if (M->getName() == "size" &&
         Context.hasSameType(M->getReturnType(), Context.getSizeType()))
@@ -47588,7 +47610,7 @@ std::optional<UtilityValarrayConstruction> approvedUtilityValarrayConstruction(
       !Context.hasSameUnqualifiedType(Construction->getType(),
           Context.getRecordType(C->getParent())) ||
       !valarraySourceGraph(S, SM, C, Context)) return std::nullopt;
-  if (*Kind != UtilityValarrayConstruction::Default) {
+  if (*Kind == UtilityValarrayConstruction::Count || *Kind == UtilityValarrayConstruction::Fill) {
     const unsigned CountIndex = *Kind == UtilityValarrayConstruction::Fill ? 1 : 0;
     if (!utilityAllocatorSafeCount(Construction->getArg(CountIndex), Context.IntTy, Context))
       return std::nullopt;
@@ -47614,6 +47636,27 @@ std::optional<UtilityValarrayCall> approvedUtilityValarrayCall(
     const ASTContext &Context) {
   if (!S.coreV2() || !Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent() || !S.owns(SM, Call->getExprLoc())) return std::nullopt;
+  const auto *F = Call->getDirectCallee();
+  if (F && !isa<CXXMethodDecl>(F) && F->getIdentifier() && F->getName() == "swap" &&
+      valarrayStandardNamespace(F->getDeclContext()) && F->getNumParams() == 2 && Call->getNumArgs() == 2 &&
+      F->getReturnType()->isVoidType() && F->getTemplateSpecializationKind() == TSK_ImplicitInstantiation) {
+    const auto *Primary = F->getPrimaryTemplate();
+    const auto *Arguments = F->getTemplateSpecializationArgs();
+    const auto Parameter = F->getParamDecl(0)->getType();
+    const auto *Owner = Parameter->isLValueReferenceType() ? Parameter->getPointeeType()->getAsCXXRecordDecl() : nullptr;
+    const auto Info = approvedUtilityValarrayRecord(S, SM, Owner, Context);
+    if (!Primary || Primary->getTemplateParameters()->size() != 1 || !Arguments || Arguments->size() != 1 ||
+        Arguments->get(0).getKind() != TemplateArgument::Type || !Context.hasSameType(Arguments->get(0).getAsType(), Context.IntTy) ||
+        !Info || !Context.hasSameType(Parameter, Context.getLValueReferenceType(Context.getRecordType(Info->Record))) ||
+        !Context.hasSameType(F->getParamDecl(1)->getType(), Parameter) ||
+        !valarraySourceGraph(S, SM, F, Context)) return std::nullopt;
+    for (const auto *Argument : Call->arguments())
+      if (Argument->getType().hasQualifiers() || !Context.hasSameType(Argument->getType(), Context.getRecordType(Info->Record)))
+        return std::nullopt;
+    const auto *Reference = directFunctionReference(Call);
+    if (!Reference || !S.owns(SM, Reference->getExprLoc())) return std::nullopt;
+    return UtilityValarrayCall{UtilityValarrayScalarOperation::Swap, Call->getArg(0), nullptr, 1, F};
+  }
   const CXXMethodDecl *M = nullptr;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
@@ -47632,6 +47675,8 @@ std::optional<UtilityValarrayCall> approvedUtilityValarrayCall(
   const auto Operation = valarrayMethodSignature(S, SM, M, Context);
   if (!Operation || !Receiver || Call->getNumArgs() != M->getNumParams() + Offset ||
       !valarraySourceGraph(S, SM, M, Context)) return std::nullopt;
+  if (*Operation == UtilityValarrayScalarOperation::Resize &&
+      !utilityAllocatorSafeCount(Call->getArg(Offset), Context.IntTy, Context)) return std::nullopt;
   const auto ObjectType = Receiver->getType()->isPointerType()
       ? Receiver->getType()->getPointeeType() : Receiver->getType();
   if (ObjectType.isVolatileQualified() ||

@@ -28142,11 +28142,159 @@ class FunctionLowering {
     return Expression{{"kind", "member"}, {"type", "ptr:int"}, {"name", Name},
         {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
   }
+  Expression valarraySize(Expression Place, SourceLocation L) {
+    auto Begin = snapshot(valarrayMember(Place, "nct_valarray_begin", L), L);
+    auto End = snapshot(valarrayMember(Place, "nct_valarray_end", L), L);
+    auto Count = temporary("u64", L);
+    assign(Count, quantity(0, "u64", L), L);
+    const auto Subtract = labelName(), Done = labelName();
+    branch(cast(Begin, "bool", L), Subtract, Done, L);
+    label(Subtract, L);
+    assign(Count, cast(binary("-", End, Begin,
+        type(A.Context.getPointerDiffType(), L), L), "u64", L), L);
+    jump(Done, L); label(Done, L);
+    return Count;
+  }
+
+  void copyValarrayElements(Expression Destination, Expression First,
+                            Expression Last, SourceLocation L) {
+    auto Input = temporary("ptr:int", L), Output = temporary("ptr:int", L);
+    assign(Input, cast(First, "ptr:int", L), L);
+    assign(Output, cast(Destination, "ptr:int", L), L);
+    const auto Check = labelName(), Store = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Input, Last, "bool", L), Store, Done, L);
+    label(Store, L);
+    assign(dereference(Output, L), dereference(Input, L), L);
+    auto Step = quantity(1, type(A.Context.getPointerDiffType(), L), L);
+    assign(Input, binary("+", Input, Step, "ptr:int", L), L);
+    assign(Output, binary("+", Output, Step, "ptr:int", L), L);
+    jump(Check, L); label(Done, L);
+  }
+
+  void constructValarrayCopy(Expression Place, Expression Source, SourceLocation L) {
+    auto Count = snapshot(valarraySize(Source, L), L);
+    const auto Allocate = labelName(), Done = labelName();
+    branch(binary("!=", Count, quantity(0, "u64", L), "bool", L), Allocate, Done, L);
+    label(Allocate, L);
+    auto Pointer = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy,
+        binary("*", Count, quantity(4, "u64", L), "u64", L), L), "ptr:int", L), L);
+    assign(valarrayMember(Place, "nct_valarray_begin", L), Pointer, L);
+    assign(valarrayMember(Place, "nct_valarray_end", L), Pointer, L);
+    // The pinned constructor reads the source range after allocation callbacks.
+    auto Input = temporary("ptr:int", L);
+    assign(Input, snapshot(valarrayMember(Source, "nct_valarray_begin", L), L), L);
+    const auto Check = labelName(), Store = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Input, valarrayMember(Source, "nct_valarray_end", L), "bool", L), Store, Done, L);
+    label(Store, L);
+    auto End = snapshot(valarrayMember(Place, "nct_valarray_end", L), L);
+    assign(dereference(End, L), dereference(Input, L), L);
+    auto Step = quantity(1, type(A.Context.getPointerDiffType(), L), L);
+    assign(valarrayMember(Place, "nct_valarray_end", L), binary("+", End, Step, "ptr:int", L), L);
+    assign(Input, binary("+", Input, Step, "ptr:int", L), L);
+    jump(Check, L); label(Done, L);
+  }
+
+  void transferValarrayStorage(Expression Place, Expression Source, SourceLocation L) {
+    auto Begin = snapshot(valarrayMember(Source, "nct_valarray_begin", L), L);
+    auto End = snapshot(valarrayMember(Source, "nct_valarray_end", L), L);
+    assign(valarrayMember(Place, "nct_valarray_begin", L), Begin, L);
+    assign(valarrayMember(Place, "nct_valarray_end", L), End, L);
+    initializeZero(valarrayMember(Source, "nct_valarray_begin", L), A.Context.getPointerType(A.Context.IntTy), L);
+    initializeZero(valarrayMember(Source, "nct_valarray_end", L), A.Context.getPointerType(A.Context.IntTy), L);
+  }
+
+  Expression utilityValarrayValueOperation(const CallExpr *Call, const UtilityValarrayCall &Proof) {
+    const auto L = Call->getExprLoc();
+    const auto Operation = Proof.Operation;
+    const auto *Selected = Proof.Method ? static_cast<const FunctionDecl *>(Proof.Method) : Proof.Function;
+    const auto *Object = Proof.Receiver;
+    std::optional<Expression> Receiver, Operand, Fill;
+    auto CaptureReceiver = [&] {
+      Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+    };
+    const bool AssignmentSyntax = isa<CXXOperatorCallExpr>(Call) &&
+        (Operation == UtilityValarrayScalarOperation::CopyAssign || Operation == UtilityValarrayScalarOperation::MoveAssign);
+    if (!AssignmentSyntax) CaptureReceiver();
+    const unsigned ParameterOffset = Proof.Method ? 0 : 1;
+    Operand = snapshot(argument(Call->getArg(Proof.ArgumentOffset),
+        Selected->getParamDecl(ParameterOffset)->getType()), L);
+    if (Operation == UtilityValarrayScalarOperation::Resize)
+      Fill = snapshot(argument(Call->getArg(Proof.ArgumentOffset + 1), Selected->getParamDecl(1)->getType()), L);
+    if (AssignmentSyntax) CaptureReceiver();
+    auto Place = dereference(*Receiver, L);
+    if (Operation == UtilityValarrayScalarOperation::Resize) {
+      destroyValarrayStorage(Place, L);
+      const auto Allocate = labelName(), Done = labelName();
+      branch(binary("!=", *Operand, quantity(0, "u64", L), "bool", L), Allocate, Done, L);
+      label(Allocate, L);
+      auto Pointer = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy,
+          binary("*", *Operand, quantity(4, "u64", L), "u64", L), L), "ptr:int", L), L);
+      assign(valarrayMember(Place, "nct_valarray_begin", L), Pointer, L);
+      assign(valarrayMember(Place, "nct_valarray_end", L), Pointer, L);
+      auto Limit = snapshot(binary("+", Pointer,
+          cast(*Operand, type(A.Context.getPointerDiffType(), L), L), "ptr:int", L), L);
+      const auto Check = labelName(), Store = labelName();
+      jump(Check, L); label(Check, L);
+      auto End = snapshot(valarrayMember(Place, "nct_valarray_end", L), L);
+      branch(binary("!=", End, Limit, "bool", L), Store, Done, L);
+      label(Store, L);
+      assign(dereference(End, L), *Fill, L);
+      assign(valarrayMember(Place, "nct_valarray_end", L), binary("+", End,
+          quantity(1, type(A.Context.getPointerDiffType(), L), L), "ptr:int", L), L);
+      jump(Check, L); label(Done, L);
+      return quantity(0, "int", L);
+    }
+    auto Source = dereference(*Operand, L);
+    if (Operation == UtilityValarrayScalarOperation::MoveAssign) {
+      destroyValarrayStorage(Place, L);
+      transferValarrayStorage(Place, Source, L);
+      return Place;
+    }
+    if (Operation == UtilityValarrayScalarOperation::Swap) {
+      for (const char *Name : {"nct_valarray_begin", "nct_valarray_end"}) {
+        auto Left = snapshot(valarrayMember(Place, Name, L), L);
+        auto Right = snapshot(valarrayMember(Source, Name, L), L);
+        assign(valarrayMember(Place, Name, L), Right, L);
+        assign(valarrayMember(Source, Name, L), Left, L);
+      }
+      return quantity(0, "int", L);
+    }
+    const auto Copy = labelName(), Done = labelName();
+    branch(binary("!=", cast(*Receiver, "ptr:void", L), cast(*Operand, "ptr:void", L), "bool", L), Copy, Done, L);
+    label(Copy, L);
+    auto First = snapshot(valarrayMember(Source, "nct_valarray_begin", L), L);
+    auto Last = snapshot(valarrayMember(Source, "nct_valarray_end", L), L);
+    auto Count = snapshot(valarraySize(Source, L), L);
+    auto Existing = snapshot(valarraySize(Place, L), L);
+    const auto Replace = labelName(), Store = labelName();
+    branch(binary("!=", Count, Existing, "bool", L), Replace, Store, L);
+    label(Replace, L);
+    destroyValarrayStorage(Place, L);
+    // __assign_range calls allocate even when the new range has zero elements.
+    auto Pointer = snapshot(cast(unorderedHeapAllocate(A.Context.IntTy,
+        binary("*", Count, quantity(4, "u64", L), "u64", L), L), "ptr:int", L), L);
+    assign(valarrayMember(Place, "nct_valarray_begin", L), Pointer, L);
+    assign(valarrayMember(Place, "nct_valarray_end", L), binary("+", Pointer,
+        cast(Count, type(A.Context.getPointerDiffType(), L), L), "ptr:int", L), L);
+    jump(Store, L); label(Store, L);
+    copyValarrayElements(valarrayMember(Place, "nct_valarray_begin", L), First, Last, L);
+    jump(Done, L); label(Done, L);
+    return Place;
+  }
+
   Expression utilityValarrayScalarOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityValarrayCall(A.S, A.Sources, Call, A.Context);
-    if (!Proof || !Proof->Receiver || !Proof->Method)
+    if (!Proof || !Proof->Receiver || (!Proof->Method && !Proof->Function))
       reject(L, "valarray operation", "The selected SDK body, layout and receiver are required.");
+    if (Proof->Operation == UtilityValarrayScalarOperation::CopyAssign ||
+        Proof->Operation == UtilityValarrayScalarOperation::MoveAssign ||
+        Proof->Operation == UtilityValarrayScalarOperation::Resize ||
+        Proof->Operation == UtilityValarrayScalarOperation::Swap)
+      return utilityValarrayValueOperation(Call, *Proof);
     const auto *Object = Proof->Receiver;
     auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
         : address(lvalue(Object), Object->getType(), L), L);
@@ -37768,6 +37916,15 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       const auto Info = approvedUtilityValarrayRecord(A.S, A.Sources,
           T->getAsCXXRecordDecl(), A.Context);
       if (!Info) reject(L, "valarray construction", "The authenticated two-pointer layout is required.");
+      if (*Kind == UtilityValarrayConstruction::Copy || *Kind == UtilityValarrayConstruction::Move) {
+        auto SourceAddress = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
+        initializeZero(valarrayMember(Place, "nct_valarray_begin", L), A.Context.getPointerType(A.Context.IntTy), L);
+        initializeZero(valarrayMember(Place, "nct_valarray_end", L), A.Context.getPointerType(A.Context.IntTy), L);
+        auto Source = dereference(SourceAddress, L);
+        if (*Kind == UtilityValarrayConstruction::Move) transferValarrayStorage(Place, Source, L);
+        else constructValarrayCopy(Place, Source, L);
+        return;
+      }
       std::optional<Expression> FillReference, Count;
       if (*Kind == UtilityValarrayConstruction::Fill) {
         FillReference = snapshot(argument(C->getArg(0),

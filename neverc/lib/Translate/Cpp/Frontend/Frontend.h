@@ -3832,14 +3832,15 @@ std::optional<UtilityValarrayRecord> approvedUtilityValarrayRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
-enum class UtilityValarrayConstruction { Default, Count, Fill };
-enum class UtilityValarrayScalarOperation { Size, Subscript, AddAssign, Sum };
+enum class UtilityValarrayConstruction { Default, Count, Fill, Copy, Move };
+enum class UtilityValarrayScalarOperation { Size, Subscript, AddAssign, Sum, CopyAssign, MoveAssign, Resize, Swap };
 
 struct UtilityValarrayCall {
   UtilityValarrayScalarOperation Operation;
   const clang::Expr *Receiver = nullptr;
   const clang::CXXMethodDecl *Method = nullptr;
   unsigned ArgumentOffset = 0;
+  const clang::FunctionDecl *Function = nullptr;
 };
 std::optional<UtilityValarrayConstruction> approvedUtilityValarrayConstruction(
     const State &S, const clang::SourceManager &SM,
