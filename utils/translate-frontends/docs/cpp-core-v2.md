@@ -17540,6 +17540,15 @@ size before releasing unused blocks. Assignment notation evaluates its right
 operand before the receiver and returns the receiver by reference; explicit
 `operator=` and `assign` calls evaluate their receiver before the argument.
 
+The same specialization admits `erase(const_iterator)` and
+`erase(const_iterator, const_iterator)` within the valid same-container iterator
+domain. The integer lowering preserves the pinned SDK's shorter-side choice:
+the prefix moves backwards or the suffix moves forwards, then size and start
+are updated before spare blocks are released. The returned mutable iterator
+denotes the first surviving element after the erased range, or `end()`. Empty
+ranges leave storage unchanged, including an empty default container. Receiver
+and iterator arguments are evaluated once with ordinary member-call sequencing.
+
 Each family has ten permanent GTests: six exact native-reference programs that
 generate and execute C23 at O0 and O2, and four source-origin rejection tests.
 Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
@@ -17585,6 +17594,12 @@ and shrink, retained element addresses, allocation and release callbacks, empty
 list reuse and operator versus explicit-call sequencing. Four source-origin
 guards reject replaced `assign` and `operator=` bodies, including bodies that
 forward to the ordinary pointer-range assignment.
+A separate erase family has ten registered GTests and twelve generated C23
+executions at O0 and O2 against exact native programs. It covers single erasure,
+multi-block front and back ranges, returned iterators, retained addresses,
+deallocation callbacks, empty ranges, whole-container erasure, reuse and argument
+sequencing. Four source-origin guards reject replaced single and range bodies,
+including forwarding replacements.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
@@ -17598,7 +17613,7 @@ checks and budgets; this reachability proof does not admit custom allocators.
 
 Custom allocators or adapter containers, other element specializations,
 other allocator and iterator range overloads, emplacement with other argument types
-or multiple arguments and positional insertion/erasure require further work.
+or multiple arguments and positional insertion require further work.
 These bounded operations
 do not establish complete STL support.
 
