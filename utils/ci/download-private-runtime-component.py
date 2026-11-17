@@ -94,7 +94,7 @@ def main():
     job = api('actions/jobs/' + str(selected[0]['id']))
     assert job['head_sha'] == plan['component_commit'] and job['status'] == 'completed' and job['conclusion'] == 'success'
     assert job['id'] == plan['component_actual_job'] and run['run_attempt'] == plan['component_attempt']
-    for name, expected in [('Validate the original125 cases across six64bit targets', 'success'),
+    for name, expected in [('Observe explicit-result bind sources across six exact 64-bit targets', 'success'),
                            ('Retain actual current private archive remotely for source diagnosis', 'success')]:
         assert any(step['name'] == name and step['conclusion'] == expected for step in job['steps'])
     downloads = []
@@ -136,7 +136,7 @@ def main():
     for name, identity in r['exact_private_input_sha256'].items():
         assert identity == plan['exact_private_input_sha256'][name]
         assert sha(root / 'neverc/lib/Translate/Cpp/Frontend' / name) == identity
-    assert r['sdk_files_verified'] == 665 and r['new_build_id'] == plan['frontend_build_id']
+    assert r['sdk_files_verified'] == 687 and r['new_build_id'] == plan['frontend_build_id']
     assert r['replayed_archive_sha256'] == plan['private_archive_sha256']
     folder = download(plan['component_archive_artifact'], 'component-archive')
     archives = [path for path in folder.rglob('*') if path.is_file()]
