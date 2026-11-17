@@ -3799,7 +3799,7 @@ std::optional<UtilityDequeRecord> approvedUtilityDequeRecord(const State &S,
 std::optional<UtilityDequeIteratorRecord> approvedUtilityDequeIteratorRecord(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
-enum class UtilityDequeConstruction { Default, Allocator, InitializerList, Copy, Move, Count, CountFill, PointerRange,
+enum class UtilityDequeConstruction { Default, Allocator, InitializerList, Copy, Move, Count, CountFill, PointerRange, CountAllocator, CountFillAllocator, PointerRangeAllocator, CopyAllocator, MoveAllocator,
   IteratorDefault, IteratorCopy, IteratorConstConversion };
 enum class UtilityDequeOperation { Empty, Size, Begin, End, Front, Back, Index, CopyAssign, MoveAssign, Swap, Resize, ResizeFill, AssignCount, AssignPointerRange,
   PushFront, PushBack, EmplaceFront, EmplaceBack, PopFront, PopBack, Clear, IteratorDereference, IteratorArrow,

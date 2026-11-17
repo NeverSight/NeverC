@@ -49631,10 +49631,61 @@ bool dequePointerRangeTemplate(const State &S, const SourceManager &SM,
       !Method->getParamDecl(0)->hasDefaultArg() && !Method->getParamDecl(1)->hasDefaultArg();
 }
 
+std::optional<UtilityDequeConstruction> dequeExplicitAllocatorConstructorSignature(
+    const State &S, const SourceManager &SM, const CXXConstructorDecl *C, const ASTContext &Context) {
+  if (!C || !C->getParent()->getIdentifier() || C->getParent()->getName() != "deque" ||
+      !approvedUtilityDequeRecord(S, SM, C->getParent(), Context) ||
+      (C->getNumParams() != 2 && C->getNumParams() != 3) ||
+      !dequeFunctionDeclarations(S, SM, C)) return std::nullopt;
+  for (const auto *P : C->parameters()) if (P->hasDefaultArg()) return std::nullopt;
+  if (!dequeAllocatorParameter(S, SM, C->getParamDecl(C->getNumParams() - 1)->getType(), Context))
+    return std::nullopt;
+  const auto First = C->getParamDecl(0)->getType();
+  const auto Record = Context.getRecordType(C->getParent());
+  const auto *Primary = C->getPrimaryTemplate();
+  const auto *Arguments = C->getTemplateSpecializationArgs();
+  if (!Primary) {
+    if (C->getNumParams() != 2) return std::nullopt;
+    if (Context.hasSameType(First, Context.getSizeType()))
+      return UtilityDequeConstruction::CountAllocator;
+    if (Context.hasSameType(First, Context.getLValueReferenceType(Record.withConst())))
+      return UtilityDequeConstruction::CopyAllocator;
+    if (Context.hasSameType(First, Context.getRValueReferenceType(Record)))
+      return UtilityDequeConstruction::MoveAllocator;
+    return std::nullopt;
+  }
+  if (!Arguments || C->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Primary->getTemplateParameters()->size() != Arguments->size()) return std::nullopt;
+  const auto Count = Arguments->size();
+  if (Count != 1 && Count != 2) return std::nullopt;
+  const auto *Enable = dyn_cast<NonTypeTemplateParmDecl>(Primary->getTemplateParameters()->getParam(Count - 1));
+  const auto &Enabled = Arguments->get(Count - 1);
+  if (!Enable || Enable->isParameterPack() || !Enable->hasDefaultArgument() ||
+      Enabled.getKind() != TemplateArgument::Integral || !Enabled.getAsIntegral().isZero() ||
+      !Context.hasSameType(Enabled.getIntegralType(), Context.IntTy)) return std::nullopt;
+  if (Count == 1) {
+    if (C->getNumParams() != 3 || !Context.hasSameType(First, Context.getSizeType())) return std::nullopt;
+    if (Context.hasSameType(C->getParamDecl(1)->getType(),
+            Context.getLValueReferenceType(Context.IntTy.withConst())))
+      return UtilityDequeConstruction::CountFillAllocator;
+    return std::nullopt;
+  }
+  const auto *Input = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
+  if (!Input || Input->isParameterPack() || C->getNumParams() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type) return std::nullopt;
+  const auto Iterator = Arguments->get(0).getAsType();
+  if (!Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy)) &&
+      !Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy.withConst()))) return std::nullopt;
+  if (!Context.hasSameType(First, Iterator) ||
+      !Context.hasSameType(C->getParamDecl(1)->getType(), Iterator)) return std::nullopt;
+  return UtilityDequeConstruction::PointerRangeAllocator;
+}
+
 std::optional<UtilityDequeConstruction> dequeConstructorSignature(const State &S, const SourceManager &SM,
     const CXXConstructorDecl *C, const ASTContext &Context) {
   if (!C || !dequeFunctionDeclarations(S, SM, C)) return std::nullopt;
   if (approvedUtilityDequeRecord(S, SM, C->getParent(), Context)) {
+    if (const auto Allocator = dequeExplicitAllocatorConstructorSignature(S, SM, C, Context)) return Allocator;
     if (dequePointerRangeTemplate(S, SM, C, Context)) return UtilityDequeConstruction::PointerRange;
     if (C->getPrimaryTemplate()) return std::nullopt;
     if (C->getNumParams() == 1 && !C->getParamDecl(0)->hasDefaultArg()) {
@@ -51826,9 +51877,12 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
         (priorityQueueAllocatorConstructorKind(S, SM, RootConstructor, Context) &&
          (*PriorityConstruction == UtilityPriorityQueueConstruction::Move ||
           *PriorityConstruction == UtilityPriorityQueueConstruction::MoveContainer)))));
+  const auto DequeAllocatorConstruction = !PriorityRoot && RootConstructor
+      ? dequeExplicitAllocatorConstructorSignature(S, SM, RootConstructor, Context) : std::nullopt;
   const bool DequeValueCopy = !PriorityRoot && RootMethod &&
       approvedUtilityDequeRecord(S, SM, RootMethod->getParent(), Context) &&
-      ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator());
+      ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator() ||
+       (DequeAllocatorConstruction && *DequeAllocatorConstruction == UtilityDequeConstruction::CopyAllocator));
   const auto CountOperation = !PriorityRoot && RootMethod
       ? dequeMethodSignature(S, SM, RootMethod, Context) : std::nullopt;
   const bool DequePointerAssign = CountOperation &&
@@ -51847,7 +51901,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   const bool ClosedCopyProof = DequeValueCopy || DequePointerAssign || SharedStatements;
   const bool DequePointerRange = !PriorityRoot && RootMethod &&
       dequePointerRangeTemplate(S, SM, RootMethod, Context);
-  const bool MemoizeStatements = ClosedCopyProof || DequeCountUpdate || DequePointerRange;
+  const bool MemoizeStatements = ClosedCopyProof || DequeCountUpdate || DequePointerRange ||
+      static_cast<bool>(DequeAllocatorConstruction);
   std::set<const FunctionDecl *> LocalQueries;
   auto &Queries = SharedQueries ? *SharedQueries : LocalQueries;
   const FunctionDecl *ActiveFunction = nullptr;

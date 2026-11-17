@@ -37445,22 +37445,24 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       if (!approvedUtilityDequeRecord(A.S, A.Sources, Record, A.Context))
         reject(L, "deque construction", "The checked integer owner layout is required.");
       initializeDequeStorage(Place, L);
-      if (*Kind == UtilityDequeConstruction::Move) {
+      if (*Kind == UtilityDequeConstruction::Move || *Kind == UtilityDequeConstruction::MoveAllocator) {
         moveDequeStorage(Place, dereference(Operands[0], L), L); return;
       }
-      if (*Kind == UtilityDequeConstruction::Copy) {
+      if (*Kind == UtilityDequeConstruction::Copy || *Kind == UtilityDequeConstruction::CopyAllocator) {
         auto Source = dereference(Operands[0], L);
         auto Map = snapshot(dequeOwnerMember(Source, "nct_deque_begin", L), L);
         auto Start = snapshot(dequeOwnerMember(Source, "nct_deque_start", L), L);
         auto Count = snapshot(dequeOwnerMember(Source, "nct_deque_size", L), L);
         initializeDequeElements(Place, Map, Count, L, Start); return;
       }
-      if (*Kind == UtilityDequeConstruction::PointerRange) {
+      if (*Kind == UtilityDequeConstruction::PointerRange || *Kind == UtilityDequeConstruction::PointerRangeAllocator) {
         assignPointerDequeRange(Place, Operands[0], Operands[1], L); return;
       }
-      if (*Kind == UtilityDequeConstruction::Count || *Kind == UtilityDequeConstruction::CountFill) {
+      if (*Kind == UtilityDequeConstruction::Count || *Kind == UtilityDequeConstruction::CountFill ||
+          *Kind == UtilityDequeConstruction::CountAllocator || *Kind == UtilityDequeConstruction::CountFillAllocator) {
         std::optional<Expression> FillReference;
-        if (*Kind == UtilityDequeConstruction::CountFill) FillReference = Operands[1];
+        if (*Kind == UtilityDequeConstruction::CountFill || *Kind == UtilityDequeConstruction::CountFillAllocator)
+          FillReference = Operands[1];
         resizeCountedDequeStorage(Place, Operands[0], FillReference, false, L); return;
       }
       if (*Kind != UtilityDequeConstruction::InitializerList) return;
