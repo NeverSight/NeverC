@@ -17531,6 +17531,15 @@ allocator transfers the original storage without allocation, preserves element
 addresses and leaves the source empty and reusable. These overloads retain the
 same valid-range, nonoverflowing-size and successful-allocation domain.
 
+The same specialization admits `assign(std::initializer_list<int>)` and
+`operator=(std::initializer_list<int>)`, including brace syntax and empty lists.
+The by-value list carrier is captured at its call sequencing point. Assignment
+writes the retained prefix before capacity callbacks and reads the new suffix
+after growth, preserving surviving element addresses. Shrinking publishes the new
+size before releasing unused blocks. Assignment notation evaluates its right
+operand before the receiver and returns the receiver by reference; explicit
+`operator=` and `assign` calls evaluate their receiver before the argument.
+
 Each family has ten permanent GTests: six exact native-reference programs that
 generate and execute C23 at O0 and O2, and four source-origin rejection tests.
 Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
@@ -17569,6 +17578,13 @@ guards reject replaced count, fill, range and copy/move allocator constructor bo
 Separate six-target source checks reject owned allocator equality bodies for both
 `allocator<int>` and its internal `allocator<int*>` rebind, whether the replaced
 body returns true or false.
+A separate initializer-list assignment family has ten registered GTests and
+twelve generated C23 executions at O0 and O2 against exact native programs. It
+covers brace and explicit calls, assignment result references, multi-block growth
+and shrink, retained element addresses, allocation and release callbacks, empty
+list reuse and operator versus explicit-call sequencing. Four source-origin
+guards reject replaced `assign` and `operator=` bodies, including bodies that
+forward to the ordinary pointer-range assignment.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
