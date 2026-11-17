@@ -51617,11 +51617,14 @@ bool dequeIntegerMoveDispatcher(const State &S, const SourceManager &SM,
   const auto IntPointer = Context.getPointerType(Context.IntTy);
   auto InputType = [&](QualType Type) {
     return Context.hasSameType(Type, IntPointer) ||
+        Context.hasSameType(Type, Context.getPointerType(IntPointer)) ||
+        Context.hasSameType(Type, Context.getPointerType(IntPointer.withConst())) ||
         Context.hasSameType(Type, Context.getPointerType(Context.IntTy.withConst())) ||
         dequeIteratorType(S, SM, Type, false, Context) || dequeIteratorType(S, SM, Type, true, Context);
   };
   if (!InputType(Input) || !Context.hasSameType(Input, Method->getParamDecl(1)->getType()) ||
-      !(Context.hasSameType(Output, IntPointer) || dequeIteratorType(S, SM, Output, false, Context))) return false;
+      !(Context.hasSameType(Output, IntPointer) || Context.hasSameType(Output, Context.getPointerType(IntPointer)) ||
+        dequeIteratorType(S, SM, Output, false, Context))) return false;
   for (const auto *Parameter : Method->parameters()) if (Parameter->hasDefaultArg()) return false;
   if (Arguments->get(2).getKind() == TemplateArgument::Type) {
     for (unsigned I = 0; I != 3; ++I)
@@ -51697,7 +51700,9 @@ bool dequeIntegerMoveDispatcher(const State &S, const SourceManager &SM,
           if (const auto *Record = dequeRecordType(Variable->getType()))
             if (!Record->hasTrivialDestructor() || !dequeDependencyDeclaration(S, SM, Record)) return false;
         } else if (const auto *Alias = dyn_cast<TypeAliasDecl>(D)) {
-          if (Alias->getDeclContext() != Function || !SegmentedTraits(Alias->getUnderlyingType())) return false;
+          if (Alias->getDeclContext() != Function ||
+              (!Context.hasSameType(Alias->getUnderlyingType(), Context.getPointerDiffType()) &&
+               !SegmentedTraits(Alias->getUnderlyingType()))) return false;
         } else if (!isa<StaticAssertDecl>(D)) return false;
       }
     } else if (const auto *Reference = dyn_cast<DeclRefExpr>(Node)) {
@@ -51714,6 +51719,22 @@ bool dequeIntegerMoveDispatcher(const State &S, const SourceManager &SM,
             !Context.hasSameType(Cast->getType()->getPointeeType(), Builtin->getType()) ||
             !dequeDependencyDeclaration(S, SM, Builtin) ||
             !dequeDependencyDeclaration(S, SM, Reference->getFoundDecl())) return false;
+      } else if (Cast->getCastKind() == CK_ConstructorConversion) {
+        const auto *Construction = dyn_cast<CXXConstructExpr>(Cast->getSubExpr()->IgnoreParens());
+        if (!Construction || !Context.hasSameType(Cast->getType(), Construction->getType())) return false;
+        const auto *Temporary = dyn_cast_or_null<ClassTemplateSpecializationDecl>(dequeRecordType(Cast->getType()));
+        bool Segment = Temporary && Temporary->getIdentifier() && Temporary->getName() == "_MoveSegment" &&
+            Name == "__move_impl" && Temporary->getDeclContext() == Owner &&
+            Temporary->hasTrivialDestructor() && Temporary->getTemplateArgs().size() == 2;
+        if (Segment) {
+          const auto &Arguments = Temporary->getTemplateArgs();
+          Segment = Arguments[0].getKind() == TemplateArgument::Type && Arguments[1].getKind() == TemplateArgument::Type &&
+              Context.hasSameType(Arguments[0].getAsType(), Input) && Context.hasSameType(Arguments[1].getAsType(), Output);
+          for (const auto *D : Temporary->redecls()) if (!Pinned(D, "__algorithm/move.h")) return false;
+        }
+        if (!Segment && !Context.hasSameType(Cast->getType(), Method->getReturnType())) return false;
+        // Recursing below proves the entire construction and records its
+        // constructor for the ordinary function/body/declaration walker.
       } else if (Cast->getCastKind() != CK_LValueToRValue && Cast->getCastKind() != CK_NoOp &&
           Cast->getCastKind() != CK_IntegralCast && Cast->getCastKind() != CK_FunctionToPointerDecay) return false;
     } else if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
