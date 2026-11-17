@@ -51571,6 +51571,173 @@ bool dequeClosedOwnerQuery(const State &S, const SourceManager &SM,
   return true;
 }
 
+bool dequeIntegerMoveDispatcher(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const ASTContext &Context,
+    std::vector<const FunctionDecl *> &Dependencies) {
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  if (!Method || Method->isInvalidDecl() || Method->isDeleted() || Method->isVariadic() ||
+      Method->isStatic() || !Method->isConst() || Method->isVolatile() ||
+      Method->getRefQualifier() != RQ_None || !Method->isOverloadedOperator() ||
+      Method->getOverloadedOperator() != OO_Call || !Method->hasBody() ||
+      Method->getNumParams() != 3 ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+  const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
+  if (!Owner || !Owner->getIdentifier() || !dequeStd(Owner->getDeclContext()) ||
+      !Owner->isEmpty() || !Owner->hasTrivialDestructor() || Owner->getTemplateArgs().size() != 1) return false;
+  const auto Name = Owner->getName();
+  const char *Header = Name == "__move_impl" ? "__algorithm/move.h" :
+      Name == "__move_backward_impl" ? "__algorithm/move_backward.h" : nullptr;
+  if (!Header) return false;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D, const char *File) {
+    return ++Declarations <= 128 && dequePinned(S, SM, D, File);
+  };
+  for (const auto *D : Owner->redecls()) if (!Pinned(D, Header)) return false;
+  const auto *OwnerTemplate = Owner->getSpecializedTemplate();
+  if (!OwnerTemplate || OwnerTemplate->getTemplateParameters()->size() != 1) return false;
+  for (const auto *D : OwnerTemplate->redecls())
+    if (!Pinned(D, Header) || !Pinned(D->getTemplatedDecl(), Header)) return false;
+  const auto &PolicyArgument = Owner->getTemplateArgs()[0];
+  if (PolicyArgument.getKind() != TemplateArgument::Type) return false;
+  const auto *Policy = dequeRecordType(PolicyArgument.getAsType());
+  if (!Policy || !Policy->getIdentifier() || Policy->getName() != "_ClassicAlgPolicy" ||
+      !dequeStd(Policy->getDeclContext()) || !Policy->isEmpty() || !Policy->hasTrivialDestructor()) return false;
+  for (const auto *D : Policy->redecls()) if (!Pinned(D, "__algorithm/iterator_operations.h")) return false;
+  const auto *Primary = Method->getPrimaryTemplate();
+  const auto *Pattern = Method->getTemplateInstantiationPattern();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  if (!Primary || !Pattern || !Arguments || Arguments->size() != 3 ||
+      Primary->getTemplateParameters()->size() != 3) return false;
+  for (const auto *D : Method->redecls()) if (!Pinned(D, Header)) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D, Header)) return false;
+  for (const auto *D : Primary->redecls())
+    if (!Pinned(D, Header) || !Pinned(D->getTemplatedDecl(), Header)) return false;
+  const auto Input = Method->getParamDecl(0)->getType();
+  const auto Output = Method->getParamDecl(2)->getType();
+  const auto IntPointer = Context.getPointerType(Context.IntTy);
+  auto InputType = [&](QualType Type) {
+    return Context.hasSameType(Type, IntPointer) ||
+        Context.hasSameType(Type, Context.getPointerType(Context.IntTy.withConst())) ||
+        dequeIteratorType(S, SM, Type, false, Context) || dequeIteratorType(S, SM, Type, true, Context);
+  };
+  if (!InputType(Input) || !Context.hasSameType(Input, Method->getParamDecl(1)->getType()) ||
+      !(Context.hasSameType(Output, IntPointer) || dequeIteratorType(S, SM, Output, false, Context))) return false;
+  for (const auto *Parameter : Method->parameters()) if (Parameter->hasDefaultArg()) return false;
+  if (Arguments->get(2).getKind() == TemplateArgument::Type) {
+    for (unsigned I = 0; I != 3; ++I)
+      if (Arguments->get(I).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments->get(I).getAsType(), Method->getParamDecl(I)->getType())) return false;
+  } else {
+    if (Arguments->get(0).getKind() != TemplateArgument::Type ||
+        Arguments->get(1).getKind() != TemplateArgument::Type ||
+        Arguments->get(2).getKind() != TemplateArgument::Integral ||
+        !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy) ||
+        !Arguments->get(2).getAsIntegral().isZero()) return false;
+    const bool Segmented = Context.hasSameType(Arguments->get(0).getAsType(), Input) &&
+        Context.hasSameType(Arguments->get(1).getAsType(), Output) &&
+        (dequeIteratorType(S, SM, Input, false, Context) || dequeIteratorType(S, SM, Input, true, Context) ||
+         dequeIteratorType(S, SM, Output, false, Context));
+    const bool Pointer = Input->isPointerType() && Output->isPointerType() &&
+        Context.hasSameType(Arguments->get(0).getAsType(), Input->getPointeeType()) &&
+        Context.hasSameType(Arguments->get(1).getAsType(), Output->getPointeeType());
+    if (!Segmented && !Pointer) return false;
+  }
+  const auto *Pair = dyn_cast_or_null<ClassTemplateSpecializationDecl>(dequeRecordType(Method->getReturnType()));
+  if (Method->getReturnType()->isReferenceType() || !Pair || !Pair->getIdentifier() || Pair->getName() != "pair" ||
+      !dequeStd(Pair->getDeclContext()) || !Pair->hasTrivialDestructor() || Pair->getTemplateArgs().size() != 2) return false;
+  const auto &PairArguments = Pair->getTemplateArgs();
+  if (PairArguments[0].getKind() != TemplateArgument::Type || PairArguments[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(PairArguments[0].getAsType(), Input) ||
+      !Context.hasSameType(PairArguments[1].getAsType(), Output)) return false;
+  for (const auto *D : Pair->redecls())
+    if (!Pinned(D, "__utility/pair.h") && !Pinned(D, "__fwd/pair.h")) return false;
+  auto SegmentedTraits = [&](QualType Type) {
+    const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(dequeRecordType(Type));
+    if (!Record || !Record->getIdentifier() || Record->getName() != "__segmented_iterator_traits" ||
+        !dequeStd(Record->getDeclContext()) || Record->getTemplateArgs().size() != 1) return false;
+    const auto &Argument = Record->getTemplateArgs()[0];
+    if (Argument.getKind() != TemplateArgument::Type ||
+        (!Context.hasSameType(Argument.getAsType(), Input) && !Context.hasSameType(Argument.getAsType(), Output))) return false;
+    for (const auto *D : Record->redecls())
+      if (!Pinned(D, "deque") && !Pinned(D, "__iterator/segmented_iterator.h")) return false;
+    return true;
+  };
+  const bool Assign = false;
+  auto Macro = [&](SourceLocation Location) {
+    if (!Location.isMacroID()) return true;
+    const auto File = S.sdkFile(SM, SM.getSpellingLoc(Location));
+    return File && (File->Root == "libcxx" || File->Root == "resource");
+  };
+  std::set<const FunctionDecl *> Callees;
+  std::vector<const FunctionDecl *> Required;
+  auto Require = [&](const FunctionDecl *Callee) {
+    if (!Callee || !dequeDependencyDeclaration(S, SM, Callee)) return false;
+    if (Callees.insert(Callee->getCanonicalDecl()).second) Required.push_back(Callee);
+    return Required.size() <= 32;
+  };
+  unsigned Nodes = 0;
+  std::function<bool(const Stmt *, unsigned)> Wrapper;
+  Wrapper = [&](const Stmt *Node, unsigned Depth) {
+    if (!Node) return true;
+    if (Depth > 16 || ++Nodes > 128 || !Macro(Node->getBeginLoc()) || !Macro(Node->getEndLoc())) return false;
+    if (const auto *Value = dyn_cast<Expr>(Node)) if (!Macro(Value->getExprLoc())) return false;
+    if (const auto *Call = dyn_cast<CallExpr>(Node)) {
+      if (!Require(Call->getDirectCallee())) return false;
+    } else if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node)) {
+      const auto *Constructor = Construction->getConstructor();
+      if (!Constructor->getParent()->hasTrivialDestructor() || !Require(Constructor)) return false;
+    } else if (const auto *This = dyn_cast<CXXThisExpr>(Node)) {
+      if (!Assign || !Context.hasSameType(This->getType(),
+          Context.getPointerType(Context.getRecordType(Method->getParent())))) return false;
+    } else if (const auto *Declaration = dyn_cast<DeclStmt>(Node)) {
+      for (const auto *D : Declaration->decls()) {
+        if (!dequeDependencyDeclaration(S, SM, D)) return false;
+        if (const auto *Variable = dyn_cast<VarDecl>(D)) {
+          if (Variable->getDeclContext() != Function || Variable->hasGlobalStorage() || !Variable->hasInit()) return false;
+          if (const auto *Record = dequeRecordType(Variable->getType()))
+            if (!Record->hasTrivialDestructor() || !dequeDependencyDeclaration(S, SM, Record)) return false;
+        } else if (const auto *Alias = dyn_cast<TypeAliasDecl>(D)) {
+          if (Alias->getDeclContext() != Function || !SegmentedTraits(Alias->getUnderlyingType())) return false;
+        } else if (!isa<StaticAssertDecl>(D)) return false;
+      }
+    } else if (const auto *Reference = dyn_cast<DeclRefExpr>(Node)) {
+      if (!dequeDependencyDeclaration(S, SM, Reference->getDecl())) return false;
+    } else if (const auto *Member = dyn_cast<MemberExpr>(Node)) {
+      if (!Macro(Member->getMemberLoc()) || !dequeDependencyDeclaration(S, SM, Member->getMemberDecl())) return false;
+    } else if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Node)) {
+      if (Cleanup->cleanupsHaveSideEffects() || Cleanup->getNumObjects() || !Cleanup->getSubExpr()) return false;
+    } else if (const auto *Cast = dyn_cast<CastExpr>(Node)) {
+      if (Cast->getCastKind() == CK_BuiltinFnToFnPtr) {
+        const auto *Reference = dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParens());
+        const auto *Builtin = Reference ? dyn_cast<FunctionDecl>(Reference->getDecl()) : nullptr;
+        if (!Builtin || !Builtin->getBuiltinID() || !Cast->getType()->isFunctionPointerType() ||
+            !Context.hasSameType(Cast->getType()->getPointeeType(), Builtin->getType()) ||
+            !dequeDependencyDeclaration(S, SM, Builtin) ||
+            !dequeDependencyDeclaration(S, SM, Reference->getFoundDecl())) return false;
+      } else if (Cast->getCastKind() != CK_LValueToRValue && Cast->getCastKind() != CK_NoOp &&
+          Cast->getCastKind() != CK_IntegralCast && Cast->getCastKind() != CK_FunctionToPointerDecay) return false;
+    } else if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
+      if (!dequeDependencyDeclaration(S, SM, Default->getParam()) || !Wrapper(Default->getExpr(), Depth + 1)) return false;
+    } else if (const auto *Unary = dyn_cast<UnaryOperator>(Node)) {
+      const auto Op = Unary->getOpcode();
+      if (Op != UO_PreInc && Op != UO_PostInc && Op != UO_PreDec && Op != UO_PostDec && Op != UO_Deref) return false;
+    } else if (const auto *Binary = dyn_cast<BinaryOperator>(Node)) {
+      const auto Op = Binary->getOpcode();
+      if (Op != BO_Assign && Op != BO_NE && Op != BO_EQ && Op != BO_Sub && Op != BO_SubAssign && Op != BO_Add) return false;
+    } else if (!isa<IfStmt>(Node) && !isa<WhileStmt>(Node) && !isa<CXXBoolLiteralExpr>(Node) &&
+               !isa<CompoundStmt>(Node) && !isa<ReturnStmt>(Node) && !isa<ParenExpr>(Node) &&
+               !isa<MaterializeTemporaryExpr>(Node) && !isa<CXXScalarValueInitExpr>(Node) &&
+               !isa<IntegerLiteral>(Node)) return false;
+    for (const auto *Child : Node->children()) if (!Wrapper(Child, Depth + 1)) return false;
+    return true;
+  };
+  if (!Wrapper(Function->getBody(), 0)) return false;
+  // The wrapper's complete AST and every call edge were checked. Actual copy,
+  // move, construction and rewrapping callees still need the original walker.
+  Dependencies = std::move(Required);
+  return true;
+}
+
 bool dequeTransferWrapper(const State &S, const SourceManager &SM,
     const FunctionDecl *Function, const ASTContext &Context,
     std::vector<const FunctionDecl *> &Dependencies) {
@@ -52094,7 +52261,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
         dequeClosedIteratorPrimitive(S, SM, F, Context) || dequeClosedOwnerQuery(S, SM, F, Context, &Queries))) return true;
     if (ClosedCopyProof) {
       std::vector<const FunctionDecl *> Dependencies;
-      if (dequeTransferWrapper(S, SM, F, Context, Dependencies) ||
+      if ((DequeInsert && dequeIntegerMoveDispatcher(S, SM, F, Context, Dependencies)) ||
+          dequeTransferWrapper(S, SM, F, Context, Dependencies) ||
           dequeAnnotationWrapper(S, SM, F, Context, Dependencies) ||
           dequeIteratorDistance(S, SM, F, Context, Dependencies)) {
         for (const auto *Dependency : Dependencies)
