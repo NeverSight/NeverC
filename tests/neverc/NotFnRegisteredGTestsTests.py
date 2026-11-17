@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.deque_explicit_allocator_registered = cls.registered
+        cls.deque_explicit_allocator_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.deque_explicit_allocator_original = cls.adapter.restore_original_gtests(cls.deque_explicit_allocator_registered,cls.deque_explicit_allocator_suffix)
+        cls.registered = cls.adapter.restore_deque_explicit_allocator_history(cls.deque_explicit_allocator_registered)
         cls.deque_range_registered = cls.registered
         cls.deque_range_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.deque_range_original = cls.adapter.restore_original_gtests(cls.deque_range_registered,cls.deque_range_suffix)
@@ -1147,6 +1151,34 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.deque_range_registered,self.deque_range_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.deque_range_original+b' ',['TranslateTest.CoreV2DequeRangeMutableConstructionRunAtBothOptimizations'])
+
+    def test_deque_explicit_allocator_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.deque_explicit_allocator_original+self.deque_explicit_allocator_suffix,self.deque_explicit_allocator_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.deque_explicit_allocator_original,self.deque_explicit_allocator_suffix),self.deque_explicit_allocator_original)
+        self.assertEqual(self.adapter.restore_deque_explicit_allocator_history(self.deque_explicit_allocator_registered),self.deque_range_registered)
+        self.assertEqual(self.adapter.restore_deque_explicit_allocator_history(self.deque_explicit_allocator_original),self.deque_range_original)
+        selected = ['TranslateTest.CoreV2DequeExplicitAllocatorCountRunAtBothOptimizations', 'TranslateTest.CoreV2DequeExplicitAllocatorFillEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2DequeExplicitAllocatorPointerRangesRunAtBothOptimizations', 'TranslateTest.CoreV2DequeExplicitAllocatorCopyRunAtBothOptimizations', 'TranslateTest.CoreV2DequeExplicitAllocatorMoveRunAtBothOptimizations', 'TranslateTest.CoreV2DequeExplicitAllocatorCallSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2DequeExplicitAllocatorCountOwnedBodyRejected', 'TranslateTest.CoreV2DequeExplicitAllocatorFillOwnedBodyRejected', 'TranslateTest.CoreV2DequeExplicitAllocatorRangeOwnedBodiesRejected', 'TranslateTest.CoreV2DequeExplicitAllocatorCopyMoveOwnedBodiesRejected']
+        generated,proof = self.extractor.extract(self.deque_explicit_allocator_original,selected)
+        self.assertEqual(proof['original_test_names'],7672)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7662)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19dqalloc',generated)
+        self.assertIn(b'allocator',generated)
+
+    def test_deque_explicit_allocator_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.deque_explicit_allocator_registered+b' ',
+                        self.deque_explicit_allocator_registered.replace(b'r19dqalloc',b'q.push(11)',1),
+                        self.deque_explicit_allocator_registered+self.deque_explicit_allocator_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.deque_explicit_allocator_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_deque_explicit_allocator_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.deque_explicit_allocator_registered,self.deque_explicit_allocator_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.deque_explicit_allocator_original+b' ',['TranslateTest.CoreV2DequeExplicitAllocatorCountRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':

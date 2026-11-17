@@ -1,0 +1,205 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-explicit-allocator-count",
+      "formal_test_name": "TranslateTest.CoreV2DequeExplicitAllocatorCountRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9be6bcdae89ec267f9ccf4850d586b5acde98010f14eef811c94a99fc6d42b9a",
+      "original_case_source_sha256": "9be6bcdae89ec267f9ccf4850d586b5acde98010f14eef811c94a99fc6d42b9a",
+      "gtest_body_sha256": "efa8c72b1e2ecb7a3d46aad403e98308328bbd0c43d811d5e294e640b6bb94b9"
+    },
+    {
+      "name": "deque-explicit-allocator-fill-effects",
+      "formal_test_name": "TranslateTest.CoreV2DequeExplicitAllocatorFillEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "aa1279f875c558297736a75324a263c10c1d8952622468f3d32997e818b4e6ff",
+      "original_case_source_sha256": "aa1279f875c558297736a75324a263c10c1d8952622468f3d32997e818b4e6ff",
+      "gtest_body_sha256": "cf39f1299e5c2c13872899d05afed655e64da3a4a04bf8b374745762d5e1e6fc"
+    },
+    {
+      "name": "deque-explicit-allocator-pointer-ranges",
+      "formal_test_name": "TranslateTest.CoreV2DequeExplicitAllocatorPointerRangesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3b7587a375047840d3a330f02cbce21a947ba5df393b93fdc4c0ccd4d80969fb",
+      "original_case_source_sha256": "3b7587a375047840d3a330f02cbce21a947ba5df393b93fdc4c0ccd4d80969fb",
+      "gtest_body_sha256": "45f711419cb5d9cdea276e23ee40899d782a69b6ece43af67a2d6b95764ad5d0"
+    },
+    {
+      "name": "deque-explicit-allocator-copy",
+      "formal_test_name": "TranslateTest.CoreV2DequeExplicitAllocatorCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e440c183ad104f11d2f0201f7760df2fdbeedac54dd930329d62c69b45081ad8",
+      "original_case_source_sha256": "e440c183ad104f11d2f0201f7760df2fdbeedac54dd930329d62c69b45081ad8",
+      "gtest_body_sha256": "3adfc6593fd96d3c1d00fbf2890b593e35489becf6fb0285800367b52a13d75c"
+    },
+    {
+      "name": "deque-explicit-allocator-move",
+      "formal_test_name": "TranslateTest.CoreV2DequeExplicitAllocatorMoveRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "96d2de1ee41cf7ac12e345f2ce4bdb83553f17b16da2f2577bd1e45182dcb692",
+      "original_case_source_sha256": "96d2de1ee41cf7ac12e345f2ce4bdb83553f17b16da2f2577bd1e45182dcb692",
+      "gtest_body_sha256": "61788f18848eab5aa045ab2676f80eeaa898a44fe325edeba5ae91391efbd693"
+    },
+    {
+      "name": "deque-explicit-allocator-call-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2DequeExplicitAllocatorCallSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "feb1b79d33b6d0e014f9664b32f8adaf70ef10901606cea5cd2c947eea61494e",
+      "original_case_source_sha256": "feb1b79d33b6d0e014f9664b32f8adaf70ef10901606cea5cd2c947eea61494e",
+      "gtest_body_sha256": "a66fbe287d333cf1c995fc6c439e5baeb24662b512ca0a023807152ba23721e5"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "deque-explicit-allocator-count-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeExplicitAllocatorCountOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "f0bf9f980be31ca820eb12af98d2ad51b58e0c2685f0f0418a210ffb155ef0ce",
+      "original_case_source_sha256": "f0bf9f980be31ca820eb12af98d2ad51b58e0c2685f0f0418a210ffb155ef0ce",
+      "gtest_body_sha256": "dac8af144bec2a50e72f8fef38ec8d9fd1d2c881ddba3fcf1584908b52572617"
+    },
+    {
+      "name": "deque-explicit-allocator-fill-owned-body",
+      "formal_test_name": "TranslateTest.CoreV2DequeExplicitAllocatorFillOwnedBodyRejected",
+      "expected": "reject",
+      "source_sha256": "3669d62a80ec6f4dcba3b2bc8944a59b28099a5aa8bb06f687bcecc892eba3a6",
+      "original_case_source_sha256": "3669d62a80ec6f4dcba3b2bc8944a59b28099a5aa8bb06f687bcecc892eba3a6",
+      "gtest_body_sha256": "e0cc9fada53af804d1f39cfe7d132ee4cb43e36e820e0c9ce5b0530932f569c5"
+    },
+    {
+      "name": "deque-explicit-allocator-range-owned-bodies",
+      "formal_test_name": "TranslateTest.CoreV2DequeExplicitAllocatorRangeOwnedBodiesRejected",
+      "expected": "reject",
+      "source_sha256": "d34e578160ab65a5b057795859bc1e5c978b3dece2b93aeb1ec80c34244ceccb",
+      "original_case_source_sha256": "d34e578160ab65a5b057795859bc1e5c978b3dece2b93aeb1ec80c34244ceccb",
+      "gtest_body_sha256": "aa7b1349a72cc4e35b2507516d28ae29e38aad505deb148fc1ee8d9a819b4edd"
+    },
+    {
+      "name": "deque-explicit-allocator-copy-move-owned-bodies",
+      "formal_test_name": "TranslateTest.CoreV2DequeExplicitAllocatorCopyMoveOwnedBodiesRejected",
+      "expected": "reject",
+      "source_sha256": "c9d0f882a6bfe3e9bd822fc12d7dd28ed6c72709518605a3f33251db0fed8df3",
+      "original_case_source_sha256": "c9d0f882a6bfe3e9bd822fc12d7dd28ed6c72709518605a3f33251db0fed8df3",
+      "gtest_body_sha256": "1e740d7d6ab8c231d953cf95e7bc04787be1f5f0f8bd6bd648c45ba0098a2f55"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeExplicitAllocatorCountRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeExplicitAllocatorFillEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeExplicitAllocatorPointerRangesRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeExplicitAllocatorCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeExplicitAllocatorMoveRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeExplicitAllocatorCallSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeExplicitAllocatorCountOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeExplicitAllocatorFillOwnedBodyRejected",
+    "TranslateTest.CoreV2DequeExplicitAllocatorRangeOwnedBodiesRejected",
+    "TranslateTest.CoreV2DequeExplicitAllocatorCopyMoveOwnedBodiesRejected"
+  ],
+  "native_reference_authentication_sha256": "f88e533c26978501c3447d85fb912ca0bc2f35d96e8339bee8ac6e1acb767070",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "5c918ba161e3bd404699e44a64ee9fc1812ed1fc274563d36355a8703681f514",
+  "maintained_original_sha256": "55e1ef9b846da39792666567def634fef22a7aed0e15bac74e3e6b91459e43ae",
+  "previous_registered_source_sha256": "8e59c90635b513a5a5e01e5beed95562546a7130fe2791e72147705759dc7ab8",
+  "previous_maintained_original_sha256": "1986f8a1b8783949442396a0e757c52d73af54ca7d425014375598d6501a19a4",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7672,
+  "current_python_registry_tests": 82,
+  "previous7662_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "80f71012cbc158ae46caeb7057501be9deacb2065e3b113bbbd736820ece1e34",
+  "extractor_sha256": "ad27b96bce1dd94eb895fe13baa7da6afd2a70db7ebd7bbdfc39bdfd0d0be891",
+  "source_cases": [
+    {
+      "name": "deque-explicit-allocator-count",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <memory>\n#include <new>\nusing Size=decltype(sizeof(0));using Alloc=std::allocator<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){Alloc alloc;\nunsigned counts[7]={0,1,1023,1024,1025,2049,3073};\nfor(unsigned t=0;t!=7;++t){unsigned n=counts[t];std::deque<int> a(n,alloc);\nif(a.size()!=n)return 1;for(unsigned i=0;i!=n;++i)if(a[i]!=0)return 2;\nif(n){int* saved=&a.front();a.push_back(17);if(&a.front()!=saved||a.back()!=17)return 3;}}\nreturn 0;}\n",
+      "source_sha256": "9be6bcdae89ec267f9ccf4850d586b5acde98010f14eef811c94a99fc6d42b9a",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-explicit-allocator-fill-effects",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <memory>\n#include <new>\nusing Size=decltype(sizeof(0));using Alloc=std::allocator<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic Size count=2050;\nstatic int fill=7,armed,calls;\nvoid* operator new(Size n){void* p=malloc(n);if(armed){++calls;count=1;fill=63;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint main(){Alloc alloc;armed=1;std::deque<int> a(count,fill,alloc);armed=0;\nif(a.size()!=2050||!calls||count!=1||fill!=63)return 1;\nfor(unsigned i=0;i!=2050;++i)if(a[i]!=63)return 2;\nstd::deque<int> empty((Size)0,fill,alloc);return !empty.empty();}\n",
+      "source_sha256": "aa1279f875c558297736a75324a263c10c1d8952622468f3d32997e818b4e6ff",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-explicit-allocator-pointer-ranges",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <memory>\n#include <new>\nusing Size=decltype(sizeof(0));using Alloc=std::allocator<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic int values[2050];\nstatic const int* first;static const int* last;static int armed,calls;\nvoid* operator new(Size n){void* p=malloc(n);if(armed){++calls;first=values+4;last=values+5;\nfor(unsigned i=0;i!=2050;++i)values[i]=50+(int)i;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint main(){Alloc alloc;for(unsigned i=0;i!=2050;++i)values[i]=(int)i;\nstd::deque<int> a(values,values+1025,alloc);\nif(a.size()!=1025||a.front()!=0||a.back()!=1024)return 1;\nfirst=values;last=values+2050;armed=1;std::deque<int> b(first,last,alloc);armed=0;\nif(!calls||b.size()!=2050||first!=values+4||last!=values+5)return 2;\nfor(unsigned i=0;i!=2050;++i)if(b[i]!=50+(int)i)return 3;\nstd::deque<int> empty(first,first,alloc);return !empty.empty();}\n",
+      "source_sha256": "3b7587a375047840d3a330f02cbce21a947ba5df393b93fdc4c0ccd4d80969fb",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-explicit-allocator-copy",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <memory>\n#include <new>\nusing Size=decltype(sizeof(0));using Alloc=std::allocator<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic std::deque<int>* owner;static int armed,calls;\nvoid* operator new(Size n){void* p=malloc(n);if(armed){++calls;owner->front()=91;owner->back()=92;}return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint main(){Alloc alloc;std::deque<int> source(2050,7);owner=&source;\nint* saved=&source.front();armed=1;std::deque<int> a(source,alloc);armed=0;\nif(!calls||source.size()!=2050||a.size()!=2050||&source.front()!=saved)return 1;\nif(a.front()!=91||a.back()!=92||&a.front()==saved)return 2;\nfor(unsigned i=1;i!=2049;++i)if(a[i]!=7)return 3;\na.front()=12;if(source.front()!=91)return 4;\nconst std::deque<int> empty;std::deque<int> b(empty,alloc);return !b.empty();}\n",
+      "source_sha256": "e440c183ad104f11d2f0201f7760df2fdbeedac54dd930329d62c69b45081ad8",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-explicit-allocator-move",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <memory>\n#include <new>\nusing Size=decltype(sizeof(0));using Alloc=std::allocator<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic int armed,calls;\nvoid* operator new(Size n){void* p=malloc(n);if(armed)++calls;return p;}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {free(p);}\nint main(){Alloc alloc;std::deque<int> source(2050,7);int* first=&source.front();int* last=&source.back();\narmed=1;std::deque<int> a(std::move(source),alloc);armed=0;\nif(calls||!source.empty()||a.size()!=2050||&a.front()!=first||&a.back()!=last)return 1;\nfor(unsigned i=0;i!=2050;++i)if(a[i]!=7)return 2;\nsource.push_back(11);if(source.size()!=1||source.front()!=11||a.front()!=7)return 3;\nstd::deque<int> empty;std::deque<int> b(std::move(empty),alloc);return !b.empty()||!empty.empty();}\n",
+      "source_sha256": "96d2de1ee41cf7ac12e345f2ce4bdb83553f17b16da2f2577bd1e45182dcb692",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-explicit-allocator-call-sequencing",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <memory>\n#include <new>\nusing Size=decltype(sizeof(0));using Alloc=std::allocator<int>;\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic int counts,fills,allocators,firsts,lasts;\nstatic int values[3]={4,5,6};static Alloc* allocator;\nSize count(){++counts;return 3;}const int& fill(){++fills;return values[0];}\nconst Alloc& alloc(){++allocators;return *allocator;}\nconst int* first(){++firsts;return values;}const int* last(){++lasts;return values+3;}\nint main(){Alloc backing;allocator=&backing;std::deque<int> a(count(),fill(),alloc());\nif(counts!=1||fills!=1||allocators!=1||a.size()!=3||a.front()!=4||a.back()!=4)return 1;\nstd::deque<int> b(first(),last(),alloc());\nif(firsts!=1||lasts!=1||allocators!=2||b.size()!=3||b.front()!=4||b.back()!=6)return 2;\nstd::deque<int> c(count(),alloc());\nreturn counts!=2||allocators!=3||c.size()!=3||c.front()!=0||c.back()!=0;}\n",
+      "source_sha256": "feb1b79d33b6d0e014f9664b32f8adaf70ef10901606cea5cd2c947eea61494e",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-explicit-allocator-count-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::deque(decltype(sizeof(0)) n,const allocator<int>& alloc) : deque() {}\n}}\nint main(){std::allocator<int> alloc;std::deque<int> a(3,alloc);return a.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "f0bf9f980be31ca820eb12af98d2ad51b58e0c2685f0f0418a210ffb155ef0ce"
+    },
+    {
+      "name": "deque-explicit-allocator-fill-owned-body",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> template<> deque<int>::deque(decltype(sizeof(0)) n,const int& value,const allocator<int>& alloc) : deque() {}\n}}\nint main(){std::allocator<int> alloc;std::deque<int> a(3,7,alloc);return a.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "3669d62a80ec6f4dcba3b2bc8944a59b28099a5aa8bb06f687bcecc892eba3a6"
+    },
+    {
+      "name": "deque-explicit-allocator-range-owned-bodies",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> template<> deque<int>::deque(int* first,int* last,const allocator<int>& alloc) : deque() {}\ntemplate<> template<> deque<int>::deque(const int* first,const int* last,const allocator<int>& alloc) : deque() {}\n}}\nint main(){std::allocator<int> alloc;int values[3]={1,2,3};const int* begin=values;\nstd::deque<int> a(values,values+3,alloc),b(begin,begin+3,alloc);return a.size()!=0||b.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "d34e578160ab65a5b057795859bc1e5c978b3dece2b93aeb1ec80c34244ceccb"
+    },
+    {
+      "name": "deque-explicit-allocator-copy-move-owned-bodies",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::deque(const deque& source,const allocator<int>& alloc) : deque() {}\ntemplate<> deque<int>::deque(deque&& source,const allocator<int>& alloc) : deque() {}\n}}\nint main(){std::allocator<int> alloc;std::deque<int> source;\nstd::deque<int> a(source,alloc),b(std::move(source),alloc);return a.size()!=0||b.size()!=0;}\n",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source_sha256": "c9d0f882a6bfe3e9bd822fc12d7dd28ed6c72709518605a3f33251db0fed8df3"
+    }
+  ],
+  "source48_authentication_sha256": "219aec5d9c347cada1d901e22d359f231ba101cd102279ad2ae361d0f7269bfe",
+  "source48_compiler_source": "a4b9d5bf1d546bce1ea330020f52b30c31902c8a"
+}
