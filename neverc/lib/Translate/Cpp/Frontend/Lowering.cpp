@@ -26447,6 +26447,123 @@ class FunctionLowering {
     jump(Check, L); label(Done, L);
   }
 
+  void listCopyValueStorage(Expression Place, Expression Source,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    auto Current = temporary("ptr:void", L);
+    assign(Current, listMember(Source, "nct_list_next", L), L);
+    auto End = snapshot(listSentinel(Source, L, true), L);
+    const auto Check = labelName(), Append = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Current, End, "bool", L), Append, Done, L);
+    label(Append, L);
+    auto Value = address(listValue(Current, true, L), A.Context.IntTy.withConst(), L);
+    auto Node = listCreateNode(Value, Info, L);
+    listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
+    assign(Current, snapshot(listLink(Current, false, L), L), L);
+    jump(Check, L); label(Done, L);
+  }
+
+  void listSpliceAllValueStorage(Expression Place, Expression Source, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Transfer = labelName(), Done = labelName();
+    branch(binary("!=", listMember(Source, "nct_list_size", L), quantity(0, Size, L), "bool", L), Transfer, Done, L);
+    label(Transfer, L);
+    auto First = snapshot(listMember(Source, "nct_list_next", L), L);
+    auto Last = snapshot(listMember(Source, "nct_list_prev", L), L);
+    auto Count = snapshot(listMember(Source, "nct_list_size", L), L);
+    auto Position = snapshot(listSentinel(Place, L), L);
+    auto Previous = snapshot(listLink(Position, true, L), L);
+    initializeListStorage(Source, L);
+    assign(listLink(Previous, false, L), First, L);
+    assign(listLink(First, true, L), Previous, L);
+    assign(listLink(Last, false, L), Position, L);
+    assign(listLink(Position, true, L), Last, L);
+    assign(listMember(Place, "nct_list_size", L), binary("+", listMember(Place, "nct_list_size", L), Count, Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+
+  void listSwapValueStorage(Expression Left, Expression Right, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto LeftFirst = snapshot(listMember(Left, "nct_list_next", L), L);
+    auto LeftLast = snapshot(listMember(Left, "nct_list_prev", L), L);
+    auto LeftSize = snapshot(listMember(Left, "nct_list_size", L), L);
+    auto RightFirst = snapshot(listMember(Right, "nct_list_next", L), L);
+    auto RightLast = snapshot(listMember(Right, "nct_list_prev", L), L);
+    auto RightSize = snapshot(listMember(Right, "nct_list_size", L), L);
+    auto LeftEnd = snapshot(listSentinel(Left, L), L);
+    auto RightEnd = snapshot(listSentinel(Right, L), L);
+    auto Install = [&](Expression Place, Expression First, Expression Last, Expression Count, Expression End) {
+      const auto Empty = labelName(), Linked = labelName(), Done = labelName();
+      branch(binary("==", Count, quantity(0, Size, L), "bool", L), Empty, Linked, L);
+      label(Empty, L); initializeListStorage(Place, L); jump(Done, L);
+      label(Linked, L);
+      assign(listMember(Place, "nct_list_next", L), First, L);
+      assign(listMember(Place, "nct_list_prev", L), Last, L);
+      assign(listMember(Place, "nct_list_size", L), Count, L);
+      assign(listLink(First, true, L), End, L); assign(listLink(Last, false, L), End, L);
+      jump(Done, L); label(Done, L);
+    };
+    Install(Left, RightFirst, RightLast, RightSize, LeftEnd);
+    Install(Right, LeftFirst, LeftLast, LeftSize, RightEnd);
+  }
+
+  void listAssignValueStorage(Expression Place, Expression Source,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Input = temporary("ptr:void", L), Output = temporary("ptr:void", L);
+    assign(Input, listMember(Source, "nct_list_next", L), L);
+    auto InputEnd = snapshot(listSentinel(Source, L, true), L);
+    assign(Output, listMember(Place, "nct_list_next", L), L);
+    auto OutputEnd = snapshot(listSentinel(Place, L), L);
+    const auto CheckInput = labelName(), CheckOutput = labelName(), Store = labelName(), Erase = labelName(), Append = labelName(), Done = labelName();
+    jump(CheckInput, L); label(CheckInput, L);
+    branch(binary("!=", Input, InputEnd, "bool", L), CheckOutput, Erase, L);
+    label(CheckOutput, L);
+    branch(binary("!=", Output, OutputEnd, "bool", L), Store, Append, L);
+    label(Store, L); assign(listValue(Output, false, L), listValue(Input, true, L), L);
+    assign(Input, snapshot(listLink(Input, false, L), L), L);
+    assign(Output, snapshot(listLink(Output, false, L), L), L);
+    jump(CheckInput, L);
+    label(Erase, L);
+    const auto Unlink = labelName(), EraseCheck = labelName(), Release = labelName();
+    branch(binary("!=", Output, OutputEnd, "bool", L), Unlink, Done, L);
+    label(Unlink, L);
+    auto Previous = snapshot(listLink(Output, true, L), L);
+    assign(listLink(Previous, false, L), OutputEnd, L); assign(listLink(OutputEnd, true, L), Previous, L);
+    jump(EraseCheck, L); label(EraseCheck, L);
+    branch(binary("!=", Output, OutputEnd, "bool", L), Release, Done, L);
+    label(Release, L);
+    auto Removed = snapshot(Output, L);
+    assign(Output, snapshot(listLink(Output, false, L), L), L);
+    assign(listMember(Place, "nct_list_size", L), binary("-", listMember(Place, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+    listReleaseNode(Removed, Info, L); jump(EraseCheck, L);
+    label(Append, L);
+    // SDK assignment builds its remaining range as a detached chain, then
+    // links it and changes the destination size after all allocation callbacks.
+    auto First = temporary("ptr:void", L), Last = temporary("ptr:void", L), Count = temporary(Size, L);
+    initializeZero(First, A.Context.VoidPtrTy, L); initializeZero(Last, A.Context.VoidPtrTy, L);
+    assign(Count, quantity(0, Size, L), L);
+    const auto AppendCheck = labelName(), Make = labelName(), Link = labelName(), SetFirst = labelName(), Advance = labelName(), Commit = labelName();
+    jump(AppendCheck, L); label(AppendCheck, L);
+    branch(binary("!=", Input, InputEnd, "bool", L), Make, Commit, L);
+    label(Make, L);
+    auto Value = address(listValue(Input, true, L), A.Context.IntTy.withConst(), L);
+    auto Node = listCreateNode(Value, Info, L);
+    assign(listLink(Node, true, L), Last, L);
+    branch(cast(First, "bool", L), Link, SetFirst, L);
+    label(Link, L); assign(listLink(Last, false, L), Node, L); jump(Advance, L);
+    label(SetFirst, L); assign(First, Node, L); jump(Advance, L);
+    label(Advance, L); assign(Last, Node, L);
+    assign(Count, binary("+", Count, quantity(1, Size, L), Size, L), L);
+    assign(Input, snapshot(listLink(Input, false, L), L), L);
+    jump(AppendCheck, L); label(Commit, L);
+    auto PreviousTail = snapshot(listLink(OutputEnd, true, L), L);
+    assign(listLink(PreviousTail, false, L), First, L); assign(listLink(First, true, L), PreviousTail, L);
+    assign(listLink(Last, false, L), OutputEnd, L); assign(listLink(OutputEnd, true, L), Last, L);
+    assign(listMember(Place, "nct_list_size", L), binary("+", listMember(Place, "nct_list_size", L), Count, Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+
   Expression utilityListOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityListCall(A.S, A.Sources, Call, A.Context);
@@ -26464,6 +26581,10 @@ class FunctionLowering {
       return binary(Operation == UtilityListOperation::IteratorEqual ? "==" : "!=",
           listIteratorMember(dereference(Operands[0], L), L),
           listIteratorMember(dereference(Operands[1], L), L), "bool", L);
+    if (!Receiver && Operation == UtilityListOperation::Swap) {
+      listSwapValueStorage(dereference(Operands[0], L), dereference(Operands[1], L), L);
+      return Expression{};
+    }
     if (!Receiver) reject(L, "list receiver", "A checked receiver is required.");
     auto Place = dereference(*Receiver, L);
     const auto *Method = dyn_cast<CXXMethodDecl>(Proof->Function);
@@ -26493,6 +26614,21 @@ class FunctionLowering {
     }
     const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Method->getParent(), A.Context);
     if (!Owner) reject(L, "list owner", "The selected integer owner layout is required.");
+    if (Operation == UtilityListOperation::CopyAssign || Operation == UtilityListOperation::MoveAssign) {
+      auto Source = dereference(Operands[0], L);
+      if (Operation == UtilityListOperation::CopyAssign) {
+        const auto Copy = labelName(), Done = labelName();
+        branch(binary("!=", listSentinel(Place, L), listSentinel(Source, L, true), "bool", L), Copy, Done, L);
+        label(Copy, L); listAssignValueStorage(Place, Source, Owner->Node, L); jump(Done, L); label(Done, L);
+      } else {
+        destroyListStorage(Place, Owner->Node, L);
+        listSpliceAllValueStorage(Place, Source, L);
+      }
+      return Place;
+    }
+    if (Operation == UtilityListOperation::Swap) {
+      listSwapValueStorage(Place, dereference(Operands[0], L), L); return Expression{};
+    }
     if (Operation == UtilityListOperation::Size) return listMember(Place, "nct_list_size", L);
     if (Operation == UtilityListOperation::Empty)
       return binary("==", listMember(Place, "nct_list_size", L),
@@ -37493,6 +37629,12 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Record, A.Context);
       if (!Owner) reject(L, "list construction", "The selected integer owner layout is required.");
       initializeListStorage(Place, L);
+      if (*Kind == UtilityListConstruction::Copy || *Kind == UtilityListConstruction::Move) {
+        auto Source = dereference(Operands[0], L);
+        if (*Kind == UtilityListConstruction::Copy) listCopyValueStorage(Place, Source, Owner->Node, L);
+        else listSpliceAllValueStorage(Place, Source, L);
+        return;
+      }
       if (*Kind != UtilityListConstruction::InitializerList) return;
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
           C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);

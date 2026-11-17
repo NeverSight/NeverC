@@ -48686,6 +48686,19 @@ std::optional<UtilityListConstruction> listConstructorSignature(
     return std::nullopt;
   if (const auto Owner = approvedUtilityListRecord(S, SM, C->getParent(), Context)) {
     if (!C->getNumParams()) return UtilityListConstruction::Default;
+    if (C->getNumParams() == 1 || C->getNumParams() == 2) {
+      const auto Type = Context.getRecordType(Owner->Record);
+      const auto Argument = C->getParamDecl(0)->getType();
+      const bool Copy = Context.hasSameType(Argument, Context.getLValueReferenceType(Type.withConst()));
+      const bool Move = Context.hasSameType(Argument, Context.getRValueReferenceType(Type));
+      if (Copy || Move) {
+        for (const auto *Parameter : C->parameters())
+          if (Parameter->hasDefaultArg()) return std::nullopt;
+        if (C->getNumParams() == 2 && !listIntegerAllocatorParameter(S, SM, C->getParamDecl(1)->getType(), Context))
+          return std::nullopt;
+        return Copy ? UtilityListConstruction::Copy : UtilityListConstruction::Move;
+      }
+    }
     if (C->getNumParams() == 1 &&
         listIntegerAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Context))
       return UtilityListConstruction::Allocator;
@@ -48722,8 +48735,24 @@ std::optional<UtilityListOperation> listMethodSignature(
   if (!M || M->isStatic() || M->isVolatile() || M->getPrimaryTemplate() ||
       !listFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityListRecord(S, SM, M->getParent(), Context)) {
+    const auto Type = Context.getRecordType(Owner->Record);
+    if (!M->isConst() && M->getRefQualifier() == RQ_None && M->isOverloadedOperator() &&
+        M->getOverloadedOperator() == OO_Equal && M->getNumParams() == 1 &&
+        !M->getParamDecl(0)->hasDefaultArg() &&
+        Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Type))) {
+      const auto Argument = M->getParamDecl(0)->getType();
+      if (Context.hasSameType(Argument, Context.getLValueReferenceType(Type.withConst())))
+        return UtilityListOperation::CopyAssign;
+      if (Context.hasSameType(Argument, Context.getRValueReferenceType(Type)))
+        return UtilityListOperation::MoveAssign;
+    }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
+    if (Name == "swap" && !M->isConst() && M->getRefQualifier() == RQ_None &&
+        M->getNumParams() == 1 && !M->getParamDecl(0)->hasDefaultArg() &&
+        M->getReturnType()->isVoidType() &&
+        Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(Type)))
+      return UtilityListOperation::Swap;
     if (!M->getNumParams()) {
       if (Name == "size" && M->isConst() && Context.hasSameType(M->getReturnType(), Context.getSizeType()))
         return UtilityListOperation::Size;
@@ -48782,6 +48811,36 @@ std::optional<UtilityListOperation> listMethodSignature(
   if (M->getNumParams() == 1 && Context.hasSameType(M->getParamDecl(0)->getType(), Context.IntTy) &&
       Context.hasSameType(M->getReturnType(), Type)) return M->getOverloadedOperator() == OO_PlusPlus ? UtilityListOperation::IteratorPostIncrement : UtilityListOperation::IteratorPostDecrement;
   return std::nullopt;
+}
+
+std::optional<UtilityListOperation> listValueSwapSignature(
+    const State &S, const SourceManager &SM, const FunctionDecl *F,
+    const ASTContext &Context) {
+  if (!F || isa<CXXMethodDecl>(F) || !F->getIdentifier() || F->getName() != "swap" ||
+      F->getNumParams() != 2 || !F->getReturnType()->isVoidType() ||
+      !listFunctionDeclarations(S, SM, F)) return std::nullopt;
+  const auto *Template = F->getPrimaryTemplate();
+  const auto *Arguments = F->getTemplateSpecializationArgs();
+  if (!Template || Template->getTemplateParameters()->size() != 2 || !Arguments || Arguments->size() != 2)
+    return std::nullopt;
+  for (const auto *Parameter : *Template->getTemplateParameters()) {
+    const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
+    if (!Type || Type->isParameterPack() || Type->hasDefaultArgument()) return std::nullopt;
+  }
+  for (const auto &Argument : Arguments->asArray())
+    if (Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+  for (const auto *Parameter : F->parameters())
+    if (Parameter->hasDefaultArg()) return std::nullopt;
+  const auto Left = F->getParamDecl(0)->getType();
+  if (!Left->isLValueReferenceType() || Left->getPointeeType().hasLocalQualifiers() ||
+      !Context.hasSameType(Left, F->getParamDecl(1)->getType())) return std::nullopt;
+  const auto Owner = approvedUtilityListRecord(S, SM, listRecordType(Left->getPointeeType()), Context);
+  const auto *Specialization = Owner ? dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record) : nullptr;
+  if (!Specialization || Specialization->getTemplateArgs().size() != 2 ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(), Specialization->getTemplateArgs().get(1).getAsType()))
+    return std::nullopt;
+  return UtilityListOperation::Swap;
 }
 
 std::optional<UtilityListOperation> listComparisonSignature(
@@ -49095,6 +49154,13 @@ std::optional<UtilityListCall> approvedUtilityListCall(
       Call->isInstantiationDependent() || !S.owns(SM, Call->getExprLoc())) return std::nullopt;
   const auto *Function = Call->getDirectCallee();
   if (!Function) return std::nullopt;
+  if (const auto Swap = listValueSwapSignature(S, SM, Function, Context)) {
+    const auto Node = listReceiverNode(S, SM, listRecordType(Function->getParamDecl(0)->getType()->getPointeeType()), Context);
+    if (!Node || !listOperandTypes(Call, Function, 0, Context) || !Call->getCallee() ||
+        !S.owns(SM, Call->getCallee()->getExprLoc()) || !listSourceGraph(S, SM, Function, Context, *Node))
+      return std::nullopt;
+    return UtilityListCall{*Swap, nullptr, Function, 0};
+  }
   if (const auto Comparison = listComparisonSignature(S, SM, Function, Context)) {
     const auto T = Function->getParamDecl(0)->getType()->getPointeeType();
     const auto Node = listReceiverNode(S, SM, listRecordType(T), Context);
