@@ -49797,10 +49797,44 @@ bool dequePointerInsertTemplate(const State &S, const SourceManager &SM,
       Context.hasSameType(Method->getParamDecl(2)->getType(), Iterator);
 }
 
+bool dequePositionalEmplaceTemplate(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const ASTContext &Context) {
+  if (!Method || !Method->getIdentifier() || Method->getName() != "emplace" || Method->isConst() ||
+      Method->isStatic() || Method->isVolatile() || Method->getRefQualifier() != RQ_None ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Method->getNumParams() < 1 || Method->getNumParams() > 2 ||
+      Method->getReturnType()->isReferenceType() ||
+      !dequeIteratorType(S, SM, Method->getReturnType(), false, Context)) return false;
+  const auto Position = Method->getParamDecl(0)->getType();
+  if (Method->getParamDecl(0)->hasDefaultArg() || Position->isReferenceType() || Position.hasLocalQualifiers() ||
+      !dequeIteratorType(S, SM, Position, true, Context)) return false;
+  const auto *Primary = Method->getPrimaryTemplate();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  if (!Primary || Primary->getTemplateParameters()->size() != 1 || !Arguments || Arguments->size() != 1) return false;
+  const auto *Pack = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
+  const auto &Argument = Arguments->get(0);
+  if (!Pack || !Pack->isParameterPack() || Argument.getKind() != TemplateArgument::Pack ||
+      Argument.pack_size() != Method->getNumParams() - 1) return false;
+  if (Method->getNumParams() == 2) {
+    const auto *Parameter = Method->getParamDecl(1);
+    const auto ParameterType = Parameter->getType();
+    if (Parameter->hasDefaultArg() || !ParameterType->isReferenceType()) return false;
+    const auto &TypeArgument = *Argument.pack_begin();
+    if (TypeArgument.getKind() != TemplateArgument::Type) return false;
+    const auto ArgumentType = TypeArgument.getAsType();
+    const auto Value = ArgumentType.getNonReferenceType();
+    if (!Context.hasSameType(Value, Context.IntTy) && !Context.hasSameType(Value, Context.IntTy.withConst())) return false;
+    const auto Expected = ArgumentType->isReferenceType() ? ArgumentType : Context.getRValueReferenceType(ArgumentType);
+    if (!Context.hasSameType(ParameterType, Expected)) return false;
+  }
+  return true;
+}
+
 std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const SourceManager &SM,
     const CXXMethodDecl *M, const ASTContext &Context) {
   if (!M || M->isStatic() || M->isVolatile() ||
       (M->getPrimaryTemplate() && !dequeEmplaceTemplate(M, Context) &&
+       !dequePositionalEmplaceTemplate(S, SM, M, Context) &&
        !dequePointerInsertTemplate(S, SM, M, Context) && !dequePointerRangeTemplate(S, SM, M, Context)) ||
       !dequeFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (approvedUtilityDequeRecord(S, SM, M->getParent(), Context)) {
@@ -49848,6 +49882,8 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
     }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
+    if (!Stack && !Queue && dequePositionalEmplaceTemplate(S, SM, M, Context))
+      return UtilityDequeOperation::EmplacePosition;
     if (Name == "insert" && !Stack && !Queue && !M->isConst() && M->getRefQualifier() == RQ_None &&
         !M->getPrimaryTemplate() && M->getNumParams() == 2 &&
         dequeIteratorType(S, SM, M->getReturnType(), false, Context)) {
@@ -52805,7 +52841,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       (*CountOperation == UtilityDequeOperation::InsertCopy || *CountOperation == UtilityDequeOperation::InsertMove ||
        *CountOperation == UtilityDequeOperation::InsertCount ||
        *CountOperation == UtilityDequeOperation::InsertPointerRange ||
-       *CountOperation == UtilityDequeOperation::InsertInitializerList);
+       *CountOperation == UtilityDequeOperation::InsertInitializerList ||
+       *CountOperation == UtilityDequeOperation::EmplacePosition);
   const bool ClosedCopyProof = DequeValueCopy || DequePointerAssign || DequeErase || DequeInsert || SharedStatements;
   const bool DequePointerRange = !PriorityRoot && RootMethod &&
       dequePointerRangeTemplate(S, SM, RootMethod, Context);

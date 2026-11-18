@@ -28181,6 +28181,17 @@ class FunctionLowering {
       auto Position = snapshot(cast(dequeIteratorDifference(dereference(Operands[0], L), Begin, L), Size, L), L);
       return insertDequeCount(Place, Position, Operands[1], Operands[2], Method->getReturnType(), L);
     }
+    if (Operation == UtilityDequeOperation::EmplacePosition) {
+      auto Begin = dequeOwnerIterator(Place, Method->getReturnType(), false, L);
+      auto Position = snapshot(cast(dequeIteratorDifference(dereference(Operands[0], L), Begin, L), Size, L), L);
+      if (Operands.size() == 1) {
+        auto Zero = temporary("int", L); assign(Zero, quantity(0, "int", L), L);
+        return insertDequeValue(Place, Position, address(Zero, A.Context.IntTy, L), Method->getReturnType(), true, L);
+      }
+      // The SDK constructs its integer temporary after capacity callbacks and
+      // before shifts, for both lvalue and rvalue forwarded references.
+      return insertDequeValue(Place, Position, Operands[1], Method->getReturnType(), true, L);
+    }
     if (Operation == UtilityDequeOperation::InsertCopy || Operation == UtilityDequeOperation::InsertMove) {
       auto Begin = dequeOwnerIterator(Place, Method->getReturnType(), false, L);
       auto Position = snapshot(cast(dequeIteratorDifference(dereference(Operands[0], L), Begin, L), Size, L), L);
