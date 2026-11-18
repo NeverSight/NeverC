@@ -17342,18 +17342,28 @@ hint. `construct` accepts zero or one directly admitted scalar argument. Other
 allocator/element types, nonempty inner packs and copy/converting construction
 remain outside this closed surface.
 
-Nonempty `std::bitset<N>` objects use the authenticated native sequence of
-64-bit storage words, with the existing record and array limits. Default and
-unsigned-long-long construction initialize that storage directly; trivial copy
-construction copies the complete carrier. `count()` counts set bits in each
-word, and `any()` reduces words with the existing typed bitwise-OR operation and
-converts the result to Boolean. No logical-OR expression is added to the IR
-protocol. `test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)` require an
-in-range integer-literal position; the omitted `set` value requires the exact
-pinned SDK default argument. Receiver and admitted value-argument effects retain
-their existing evaluation and cleanup rules. Empty bitsets, proxy access,
-whole-object mutation overloads, shifts, string conversion and arbitrary position
-expressions are not part of this increment.
+The private C++17 profile admits the pinned `std::bitset<N>` layout with
+64-bit storage words and a separate empty layout for `N == 0`. Default and
+`unsigned long long` construction initialize the storage. Trivial copies and
+assignments preserve the complete value. Queries include `size()`, `count()`,
+`any()`, `none()` and `all()`. The no-argument `set()`, `reset()` and `flip()`
+update the whole bitset and keep unused bits in the last word clear.
+
+`~`, `&`, `|` and `^` produce values. `&=`, `|=` and `^=` update the receiver
+and return a reference to it. `==` and `!=` compare values. The `<<`, `>>`,
+`<<=` and `>>=` overloads accept runtime shift amounts, including zero and
+amounts at least as large as the bitset. Large amounts produce all zero bits.
+Overloaded shift assignment evaluates the right operand before the receiver.
+Explicit member calls evaluate the receiver first.
+
+`test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)` require an
+in-range integer literal. The omitted `set` value requires the pinned SDK default
+argument. Proxy access, string operations and general position expressions
+require further work.
+
+The additional bitset suites cover 36 registered tests, 180 source requests
+across the six 64-bit targets, and 36 generated C23 executions against matching
+native C++ programs at O0 and O2.
 
 SDK template, specialization and function redeclarations remain authenticated.
 The used body graph rejects source-owned macro spelling, replaced declarations

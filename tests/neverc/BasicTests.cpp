@@ -23,6 +23,13 @@ TEST_F(BasicTest, TestC23) {
                      "-std=c23", 0, "test_c23: ALL PASSED");
 }
 
+TEST_F(BasicTest, ConstantIfElseSelectsReachableBranch) {
+  const auto source =
+      (testDir() / "standards" / "test_constant_if_else.c").string();
+  compileRunAndCheck("constant_if_else_o0", source, "-std=c23 -O0", 0);
+  compileRunAndCheck("constant_if_else_o2", source, "-std=c23 -O2", 0);
+}
+
 TEST_F(BasicTest, TestC23Default) {
   auto src = (testDir() / "standards" / "test_c23_default.c").string();
   compileRunAndCheck("test_c23_default", src, "", 0,

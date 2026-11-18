@@ -426,7 +426,7 @@ Qualified implementation `813a7045ed8b` passes 6 source syntax checks, all 750 e
 | Private `cpp-core-v2` surface | Admitted operations | Boundary |
 | --- | --- | --- |
 | `std::scoped_allocator_adaptor<std::allocator<int>>` | Default construction, allocation without a hint, deallocation, zero- or one-value integer construction, and integer destruction. | The outer allocator is the pinned default integer allocator and the inner allocator pack is empty. Copying, converting constructors and other element or allocator types require further work. |
-| `std::bitset<N>` | Default, unsigned-long-long and trivial copy construction; `count()`, `any()`, `test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)`. | Nonempty pinned 64-bit-word layouts within existing array limits; position arguments are in-range integer literals. Other overloads, proxies and general position expressions require further work. |
+| `std::bitset<N>` | Default, unsigned-long-long and trivial copy construction; copy assignment; `size()`, `count()`, `any()`, `all()`, `none()`; whole and literal-position mutation and queries; complement, equality, bitwise operators and shifts, including compound assignment. | Pinned empty and 64-bit-word layouts within existing record and array limits. Position-taking members require in-range integer literals. Proxy access and string operations require further work. |
 
 Every selected declaration and used implementation body retains SDK-origin and
 source-owned macro/redeclaration checks. The allocator uses the existing checked
@@ -436,8 +436,9 @@ operations. Neither surface introduces a runtime libc++ dependency.
 Six permanent GTests cover two native-matched runtime programs at O0 and O2 and
 four source-origin rejection programs. The bitset runtime case exercises a
 70-bit object across two words. Source admission and rejection checks run for
-the six existing 64-bit target descriptors. This coverage does not establish
-complete STL support. See the [detailed contract](cpp-core-v2.md#r19-checked-allocator-and-bitset-operations).
+the six existing 64-bit target descriptors. The whole-value, bitwise and shift
+suites add 36 GTests and 36 generated C23 executions against native C++ at
+O0 and O2. Further STL coverage remains in progress. See the [detailed contract](cpp-core-v2.md#r19-checked-allocator-and-bitset-operations).
 
 ## R19 checked integer valarray operations
 

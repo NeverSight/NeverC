@@ -26127,6 +26127,7 @@ class FunctionLowering {
 
 
   QualType bitsetArrayType(const UtilityBitsetRecord &Info) {
+    if (!Info.Words) return A.Context.UnsignedCharTy;
     return A.Context.getConstantArrayType(A.Context.getSizeType(),
         llvm::APInt(64, Info.Words), nullptr, ArraySizeModifier::Normal, 0);
   }
@@ -26141,9 +26142,155 @@ class FunctionLowering {
                        ReadOnly ? "cptr:u64" : "ptr:u64", L);
     return index(std::move(Words), std::move(Position), "u64", L);
   }
+  Expression utilityBitsetShiftOperation(const CallExpr *Call, UtilityOperation Operation) {
+    const auto L = Call->getExprLoc();
+    const auto Proof = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
+    const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+    const auto Info = Proof && Proof->Record ? approvedUtilityBitsetRecord(
+        A.S, A.Sources, Proof->Record, A.Context) : std::nullopt;
+    if (!Proof || !Info || !Proof->Receiver || !Method || Proof->Operation != Operation)
+      reject(L, "bitset shift", "The exact pinned SDK shift signature and implementation graph are required.");
+    const bool Left = Operation == UtilityOperation::BitsetShiftLeft || Operation == UtilityOperation::BitsetShiftLeftAssign;
+    const bool InPlace = Operation == UtilityOperation::BitsetShiftLeftAssign || Operation == UtilityOperation::BitsetShiftRightAssign;
+    std::optional<Expression> Receiver;
+    auto CaptureReceiver = [&] {
+      const auto *Object = Proof->Receiver;
+      Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+    };
+    // Assignment notation evaluates its right operand first. Explicit member
+    // calls and value shifts evaluate the receiver before the shift amount.
+    const bool AssignmentSyntax = InPlace && isa<CXXOperatorCallExpr>(Call);
+    if (!AssignmentSyntax) CaptureReceiver();
+    auto Amount = snapshot(argument(Call->getArg(Proof->ArgumentOffset), Method->getParamDecl(0)->getType()), L);
+    if (AssignmentSyntax) CaptureReceiver();
+    auto Place = dereference(*Receiver, L);
+    const auto OwnerType = type(A.Context.getRecordType(Info->Record), L);
+    // Read the receiver after both expressions. Keep its original words when
+    // an in-place shift overwrites aliased storage.
+    auto Source = temporary(OwnerType, L);assign(Source, Place, L);
+    auto Result = temporary(OwnerType, L);assign(Result, Source, L);
+    auto Destination = InPlace ? Place : Result;
+    if (!Info->Words) return Destination;
+    auto Position = temporary("u64", L);assign(Position, quantity(0, "u64", L), L);
+    const auto ZeroCheck = labelName(), ZeroBody = labelName(), ZeroDone = labelName();
+    jump(ZeroCheck, L);label(ZeroCheck, L);
+    branch(binary("<", Position, quantity(Info->Words, "u64", L), "bool", L), ZeroBody, ZeroDone, L);
+    label(ZeroBody, L);
+    assign(bitsetWord(Destination, *Info, Position, L), quantity(0, "u64", L), L);
+    assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
+    jump(ZeroCheck, L);label(ZeroDone, L);
+    const auto Begin = labelName(), Check = labelName(), Body = labelName(), Done = labelName();
+    branch(binary("<", Amount, quantity(Info->Bits, "u64", L), "bool", L), Begin, Done, L);
+    label(Begin, L);
+    auto Limit = snapshot(binary("-", quantity(Info->Bits, "u64", L), Amount, "u64", L), L);
+    assign(Position, quantity(0, "u64", L), L);jump(Check, L);label(Check, L);
+    branch(binary("<", Position, Limit, "bool", L), Body, Done, L);label(Body, L);
+    auto Shifted = snapshot(binary("+", Position, Amount, "u64", L), L);
+    auto SourcePosition = Left ? Position : Shifted;
+    auto DestinationPosition = Left ? Shifted : Position;
+    auto SourceWord = bitsetWord(Source, *Info,
+        binary("/", SourcePosition, quantity(64, "u64", L), "u64", L), L, true);
+    auto Bit = binary("&", binary(">>", SourceWord,
+        binary("%", SourcePosition, quantity(64, "u64", L), "u64", L), "u64", L), quantity(1, "u64", L), "u64", L);
+    auto Word = bitsetWord(Destination, *Info,
+        binary("/", DestinationPosition, quantity(64, "u64", L), "u64", L), L);
+    assign(Word, binary("|", Word, binary("<<", Bit,
+        binary("%", DestinationPosition, quantity(64, "u64", L), "u64", L), "u64", L), "u64", L), L);
+    assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
+    jump(Check, L);label(Done, L);
+    return Destination;
+  }
+
+  Expression utilityBitsetBitwiseOperation(const CallExpr *Call, UtilityOperation Operation) {
+    const auto L = Call->getExprLoc();
+    const auto Proof = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
+    const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+    const auto Info = Proof && Proof->Record ? approvedUtilityBitsetRecord(
+        A.S, A.Sources, Proof->Record, A.Context) : std::nullopt;
+    if (!Proof || !Info || !Proof->Receiver || Proof->Operation != Operation)
+      reject(L, "bitset bitwise operation", "The exact pinned SDK operands and implementation graph are required.");
+    const bool Complement = Operation == UtilityOperation::BitsetNot;
+    const bool Compare = Operation == UtilityOperation::BitsetEqual || Operation == UtilityOperation::BitsetNotEqual;
+    const bool InPlace = Operation == UtilityOperation::BitsetAndAssign ||
+        Operation == UtilityOperation::BitsetOrAssign || Operation == UtilityOperation::BitsetXorAssign;
+    std::optional<Expression> Receiver, Source;
+    auto CaptureReceiver = [&] {
+      const auto *Object = Proof->Receiver;
+      Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+    };
+    const bool AssignmentSyntax = InPlace && isa<CXXOperatorCallExpr>(Call);
+    if (!AssignmentSyntax) CaptureReceiver();
+    if (!Complement) {
+      const auto ParameterIndex = Method ? 0u : 1u;
+      Source = snapshot(argument(Call->getArg(Proof->ArgumentOffset),
+          Call->getDirectCallee()->getParamDecl(ParameterIndex)->getType()), L);
+    }
+    if (AssignmentSyntax) CaptureReceiver();
+    auto Place = dereference(*Receiver, L);
+    auto Result = temporary(Compare ? "bool" : type(A.Context.getRecordType(Info->Record), L), L);
+    if (Compare) assign(Result, binary("==", quantity(0, "u64", L), quantity(0, "u64", L), "bool", L), L);
+    else if (!InPlace) assign(Result, Place, L);
+    auto Destination = InPlace ? Place : Result;
+    if (Info->Words) {
+      auto Position = temporary("u64", L);assign(Position, quantity(0, "u64", L), L);
+      const auto Check = labelName(), Body = labelName(), Next = labelName(), Done = labelName();
+      jump(Check, L);label(Check, L);
+      branch(binary("<", Position, quantity(Info->Words, "u64", L), "bool", L), Body, Done, L);
+      label(Body, L);
+      auto Word = bitsetWord(Compare ? Place : Destination, *Info, Position, L, Compare);
+      if (Complement) {
+        auto Mask = temporary("u64", L);assign(Mask, quantity(UINT64_MAX, "u64", L), L);
+        if (Info->Bits % 64) {
+          const auto Last = labelName(), Ready = labelName();
+          branch(binary("==", Position, quantity(Info->Words - 1, "u64", L), "bool", L), Last, Ready, L);
+          label(Last, L);assign(Mask, quantity((uint64_t(1) << (Info->Bits % 64)) - 1, "u64", L), L);
+          jump(Ready, L);label(Ready, L);
+        }
+        assign(Word, binary("^", Word, Mask, "u64", L), L);
+      } else {
+        auto Other = bitsetWord(dereference(*Source, L), *Info, Position, L, true);
+        if (Compare) assign(Result, cast(binary("&", cast(Result, "int", L),
+            cast(binary("==", Word, Other, "bool", L), "int", L), "int", L), "bool", L), L);
+        else {
+          const auto *Operator = Operation == UtilityOperation::BitsetAnd || Operation == UtilityOperation::BitsetAndAssign ? "&" :
+              Operation == UtilityOperation::BitsetOr || Operation == UtilityOperation::BitsetOrAssign ? "|" : "^";
+          assign(Word, binary(Operator, Word, Other, "u64", L), L);
+        }
+      }
+      jump(Next, L);label(Next, L);assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
+      jump(Check, L);label(Done, L);
+    }
+    if (Operation == UtilityOperation::BitsetNotEqual)
+      return binary("==", cast(Result, "int", L), quantity(0, "int", L), "bool", L);
+    return Compare ? Result : Destination;
+  }
+
   Expression utilityBitsetOperation(const CallExpr *Call, UtilityOperation Operation) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
+    if (Operation == UtilityOperation::BitsetAssign) {
+      const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+      if (!Proof || Proof->Operation != Operation || !Proof->Receiver || !Method)
+        reject(L, "bitset assignment", "The implicit trivial selected SDK assignment is required.");
+      const auto *Object = Proof->Receiver;
+      std::optional<Expression> Receiver;
+      auto CaptureReceiver = [&] {
+        Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+            : address(lvalue(Object), Object->getType(), L), L);
+      };
+      const bool AssignmentSyntax = isa<CXXOperatorCallExpr>(Call);
+      if (!AssignmentSyntax) CaptureReceiver();
+      // Preserve the reference carrier now; read its bits only in the body,
+      // after both operand expressions have completed, including aliases.
+      auto Source = snapshot(argument(Call->getArg(Proof->ArgumentOffset),
+          Method->getParamDecl(0)->getType()), L);
+      if (AssignmentSyntax) CaptureReceiver();
+      auto Place = dereference(*Receiver, L);
+      assign(Place, dereference(Source, L), L);
+      return Place;
+    }
     const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
     const auto Info = Member ? approvedUtilityBitsetRecord(A.S, A.Sources,
         Member->getMethodDecl()->getParent(), A.Context) : std::nullopt;
@@ -26153,7 +26300,44 @@ class FunctionLowering {
     auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
         : address(lvalue(Object), Object->getType(), L), L);
     auto Place = dereference(Receiver, L);
-    if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny) {
+    if (Operation == UtilityOperation::BitsetSize)
+      return cast(quantity(Info->Bits, "u64", L), type(Call->getType(), L), L);
+    if (!Info->Words) {
+      if (Operation == UtilityOperation::BitsetSetAll || Operation == UtilityOperation::BitsetResetAll ||
+          Operation == UtilityOperation::BitsetFlipAll) return Place;
+      const uint64_t Value = Operation == UtilityOperation::BitsetNone || Operation == UtilityOperation::BitsetAll;
+      return cast(quantity(Value, "u64", L), type(Call->getType(), L), L);
+    }
+    if (Operation == UtilityOperation::BitsetAll || Operation == UtilityOperation::BitsetSetAll ||
+        Operation == UtilityOperation::BitsetResetAll || Operation == UtilityOperation::BitsetFlipAll) {
+      const bool Query = Operation == UtilityOperation::BitsetAll;
+      auto Result = temporary("bool", L), Position = temporary("u64", L);
+      assign(Result, binary("==", quantity(0, "u64", L), quantity(0, "u64", L), "bool", L), L);
+      assign(Position, quantity(0, "u64", L), L);
+      const auto Check = labelName(), Body = labelName(), Next = labelName(), Done = labelName();
+      jump(Check, L);label(Check, L);
+      branch(binary("<", Position, quantity(Info->Words, "u64", L), "bool", L), Body, Done, L);
+      label(Body, L);
+      auto Mask = temporary("u64", L);assign(Mask, quantity(UINT64_MAX, "u64", L), L);
+      if (Info->Bits % 64) {
+        const auto Last = labelName(), Ready = labelName();
+        branch(binary("==", Position, quantity(Info->Words - 1, "u64", L), "bool", L), Last, Ready, L);
+        label(Last, L);assign(Mask, quantity((uint64_t(1) << (Info->Bits % 64)) - 1, "u64", L), L);
+        jump(Ready, L);label(Ready, L);
+      }
+      auto Word = bitsetWord(Place, *Info, Position, L, Query);
+      if (Query) assign(Result, cast(binary("&", cast(Result, "int", L),
+          cast(binary("==", Word, Mask, "bool", L), "int", L), "int", L), "bool", L), L);
+      else if (Operation == UtilityOperation::BitsetSetAll) assign(Word, Mask, L);
+      else if (Operation == UtilityOperation::BitsetResetAll) assign(Word, quantity(0, "u64", L), L);
+      else assign(Word, binary("^", Word, Mask, "u64", L), L);
+      jump(Next, L);label(Next, L);
+      assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
+      jump(Check, L);label(Done, L);
+      return Query ? Result : Place;
+    }
+    if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
+        Operation == UtilityOperation::BitsetNone) {
       auto Result = temporary("u64", L), Position = temporary("u64", L);
       assign(Result, quantity(0, "u64", L), L);
       assign(Position, quantity(0, "u64", L), L);
@@ -26162,7 +26346,7 @@ class FunctionLowering {
       branch(binary("<", Position, quantity(Info->Words, "u64", L), "bool", L), Word, Done, L);
       label(Word, L);
       auto Bits = snapshot(bitsetWord(Place, *Info, Position, L, true), L);
-      if (Operation == UtilityOperation::BitsetAny) {
+      if (Operation == UtilityOperation::BitsetAny || Operation == UtilityOperation::BitsetNone) {
         assign(Result, binary("|", Result, Bits, "u64", L), L);
         jump(Next, L);
       } else {
@@ -26177,6 +26361,8 @@ class FunctionLowering {
       label(Next, L);
       assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
       jump(Check, L);label(Done, L);
+      if (Operation == UtilityOperation::BitsetNone)
+        return binary("==", Result, quantity(0, "u64", L), "bool", L);
       return cast(Result, type(Call->getType(), L), L);
     }
     // A literal, in-range position has no side effects. Evaluate its owned
@@ -28696,9 +28882,40 @@ class FunctionLowering {
       return Result;
     }
     if (Operation == UtilityOperation::ValarrayScalar) return utilityValarrayScalarOperation(Call);
+    if (Operation == UtilityOperation::BitsetShiftLeft || Operation == UtilityOperation::BitsetShiftRight ||
+        Operation == UtilityOperation::BitsetShiftLeftAssign || Operation == UtilityOperation::BitsetShiftRightAssign) {
+      auto Result = utilityBitsetShiftOperation(Call, Operation);
+      if (Destination) {
+        if (!Call->isPRValue() || !Call->getType()->isRecordType() ||
+            Result.getString("type") != Destination->getString("type"))
+          reject(L, "bitset shift destination", "The exact authenticated record prvalue destination is required.");
+        assign(*Destination, std::move(Result), L);
+        return std::move(*Destination);
+      }
+      return Result;
+    }
+    if (Operation == UtilityOperation::BitsetNot || Operation == UtilityOperation::BitsetEqual ||
+        Operation == UtilityOperation::BitsetNotEqual || Operation == UtilityOperation::BitsetAnd ||
+        Operation == UtilityOperation::BitsetOr || Operation == UtilityOperation::BitsetXor ||
+        Operation == UtilityOperation::BitsetAndAssign || Operation == UtilityOperation::BitsetOrAssign ||
+        Operation == UtilityOperation::BitsetXorAssign) {
+      auto Result = utilityBitsetBitwiseOperation(Call, Operation);
+      if (Destination) {
+        if (!Call->isPRValue() || !Call->getType()->isRecordType() ||
+            Result.getString("type") != Destination->getString("type"))
+          reject(L, "bitset result destination", "The exact authenticated record prvalue destination is required.");
+        assign(*Destination, std::move(Result), L);
+        return std::move(*Destination);
+      }
+      return Result;
+    }
     if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
         Operation == UtilityOperation::BitsetTest || Operation == UtilityOperation::BitsetSet ||
-        Operation == UtilityOperation::BitsetReset || Operation == UtilityOperation::BitsetFlip)
+        Operation == UtilityOperation::BitsetReset || Operation == UtilityOperation::BitsetFlip ||
+        Operation == UtilityOperation::BitsetSize || Operation == UtilityOperation::BitsetNone ||
+        Operation == UtilityOperation::BitsetAll || Operation == UtilityOperation::BitsetSetAll ||
+        Operation == UtilityOperation::BitsetResetAll || Operation == UtilityOperation::BitsetFlipAll ||
+        Operation == UtilityOperation::BitsetAssign)
       return utilityBitsetOperation(Call, Operation);
     if (Operation == UtilityOperation::UnorderedMapGetAllocator ||
         Operation == UtilityOperation::UnorderedMapPolicy) {
@@ -37977,7 +38194,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
           auto Value = snapshot(cast(argument(C->getArg(0), A.Context.UnsignedLongLongTy), "u64", L), L);
           if (Info->Bits < 64)
             Value = binary("&", Value, quantity((uint64_t(1) << Info->Bits) - 1, "u64", L), "u64", L);
-          assign(bitsetWord(Place, *Info, quantity(0, "u64", L), L), Value, L);
+          if (Info->Words) assign(bitsetWord(Place, *Info, quantity(0, "u64", L), L), Value, L);
         }
       }
       return;
