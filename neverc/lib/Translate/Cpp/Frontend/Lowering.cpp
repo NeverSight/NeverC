@@ -26308,6 +26308,10 @@ class FunctionLowering {
       const uint64_t Value = Operation == UtilityOperation::BitsetNone || Operation == UtilityOperation::BitsetAll;
       return cast(quantity(Value, "u64", L), type(Call->getType(), L), L);
     }
+    if (Operation == UtilityOperation::BitsetToUnsigned) {
+      auto Word = snapshot(bitsetWord(Place, *Info, quantity(0, "u64", L), L, true), L);
+      return cast(Word, type(Call->getType(), L), L);
+    }
     if (Operation == UtilityOperation::BitsetAll || Operation == UtilityOperation::BitsetSetAll ||
         Operation == UtilityOperation::BitsetResetAll || Operation == UtilityOperation::BitsetFlipAll) {
       const bool Query = Operation == UtilityOperation::BitsetAll;
@@ -28909,7 +28913,8 @@ class FunctionLowering {
       }
       return Result;
     }
-    if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
+    if (Operation == UtilityOperation::BitsetToUnsigned ||
+        Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
         Operation == UtilityOperation::BitsetTest || Operation == UtilityOperation::BitsetSet ||
         Operation == UtilityOperation::BitsetReset || Operation == UtilityOperation::BitsetFlip ||
         Operation == UtilityOperation::BitsetSize || Operation == UtilityOperation::BitsetNone ||

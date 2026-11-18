@@ -47555,6 +47555,13 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
       !bitsetSourceGraph(S, SM, M)) return std::nullopt;
   const auto Name = M->getName();
   if (M->isConst() && M->getNumParams() == 0 && Call->getNumArgs() == 0) {
+    if ((Name == "to_ulong" && Context.hasSameType(M->getReturnType(), Context.UnsignedLongTy)) ||
+        (Name == "to_ullong" && Context.hasSameType(M->getReturnType(), Context.UnsignedLongLongTy))) {
+      // An oversized bitset can reach the checked overflow path.
+      if (Info->Bits > Context.getTypeSize(M->getReturnType()) || Info->Words > 1)
+        return std::nullopt;
+      return UtilityBitsetCall{UtilityOperation::BitsetToUnsigned, 0};
+    }
     if (Name == "count" && Context.hasSameType(M->getReturnType(), Context.getSizeType()))
       return UtilityBitsetCall{UtilityOperation::BitsetCount, 0};
     if (Name == "any" && Context.hasSameType(M->getReturnType(), Context.BoolTy))

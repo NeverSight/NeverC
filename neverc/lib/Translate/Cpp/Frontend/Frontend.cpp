@@ -30924,7 +30924,12 @@ public:
         return true;
       if (A.S.coreV2() && UtilityAllocatorAssignment)
         return true;
-      if (A.S.coreV2() && F && approvedSDKDeclaration(A.S, A.Sources, F)) {
+      // An SDK declaration can get its name from a macro spelled outside the SDK.
+      // Its expansion site must not route an unrecognized call to generic lowering.
+      if (A.S.coreV2() && F &&
+          (approvedSDKDeclaration(A.S, A.Sources, F) ||
+           (F->getLocation().isMacroID() &&
+            A.S.sdkFile(A.Sources, A.Sources.getExpansionLoc(F->getLocation()))))) {
         A.reject(S->getBeginLoc(), "standard library runtime call",
                  "Approved SDK declarations may run only through a documented "
                  "direct lowering; this call has none.",
