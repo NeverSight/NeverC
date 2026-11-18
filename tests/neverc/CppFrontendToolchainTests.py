@@ -2763,13 +2763,19 @@ int main() {
                             self.assertIn("static_cast<double>(_Left)", body_text)
                             if macro == "_GENERIC_MATH2_BASE":
                                 self.assertIn("static_cast<double>(_Right)", body_text)
+                    # MSVC 14.52 added the C++26 specifier to both macro invocations.
+                    constexpr_specifier = r"(?:_CONSTEXPR_CMATH26\s*,\s*)?"
+                    log10_invocation = re.compile(
+                        r"\s*_GENERIC_MATH1\s*\(\s*" + constexpr_specifier + r"log10\s*\)\s*")
                     matches = [(i, line) for i, line in enumerate(lines)
-                               if re.fullmatch(r"\s*_GENERIC_MATH1\s*\(\s*log10\s*\)\s*", line)]
+                               if log10_invocation.fullmatch(line)]
                     self.assertEqual(len(matches), 1, (path, "log10"))
                     i, line = matches[0]
                     print(f"CMATH actual instantiation {path}:{i + 1}: {line}", flush=True)
+                    pow_invocation = re.compile(
+                        r"\s*_GENERIC_MATH2\s*\(\s*" + constexpr_specifier + r"pow\s*\)\s*")
                     pow_macros = [(i, line) for i, line in enumerate(lines)
-                                  if re.fullmatch(r"\s*_GENERIC_MATH2\s*\(\s*pow\s*\)\s*", line)]
+                                  if pow_invocation.fullmatch(line)]
                     pow_functions = [i for i, line in enumerate(lines)
                                      if re.search(r"\bpow\s*\(\s*_Ty1\s+_Left\s*,\s*_Ty2\s+_Right\s*\)", line)]
                     self.assertEqual(len(pow_macros) + len(pow_functions), 1, path)
