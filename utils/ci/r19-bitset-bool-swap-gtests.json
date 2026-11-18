@@ -1,0 +1,266 @@
+{
+  "positive_cases": [
+    {
+      "name": "bitset-bool-swap-proxy-first",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapProxyFirstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ba9f826cb316d36b26167870c07e3f94a8ec4c480b78963fb70bdf0d2f4ade9a",
+      "original_case_source_sha256": "ba9f826cb316d36b26167870c07e3f94a8ec4c480b78963fb70bdf0d2f4ade9a",
+      "gtest_body_sha256": "7d1996f5862c0fd688c3f3e9592b7ec28e6133a1aa204c65244e8cfc47f0c78f"
+    },
+    {
+      "name": "bitset-bool-swap-bool-first",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapBoolFirstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2230d7ca3c124d630350b29bf19c1c5c4af5f1e251387d70f7105f29517411b1",
+      "original_case_source_sha256": "2230d7ca3c124d630350b29bf19c1c5c4af5f1e251387d70f7105f29517411b1",
+      "gtest_body_sha256": "0fd268608c0f27c3dbefe9780f7a9ede61d95dbf638e8384e6312e670508aa31"
+    },
+    {
+      "name": "bitset-bool-swap-copied-alias",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapCopiedAliasRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8645f3691646871db4a51085a6f188955c65765d43b5188d06c601d660c9f6a8",
+      "original_case_source_sha256": "8645f3691646871db4a51085a6f188955c65765d43b5188d06c601d660c9f6a8",
+      "gtest_body_sha256": "7415caafbf9e7045fb6aa802805aba34def5155e2e8f72f7199d07f26b84734a"
+    },
+    {
+      "name": "bitset-bool-swap-unchanged-other-words",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapUnchangedOtherWordsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9342011b291cbdfe8460a5553205ff527236c84d0d720837135958773b7ace63",
+      "original_case_source_sha256": "9342011b291cbdfe8460a5553205ff527236c84d0d720837135958773b7ace63",
+      "gtest_body_sha256": "59e3b022bbc7d331d8e2115c3085b1b1a3bd5a3b0ef8330e6eafc0e89839dd2a"
+    },
+    {
+      "name": "bitset-bool-swap-capture-once",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapCaptureOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8478cb1f4cd0bb66052681315b4776eab7851934e006852cb891494551e40187",
+      "original_case_source_sha256": "8478cb1f4cd0bb66052681315b4776eab7851934e006852cb891494551e40187",
+      "gtest_body_sha256": "1a4c69e00e140e10ec1792b94adddaf291704898d88499409001709068cf0147"
+    },
+    {
+      "name": "bitset-bool-swap-read-after-capture",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapReadAfterCaptureRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c1ee3a02b76876f222a4715258fa8c4f44cd38c8c88e66b3cb81f39aa66c150c",
+      "original_case_source_sha256": "c1ee3a02b76876f222a4715258fa8c4f44cd38c8c88e66b3cb81f39aa66c150c",
+      "gtest_body_sha256": "660197837e71b143e283d52f922ac77b4981fb3f70a78485a818263f3d36d892"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "bitset-bool-swap-guard-segment",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapGuardSegmentRejected",
+      "expected": "reject",
+      "source_sha256": "1faac25243450eee2b4b161fd39cdc6b49a40d675baea4f6ab7ebb7b04881604",
+      "original_case_source_sha256": "1faac25243450eee2b4b161fd39cdc6b49a40d675baea4f6ab7ebb7b04881604",
+      "gtest_body_sha256": "0272df67ffa3610249c1b02bfe4dc3c968684bdd8cdca0f9802ebf95fffd2002"
+    },
+    {
+      "name": "bitset-bool-swap-guard-mask",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapGuardMaskRejected",
+      "expected": "reject",
+      "source_sha256": "f7abb48e504f8618174cea573a739c57fe4a6617a4cac00c9414f2f11fc1cf18",
+      "original_case_source_sha256": "f7abb48e504f8618174cea573a739c57fe4a6617a4cac00c9414f2f11fc1cf18",
+      "gtest_body_sha256": "db940057de7e1f8b8aecef70bbef5a35911009b060ae7e79e32171d0ae72cb58"
+    },
+    {
+      "name": "bitset-bool-swap-guard-make-reference",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapGuardMakeReferenceRejected",
+      "expected": "reject",
+      "source_sha256": "7b540fea61402729e8d804bfaef23920a1f6ce904894b837017adc40e5694ef0",
+      "original_case_source_sha256": "7b540fea61402729e8d804bfaef23920a1f6ce904894b837017adc40e5694ef0",
+      "gtest_body_sha256": "c261fff0c0a18aff97da8080a3427cec7b03588422118c159cb17a9c2b2e9ff5"
+    },
+    {
+      "name": "bitset-bool-swap-guard-reference-carrier",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapGuardReferenceCarrierRejected",
+      "expected": "reject",
+      "source_sha256": "4418ee3dc60a0c84a1754eb8a9d780b3ede5fab7b75819c183ce448853e6143e",
+      "original_case_source_sha256": "4418ee3dc60a0c84a1754eb8a9d780b3ede5fab7b75819c183ce448853e6143e",
+      "gtest_body_sha256": "8c78a3f5e54050990a076d4cda574c7d0582138a98b6bdefbad405c81ea2e50b"
+    },
+    {
+      "name": "bitset-bool-swap-guard-storage-base",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapGuardStorageBaseRejected",
+      "expected": "reject",
+      "source_sha256": "60aff58de2bd39fc169ce8d0ade984d3d8cbc85c57d2a745e2e9ee7f30df3da0",
+      "original_case_source_sha256": "60aff58de2bd39fc169ce8d0ade984d3d8cbc85c57d2a745e2e9ee7f30df3da0",
+      "gtest_body_sha256": "7eded61adc14c71acf88d91cde7c8482ddc91dd9b60c023658c09fef341256a5"
+    },
+    {
+      "name": "bitset-bool-swap-guard-storage",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapGuardStorageRejected",
+      "expected": "reject",
+      "source_sha256": "37a6c85a561cbabddab75e06078a5706c6aa8848d5d25843bbef7aa26d5e618d",
+      "original_case_source_sha256": "37a6c85a561cbabddab75e06078a5706c6aa8848d5d25843bbef7aa26d5e618d",
+      "gtest_body_sha256": "55199c541660f0db319e4cd23e989a5de3f3fb9bb7b52d6fbceb21eab97f2533"
+    },
+    {
+      "name": "bitset-bool-swap-guard-overload-name",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapGuardOverloadNameRejected",
+      "expected": "reject",
+      "source_sha256": "436eac99e203923bed9c9924ea5a3a117303e3cd82a86eb39270758dbaf1cc04",
+      "original_case_source_sha256": "436eac99e203923bed9c9924ea5a3a117303e3cd82a86eb39270758dbaf1cc04",
+      "gtest_body_sha256": "378b102def512258549b6c0a1a3bbb81a0b2286a47b727de6614fe0131e13fcc"
+    },
+    {
+      "name": "bitset-bool-swap-guard-owned-subscript",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBoolSwapGuardOwnedSubscriptRejected",
+      "expected": "reject",
+      "source_sha256": "34726bb7b1c0663f78cb102e82f00e2ad62c2f1616b7783302250a47a45d4784",
+      "original_case_source_sha256": "34726bb7b1c0663f78cb102e82f00e2ad62c2f1616b7783302250a47a45d4784",
+      "gtest_body_sha256": "1dfd181aeb9f04506e1f435b6046789422934a03cb893269fbce5aef0e344748"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2BitsetBoolSwapProxyFirstRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBoolSwapBoolFirstRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBoolSwapCopiedAliasRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBoolSwapUnchangedOtherWordsRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBoolSwapCaptureOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBoolSwapReadAfterCaptureRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBoolSwapGuardSegmentRejected",
+    "TranslateTest.CoreV2BitsetBoolSwapGuardMaskRejected",
+    "TranslateTest.CoreV2BitsetBoolSwapGuardMakeReferenceRejected",
+    "TranslateTest.CoreV2BitsetBoolSwapGuardReferenceCarrierRejected",
+    "TranslateTest.CoreV2BitsetBoolSwapGuardStorageBaseRejected",
+    "TranslateTest.CoreV2BitsetBoolSwapGuardStorageRejected",
+    "TranslateTest.CoreV2BitsetBoolSwapGuardOverloadNameRejected",
+    "TranslateTest.CoreV2BitsetBoolSwapGuardOwnedSubscriptRejected"
+  ],
+  "native_reference_authentication_sha256": "faf8309fcee726a02835244fd3d2fcc5df03252cd0ca0e8681289692874d3b14",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "1b9ef698968ee5433f3ccb6e690efb734660b7d3a2e833580b718d4eab5dc5de",
+  "maintained_original_sha256": "4a079ff70913f47a024d1d7b6405389f973946748698e21c6f30da10ee75eb79",
+  "previous_registered_source_sha256": "db1c33c4535a2c3fe53012f3acf2ee6b9dfe700813b1c4c038d1ca0c9a0c7e23",
+  "previous_maintained_original_sha256": "8f1fa8e34a5758b14e300009995b640ac0f931e16bb0909fc207f88f97a70014",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7802,
+  "current_python_registry_tests": 106,
+  "previous7788_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "6e7a02e6e329d12c422e6ee011c8dfcb734e080eb7dfa4fa36c898fbfa9fb8f1",
+  "extractor_sha256": "2c739d50fd4273fe6fe60cbac3547cfb7881d704d1a11e6790ee0bd7aa8753f3",
+  "source_cases": [
+    {
+      "name": "bitset-bool-swap-proxy-first",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<65> b;bool v=true;using std::swap;\nswap(b[64],v);return v||!b.test(64)||b.count()!=1;}\n",
+      "source_sha256": "ba9f826cb316d36b26167870c07e3f94a8ec4c480b78963fb70bdf0d2f4ade9a",
+      "expected": "accept",
+      "kind": "bitset-bool-swap-operations"
+    },
+    {
+      "name": "bitset-bool-swap-bool-first",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<65> b(1);bool v=false;using std::swap;\nswap(v,b[0]);return !v||b.any();}\n",
+      "source_sha256": "2230d7ca3c124d630350b29bf19c1c5c4af5f1e251387d70f7105f29517411b1",
+      "expected": "accept",
+      "kind": "bitset-bool-swap-operations"
+    },
+    {
+      "name": "bitset-bool-swap-copied-alias",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<129> b;auto original=b[128];auto alias=original;\nbool v=true;using std::swap;swap(alias,v);if(v||!bool(original))return 1;\nswap(v,original);return !v||b.any()||bool(alias);}\n",
+      "source_sha256": "8645f3691646871db4a51085a6f188955c65765d43b5188d06c601d660c9f6a8",
+      "expected": "accept",
+      "kind": "bitset-bool-swap-operations"
+    },
+    {
+      "name": "bitset-bool-swap-unchanged-other-words",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<129> b;b.set(64).set(128);\nbool a=false;bool c=true;using std::swap;swap(a,b[64]);swap(b[0],c);\nreturn !a||c||b.count()!=2||!b.test(0)||b.test(64)||!b.test(128);}\n",
+      "source_sha256": "9342011b291cbdfe8460a5553205ff527236c84d0d720837135958773b7ace63",
+      "expected": "accept",
+      "kind": "bitset-bool-swap-operations"
+    },
+    {
+      "name": "bitset-bool-swap-capture-once",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nstatic int events;\nstd::bitset<65>& observe(std::bitset<65>& b){events+=10;return b;}\nbool& reference(bool& v){++events;return v;}\nint main(){std::bitset<65> b;b.set(63);bool v=false;using std::swap;\nswap(observe(b)[63],reference(v));return !v||b.any()||events!=11;}\n",
+      "source_sha256": "8478cb1f4cd0bb66052681315b4776eab7851934e006852cb891494551e40187",
+      "expected": "accept",
+      "kind": "bitset-bool-swap-operations"
+    },
+    {
+      "name": "bitset-bool-swap-read-after-capture",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nstatic std::bitset<65>* selected;\nbool& set_bit(bool& v){selected->set(64);return v;}\nint main(){std::bitset<65> b;selected=&b;bool v=false;using std::swap;\nswap(set_bit(v),b[64]);return !v||b.any();}\n",
+      "source_sha256": "c1ee3a02b76876f222a4715258fa8c4f44cd38c8c88e66b3cb81f39aa66c150c",
+      "expected": "accept",
+      "kind": "bitset-bool-swap-operations"
+    },
+    {
+      "name": "bitset-bool-swap-guard-segment",
+      "public_header": "bitset",
+      "source": "#define __seg_ nct_alternate_seg\n#include <bitset>\n#undef __seg_\nint main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}\n",
+      "source_sha256": "1faac25243450eee2b4b161fd39cdc6b49a40d675baea4f6ab7ebb7b04881604",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-bool-swap-guard-mask",
+      "public_header": "bitset",
+      "source": "#define __mask_ nct_alternate_mask\n#include <bitset>\n#undef __mask_\nint main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}\n",
+      "source_sha256": "f7abb48e504f8618174cea573a739c57fe4a6617a4cac00c9414f2f11fc1cf18",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-bool-swap-guard-make-reference",
+      "public_header": "bitset",
+      "source": "#define __make_ref nct_alternate_make_ref\n#include <bitset>\n#undef __make_ref\nint main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}\n",
+      "source_sha256": "7b540fea61402729e8d804bfaef23920a1f6ce904894b837017adc40e5694ef0",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-bool-swap-guard-reference-carrier",
+      "public_header": "bitset",
+      "source": "#define __bit_reference nct_alternate_bit_reference\n#include <bitset>\n#undef __bit_reference\nint main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}\n",
+      "source_sha256": "4418ee3dc60a0c84a1754eb8a9d780b3ede5fab7b75819c183ce448853e6143e",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-bool-swap-guard-storage-base",
+      "public_header": "bitset",
+      "source": "#define __bitset nct_alternate_bitset\n#include <bitset>\n#undef __bitset\nint main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}\n",
+      "source_sha256": "60aff58de2bd39fc169ce8d0ade984d3d8cbc85c57d2a745e2e9ee7f30df3da0",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-bool-swap-guard-storage",
+      "public_header": "bitset",
+      "source": "#define __first_ nct_alternate_first\n#include <bitset>\n#undef __first_\nint main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}\n",
+      "source_sha256": "37a6c85a561cbabddab75e06078a5706c6aa8848d5d25843bbef7aa26d5e618d",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-bool-swap-guard-overload-name",
+      "public_header": "bitset",
+      "source": "#define swap nct_alternate_swap\n#include <bitset>\n#undef swap\nint main(){std::bitset<65> b;bool value=true;using std::nct_alternate_swap;nct_alternate_swap(b[64],value);return value;}\n",
+      "source_sha256": "436eac99e203923bed9c9924ea5a3a117303e3cd82a86eb39270758dbaf1cc04",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-bool-swap-guard-owned-subscript",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nnamespace std{template<> auto bitset<65>::operator[](size_t) -> reference{return this->__make_ref(0);}}\nint main(){std::bitset<65> b;bool value=true;using std::swap;swap(value,b[64]);return value;}\n",
+      "source_sha256": "34726bb7b1c0663f78cb102e82f00e2ad62c2f1616b7783302250a47a45d4784",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_sha256": "52f966566c5e0d18b5212256c3d5bf46fe353d701e28409b489a33e16aa1d86d"
+}
