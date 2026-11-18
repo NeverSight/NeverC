@@ -17356,14 +17356,25 @@ amounts at least as large as the bitset. Large amounts produce all zero bits.
 Overloaded shift assignment evaluates the right operand before the receiver.
 Explicit member calls evaluate the receiver first.
 
-`test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)` require an
-in-range integer literal. The omitted `set` value requires the pinned SDK default
-argument. Proxy access, string operations and general position expressions
-require further work.
+`test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)` accept in-range
+literals and unsigned expressions whose bounds follow from a literal mask or
+modulus. The omitted `set` value uses the pinned SDK default.
+
+Mutable `operator[]` exposes a proxy that aliases the selected bit. Proxy
+copies preserve that alias. Conversion to `bool`, complement, `flip()`, bool
+and proxy assignment, and the pinned two-proxy `swap` overload preserve their
+selected SDK semantics. Const subscript follows the selected SDK return type.
+
+`to_ulong()` and `to_ullong()` preserve the value when the receiving unsigned
+type can represent all `N` bits. Their limits follow the selected target ABI.
+The checked operations still require an in-range proof. String operations and
+conversions that can overflow require further work.
 
 The additional bitset suites cover 36 registered tests, 180 source requests
 across the six 64-bit targets, and 36 generated C23 executions against matching
-native C++ programs at O0 and O2.
+native C++ programs at O0 and O2. The proxy, integer conversion and checked
+index suites add 42 registered tests, 252 source requests across the same
+targets, and 36 C23 executions at O0 and O2 on 64-bit Linux.
 
 SDK template, specialization and function redeclarations remain authenticated.
 The used body graph rejects source-owned macro spelling, replaced declarations
