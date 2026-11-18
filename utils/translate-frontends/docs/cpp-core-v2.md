@@ -17342,18 +17342,28 @@ hint. `construct` accepts zero or one directly admitted scalar argument. Other
 allocator/element types, nonempty inner packs and copy/converting construction
 remain outside this closed surface.
 
-Nonempty `std::bitset<N>` objects use the authenticated native sequence of
-64-bit storage words, with the existing record and array limits. Default and
-unsigned-long-long construction initialize that storage directly; trivial copy
-construction copies the complete carrier. `count()` counts set bits in each
-word, and `any()` reduces words with the existing typed bitwise-OR operation and
-converts the result to Boolean. No logical-OR expression is added to the IR
-protocol. `test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)` require an
-in-range integer-literal position; the omitted `set` value requires the exact
-pinned SDK default argument. Receiver and admitted value-argument effects retain
-their existing evaluation and cleanup rules. Empty bitsets, proxy access,
-whole-object mutation overloads, shifts, string conversion and arbitrary position
-expressions are not part of this increment.
+The private C++17 profile admits the pinned `std::bitset<N>` layout with
+64-bit storage words and a separate empty layout for `N == 0`. Default and
+`unsigned long long` construction initialize the storage. Trivial copies and
+assignments preserve the complete value. Queries include `size()`, `count()`,
+`any()`, `none()` and `all()`. The no-argument `set()`, `reset()` and `flip()`
+update the whole bitset and keep unused bits in the last word clear.
+
+`~`, `&`, `|` and `^` produce values. `&=`, `|=` and `^=` update the receiver
+and return a reference to it. `==` and `!=` compare values. The `<<`, `>>`,
+`<<=` and `>>=` overloads accept runtime shift amounts, including zero and
+amounts at least as large as the bitset. Large amounts produce all zero bits.
+Overloaded shift assignment evaluates the right operand before the receiver.
+Explicit member calls evaluate the receiver first.
+
+`test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)` require an
+in-range integer literal. The omitted `set` value requires the pinned SDK default
+argument. Proxy access, string operations and general position expressions
+require further work.
+
+The additional bitset suites cover 36 registered tests, 180 source requests
+across the six 64-bit targets, and 36 generated C23 executions against matching
+native C++ programs at O0 and O2.
 
 SDK template, specialization and function redeclarations remain authenticated.
 The used body graph rejects source-owned macro spelling, replaced declarations
@@ -17407,8 +17417,20 @@ Six exact native-reference programs and their generated C23 counterparts execute
 at both O0 and O2. The programs exercise count/fill initialization, live aliasing,
 owned argument effects, empty/zero-count storage and selected heap functions.
 Native execution and six-target source admission remain separate from generated
-C23 execution evidence. Copy/move construction, resizing, slices, expression
-templates and other element specializations remain outside this increment.
+C23 execution evidence. The value-operation increment also admits copy and move
+construction, copy and move assignment, `resize(count)` and `resize(count, value)`,
+member `swap` and the selected SDK `std::swap`. Copies own independent storage.
+Copy assignment reuses equal-sized storage and handles self-assignment; moves
+transfer the storage carrier and leave the source empty and reusable. Resize
+discards existing elements, even when the requested size is unchanged, and
+captures its fill value before allocation. Swapping preserves element addresses.
+Allocation callbacks, live copy-source reads and C++17 assignment sequencing are
+retained: overloaded assignment evaluates its right operand before the receiver,
+while an explicit member call evaluates its receiver before the argument.
+Ten additional registered tests compare six exact native programs with twelve
+generated C23 executions at O0/O2 and reject four source-owned SDK replacements.
+Slices, expression templates and other element specializations remain outside
+this increment.
 NeverC's public source frontend remains C23-only; complete STL support still
 requires further implementation and verification.
 
@@ -17454,9 +17476,21 @@ references, returned positions and selected heap or argument effects. Four
 negative tests per family retain independent body and macro-origin checks.
 Six-target source admission is a separate credential from those execution results.
 
-Owner copy/move construction and assignment, custom allocators, non-integer
-elements, further overloads, range operations, emplacing, resizing and linked
-container splice/sort/merge operations remain outside this increment. NeverC's
+The `list<int>` value-operation increment admits copy and move construction,
+including the checked explicit default-allocator forms, copy and move assignment,
+member `swap` and the selected SDK `std::swap`. Copies own independent nodes;
+copy assignment reuses existing nodes in SDK order, handles self-assignment and
+appends or removes nodes as needed. Moves transfer node ownership and leave an
+empty reusable source. Swap preserves element references and iterators to nodes,
+including when one owner is empty. Allocation callbacks, live integer reads and
+sentinel relinking retain the selected SDK order. C++17 overloaded assignment
+evaluates its right operand first; explicit member calls evaluate the receiver
+first. Ten additional registered tests execute six exact native programs and
+twelve generated C23 programs at O0/O2, with four source-owned body guards.
+
+`forward_list` owner copy/move construction and assignment, custom allocators,
+non-integer elements, further overloads, range operations, emplacing, resizing
+and linked container splice/sort/merge operations require further work. NeverC's
 public source frontend remains C23-only; full STL support still requires further
 implementation and verification.
 
@@ -17574,6 +17608,14 @@ segmented growth precedes live input reads; insertion preserves the selected SDK
 shorter-side shifts and returns a mutable iterator to the insertion position.
 Empty input retains argument effects without allocation or element reads.
 
+The same specialization admits `emplace(position)` and `emplace(position, value)`
+with one exact integer lvalue, const lvalue or rvalue. Zero-argument emplacement
+inserts a value-initialized zero. The checked mutable or const iterator position
+must belong to the destination. The result is a mutable iterator to the new
+element. Receiver and argument expressions are evaluated once; selected SDK
+capacity callbacks, integer temporary reads and shorter-side shifts retain
+their observed order, including integer references aliased into the deque.
+
 Each family has ten permanent GTests: six exact native-reference programs that
 generate and execute C23 at O0 and O2, and four source-origin rejection tests.
 Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
@@ -17643,6 +17685,12 @@ and const endpoints, initializer lists, empty input, front/middle/back insertion
 multiple-block growth, storage reuse, returned iterators, allocation callbacks
 and argument sequencing. Four source-origin guards reject replaced raw pointer
 and initializer-list bodies, including forwarding replacements.
+A separate positional-emplacement family has ten registered GTests and twelve
+generated C23 executions at O0 and O2 against six exact native programs. It
+covers zero/lvalue/rvalue arguments, front/middle/back positions, segmented
+growth, aliases, returned iterators, allocation callbacks and call sequencing.
+Four source-origin guards reject replaced zero/lvalue/rvalue emplacement
+bodies, including forwarding replacements.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
@@ -17656,7 +17704,7 @@ checks and budgets; this reachability proof does not admit custom allocators.
 
 Custom allocators or adapter containers, other element specializations,
 other allocator and iterator range overloads, emplacement with other argument types
-or multiple arguments and positional emplacement require further work.
+or multiple arguments require further work.
 These bounded operations
 do not establish complete STL support.
 

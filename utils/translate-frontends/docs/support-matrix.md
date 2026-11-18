@@ -426,7 +426,7 @@ Qualified implementation `813a7045ed8b` passes 6 source syntax checks, all 750 e
 | Private `cpp-core-v2` surface | Admitted operations | Boundary |
 | --- | --- | --- |
 | `std::scoped_allocator_adaptor<std::allocator<int>>` | Default construction, allocation without a hint, deallocation, zero- or one-value integer construction, and integer destruction. | The outer allocator is the pinned default integer allocator and the inner allocator pack is empty. Copying, converting constructors and other element or allocator types require further work. |
-| `std::bitset<N>` | Default, unsigned-long-long and trivial copy construction; `count()`, `any()`, `test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)`. | Nonempty pinned 64-bit-word layouts within existing array limits; position arguments are in-range integer literals. Other overloads, proxies and general position expressions require further work. |
+| `std::bitset<N>` | Default, unsigned-long-long and trivial copy construction; copy assignment; `size()`, `count()`, `any()`, `all()`, `none()`; whole and literal-position mutation and queries; complement, equality, bitwise operators and shifts, including compound assignment. | Pinned empty and 64-bit-word layouts within existing record and array limits. Position-taking members require in-range integer literals. Proxy access and string operations require further work. |
 
 Every selected declaration and used implementation body retains SDK-origin and
 source-owned macro/redeclaration checks. The allocator uses the existing checked
@@ -436,14 +436,15 @@ operations. Neither surface introduces a runtime libc++ dependency.
 Six permanent GTests cover two native-matched runtime programs at O0 and O2 and
 four source-origin rejection programs. The bitset runtime case exercises a
 70-bit object across two words. Source admission and rejection checks run for
-the six existing 64-bit target descriptors. This coverage does not establish
-complete STL support. See the [detailed contract](cpp-core-v2.md#r19-checked-allocator-and-bitset-operations).
+the six existing 64-bit target descriptors. The whole-value, bitwise and shift
+suites add 36 GTests and 36 generated C23 executions against native C++ at
+O0 and O2. Further STL coverage remains in progress. See the [detailed contract](cpp-core-v2.md#r19-checked-allocator-and-bitset-operations).
 
 ## R19 checked integer valarray operations
 
 | Private `cpp-core-v2` surface | Admitted operations | Boundary |
 | --- | --- | --- |
-| `std::valarray<int>` | Default, count and scalar-fill construction; destruction; `size()`, mutable/const integer subscripting, scalar `operator+=` and `sum()`. | Exact pinned two-pointer layout and integer specialization. Copy/move construction, resize, slices, expression templates and other element types require further work. |
+| `std::valarray<int>` | Default, count and scalar-fill construction; destruction; `size()`, mutable/const integer subscripting, scalar `operator+=` and `sum()`; copy/move construction and assignment; destructive `resize`; member/SDK swap. | Exact pinned two-pointer layout and integer specialization. Slices, expression templates, additional overloads and other element types require further work. |
 
 Six native-matched programs execute as generated C23 at O0 and O2. They cover
 zero initialization, scalar fill, live scalar aliases, owned argument effects,
@@ -458,7 +459,7 @@ This bounded increment does not establish complete STL support.
 | Private `cpp-core-v2` surface | Admitted operations | Boundary |
 | --- | --- | --- |
 | `std::forward_list<int>` | Default, allocator-only and initializer-list construction; destruction; `empty`, `front`, before/begin/end iterator access, front insertion/removal, single-position `insert_after`/`erase_after` and `clear`. | Exact default allocator and pinned owner/node layouts. Mutable/const SDK iterators admit copying, conversion, dereference, arrow, increment and equality forms. |
-| `std::list<int>` | Default, allocator-only and initializer-list construction; destruction; `empty`, `size`, front/back access, begin/end iterators, front/back insertion/removal, single-position `insert`/`erase` and `clear`. | Exact default allocator and pinned sentinel/node layouts. Mutable/const SDK iterators additionally admit decrement. |
+| `std::list<int>` | Default, allocator-only and initializer-list construction; destruction; `empty`, `size`, front/back access, begin/end iterators, front/back insertion/removal, single-position `insert`/`erase` and `clear`; copy/move construction and assignment; member/SDK swap. | Exact default allocator and pinned sentinel/node layouts. Mutable/const SDK iterators additionally admit decrement. |
 
 Each family has six exact native-reference programs and generated C23 executions
 at O0 and O2, plus four source-origin guards. These execution results are distinct
@@ -472,7 +473,7 @@ This increment does not establish complete STL support.
 
 | Private `cpp-core-v2` surface | Admitted operations | Boundary |
 | --- | --- | --- |
-| `std::deque<int>` | Default, count, count/value, raw pointer range, initializer-list, copy and move construction; explicit default allocator count, count/value, raw pointer range, copy and move constructors; copy/move and integer initializer-list assignment; single and range erase; single-element, counted, raw-pointer-range and initializer-list insert; `resize(n)`, `resize(n, value)`, `assign(n, value)` and raw pointer `assign(first, last)`; member and SDK `swap`; destruction; `empty`, `size`, front/back access, integer subscripting, front/back insertion/removal, `emplace_front`, `emplace_back` and `clear`; checked begin/end iterator operations. | Exact default allocator, pinned segmented owner and mutable/const iterator layouts. |
+| `std::deque<int>` | Default, count, count/value, raw pointer range, initializer-list, copy and move construction; explicit default allocator count, count/value, raw pointer range, copy and move constructors; copy/move and integer initializer-list assignment; single and range erase; single-element, counted, raw-pointer-range and initializer-list insert; zero/one-integer positional `emplace`; `resize(n)`, `resize(n, value)`, `assign(n, value)` and raw pointer `assign(first, last)`; member and SDK `swap`; destruction; `empty`, `size`, front/back access, integer subscripting, front/back insertion/removal, `emplace_front`, `emplace_back` and `clear`; checked begin/end iterator operations. | Exact default allocator, pinned segmented owner and mutable/const iterator layouts. |
 | `std::stack<int>` | Default, copy and move construction, copy/move assignment, member and SDK `swap`, destruction, `empty`, `size`, `top`, `push`, zero/one-integer `emplace` and `pop`. | Exact default `std::deque<int>` container; mutable/const access retains live element references. |
 | `std::queue<int>` | Default, copy and move construction, copy/move assignment, member and SDK `swap`, destruction, `empty`, `size`, `front`, `back`, `push`, zero/one-integer `emplace` and `pop`. | Exact default `std::deque<int>` container; pushes append and pops remove the front element. |
 | `std::priority_queue<int>` | Default/copy/move and comparator/vector/pointer-range construction, including pinned default-allocator overloads; destruction, copy/move assignment, `empty`, `size`, `top`, integer `push`, `pop`, member/SDK swap and zero/one-int `emplace`; generated C23 heap operations. | Exact pinned default vector and allocator, with `std::less<int>`, `std::greater<int>` or transparent `std::less<void>` / `std::greater<void>`; `int*`/`const int*` ranges; six approved 64-bit targets. [Scope and execution evidence](cpp-core-v2.md#r19-checked-integer-priority-queues). |
@@ -485,5 +486,5 @@ effects. Six-target source admission is checked separately from Linux x86-64
 execution. See the [detailed contract](cpp-core-v2.md#r19-checked-integer-deque-and-container-adapters).
 Custom allocators or adapter containers, other element types, additional
 other allocator and iterator range overloads, other emplacement argument forms
-and positional emplacement require further work. This increment does not establish complete
+require further work. This increment does not establish complete
 STL support.
