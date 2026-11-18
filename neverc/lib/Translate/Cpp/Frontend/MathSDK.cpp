@@ -47294,11 +47294,25 @@ bool bitsetConstantEvaluationBuiltin(const State &S, const SourceManager &SM,
 bool bitsetPinnedTrailingZeroCount(const State &S, const SourceManager &SM,
                                    const CallExpr *Call, const ASTContext &Context) {
   const auto *F = Call->getDirectCallee();
+  const bool Trace = F && F->getIdentifier() &&
+      (F->getName() == "__builtin_ctzl" || F->getName() == "__builtin_ctzll");
+  auto Detail = [&](llvm::StringRef Why, bool Passed = false, const FunctionDecl *D = nullptr) {
+    if (Trace) {
+      llvm::errs() << "bitset-ctz-proof " << Why << " symbol=" << F->getName()
+                   << " call-line=" << SM.getExpansionLineNumber(Call->getExprLoc());
+      if (D)
+        llvm::errs() << " decl-line=" << SM.getExpansionLineNumber(D->getLocation())
+                     << " implicit=" << D->isImplicit() << " body=" << D->hasBody()
+                     << " decl-builtin=" << D->getBuiltinID();
+      llvm::errs() << '\n';
+    }
+    return Passed;
+  };
   if (!F || F->isInvalidDecl() || !F->getIdentifier() || F->hasBody() ||
       F->isVariadic() || F->getNumParams() != 1 || Call->getNumArgs() != 1 ||
       !F->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
       !Context.hasSameType(F->getReturnType(), Context.IntTy))
-    return false;
+    return Detail("function signature", false, F);
   const auto ID = F->getBuiltinID();
   QualType Word;
   unsigned ExpectedLine;
@@ -47309,22 +47323,22 @@ bool bitsetPinnedTrailingZeroCount(const State &S, const SourceManager &SM,
     Word = Context.UnsignedLongLongTy;
     ExpectedLine = 38;
   } else {
-    return false;
+    return Detail("builtin identity", false, F);
   }
   if (!Context.hasSameType(F->getParamDecl(0)->getType(), Word) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Word))
-    return false;
+    return Detail("argument type", false, F);
   auto PinnedSite = [&](SourceLocation Location) {
     return Location.isValid() && !Location.isMacroID() &&
         cstddefOrigin(S, SM, Location, "libcxx", "__bit/countr.h") &&
         SM.getExpansionLineNumber(Location) == ExpectedLine;
   };
-  if (!PinnedSite(Call->getExprLoc())) return false;
+  if (!PinnedSite(Call->getExprLoc())) return Detail("call site", false, F);
   unsigned Declarations = 0;
   for (const auto *D : F->redecls())
     if (++Declarations > 64 || !D->isImplicit() || D->hasBody() ||
         D->getBuiltinID() != ID || !PinnedSite(D->getLocation()))
-      return false;
+      return Detail("builtin declaration", false, D);
   const auto *Reference = dyn_cast<DeclRefExpr>(Call->getArg(0)->IgnoreParenImpCasts());
   const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
   const auto *Owner = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
@@ -47334,39 +47348,56 @@ bool bitsetPinnedTrailingZeroCount(const State &S, const SourceManager &SM,
       !Context.hasSameType(Parameter->getType(), Word) ||
       !Context.hasSameType(Owner->getReturnType(), Context.IntTy) ||
       !bitsetPinnedHeader(S, SM, Owner, "__bit/countr.h") || !bitsetPinnedFunction(S, SM, Owner))
-    return false;
+    return Detail("SDK owner");
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Owner->getBody());
-  if (!Body || Body->size() != 1) return false;
+  if (!Body || Body->size() != 1) return Detail("owner body");
   const auto *Return = dyn_cast<ReturnStmt>(*Body->body_begin());
-  return Return && Return->getRetValue() && Return->getRetValue()->IgnoreParenImpCasts() == Call;
+  return Return && Return->getRetValue() && Return->getRetValue()->IgnoreParenImpCasts() == Call
+      ? Detail("accepted", true) : Detail("owner return");
 }
 
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
                         const FunctionDecl *Root, bool ProvenNoOverflow = false) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
+  bool Logged = false;
+  auto Failure = [&](llvm::StringRef Reason, const FunctionDecl *F, const Stmt *Node = nullptr) {
+    if (ProvenNoOverflow && !Logged) {
+      Logged = true;
+      llvm::errs() << "bitset-wide-proof graph " << Reason;
+      if (F && F->getIdentifier()) llvm::errs() << " symbol=" << F->getName();
+      if (F) {
+        llvm::errs() << " builtin=" << F->getBuiltinID();
+        if (const auto File = S.sdkFile(SM, F->getLocation()))
+          llvm::errs() << " sdk=" << File->Root << '/' << File->Path;
+      }
+      if (Node) llvm::errs() << " node=" << Node->getStmtClassName();
+      llvm::errs() << '\n';
+    }
+    return false;
+  };
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   Function = [&](const FunctionDecl *F, unsigned Depth) {
-    if (!F || Depth > 64 || ++Nodes > 4096) return false;
+    if (!F || Depth > 64 || ++Nodes > 4096) return Failure("callee or budget", F);
     if (bitsetBuiltinLibraryCast(S, SM, F, Root->getASTContext())) return true;
     if (F->getBuiltinID() == Builtin::BI__builtin_is_constant_evaluated)
-      return bitsetConstantEvaluationBuiltin(S, SM, F, Root->getASTContext());
+      return bitsetConstantEvaluationBuiltin(S, SM, F, Root->getASTContext()) || Failure("constant-evaluation builtin", F);
     if (F->getBuiltinID()) {
       // Clang creates these global builtin declarations lazily at their
       // SDK call token. They are not ordinary declarations in namespace std.
       // Every explicit or user-sourced redeclaration still fails closed.
       for (const auto *D : F->redecls())
         if (D->getLocation().isValid() && !bitsetPinned(S, SM, D) &&
-            !bitsetImplicitPopcountBuiltin(S, SM, D, F->getBuiltinID())) return false;
-      if (F->hasBody()) return false;
+            !bitsetImplicitPopcountBuiltin(S, SM, D, F->getBuiltinID())) return Failure("builtin declaration", D);
+      if (F->hasBody()) return Failure("builtin body", F);
       const auto Name = F->getName();
       return Name == "__builtin_is_constant_evaluated" ||
              Name == "__builtin_popcount" || Name == "__builtin_popcountl" ||
              Name == "__builtin_popcountll" || Name == "__builtin_expect" ||
-             Name == "__builtin_assume" || Name == "__builtin_unreachable";
+             Name == "__builtin_assume" || Name == "__builtin_unreachable" || Failure("unlisted builtin", F);
     }
-    if (!bitsetPinnedFunction(S, SM, F)) return false;
+    if (!bitsetPinnedFunction(S, SM, F)) return Failure("callee origin", F);
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
     // Position-taking operations below require a constant in-range index.
     // Their error branch cannot execute, but its declaration remains pinned.
@@ -47385,21 +47416,21 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
       for (const auto *Init : Constructor->inits())
         if (!Statement(Init->getInit(), Depth + 1)) return false;
     const auto *Body = F->getBody();
-    return Body && Statement(Body, Depth + 1);
+    return Body ? Statement(Body, Depth + 1) : Failure("missing body", F);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
-    if (Depth > 64 || ++Nodes > 4096) return false;
+    if (Depth > 64 || ++Nodes > 4096) return Failure("statement budget", nullptr, Node);
     auto PinnedMacro = [&](SourceLocation Location) {
       if (!Location.isMacroID()) return true;
       const auto File = S.sdkFile(SM, SM.getSpellingLoc(Location));
       return File && (File->Root == "libcxx" || File->Root == "resource");
     };
-    if (!PinnedMacro(Node->getBeginLoc()) || !PinnedMacro(Node->getEndLoc())) return false;
+    if (!PinnedMacro(Node->getBeginLoc()) || !PinnedMacro(Node->getEndLoc())) return Failure("statement macro", nullptr, Node);
     if (const auto *E = dyn_cast<Expr>(Node))
-      if (!PinnedMacro(E->getExprLoc())) return false;
+      if (!PinnedMacro(E->getExprLoc())) return Failure("expression macro", nullptr, E);
     if (const auto *E = dyn_cast<MemberExpr>(Node))
-      if (!PinnedMacro(E->getMemberLoc())) return false;
+      if (!PinnedMacro(E->getMemberLoc())) return Failure("member macro", nullptr, E);
     if (const auto *Call = dyn_cast<CallExpr>(Node)) {
       const auto &Context = Root->getASTContext();
       if (bitsetPinnedWordRangeQuery(S, SM, Call, Context)) return true;
@@ -47813,8 +47844,12 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
        (Name == "to_ullong" && Context.hasSameType(Result, Context.UnsignedLongLongTy)));
   const bool NeedsOverflowProof = ToUnsigned && Info->Bits > Context.getTypeSize(Result);
   if (NeedsOverflowProof && !bitsetTemporaryFitsUnsigned(S, SM,
-      Member->getImplicitObjectArgument(), Result, Context))
+      Member->getImplicitObjectArgument(), Result, Context)) {
+    const auto *Operand = Member->getImplicitObjectArgument();
+    llvm::errs() << "bitset-wide-proof receiver " << Name << " width=" << Info->Bits
+                 << " node=" << (Operand ? Operand->getStmtClassName() : "none") << '\n';
     return std::nullopt;
+  }
   if (!bitsetSourceGraph(S, SM, M, NeedsOverflowProof)) return std::nullopt;
   if (ToUnsigned) return UtilityBitsetCall{UtilityOperation::BitsetToUnsigned, 0};
   if (M->isConst() && M->getNumParams() == 0 && Call->getNumArgs() == 0) {
