@@ -47560,7 +47560,12 @@ static std::optional<UtilityBitsetCall> bitsetProxyCall(
       return std::nullopt;
     const auto Left = Proxy(F->getParamDecl(0)->getType());
     const auto Right = Proxy(F->getParamDecl(1)->getType());
-    if (Left && Right && !Left->ReadOnly && !Right->ReadOnly && Origin("__bit_reference"))
+    const auto BoolReference = Context.getLValueReferenceType(Context.BoolTy);
+    const bool LeftMatches = Left ? !Left->ReadOnly :
+        Context.hasSameType(F->getParamDecl(0)->getType(), BoolReference);
+    const bool RightMatches = Right ? !Right->ReadOnly :
+        Context.hasSameType(F->getParamDecl(1)->getType(), BoolReference);
+    if ((Left || Right) && LeftMatches && RightMatches && Origin("__bit_reference"))
       return UtilityBitsetCall{UtilityOperation::BitsetProxySwap};
     return std::nullopt;
   }

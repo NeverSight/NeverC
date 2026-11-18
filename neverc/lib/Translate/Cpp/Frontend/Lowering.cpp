@@ -26180,14 +26180,24 @@ class FunctionLowering {
       // By-value record arguments point to their caller-owned copies.
       auto Left = dereference(argument(Call->getArg(0), F->getParamDecl(0)->getType()), L);
       auto Right = dereference(argument(Call->getArg(1), F->getParamDecl(1)->getType()), L);
-      const auto LInfo = Describe(F->getParamDecl(0)->getType());
-      const auto RInfo = Describe(F->getParamDecl(1)->getType());
-      auto Saved = snapshot(Read(Left, LInfo), L);
-      auto Value = snapshot(Read(Right, RInfo), L);
-      Write(dereference(fieldStorage(Left, LInfo.Word, L), L),
-            fieldStorage(Left, LInfo.Mask, L), Value);
-      Write(dereference(fieldStorage(Right, RInfo.Word, L), L),
-            fieldStorage(Right, RInfo.Mask, L), Saved);
+      const auto BoolReference = Context.getLValueReferenceType(Context.BoolTy);
+      auto Layout = [&](unsigned Index) -> std::optional<UtilityBitsetProxyRecord> {
+        const auto T = F->getParamDecl(Index)->getType();
+        if (Context.hasSameType(T, BoolReference)) return std::nullopt;
+        return Describe(T);
+      };
+      const auto LInfo = Layout(0), RInfo = Layout(1);
+      auto Saved = snapshot(LInfo ? Read(Left, *LInfo) : Left, L);
+      auto Value = snapshot(RInfo ? Read(Right, *RInfo) : Right, L);
+      auto Store = [&](Expression Place, const auto &Info, Expression NewValue) {
+        if (Info)
+          Write(dereference(fieldStorage(Place, Info->Word, L), L),
+                fieldStorage(Place, Info->Mask, L), std::move(NewValue));
+        else
+          assign(std::move(Place), std::move(NewValue), L);
+      };
+      Store(Left, LInfo, Value);
+      Store(Right, RInfo, Saved);
       return {};
     }
     const auto *M = llvm::cast<CXXMethodDecl>(F);
