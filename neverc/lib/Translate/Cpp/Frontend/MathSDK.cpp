@@ -47619,8 +47619,9 @@ bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
     if (!Cast || (Cast->getCastKind() != CK_NoOp &&
         (Cast->getCastKind() != CK_Dependent || !Pattern->isDependentContext())) ||
         !Cast->getTypeAsWritten()->isRValueReferenceType() || !ParameterReference(Cast->getSubExpr())) return false;
-    const auto *Target = Cast->getTypeAsWritten()->getPointeeType()->getAs<TemplateTypeParmType>();
-    if (!Target || !Target->getDecl() || Target->getDecl()->getCanonicalDecl() != Parameter->getCanonicalDecl()) return false;
+    const auto *ParameterType = Parameter->getTypeForDecl();
+    if (!ParameterType || !Context.hasSameType(Cast->getTypeAsWritten()->getPointeeType(),
+        QualType(ParameterType, 0))) return false;
   } else {
     const auto *Call = dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts());
     const auto *Builtin = Call ? Call->getDirectCallee() : nullptr;
