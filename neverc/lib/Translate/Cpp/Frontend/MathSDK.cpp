@@ -19,6 +19,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include <cstdio>
 #include <deque>
 #include <functional>
 #include <set>
@@ -49771,30 +49772,46 @@ bool dequeEmplaceTemplate(const CXXMethodDecl *Method, const ASTContext &Context
 
 bool dequePointerInsertTemplate(const State &S, const SourceManager &SM,
     const CXXMethodDecl *Method, const ASTContext &Context) {
+  unsigned TracePointerLine = 0;
+  bool TracePointerProven = false;
+  auto TracePointerFailure = [&](unsigned Line) { if (!TracePointerLine) TracePointerLine = Line; return false; };
+  auto TracePointerFinish = llvm::make_scope_exit([&] {
+    if (!Method || !Method->getIdentifier() || Method->getName() != "insert") return;
+    const auto *T = Method->getPrimaryTemplate();
+    const auto *A = Method->getTemplateSpecializationArgs();
+    const auto *E = T && T->getTemplateParameters()->size() > 1 ?
+        dyn_cast<NonTypeTemplateParmDecl>(T->getTemplateParameters()->getParam(1)) : nullptr;
+    std::fprintf(stderr, "NCT_RANGE_SIGNATURE result=%d line=%u params=%u template_params=%u args=%u default=%d specialization=%u parameter1=%s\n",
+        TracePointerProven ? 1 : 0, TracePointerLine, Method->getNumParams(),
+        T ? T->getTemplateParameters()->size() : 0, A ? A->size() : 0, E && E->hasDefaultArgument() ? 1 : 0,
+        unsigned(Method->getTemplateSpecializationKind()),
+        Method->getNumParams() > 1 ? Method->getParamDecl(1)->getType().getAsString().c_str() : "none");
+  });
   if (!Method || Method->isStatic() || Method->isConst() || Method->isVolatile() ||
       Method->getRefQualifier() != RQ_None || Method->getNumParams() != 3 ||
       !Method->getIdentifier() || Method->getName() != "insert" ||
       Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedUtilityDequeRecord(S, SM, Method->getParent(), Context) ||
-      !dequeIteratorType(S, SM, Method->getReturnType(), false, Context)) return false;
+      !dequeIteratorType(S, SM, Method->getReturnType(), false, Context)) return TracePointerFailure(__LINE__);
   const auto Position = Method->getParamDecl(0)->getType();
   if (Position->isReferenceType() || Position.hasLocalQualifiers() ||
-      !dequeIteratorType(S, SM, Position, true, Context)) return false;
+      !dequeIteratorType(S, SM, Position, true, Context)) return TracePointerFailure(__LINE__);
   const auto *Primary = Method->getPrimaryTemplate();
   const auto *Arguments = Method->getTemplateSpecializationArgs();
-  if (!Primary || Primary->getTemplateParameters()->size() != 2 || !Arguments || Arguments->size() != 2) return false;
+  if (!Primary || Primary->getTemplateParameters()->size() != 2 || !Arguments || Arguments->size() != 2) return TracePointerFailure(__LINE__);
   const auto *Input = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
   const auto *Enable = dyn_cast<NonTypeTemplateParmDecl>(Primary->getTemplateParameters()->getParam(1));
   if (!Input || Input->isParameterPack() || !Enable || Enable->isParameterPack() || !Enable->hasDefaultArgument() ||
       Arguments->get(0).getKind() != TemplateArgument::Type || Arguments->get(1).getKind() != TemplateArgument::Integral ||
       !Arguments->get(1).getAsIntegral().isZero() ||
-      !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.IntTy)) return false;
+      !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.IntTy)) return TracePointerFailure(__LINE__);
   const auto Iterator = Arguments->get(0).getAsType();
   if (!Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy)) &&
-      !Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy.withConst()))) return false;
-  for (const auto *Parameter : Method->parameters()) if (Parameter->hasDefaultArg()) return false;
-  return Context.hasSameType(Method->getParamDecl(1)->getType(), Iterator) &&
+      !Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy.withConst()))) return TracePointerFailure(__LINE__);
+  for (const auto *Parameter : Method->parameters()) if (Parameter->hasDefaultArg()) return TracePointerFailure(__LINE__);
+  TracePointerProven = Context.hasSameType(Method->getParamDecl(1)->getType(), Iterator) &&
       Context.hasSameType(Method->getParamDecl(2)->getType(), Iterator);
+  return TracePointerProven;
 }
 
 std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const SourceManager &SM,
@@ -52459,6 +52476,14 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
   const FunctionDecl *ActiveFunction = nullptr;
   unsigned LocalNodes = 0;
   unsigned &Nodes = SharedNodes ? *SharedNodes : LocalNodes;
+  const bool TraceRange = !PriorityRoot && RootMethod && RootMethod->getIdentifier() && RootMethod->getName() == "insert";
+  unsigned TraceRangeLine = 0;
+  const FunctionDecl *TraceRejectedFunction = nullptr;
+  const Stmt *TraceStatement = nullptr, *TraceRejectedStatement = nullptr;
+  auto TraceRangeFailure = [&](unsigned Line) {
+    if (!TraceRangeLine) { TraceRangeLine = Line; TraceRejectedFunction = ActiveFunction; TraceRejectedStatement = TraceStatement; }
+    return false;
+  };
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   auto PinnedMacro = [&](SourceLocation L) {
@@ -52475,7 +52500,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     // function's traversal. Charge that proof only once; depth and all
     // declaration/source checks below still apply to every reference.
     if (!F || F->isInvalidDecl() || Depth > 64 ||
-        ((!MemoizeStatements || !Seen.count(F->getCanonicalDecl())) && ++Nodes > 4096)) return false;
+        ((!MemoizeStatements || !Seen.count(F->getCanonicalDecl())) && ++Nodes > 4096)) return TraceRangeFailure(__LINE__);
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (dequeHeapBoundary(F, Context)) return true;
@@ -52487,33 +52512,33 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       return true;
     }
     if (F->getBuiltinID()) {
-      if (!F->getIdentifier() || F->hasBody()) return false;
+      if (!F->getIdentifier() || F->hasBody()) return TraceRangeFailure(__LINE__);
       const auto Name = F->getName();
       if (Name != "__builtin_is_constant_evaluated" &&
           Name != "__builtin_addressof" &&
           Name != "__builtin_operator_new" && Name != "__builtin_operator_delete" &&
           Name != "__builtin_expect" && Name != "__builtin_assume" &&
-          Name != "__builtin_unreachable") return false;
+          Name != "__builtin_unreachable") return TraceRangeFailure(__LINE__);
       for (const auto *D : F->redecls()) {
         if (dequeDependencyDeclaration(S, SM, D)) continue;
         if (!D->isImplicit() || D->hasBody() ||
-            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return TraceRangeFailure(__LINE__);
         if (D->getLocation().isValid()) {
           const auto File = S.sdkFile(SM, D->getLocation());
-          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return TraceRangeFailure(__LINE__);
         }
       }
       return true;
     }
     for (const auto *D : F->redecls())
-      if (!dequeDependencyDeclaration(S, SM, D)) return false;
+      if (!dequeDependencyDeclaration(S, SM, D)) return TraceRangeFailure(__LINE__);
     if (const auto *Pattern = F->getTemplateInstantiationPattern())
       for (const auto *D : Pattern->redecls())
-        if (!dequeDependencyDeclaration(S, SM, D)) return false;
+        if (!dequeDependencyDeclaration(S, SM, D)) return TraceRangeFailure(__LINE__);
     if (const auto *T = F->getPrimaryTemplate())
       for (const auto *D : T->redecls())
         if (!dequeDependencyDeclaration(S, SM, D) ||
-            !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+            !dequeDependencyDeclaration(S, SM, D->getTemplatedDecl())) return TraceRangeFailure(__LINE__);
     // Checked vector copies use an existing valid vector's bounded size.
     // Pointer ranges and combined sizes retain the successful, nonoverflowing
     // default-allocator precondition. Only this authenticated error boundary
@@ -52534,7 +52559,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           dequeAnnotationWrapper(S, SM, F, Context, Dependencies) ||
           dequeIteratorDistance(S, SM, F, Context, Dependencies)) {
         for (const auto *Dependency : Dependencies)
-          if (!Function(Dependency, Depth + 1)) return false;
+          if (!Function(Dependency, Depth + 1)) return TraceRangeFailure(__LINE__);
         return true;
       }
     }
@@ -52548,18 +52573,18 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       const auto *Parent = D->getParent();
       for (const auto &Base : Parent->bases()) {
         const auto *Record = dequeRecordType(Base.getType());
-        if (!Record || Base.isVirtual()) return false;
-        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return false;
+        if (!Record || Base.isVirtual()) return TraceRangeFailure(__LINE__);
+        if (!Record->hasTrivialDestructor() && !Function(Record->getDestructor(), Depth + 1)) return TraceRangeFailure(__LINE__);
       }
       for (const auto *Field : Parent->fields()) {
         const auto *Record = dequeRecordType(Field->getType());
         if (Record && !Record->hasTrivialDestructor() &&
-            !Function(Record->getDestructor(), Depth + 1)) return false;
+            !Function(Record->getDestructor(), Depth + 1)) return TraceRangeFailure(__LINE__);
       }
     }
     if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
       for (const auto *Init : C->inits())
-        if (!Statement(Init->getInit(), Depth + 1)) return false;
+        if (!Statement(Init->getInit(), Depth + 1)) return TraceRangeFailure(__LINE__);
     if (dequeClosedPointerLess(S, SM, F, Context)) return true;
     // Exact SDK primitive and segmented copy units retain the complete walker
     // under an independent depth origin. The outer 4096-node ledger is shared,
@@ -52571,7 +52596,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       // the closed unit must traverse its own complete body before memoization.
       // Other validated dependencies remain shared; priority proofs retain
       // their original independent function set and conditional boundaries.
-      if (!PriorityRoot && Seen.erase(F->getCanonicalDecl()) != 1) return false;
+      if (!PriorityRoot && Seen.erase(F->getCanonicalDecl()) != 1) return TraceRangeFailure(__LINE__);
       return dequeSourceGraph(S, SM, F, Context, PriorityRoot, F, &Nodes,
                               PriorityRoot ? nullptr : &Seen,
                               PriorityRoot ? nullptr : &Statements,
@@ -52581,7 +52606,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       std::vector<const FunctionDecl *> Dependencies;
       if (priorityCapacityQuery(S, SM, F, Context, Dependencies)) {
         for (const auto *Dependency : Dependencies)
-          if (!Function(Dependency, Depth + 1)) return false;
+          if (!Function(Dependency, Depth + 1)) return TraceRangeFailure(__LINE__);
         return true;
       }
     }
@@ -52589,6 +52614,8 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
     return Body && Statement(Body, Depth + 1);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
+    const auto *PreviousTraceStatement = TraceStatement; TraceStatement = Node;
+    auto RestoreTraceStatement = llvm::make_scope_exit([&] { TraceStatement = PreviousTraceStatement; });
     // A shared AST node is reusable only after its entire original proof
     // succeeded at an equal or greater depth. Keep source/macro checks on
     // every reuse and never memoize an active or rejected statement.
@@ -52605,21 +52632,21 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       // retain the ordinary charge. Depth and source checks run every time.
       const bool RevalidatedInsertNode = DequeInsert && Statements.count(Node);
       if (Depth > 64 || (!RevalidatedInsertNode && ++Nodes > 4096) || !PinnedMacro(Node->getBeginLoc()) ||
-          !PinnedMacro(Node->getEndLoc())) return false;
+          !PinnedMacro(Node->getEndLoc())) return TraceRangeFailure(__LINE__);
       if (const auto *E = dyn_cast<Expr>(Node))
-        if (!PinnedMacro(E->getExprLoc())) return false;
+        if (!PinnedMacro(E->getExprLoc())) return TraceRangeFailure(__LINE__);
       if (const auto *E = dyn_cast<MemberExpr>(Node))
-        if (!PinnedMacro(E->getMemberLoc())) return false;
+        if (!PinnedMacro(E->getMemberLoc())) return TraceRangeFailure(__LINE__);
       if (const auto *D = dyn_cast<DeclStmt>(Node))
         for (const auto *Declaration : D->decls())
-          if (!PinnedMacro(Declaration->getLocation())) return false;
+          if (!PinnedMacro(Declaration->getLocation())) return TraceRangeFailure(__LINE__);
       if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node)) {
         if (!dequeDependencyDeclaration(S, SM, Default->getField()) ||
-            !Statement(Default->getExpr(), Depth + 1)) return false;
+            !Statement(Default->getExpr(), Depth + 1)) return TraceRangeFailure(__LINE__);
       }
       if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
         if (!dequeDependencyDeclaration(S, SM, Default->getParam()) ||
-            !Statement(Default->getExpr(), Depth + 1)) return false;
+            !Statement(Default->getExpr(), Depth + 1)) return TraceRangeFailure(__LINE__);
       }
       if (const auto *Call = dyn_cast<CallExpr>(Node)) {
         // The exact SDK pointer-comparison query has a closed, separately bounded
@@ -52628,7 +52655,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           std::vector<const FunctionDecl *> Dependencies;
           if (priorityRelocationTransfer(S, SM, Call, Context, Dependencies)) {
             for (const auto *Dependency : Dependencies)
-              if (!Function(Dependency, Depth + 1)) return false;
+              if (!Function(Dependency, Depth + 1)) return TraceRangeFailure(__LINE__);
             return true;
           }
         }
@@ -52636,20 +52663,20 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
         if (dequePinnedRangeQuery(S, SM, Call, Context)) return true;
         if (!dequeScalarDestruction(S, SM, Call, Context) &&
             !dequePinnedMemoryTransfer(S, SM, Call, Context) &&
-            !Function(Call->getDirectCallee(), Depth + 1)) return false;
+            !Function(Call->getDirectCallee(), Depth + 1)) return TraceRangeFailure(__LINE__);
       }
       if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
         // This exact empty SDK functor has no arguments, initializers or state;
         // its complete construction proof is a separately authenticated leaf.
         if (dequeClosedLessConstruction(S, SM, C, Context)) return true;
-        if (!Function(C->getConstructor(), Depth + 1)) return false;
+        if (!Function(C->getConstructor(), Depth + 1)) return TraceRangeFailure(__LINE__);
       }
       if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
         if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
              !Context.hasSameType(N->getAllocatedType(), Context.getPointerType(Context.IntTy))) ||
             N->getNumPlacementArgs() != 1 ||
-            !Function(N->getOperatorNew(), Depth + 1)) return false;
-        if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+            !Function(N->getOperatorNew(), Depth + 1)) return TraceRangeFailure(__LINE__);
+        if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return TraceRangeFailure(__LINE__);
       }
       if (DequeAllocatorConstruction &&
           *DequeAllocatorConstruction == UtilityDequeConstruction::MoveAllocator) {
@@ -52658,7 +52685,7 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           // Only the exact pinned allocator<int>/allocator<int*> comparison
           // returns the literal true. Prove every condition effect and the
           // complete reachable branch with the original shared ledger.
-          if (!Statement(Branch->getCond(), Depth + 1)) return false;
+          if (!Statement(Branch->getCond(), Depth + 1)) return TraceRangeFailure(__LINE__);
           return Statement(Branch->getThen(), Depth + 1);
         }
       }
@@ -52669,26 +52696,35 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
           // query returns the compiler builtin and has no other effects.
           // Keep its full ordinary proof and the entire runtime else branch;
           // only the constant-evaluation-only then branch is unreachable.
-          if (!Statement(Branch->getCond(), Depth + 1)) return false;
+          if (!Statement(Branch->getCond(), Depth + 1)) return TraceRangeFailure(__LINE__);
           return Statement(Branch->getElse(), Depth + 1);
         }
       }
       for (const auto *Child : Node->children())
-        if (!Statement(Child, Depth + 1)) return false;
+        if (!Statement(Child, Depth + 1)) return TraceRangeFailure(__LINE__);
       return true;
     };
-    if (!Prove()) return false;
+    if (!Prove()) return TraceRangeFailure(__LINE__);
     if (MemoizeStatements && Node) {
       auto &ProvenDepth = Statements[Node];
       if (Depth > ProvenDepth) ProvenDepth = Depth;
     }
     return true;
   };
-  return Root && (ClosedCopyRoot ? Root == ClosedCopyRoot &&
+  const bool Proven = Root && (ClosedCopyRoot ? Root == ClosedCopyRoot &&
       (PriorityRoot ? priorityIntCopySubgraph(S, SM, Root, Context)
                     : (dequeValueCopySubgraph(S, SM, Root, Context) || dequeMapAddressSubgraph(S, SM, Root, Context)))
                               : PriorityRoot ? priorityQueueFunctionDeclarations(S, SM, Root)
                                              : dequeFunctionDeclarations(S, SM, Root)) && Function(Root, 0);
+  if (TraceRange)
+    std::fprintf(stderr, "NCT_RANGE_GRAPH result=%d nodes=%u line=%u root=%s function=%s builtin=%u statement=%s parameter=%s\n",
+        Proven ? 1 : 0, Nodes, TraceRangeLine, Root->getQualifiedNameAsString().c_str(),
+        TraceRejectedFunction ? TraceRejectedFunction->getQualifiedNameAsString().c_str() : "none",
+        TraceRejectedFunction ? TraceRejectedFunction->getBuiltinID() : 0,
+        TraceRejectedStatement ? TraceRejectedStatement->getStmtClassName() : "none",
+        TraceRejectedFunction && TraceRejectedFunction->getNumParams() ?
+            TraceRejectedFunction->getParamDecl(0)->getType().getAsString().c_str() : "none");
+  return Proven;
 }
 }
 
@@ -52744,6 +52780,10 @@ std::optional<UtilityDequeCall> approvedUtilityDequeCall(
   }
   const auto *Method = dyn_cast<CXXMethodDecl>(Function);
   const auto Operation = dequeMethodSignature(S, SM, Method, Context);
+  if (Method && Method->getIdentifier() && Method->getName() == "insert")
+    std::fprintf(stderr, "NCT_RANGE_CALL signature=%d operation=%d receiver=%d params=%u\n",
+        Operation ? 1 : 0, Operation ? int(*Operation) : -1,
+        dequeReceiverRecord(S, SM, Method->getParent(), Context) ? 1 : 0, Method->getNumParams());
   if (!Operation || !Method || !dequeReceiverRecord(S, SM, Method->getParent(), Context) ||
       !dequeSourceGraph(S, SM, Method, Context)) return std::nullopt;
   const Expr *Receiver = nullptr;
