@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_zero_whole_registered = cls.registered
+        cls.bitset_zero_whole_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_zero_whole_original = cls.adapter.restore_original_gtests(cls.bitset_zero_whole_registered,cls.bitset_zero_whole_suffix)
+        cls.registered = cls.adapter.restore_bitset_zero_whole_history(cls.bitset_zero_whole_registered)
         cls.valarray_value_registered = cls.registered
         cls.valarray_value_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.valarray_value_original = cls.adapter.restore_original_gtests(cls.valarray_value_registered,cls.valarray_value_suffix)
@@ -1440,6 +1444,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.valarray_value_registered,self.valarray_value_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.valarray_value_original+b' ',['TranslateTest.CoreV2ValarrayValueConstructorsRunAtBothOptimizations'])
+
+    def test_bitset_zero_whole_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.bitset_zero_whole_original+self.bitset_zero_whole_suffix,self.bitset_zero_whole_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_zero_whole_original,self.bitset_zero_whole_suffix),self.bitset_zero_whole_original)
+        self.assertEqual(self.adapter.restore_bitset_zero_whole_history(self.bitset_zero_whole_registered),self.valarray_value_registered)
+        self.assertEqual(self.adapter.restore_bitset_zero_whole_history(self.bitset_zero_whole_original),self.valarray_value_original)
+        selected = ['TranslateTest.CoreV2BitsetZeroLayoutRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWholeMasksRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWholeReturnAliasRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWholeUnsignedMaskRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWholeConstCopyRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWholeReceiverEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetZeroOwnedSizeRejected', 'TranslateTest.CoreV2BitsetWholeOwnedSetRejected', 'TranslateTest.CoreV2BitsetWholeOwnedResetRejected', 'TranslateTest.CoreV2BitsetWholeOwnedFlipRejected']
+        generated,proof = self.extractor.extract(self.bitset_zero_whole_original,selected)
+        self.assertEqual(proof['original_test_names'],7762)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7752)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bitzero',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_zero_whole_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_zero_whole_registered+b' ',
+                        self.bitset_zero_whole_registered.replace(b'r19bitzero',b'q.push(11)',1),
+                        self.bitset_zero_whole_registered+self.bitset_zero_whole_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_zero_whole_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_zero_whole_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_zero_whole_registered,self.bitset_zero_whole_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_zero_whole_original+b' ',['TranslateTest.CoreV2BitsetZeroLayoutRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
