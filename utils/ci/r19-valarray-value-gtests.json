@@ -1,0 +1,193 @@
+{
+  "positive_cases": [
+    {
+      "name": "valarray-value-constructors",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayValueConstructorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0147079aa2a4380373aad7959c5770e5581aa661b5b49b3bc408791b26b4a6f3",
+      "original_case_source_sha256": "0147079aa2a4380373aad7959c5770e5581aa661b5b49b3bc408791b26b4a6f3",
+      "gtest_body_sha256": "27d78c0e1522c21817cd1d12ced559c925fa21706f4b161872c7aac0a5922c6c"
+    },
+    {
+      "name": "valarray-value-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayValueCopyAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2b4666927361a1448682d54f00d6925dfd73a828a8238327de62510a5383dab2",
+      "original_case_source_sha256": "2b4666927361a1448682d54f00d6925dfd73a828a8238327de62510a5383dab2",
+      "gtest_body_sha256": "9ca5976082fe395babeef3e41a61abbda29d2ceaef23669cb940ba6d867d9420"
+    },
+    {
+      "name": "valarray-value-move-assignment",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayValueMoveAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d4e6e033a55e72df1cb407ecff97bd2aa259dda76d3e9aed9d8ceb3057b2a844",
+      "original_case_source_sha256": "d4e6e033a55e72df1cb407ecff97bd2aa259dda76d3e9aed9d8ceb3057b2a844",
+      "gtest_body_sha256": "ac74a3743351d640915eb312abad4e022cda8d9f66f1767b347f29f1b77649b1"
+    },
+    {
+      "name": "valarray-value-resize",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayValueResizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "232cdd1d2e332788cca4afdf1b58bce66beb8110a4806226e593376f8d7f8629",
+      "original_case_source_sha256": "232cdd1d2e332788cca4afdf1b58bce66beb8110a4806226e593376f8d7f8629",
+      "gtest_body_sha256": "9bf16d3b17ad3def7e2e16cc54fca1254164cd76e9fe2ad9f6e9d579e1bae7e4"
+    },
+    {
+      "name": "valarray-value-swap",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayValueSwapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f55f65e69f469847bc23f14b7ae68e352e848468305dea6d5984dad2b8447f1c",
+      "original_case_source_sha256": "f55f65e69f469847bc23f14b7ae68e352e848468305dea6d5984dad2b8447f1c",
+      "gtest_body_sha256": "b128372a451f3d3ba09a638354a3a3e748ce261a8c2d8dad986b5bf930e6883e"
+    },
+    {
+      "name": "valarray-value-allocation-and-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayValueAllocationAndSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2de563b2878ee7c1aa40e69638f77bf2788e7bc5886a8c90681094dd21830812",
+      "original_case_source_sha256": "2de563b2878ee7c1aa40e69638f77bf2788e7bc5886a8c90681094dd21830812",
+      "gtest_body_sha256": "f0a07f113a78a44527ee5408ed07ca7c9074e77f38f0a3a4fd9e73634eb8d77f"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "valarray-value-owned-copy-constructor",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayValueOwnedCopyConstructorRejected",
+      "expected": "reject",
+      "source_sha256": "764f74ac2a5bb93d3af4841e7edeadf0beea477516758beb2eec85ecfbb265e2",
+      "original_case_source_sha256": "764f74ac2a5bb93d3af4841e7edeadf0beea477516758beb2eec85ecfbb265e2",
+      "gtest_body_sha256": "6847236bac02064bebbab0cc2d2578adc406a7ec78a34df41ffd68eba6f8f694"
+    },
+    {
+      "name": "valarray-value-owned-move-assignment",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayValueOwnedMoveAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "2f048542d7336feef53edc9832211eb14a9c861bf27b5f61004399d369bb0628",
+      "original_case_source_sha256": "2f048542d7336feef53edc9832211eb14a9c861bf27b5f61004399d369bb0628",
+      "gtest_body_sha256": "c2b271a5982cf400d79cd8222308459ea2065b734d1dd1642d3debff191d2c5e"
+    },
+    {
+      "name": "valarray-value-owned-resize",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayValueOwnedResizeRejected",
+      "expected": "reject",
+      "source_sha256": "65ec9c4885267a0246a42c040bad723b56e4366241153e419921737a239a35a2",
+      "original_case_source_sha256": "65ec9c4885267a0246a42c040bad723b56e4366241153e419921737a239a35a2",
+      "gtest_body_sha256": "20776e82519e258e008c846646382195ed199a2d7810b166c8cf3d58f5a56f4d"
+    },
+    {
+      "name": "valarray-value-owned-sdk-swap",
+      "formal_test_name": "TranslateTest.CoreV2ValarrayValueOwnedSDKSwapRejected",
+      "expected": "reject",
+      "source_sha256": "eae5c06e56abde1f00cb0d693bd6309187d0880025eb21608db56972214dd915",
+      "original_case_source_sha256": "eae5c06e56abde1f00cb0d693bd6309187d0880025eb21608db56972214dd915",
+      "gtest_body_sha256": "e3e7efe3b8d6851107b57049cc71f3c3e5119f8ad7e42ef66529b87fb74fd8cf"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ValarrayValueConstructorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayValueCopyAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayValueMoveAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayValueResizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayValueSwapRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayValueAllocationAndSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2ValarrayValueOwnedCopyConstructorRejected",
+    "TranslateTest.CoreV2ValarrayValueOwnedMoveAssignmentRejected",
+    "TranslateTest.CoreV2ValarrayValueOwnedResizeRejected",
+    "TranslateTest.CoreV2ValarrayValueOwnedSDKSwapRejected"
+  ],
+  "native_reference_authentication_sha256": "0ed8212a66b2bfc86badb53fa708744b7c6b431730970820a98e150abb1546c3",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "a7cc77121e39e8c177edb9443d759e297432bce1a3cfdba45a3df39021f7b00f",
+  "maintained_original_sha256": "648955bc88c60668fa3cadd035cd81c4ccc4951a318feeeae4de8e1c2b137604",
+  "previous_registered_source_sha256": "9a8e47ade9557d15e34716329a587d562fc5e0246d22ce15c49f64ae62773556",
+  "previous_maintained_original_sha256": "24c4a41ce4f2c53230d3c2db1383cf11c4093b03665132d9f7e4088f8a7ac6dc",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7712,
+  "current_python_registry_tests": 90,
+  "previous7702_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "40ec3e019d602802ec2209696260217ffe4bbea276d4084e510bf951bcce82b5",
+  "extractor_sha256": "e544a6a8dee4b006465b97d1d1d7845b9dd8a93b499b044f55288cb6b720c7ff",
+  "source_cases": [
+    {
+      "name": "valarray-value-constructors",
+      "public_header": "valarray",
+      "source": "#include <valarray>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::valarray<int> a(3);a[0]=1;a[1]=2;a[2]=3;\nstd::valarray<int> b(a);if(b.size()!=3||b[0]!=1||b[2]!=3||&b[0]==&a[0])return 1;\nb[0]=9;if(a[0]!=1)return 2;int* identity=&a[0];std::valarray<int> c(std::move(a));\nif(a.size()!=0||c.size()!=3||&c[0]!=identity)return 3;\na.resize(2,7);if(a.size()!=2||a[0]!=7||a[1]!=7)return 4;\nstd::valarray<int> empty;std::valarray<int> copied(empty);std::valarray<int> moved(std::move(empty));\nreturn copied.size()!=0||moved.size()!=0||empty.size()!=0;}\n",
+      "source_sha256": "0147079aa2a4380373aad7959c5770e5581aa661b5b49b3bc408791b26b4a6f3",
+      "expected": "accept"
+    },
+    {
+      "name": "valarray-value-copy-assignment",
+      "public_header": "valarray",
+      "source": "#include <valarray>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::valarray<int> a(3);a[0]=1;a[1]=2;a[2]=3;\nstd::valarray<int> b(8,3);int* reused=&b[0];std::valarray<int>& result=(b=a);\nif(&result!=&b||b.size()!=3||b[0]!=1||b[2]!=3||&b[0]!=reused)return 1;\nb[0]=7;if(a[0]!=1)return 2;b=b;if(b[0]!=7||b.size()!=3)return 3;\nstd::valarray<int> small(9,1);small=a;if(small.size()!=3||small[0]!=1||small[2]!=3)return 4;\nstd::valarray<int> empty;b=empty;if(b.size()!=0)return 5;\nempty=a;return empty.size()!=3||empty[0]!=1||empty[2]!=3;}\n",
+      "source_sha256": "2b4666927361a1448682d54f00d6925dfd73a828a8238327de62510a5383dab2",
+      "expected": "accept"
+    },
+    {
+      "name": "valarray-value-move-assignment",
+      "public_header": "valarray",
+      "source": "#include <valarray>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::valarray<int> a(3);a[0]=2;a[1]=4;a[2]=6;\nstd::valarray<int> b(8,2);int* identity=&a[0];std::valarray<int>& result=(b=std::move(a));\nif(&result!=&b||a.size()!=0||b.size()!=3||b[2]!=6||&b[0]!=identity)return 1;\na.resize(1,9);if(a.size()!=1||a[0]!=9)return 2;\nstd::valarray<int> empty;b=std::move(empty);if(b.size()!=0||empty.size()!=0)return 3;\nempty=std::move(a);return a.size()!=0||empty.size()!=1||empty[0]!=9;}\n",
+      "source_sha256": "d4e6e033a55e72df1cb407ecff97bd2aa259dda76d3e9aed9d8ceb3057b2a844",
+      "expected": "accept"
+    },
+    {
+      "name": "valarray-value-resize",
+      "public_header": "valarray",
+      "source": "#include <valarray>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::valarray<int> a(5,3);a[0]=99;\na.resize(3,7);if(a.size()!=3||a[0]!=7||a[2]!=7)return 1;\na.resize(5);if(a.size()!=5)return 2;for(Size i=0;i<a.size();++i)if(a[i]!=0)return 3;\na.resize(2,-4);if(a.size()!=2||a[0]!=-4||a[1]!=-4)return 4;\na.resize(0,8);if(a.size()!=0)return 5;a.resize(1,6);return a.size()!=1||a[0]!=6;}\n",
+      "source_sha256": "232cdd1d2e332788cca4afdf1b58bce66beb8110a4806226e593376f8d7f8629",
+      "expected": "accept"
+    },
+    {
+      "name": "valarray-value-swap",
+      "public_header": "valarray",
+      "source": "#include <valarray>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nvoid* operator new(Size n){return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){std::valarray<int> a(1,2);std::valarray<int> b(3,3);\nint* first=&a[0];int* second=&b[0];a.swap(b);\nif(a.size()!=3||b.size()!=2||&a[0]!=second||&b[0]!=first||a[2]!=3)return 1;\nstd::swap(a,b);if(a.size()!=2||b.size()!=3||&a[0]!=first||&b[0]!=second)return 2;\nstd::valarray<int> empty;empty.swap(a);if(a.size()!=0||empty.size()!=2||&empty[0]!=first)return 3;\na.resize(1,7);return a[0]!=7||empty[1]!=1;}\n",
+      "source_sha256": "f55f65e69f469847bc23f14b7ae68e352e848468305dea6d5984dad2b8447f1c",
+      "expected": "accept"
+    },
+    {
+      "name": "valarray-value-allocation-and-sequencing",
+      "public_header": "valarray",
+      "source": "#include <valarray>\n#include <new>\n#include <utility>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic std::valarray<int>* destination;static std::valarray<int>* argument;\nstatic int* input;static int active,calls,write_value,events;\nvoid* operator new(Size n){if(active){++calls;*input=write_value;}return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}\nvoid operator delete(void* p,Size) noexcept {operator delete(p);}\nstd::valarray<int>& receiver(){events=events*10+1;return *destination;}\nstd::valarray<int>& source(){events=events*10+2;return *argument;}\nint main(){std::valarray<int> a(3);a[0]=1;a[1]=2;a[2]=3;input=&a[0];write_value=77;active=1;\nstd::valarray<int> b(a);active=0;if(calls!=1||b[0]!=77||b[2]!=3)return 1;\nstd::valarray<int> c(9,1);destination=&c;argument=&a;events=0;receiver()=source();\nif(events!=21||c.size()!=3||c[0]!=77)return 2;events=0;receiver().operator=(source());\nif(events!=12)return 3;events=0;receiver()=std::move(source());if(events!=21||a.size()!=0)return 4;\nint fill=7;input=&fill;write_value=99;calls=0;active=1;c.resize(4,fill);active=0;\nreturn calls!=1||fill!=99||c.size()!=4||c[0]!=7||c[3]!=7;}\n",
+      "source_sha256": "2de563b2878ee7c1aa40e69638f77bf2788e7bc5886a8c90681094dd21830812",
+      "expected": "accept"
+    },
+    {
+      "name": "valarray-value-owned-copy-constructor",
+      "public_header": "valarray",
+      "source": "#include <valarray>\nnamespace std { inline namespace __1 {\ntemplate<> valarray<int>::valarray(const valarray<int>& source) {}\n}}\nint main(){std::valarray<int> a(3);std::valarray<int> b(a);return 0;}\n",
+      "source_sha256": "764f74ac2a5bb93d3af4841e7edeadf0beea477516758beb2eec85ecfbb265e2",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "valarray-value-owned-move-assignment",
+      "public_header": "valarray",
+      "source": "#include <valarray>\nnamespace std { inline namespace __1 {\ntemplate<> valarray<int>& valarray<int>::operator=(valarray<int>&& source) noexcept {return *this;}\n}}\nint main(){std::valarray<int> a(3);std::valarray<int> b;b=static_cast<std::valarray<int>&&>(a);return 0;}\n",
+      "source_sha256": "2f048542d7336feef53edc9832211eb14a9c861bf27b5f61004399d369bb0628",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "valarray-value-owned-resize",
+      "public_header": "valarray",
+      "source": "#include <valarray>\nnamespace std { inline namespace __1 {\ntemplate<> void valarray<int>::resize(size_t n,int value) {}\n}}\nint main(){std::valarray<int> a(3);a.resize(5,7);return 0;}\n",
+      "source_sha256": "65ec9c4885267a0246a42c040bad723b56e4366241153e419921737a239a35a2",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "valarray-value-owned-sdk-swap",
+      "public_header": "valarray",
+      "source": "#include <valarray>\nnamespace std { inline namespace __1 {\ntemplate<> void swap(valarray<int>& a,valarray<int>& b) noexcept {}\n}}\nint main(){std::valarray<int> a(3);std::valarray<int> b(2);std::swap(a,b);return 0;}\n",
+      "source_sha256": "eae5c06e56abde1f00cb0d693bd6309187d0880025eb21608db56972214dd915",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source48_authentication_sha256": "e3dec74f5d83c2e83e8cf89c2bd62694daacf818e7b2a7cd1a9c4664555fbaf7",
+  "source48_compiler_source": "fa70497b4a6b27a5aaf315ec20ae1d5606bca3ad"
+}
