@@ -120,11 +120,14 @@ def main():
         assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256']
         catalog = json.loads((sdk / 'catalog.json').read_text())
         entries = catalog['headers'] + catalog['metadata']
-        assert len(entries) == 665
+        assert len(entries) == 687
         for entry in entries:
             assert sha(sdk / entry['root'] / entry['path']) == entry['sha256']
         dependencies = {(e['root'], e['path']): e['sha256'] for e in entries}
-        result['sdk_files_verified'] = 665
+        result['sdk_files_verified'] = 687
+        current_sdk = {p.relative_to(sdk).as_posix():sha(p) for p in sdk.rglob('*') if p.is_file()}
+        assert current_sdk==plan['sdk_input_sha256'] and len(current_sdk)==695
+        result['exact_sdk_input_sha256']=current_sdk
         producer = api('actions/runs/' + str(plan['producer_run_id']))
         job = api('actions/jobs/' + str(plan['producer_job_id']))
         assert producer['head_sha'] == job['head_sha'] == plan['producer_commit']
@@ -132,7 +135,7 @@ def main():
         assert producer['conclusion'] == job['conclusion'] == 'success'
         assert producer['run_attempt'] == job['run_attempt'] == plan['producer_attempt']
         assert job['run_id'] == producer['id']
-        for name in ['Validate the original125 cases across six64bit targets',
+        for name in ['Observe explicit-result bind sources across six exact 64-bit targets',
                      'Keep new actual source binary remotely for further diagnosis']:
             assert any(s['name'] == name and s['conclusion'] == 'success' for s in job['steps'])
         provenance = out / 'producer'
@@ -174,7 +177,8 @@ def main():
         assert all(r['expectation_satisfied'] for r in previous['requests'])
         assert previous['exact_private_input_sha256'] == plan['exact_private_input_sha256']
         assert previous['new_build_id'] == plan['frontend_build_id']
-        assert previous['sdk_files_verified'] == 665 and previous['frontend_execution_timeout_seconds'] == 60
+        assert previous['sdk_files_verified'] == 687 and previous['frontend_execution_timeout_seconds'] == 60
+        assert previous['exact_sdk_input_sha256']==plan['sdk_input_sha256']
         assert previous['all_five_bridge_units_recompiled'] and not previous['upstream_dependency_rebuilt']
         (provenance / 'authenticated-report.json').write_bytes(reports[0].read_bytes())
         binary = folders['binary'] / 'private-frontend-source-replay'
