@@ -47554,8 +47554,9 @@ bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
       F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
   const bool Move = F->getName() == "move";
   const bool Address = F->getName() == "addressof";
-  if (!Move && !Address) return false;
-  const char *Header = Move ? "__utility/move.h" : "__memory/addressof.h";
+  const bool Forward = F->getName() == "forward" && F->getBuiltinID() == Builtin::BIforward;
+  if (!Move && !Address && !Forward) return false;
+  const char *Header = Forward ? "__utility/forward.h" : Move ? "__utility/move.h" : "__memory/addressof.h";
   auto Pinned = [&](const Decl *D) {
     const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
     return File && File->Root == "libcxx" && File->Path == Header && valarrayDependencyDeclaration(S, SM, D);
@@ -47570,12 +47571,14 @@ bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
   const auto Element = Deduced.getNonReferenceType();
   if (Element.isVolatileQualified()) return false;
   const auto Argument = F->getParamDecl(0)->getType();
-  if (Move) {
+  if (Move || Forward) {
     if (!Context.hasSameUnqualifiedType(Element, Context.getPointerType(Context.IntTy)) &&
         !Context.hasSameUnqualifiedType(Element, Context.getPointerType(Context.IntTy.withConst()))) return false;
-    const auto Expected = Deduced->isReferenceType() ? Deduced : Context.getRValueReferenceType(Deduced);
-    if (!Context.hasSameType(Argument, Expected) ||
-        !Context.hasSameType(F->getReturnType(), Context.getRValueReferenceType(Element))) return false;
+    const auto Expected = Forward ? Context.getLValueReferenceType(Element) :
+        Deduced->isReferenceType() ? Deduced : Context.getRValueReferenceType(Deduced);
+    const auto Result = Forward && Deduced->isLValueReferenceType() ? Context.getLValueReferenceType(Element) :
+        Context.getRValueReferenceType(Element);
+    if (!Context.hasSameType(Argument, Expected) || !Context.hasSameType(F->getReturnType(), Result)) return false;
   } else {
     const bool Integer = Context.hasSameUnqualifiedType(Element, Context.IntTy);
     const auto Owner = approvedUtilityValarrayRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
@@ -47611,6 +47614,13 @@ bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
         !Cast->getTypeAsWritten()->isRValueReferenceType() || !ParameterReference(Cast->getSubExpr())) return false;
     const auto *AliasType = Cast->getTypeAsWritten()->getPointeeType()->getAs<TypedefType>();
     if (!AliasType || AliasType->getDecl()->getCanonicalDecl() != Alias->getCanonicalDecl()) return false;
+  } else if (Forward) {
+    const auto *Cast = dyn_cast<CXXStaticCastExpr>(Return->getRetValue()->IgnoreParens());
+    if (!Cast || (Cast->getCastKind() != CK_NoOp &&
+        (Cast->getCastKind() != CK_Dependent || !Pattern->isDependentContext())) ||
+        !Cast->getTypeAsWritten()->isRValueReferenceType() || !ParameterReference(Cast->getSubExpr())) return false;
+    const auto *Target = Cast->getTypeAsWritten()->getPointeeType()->getAs<TemplateTypeParmType>();
+    if (!Target || !Target->getDecl() || Target->getDecl()->getCanonicalDecl() != Parameter->getCanonicalDecl()) return false;
   } else {
     const auto *Call = dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts());
     const auto *Builtin = Call ? Call->getDirectCallee() : nullptr;
@@ -47666,7 +47676,15 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
     if (F->getBuiltinID()) {
       if (!F->getIdentifier() || F->hasBody()) return false;
       const auto Name = F->getName();
-      if (Name != "__builtin_is_constant_evaluated" &&
+      const auto VoidPointer = Context.getPointerType(Context.VoidTy);
+      const bool Memory = Name == "__builtin_memmove" && F->getBuiltinID() == Builtin::BI__builtin_memmove &&
+          !F->isVariadic() && F->getNumParams() == 3 && Context.hasSameType(F->getReturnType(), VoidPointer) &&
+          Context.hasSameType(F->getParamDecl(0)->getType(), VoidPointer) &&
+          Context.hasSameType(F->getParamDecl(1)->getType(), Context.getPointerType(Context.VoidTy.withConst())) &&
+          Context.hasSameType(F->getParamDecl(2)->getType(), Context.getSizeType());
+      const bool Constant = Name == "__builtin_constant_p" && F->getBuiltinID() == Builtin::BI__builtin_constant_p &&
+          Context.hasSameType(F->getReturnType(), Context.IntTy);
+      if (!Memory && !Constant && Name != "__builtin_is_constant_evaluated" &&
           Name != "__builtin_operator_new" && Name != "__builtin_operator_delete" &&
           Name != "__builtin_expect" && Name != "__builtin_assume" &&
           Name != "__builtin_unreachable") return false;
@@ -47718,10 +47736,18 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
       if (!valarrayDependencyDeclaration(S, SM, Default->getParam()) ||
           !Statement(Default->getExpr(), Depth + 1)) return false;
     }
-    if (const auto *Call = dyn_cast<CallExpr>(Node))
+    if (const auto *Call = dyn_cast<CallExpr>(Node)) {
+      const auto *Callee = Call->getDirectCallee();
+      if (Callee && Callee->getBuiltinID() == Builtin::BI__builtin_constant_p) {
+        const auto File = S.sdkFile(SM, Call->getExprLoc());
+        if (!File || File->Root != "libcxx" || File->Path != "__utility/is_pointer_in_range.h" ||
+            Call->getNumArgs() != 1 || !Context.hasSameType(Call->getType(), Context.IntTy) ||
+            !Call->getArg(0)->getType()->isIntegerType()) return false;
+      }
       if (!valarrayScalarEndDestruction(S, SM, Call, Context) &&
           !valarrayScalarParameterDestruction(S, SM, Call, Context) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
+    }
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
