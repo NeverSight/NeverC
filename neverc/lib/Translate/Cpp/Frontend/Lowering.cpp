@@ -26142,6 +26142,56 @@ class FunctionLowering {
                        ReadOnly ? "cptr:u64" : "ptr:u64", L);
     return index(std::move(Words), std::move(Position), "u64", L);
   }
+  Expression utilityBitsetToString(const CallExpr *Call,
+                                   std::optional<Expression> Destination) {
+    const auto L = Call->getExprLoc();
+    const auto Bitset = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
+    const auto Layout = Bitset ? approvedUtilityBitsetRecord(
+        A.S, A.Sources, Bitset->Record, A.Context) : std::nullopt;
+    const auto ResultType = Call->getType();
+    const auto String = approvedUtilityStringRecord(
+        A.S, A.Sources, ResultType->getAsCXXRecordDecl(), A.Context);
+    if (!Bitset || Bitset->Operation != UtilityOperation::BitsetToString ||
+        !Bitset->Receiver || !Layout || !String)
+      reject(L, "bitset string result", "The pinned bitset and owning narrow string layouts are required.");
+    const auto *Receiver = Bitset->Receiver;
+    auto Self = snapshot(Receiver->getType()->isPointerType() ? expression(Receiver)
+        : address(lvalue(Receiver), Receiver->getType(), L), L);
+    auto Zero = snapshot(argument(Call->getArg(0), A.Context.CharTy), L);
+    auto One = snapshot(argument(Call->getArg(1), A.Context.CharTy), L);
+    auto Result = Destination ? std::move(*Destination) : objectTemporary(ResultType, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Pointer = type(String->PointerType, L);
+    auto Limit = snapshot(quantity(Layout->Bits, Size, L), L);
+    auto Data = constructStringBytes(Result, ResultType, &*String,
+        quantity(0, Pointer, L), Limit, std::move(Zero), L);
+    if (!Layout->Bits) return Result;
+    auto Place = dereference(std::move(Self), L);
+    auto Position = temporary(Size, L);
+    assign(Position, quantity(0, Size, L), L);
+    const auto Check = labelName(), Read = labelName(), Set = labelName(), Advance = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", Position, Limit, "bool", L), Read, Done, L);
+    label(Read, L);
+    auto WordIndex = binary("/", Position, quantity(64, Size, L), Size, L);
+    auto Offset = binary("%", Position, quantity(64, Size, L), Size, L);
+    auto Bits = bitsetWord(Place, *Layout, WordIndex, L, true);
+    auto Mask = binary("<<", quantity(1, "u64", L), Offset, "u64", L);
+    branch(binary("!=", binary("&", Bits, Mask, "u64", L), quantity(0, "u64", L), "bool", L),
+           Set, Advance, L);
+    label(Set, L);
+    auto Index = binary("-", quantity(Layout->Bits - 1, Size, L), Position, Size, L);
+    assign(dereference(binary("+", Data, cast(Index, Difference, L), Pointer, L), L), One, L);
+    jump(Advance, L);
+    label(Advance, L);
+    assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(Done, L);
+    return Result;
+  }
+
   Expression utilityBitsetShiftOperation(const CallExpr *Call, UtilityOperation Operation) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
@@ -28882,6 +28932,8 @@ class FunctionLowering {
       return Result;
     }
     if (Operation == UtilityOperation::ValarrayScalar) return utilityValarrayScalarOperation(Call);
+    if (Operation == UtilityOperation::BitsetToString)
+      return utilityBitsetToString(Call, std::move(Destination));
     if (Operation == UtilityOperation::BitsetShiftLeft || Operation == UtilityOperation::BitsetShiftRight ||
         Operation == UtilityOperation::BitsetShiftLeftAssign || Operation == UtilityOperation::BitsetShiftRightAssign) {
       auto Result = utilityBitsetShiftOperation(Call, Operation);
@@ -34137,7 +34189,7 @@ class FunctionLowering {
                                 {"args", std::move(Args)},
                                 {"loc", A.loc(L)}});
   }
-  void constructStringBytes(Expression Place, QualType T,
+  Expression constructStringBytes(Expression Place, QualType T,
                             const UtilityStringRecord *String, Expression Input,
                             Expression Length,
                             std::optional<Expression> FillCharacter,
@@ -34280,6 +34332,7 @@ class FunctionLowering {
     label(Finish, L);
     assign(dereference(std::move(TargetCurrent), L),
            quantity(0, type(A.Context.CharTy, L), L), L);
+    return Data;
   }
 
   void constructVectorNestedEmplace(Expression Place,

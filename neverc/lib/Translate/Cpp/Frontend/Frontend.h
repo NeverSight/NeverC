@@ -1297,7 +1297,7 @@ enum class UtilityOperation {
   StringFindLastNotOf,
   StringViewSize,
   BitsetCount, BitsetAny, BitsetTest, BitsetSet, BitsetReset, BitsetFlip,
-  BitsetSize, BitsetNone, BitsetAll, BitsetSetAll, BitsetResetAll, BitsetFlipAll, BitsetAssign,
+  BitsetSize, BitsetNone, BitsetAll, BitsetSetAll, BitsetResetAll, BitsetFlipAll, BitsetAssign, BitsetToString,
   BitsetNot, BitsetEqual, BitsetNotEqual, BitsetAnd, BitsetOr, BitsetXor,
   BitsetAndAssign, BitsetOrAssign, BitsetXorAssign,
   BitsetShiftLeft, BitsetShiftRight, BitsetShiftLeftAssign, BitsetShiftRightAssign,
