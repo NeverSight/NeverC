@@ -47291,6 +47291,56 @@ bool bitsetConstantEvaluationBuiltin(const State &S, const SourceManager &SM,
   return Declarations != 0;
 }
 
+bool bitsetPinnedTrailingZeroCount(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call->getDirectCallee();
+  if (!F || F->isInvalidDecl() || !F->getIdentifier() || F->hasBody() ||
+      F->isVariadic() || F->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !F->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      !Context.hasSameType(F->getReturnType(), Context.IntTy))
+    return false;
+  const auto ID = F->getBuiltinID();
+  QualType Word;
+  unsigned ExpectedLine;
+  if (ID == Builtin::BI__builtin_ctzl && F->getName() == "__builtin_ctzl") {
+    Word = Context.UnsignedLongTy;
+    ExpectedLine = 34;
+  } else if (ID == Builtin::BI__builtin_ctzll && F->getName() == "__builtin_ctzll") {
+    Word = Context.UnsignedLongLongTy;
+    ExpectedLine = 38;
+  } else {
+    return false;
+  }
+  if (!Context.hasSameType(F->getParamDecl(0)->getType(), Word) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Word))
+    return false;
+  auto PinnedSite = [&](SourceLocation Location) {
+    return Location.isValid() && !Location.isMacroID() &&
+        cstddefOrigin(S, SM, Location, "libcxx", "__bit/countr.h") &&
+        SM.getExpansionLineNumber(Location) == ExpectedLine;
+  };
+  if (!PinnedSite(Call->getExprLoc())) return false;
+  unsigned Declarations = 0;
+  for (const auto *D : F->redecls())
+    if (++Declarations > 64 || !D->isImplicit() || D->hasBody() ||
+        D->getBuiltinID() != ID || !PinnedSite(D->getLocation()))
+      return false;
+  const auto *Reference = dyn_cast<DeclRefExpr>(Call->getArg(0)->IgnoreParenImpCasts());
+  const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
+  const auto *Owner = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  if (!Owner || !Owner->getIdentifier() || Owner->getName() != "__libcpp_ctz" ||
+      !bitsetStandardNamespace(Owner->getDeclContext()) || Owner->isVariadic() ||
+      Owner->getNumParams() != 1 || Owner->getParamDecl(0) != Parameter ||
+      !Context.hasSameType(Parameter->getType(), Word) ||
+      !Context.hasSameType(Owner->getReturnType(), Context.IntTy) ||
+      !bitsetPinnedHeader(S, SM, Owner, "__bit/countr.h") || !bitsetPinnedFunction(S, SM, Owner))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Owner->getBody());
+  if (!Body || Body->size() != 1) return false;
+  const auto *Return = dyn_cast<ReturnStmt>(*Body->body_begin());
+  return Return && Return->getRetValue() && Return->getRetValue()->IgnoreParenImpCasts() == Call;
+}
+
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
                         const FunctionDecl *Root, bool ProvenNoOverflow = false) {
   std::set<const FunctionDecl *> Seen;
@@ -47354,6 +47404,7 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
       const auto &Context = Root->getASTContext();
       if (bitsetPinnedWordRangeQuery(S, SM, Call, Context)) return true;
       if (!bitsetPinnedWordTransfer(S, SM, Call, Context) &&
+          !(ProvenNoOverflow && bitsetPinnedTrailingZeroCount(S, SM, Call, Context)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     }
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
