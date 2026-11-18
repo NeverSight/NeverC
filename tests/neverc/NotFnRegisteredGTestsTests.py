@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_value_registered = cls.registered
+        cls.list_value_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_value_original = cls.adapter.restore_original_gtests(cls.list_value_registered,cls.list_value_suffix)
+        cls.registered = cls.adapter.restore_list_value_history(cls.list_value_registered)
         cls.deque_positional_emplace_registered = cls.registered
         cls.deque_positional_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.deque_positional_emplace_original = cls.adapter.restore_original_gtests(cls.deque_positional_emplace_registered,cls.deque_positional_emplace_suffix)
@@ -1374,6 +1378,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.deque_positional_emplace_registered,self.deque_positional_emplace_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.deque_positional_emplace_original+b' ',['TranslateTest.CoreV2DequePositionalEmplaceSingleRunAtBothOptimizations'])
+
+    def test_list_value_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.list_value_original+self.list_value_suffix,self.list_value_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.list_value_original,self.list_value_suffix),self.list_value_original)
+        self.assertEqual(self.adapter.restore_list_value_history(self.list_value_registered),self.deque_positional_emplace_registered)
+        self.assertEqual(self.adapter.restore_list_value_history(self.list_value_original),self.deque_positional_emplace_original)
+        selected = ['TranslateTest.CoreV2ListValueConstructorsRunAtBothOptimizations', 'TranslateTest.CoreV2ListValueCopyAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2ListValueMoveAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2ListValueSwapRunAtBothOptimizations', 'TranslateTest.CoreV2ListValueAllocationEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2ListValueExplicitAllocatorSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2ListValueOwnedCopyConstructorRejected', 'TranslateTest.CoreV2ListValueOwnedMoveConstructorRejected', 'TranslateTest.CoreV2ListValueOwnedCopyAssignmentRejected', 'TranslateTest.CoreV2ListValueOwnedMoveAssignmentRejected']
+        generated,proof = self.extractor.extract(self.list_value_original,selected)
+        self.assertEqual(proof['original_test_names'],7742)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7732)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19listvalue',generated)
+        self.assertIn(b'list-value-',generated)
+        self.assertIn(b'std::list<int>',generated)
+
+    def test_list_value_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.list_value_registered+b' ',
+                        self.list_value_registered.replace(b'r19listvalue',b'q.push(11)',1),
+                        self.list_value_registered+self.list_value_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.list_value_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_list_value_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_value_registered,self.list_value_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.list_value_original+b' ',['TranslateTest.CoreV2ListValueConstructorsRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
