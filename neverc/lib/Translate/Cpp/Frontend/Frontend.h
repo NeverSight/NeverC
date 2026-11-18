@@ -1301,6 +1301,8 @@ enum class UtilityOperation {
   BitsetNot, BitsetEqual, BitsetNotEqual, BitsetAnd, BitsetOr, BitsetXor,
   BitsetAndAssign, BitsetOrAssign, BitsetXorAssign,
   BitsetShiftLeft, BitsetShiftRight, BitsetShiftLeftAssign, BitsetShiftRightAssign,
+  BitsetProxySubscript, BitsetConstSubscript, BitsetProxyRead, BitsetProxyNot,
+  BitsetProxySet, BitsetProxyCopyValue, BitsetProxyFlip, BitsetProxySwap,
   ForwardList,
   List,
   PriorityQueue,
@@ -3668,6 +3670,17 @@ struct UtilityBitsetRecord {
   uint64_t Bits = 0;
   uint64_t Words = 0;
 };
+struct UtilityBitsetProxyRecord {
+  const clang::CXXRecordDecl *Record = nullptr;
+  const clang::CXXRecordDecl *Base = nullptr;
+  const clang::FieldDecl *Word = nullptr;
+  const clang::FieldDecl *Mask = nullptr;
+  bool ReadOnly = false;
+};
+std::optional<UtilityBitsetProxyRecord> approvedUtilityBitsetProxyRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+
 enum class UtilityBitsetConstruction { Default, UnsignedValue, Copy };
 struct UtilityBitsetCall {
   UtilityOperation Operation;
@@ -4480,6 +4493,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStringViews;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStrings;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityBitsets;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityBitsetProxies;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityForwardLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityPriorityQueues;
