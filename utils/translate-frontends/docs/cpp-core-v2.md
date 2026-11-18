@@ -17407,8 +17407,20 @@ Six exact native-reference programs and their generated C23 counterparts execute
 at both O0 and O2. The programs exercise count/fill initialization, live aliasing,
 owned argument effects, empty/zero-count storage and selected heap functions.
 Native execution and six-target source admission remain separate from generated
-C23 execution evidence. Copy/move construction, resizing, slices, expression
-templates and other element specializations remain outside this increment.
+C23 execution evidence. The value-operation increment also admits copy and move
+construction, copy and move assignment, `resize(count)` and `resize(count, value)`,
+member `swap` and the selected SDK `std::swap`. Copies own independent storage.
+Copy assignment reuses equal-sized storage and handles self-assignment; moves
+transfer the storage carrier and leave the source empty and reusable. Resize
+discards existing elements, even when the requested size is unchanged, and
+captures its fill value before allocation. Swapping preserves element addresses.
+Allocation callbacks, live copy-source reads and C++17 assignment sequencing are
+retained: overloaded assignment evaluates its right operand before the receiver,
+while an explicit member call evaluates its receiver before the argument.
+Ten additional registered tests compare six exact native programs with twelve
+generated C23 executions at O0/O2 and reject four source-owned SDK replacements.
+Slices, expression templates and other element specializations remain outside
+this increment.
 NeverC's public source frontend remains C23-only; complete STL support still
 requires further implementation and verification.
 
@@ -17454,9 +17466,21 @@ references, returned positions and selected heap or argument effects. Four
 negative tests per family retain independent body and macro-origin checks.
 Six-target source admission is a separate credential from those execution results.
 
-Owner copy/move construction and assignment, custom allocators, non-integer
-elements, further overloads, range operations, emplacing, resizing and linked
-container splice/sort/merge operations remain outside this increment. NeverC's
+The `list<int>` value-operation increment admits copy and move construction,
+including the checked explicit default-allocator forms, copy and move assignment,
+member `swap` and the selected SDK `std::swap`. Copies own independent nodes;
+copy assignment reuses existing nodes in SDK order, handles self-assignment and
+appends or removes nodes as needed. Moves transfer node ownership and leave an
+empty reusable source. Swap preserves element references and iterators to nodes,
+including when one owner is empty. Allocation callbacks, live integer reads and
+sentinel relinking retain the selected SDK order. C++17 overloaded assignment
+evaluates its right operand first; explicit member calls evaluate the receiver
+first. Ten additional registered tests execute six exact native programs and
+twelve generated C23 programs at O0/O2, with four source-owned body guards.
+
+`forward_list` owner copy/move construction and assignment, custom allocators,
+non-integer elements, further overloads, range operations, emplacing, resizing
+and linked container splice/sort/merge operations require further work. NeverC's
 public source frontend remains C23-only; full STL support still requires further
 implementation and verification.
 
@@ -17574,6 +17598,14 @@ segmented growth precedes live input reads; insertion preserves the selected SDK
 shorter-side shifts and returns a mutable iterator to the insertion position.
 Empty input retains argument effects without allocation or element reads.
 
+The same specialization admits `emplace(position)` and `emplace(position, value)`
+with one exact integer lvalue, const lvalue or rvalue. Zero-argument emplacement
+inserts a value-initialized zero. The checked mutable or const iterator position
+must belong to the destination. The result is a mutable iterator to the new
+element. Receiver and argument expressions are evaluated once; selected SDK
+capacity callbacks, integer temporary reads and shorter-side shifts retain
+their observed order, including integer references aliased into the deque.
+
 Each family has ten permanent GTests: six exact native-reference programs that
 generate and execute C23 at O0 and O2, and four source-origin rejection tests.
 Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
@@ -17643,6 +17675,12 @@ and const endpoints, initializer lists, empty input, front/middle/back insertion
 multiple-block growth, storage reuse, returned iterators, allocation callbacks
 and argument sequencing. Four source-origin guards reject replaced raw pointer
 and initializer-list bodies, including forwarding replacements.
+A separate positional-emplacement family has ten registered GTests and twelve
+generated C23 executions at O0 and O2 against six exact native programs. It
+covers zero/lvalue/rvalue arguments, front/middle/back positions, segmented
+growth, aliases, returned iterators, allocation callbacks and call sequencing.
+Four source-origin guards reject replaced zero/lvalue/rvalue emplacement
+bodies, including forwarding replacements.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
@@ -17656,7 +17694,7 @@ checks and budgets; this reachability proof does not admit custom allocators.
 
 Custom allocators or adapter containers, other element specializations,
 other allocator and iterator range overloads, emplacement with other argument types
-or multiple arguments and positional emplacement require further work.
+or multiple arguments require further work.
 These bounded operations
 do not establish complete STL support.
 
