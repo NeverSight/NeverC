@@ -47292,7 +47292,7 @@ bool bitsetConstantEvaluationBuiltin(const State &S, const SourceManager &SM,
 }
 
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
-                        const FunctionDecl *Root) {
+                        const FunctionDecl *Root, bool ProvenNoOverflow = false) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -47322,6 +47322,13 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
     // Their error branch cannot execute, but its declaration remains pinned.
     if (F->getIdentifier() && F->getName() == "__throw_out_of_range" && F->getNumParams() == 1)
       return true;
+    if (ProvenNoOverflow && F->getIdentifier() && F->getName() == "__throw_overflow_error" &&
+        F->getNumParams() == 1 && !F->isVariadic() && F->isNoReturn() &&
+        bitsetPinnedHeader(S, SM, F, "stdexcept")) {
+      const auto &Context = Root->getASTContext();
+      return Context.hasSameType(F->getReturnType(), Context.VoidTy) &&
+          Context.hasSameType(F->getParamDecl(0)->getType(), Context.getPointerType(Context.CharTy.withConst()));
+    }
     if (const auto *M = dyn_cast<CXXMethodDecl>(F);
         M && M->isImplicit() && M->isTrivial()) return true;
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(F))
@@ -47627,6 +47634,34 @@ static std::optional<UtilityBitsetCall> bitsetProxyCall(
   return std::nullopt;
 }
 
+static bool bitsetTemporaryFitsUnsigned(const State &S, const SourceManager &SM,
+                                        const Expr *Receiver, QualType Result,
+                                        const ASTContext &Context) {
+  if (!Receiver) return false;
+  const Expr *Value = Receiver->IgnoreParenImpCasts();
+  if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Value))
+    Value = Temporary->getSubExpr()->IgnoreParenImpCasts();
+  if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(Value)) {
+    if (Cast->getCastKind() != CK_ConstructorConversion && Cast->getCastKind() != CK_NoOp)
+      return false;
+    Value = Cast->getSubExpr()->IgnoreImplicit()->IgnoreParens();
+  }
+  const auto *Constructor = dyn_cast<CXXConstructExpr>(Value);
+  const auto Construction = approvedUtilityBitsetConstruction(S, SM, Constructor, Context);
+  if (Construction == UtilityBitsetConstruction::Default) return true;
+  if (Construction != UtilityBitsetConstruction::UnsignedValue) return false;
+  // This constructor zeros every bit above the converted unsigned operand.
+  const auto Width = Context.getTypeSize(Result);
+  if (Width >= Context.getTypeSize(Context.UnsignedLongLongTy)) return true;
+  if (!Width || Width >= 64) return false;
+  const auto *Argument = Constructor->getArg(0);
+  Expr::EvalResult Evaluated;
+  if (Argument->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt() &&
+      Evaluated.Val.getInt().getActiveBits() <= Width)
+    return true;
+  return bitsetBoundedPosition(Argument, Context, uint64_t(1) << Width);
+}
+
 std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
@@ -47719,17 +47754,19 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *M = Member ? Member->getMethodDecl() : nullptr;
   const auto Info = M ? approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) : std::nullopt;
-  if (!Info || (!directMethodReference(Call) || !S.owns(SM, directMethodReference(Call)->getExprLoc())) || !M->getIdentifier() || M->isStatic() || M->isVariadic() || !bitsetPinnedFunction(S, SM, M) ||
-      !bitsetSourceGraph(S, SM, M)) return std::nullopt;
+  if (!Info || (!directMethodReference(Call) || !S.owns(SM, directMethodReference(Call)->getExprLoc())) || !M->getIdentifier() || M->isStatic() || M->isVariadic() || !bitsetPinnedFunction(S, SM, M)) return std::nullopt;
   const auto Name = M->getName();
+  const auto Result = M->getReturnType();
+  const bool ToUnsigned = M->isConst() && M->getNumParams() == 0 && Call->getNumArgs() == 0 &&
+      ((Name == "to_ulong" && Context.hasSameType(Result, Context.UnsignedLongTy)) ||
+       (Name == "to_ullong" && Context.hasSameType(Result, Context.UnsignedLongLongTy)));
+  const bool NeedsOverflowProof = ToUnsigned && Info->Bits > Context.getTypeSize(Result);
+  if (NeedsOverflowProof && !bitsetTemporaryFitsUnsigned(S, SM,
+      Member->getImplicitObjectArgument(), Result, Context))
+    return std::nullopt;
+  if (!bitsetSourceGraph(S, SM, M, NeedsOverflowProof)) return std::nullopt;
+  if (ToUnsigned) return UtilityBitsetCall{UtilityOperation::BitsetToUnsigned, 0};
   if (M->isConst() && M->getNumParams() == 0 && Call->getNumArgs() == 0) {
-    if ((Name == "to_ulong" && Context.hasSameType(M->getReturnType(), Context.UnsignedLongTy)) ||
-        (Name == "to_ullong" && Context.hasSameType(M->getReturnType(), Context.UnsignedLongLongTy))) {
-      // An oversized bitset can reach the checked overflow path.
-      if (Info->Bits > Context.getTypeSize(M->getReturnType()) || Info->Words > 1)
-        return std::nullopt;
-      return UtilityBitsetCall{UtilityOperation::BitsetToUnsigned, 0};
-    }
     if (Name == "count" && Context.hasSameType(M->getReturnType(), Context.getSizeType()))
       return UtilityBitsetCall{UtilityOperation::BitsetCount, 0};
     if (Name == "any" && Context.hasSameType(M->getReturnType(), Context.BoolTy))
