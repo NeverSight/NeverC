@@ -14283,12 +14283,12 @@ bool Adapter::requireUtilityBitset(const CXXRecordDecl *Record,
                                    SourceLocation L, unsigned Depth) {
   const auto Info = approvedUtilityBitsetRecord(S, Sources, Record, Context);
   if (!Info || Depth > 64) {
-    reject(L, "bitset layout", "The pinned nonempty 64-bit-word bitset layout is required.", "TR0203");
+    reject(L, "bitset layout", "The pinned zero-byte-storage or 64-bit-word bitset layout is required.", "TR0203");
     return false;
   }
   if (!RequiredUtilityBitsets.insert(Info->Record->getCanonicalDecl()).second) return true;
-  const auto Storage = Context.getConstantArrayType(Context.getSizeType(),
-      llvm::APInt(64, Info->Words), nullptr, ArraySizeModifier::Normal, 0);
+  const QualType Storage = Info->Words ? QualType(Context.getConstantArrayType(Context.getSizeType(),
+      llvm::APInt(64, Info->Words), nullptr, ArraySizeModifier::Normal, 0)) : Context.UnsignedCharTy;
   if (type(Storage, L, false, Depth + 1).empty()) return false;
   Records.push_back(const_cast<CXXRecordDecl *>(Info->Record));
   return true;
@@ -14694,7 +14694,7 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Context.getSizeType(), L));
       Args.push_back(zero(Context.FloatTy, L));
     } else if (auto Bitset = approvedUtilityBitsetRecord(S, Sources, R, Context)) {
-      Args.push_back(zero(Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, Bitset->Words), nullptr, ArraySizeModifier::Normal, 0), L));
+      Args.push_back(zero(Bitset->Words ? QualType(Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, Bitset->Words), nullptr, ArraySizeModifier::Normal, 0)) : Context.UnsignedCharTy, L));
     } else if (approvedUtilityForwardListRecord(S, Sources, R, Context) ||
                approvedUtilityForwardListIteratorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.VoidPtrTy, L));
@@ -15211,12 +15211,17 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
     } else if (approvedFunctionalObjectRecord(S, Sources, Record, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto Bitset = approvedUtilityBitsetRecord(S, Sources, Record, Context)) {
-      const auto &Storage = V.getStructBase(0).getStructField(0);
-      const auto Array = Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, Bitset->Words), nullptr, ArraySizeModifier::Normal, 0);
-      if (Bitset->Words == 1) {
-        json::Array Words;Words.push_back(constant(Storage, Context.getSizeType(), L));
-        Args.push_back(json::Object{{"kind", "aggregate"}, {"type", type(Array, L)}, {"args", std::move(Words)}, {"loc", loc(L)}});
-      } else Args.push_back(constant(Storage, Array, L));
+      if (!Bitset->Words) {
+        // The SDK empty base has no field to read from an APValue.
+        Args.push_back(zero(Context.UnsignedCharTy, L));
+      } else {
+        const auto &Storage = V.getStructBase(0).getStructField(0);
+        const auto Array = Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, Bitset->Words), nullptr, ArraySizeModifier::Normal, 0);
+        if (Bitset->Words == 1) {
+          json::Array Words;Words.push_back(constant(Storage, Context.getSizeType(), L));
+          Args.push_back(json::Object{{"kind", "aggregate"}, {"type", type(Array, L)}, {"args", std::move(Words)}, {"loc", loc(L)}});
+        } else Args.push_back(constant(Storage, Array, L));
+      }
     } else if (approvedUtilityForwardListRecord(S, Sources, Record, Context) ||
                approvedUtilityForwardListIteratorRecord(S, Sources, Record, Context)) {
       Args.push_back(constant(V.getStructField(0), Context.VoidPtrTy, L));
@@ -31677,7 +31682,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       for (const auto *Name : {"nct_valarray_begin", "nct_valarray_end"})
         Fields.push_back(json::Object{{"name", Name}, {"type", type(Context.getPointerType(Context.IntTy), R->getLocation())}});
     } else if (UtilityBitset) {
-      const auto Storage = Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, UtilityBitset->Words), nullptr, ArraySizeModifier::Normal, 0);
+      const QualType Storage = UtilityBitset->Words ? QualType(Context.getConstantArrayType(Context.getSizeType(), llvm::APInt(64, UtilityBitset->Words), nullptr, ArraySizeModifier::Normal, 0)) : Context.UnsignedCharTy;
       Fields.push_back(json::Object{{"name", "nct_bitset_words"}, {"type", type(Storage, R->getLocation())}});
     } else if (UtilityString) {
       for (unsigned I = 0; I != 3; ++I)
