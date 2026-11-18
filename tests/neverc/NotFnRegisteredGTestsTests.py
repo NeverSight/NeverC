@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.deque_range_insert_registered = cls.registered
+        cls.deque_range_insert_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.deque_range_insert_original = cls.adapter.restore_original_gtests(cls.deque_range_insert_registered,cls.deque_range_insert_suffix)
+        cls.registered = cls.adapter.restore_deque_range_insert_history(cls.deque_range_insert_registered)
         cls.deque_count_insert_registered = cls.registered
         cls.deque_count_insert_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.deque_count_insert_original = cls.adapter.restore_original_gtests(cls.deque_count_insert_registered,cls.deque_count_insert_suffix)
@@ -1308,6 +1312,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.deque_count_insert_registered,self.deque_count_insert_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.deque_count_insert_original+b' ',['TranslateTest.CoreV2DequeCountInsertBasicRunAtBothOptimizations'])
+
+    def test_deque_range_insert_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.deque_range_insert_original+self.deque_range_insert_suffix,self.deque_range_insert_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.deque_range_insert_original,self.deque_range_insert_suffix),self.deque_range_insert_original)
+        self.assertEqual(self.adapter.restore_deque_range_insert_history(self.deque_range_insert_registered),self.deque_count_insert_registered)
+        self.assertEqual(self.adapter.restore_deque_range_insert_history(self.deque_range_insert_original),self.deque_count_insert_original)
+        selected = ['TranslateTest.CoreV2DequeRangeInsertBasicRunAtBothOptimizations', 'TranslateTest.CoreV2DequeRangeInsertFrontGrowthRunAtBothOptimizations', 'TranslateTest.CoreV2DequeRangeInsertBackGrowthRunAtBothOptimizations', 'TranslateTest.CoreV2DequeRangeInsertReuseAndResultsRunAtBothOptimizations', 'TranslateTest.CoreV2DequeRangeInsertAllocationEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2DequeRangeInsertCallSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2DequeRangeInsertOwnedMutableBodyRejected', 'TranslateTest.CoreV2DequeRangeInsertOwnedConstBodyRejected', 'TranslateTest.CoreV2DequeRangeInsertOwnedListEmptyBodyRejected', 'TranslateTest.CoreV2DequeRangeInsertOwnedListForwardingBodyRejected']
+        generated,proof = self.extractor.extract(self.deque_range_insert_original,selected)
+        self.assertEqual(proof['original_test_names'],7722)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7712)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19dqrnginsert',generated)
+        self.assertIn(b'deque-range-insert-',generated)
+        self.assertIn(b'insert(',generated)
+
+    def test_deque_range_insert_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.deque_range_insert_registered+b' ',
+                        self.deque_range_insert_registered.replace(b'r19dqrnginsert',b'q.push(11)',1),
+                        self.deque_range_insert_registered+self.deque_range_insert_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.deque_range_insert_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_deque_range_insert_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.deque_range_insert_registered,self.deque_range_insert_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.deque_range_insert_original+b' ',['TranslateTest.CoreV2DequeRangeInsertBasicRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':

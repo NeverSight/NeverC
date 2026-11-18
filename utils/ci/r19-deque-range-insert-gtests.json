@@ -1,0 +1,211 @@
+{
+  "positive_cases": [
+    {
+      "name": "deque-range-insert-basic",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeInsertBasicRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a0e306778cda355c21f89784bc747c7836d5f983ed60413c9c087edaa3503245",
+      "original_case_source_sha256": "a0e306778cda355c21f89784bc747c7836d5f983ed60413c9c087edaa3503245",
+      "gtest_body_sha256": "eda4cc29cff1fa0946fbaf8ca5a2abb39c88cd0c17c4f9f1ba181e05733c6651"
+    },
+    {
+      "name": "deque-range-insert-front-growth",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeInsertFrontGrowthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "690040f49ea988a0a4a6db9421ff2f1892137fc3c08732f80698821d5a8ac432",
+      "original_case_source_sha256": "690040f49ea988a0a4a6db9421ff2f1892137fc3c08732f80698821d5a8ac432",
+      "gtest_body_sha256": "fb414ac2924fd80b0662744e80ab54b1fac0ed9e0d78394d47cb92c3a6d57dd6"
+    },
+    {
+      "name": "deque-range-insert-back-growth",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeInsertBackGrowthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e6f5ec3597724db205a0fe1567e0ccefa6ff8a1a41c9dde226773ab93021e299",
+      "original_case_source_sha256": "e6f5ec3597724db205a0fe1567e0ccefa6ff8a1a41c9dde226773ab93021e299",
+      "gtest_body_sha256": "700f675a1dc8ad5cb1eff28cbb07ea2439e97c172ce0412dba1531bc26463e7c"
+    },
+    {
+      "name": "deque-range-insert-reuse-and-results",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeInsertReuseAndResultsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fb5c31f7a074996c996c482feaba04233b9d4da30d78060c6023c8f83a9ceb98",
+      "original_case_source_sha256": "fb5c31f7a074996c996c482feaba04233b9d4da30d78060c6023c8f83a9ceb98",
+      "gtest_body_sha256": "24a77501fc13f7c03f101b6a5a222b265e26e1bddcdb9d9139261f24fc84f050"
+    },
+    {
+      "name": "deque-range-insert-allocation-effects",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeInsertAllocationEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d0a20c3c174d8d353ba65ba44b080fff1568a416e2b77f539b77410941330b95",
+      "original_case_source_sha256": "d0a20c3c174d8d353ba65ba44b080fff1568a416e2b77f539b77410941330b95",
+      "gtest_body_sha256": "4e045bdcbb16ebaccecd443a71581a6930544a37c7901c3adc3cef224ce63042"
+    },
+    {
+      "name": "deque-range-insert-call-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeInsertCallSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c435b6898e98f88ec20b602891d9724c18f3f41ed4aa96715737c7d3fc4d08c2",
+      "original_case_source_sha256": "c435b6898e98f88ec20b602891d9724c18f3f41ed4aa96715737c7d3fc4d08c2",
+      "gtest_body_sha256": "8e1bc7f088d3cc1428a172b7636c629082f6ca70ae1a317f5a6248473409dd08"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "deque-range-insert-owned-mutable",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeInsertOwnedMutableBodyRejected",
+      "expected": "reject",
+      "source_sha256": "84b2446d27fc2030be9a7a851b25c0a3ab60dbb5092fee2c610893dc3d47cde2",
+      "original_case_source_sha256": "84b2446d27fc2030be9a7a851b25c0a3ab60dbb5092fee2c610893dc3d47cde2",
+      "gtest_body_sha256": "66983afd96d685df67b24faf013293e8d6c1f876bf1f2d09dd311f671a7d677f"
+    },
+    {
+      "name": "deque-range-insert-owned-const",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeInsertOwnedConstBodyRejected",
+      "expected": "reject",
+      "source_sha256": "fdb6f376b67341e843ce51a02a50d5f44ca3af15a8c9d129302904b4d18aea61",
+      "original_case_source_sha256": "fdb6f376b67341e843ce51a02a50d5f44ca3af15a8c9d129302904b4d18aea61",
+      "gtest_body_sha256": "395c24cf821df785aa15721daf27aae79396cf4a01a4d25acc5a5f3ab7f4f671"
+    },
+    {
+      "name": "deque-range-insert-owned-list-empty",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeInsertOwnedListEmptyBodyRejected",
+      "expected": "reject",
+      "source_sha256": "9e35b766905a2c20b03926798ab2fe1c1baf467a7d09e9e9426a9d838b8149d8",
+      "original_case_source_sha256": "9e35b766905a2c20b03926798ab2fe1c1baf467a7d09e9e9426a9d838b8149d8",
+      "gtest_body_sha256": "31866297a7092a1a5f5659f65e846a433e6fa3fd093cbbb50a62ef23a5e82bac"
+    },
+    {
+      "name": "deque-range-insert-owned-list-forwarding",
+      "formal_test_name": "TranslateTest.CoreV2DequeRangeInsertOwnedListForwardingBodyRejected",
+      "expected": "reject",
+      "source_sha256": "5c72219617b7ff2c127a6290dcea6af85ecf47213e69ffdd0912f162ac6a0d9b",
+      "original_case_source_sha256": "5c72219617b7ff2c127a6290dcea6af85ecf47213e69ffdd0912f162ac6a0d9b",
+      "gtest_body_sha256": "be6788bc9f373db2635485f62b5fb35203c313133721683729a09b4c327db76d"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2DequeRangeInsertBasicRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeInsertFrontGrowthRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeInsertBackGrowthRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeInsertReuseAndResultsRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeInsertAllocationEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeInsertCallSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2DequeRangeInsertOwnedMutableBodyRejected",
+    "TranslateTest.CoreV2DequeRangeInsertOwnedConstBodyRejected",
+    "TranslateTest.CoreV2DequeRangeInsertOwnedListEmptyBodyRejected",
+    "TranslateTest.CoreV2DequeRangeInsertOwnedListForwardingBodyRejected"
+  ],
+  "native_reference_authentication_sha256": "fa4158da18a13c943974f5295ac68ee734385e789eaafbd41ed0abbdbf6b6063",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "bf8020a7efb507a1a168750a61a01961349b7a98478cef09418ee4aa526161cd",
+  "maintained_original_sha256": "165b3cf63c6843a33e856b2249ac44313e06de683da79c21fad91587ab2a6b71",
+  "previous_registered_source_sha256": "e76f25f61b551e61a11282a5d115de4d4a283ef75598fc2694ff81f0cb7c9382",
+  "previous_maintained_original_sha256": "89763d0ef80e1d5c1601500e6d1f6e581caf82301292ca249f6ebeb89ee08d26",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7722,
+  "current_python_registry_tests": 92,
+  "previous7712_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "a7f3206e4ff59805bd017a0e047a351b806de07815502fcdada2755601c20086",
+  "extractor_sha256": "7e9a0bffeeb94c95e6a7b5765b063aac64c44494e4dbb0cf0003d45fbb3b1a4e",
+  "source_cases": [
+    {
+      "name": "deque-range-insert-basic",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){int input[]={1,2,3};std::deque<int> a;\nauto empty=a.insert(a.cbegin(),input,input);if(empty!=a.begin()||!a.empty())return 1;\nauto first=a.insert(a.cbegin(),input,input+3);if(first!=a.begin()||*first!=1||a.size()!=3)return 2;\nconst int more[]={4,5};auto tail=a.insert(a.cend(),more,more+2);\nif(tail!=a.begin()+3||*tail!=4||a.back()!=5||a.size()!=5)return 3;\nauto middle=a.insert(a.cbegin()+2,{8,9});if(middle!=a.begin()+2||*middle!=8||a.size()!=7)return 4;\nauto unchanged=a.insert(a.cbegin()+3,{});if(unchanged!=a.begin()+3||a.size()!=7)return 5;\nauto front=a.insert(a.cbegin(),{0});if(front!=a.begin()||a.size()!=8)return 6;\nint expected[]={0,1,2,8,9,3,4,5};for(unsigned i=0;i!=8;++i)if(a[i]!=expected[i])return 7;return 0;}\n",
+      "source_sha256": "a0e306778cda355c21f89784bc747c7836d5f983ed60413c9c087edaa3503245",
+      "reference_native_only": true,
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-insert-front-growth",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a(2050);int input[3073];\nfor(unsigned i=0;i!=2050;++i)a[i]=(int)i;for(unsigned i=0;i!=3073;++i)input[i]=-(int)i-1;\nauto first=a.insert(a.cbegin()+1,input,input+3073);\nif(first!=a.begin()+1||a.size()!=5123||a.front()!=0||a.back()!=2049)return 1;\nfor(unsigned i=0;i!=3073;++i)if(a[i+1]!=input[i])return 2;\nfor(unsigned i=1;i!=2050;++i)if(a[i+3073]!=(int)i)return 3;\nauto second=a.insert(a.cbegin()+1024,{-8,-9});\nreturn second!=a.begin()+1024||a.size()!=5125||*second!=-8||a[1025]!=-9||a[1023]!=-1023||a[1026]!=-1024;}\n",
+      "source_sha256": "690040f49ea988a0a4a6db9421ff2f1892137fc3c08732f80698821d5a8ac432",
+      "reference_native_only": true,
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-insert-back-growth",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a(2050);int input[3073];\nfor(unsigned i=0;i!=2050;++i)a[i]=(int)i;for(unsigned i=0;i!=3073;++i)input[i]=-(int)i-1;\nconst int* begin=input;auto first=a.insert(a.cend()-1,begin,begin+3073);\nif(first!=a.begin()+2049||a.size()!=5123||a.front()!=0||a.back()!=2049)return 1;\nfor(unsigned i=0;i!=2049;++i)if(a[i]!=(int)i)return 2;\nfor(unsigned i=0;i!=3073;++i)if(a[i+2049]!=input[i])return 3;\nauto second=a.insert(a.cbegin()+3072,{-8,-9});\nreturn second!=a.begin()+3072||a.size()!=5125||*second!=-8||a[3073]!=-9||a[3071]!=-1023||a[3074]!=-1024;}\n",
+      "source_sha256": "e6f5ec3597724db205a0fe1567e0ccefa6ff8a1a41c9dde226773ab93021e299",
+      "reference_native_only": true,
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-insert-reuse-and-results",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nint main(){std::deque<int> a={1,2,3,4};int input[]={7,8};\nauto middle=a.insert(a.cbegin()+1,input,input+2);if(middle!=a.begin()+1||*middle!=7||a.size()!=6)return 1;\na.erase(a.cbegin()+2,a.cbegin()+4);if(a.size()!=4||a[0]!=1||a[1]!=7||a[2]!=3||a[3]!=4)return 2;\na.clear();auto empty=a.insert(a.cend(),input+1,input+1);if(empty!=a.begin()||!a.empty())return 3;\nauto list=a.insert(a.cbegin(),{9,10});if(list!=a.begin()||*list!=9||a.back()!=10)return 4;\nfor(unsigned i=0;i!=4096;++i)a.push_back((int)i);for(unsigned i=0;i!=4096;++i)a.pop_front();\nauto again=a.insert(a.cbegin(),input,input+2);return again!=a.begin()||*again!=7||a[1]!=8||a.size()!=4;}\n",
+      "source_sha256": "fb5c31f7a074996c996c482feaba04233b9d4da30d78060c6023c8f83a9ceb98",
+      "reference_native_only": true,
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-insert-allocation-effects",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nstatic std::deque<int>* owner;static int* input;static int stage,calls,bad;\nvoid* operator new(Size n){if(stage){++calls;if(owner->size()!=1023)bad=1;owner->front()=77;input[0]=77;input[2049]=88;}return malloc(n);}\nvoid operator delete(void* p) noexcept {free(p);}void operator delete(void* p,Size) noexcept {operator delete(p);}\nint main(){int values[2050];for(unsigned i=0;i!=2050;++i)values[i]=(int)i;input=values;\nstd::deque<int> a(1023,8);owner=&a;const int* start=values;stage=1;\nauto front=a.insert(a.cbegin()+1,start,start+2050);stage=0;\nif(!calls||bad||front!=a.begin()+1||*front!=77||a.front()!=77||a[2050]!=88||a[2051]!=8||a.size()!=3073)return 1;\nstd::deque<int> b(1023,8);owner=&b;calls=0;values[0]=-5;values[2049]=-6;stage=1;\nauto back=b.insert(b.cend()-1,values,values+2050);stage=0;\nif(!calls||bad||back!=b.begin()+1022||*back!=77||b[3071]!=88||b.back()!=8||b.size()!=3073)return 2;\nstd::deque<int> c(1023,9);owner=&c;calls=0;stage=1;auto list=c.insert(c.cend(),{1,2,3});stage=0;\nreturn !calls||bad||list!=c.begin()+1023||*list!=1||c.front()!=77||c.back()!=3||c.size()!=1026;}\n",
+      "source_sha256": "d0a20c3c174d8d353ba65ba44b080fff1568a416e2b77f539b77410941330b95",
+      "reference_native_only": true,
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-insert-call-sequencing",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <deque>\n#include <new>\nusing Size=decltype(sizeof(0));\nextern \"C\" void* malloc(Size);extern \"C\" void free(void*);\nusing It=std::deque<int>::const_iterator;\nstatic std::deque<int>* owner;static const It* point;static int data[]={2,3};\nstatic int receivers,positions,firsts,lasts,values,bad;\nstd::deque<int>& receiver(){++receivers;return *owner;}\nIt position(){++positions;if(receivers!=positions)bad=1;return *point;}\nint* first(){++firsts;if(receivers!=1)bad=1;return data;}\nconst int* last(){++lasts;if(receivers!=1)bad=1;return data+2;}\nconst int* const_first(){++firsts;if(receivers!=1)bad=1;return data;}\nint value(int number){++values;if(receivers!=2||(values==1&&number!=5)||(values==2&&number!=6))bad=1;return number;}\nint main(){std::deque<int> a={1,4};owner=&a;It p=a.cbegin()+1;point=&p;\nauto range=receiver().insert(position(),const_first(),last());\nif(bad||receivers!=1||positions!=1||firsts!=1||lasts!=1||range!=a.begin()+1||a.size()!=4)return 1;\np=a.cbegin()+2;auto list=receiver().insert(position(),{value(5),value(6)});\nif(bad||receivers!=2||positions!=2||values!=2||firsts!=1||lasts!=1||list!=a.begin()+2||a.size()!=6)return 2;\nint expected[]={1,2,5,6,3,4};for(unsigned i=0;i!=6;++i)if(a[i]!=expected[i])return 3;return 0;}\n",
+      "source_sha256": "c435b6898e98f88ec20b602891d9724c18f3f41ed4aa96715737c7d3fc4d08c2",
+      "reference_native_only": true,
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "deque-range-insert-owned-mutable",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> template<> deque<int>::iterator deque<int>::insert<int*,0>(const_iterator position,int* first,int* last) {return begin();}\n}}\nint main(){int input[3]={1,2,3};int* first=input;std::deque<int> a={4,5};\na.insert(a.cbegin()+1,first,first+3);return 0;}\n",
+      "source_sha256": "84b2446d27fc2030be9a7a851b25c0a3ab60dbb5092fee2c610893dc3d47cde2",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-range-insert-owned-const",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> template<> deque<int>::iterator deque<int>::insert<const int*,0>(const_iterator position,const int* first,const int* last) {return begin();}\n}}\nint main(){int input[3]={1,2,3};const int* first=input;std::deque<int> a={4,5};\na.insert(a.cbegin()+1,first,first+3);return 0;}\n",
+      "source_sha256": "fdb6f376b67341e843ce51a02a50d5f44ca3af15a8c9d129302904b4d18aea61",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-range-insert-owned-list-empty",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::iterator deque<int>::insert(const_iterator position,initializer_list<value_type> values) {return begin();}\n}}\nint main(){std::deque<int> a={4,5};a.insert(a.cbegin()+1,{1,2,3});return 0;}\n",
+      "source_sha256": "9e35b766905a2c20b03926798ab2fe1c1baf467a7d09e9e9426a9d838b8149d8",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "deque-range-insert-owned-list-forwarding",
+      "public_header": "deque",
+      "source": "#include <deque>\nnamespace std { inline namespace __1 {\ntemplate<> deque<int>::iterator deque<int>::insert(const_iterator position,initializer_list<value_type> values) {return insert(position,values.begin(),values.end());}\n}}\nint main(){std::deque<int> a={4,5};a.insert(a.cbegin()+1,{1,2,3});return 0;}\n",
+      "source_sha256": "5c72219617b7ff2c127a6290dcea6af85ecf47213e69ffdd0912f162ac6a0d9b",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source48_authentication_sha256": "9248da3b33dda38d3a24b8cbdbf9dcec508e36e91693ee7fb29224c456e46283",
+  "source48_compiler_source": "189a1997b5e3554a9c428a65ce4507858e15846c"
+}
