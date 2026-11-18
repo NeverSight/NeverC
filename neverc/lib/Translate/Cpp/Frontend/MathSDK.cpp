@@ -47572,10 +47572,64 @@ static bool bitsetLiteralCharacterConstructor(const State &S, const SourceManage
       bitsetPinned(S, SM, M, true) && bitsetPinnedFunction(S, SM, M);
 }
 
+static bool bitsetLiteralStringConstructor(const State &S, const SourceManager &SM,
+                                           const CXXConstructorDecl *M,
+                                           const ASTContext &Context) {
+  if (!M || !M->getPrimaryTemplate() ||
+      M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      M->isVariadic() || M->getNumParams() != 5 ||
+      !approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) ||
+      !bitsetPinned(S, SM, M, true) || !bitsetPinnedFunction(S, SM, M))
+    return false;
+  const auto Parameter = M->getParamDecl(0)->getType();
+  if (!Parameter->isLValueReferenceType()) return false;
+  const auto Type = Parameter->getPointeeType();
+  const auto String = approvedUtilityStringRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+  return String && Context.hasSameType(Type, Context.getRecordType(String->Record).withConst()) &&
+      Context.hasSameType(M->getParamDecl(1)->getType(), Context.getSizeType()) &&
+      Context.hasSameType(M->getParamDecl(2)->getType(), Context.getSizeType()) &&
+      Context.hasSameType(M->getParamDecl(3)->getType(), Context.CharTy) &&
+      Context.hasSameType(M->getParamDecl(4)->getType(), Context.CharTy);
+}
+
+static std::optional<llvm::StringRef> bitsetLiteralStringBytes(
+    const State &S, const SourceManager &SM, const Expr *Argument, const ASTContext &Context) {
+  const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Argument->IgnoreParenImpCasts());
+  if (!Temporary || Temporary->getExtendingDecl()) return std::nullopt;
+  const Expr *Value = Temporary->getSubExpr()->IgnoreImplicit()->IgnoreParens();
+  if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(Value)) {
+    if (Cast->getCastKind() != CK_ConstructorConversion && Cast->getCastKind() != CK_NoOp)
+      return std::nullopt;
+    Value = Cast->getSubExpr()->IgnoreImplicit()->IgnoreParens();
+  }
+  const auto *C = dyn_cast<CXXConstructExpr>(Value);
+  const auto Kind = approvedUtilityStringConstruction(S, SM, C, Context);
+  if (!Kind || !S.owns(SM, C->getExprLoc()) || !bitsetPinnedFunction(S, SM, C->getConstructor()))
+    return std::nullopt;
+  if (*Kind == UtilityStringConstruction::Default) return llvm::StringRef("");
+  if (*Kind != UtilityStringConstruction::CString && *Kind != UtilityStringConstruction::PointerLength)
+    return std::nullopt;
+  const auto *Text = dyn_cast<StringLiteral>(C->getArg(0)->IgnoreParenImpCasts());
+  if (!Text || Text->getCharByteWidth() != 1 || !S.owns(SM, Text->getBeginLoc()))
+    return std::nullopt;
+  const auto Bytes = Text->getBytes();
+  if (*Kind == UtilityStringConstruction::CString) return Bytes.split('\0').first;
+  const auto *Count = dyn_cast<IntegerLiteral>(C->getArg(1)->IgnoreParenImpCasts());
+  Expr::EvalResult Result;
+  if (!Count || !S.owns(SM, Count->getExprLoc()) ||
+      !C->getArg(1)->EvaluateAsInt(Result, Context) || !Result.Val.isInt() ||
+      Result.Val.getInt().getActiveBits() > 64 || Result.Val.getInt().getZExtValue() > Bytes.size())
+    return std::nullopt;
+  return Bytes.take_front(Result.Val.getInt().getZExtValue());
+}
+
 static std::optional<uint64_t> bitsetLiteralTextArgument(
     const State &S, const SourceManager &SM, const Expr *Argument,
     const CXXConstructorDecl *M, unsigned Index, const ASTContext &Context) {
   const auto *Parameter = M->getParamDecl(Index);
+  const bool SizeArgument = Context.hasSameType(Parameter->getType(), Context.getSizeType());
+  const bool FromString = M->getNumParams() == 5;
+  const unsigned CountIndex = FromString ? 2 : 1;
   const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument);
   if (Default) {
     if (Default->getParam() != Parameter || !bitsetPinned(S, SM, Parameter, true))
@@ -47585,8 +47639,8 @@ static std::optional<uint64_t> bitsetLiteralTextArgument(
       return std::nullopt;
   } else {
     const auto *Literal = Argument->IgnoreParenImpCasts();
-    if ((Index == 1 && !isa<IntegerLiteral>(Literal)) ||
-        (Index != 1 && !isa<CharacterLiteral>(Literal)) ||
+    if ((SizeArgument && !isa<IntegerLiteral>(Literal)) ||
+        (!SizeArgument && !isa<CharacterLiteral>(Literal)) ||
         !S.owns(SM, Literal->getExprLoc()))
       return std::nullopt;
   }
@@ -47595,28 +47649,40 @@ static std::optional<uint64_t> bitsetLiteralTextArgument(
       Result.Val.getInt().getActiveBits() > 64)
     return std::nullopt;
   uint64_t Value = Result.Val.getInt().getZExtValue();
-  if (Index != 1) Value = static_cast<unsigned char>(Value);
-  if (Default && Value != (Index == 1 ? UINT64_MAX : Index == 2 ? '0' : '1'))
-    return std::nullopt;
+  if (!SizeArgument) Value = static_cast<unsigned char>(Value);
+  const uint64_t Expected = SizeArgument ? (Index == CountIndex ? UINT64_MAX : 0) :
+      (Index == CountIndex + 1 ? '0' : '1');
+  if (Default && Value != Expected) return std::nullopt;
   return Value;
 }
 
 std::optional<std::vector<uint64_t>> approvedUtilityBitsetLiteralWords(
     const State &S, const SourceManager &SM, const CXXConstructExpr *C,
     const ASTContext &Context) {
-  if (!C || C->getNumArgs() != 4 || C->isTypeDependent() || C->isValueDependent() ||
+  if (!C || C->isTypeDependent() || C->isValueDependent() ||
       C->getConstructionKind() != CXXConstructionKind::Complete)
     return std::nullopt;
-  const auto *Text = dyn_cast<StringLiteral>(C->getArg(0)->IgnoreParenImpCasts());
   const auto *M = C->getConstructor();
-  if (!Text || Text->getCharByteWidth() != 1 || !S.owns(SM, Text->getBeginLoc()) ||
-      !bitsetLiteralCharacterConstructor(S, SM, M, Context))
+  llvm::StringRef Bytes;
+  unsigned CountIndex;
+  if (C->getNumArgs() == 4 && bitsetLiteralCharacterConstructor(S, SM, M, Context)) {
+    const auto *Text = dyn_cast<StringLiteral>(C->getArg(0)->IgnoreParenImpCasts());
+    if (!Text || Text->getCharByteWidth() != 1 || !S.owns(SM, Text->getBeginLoc())) return std::nullopt;
+    Bytes = Text->getBytes().split('\0').first;
+    CountIndex = 1;
+  } else if (C->getNumArgs() == 5 && bitsetLiteralStringConstructor(S, SM, M, Context)) {
+    const auto Text = bitsetLiteralStringBytes(S, SM, C->getArg(0), Context);
+    const auto Position = bitsetLiteralTextArgument(S, SM, C->getArg(1), M, 1, Context);
+    if (!Text || !Position || *Position > Text->size()) return std::nullopt;
+    Bytes = Text->drop_front(*Position);
+    CountIndex = 2;
+  } else {
     return std::nullopt;
-  const auto Count = bitsetLiteralTextArgument(S, SM, C->getArg(1), M, 1, Context);
-  const auto Zero = bitsetLiteralTextArgument(S, SM, C->getArg(2), M, 2, Context);
-  const auto One = bitsetLiteralTextArgument(S, SM, C->getArg(3), M, 3, Context);
+  }
+  const auto Count = bitsetLiteralTextArgument(S, SM, C->getArg(CountIndex), M, CountIndex, Context);
+  const auto Zero = bitsetLiteralTextArgument(S, SM, C->getArg(CountIndex + 1), M, CountIndex + 1, Context);
+  const auto One = bitsetLiteralTextArgument(S, SM, C->getArg(CountIndex + 2), M, CountIndex + 2, Context);
   if (!Count || !Zero || !One) return std::nullopt;
-  const auto Bytes = Text->getBytes().split('\0').first;
   const auto Length = std::min<uint64_t>(Bytes.size(), *Count);
   for (uint64_t I = 0; I != Length; ++I) {
     const auto Digit = static_cast<unsigned char>(Bytes[I]);
@@ -47635,8 +47701,9 @@ std::optional<std::vector<uint64_t>> approvedUtilityBitsetLiteralWords(
 std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *C,
     const ASTContext &Context) {
-  if (C && C->getNumArgs() == 4 && approvedUtilityBitsetLiteralWords(S, SM, C, Context))
-    return UtilityBitsetConstruction::LiteralText;
+  if (C && (C->getNumArgs() == 4 || C->getNumArgs() == 5) &&
+      approvedUtilityBitsetLiteralWords(S, SM, C, Context))
+    return C->getNumArgs() == 4 ? UtilityBitsetConstruction::LiteralText : UtilityBitsetConstruction::LiteralString;
   if (!C || C->isTypeDependent() || C->isValueDependent() ||
       C->getConstructionKind() != CXXConstructionKind::Complete) return std::nullopt;
   const auto *M = C->getConstructor();
@@ -54375,7 +54442,9 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
   if (bitsetStringResultDefault(S, SM, Default, dyn_cast_or_null<CXXMethodDecl>(Function), Index, Context))
     return true;
   if (const auto *M = dyn_cast_or_null<CXXConstructorDecl>(Function);
-      Default && Index >= 1 && Index <= 3 && bitsetLiteralCharacterConstructor(S, SM, M, Context) &&
+      Default && Index >= 1 &&
+      ((Index <= 3 && bitsetLiteralCharacterConstructor(S, SM, M, Context)) ||
+       (Index <= 4 && bitsetLiteralStringConstructor(S, SM, M, Context))) &&
       bitsetLiteralTextArgument(S, SM, Default, M, Index, Context))
     return true;
   if (valarrayResizeDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
