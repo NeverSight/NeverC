@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/Lex/Lexer.h"
@@ -47508,13 +47509,23 @@ bool valarrayScalarEndDestruction(const State &S, const SourceManager &SM,
 
 bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
     const FunctionDecl *F, const ASTContext &Context) {
+  unsigned TraceLine = 0, TraceBodySize = 0;
+  const char *TraceReturn = "none";
+  bool TraceProven = false;
+  auto TraceFailure = [&](unsigned Line) { if (!TraceLine) TraceLine = Line; return false; };
+  auto TraceFinish = llvm::make_scope_exit([&] {
+    if (F && F->getIdentifier() && (F->getName() == "move" || F->getName() == "addressof"))
+      std::fprintf(stderr, "NCT_VALARRAY_UTILITY result=%d line=%u body_size=%u return=%s function=%s builtin=%u parameter=%s\n",
+          TraceProven ? 1 : 0, TraceLine, TraceBodySize, TraceReturn, F->getQualifiedNameAsString().c_str(),
+          F->getBuiltinID(), F->getNumParams() ? F->getParamDecl(0)->getType().getAsString().c_str() : "none");
+  });
   if (!F || !F->getBuiltinID() || F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
       isa<CXXMethodDecl>(F) || !F->getIdentifier() || F->getNumParams() != 1 ||
       F->getParamDecl(0)->hasDefaultArg() || !valarrayStandardNamespace(F->getDeclContext()) ||
-      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return TraceFailure(__LINE__);
   const bool Move = F->getName() == "move";
   const bool Address = F->getName() == "addressof";
-  if (!Move && !Address) return false;
+  if (!Move && !Address) return TraceFailure(__LINE__);
   const char *Header = Move ? "__utility/move.h" : "__memory/addressof.h";
   auto Pinned = [&](const Decl *D) {
     const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
@@ -47523,43 +47534,45 @@ bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
   const auto *Primary = F->getPrimaryTemplate();
   const auto *Arguments = F->getTemplateSpecializationArgs();
   if (!Primary || Primary->getTemplateParameters()->size() != 1 || !Arguments || Arguments->size() != 1 ||
-      Arguments->get(0).getKind() != TemplateArgument::Type) return false;
+      Arguments->get(0).getKind() != TemplateArgument::Type) return TraceFailure(__LINE__);
   const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
-  if (!Parameter || Parameter->isParameterPack() || !Pinned(Parameter)) return false;
+  if (!Parameter || Parameter->isParameterPack() || !Pinned(Parameter)) return TraceFailure(__LINE__);
   const auto Deduced = Arguments->get(0).getAsType();
   const auto Element = Deduced.getNonReferenceType();
-  if (Element.isVolatileQualified()) return false;
+  if (Element.isVolatileQualified()) return TraceFailure(__LINE__);
   const auto Argument = F->getParamDecl(0)->getType();
   if (Move) {
     if (!Context.hasSameUnqualifiedType(Element, Context.getPointerType(Context.IntTy)) &&
-        !Context.hasSameUnqualifiedType(Element, Context.getPointerType(Context.IntTy.withConst()))) return false;
+        !Context.hasSameUnqualifiedType(Element, Context.getPointerType(Context.IntTy.withConst()))) return TraceFailure(__LINE__);
     const auto Expected = Deduced->isReferenceType() ? Deduced : Context.getRValueReferenceType(Deduced);
     if (!Context.hasSameType(Argument, Expected) ||
-        !Context.hasSameType(F->getReturnType(), Context.getRValueReferenceType(Element))) return false;
+        !Context.hasSameType(F->getReturnType(), Context.getRValueReferenceType(Element))) return TraceFailure(__LINE__);
   } else {
     const bool Integer = Context.hasSameUnqualifiedType(Element, Context.IntTy);
     const auto Owner = approvedUtilityValarrayRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
     if (Deduced->isReferenceType() || (!Integer && (!Owner ||
         !Context.hasSameUnqualifiedType(Element, Context.getRecordType(Owner->Record)))) ||
         !Context.hasSameType(Argument, Context.getLValueReferenceType(Element)) ||
-        !Context.hasSameType(F->getReturnType(), Context.getPointerType(Element))) return false;
+        !Context.hasSameType(F->getReturnType(), Context.getPointerType(Element))) return TraceFailure(__LINE__);
   }
-  for (const auto *D : F->redecls()) if (!Pinned(D)) return false;
-  if (!Pinned(F->getParamDecl(0))) return false;
+  for (const auto *D : F->redecls()) if (!Pinned(D)) return TraceFailure(__LINE__);
+  if (!Pinned(F->getParamDecl(0))) return TraceFailure(__LINE__);
   for (const auto *D : Primary->redecls())
-    if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+    if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return TraceFailure(__LINE__);
   const auto *Pattern = F->getTemplateInstantiationPattern();
   if (!Pattern) Pattern = Primary->getTemplatedDecl();
-  if (!Pattern || Pattern->getNumParams() != 1 || !Pinned(Pattern->getParamDecl(0))) return false;
-  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  if (!Pattern || Pattern->getNumParams() != 1 || !Pinned(Pattern->getParamDecl(0))) return TraceFailure(__LINE__);
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return TraceFailure(__LINE__);
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Pattern->getBody());
-  if (!Body || Body->size() != (Move ? 2U : 1U)) return false;
+  TraceBodySize = Body ? Body->size() : 0;
+  if (!Body || Body->size() != (Move ? 2U : 1U)) return TraceFailure(__LINE__);
   auto ParameterReference = [&](const Expr *Value) {
     const auto *Name = Value ? dyn_cast<DeclRefExpr>(Value->IgnoreParenImpCasts()) : nullptr;
     return Name && Name->getDecl()->getCanonicalDecl() == Pattern->getParamDecl(0)->getCanonicalDecl();
   };
   const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
-  if (!Return || !Return->getRetValue()) return false;
+  if (!Return || !Return->getRetValue()) return TraceFailure(__LINE__);
+  TraceReturn = Return->getRetValue()->IgnoreParenImpCasts()->getStmtClassName();
   if (Move) {
     const auto *Declaration = dyn_cast<DeclStmt>(Body->body_front());
     const auto *Alias = Declaration && Declaration->isSingleDecl()
@@ -47568,27 +47581,27 @@ bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
     if (!Alias || !Pinned(Alias) || !Cast ||
         (Cast->getCastKind() != CK_NoOp && (Cast->getCastKind() != CK_Dependent ||
             !Pattern->isDependentContext() || !Alias->getUnderlyingType()->isDependentType())) ||
-        !Cast->getTypeAsWritten()->isRValueReferenceType() || !ParameterReference(Cast->getSubExpr())) return false;
+        !Cast->getTypeAsWritten()->isRValueReferenceType() || !ParameterReference(Cast->getSubExpr())) return TraceFailure(__LINE__);
     const auto *AliasType = Cast->getTypeAsWritten()->getPointeeType()->getAs<TypedefType>();
-    if (!AliasType || AliasType->getDecl()->getCanonicalDecl() != Alias->getCanonicalDecl()) return false;
+    if (!AliasType || AliasType->getDecl()->getCanonicalDecl() != Alias->getCanonicalDecl()) return TraceFailure(__LINE__);
   } else {
     const auto *Call = dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts());
     const auto *Builtin = Call ? Call->getDirectCallee() : nullptr;
     if (!Builtin || !Builtin->getBuiltinID() || Builtin->hasBody() || !Builtin->getIdentifier() ||
         Builtin->getName() != "__builtin_addressof" || Call->getNumArgs() != 1 ||
         !Builtin->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
-        !ParameterReference(Call->getArg(0))) return false;
+        !ParameterReference(Call->getArg(0))) return TraceFailure(__LINE__);
     for (const auto *D : Builtin->redecls()) {
       if (valarrayDependencyDeclaration(S, SM, D)) continue;
-      if (!D->isImplicit() || D->hasBody() || !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+      if (!D->isImplicit() || D->hasBody() || !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return TraceFailure(__LINE__);
       if (D->getLocation().isValid()) {
         const auto File = S.sdkFile(SM, D->getLocation());
-        if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+        if (!File || (File->Root != "libcxx" && File->Root != "resource")) return TraceFailure(__LINE__);
       }
     }
   }
   auto Location = [&](SourceLocation L) {
-    if (!L.isValid()) return false;
+    if (!L.isValid()) return TraceFailure(__LINE__);
     const auto File = S.sdkFile(SM, SM.getSpellingLoc(L));
     return File && (L.isMacroID() ? (File->Root == "libcxx" || File->Root == "resource")
         : File->Root == "libcxx" && File->Path == Header);
@@ -47597,18 +47610,28 @@ bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
   std::function<bool(const Stmt *, unsigned)> PureSource;
   PureSource = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
-    if (Depth > 8 || ++Nodes > 32 || !Location(Node->getBeginLoc()) || !Location(Node->getEndLoc())) return false;
-    if (const auto *Value = dyn_cast<Expr>(Node)) if (!Location(Value->getExprLoc())) return false;
-    for (const auto *Child : Node->children()) if (!PureSource(Child, Depth + 1)) return false;
+    if (Depth > 8 || ++Nodes > 32 || !Location(Node->getBeginLoc()) || !Location(Node->getEndLoc())) return TraceFailure(__LINE__);
+    if (const auto *Value = dyn_cast<Expr>(Node)) if (!Location(Value->getExprLoc())) return TraceFailure(__LINE__);
+    for (const auto *Child : Node->children()) if (!PureSource(Child, Depth + 1)) return TraceFailure(__LINE__);
     return true;
   };
-  return PureSource(Body, 0);
+  TraceProven = PureSource(Body, 0);
+  return TraceProven;
 }
 
 bool valarraySourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
+  const FunctionDecl *TraceFunction = nullptr, *TraceRejectedFunction = nullptr;
+  const Stmt *TraceStatement = nullptr, *TraceRejectedStatement = nullptr;
+  unsigned TraceLine = 0;
+  auto TraceFailure = [&](unsigned Line) {
+    if (!TraceLine) {
+      TraceLine = Line; TraceRejectedFunction = TraceFunction; TraceRejectedStatement = TraceStatement;
+    }
+    return false;
+  };
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   auto PinnedMacro = [&](SourceLocation L) {
@@ -47618,38 +47641,40 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
     return File && (File->Root == "libcxx" || File->Root == "resource");
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
-    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return false;
+    const auto *PreviousFunction = TraceFunction; TraceFunction = F;
+    auto RestoreFunction = llvm::make_scope_exit([&] { TraceFunction = PreviousFunction; });
+    if (!F || F->isInvalidDecl() || Depth > 64 || ++Nodes > 4096) return TraceFailure(__LINE__);
     // These are selected again by the existing heap helper during lowering.
     // Its exact overload and source-definition checks remain mandatory.
     if (valarrayHeapBoundary(F, Context)) return true;
     if (valarrayBuiltinUtility(S, SM, F, Context)) return true;
     if (F->getBuiltinID()) {
-      if (!F->getIdentifier() || F->hasBody()) return false;
+      if (!F->getIdentifier() || F->hasBody()) return TraceFailure(__LINE__);
       const auto Name = F->getName();
       if (Name != "__builtin_is_constant_evaluated" &&
           Name != "__builtin_operator_new" && Name != "__builtin_operator_delete" &&
           Name != "__builtin_expect" && Name != "__builtin_assume" &&
-          Name != "__builtin_unreachable") return false;
+          Name != "__builtin_unreachable") return TraceFailure(__LINE__);
       for (const auto *D : F->redecls()) {
         if (valarrayDependencyDeclaration(S, SM, D)) continue;
         if (!D->isImplicit() || D->hasBody() ||
-            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return false;
+            !D->getDeclContext()->getRedeclContext()->isTranslationUnit()) return TraceFailure(__LINE__);
         if (D->getLocation().isValid()) {
           const auto File = S.sdkFile(SM, D->getLocation());
-          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return false;
+          if (!File || (File->Root != "libcxx" && File->Root != "resource")) return TraceFailure(__LINE__);
         }
       }
       return true;
     }
     for (const auto *D : F->redecls())
-      if (!valarrayDependencyDeclaration(S, SM, D)) return false;
+      if (!valarrayDependencyDeclaration(S, SM, D)) return TraceFailure(__LINE__);
     if (const auto *Pattern = F->getTemplateInstantiationPattern())
       for (const auto *D : Pattern->redecls())
-        if (!valarrayDependencyDeclaration(S, SM, D)) return false;
+        if (!valarrayDependencyDeclaration(S, SM, D)) return TraceFailure(__LINE__);
     if (const auto *T = F->getPrimaryTemplate())
       for (const auto *D : T->redecls())
         if (!valarrayDependencyDeclaration(S, SM, D) ||
-            !valarrayDependencyDeclaration(S, SM, D->getTemplatedDecl())) return false;
+            !valarrayDependencyDeclaration(S, SM, D->getTemplatedDecl())) return TraceFailure(__LINE__);
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
     // Every admitted construction count has already passed the existing
     // allocator max-size proof, making this pinned error branch unreachable.
@@ -47659,41 +47684,52 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
         M && M->isImplicit() && M->isTrivial()) return true;
     if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
       for (const auto *Init : C->inits())
-        if (!Statement(Init->getInit(), Depth + 1)) return false;
+        if (!Statement(Init->getInit(), Depth + 1)) return TraceFailure(__LINE__);
     const auto *Body = F->getBody();
     return Body && Statement(Body, Depth + 1);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
+    const auto *PreviousStatement = TraceStatement; TraceStatement = Node;
+    auto RestoreStatement = llvm::make_scope_exit([&] { TraceStatement = PreviousStatement; });
     if (!Node) return true;
     if (Depth > 64 || ++Nodes > 4096 || !PinnedMacro(Node->getBeginLoc()) ||
-        !PinnedMacro(Node->getEndLoc())) return false;
+        !PinnedMacro(Node->getEndLoc())) return TraceFailure(__LINE__);
     if (const auto *E = dyn_cast<Expr>(Node))
-      if (!PinnedMacro(E->getExprLoc())) return false;
+      if (!PinnedMacro(E->getExprLoc())) return TraceFailure(__LINE__);
     if (const auto *E = dyn_cast<MemberExpr>(Node))
-      if (!PinnedMacro(E->getMemberLoc())) return false;
+      if (!PinnedMacro(E->getMemberLoc())) return TraceFailure(__LINE__);
     if (const auto *D = dyn_cast<DeclStmt>(Node))
       for (const auto *Declaration : D->decls())
-        if (!PinnedMacro(Declaration->getLocation())) return false;
+        if (!PinnedMacro(Declaration->getLocation())) return TraceFailure(__LINE__);
     if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
       if (!valarrayDependencyDeclaration(S, SM, Default->getParam()) ||
-          !Statement(Default->getExpr(), Depth + 1)) return false;
+          !Statement(Default->getExpr(), Depth + 1)) return TraceFailure(__LINE__);
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!valarrayScalarEndDestruction(S, SM, Call, Context) &&
-          !Function(Call->getDirectCallee(), Depth + 1)) return false;
+          !Function(Call->getDirectCallee(), Depth + 1)) return TraceFailure(__LINE__);
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
-      if (!Function(C->getConstructor(), Depth + 1)) return false;
+      if (!Function(C->getConstructor(), Depth + 1)) return TraceFailure(__LINE__);
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || !Context.hasSameType(N->getAllocatedType(), Context.IntTy) ||
           N->getNumPlacementArgs() != 1 ||
-          !Function(N->getOperatorNew(), Depth + 1)) return false;
-      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+          !Function(N->getOperatorNew(), Depth + 1)) return TraceFailure(__LINE__);
+      if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return TraceFailure(__LINE__);
     }
     for (const auto *Child : Node->children())
-      if (!Statement(Child, Depth + 1)) return false;
+      if (!Statement(Child, Depth + 1)) return TraceFailure(__LINE__);
     return true;
   };
-  return Root && valarrayFunctionDeclarations(S, SM, Root) && Function(Root, 0);
+  const bool Proven = Root && valarrayFunctionDeclarations(S, SM, Root) && Function(Root, 0);
+  if (!Proven)
+    std::fprintf(stderr, "NCT_VALARRAY_GRAPH result=0 nodes=%u line=%u root=%s function=%s builtin=%u statement=%s parameter=%s\n",
+        Nodes, TraceLine, Root ? Root->getQualifiedNameAsString().c_str() : "none",
+        TraceRejectedFunction ? TraceRejectedFunction->getQualifiedNameAsString().c_str() : "none",
+        TraceRejectedFunction ? TraceRejectedFunction->getBuiltinID() : 0,
+        TraceRejectedStatement ? TraceRejectedStatement->getStmtClassName() : "none",
+        TraceRejectedFunction && TraceRejectedFunction->getNumParams() ?
+            TraceRejectedFunction->getParamDecl(0)->getType().getAsString().c_str() : "none");
+  return Proven;
 }
 }
 
