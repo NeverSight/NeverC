@@ -17558,6 +17558,13 @@ preserves an aliased source through integer shifts; the rvalue overload retains
 its reference until the selected store. Receiver and argument expressions are
 evaluated once with ordinary member-call sequencing.
 
+The same specialization admits `insert(const_iterator, size_type, const int&)`
+at valid same-container positions. Counted insertion preserves the pinned SDK's
+shorter-side choice, bulk segmented capacity growth and mutable iterator result.
+The fill value is read after required allocation callbacks and before integer
+shifts. A zero count returns the position without reading the referenced value
+or growing storage; receiver and argument expressions are still evaluated once.
+
 Each family has ten permanent GTests: six exact native-reference programs that
 generate and execute C23 at O0 and O2, and four source-origin rejection tests.
 Linux x86-64 execution covers empty layouts, iterators or LIFO/FIFO behavior,
@@ -17615,6 +17622,12 @@ middle and back insertion, returned iterators, multi-block growth, integer
 aliases, allocation callbacks, empty-container reuse and argument sequencing.
 Four source-origin guards reject replaced const-reference and rvalue-reference
 insert bodies, including forwarding replacements.
+A separate counted-insert family has ten registered GTests and twelve generated
+C23 executions at O0 and O2 against exact native programs. It covers zero counts,
+front, middle and back insertion, multi-block growth and reuse, returned
+iterators, aliased fill values, allocation callbacks and argument sequencing.
+Four source-origin guards reject replaced counted-insert bodies, including
+forwarding replacements.
 
 The SDK proof checks selected declarations, template and forward origins,
 owned storage, allocator dependencies, and the complete selected operation
@@ -17628,7 +17641,7 @@ checks and budgets; this reachability proof does not admit custom allocators.
 
 Custom allocators or adapter containers, other element specializations,
 other allocator and iterator range overloads, emplacement with other argument types
-or multiple arguments and counted, range and initializer-list insertion and positional emplacement require further work.
+or multiple arguments and range and initializer-list insertion and positional emplacement require further work.
 These bounded operations
 do not establish complete STL support.
 
