@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_hash_registered = cls.registered
+        cls.bitset_hash_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_hash_original = cls.adapter.restore_original_gtests(cls.bitset_hash_registered,cls.bitset_hash_suffix)
+        cls.registered = cls.adapter.restore_bitset_hash_history(cls.bitset_hash_registered)
         cls.bitset_shift_registered = cls.registered
         cls.bitset_shift_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_shift_original = cls.adapter.restore_original_gtests(cls.bitset_shift_registered,cls.bitset_shift_suffix)
@@ -1539,6 +1543,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_shift_registered,self.bitset_shift_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_shift_original+b' ',['TranslateTest.CoreV2BitsetShiftZeroRunAtBothOptimizations'])
+
+    def test_bitset_hash_preserves_all_previous_registry_bytes_and_extracts_fourteen_tests(self):
+        self.assertEqual(self.bitset_hash_original+self.bitset_hash_suffix,self.bitset_hash_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_hash_original,self.bitset_hash_suffix),self.bitset_hash_original)
+        self.assertEqual(self.adapter.restore_bitset_hash_history(self.bitset_hash_registered),self.bitset_shift_registered)
+        self.assertEqual(self.adapter.restore_bitset_hash_history(self.bitset_hash_original),self.bitset_shift_original)
+        selected = ['TranslateTest.CoreV2BitsetHashZeroSizeRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashSingleWordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashXorCancellationRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashNonzeroTailRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashCopiedCarrierRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashWordStorageRejected', 'TranslateTest.CoreV2BitsetHashBitsetBaseRejected', 'TranslateTest.CoreV2BitsetHashHashImplementationRejected', 'TranslateTest.CoreV2BitsetHashHashBaseRejected', 'TranslateTest.CoreV2BitsetHashHashCarrierRejected', 'TranslateTest.CoreV2BitsetHashLegacyBaseRejected', 'TranslateTest.CoreV2BitsetHashSpecializedOperatorRejected', 'TranslateTest.CoreV2BitsetHashSpecializedEmptyOperatorRejected']
+        generated,proof = self.extractor.extract(self.bitset_hash_original,selected)
+        self.assertEqual(proof['original_test_names'],7802)
+        self.assertEqual(proof['selected_count'],14)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7788)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bithash',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_hash_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_hash_registered+b' ',
+                        self.bitset_hash_registered.replace(b'r19bithash',b'q.push(11)',1),
+                        self.bitset_hash_registered+self.bitset_hash_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_hash_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_hash_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_hash_registered,self.bitset_hash_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_hash_original+b' ',['TranslateTest.CoreV2BitsetHashZeroSizeRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
