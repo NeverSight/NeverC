@@ -3675,6 +3675,7 @@ struct UtilityBitsetCall {
   const clang::Expr *Receiver = nullptr;
   unsigned ArgumentOffset = 0;
   const clang::CXXRecordDecl *Record = nullptr;
+  bool DynamicPosition = false;
 };
 std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
     const State &S, const clang::SourceManager &SM,

@@ -26365,26 +26365,35 @@ class FunctionLowering {
         return binary("==", Result, quantity(0, "u64", L), "bool", L);
       return cast(Result, type(Call->getType(), L), L);
     }
-    // A literal, in-range position has no side effects. Evaluate its owned
-    // operand slot as well, preserving the receiver-before-arguments rule.
-    argument(Call->getArg(0), Member->getMethodDecl()->getParamDecl(0)->getType());
-    auto Word = bitsetWord(Place, *Info, quantity(Proof->Position / 64, "u64", L), L,
-                           Operation == UtilityOperation::BitsetTest);
-    const uint64_t Mask = uint64_t(1) << (Proof->Position % 64);
+    auto Index = argument(Call->getArg(0), Member->getMethodDecl()->getParamDecl(0)->getType());
+    auto WordIndex = quantity(Proof->Position / 64, "u64", L);
+    const uint64_t FixedMask = uint64_t(1) << (Proof->Position % 64);
+    auto Mask = quantity(FixedMask, "u64", L);
+    if (Proof->DynamicPosition) {
+      Index = snapshot(std::move(Index), L);
+      WordIndex = binary("/", Index, quantity(64, "u64", L), "u64", L);
+      auto Offset = binary("%", Index, quantity(64, "u64", L), "u64", L);
+      Mask = binary("<<", quantity(1, "u64", L), Offset, "u64", L);
+    }
+    auto Word = bitsetWord(Place, *Info, WordIndex, L, Operation == UtilityOperation::BitsetTest);
+    auto ClearMask = [&] {
+      return Proof->DynamicPosition ? binary("^", Mask, quantity(UINT64_MAX, "u64", L), "u64", L)
+                                    : quantity(UINT64_MAX ^ FixedMask, "u64", L);
+    };
     if (Operation == UtilityOperation::BitsetTest)
-      return binary("!=", binary("&", Word, quantity(Mask, "u64", L), "u64", L), quantity(0, "u64", L), "bool", L);
+      return binary("!=", binary("&", Word, Mask, "u64", L), quantity(0, "u64", L), "bool", L);
     if (Operation == UtilityOperation::BitsetSet) {
       auto Value = snapshot(argument(Call->getArg(1), A.Context.BoolTy), L);
       const auto Set = labelName(), Clear = labelName(), Done = labelName();
       branch(Value, Set, Clear, L);label(Set, L);
-      assign(Word, binary("|", Word, quantity(Mask, "u64", L), "u64", L), L);
+      assign(Word, binary("|", Word, Mask, "u64", L), L);
       jump(Done, L);label(Clear, L);
-      assign(Word, binary("&", Word, quantity(UINT64_MAX ^ Mask, "u64", L), "u64", L), L);
+      assign(Word, binary("&", Word, ClearMask(), "u64", L), L);
       jump(Done, L);label(Done, L);
     } else if (Operation == UtilityOperation::BitsetReset) {
-      assign(Word, binary("&", Word, quantity(UINT64_MAX ^ Mask, "u64", L), "u64", L), L);
+      assign(Word, binary("&", Word, ClearMask(), "u64", L), L);
     } else if (Operation == UtilityOperation::BitsetFlip) {
-      assign(Word, binary("^", Word, quantity(Mask, "u64", L), "u64", L), L);
+      assign(Word, binary("^", Word, Mask, "u64", L), L);
     } else reject(L, "bitset operation", "Unknown checked bitset operation.");
     return Place;
   }

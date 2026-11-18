@@ -47365,6 +47365,20 @@ std::optional<uint64_t> bitsetFixedPosition(const Expr *E,
       Value->getValue().getZExtValue() >= Bits) return std::nullopt;
   return Value->getValue().getZExtValue();
 }
+
+bool bitsetBoundedPosition(const Expr *E, const ASTContext &Context, uint64_t Bits) {
+  const auto *Op = dyn_cast<BinaryOperator>(E->IgnoreParenImpCasts());
+  if (!Op || !Op->getType()->isUnsignedIntegerType() ||
+      Context.getTypeSize(Op->getType()) > 64)
+    return false;
+  const auto *Limit = dyn_cast<IntegerLiteral>(Op->getRHS()->IgnoreParenImpCasts());
+  if (!Limit || Limit->getValue().getActiveBits() > 64)
+    return false;
+  const uint64_t Value = Limit->getValue().getZExtValue();
+  if (Op->getOpcode() == BO_And)
+    return Value < Bits;
+  return Op->getOpcode() == BO_Rem && Value != 0 && Value <= Bits;
+}
 } // namespace
 
 std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
@@ -47576,20 +47590,27 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
   }
   if (M->getNumParams() == 0 || Call->getNumArgs() == 0 ||
       !Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) return std::nullopt;
-  const auto Position = bitsetFixedPosition(Call->getArg(0), Context, Info->Bits);
-  if (!Position) return std::nullopt;
+  const auto *Index = Call->getArg(0);
+  const auto Position = bitsetFixedPosition(Index, Context, Info->Bits);
+  if (!Position && !bitsetBoundedPosition(Index, Context, Info->Bits))
+    return std::nullopt;
+  auto Indexed = [&](UtilityOperation Operation) {
+    UtilityBitsetCall Result{Operation, Position.value_or(0)};
+    Result.DynamicPosition = !Position.has_value();
+    return Result;
+  };
   if (Name == "test" && M->isConst() && M->getNumParams() == 1 && Call->getNumArgs() == 1 &&
       Context.hasSameType(M->getReturnType(), Context.BoolTy))
-    return UtilityBitsetCall{UtilityOperation::BitsetTest, *Position};
+    return Indexed(UtilityOperation::BitsetTest);
   if (M->isConst() || !M->getReturnType()->isLValueReferenceType() ||
       !Context.hasSameType(M->getReturnType()->getPointeeType(), Context.getRecordType(Info->Record)))
     return std::nullopt;
   if (Name == "set" && M->getNumParams() == 2 && Call->getNumArgs() == 2 &&
       Context.hasSameType(M->getParamDecl(1)->getType(), Context.BoolTy))
-    return UtilityBitsetCall{UtilityOperation::BitsetSet, *Position};
+    return Indexed(UtilityOperation::BitsetSet);
   if (M->getNumParams() == 1 && Call->getNumArgs() == 1) {
-    if (Name == "reset") return UtilityBitsetCall{UtilityOperation::BitsetReset, *Position};
-    if (Name == "flip") return UtilityBitsetCall{UtilityOperation::BitsetFlip, *Position};
+    if (Name == "reset") return Indexed(UtilityOperation::BitsetReset);
+    if (Name == "flip") return Indexed(UtilityOperation::BitsetFlip);
   }
   return std::nullopt;
 }
