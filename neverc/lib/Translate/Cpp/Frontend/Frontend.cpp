@@ -13863,6 +13863,12 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityUnorderedMapRecord(S, Sources, D, Context) &&
                  !requireUtilityUnorderedMap(D, L, Depth + 1)) {
         return {};
+      } else if (const auto Proxy = approvedUtilityBitsetProxyRecord(S, Sources, D, Context)) {
+        if (RequiredUtilityBitsetProxies.insert(Proxy->Record->getCanonicalDecl()).second) {
+          for (const auto *Field : Proxy->Record->fields())
+            if (type(Field->getType(), L, false, Depth + 1).empty()) return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(Proxy->Record));
+        }
       } else if (approvedUtilityBitsetRecord(S, Sources, D, Context) &&
                  !requireUtilityBitset(D, L, Depth + 1)) {
         return {};
@@ -30924,7 +30930,12 @@ public:
         return true;
       if (A.S.coreV2() && UtilityAllocatorAssignment)
         return true;
-      if (A.S.coreV2() && F && approvedSDKDeclaration(A.S, A.Sources, F)) {
+      // An SDK declaration can get its name from a macro spelled outside the SDK.
+      // Its expansion site must not route an unrecognized call to generic lowering.
+      if (A.S.coreV2() && F &&
+          (approvedSDKDeclaration(A.S, A.Sources, F) ||
+           (F->getLocation().isMacroID() &&
+            A.S.sdkFile(A.Sources, A.Sources.getExpansionLoc(F->getLocation()))))) {
         A.reject(S->getBeginLoc(), "standard library runtime call",
                  "Approved SDK declarations may run only through a documented "
                  "direct lowering; this call has none.",
