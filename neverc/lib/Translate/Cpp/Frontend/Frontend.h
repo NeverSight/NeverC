@@ -3668,7 +3668,7 @@ struct UtilityBitsetRecord {
   uint64_t Bits = 0;
   uint64_t Words = 0;
 };
-enum class UtilityBitsetConstruction { Default, UnsignedValue, Copy };
+enum class UtilityBitsetConstruction { Default, UnsignedValue, Copy, LiteralText };
 struct UtilityBitsetCall {
   UtilityOperation Operation;
   uint64_t Position = 0;
@@ -3679,6 +3679,9 @@ struct UtilityBitsetCall {
 std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<std::vector<uint64_t>> approvedUtilityBitsetLiteralWords(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *C,
+    const clang::ASTContext &Context);
 std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);

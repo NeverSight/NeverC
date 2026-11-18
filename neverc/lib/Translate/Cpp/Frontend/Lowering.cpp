@@ -38190,6 +38190,15 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         assign(Place, expression(C->getArg(0)), L);
       } else {
         initializeZero(bitsetStorage(Place, *Info, L), bitsetArrayType(*Info), L);
+        if (*Kind == UtilityBitsetConstruction::LiteralText) {
+          const auto Words = approvedUtilityBitsetLiteralWords(A.S, A.Sources, C, A.Context);
+          if (!Words) reject(L, "bitset text", "The exact validated literal words are required.");
+          for (uint64_t Index = 0; Index != Words->size(); ++Index) {
+            if ((*Words)[Index])
+              assign(bitsetWord(Place, *Info, quantity(Index, "u64", L), L),
+                     quantity((*Words)[Index], "u64", L), L);
+          }
+        }
         if (*Kind == UtilityBitsetConstruction::UnsignedValue) {
           auto Value = snapshot(cast(argument(C->getArg(0), A.Context.UnsignedLongLongTy), "u64", L), L);
           if (Info->Bits < 64)

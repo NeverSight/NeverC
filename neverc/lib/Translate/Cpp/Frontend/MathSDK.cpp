@@ -47292,16 +47292,35 @@ bool bitsetConstantEvaluationBuiltin(const State &S, const SourceManager &SM,
 }
 
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
-                        const FunctionDecl *Root) {
+                        const FunctionDecl *Root, bool KnownValidText = false) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
+  // Clang may create the global declaration at the pinned SDK strlen call.
+  auto IsTextLengthBuiltin = [&](const FunctionDecl *F) {
+    if (F->getBuiltinID() != Builtin::BI__builtin_strlen || F->hasBody() ||
+        F->getNumParams() != 1 || F->isVariadic()) return false;
+    const auto &Context = Root->getASTContext();
+    if (!Context.hasSameType(F->getReturnType(), Context.getSizeType()) ||
+        !Context.hasSameType(F->getParamDecl(0)->getType(),
+                            Context.getPointerType(Context.CharTy.withConst()))) return false;
+    for (const auto *D : F->redecls()) {
+      if (D->getTypeSourceInfo()) return false;
+      if (D->getLocation().isInvalid()) continue;
+      const auto File = S.sdkFile(SM, D->getLocation());
+      if (!File || File->Root != "libcxx" ||
+          File->Path != "__string/constexpr_c_functions.h") return false;
+    }
+    return true;
+  };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
     if (!F || Depth > 64 || ++Nodes > 4096) return false;
     if (bitsetBuiltinLibraryCast(S, SM, F, Root->getASTContext())) return true;
     if (F->getBuiltinID() == Builtin::BI__builtin_is_constant_evaluated)
       return bitsetConstantEvaluationBuiltin(S, SM, F, Root->getASTContext());
+    if (KnownValidText && F->getBuiltinID() == Builtin::BI__builtin_strlen)
+      return IsTextLengthBuiltin(F);
     if (F->getBuiltinID()) {
       // Clang creates these global builtin declarations lazily at their
       // SDK call token. They are not ordinary declarations in namespace std.
@@ -47321,6 +47340,10 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
     // Position-taking operations below require a constant in-range index.
     // Their error branch cannot execute, but its declaration remains pinned.
     if (F->getIdentifier() && F->getName() == "__throw_out_of_range" && F->getNumParams() == 1)
+      return true;
+    if (KnownValidText && F->getIdentifier() &&
+        F->getName() == "__throw_invalid_argument" && F->getNumParams() == 1 &&
+        F->isNoReturn() && bitsetPinnedHeader(S, SM, F, "stdexcept"))
       return true;
     if (const auto *M = dyn_cast<CXXMethodDecl>(F);
         M && M->isImplicit() && M->isTrivial()) return true;
@@ -47433,9 +47456,86 @@ std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
   return UtilityBitsetRecord{R, Base, Storage, Bits, Words};
 }
 
+static bool bitsetLiteralCharacterConstructor(const State &S, const SourceManager &SM,
+                                              const CXXConstructorDecl *M,
+                                              const ASTContext &Context) {
+  return M && M->getPrimaryTemplate() &&
+      M->getTemplateSpecializationKind() == TSK_ImplicitInstantiation &&
+      !M->isVariadic() && M->getNumParams() == 4 &&
+      Context.hasSameType(M->getParamDecl(0)->getType(),
+                          Context.getPointerType(Context.CharTy.withConst())) &&
+      Context.hasSameType(M->getParamDecl(1)->getType(), Context.getSizeType()) &&
+      Context.hasSameType(M->getParamDecl(2)->getType(), Context.CharTy) &&
+      Context.hasSameType(M->getParamDecl(3)->getType(), Context.CharTy) &&
+      approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) &&
+      bitsetPinned(S, SM, M, true) && bitsetPinnedFunction(S, SM, M);
+}
+
+static std::optional<uint64_t> bitsetLiteralTextArgument(
+    const State &S, const SourceManager &SM, const Expr *Argument,
+    const CXXConstructorDecl *M, unsigned Index, const ASTContext &Context) {
+  const auto *Parameter = M->getParamDecl(Index);
+  const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument);
+  if (Default) {
+    if (Default->getParam() != Parameter || !bitsetPinned(S, SM, Parameter, true))
+      return std::nullopt;
+    Argument = selectedDefaultArgument(Default, Context);
+    if (!Argument || !cstddefOrigin(S, SM, Argument->getExprLoc(), "libcxx", "bitset"))
+      return std::nullopt;
+  } else {
+    const auto *Literal = Argument->IgnoreParenImpCasts();
+    if ((Index == 1 && !isa<IntegerLiteral>(Literal)) ||
+        (Index != 1 && !isa<CharacterLiteral>(Literal)) ||
+        !S.owns(SM, Literal->getExprLoc()))
+      return std::nullopt;
+  }
+  Expr::EvalResult Result;
+  if (!Argument->EvaluateAsInt(Result, Context) || !Result.Val.isInt() ||
+      Result.Val.getInt().getActiveBits() > 64)
+    return std::nullopt;
+  uint64_t Value = Result.Val.getInt().getZExtValue();
+  if (Index != 1) Value = static_cast<unsigned char>(Value);
+  if (Default && Value != (Index == 1 ? UINT64_MAX : Index == 2 ? '0' : '1'))
+    return std::nullopt;
+  return Value;
+}
+
+std::optional<std::vector<uint64_t>> approvedUtilityBitsetLiteralWords(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *C,
+    const ASTContext &Context) {
+  if (!C || C->getNumArgs() != 4 || C->isTypeDependent() || C->isValueDependent() ||
+      C->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Text = dyn_cast<StringLiteral>(C->getArg(0)->IgnoreParenImpCasts());
+  const auto *M = C->getConstructor();
+  if (!Text || Text->getCharByteWidth() != 1 || !S.owns(SM, Text->getBeginLoc()) ||
+      !bitsetLiteralCharacterConstructor(S, SM, M, Context))
+    return std::nullopt;
+  const auto Count = bitsetLiteralTextArgument(S, SM, C->getArg(1), M, 1, Context);
+  const auto Zero = bitsetLiteralTextArgument(S, SM, C->getArg(2), M, 2, Context);
+  const auto One = bitsetLiteralTextArgument(S, SM, C->getArg(3), M, 3, Context);
+  if (!Count || !Zero || !One) return std::nullopt;
+  const auto Bytes = Text->getBytes().split('\0').first;
+  const auto Length = std::min<uint64_t>(Bytes.size(), *Count);
+  for (uint64_t I = 0; I != Length; ++I) {
+    const auto Digit = static_cast<unsigned char>(Bytes[I]);
+    if (Digit != *Zero && Digit != *One) return std::nullopt;
+  }
+  if (!bitsetSourceGraph(S, SM, M, /*KnownValidText=*/true)) return std::nullopt;
+  const auto Info = approvedUtilityBitsetRecord(S, SM, M->getParent(), Context);
+  const auto Width = std::min(Length, Info->Bits);
+  std::vector<uint64_t> Words((Width + 63) / 64);
+  for (uint64_t I = 0; I != Width; ++I)
+    if (static_cast<unsigned char>(Bytes[Width - 1 - I]) == *One)
+      Words[I / 64] |= uint64_t(1) << (I % 64);
+  return Words;
+}
+
 std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *C,
     const ASTContext &Context) {
+  if (C && C->getNumArgs() == 4 && approvedUtilityBitsetLiteralWords(S, SM, C, Context))
+    return UtilityBitsetConstruction::LiteralText;
   if (!C || C->isTypeDependent() || C->isValueDependent() ||
       C->getConstructionKind() != CXXConstructionKind::Complete) return std::nullopt;
   const auto *M = C->getConstructor();
@@ -53930,6 +54030,10 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
     return false;
   if (priorityQueueComparatorDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
   if (bitsetDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
+  if (const auto *M = dyn_cast_or_null<CXXConstructorDecl>(Function);
+      Default && Index >= 1 && Index <= 3 && bitsetLiteralCharacterConstructor(S, SM, M, Context) &&
+      bitsetLiteralTextArgument(S, SM, Default, M, Index, Context))
+    return true;
   if (valarrayResizeDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
   if (approvedUtilityUnorderedMapDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
