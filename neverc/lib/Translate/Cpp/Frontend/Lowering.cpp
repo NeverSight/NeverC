@@ -26127,6 +26127,7 @@ class FunctionLowering {
 
 
   QualType bitsetArrayType(const UtilityBitsetRecord &Info) {
+    if (!Info.Words) return A.Context.UnsignedCharTy;
     return A.Context.getConstantArrayType(A.Context.getSizeType(),
         llvm::APInt(64, Info.Words), nullptr, ArraySizeModifier::Normal, 0);
   }
@@ -26153,7 +26154,43 @@ class FunctionLowering {
     auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
         : address(lvalue(Object), Object->getType(), L), L);
     auto Place = dereference(Receiver, L);
-    if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny) {
+    if (Operation == UtilityOperation::BitsetSize)
+      return cast(quantity(Info->Bits, "u64", L), type(Call->getType(), L), L);
+    if (!Info->Words) {
+      if (Operation == UtilityOperation::BitsetSetAll || Operation == UtilityOperation::BitsetResetAll ||
+          Operation == UtilityOperation::BitsetFlipAll) return Place;
+      const uint64_t Value = Operation == UtilityOperation::BitsetNone || Operation == UtilityOperation::BitsetAll;
+      return cast(quantity(Value, "u64", L), type(Call->getType(), L), L);
+    }
+    if (Operation == UtilityOperation::BitsetAll || Operation == UtilityOperation::BitsetSetAll ||
+        Operation == UtilityOperation::BitsetResetAll || Operation == UtilityOperation::BitsetFlipAll) {
+      const bool Query = Operation == UtilityOperation::BitsetAll;
+      auto Result = temporary("bool", L), Position = temporary("u64", L);
+      assign(Result, binary("==", quantity(0, "u64", L), quantity(0, "u64", L), "bool", L), L);
+      assign(Position, quantity(0, "u64", L), L);
+      const auto Check = labelName(), Body = labelName(), Next = labelName(), Done = labelName();
+      jump(Check, L);label(Check, L);
+      branch(binary("<", Position, quantity(Info->Words, "u64", L), "bool", L), Body, Done, L);
+      label(Body, L);
+      auto Mask = temporary("u64", L);assign(Mask, quantity(UINT64_MAX, "u64", L), L);
+      if (Info->Bits % 64) {
+        const auto Last = labelName(), Ready = labelName();
+        branch(binary("==", Position, quantity(Info->Words - 1, "u64", L), "bool", L), Last, Ready, L);
+        label(Last, L);assign(Mask, quantity((uint64_t(1) << (Info->Bits % 64)) - 1, "u64", L), L);
+        jump(Ready, L);label(Ready, L);
+      }
+      auto Word = bitsetWord(Place, *Info, Position, L, Query);
+      if (Query) assign(Result, binary("&", Result, binary("==", Word, Mask, "bool", L), "bool", L), L);
+      else if (Operation == UtilityOperation::BitsetSetAll) assign(Word, Mask, L);
+      else if (Operation == UtilityOperation::BitsetResetAll) assign(Word, quantity(0, "u64", L), L);
+      else assign(Word, binary("^", Word, Mask, "u64", L), L);
+      jump(Next, L);label(Next, L);
+      assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
+      jump(Check, L);label(Done, L);
+      return Query ? Result : Place;
+    }
+    if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
+        Operation == UtilityOperation::BitsetNone) {
       auto Result = temporary("u64", L), Position = temporary("u64", L);
       assign(Result, quantity(0, "u64", L), L);
       assign(Position, quantity(0, "u64", L), L);
@@ -26162,7 +26199,7 @@ class FunctionLowering {
       branch(binary("<", Position, quantity(Info->Words, "u64", L), "bool", L), Word, Done, L);
       label(Word, L);
       auto Bits = snapshot(bitsetWord(Place, *Info, Position, L, true), L);
-      if (Operation == UtilityOperation::BitsetAny) {
+      if (Operation == UtilityOperation::BitsetAny || Operation == UtilityOperation::BitsetNone) {
         assign(Result, binary("|", Result, Bits, "u64", L), L);
         jump(Next, L);
       } else {
@@ -26177,6 +26214,8 @@ class FunctionLowering {
       label(Next, L);
       assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
       jump(Check, L);label(Done, L);
+      if (Operation == UtilityOperation::BitsetNone)
+        return binary("==", Result, quantity(0, "u64", L), "bool", L);
       return cast(Result, type(Call->getType(), L), L);
     }
     // A literal, in-range position has no side effects. Evaluate its owned
@@ -28698,7 +28737,10 @@ class FunctionLowering {
     if (Operation == UtilityOperation::ValarrayScalar) return utilityValarrayScalarOperation(Call);
     if (Operation == UtilityOperation::BitsetCount || Operation == UtilityOperation::BitsetAny ||
         Operation == UtilityOperation::BitsetTest || Operation == UtilityOperation::BitsetSet ||
-        Operation == UtilityOperation::BitsetReset || Operation == UtilityOperation::BitsetFlip)
+        Operation == UtilityOperation::BitsetReset || Operation == UtilityOperation::BitsetFlip ||
+        Operation == UtilityOperation::BitsetSize || Operation == UtilityOperation::BitsetNone ||
+        Operation == UtilityOperation::BitsetAll || Operation == UtilityOperation::BitsetSetAll ||
+        Operation == UtilityOperation::BitsetResetAll || Operation == UtilityOperation::BitsetFlipAll)
       return utilityBitsetOperation(Call, Operation);
     if (Operation == UtilityOperation::UnorderedMapGetAllocator ||
         Operation == UtilityOperation::UnorderedMapPolicy) {
@@ -37977,7 +38019,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
           auto Value = snapshot(cast(argument(C->getArg(0), A.Context.UnsignedLongLongTy), "u64", L), L);
           if (Info->Bits < 64)
             Value = binary("&", Value, quantity((uint64_t(1) << Info->Bits) - 1, "u64", L), "u64", L);
-          assign(bitsetWord(Place, *Info, quantity(0, "u64", L), L), Value, L);
+          if (Info->Words) assign(bitsetWord(Place, *Info, quantity(0, "u64", L), L), Value, L);
         }
       }
       return;
