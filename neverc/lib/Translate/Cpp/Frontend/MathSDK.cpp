@@ -47506,6 +47506,46 @@ bool valarrayScalarEndDestruction(const State &S, const SourceManager &SM,
          isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts());
 }
 
+bool valarrayScalarParameterDestruction(const State &S, const SourceManager &SM,
+    const CallExpr *Call, const ASTContext &Context) {
+  const auto *D = Call && !Call->getNumArgs() && Call->getType()->isVoidType()
+      ? dyn_cast<CXXPseudoDestructorExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  if (!D || !D->isArrow() || !D->getBase() || !D->getDestroyedTypeInfo() ||
+      !Context.hasSameType(D->getDestroyedType(), Context.IntTy)) return false;
+  const auto File = S.sdkFile(SM, Call->getExprLoc());
+  if (!File || File->Root != "libcxx" || File->Path != "__memory/construct_at.h") return false;
+  const auto *Reference = dyn_cast<DeclRefExpr>(D->getBase()->IgnoreParenImpCasts());
+  const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
+  const auto *F = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  if (!F || F->isInvalidDecl() || F->isDeleted() || F->isVariadic() || isa<CXXMethodDecl>(F) ||
+      !F->getIdentifier() || F->getName() != "__destroy_at" ||
+      !valarrayStandardNamespace(F->getDeclContext()) || F->getNumParams() != 1 ||
+      F->getParamDecl(0) != Parameter || Parameter->hasDefaultArg() ||
+      !F->getReturnType()->isVoidType() ||
+      !Context.hasSameType(Parameter->getType(), Context.getPointerType(Context.IntTy)) ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return false;
+  const auto *Primary = F->getPrimaryTemplate();
+  const auto *Arguments = F->getTemplateSpecializationArgs();
+  if (!Primary || Primary->getTemplateParameters()->size() != 2 || !Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Context.IntTy) ||
+      Arguments->get(1).getKind() != TemplateArgument::Integral ||
+      !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.IntTy) ||
+      Arguments->get(1).getAsIntegral() != 0) return false;
+  auto Pinned = [&](const Decl *Declaration) {
+    const auto Location = Declaration ? S.sdkFile(SM, Declaration->getLocation()) : std::nullopt;
+    return Location && Location->Root == "libcxx" && Location->Path == "__memory/construct_at.h" &&
+           valarrayDependencyDeclaration(S, SM, Declaration);
+  };
+  for (const auto *Declaration : F->redecls()) if (!Pinned(Declaration)) return false;
+  for (const auto *Declaration : Primary->redecls())
+    if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl())) return false;
+  if (!Pinned(Parameter)) return false;
+  if (const auto *Pattern = F->getTemplateInstantiationPattern())
+    for (const auto *Declaration : Pattern->redecls()) if (!Pinned(Declaration)) return false;
+  return true;
+}
+
 bool valarrayBuiltinUtility(const State &S, const SourceManager &SM,
     const FunctionDecl *F, const ASTContext &Context) {
   if (!F || !F->getBuiltinID() || F->isInvalidDecl() || F->isDeleted() || F->isVariadic() ||
@@ -47680,6 +47720,7 @@ bool valarraySourceGraph(const State &S, const SourceManager &SM,
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!valarrayScalarEndDestruction(S, SM, Call, Context) &&
+          !valarrayScalarParameterDestruction(S, SM, Call, Context) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
