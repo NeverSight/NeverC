@@ -47012,7 +47012,13 @@ const ClassTemplateSpecializationDecl *bitsetSpecialization(
   const auto *T = R ? R->getSpecializedTemplate() : nullptr;
   if (!T || T->getName() != Name || !bitsetStandardNamespace(T->getDeclContext()) ||
       R->isInvalidDecl() || R->isDependentContext() || R->isUnion() ||
-      R->getSpecializationKind() != TSK_ImplicitInstantiation) return nullptr;
+      (R->getSpecializationKind() != TSK_ImplicitInstantiation &&
+       !(Name == "__bitset" && R->getSpecializationKind() == TSK_ExplicitSpecialization &&
+         R->getTemplateArgs().size() == 2 &&
+         R->getTemplateArgs()[0].getKind() == TemplateArgument::Integral &&
+         R->getTemplateArgs()[1].getKind() == TemplateArgument::Integral &&
+         R->getTemplateArgs()[0].getAsIntegral().isZero() &&
+         R->getTemplateArgs()[1].getAsIntegral().isZero()))) return nullptr;
   for (const auto *D : T->redecls()) {
     if (!bitsetPinned(S, SM, D, true)) return nullptr;
     for (const auto *Pattern : D->getTemplatedDecl()->redecls())
@@ -47065,6 +47071,61 @@ bool bitsetImplicitPopcountBuiltin(const State &S, const SourceManager &SM,
   return true;
 }
 
+bool bitsetBuiltinLibraryCast(const State &S, const SourceManager &SM,
+                                   const FunctionDecl *F, const ASTContext &Context) {
+  const auto *Builtin = F ? F->getAttr<BuiltinAttr>() : nullptr;
+  const auto *Primary = F ? F->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Arguments = F ? F->getTemplateSpecializationArgs() : nullptr;
+  const auto *Prototype = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!F || !Builtin || !Builtin->isImplicit() || !Primary || !Pattern || !Pattern->hasBody() ||
+      !Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
+      F->isInvalidDecl() || F->isDeleted() || F->isVariadic() || isa<CXXMethodDecl>(F) || F->isExternC() ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !F->getIdentifier() || !bitsetStandardNamespace(F->getDeclContext()) || F->getNumParams() != 1 ||
+      F->getParamDecl(0)->hasDefaultArg() || !Prototype || Prototype->isVariadic() ||
+      Prototype->getCallConv() != CC_C || Prototype->hasExtParameterInfos() ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept || Prototype->getNoexceptExpr() ||
+      Primary->getTemplateParameters()->size() != 1 ||
+      !isa<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0))) return false;
+  const auto Name = F->getName();
+  llvm::StringRef Header;
+  unsigned ID = 0;
+  if (Name == "addressof") { Header = "__memory/addressof.h"; ID = Builtin::BIaddressof; }
+  else if (Name == "move") { Header = "__utility/move.h"; ID = Builtin::BImove; }
+  else if (Name == "forward") { Header = "__utility/forward.h"; ID = Builtin::BIforward; }
+  else return false;
+  if (Builtin->getID() != ID || F->getBuiltinID() != ID) return false;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *D) {
+    const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+    return ++Declarations <= 64 && File && File->Root == "libcxx" &&
+        File->Path == Header && bitsetPinned(S, SM, D);
+  };
+  for (const auto *D : F->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : Pattern->redecls()) if (!Pinned(D)) return false;
+  for (const auto *D : Primary->redecls())
+    if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+  const auto Argument = Arguments->get(0).getAsType();
+  const auto Parameter = F->getParamDecl(0)->getType();
+  const auto Result = F->getReturnType();
+  // ASTContext reference factories preserve the requested outer reference kind.
+  // Apply the language's T& && -> T& rule before comparing the canonical signature.
+  const auto Forwarded = Argument->isLValueReferenceType()
+      ? Context.getLValueReferenceType(Argument.getNonReferenceType())
+      : Context.getRValueReferenceType(Argument.getNonReferenceType());
+  if (Name == "addressof")
+    return !Argument->isReferenceType() &&
+        Context.hasSameType(Parameter, Context.getLValueReferenceType(Argument)) &&
+        Context.hasSameType(Result, Context.getPointerType(Argument));
+  if (Name == "move")
+    return Context.hasSameType(Parameter, Forwarded) &&
+        Context.hasSameType(Result, Context.getRValueReferenceType(Argument.getNonReferenceType()));
+  return (Context.hasSameType(Parameter, Context.getLValueReferenceType(Argument.getNonReferenceType())) ||
+          Context.hasSameType(Parameter, Context.getRValueReferenceType(Argument.getNonReferenceType()))) &&
+      Context.hasSameType(Result, Forwarded);
+}
+
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
                         const FunctionDecl *Root) {
   std::set<const FunctionDecl *> Seen;
@@ -47073,6 +47134,7 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
   std::function<bool(const Stmt *, unsigned)> Statement;
   Function = [&](const FunctionDecl *F, unsigned Depth) {
     if (!F || Depth > 64 || ++Nodes > 4096) return false;
+    if (bitsetBuiltinLibraryCast(S, SM, F, Root->getASTContext())) return true;
     if (F->getBuiltinID()) {
       // Clang creates these global builtin declarations lazily at their
       // SDK call token. They are not ordinary declarations in namespace std.
@@ -47148,7 +47210,7 @@ std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
       Argument.getAsIntegral().isNegative() || Argument.getAsIntegral().getActiveBits() > 64)
     return std::nullopt;
   const uint64_t Bits = Argument.getAsIntegral().getZExtValue();
-  if (!Bits || Bits > UINT64_MAX - 63) return std::nullopt;
+  if (Bits > UINT64_MAX - 63) return std::nullopt;
   const uint64_t Words = (Bits + 63) / 64;
   const auto *R = Specialization->getDefinition();
   if (!R || R->getNumBases() != 1 || R->getNumVBases() || R->isPolymorphic() ||
@@ -47164,6 +47226,16 @@ std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
   const auto *Base = BaseSpecialization->getDefinition();
   if (!Base || Base->getNumBases() || Base->getNumVBases() || Base->isPolymorphic())
     return std::nullopt;
+  if (!Bits) {
+    const auto &Layout = Context.getASTRecordLayout(R);
+    const auto &BaseLayout = Context.getASTRecordLayout(Base);
+    if (!Base->field_empty() || !Base->isTriviallyCopyable() ||
+        !Base->hasTrivialDestructor() || Layout.getBaseClassOffset(Base).getQuantity() != 0 ||
+        Layout.getSize().getQuantity() != 1 || BaseLayout.getSize().getQuantity() != 1 ||
+        Layout.getAlignment().getQuantity() != 1 || BaseLayout.getAlignment().getQuantity() != 1)
+      return std::nullopt;
+    return UtilityBitsetRecord{R, Base, nullptr, 0, 0};
+  }
   const FieldDecl *Storage = nullptr;
   for (const auto *F : Base->fields()) {
     if (Storage || !bitsetPinned(S, SM, F, true) || F->getName() != "__first_" || F->isBitField())
@@ -47220,6 +47292,91 @@ std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
 std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
+  const auto *Callee = Call ? Call->getDirectCallee() : nullptr;
+  if (Callee && Callee->isOverloadedOperator() && !Callee->isVariadic() &&
+      bitsetPinnedFunction(S, SM, Callee) && bitsetSourceGraph(S, SM, Callee) &&
+      S.owns(SM, Call->getExprLoc())) {
+    const auto Kind = Callee->getOverloadedOperator();
+    if (const auto *Method = dyn_cast<CXXMethodDecl>(Callee)) {
+      const auto Info = approvedUtilityBitsetRecord(S, SM, Method->getParent(), Context);
+      if (!Info || Method->isStatic()) return std::nullopt;
+      const auto Owner = Context.getRecordType(Info->Record);
+      const Expr *Receiver = nullptr;unsigned Offset = 0;
+      if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+        if (!S.owns(SM, Operator->getOperatorLoc()) ||
+            Operator->getNumArgs() != Method->getNumParams() + 1) return std::nullopt;
+        Receiver = Operator->getArg(0);Offset = 1;
+      } else if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
+        if (!directMethodReference(Call) || !S.owns(SM, directMethodReference(Call)->getExprLoc()) ||
+            Call->getNumArgs() != Method->getNumParams()) return std::nullopt;
+        Receiver = Member->getImplicitObjectArgument();
+      } else return std::nullopt;
+      if (Method->getNumParams() == 1 && Context.hasSameType(
+          Method->getParamDecl(0)->getType(), Context.getSizeType())) {
+        if (Method->isConst() && Context.hasSameType(Method->getReturnType(), Owner)) {
+          if (Kind == OO_LessLess) return UtilityBitsetCall{UtilityOperation::BitsetShiftLeft, 0, Receiver, Offset, Info->Record};
+          if (Kind == OO_GreaterGreater) return UtilityBitsetCall{UtilityOperation::BitsetShiftRight, 0, Receiver, Offset, Info->Record};
+        }
+        if (!Method->isConst() && Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Owner))) {
+          if (Kind == OO_LessLessEqual) return UtilityBitsetCall{UtilityOperation::BitsetShiftLeftAssign, 0, Receiver, Offset, Info->Record};
+          if (Kind == OO_GreaterGreaterEqual) return UtilityBitsetCall{UtilityOperation::BitsetShiftRightAssign, 0, Receiver, Offset, Info->Record};
+        }
+      }
+      if (Kind == OO_Tilde && Method->isConst() && Method->getNumParams() == 0 &&
+          Context.hasSameType(Method->getReturnType(), Owner))
+        return UtilityBitsetCall{UtilityOperation::BitsetNot, 0, Receiver, Offset, Info->Record};
+      if (Method->getNumParams() == 1 && Context.hasSameType(
+          Method->getParamDecl(0)->getType(), Context.getLValueReferenceType(Owner.withConst()))) {
+        if (Method->isConst() && Context.hasSameType(Method->getReturnType(), Context.BoolTy)) {
+          if (Kind == OO_EqualEqual) return UtilityBitsetCall{UtilityOperation::BitsetEqual, 0, Receiver, Offset, Info->Record};
+          if (Kind == OO_ExclaimEqual) return UtilityBitsetCall{UtilityOperation::BitsetNotEqual, 0, Receiver, Offset, Info->Record};
+        }
+        if (!Method->isConst() && Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Owner))) {
+          if (Kind == OO_AmpEqual) return UtilityBitsetCall{UtilityOperation::BitsetAndAssign, 0, Receiver, Offset, Info->Record};
+          if (Kind == OO_PipeEqual) return UtilityBitsetCall{UtilityOperation::BitsetOrAssign, 0, Receiver, Offset, Info->Record};
+          if (Kind == OO_CaretEqual) return UtilityBitsetCall{UtilityOperation::BitsetXorAssign, 0, Receiver, Offset, Info->Record};
+        }
+      }
+    } else if (Callee->getNumParams() == 2 && Call->getNumArgs() == 2 &&
+               (Kind == OO_Amp || Kind == OO_Pipe || Kind == OO_Caret)) {
+      const auto *OwnerDecl = Callee->getReturnType()->getAsCXXRecordDecl();
+      const auto Info = approvedUtilityBitsetRecord(S, SM, OwnerDecl, Context);
+      if (!Info) return std::nullopt;
+      const auto Owner = Context.getRecordType(Info->Record);
+      const auto Parameter = Context.getLValueReferenceType(Owner.withConst());
+      if (!Context.hasSameType(Callee->getReturnType(), Owner) ||
+          !Context.hasSameType(Callee->getParamDecl(0)->getType(), Parameter) ||
+          !Context.hasSameType(Callee->getParamDecl(1)->getType(), Parameter)) return std::nullopt;
+      const auto Operation = Kind == OO_Amp ? UtilityOperation::BitsetAnd :
+          Kind == OO_Pipe ? UtilityOperation::BitsetOr : UtilityOperation::BitsetXor;
+      return UtilityBitsetCall{Operation, 0, Call->getArg(0), 1, Info->Record};
+    }
+  }
+  const auto *Selected = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  if (Selected && !Selected->isStatic() && !Selected->isVariadic() &&
+      Selected->isImplicit() && Selected->isDefaulted() && Selected->isTrivial() &&
+      (Selected->isCopyAssignmentOperator() || Selected->isMoveAssignmentOperator()) &&
+      Selected->getNumParams() == 1 && bitsetPinnedFunction(S, SM, Selected) &&
+      bitsetSourceGraph(S, SM, Selected) && S.owns(SM, Call->getExprLoc())) {
+    const auto Info = approvedUtilityBitsetRecord(S, SM, Selected->getParent(), Context);
+    if (!Info) return std::nullopt;
+    const auto Owner = Context.getRecordType(Info->Record);
+    const auto Parameter = Selected->getParamDecl(0)->getType();
+    if (!Context.hasSameType(Selected->getReturnType(), Context.getLValueReferenceType(Owner)) ||
+        (!Context.hasSameType(Parameter, Context.getLValueReferenceType(Owner.withConst())) &&
+         !Context.hasSameType(Parameter, Context.getRValueReferenceType(Owner)))) return std::nullopt;
+    if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+      if (Operator->getOperator() == OO_Equal && Operator->getNumArgs() == 2 &&
+          S.owns(SM, Operator->getOperatorLoc()))
+        return UtilityBitsetCall{UtilityOperation::BitsetAssign, 0, Operator->getArg(0), 1};
+      return std::nullopt;
+    }
+    if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+        Member && Member->getNumArgs() == 1 && directMethodReference(Call) &&
+        S.owns(SM, directMethodReference(Call)->getExprLoc()))
+      return UtilityBitsetCall{UtilityOperation::BitsetAssign, 0, Member->getImplicitObjectArgument(), 0};
+    return std::nullopt;
+  }
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *M = Member ? Member->getMethodDecl() : nullptr;
   const auto Info = M ? approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) : std::nullopt;
@@ -47231,7 +47388,20 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
       return UtilityBitsetCall{UtilityOperation::BitsetCount, 0};
     if (Name == "any" && Context.hasSameType(M->getReturnType(), Context.BoolTy))
       return UtilityBitsetCall{UtilityOperation::BitsetAny, 0};
+    if (Name == "size" && Context.hasSameType(M->getReturnType(), Context.getSizeType()))
+      return UtilityBitsetCall{UtilityOperation::BitsetSize, 0};
+    if (Name == "none" && Context.hasSameType(M->getReturnType(), Context.BoolTy))
+      return UtilityBitsetCall{UtilityOperation::BitsetNone, 0};
+    if (Name == "all" && Context.hasSameType(M->getReturnType(), Context.BoolTy))
+      return UtilityBitsetCall{UtilityOperation::BitsetAll, 0};
     return std::nullopt;
+  }
+  if (!M->isConst() && M->getNumParams() == 0 && Call->getNumArgs() == 0 &&
+      M->getReturnType()->isLValueReferenceType() &&
+      Context.hasSameType(M->getReturnType()->getPointeeType(), Context.getRecordType(Info->Record))) {
+    if (Name == "set") return UtilityBitsetCall{UtilityOperation::BitsetSetAll, 0};
+    if (Name == "reset") return UtilityBitsetCall{UtilityOperation::BitsetResetAll, 0};
+    if (Name == "flip") return UtilityBitsetCall{UtilityOperation::BitsetFlipAll, 0};
   }
   if (M->getNumParams() == 0 || Call->getNumArgs() == 0 ||
       !Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) return std::nullopt;
