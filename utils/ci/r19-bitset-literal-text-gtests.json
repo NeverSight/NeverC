@@ -1,0 +1,266 @@
+{
+  "positive_cases": [
+    {
+      "name": "bitset-literal-text-default-and-truncation",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextDefaultAndTruncationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "666405632b8b54195ce7bb355a358ca079cb4b3e9c79c61a3afea5d665a67355",
+      "original_case_source_sha256": "666405632b8b54195ce7bb355a358ca079cb4b3e9c79c61a3afea5d665a67355",
+      "gtest_body_sha256": "67fca878220e7d0ea30bc968bbde86cf4590138f77eb15a45e70746f8e5cf184"
+    },
+    {
+      "name": "bitset-literal-text-cross-word",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextCrossWordRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ce3d6a138ba9f03f3f9dab9ab482cdf3a0b36e603b2f67e6eb00d97683ee59f2",
+      "original_case_source_sha256": "ce3d6a138ba9f03f3f9dab9ab482cdf3a0b36e603b2f67e6eb00d97683ee59f2",
+      "gtest_body_sha256": "93ee6254f9ffed5871698cc091498884596de680e24bbfa8ea5aa5246173a7c3"
+    },
+    {
+      "name": "bitset-literal-text-bounded-length-and-nul",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextBoundedLengthAndNulRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cb27f4018620c50dcba902b7b29570fa0a9e8b7b9a26c7dbd86925b2bdcd1fa8",
+      "original_case_source_sha256": "cb27f4018620c50dcba902b7b29570fa0a9e8b7b9a26c7dbd86925b2bdcd1fa8",
+      "gtest_body_sha256": "cc8788ee4baf58d0d713524542c743c5e0aea844667ce5be9ee6e369fa572527"
+    },
+    {
+      "name": "bitset-literal-text-custom-characters",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextCustomCharactersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6c0f76ed7651c50ca1675ee33ac0168ac74f15525b0ae2624576232109d088f5",
+      "original_case_source_sha256": "6c0f76ed7651c50ca1675ee33ac0168ac74f15525b0ae2624576232109d088f5",
+      "gtest_body_sha256": "48081a8564c21e1c8fa7090f41654dd7272bff5d1cd32eaf9f8bc56568351a7b"
+    },
+    {
+      "name": "bitset-literal-text-equal-characters",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextEqualCharactersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4057c304d8a624db21a6474122ef8c0437567b943ebe31787dfa508da9d7ac71",
+      "original_case_source_sha256": "4057c304d8a624db21a6474122ef8c0437567b943ebe31787dfa508da9d7ac71",
+      "gtest_body_sha256": "4df96eb8b8ec46632ea20d7bc8c45e7dbb47834eb8cc793a9e5ad71c10fc0c90"
+    },
+    {
+      "name": "bitset-literal-text-empty-input-and-result",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextEmptyInputAndResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c1b26dad0afde935e09195ba2a2abd92cd00a2035b8994f468598ca8859fb301",
+      "original_case_source_sha256": "c1b26dad0afde935e09195ba2a2abd92cd00a2035b8994f468598ca8859fb301",
+      "gtest_body_sha256": "53d68e52a64388a12e36108c1c742b44cf355a102ebdef2aca1514ba58419011"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "bitset-literal-text-invalid-digit",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextInvalidDigitRejected",
+      "expected": "reject",
+      "source_sha256": "f5e93d58ee0412d47b304a22f3a038cd2f5b202af9548d70a44ea1a49d863584",
+      "original_case_source_sha256": "f5e93d58ee0412d47b304a22f3a038cd2f5b202af9548d70a44ea1a49d863584",
+      "gtest_body_sha256": "1fa0b5b23c14cffa14a658da9932f08f609a3eb5c73ad48e264272175f920f5e"
+    },
+    {
+      "name": "bitset-literal-text-invalid-beyond-width",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextInvalidBeyondWidthRejected",
+      "expected": "reject",
+      "source_sha256": "0ef637e1b0493e51933c55416de3bcc9b624b470afe4099013d506855380f18f",
+      "original_case_source_sha256": "0ef637e1b0493e51933c55416de3bcc9b624b470afe4099013d506855380f18f",
+      "gtest_body_sha256": "3312cacbf0e124c11cba51c21c26a9c086c6e4da0cfc2edbea99ae32d05329e4"
+    },
+    {
+      "name": "bitset-literal-text-dynamic-pointer",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextDynamicPointerRejected",
+      "expected": "reject",
+      "source_sha256": "10e2ee6e44388cd77d8ef153097ed610ebef7dd0f9ea50416ccb05dc116907e8",
+      "original_case_source_sha256": "10e2ee6e44388cd77d8ef153097ed610ebef7dd0f9ea50416ccb05dc116907e8",
+      "gtest_body_sha256": "1bf5204a8e9914c0127c67c8002370fbf38b80808052a153cc9a384dfb90f2f4"
+    },
+    {
+      "name": "bitset-literal-text-dynamic-length",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextDynamicLengthRejected",
+      "expected": "reject",
+      "source_sha256": "a733c893d46d5d2e82d971f01be8ade3c0816bd625eb792ce11a39fa56a6ef61",
+      "original_case_source_sha256": "a733c893d46d5d2e82d971f01be8ade3c0816bd625eb792ce11a39fa56a6ef61",
+      "gtest_body_sha256": "9369408b239e589cad5e4ff10b7d2ca504277f3287fb0bfe2eb9e5ee7c77d3ca"
+    },
+    {
+      "name": "bitset-literal-text-dynamic-digit",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextDynamicDigitRejected",
+      "expected": "reject",
+      "source_sha256": "1d41f5ea7ced43b2c01f8d13b38f9a56491d5e9eee2f01e254e4b7f3a4804616",
+      "original_case_source_sha256": "1d41f5ea7ced43b2c01f8d13b38f9a56491d5e9eee2f01e254e4b7f3a4804616",
+      "gtest_body_sha256": "336f46f2381595d3ae184a2294aba13cd501d265c77078bf221e0deb19205fd8"
+    },
+    {
+      "name": "bitset-literal-text-wide-character",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextWideCharacterRejected",
+      "expected": "reject",
+      "source_sha256": "9367d5a5257e96c1e147e9316de195a0dbecdc83f29b7a8feb0315d85bb6fb3f",
+      "original_case_source_sha256": "9367d5a5257e96c1e147e9316de195a0dbecdc83f29b7a8feb0315d85bb6fb3f",
+      "gtest_body_sha256": "606e903f3331055099bb811d9bdbaf0a880e87d105beb080038149d735dcad33"
+    },
+    {
+      "name": "bitset-literal-text-owned-decoder",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextOwnedDecoderRejected",
+      "expected": "reject",
+      "source_sha256": "cffc635bbfb2253de1277d088e0a40651078781dc9abb7470d9e9f29754fe97d",
+      "original_case_source_sha256": "cffc635bbfb2253de1277d088e0a40651078781dc9abb7470d9e9f29754fe97d",
+      "gtest_body_sha256": "49060f6f1ce182ca5756d04328cb59747a9db469af88d530a1e3c2a47568d123"
+    },
+    {
+      "name": "bitset-literal-text-owned-length",
+      "formal_test_name": "TranslateTest.CoreV2BitsetLiteralTextOwnedLengthRejected",
+      "expected": "reject",
+      "source_sha256": "34f5ee6fbffa035f3a75530f0b223ea8f89bff1fc1582434b96aca192abf6e0b",
+      "original_case_source_sha256": "34f5ee6fbffa035f3a75530f0b223ea8f89bff1fc1582434b96aca192abf6e0b",
+      "gtest_body_sha256": "1ec7cf71cf5ee621616cc1115af991a51d27f4cdbaee88590d756bb4092173d1"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2BitsetLiteralTextDefaultAndTruncationRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetLiteralTextCrossWordRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetLiteralTextBoundedLengthAndNulRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetLiteralTextCustomCharactersRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetLiteralTextEqualCharactersRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetLiteralTextEmptyInputAndResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetLiteralTextInvalidDigitRejected",
+    "TranslateTest.CoreV2BitsetLiteralTextInvalidBeyondWidthRejected",
+    "TranslateTest.CoreV2BitsetLiteralTextDynamicPointerRejected",
+    "TranslateTest.CoreV2BitsetLiteralTextDynamicLengthRejected",
+    "TranslateTest.CoreV2BitsetLiteralTextDynamicDigitRejected",
+    "TranslateTest.CoreV2BitsetLiteralTextWideCharacterRejected",
+    "TranslateTest.CoreV2BitsetLiteralTextOwnedDecoderRejected",
+    "TranslateTest.CoreV2BitsetLiteralTextOwnedLengthRejected"
+  ],
+  "native_reference_authentication_sha256": "5c666540a1ceae8b48ab89065333eb41257c2dec530345ed9b04ceb21dd53963",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "56aba6a92971f96dfebc8f2917d49c68e87e20ff59c4d1c2675dab4c6745b567",
+  "maintained_original_sha256": "70b461dbfc9f87818344a56e52696bfc98d4a003d119eeb512e603a0a8b8b4c5",
+  "previous_registered_source_sha256": "db1c33c4535a2c3fe53012f3acf2ee6b9dfe700813b1c4c038d1ca0c9a0c7e23",
+  "previous_maintained_original_sha256": "8f1fa8e34a5758b14e300009995b640ac0f931e16bb0909fc207f88f97a70014",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7802,
+  "current_python_registry_tests": 106,
+  "previous7788_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "16ed565a75a50e0348a690524b2148322e1156da46805fa363cfaeea2d78ecdc",
+  "extractor_sha256": "54a9eff790eaefba11a6d80e215f025f3fa80e3883157d882c62de7fa5edd128",
+  "source_cases": [
+    {
+      "name": "bitset-literal-text-default-and-truncation",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){const std::bitset<3> a(\"1011\");\nreturn a.count()!=2||!a.test(0)||a.test(1)||!a.test(2);}\n",
+      "source_sha256": "666405632b8b54195ce7bb355a358ca079cb4b3e9c79c61a3afea5d665a67355",
+      "expected": "accept",
+      "kind": "bitset-literal-text-operations"
+    },
+    {
+      "name": "bitset-literal-text-cross-word",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<129> a(\"100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001\");\nreturn a.count()!=3||!a.test(0)||!a.test(64)||!a.test(128);}\n",
+      "source_sha256": "ce3d6a138ba9f03f3f9dab9ab482cdf3a0b36e603b2f67e6eb00d97683ee59f2",
+      "expected": "accept",
+      "kind": "bitset-literal-text-operations"
+    },
+    {
+      "name": "bitset-literal-text-bounded-length-and-nul",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){\nstd::bitset<16> a(\"101bad\",3);std::bitset<16> b(\"01\\0bad\",7);\nreturn a.count()!=2||!a.test(2)||!a.test(0)||b.count()!=1||!b.test(0);}\n",
+      "source_sha256": "cb27f4018620c50dcba902b7b29570fa0a9e8b7b9a26c7dbd86925b2bdcd1fa8",
+      "expected": "accept",
+      "kind": "bitset-literal-text-operations"
+    },
+    {
+      "name": "bitset-literal-text-custom-characters",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){\nstd::bitset<7> a(\"AABA\",4,'A','B');std::bitset<4> b(\"\\xff\\xfe\",2,'\\xfe','\\xff');\nreturn a.count()!=1||!a.test(1)||b.count()!=1||!b.test(1);}\n",
+      "source_sha256": "6c0f76ed7651c50ca1675ee33ac0168ac74f15525b0ae2624576232109d088f5",
+      "expected": "accept",
+      "kind": "bitset-literal-text-operations"
+    },
+    {
+      "name": "bitset-literal-text-equal-characters",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<5> a(\"xx\",2,'x','x');\nreturn a.count()!=2||!a.test(0)||!a.test(1)||a.test(2);}\n",
+      "source_sha256": "4057c304d8a624db21a6474122ef8c0437567b943ebe31787dfa508da9d7ac71",
+      "expected": "accept",
+      "kind": "bitset-literal-text-operations"
+    },
+    {
+      "name": "bitset-literal-text-empty-input-and-result",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<0> a(\"0101\");\nstd::bitset<65> b(\"\");std::bitset<4> c(\"invalid\",0);\nreturn a.any()||b.any()||c.any()||!a.all();}\n",
+      "source_sha256": "c1b26dad0afde935e09195ba2a2abd92cd00a2035b8994f468598ca8859fb301",
+      "expected": "accept",
+      "kind": "bitset-literal-text-operations"
+    },
+    {
+      "name": "bitset-literal-text-invalid-digit",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<8> a(\"10x\");return a.any();}\n",
+      "source_sha256": "f5e93d58ee0412d47b304a22f3a038cd2f5b202af9548d70a44ea1a49d863584",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-literal-text-invalid-beyond-width",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<1> a(\"1x\");return a.any();}\n",
+      "source_sha256": "0ef637e1b0493e51933c55416de3bcc9b624b470afe4099013d506855380f18f",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-literal-text-dynamic-pointer",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){const char* p=\"01\";std::bitset<8> a(p);return a.any();}\n",
+      "source_sha256": "10e2ee6e44388cd77d8ef153097ed610ebef7dd0f9ea50416ccb05dc116907e8",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-literal-text-dynamic-length",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::size_t n=2;std::bitset<8> a(\"01\",n);return a.any();}\n",
+      "source_sha256": "a733c893d46d5d2e82d971f01be8ade3c0816bd625eb792ce11a39fa56a6ef61",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-literal-text-dynamic-digit",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){char digit='x';std::bitset<8> a(\"ox\",2,'o',digit);return a.any();}\n",
+      "source_sha256": "1d41f5ea7ced43b2c01f8d13b38f9a56491d5e9eee2f01e254e4b7f3a4804616",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-literal-text-wide-character",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<8> a(u\"01\");return a.any();}\n",
+      "source_sha256": "9367d5a5257e96c1e147e9316de195a0dbecdc83f29b7a8feb0315d85bb6fb3f",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-literal-text-owned-decoder",
+      "public_header": "bitset",
+      "source": "#define __init_from_string_view nct_foreign_text_init\n#include <bitset>\n#undef __init_from_string_view\nint main(){std::bitset<8> a(\"01\");return a.any();}\n",
+      "source_sha256": "cffc635bbfb2253de1277d088e0a40651078781dc9abb7470d9e9f29754fe97d",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-literal-text-owned-length",
+      "public_header": "bitset",
+      "source": "#define __constexpr_strlen nct_foreign_text_length\n#include <bitset>\n#undef __constexpr_strlen\nint main(){std::bitset<8> a(\"1010\");return a.any();}\n",
+      "source_sha256": "34f5ee6fbffa035f3a75530f0b223ea8f89bff1fc1582434b96aca192abf6e0b",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_sha256": "290dac2a2cfe859d093563d25ae10fd36109f776d439c0991ad0a5d38fda4f54"
+}
