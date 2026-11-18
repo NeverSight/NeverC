@@ -47433,6 +47433,62 @@ std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
   return UtilityBitsetRecord{R, Base, Storage, Bits, Words};
 }
 
+std::optional<UtilityBitsetProxyRecord> approvedUtilityBitsetProxyRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    const ASTContext &Context) {
+  const auto *Spec = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input);
+  const auto *Template = Spec ? Spec->getSpecializedTemplate() : nullptr;
+  if (!Template || !S.coreV2() || Context.getCharWidth() != 8 ||
+      Context.getTypeSize(Context.getSizeType()) != 64 ||
+      Context.getTypeSize(Context.VoidPtrTy) != 64 ||
+      !bitsetStandardNamespace(Template->getDeclContext()))
+    return std::nullopt;
+  const bool ReadOnly = Template->getName() == "__bit_const_reference";
+  if (!ReadOnly && Template->getName() != "__bit_reference") return std::nullopt;
+  constexpr llvm::StringLiteral Header = "__bit_reference";
+  const auto &Arguments = Spec->getTemplateArgs();
+  const auto *Record = Spec->getDefinition();
+  if (!Record || Record->isInvalidDecl() || Record->isDependentContext() ||
+      Record->isUnion() || Record->getNumBases() || Record->getNumVBases() ||
+      Record->isPolymorphic() || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialDestructor() ||
+      Spec->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Arguments.size() != (ReadOnly ? 1u : 2u) ||
+      Arguments[0].getKind() != TemplateArgument::Type ||
+      (!ReadOnly && !bitsetIntegral(Arguments[1], 1)))
+    return std::nullopt;
+  const auto *Base = bitsetSpecialization(S, SM,
+      Arguments[0].getAsType()->getAsCXXRecordDecl(), "__bitset");
+  if (!Base || Base->getTemplateArgs().size() != 2) return std::nullopt;
+  const auto &Size = Base->getTemplateArgs()[1];
+  if (Size.getKind() != TemplateArgument::Integral || Size.getAsIntegral().isNegative() ||
+      Size.getAsIntegral().getActiveBits() > 64) return std::nullopt;
+  const uint64_t Bits = Size.getAsIntegral().getZExtValue();
+  if (!Bits || Bits > UINT64_MAX - 63 ||
+      !bitsetIntegral(Base->getTemplateArgs()[0], (Bits + 63) / 64)) return std::nullopt;
+  for (const auto *D : Template->redecls())
+    if (!bitsetPinnedHeader(S, SM, D, Header) ||
+        !bitsetPinnedHeader(S, SM, D->getTemplatedDecl(), Header)) return std::nullopt;
+  for (const auto *D : Spec->redecls())
+    if (!bitsetPinnedHeader(S, SM, D, Header)) return std::nullopt;
+  auto F = Record->field_begin();
+  if (F == Record->field_end()) return std::nullopt;
+  const auto *Word = *F++;
+  if (F == Record->field_end()) return std::nullopt;
+  const auto *Mask = *F++;
+  const auto Storage = Context.getSizeType();
+  if (F != Record->field_end() || Word->getName() != "__seg_" || Mask->getName() != "__mask_" ||
+      Word->isBitField() || Mask->isBitField() ||
+      !bitsetPinnedHeader(S, SM, Word, Header) || !bitsetPinnedHeader(S, SM, Mask, Header) ||
+      !Context.hasSameType(Word->getType(), Context.getPointerType(ReadOnly ? Storage.withConst() : Storage)) ||
+      !Context.hasSameType(Mask->getType(), Storage)) return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(Record);
+  if (Layout.getSize().getQuantity() != 16 || Layout.getAlignment().getQuantity() != 8 ||
+      Layout.getFieldOffset(0) != 0 || Layout.getFieldOffset(1) != 64)
+    return std::nullopt;
+  return UtilityBitsetProxyRecord{Record, Base, Word, Mask, ReadOnly};
+}
+
 std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *C,
     const ASTContext &Context) {
@@ -47440,7 +47496,15 @@ std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
       C->getConstructionKind() != CXXConstructionKind::Complete) return std::nullopt;
   const auto *M = C->getConstructor();
   const auto Info = M ? approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) : std::nullopt;
-  if (!Info || !bitsetPinnedFunction(S, SM, M) || !bitsetSourceGraph(S, SM, M)) return std::nullopt;
+  if (!Info) {
+    const auto Proxy = M ? approvedUtilityBitsetProxyRecord(S, SM, M->getParent(), Context) : std::nullopt;
+    if (Proxy && M->isCopyConstructor() && M->isTrivial() && !M->isDeleted() &&
+        C->getNumArgs() == 1 && bitsetPinnedHeader(S, SM, M, "__bit_reference") &&
+        bitsetPinnedFunction(S, SM, M) && bitsetSourceGraph(S, SM, M))
+      return UtilityBitsetConstruction::Copy;
+    return std::nullopt;
+  }
+  if (!bitsetPinnedFunction(S, SM, M) || !bitsetSourceGraph(S, SM, M)) return std::nullopt;
   if ((M->isCopyConstructor() || M->isMoveConstructor()) && M->isImplicit() && M->isTrivial() &&
       C->getNumArgs() == 1) return UtilityBitsetConstruction::Copy;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(M->getBody());
@@ -47460,9 +47524,99 @@ std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
   return std::nullopt;
 }
 
+static std::optional<UtilityBitsetCall> bitsetProxyCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!F || F->isVariadic()) return std::nullopt;
+  const auto *Conversion = dyn_cast<CXXConversionDecl>(F);
+  if (!Conversion && !S.owns(SM, Call->getExprLoc())) return std::nullopt;
+  auto Origin = [&, F](llvm::StringRef Header) {
+    return bitsetPinnedHeader(S, SM, F, Header) &&
+        bitsetPinnedFunction(S, SM, F) && bitsetSourceGraph(S, SM, F);
+  };
+  auto Proxy = [&](QualType T) {
+    return approvedUtilityBitsetProxyRecord(S, SM, T->getAsCXXRecordDecl(), Context);
+  };
+  const auto *M = dyn_cast<CXXMethodDecl>(F);
+  if (!M) {
+    if (!F->getIdentifier() || F->getName() != "swap" ||
+        F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !bitsetStandardNamespace(F->getDeclContext()) || F->getNumParams() != 2 ||
+        Call->getNumArgs() != 2 || !Context.hasSameType(F->getReturnType(), Context.VoidTy))
+      return std::nullopt;
+    const auto Left = Proxy(F->getParamDecl(0)->getType());
+    const auto Right = Proxy(F->getParamDecl(1)->getType());
+    if (Left && Right && !Left->ReadOnly && !Right->ReadOnly && Origin("__bit_reference"))
+      return UtilityBitsetCall{UtilityOperation::BitsetProxySwap};
+    return std::nullopt;
+  }
+  if (M->isStatic() || M->isVolatile() || M->getRefQualifier() != RQ_None) return std::nullopt;
+  const Expr *Receiver = nullptr;
+  unsigned Offset = 0;
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+    if (Operator->getNumArgs() != M->getNumParams() + 1 ||
+        !S.owns(SM, Operator->getOperatorLoc())) return std::nullopt;
+    Receiver = Operator->getArg(0);
+    Offset = 1;
+  } else if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
+    const auto *Reference = directMethodReference(Call);
+    Receiver = Member->getImplicitObjectArgument();
+    if (Call->getNumArgs() != M->getNumParams() || !Reference || !Receiver)
+      return std::nullopt;
+    // Sema can synthesize the member spelling for a user-defined conversion.
+    const auto Use = Conversion ? Receiver->IgnoreParenImpCasts()->getExprLoc()
+                                : Reference->getExprLoc();
+    if (!S.owns(SM, Use)) return std::nullopt;
+  }
+  if (!Receiver) return std::nullopt;
+  const auto Kind = M->getOverloadedOperator();
+  if (Kind == OO_Subscript && M->getNumParams() == 1 &&
+      Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) {
+    const auto Owner = approvedUtilityBitsetRecord(S, SM, M->getParent(), Context);
+    if (!Owner || !Owner->Words) return std::nullopt;
+    const auto Parameter = Call->getArg(Offset);
+    if (const auto *Literal = dyn_cast<IntegerLiteral>(Parameter->IgnoreParenImpCasts());
+        Literal && (Literal->getValue().getActiveBits() > 64 ||
+                    Literal->getValue().getZExtValue() >= Owner->Bits)) return std::nullopt;
+    const auto Carrier = Proxy(M->getReturnType());
+    if (Carrier && Carrier->ReadOnly == M->isConst() &&
+        Carrier->Base->getCanonicalDecl() == Owner->Base->getCanonicalDecl() && Origin("bitset"))
+      return UtilityBitsetCall{UtilityOperation::BitsetProxySubscript, 0, Receiver, Offset, Owner->Record};
+    if (M->isConst() && Context.hasSameType(M->getReturnType(), Context.BoolTy) && Origin("bitset"))
+      return UtilityBitsetCall{UtilityOperation::BitsetConstSubscript, 0, Receiver, Offset, Owner->Record};
+    return std::nullopt;
+  }
+  const auto Info = approvedUtilityBitsetProxyRecord(S, SM, M->getParent(), Context);
+  if (!Info || !Origin("__bit_reference")) return std::nullopt;
+  auto Result = [&](UtilityOperation Operation) -> std::optional<UtilityBitsetCall> {
+    return UtilityBitsetCall{Operation, 0, Receiver, Offset, Info->Record};
+  };
+  if (M->isConst() && M->getNumParams() == 0 &&
+      Context.hasSameType(M->getReturnType(), Context.BoolTy)) {
+    if (Conversion && Context.hasSameType(Conversion->getConversionType(), Context.BoolTy))
+      return Result(UtilityOperation::BitsetProxyRead);
+    if (!Info->ReadOnly && Kind == OO_Tilde) return Result(UtilityOperation::BitsetProxyNot);
+  }
+  if (Info->ReadOnly || M->isConst()) return std::nullopt;
+  if (M->getIdentifier() && M->getName() == "flip" && M->getNumParams() == 0 &&
+      Context.hasSameType(M->getReturnType(), Context.VoidTy))
+    return Result(UtilityOperation::BitsetProxyFlip);
+  if (Kind == OO_Equal && M->getNumParams() == 1) {
+    const auto T = Context.getRecordType(Info->Record);
+    if (!Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(T)))
+      return std::nullopt;
+    const auto Parameter = M->getParamDecl(0)->getType();
+    if (Context.hasSameType(Parameter, Context.BoolTy)) return Result(UtilityOperation::BitsetProxySet);
+    if (Context.hasSameType(Parameter, Context.getLValueReferenceType(T.withConst())))
+      return Result(UtilityOperation::BitsetProxyCopyValue);
+  }
+  return std::nullopt;
+}
+
 std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
+  if (auto Proxy = bitsetProxyCall(S, SM, Call, Context)) return Proxy;
   const auto *Callee = Call ? Call->getDirectCallee() : nullptr;
   if (Callee && Callee->isOverloadedOperator() && !Callee->isVariadic() &&
       bitsetPinnedFunction(S, SM, Callee) && bitsetSourceGraph(S, SM, Callee) &&

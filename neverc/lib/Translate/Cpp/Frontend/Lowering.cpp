@@ -26142,6 +26142,108 @@ class FunctionLowering {
                        ReadOnly ? "cptr:u64" : "ptr:u64", L);
     return index(std::move(Words), std::move(Position), "u64", L);
   }
+  Expression utilityBitsetProxyOperation(const CallExpr *Call,
+                                         UtilityOperation Operation,
+                                         std::optional<Expression> Destination) {
+    const auto L = Call->getExprLoc();
+    const auto &Context = A.Context;
+    const auto Proof = approvedUtilityBitsetCall(A.S, A.Sources, Call, Context);
+    if (!Proof || Proof->Operation != Operation)
+      reject(L, "bitset proxy", "The exact authenticated bitset proxy operation is required.");
+    const auto *F = Call->getDirectCallee();
+    auto Describe = [&](QualType T) {
+      const auto Info = approvedUtilityBitsetProxyRecord(A.S, A.Sources,
+          T->getAsCXXRecordDecl(), Context);
+      if (!Info)
+        reject(L, "bitset proxy storage", "The authenticated word pointer and mask are required.");
+      return *Info;
+    };
+    auto Read = [&](Expression Proxy, const UtilityBitsetProxyRecord &Info) {
+      auto Word = dereference(fieldStorage(Proxy, Info.Word, L), L);
+      auto Mask = fieldStorage(Proxy, Info.Mask, L);
+      return binary("!=", binary("&", Word, Mask, "u64", L),
+                    quantity(0, "u64", L), "bool", L);
+    };
+    auto Write = [&](Expression Word, Expression Mask, Expression Value) {
+      const auto Set = labelName(), Clear = labelName(), Done = labelName();
+      branch(Value, Set, Clear, L);
+      label(Set, L);
+      assign(Word, binary("|", Word, Mask, "u64", L), L);
+      jump(Done, L);
+      label(Clear, L);
+      auto Keep = binary("^", Mask, quantity(UINT64_MAX, "u64", L), "u64", L);
+      assign(Word, binary("&", Word, Keep, "u64", L), L);
+      jump(Done, L);
+      label(Done, L);
+    };
+    if (Operation == UtilityOperation::BitsetProxySwap) {
+      // By-value record arguments point to their caller-owned copies.
+      auto Left = dereference(argument(Call->getArg(0), F->getParamDecl(0)->getType()), L);
+      auto Right = dereference(argument(Call->getArg(1), F->getParamDecl(1)->getType()), L);
+      const auto LInfo = Describe(F->getParamDecl(0)->getType());
+      const auto RInfo = Describe(F->getParamDecl(1)->getType());
+      auto Saved = snapshot(Read(Left, LInfo), L);
+      auto Value = snapshot(Read(Right, RInfo), L);
+      Write(dereference(fieldStorage(Left, LInfo.Word, L), L),
+            fieldStorage(Left, LInfo.Mask, L), Value);
+      Write(dereference(fieldStorage(Right, RInfo.Word, L), L),
+            fieldStorage(Right, RInfo.Mask, L), Saved);
+      return {};
+    }
+    const auto *M = llvm::cast<CXXMethodDecl>(F);
+    const auto *Receiver = Proof->Receiver;
+    auto CaptureReceiver = [&] {
+      return snapshot(Receiver->getType()->isPointerType() ? expression(Receiver)
+          : address(lvalue(Receiver), Receiver->getType(), L), L);
+    };
+    if (Operation == UtilityOperation::BitsetProxySubscript ||
+        Operation == UtilityOperation::BitsetConstSubscript) {
+      const auto Owner = approvedUtilityBitsetRecord(A.S, A.Sources, Proof->Record, Context);
+      if (!Owner || !Owner->Words)
+        reject(L, "bitset subscript storage", "The authenticated nonempty word layout is required.");
+      auto Self = CaptureReceiver();
+      auto Bit = snapshot(argument(Call->getArg(Proof->ArgumentOffset),
+                                    M->getParamDecl(0)->getType()), L);
+      auto Position = binary("/", Bit, quantity(64, "u64", L), "u64", L);
+      auto Mask = binary("<<", quantity(1, "u64", L),
+          binary("%", Bit, quantity(64, "u64", L), "u64", L), "u64", L);
+      auto Word = bitsetWord(dereference(Self, L), *Owner, Position, L, M->isConst());
+      if (Operation == UtilityOperation::BitsetConstSubscript)
+        return binary("!=", binary("&", Word, Mask, "u64", L),
+                      quantity(0, "u64", L), "bool", L);
+      const auto Carrier = Describe(Call->getType());
+      auto Result = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      const auto Element = Carrier.Word->getType()->getPointeeType();
+      assign(fieldStorage(Result, Carrier.Word, L), address(Word, Element, L), L);
+      assign(fieldStorage(Result, Carrier.Mask, L), Mask, L);
+      return Result;
+    }
+    const auto Info = Describe(Context.getRecordType(Proof->Record));
+    const bool Assignment = Operation == UtilityOperation::BitsetProxySet ||
+                            Operation == UtilityOperation::BitsetProxyCopyValue;
+    const bool RightFirst = Assignment && isa<CXXOperatorCallExpr>(Call);
+    std::optional<Expression> Self;
+    if (!RightFirst) Self = CaptureReceiver();
+    std::optional<Expression> Right;
+    if (Assignment)
+      Right = snapshot(argument(Call->getArg(Proof->ArgumentOffset), M->getParamDecl(0)->getType()), L);
+    if (RightFirst) Self = CaptureReceiver();
+    auto Place = dereference(*Self, L);
+    if (Operation == UtilityOperation::BitsetProxyRead) return Read(Place, Info);
+    if (Operation == UtilityOperation::BitsetProxyNot)
+      return binary("==", Read(Place, Info), boolean(false, L), "bool", L);
+    auto Word = dereference(fieldStorage(Place, Info.Word, L), L);
+    auto Mask = fieldStorage(Place, Info.Mask, L);
+    if (Operation == UtilityOperation::BitsetProxyFlip) {
+      assign(Word, binary("^", Word, Mask, "u64", L), L);
+      return {};
+    }
+    auto Value = Operation == UtilityOperation::BitsetProxyCopyValue
+        ? snapshot(Read(dereference(*Right, L), Info), L) : *Right;
+    Write(Word, Mask, Value);
+    return Place;
+  }
+
   Expression utilityBitsetShiftOperation(const CallExpr *Call, UtilityOperation Operation) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
@@ -28882,6 +28984,9 @@ class FunctionLowering {
       return Result;
     }
     if (Operation == UtilityOperation::ValarrayScalar) return utilityValarrayScalarOperation(Call);
+    if (Operation >= UtilityOperation::BitsetProxySubscript &&
+        Operation <= UtilityOperation::BitsetProxySwap)
+      return utilityBitsetProxyOperation(Call, Operation, std::move(Destination));
     if (Operation == UtilityOperation::BitsetShiftLeft || Operation == UtilityOperation::BitsetShiftRight ||
         Operation == UtilityOperation::BitsetShiftLeftAssign || Operation == UtilityOperation::BitsetShiftRightAssign) {
       auto Result = utilityBitsetShiftOperation(Call, Operation);
@@ -38183,12 +38288,12 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
     if (auto Kind = approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context)) {
-      const auto Info = approvedUtilityBitsetRecord(A.S, A.Sources,
-          T->getAsCXXRecordDecl(), A.Context);
-      if (!Info) reject(L, "bitset construction", "The authenticated word storage is unavailable.");
       if (*Kind == UtilityBitsetConstruction::Copy) {
         assign(Place, expression(C->getArg(0)), L);
       } else {
+        const auto Info = approvedUtilityBitsetRecord(A.S, A.Sources,
+            T->getAsCXXRecordDecl(), A.Context);
+        if (!Info) reject(L, "bitset construction", "The authenticated word storage is unavailable.");
         initializeZero(bitsetStorage(Place, *Info, L), bitsetArrayType(*Info), L);
         if (*Kind == UtilityBitsetConstruction::UnsignedValue) {
           auto Value = snapshot(cast(argument(C->getArg(0), A.Context.UnsignedLongLongTy), "u64", L), L);

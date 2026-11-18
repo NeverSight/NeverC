@@ -13863,6 +13863,12 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityUnorderedMapRecord(S, Sources, D, Context) &&
                  !requireUtilityUnorderedMap(D, L, Depth + 1)) {
         return {};
+      } else if (const auto Proxy = approvedUtilityBitsetProxyRecord(S, Sources, D, Context)) {
+        if (RequiredUtilityBitsetProxies.insert(Proxy->Record->getCanonicalDecl()).second) {
+          for (const auto *Field : Proxy->Record->fields())
+            if (type(Field->getType(), L, false, Depth + 1).empty()) return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(Proxy->Record));
+        }
       } else if (approvedUtilityBitsetRecord(S, Sources, D, Context) &&
                  !requireUtilityBitset(D, L, Depth + 1)) {
         return {};
