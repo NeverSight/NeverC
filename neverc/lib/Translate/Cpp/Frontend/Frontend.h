@@ -1297,6 +1297,7 @@ enum class UtilityOperation {
   StringFindLastNotOf,
   StringViewSize,
   BitsetCount, BitsetAny, BitsetTest, BitsetSet, BitsetReset, BitsetFlip,
+  BitsetSize, BitsetNone, BitsetAll, BitsetSetAll, BitsetResetAll, BitsetFlipAll, BitsetAssign,
   ForwardList,
   List,
   PriorityQueue,
@@ -3668,6 +3669,8 @@ enum class UtilityBitsetConstruction { Default, UnsignedValue, Copy };
 struct UtilityBitsetCall {
   UtilityOperation Operation;
   uint64_t Position = 0;
+  const clang::Expr *Receiver = nullptr;
+  unsigned ArgumentOffset = 0;
 };
 std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
     const State &S, const clang::SourceManager &SM,
