@@ -494,11 +494,10 @@ NEVERC_HOT void FunctionEmitter::genIfStmt(const IfStmt &S) {
       std::swap(Executed, Skipped);
 
     if (!containsLabel(Skipped)) {
-      if (CondConstant)
-        if (Executed) {
-          RunCleanupsScope ExecutedScope(*this);
-          genStmt(Executed);
-        }
+      if (Executed) {
+        RunCleanupsScope ExecutedScope(*this);
+        genStmt(Executed);
+      }
       return;
     }
   }
