@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.deque_positional_emplace_registered = cls.registered
+        cls.deque_positional_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.deque_positional_emplace_original = cls.adapter.restore_original_gtests(cls.deque_positional_emplace_registered,cls.deque_positional_emplace_suffix)
+        cls.registered = cls.adapter.restore_deque_positional_emplace_history(cls.deque_positional_emplace_registered)
         cls.deque_range_insert_registered = cls.registered
         cls.deque_range_insert_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.deque_range_insert_original = cls.adapter.restore_original_gtests(cls.deque_range_insert_registered,cls.deque_range_insert_suffix)
@@ -1341,6 +1345,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.deque_range_insert_registered,self.deque_range_insert_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.deque_range_insert_original+b' ',['TranslateTest.CoreV2DequeRangeInsertBasicRunAtBothOptimizations'])
+
+    def test_deque_positional_emplace_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.deque_positional_emplace_original+self.deque_positional_emplace_suffix,self.deque_positional_emplace_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.deque_positional_emplace_original,self.deque_positional_emplace_suffix),self.deque_positional_emplace_original)
+        self.assertEqual(self.adapter.restore_deque_positional_emplace_history(self.deque_positional_emplace_registered),self.deque_range_insert_registered)
+        self.assertEqual(self.adapter.restore_deque_positional_emplace_history(self.deque_positional_emplace_original),self.deque_range_insert_original)
+        selected = ['TranslateTest.CoreV2DequePositionalEmplaceSingleRunAtBothOptimizations', 'TranslateTest.CoreV2DequePositionalEmplaceFrontGrowthRunAtBothOptimizations', 'TranslateTest.CoreV2DequePositionalEmplaceBackGrowthRunAtBothOptimizations', 'TranslateTest.CoreV2DequePositionalEmplaceAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2DequePositionalEmplaceAllocationEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2DequePositionalEmplaceCallSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2DequePositionalEmplaceOwnedZeroEmptyBodyRejected', 'TranslateTest.CoreV2DequePositionalEmplaceOwnedZeroForwardingBodyRejected', 'TranslateTest.CoreV2DequePositionalEmplaceOwnedLvalueEmptyBodyRejected', 'TranslateTest.CoreV2DequePositionalEmplaceOwnedRvalueForwardingBodyRejected']
+        generated,proof = self.extractor.extract(self.deque_positional_emplace_original,selected)
+        self.assertEqual(proof['original_test_names'],7732)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7722)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19dqposemplace',generated)
+        self.assertIn(b'deque-positional-emplace-',generated)
+        self.assertIn(b'emplace(',generated)
+
+    def test_deque_positional_emplace_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.deque_positional_emplace_registered+b' ',
+                        self.deque_positional_emplace_registered.replace(b'r19dqposemplace',b'q.push(11)',1),
+                        self.deque_positional_emplace_registered+self.deque_positional_emplace_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.deque_positional_emplace_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_deque_positional_emplace_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.deque_positional_emplace_registered,self.deque_positional_emplace_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.deque_positional_emplace_original+b' ',['TranslateTest.CoreV2DequePositionalEmplaceSingleRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
