@@ -188,6 +188,8 @@
       "kind": "source-body-guard"
     }
   ],
-  "source48_authentication_sha256": "654af2bea23579435deb3136d45ecac3e5b63d31c3afe68c82a9bb2ccb399b62",
-  "source48_compiler_source": "bb80707a0f7d3a9034be739b48de124717f3cbb3"
+  "source48_authentication_sha256": "11175d29bf7022fabeba5c409e81318a34e1edef8d8cbe0dd8bcb08624add723",
+  "source48_compiler_source": "9c02d037e4598c032e129330086aaa7ac2c04fd7",
+  "requalified_on_current_compiler": true,
+  "original_registered_test_bodies_byte_exact": true
 }

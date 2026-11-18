@@ -102,16 +102,16 @@
   "actual_new_generated_c23_executions": 0,
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
-  "registered_source_sha256": "fb7cedbf050ea2d746542cf4d271ec84e4a01293ed8861d4a01bb3833bbcc92c",
-  "maintained_original_sha256": "b4b3d48914d151ba193d0027f2a57876570bdf91163ba331c0e5898a4717545e",
+  "registered_source_sha256": "5f671bc67c4322f443c6faf1c15d5efc79b0064481791660c879d42de4004341",
+  "maintained_original_sha256": "7fe5f01d7e6e8b808796ba6d60a3e086042c075429399a6f0f0bbd777ba32448",
   "previous_registered_source_sha256": "bf8020a7efb507a1a168750a61a01961349b7a98478cef09418ee4aa526161cd",
   "previous_maintained_original_sha256": "165b3cf63c6843a33e856b2249ac44313e06de683da79c21fad91587ab2a6b71",
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
-  "current_registry_count": 7732,
-  "current_python_registry_tests": 94,
+  "current_registry_count": 7752,
+  "current_python_registry_tests": 98,
   "previous7722_and_raw109_gtest_bytes_unchanged": true,
-  "restorer_sha256": "3b0216a479e5d0d1bc9d6784bc4b6ad56fd27474d20776d3edf95c30a16e9ed8",
-  "extractor_sha256": "f065ede6ad6b43d4549e683c4666ed418fdc217f29bcf86591c9e78253082d5f",
+  "restorer_sha256": "615682c5765652484777709a909ce32627cce1d2585309664a3c2fa3f4d87566",
+  "extractor_sha256": "1ba5a3dd4ef4ce168cec7754f7ce6fb55a7d759535c2a66be4331cb0a84523b0",
   "source_cases": [
     {
       "name": "deque-positional-emplace-single",
@@ -206,6 +206,8 @@
       "kind": "source-body-guard"
     }
   ],
-  "source48_authentication_sha256": "639e624da3fc27586b41b961b36a877b03927b6a2db972941af039b4ec81c1ff",
-  "source48_compiler_source": "94142f0d41faa7a3cd344149a2c78696a2fa7040"
+  "source48_authentication_sha256": "598c5c3b8b78c400e157ade5ba36aec741eb05582f5b94b4ac6905f1e086407f",
+  "source48_compiler_source": "9c02d037e4598c032e129330086aaa7ac2c04fd7",
+  "requalified_on_current_compiler": true,
+  "original_registered_test_bodies_byte_exact": true
 }
