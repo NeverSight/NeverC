@@ -52911,6 +52911,31 @@ std::optional<UtilityPriorityQueueCall> approvedUtilityPriorityQueueCall(
   return UtilityPriorityQueueCall{*Operation, Receiver, Method, Method->getParent(), Offset};
 }
 
+bool valarrayResizeDefaultArgument(const State &S, const SourceManager &SM,
+    const CXXDefaultArgExpr *Default, const FunctionDecl *Function,
+    unsigned Index, ASTContext &Context) {
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  const auto *Parameter = Default ? Default->getParam() : nullptr;
+  const auto *Owner = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  if (!S.coreV2() || !Method || !Parameter || !Owner || Index != 1 ||
+      Method->getNumParams() != 2 || Parameter != Method->getParamDecl(1) ||
+      Parameter->getFunctionScopeIndex() != 1 || !Parameter->hasDefaultArg() ||
+      Owner->getCanonicalDecl() != Method->getCanonicalDecl() ||
+      !Context.hasSameType(Parameter->getType(), Context.IntTy)) return false;
+  const auto Operation = valarrayMethodSignature(S, SM, Method, Context);
+  if (!Operation || *Operation != UtilityValarrayScalarOperation::Resize ||
+      !valarrayDependencyDeclaration(S, SM, Parameter) ||
+      !valarraySourceGraph(S, SM, Method, Context)) return false;
+  const auto *Init = selectedDefaultArgument(Default, Context);
+  if (!Init || Init->isTypeDependent() || Init->isValueDependent() ||
+      Init->isInstantiationDependent() ||
+      !Context.hasSameType(Init->getType(), Context.IntTy) ||
+      !isa<CXXScalarValueInitExpr>(Init->IgnoreParenImpCasts())) return false;
+  for (const auto Location : {Init->getBeginLoc(), Init->getEndLoc(), Init->getExprLoc()})
+    if (Location.isMacroID() || !cstddefOrigin(S, SM, Location, "libcxx", "valarray")) return false;
+  return true;
+}
+
 bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     const CXXDefaultArgExpr *Default,
                                     const FunctionDecl *Function,
@@ -52919,6 +52944,7 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
     return false;
   if (priorityQueueComparatorDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
   if (bitsetDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
+  if (valarrayResizeDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
   if (approvedUtilityUnorderedMapDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
   if (approvedScalarRealDistributionDefaultArgument(S, SM, Default, Function, Index, Context))
