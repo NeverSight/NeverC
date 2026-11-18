@@ -803,6 +803,9 @@ static bool functionalObjectOrigin(const State &S, const SourceManager &SM,
       return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
                             "__memory/unique_ptr.h");
   if (const auto *Method = dyn_cast<CXXMethodDecl>(Declaration))
+    if (approvedBitsetHashObject(S, SM, Method->getParent(), Method->getASTContext()))
+      return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "bitset");
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(Declaration))
     if (auto StringHash = approvedStringHashObject(
             S, SM, Method->getParent(), Method->getASTContext()))
       return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
@@ -1473,6 +1476,8 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
     return FunctionalObjectRecord{UniqueHash->Record};
   if (auto StringHash = approvedStringHashObject(S, SM, Record, Context))
     return FunctionalObjectRecord{StringHash->Record};
+  if (approvedBitsetHashObject(S, SM, Record, Context))
+    return FunctionalObjectRecord{Record->getDefinition()};
   if (functionTraitObjectValue(S, SM, Record, Context))
     return FunctionalObjectRecord{Record->getDefinition()};
   const auto *Definition = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
@@ -47460,10 +47465,89 @@ std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
   return std::nullopt;
 }
 
+std::optional<UtilityBitsetRecord> approvedBitsetHashObject(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    const ASTContext &Context) {
+  const auto *Hash = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Input && Input->getIdentifier() && Input->getName() == "hash"
+          ? Input->getDefinition() : nullptr);
+  const auto *Partial = Hash ? Hash->getSpecializedTemplateOrPartial()
+      .dyn_cast<ClassTemplatePartialSpecializationDecl *>() : nullptr;
+  if (!Hash || Hash->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !bitsetPinned(S, SM, Hash, true) || !bitsetPinned(S, SM, Partial, true) ||
+      Hash->getTemplateArgs().size() != 1 ||
+      Hash->getTemplateArgs()[0].getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Value = Hash->getTemplateArgs()[0].getAsType();
+  const auto Bits = approvedUtilityBitsetRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
+  if (!Bits || Value.hasQualifiers() || !stringHashRecordSource(S, SM, Hash, "hash", "bitset"))
+    return std::nullopt;
+  auto Empty = [&](const CXXRecordDecl *Record, unsigned Bases) {
+    return Record && Record->isEmpty() && Record->isStandardLayout() &&
+        Record->isTriviallyCopyable() && Record->hasTrivialDestructor() &&
+        !Record->hasUserDeclaredConstructor() && !Record->hasUserDeclaredDestructor() &&
+        Record->field_empty() && Record->getNumBases() == Bases &&
+        !Record->getNumVBases() &&
+        Context.getTypeSize(Context.getRecordType(Record)) == Context.getCharWidth() &&
+        Context.getTypeAlign(Context.getRecordType(Record)) == Context.getTypeAlign(Context.CharTy);
+  };
+  if (!Empty(Hash, 1) || Hash->bases_begin()->isVirtual() ||
+      Hash->bases_begin()->getAccessSpecifier() != AS_public)
+    return std::nullopt;
+  const auto *R = Hash->bases_begin()->getType()->getAsCXXRecordDecl();
+  const auto *Base = dyn_cast_or_null<ClassTemplateSpecializationDecl>(R ? R->getDefinition() : nullptr);
+  if (!Empty(Base, 0) ||
+      Base->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !stringHashRecordSource(S, SM, Base, "__unary_function_keep_layout_base",
+                              "__functional/unary_function.h"))
+    return std::nullopt;
+  const auto &Arguments = Base->getTemplateArgs();
+  if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
+      Arguments[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments[0].getAsType(), Value) ||
+      !Context.hasSameType(Arguments[1].getAsType(), Context.getSizeType()))
+    return std::nullopt;
+  return Bits;
+}
+
+static std::optional<UtilityBitsetCall> bitsetHashCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+  const auto *Prototype = M ? M->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!M || M->getOverloadedOperator() != OO_Call || M->getNumParams() != 1 ||
+      M->isStatic() || !M->isConst() || M->isVolatile() || M->isVariadic() ||
+      M->getRefQualifier() != RQ_None || !Prototype || !Prototype->isNothrow() ||
+      !Context.hasSameType(M->getReturnType(), Context.getSizeType()))
+    return std::nullopt;
+  const auto Bits = approvedBitsetHashObject(S, SM, M->getParent(), Context);
+  if (!Bits || !Context.hasSameType(M->getParamDecl(0)->getType(),
+      Context.getLValueReferenceType(Context.getRecordType(Bits->Record).withConst())))
+    return std::nullopt;
+  const Expr *Receiver = nullptr;
+  unsigned Offset = 0;
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+    if (Operator->getNumArgs() != 2 || !S.owns(SM, Operator->getOperatorLoc()))
+      return std::nullopt;
+    Receiver = Operator->getArg(0);
+    Offset = 1;
+  } else if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
+    const auto *Reference = directMethodReference(Member);
+    if (Member->getNumArgs() != 1 || !Reference || !S.owns(SM, Reference->getExprLoc()))
+      return std::nullopt;
+    Receiver = Member->getImplicitObjectArgument();
+  }
+  if (!Receiver || !bitsetPinned(S, SM, M, true) || !bitsetSourceGraph(S, SM, M))
+    return std::nullopt;
+  return UtilityBitsetCall{UtilityOperation::BitsetHash, 0, Receiver, Offset, Bits->Record};
+}
+
 std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Callee = Call ? Call->getDirectCallee() : nullptr;
+  if (Call && S.owns(SM, Call->getExprLoc()))
+    if (auto Hash = bitsetHashCall(S, SM, Call, Context)) return Hash;
   if (Callee && Callee->isOverloadedOperator() && !Callee->isVariadic() &&
       bitsetPinnedFunction(S, SM, Callee) && bitsetSourceGraph(S, SM, Callee) &&
       S.owns(SM, Call->getExprLoc())) {

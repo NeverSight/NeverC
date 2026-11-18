@@ -1297,7 +1297,7 @@ enum class UtilityOperation {
   StringFindLastNotOf,
   StringViewSize,
   BitsetCount, BitsetAny, BitsetTest, BitsetSet, BitsetReset, BitsetFlip,
-  BitsetSize, BitsetNone, BitsetAll, BitsetSetAll, BitsetResetAll, BitsetFlipAll, BitsetAssign,
+  BitsetSize, BitsetNone, BitsetAll, BitsetSetAll, BitsetResetAll, BitsetFlipAll, BitsetAssign, BitsetHash,
   BitsetNot, BitsetEqual, BitsetNotEqual, BitsetAnd, BitsetOr, BitsetXor,
   BitsetAndAssign, BitsetOrAssign, BitsetXorAssign,
   BitsetShiftLeft, BitsetShiftRight, BitsetShiftLeftAssign, BitsetShiftRightAssign,
@@ -3679,6 +3679,9 @@ struct UtilityBitsetCall {
 std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<UtilityBitsetRecord> approvedBitsetHashObject(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Input,
+    const clang::ASTContext &Context);
 std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);

@@ -26142,6 +26142,39 @@ class FunctionLowering {
                        ReadOnly ? "cptr:u64" : "ptr:u64", L);
     return index(std::move(Words), std::move(Position), "u64", L);
   }
+  Expression utilityBitsetHash(const CallExpr *Call) {
+    const auto L = Call->getExprLoc();
+    const auto Proof = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
+    const auto Info = Proof && Proof->Record ? approvedUtilityBitsetRecord(
+        A.S, A.Sources, Proof->Record, A.Context) : std::nullopt;
+    if (!Proof || !Info || !Proof->Receiver || Proof->Operation != UtilityOperation::BitsetHash)
+      reject(L, "bitset hash", "The exact pinned hash and bitset operand are required.");
+    const auto *Receiver = Proof->Receiver;
+    (void)snapshot(Receiver->getType()->isPointerType() ? expression(Receiver)
+        : address(lvalue(Receiver), Receiver->getType(), L), L);
+    auto Value = argument(Call->getArg(Proof->ArgumentOffset),
+        Call->getDirectCallee()->getParamDecl(0)->getType());
+    if (!Info->Words)
+      return cast(quantity(0, "u64", L), type(Call->getType(), L), L);
+    auto Place = dereference(std::move(Value), L);
+    if (Info->Words == 1)
+      return cast(bitsetWord(Place, *Info, quantity(0, "u64", L), L, true),
+                  type(Call->getType(), L), L);
+    auto Result = temporary("u64", L), Position = temporary("u64", L);
+    assign(Result, quantity(0, "u64", L), L);
+    assign(Position, quantity(0, "u64", L), L);
+    const auto Check = labelName(), Body = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", Position, quantity(Info->Words, "u64", L), "bool", L), Body, Done, L);
+    label(Body, L);
+    assign(Result, binary("^", Result, bitsetWord(Place, *Info, Position, L, true), "u64", L), L);
+    assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
+    jump(Check, L);
+    label(Done, L);
+    return cast(Result, type(Call->getType(), L), L);
+  }
+
   Expression utilityBitsetShiftOperation(const CallExpr *Call, UtilityOperation Operation) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
@@ -28882,6 +28915,8 @@ class FunctionLowering {
       return Result;
     }
     if (Operation == UtilityOperation::ValarrayScalar) return utilityValarrayScalarOperation(Call);
+    if (Operation == UtilityOperation::BitsetHash)
+      return utilityBitsetHash(Call);
     if (Operation == UtilityOperation::BitsetShiftLeft || Operation == UtilityOperation::BitsetShiftRight ||
         Operation == UtilityOperation::BitsetShiftLeftAssign || Operation == UtilityOperation::BitsetShiftRightAssign) {
       auto Result = utilityBitsetShiftOperation(Call, Operation);
