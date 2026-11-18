@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_to_string_registered = cls.registered
+        cls.bitset_to_string_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_to_string_original = cls.adapter.restore_original_gtests(cls.bitset_to_string_registered,cls.bitset_to_string_suffix)
+        cls.registered = cls.adapter.restore_bitset_to_string_history(cls.bitset_to_string_registered)
         cls.bitset_shift_registered = cls.registered
         cls.bitset_shift_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_shift_original = cls.adapter.restore_original_gtests(cls.bitset_shift_registered,cls.bitset_shift_suffix)
@@ -1539,6 +1543,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_shift_registered,self.bitset_shift_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_shift_original+b' ',['TranslateTest.CoreV2BitsetShiftZeroRunAtBothOptimizations'])
+
+    def test_bitset_to_string_preserves_all_previous_registry_bytes_and_extracts_fourteen_tests(self):
+        self.assertEqual(self.bitset_to_string_original+self.bitset_to_string_suffix,self.bitset_to_string_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_to_string_original,self.bitset_to_string_suffix),self.bitset_to_string_original)
+        self.assertEqual(self.adapter.restore_bitset_to_string_history(self.bitset_to_string_registered),self.bitset_shift_registered)
+        self.assertEqual(self.adapter.restore_bitset_to_string_history(self.bitset_to_string_original),self.bitset_shift_original)
+        selected = ['TranslateTest.CoreV2BitsetToStringShortDefaultDigitsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringLongCrossWordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringEmptyReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringEmbeddedNulRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringPersistentCopyRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringDefaultReturnTemplateRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringWideCharacterRejected', 'TranslateTest.CoreV2BitsetToStringCustomTraitsRejected', 'TranslateTest.CoreV2BitsetToStringCustomAllocatorRejected', 'TranslateTest.CoreV2BitsetToStringExplicitUserImplementationRejected', 'TranslateTest.CoreV2BitsetToStringOwnedRootNameRejected', 'TranslateTest.CoreV2BitsetToStringOwnedBitsetStorageRejected', 'TranslateTest.CoreV2BitsetToStringOwnedBitReferenceRejected', 'TranslateTest.CoreV2BitsetToStringOwnedStringTypeRejected']
+        generated,proof = self.extractor.extract(self.bitset_to_string_original,selected)
+        self.assertEqual(proof['original_test_names'],7802)
+        self.assertEqual(proof['selected_count'],14)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7788)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bitstr',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_to_string_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_to_string_registered+b' ',
+                        self.bitset_to_string_registered.replace(b'r19bitstr',b'q.push(11)',1),
+                        self.bitset_to_string_registered+self.bitset_to_string_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_to_string_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_to_string_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_to_string_registered,self.bitset_to_string_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_to_string_original+b' ',['TranslateTest.CoreV2BitsetToStringShortDefaultDigitsRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
