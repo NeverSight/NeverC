@@ -1,0 +1,207 @@
+{
+  "positive_cases": [
+    {
+      "name": "bitset-bitwise-zero",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBitwiseZeroRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fb407f8f0fcf4fad34074c5e67600583691aa3bc80dc976d3b147904aa477bc7",
+      "original_case_source_sha256": "fb407f8f0fcf4fad34074c5e67600583691aa3bc80dc976d3b147904aa477bc7",
+      "gtest_body_sha256": "e837d8f4a591faecc450cd1a4d8e69f20c8204989ddf4cba9223e50ef65c3b78"
+    },
+    {
+      "name": "bitset-bitwise-single-word",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBitwiseSingleWordRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b37598ff3bf965bd7db8e9d79157d46f3929c7c22e728f92eaeec529d74f1425",
+      "original_case_source_sha256": "b37598ff3bf965bd7db8e9d79157d46f3929c7c22e728f92eaeec529d74f1425",
+      "gtest_body_sha256": "ba9b4d2ef4d65a29bd3d77d078f79a2a8a2c81a0005602489a8498ca8035fae0"
+    },
+    {
+      "name": "bitset-bitwise-multi-word",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBitwiseMultiWordRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f6b8fc43dbd5fb0bf69365964ac19213de77d007b928de37797ae6d8083c89e1",
+      "original_case_source_sha256": "f6b8fc43dbd5fb0bf69365964ac19213de77d007b928de37797ae6d8083c89e1",
+      "gtest_body_sha256": "cd96707196532705f09ba3fbe5d961970332065718e90bad78acf5ee1f184134"
+    },
+    {
+      "name": "bitset-bitwise-word-boundaries",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBitwiseWordBoundariesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7192c6e5a30ed6b7ab23d54717957b2f7c93cf578db9dd72e1613c25335f9eed",
+      "original_case_source_sha256": "7192c6e5a30ed6b7ab23d54717957b2f7c93cf578db9dd72e1613c25335f9eed",
+      "gtest_body_sha256": "aa68ae0ac710b4d54439e23e7eb178b056537e63b2af133d0988ed0aac234f00"
+    },
+    {
+      "name": "bitset-bitwise-assignment-alias",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBitwiseAssignmentAliasRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5d84022f86e0bd2f1ce7042bc4e6256ae4a52e0cdf7bb643e79a3bf36d399966",
+      "original_case_source_sha256": "5d84022f86e0bd2f1ce7042bc4e6256ae4a52e0cdf7bb643e79a3bf36d399966",
+      "gtest_body_sha256": "69a9e719c71967a4a38c7ebe43c8b6ee0adffbb095261f493bfda26bd2605ee7"
+    },
+    {
+      "name": "bitset-bitwise-assignment-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBitwiseAssignmentSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "92764474e1495a05e7be83bbda77328cd42510cff1e7e3b2c7794a5a9866b0dd",
+      "original_case_source_sha256": "92764474e1495a05e7be83bbda77328cd42510cff1e7e3b2c7794a5a9866b0dd",
+      "gtest_body_sha256": "b463506ca2a3088c62c2691e048240ec43fac233d221417bd2a9a7c0006c31d6"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "bitset-bitwise-owned-equal",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBitwiseOwnedEqualRejected",
+      "expected": "reject",
+      "source_sha256": "6459aa51015403144dbcbd349ab25ff66661124ee7fcdb8ee1c16fb6dda2bf5b",
+      "original_case_source_sha256": "6459aa51015403144dbcbd349ab25ff66661124ee7fcdb8ee1c16fb6dda2bf5b",
+      "gtest_body_sha256": "b8107f7e2db9d33f87e33d3d73b5e0142703cd48403480781e16a2eba31b308f"
+    },
+    {
+      "name": "bitset-bitwise-owned-complement",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBitwiseOwnedComplementRejected",
+      "expected": "reject",
+      "source_sha256": "bc457b5d45029b635b51d79de09ca449ee5e912973c4e8cff2c4475cae8a086c",
+      "original_case_source_sha256": "bc457b5d45029b635b51d79de09ca449ee5e912973c4e8cff2c4475cae8a086c",
+      "gtest_body_sha256": "36ddd5364bea54ec122c3e515bd140b900012ddee532ce378d0f0bcbed674973"
+    },
+    {
+      "name": "bitset-bitwise-owned-and-assignment",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBitwiseOwnedAndAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "df5ccd2bfde79d2b3adb75f95d724dcd87683ccecdd887e0e29737f8258bcdf3",
+      "original_case_source_sha256": "df5ccd2bfde79d2b3adb75f95d724dcd87683ccecdd887e0e29737f8258bcdf3",
+      "gtest_body_sha256": "b86ce90ed306b248615d3b83906dc10f7651e644fe08cfa9c34abd3be4d9e756"
+    },
+    {
+      "name": "bitset-bitwise-owned-free-or",
+      "formal_test_name": "TranslateTest.CoreV2BitsetBitwiseOwnedFreeOrRejected",
+      "expected": "reject",
+      "source_sha256": "924ffa0d6de95a7f1f6529560dbc8e76846d5eaf91e8e1075f4cd5af407df8b2",
+      "original_case_source_sha256": "924ffa0d6de95a7f1f6529560dbc8e76846d5eaf91e8e1075f4cd5af407df8b2",
+      "gtest_body_sha256": "10ee899101e98e365dd3ba4dfc140350d58f481b866f1e0adaea5dab97c98244"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2BitsetBitwiseZeroRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBitwiseSingleWordRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBitwiseMultiWordRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBitwiseWordBoundariesRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBitwiseAssignmentAliasRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBitwiseAssignmentSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetBitwiseOwnedEqualRejected",
+    "TranslateTest.CoreV2BitsetBitwiseOwnedComplementRejected",
+    "TranslateTest.CoreV2BitsetBitwiseOwnedAndAssignmentRejected",
+    "TranslateTest.CoreV2BitsetBitwiseOwnedFreeOrRejected"
+  ],
+  "native_reference_authentication_sha256": "d7e6509edb4673d8eb666757e33ac573c95a0fd8b8dc3a40e5a9d4e2d76a3c1b",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "d9d2491e0d6943ff113a9b685a8dd8d4ba29aee3d2a8ebed0486e37df10b2e87",
+  "maintained_original_sha256": "f7034c728986dbaea562fe6ac871c6b9c9d9b71c3df214ebaef2306ac8066bfa",
+  "previous_registered_source_sha256": "4852d27a08f5d38977e7b2d93cc5f1b6c07d6b4ec7566d697819eeba9c4b7eee",
+  "previous_maintained_original_sha256": "9d42a1b9c2c0aacabdee67e345e5f9861cb70f6742e5897a133dce0877099870",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7772,
+  "current_python_registry_tests": 102,
+  "previous7762_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "a333d55000c806419ad233f5a5e7d6f416f1662c12c69a1448174900b313a972",
+  "extractor_sha256": "74ba57a378dcc020753426c03954fcc1aabab50105f3fcc9744687844e27fdef",
+  "source_cases": [
+    {
+      "name": "bitset-bitwise-zero",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <bitset>\nint main(){std::bitset<0> a,b;auto c=~a;auto d=a&b;auto e=a|b;auto f=a^b;\nif(!(a==b)||a!=b||c.any()||d.any()||e.any()||f.any()||!c.all())return 1;\nif(&(a&=b)!=&a||&(a|=b)!=&a||&(a^=b)!=&a)return 2;return a.count()!=0;}\n",
+      "source_sha256": "fb407f8f0fcf4fad34074c5e67600583691aa3bc80dc976d3b147904aa477bc7",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "bitset-bitwise-single-word",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <bitset>\nint main(){std::bitset<1> a,b;b.set();auto c=~a;if(c!=b||a==b||(a|b)!=b||(a&b)!=a||(a^b)!=b)return 1;\nstd::bitset<63> x,y;x.set();y.set(0);auto n=~y;if(n.count()!=62||(x&y)!=y||(x|y)!=x||(x^y)!=n)return 2;\nstd::bitset<64> all,edge;all.set();edge.set(63);auto opposite=~edge;\nreturn opposite.count()!=63||(all&edge)!=edge||(all^edge)!=opposite||(~all).any();}\n",
+      "source_sha256": "b37598ff3bf965bd7db8e9d79157d46f3929c7c22e728f92eaeec529d74f1425",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "bitset-bitwise-multi-word",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <bitset>\nint main(){std::bitset<70> a,b;a.set(0).set(63).set(69);b.set(63).set(64);\nauto both=a&b,either=a|b,different=a^b,opposite=~a;\nif(both.count()!=1||!both.test(63)||either.count()!=4||different.count()!=3||different.test(63)||opposite.count()!=67)return 1;\nif(!opposite.test(64)||opposite.test(69)||a.count()!=3||b.count()!=2)return 2;\nauto chained=(a&b)|(a^b);return chained!=either;}\n",
+      "source_sha256": "f6b8fc43dbd5fb0bf69365964ac19213de77d007b928de37797ae6d8083c89e1",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "bitset-bitwise-word-boundaries",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <bitset>\nint main(){std::bitset<65> a,b;a.set();b.set(0).set(64);auto c=a^b;\nif(c.count()!=63||c.test(0)||c.test(64)||(~a).any()||(a&b)!=b)return 1;\nstd::bitset<129> x,y;x.set(0).set(63).set(64).set(127).set(128);y.set(64).set(128);\nauto both=x&y,opposite=~x;if(both!=y||opposite.count()!=124||opposite.test(128)||!opposite.test(126))return 2;\nauto combined=x|opposite;return !combined.all()||combined.count()!=129||(x^x).any();}\n",
+      "source_sha256": "7192c6e5a30ed6b7ab23d54717957b2f7c93cf578db9dd72e1613c25335f9eed",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "bitset-bitwise-assignment-alias",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <bitset>\nint main(){std::bitset<70> a,b;a.set(0).set(69);b.set(63).set(69);auto both=a&b,either=a|b,different=a^b;\nauto c=a;if(&(c&=b)!=&c||c!=both)return 1;c=a;if(&(c|=b)!=&c||c!=either)return 2;c=a;\nif(&(c^=b)!=&c||c!=different)return 3;c=a;c&=c;if(c!=a)return 4;c|=c;if(c!=a)return 5;c^=c;\nif(c.any())return 6;const auto saved=a;auto copy=saved;copy&=saved;return copy!=saved||a!=saved;}\n",
+      "source_sha256": "5d84022f86e0bd2f1ce7042bc4e6256ae4a52e0cdf7bb643e79a3bf36d399966",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "bitset-bitwise-assignment-sequencing",
+      "kind": "native-reference-only",
+      "expected": "accept",
+      "source": "#include <bitset>\nstatic std::bitset<70>* left;static std::bitset<70>* right;static int events;\nstd::bitset<70>& receiver(){events=events*10+1;right->set(69);return *left;}\nconst std::bitset<70>& source(){events=events*10+2;return *right;}\nint main(){std::bitset<70> a,b;a.set();left=&a;right=&b;events=0;\nif(&(receiver()&=source())!=&a||events!=21||a.count()!=1||!a.test(69))return 1;\na.reset();b.reset();events=0;receiver().operator|=(source());if(events!=12||a.count()!=1||!a.test(69))return 2;\na.set();b.reset();events=0;receiver()^=source();return events!=21||a.count()!=69||a.test(69);}\n",
+      "source_sha256": "92764474e1495a05e7be83bbda77328cd42510cff1e7e3b2c7794a5a9866b0dd",
+      "private_support_verified": false,
+      "full_stl_complete": false
+    },
+    {
+      "name": "bitset-bitwise-owned-equal",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nnamespace std { inline namespace __1 {\ntemplate<> bool bitset<70>::operator==(const bitset<70>& source) const noexcept {return true;}\n}}\nint main(){std::bitset<70> a,b;return a==b;}\n",
+      "source_sha256": "6459aa51015403144dbcbd349ab25ff66661124ee7fcdb8ee1c16fb6dda2bf5b",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-bitwise-owned-complement",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nnamespace std { inline namespace __1 {\ntemplate<> bitset<70> bitset<70>::operator~() const noexcept {return {};}\n}}\nint main(){std::bitset<70> a,b;auto c=~a;return c.count();}\n",
+      "source_sha256": "bc457b5d45029b635b51d79de09ca449ee5e912973c4e8cff2c4475cae8a086c",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-bitwise-owned-and-assignment",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nnamespace std { inline namespace __1 {\ntemplate<> bitset<70>& bitset<70>::operator&=(const bitset<70>& source) noexcept {return *this;}\n}}\nint main(){std::bitset<70> a,b;a&=b;return a.count();}\n",
+      "source_sha256": "df5ccd2bfde79d2b3adb75f95d724dcd87683ccecdd887e0e29737f8258bcdf3",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-bitwise-owned-free-or",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nnamespace std { inline namespace __1 {\ntemplate<> bitset<70> operator|(const bitset<70>& a,const bitset<70>& b) noexcept {return {};}\n}}\nint main(){std::bitset<70> a,b;auto c=a|b;return c.count();}\n",
+      "source_sha256": "924ffa0d6de95a7f1f6529560dbc8e76846d5eaf91e8e1075f4cd5af407df8b2",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source48_authentication_sha256": "67e61925ac1b4acd6ec56bb629bb1dfe2811b5ec94f183869312bc6eb3ce7a1f",
+  "source48_compiler_source": "bafa81f994b626213df0cbc6b3d301af2d346725",
+  "requalified_on_current_compiler": true,
+  "original_registered_test_bodies_byte_exact": true
+}

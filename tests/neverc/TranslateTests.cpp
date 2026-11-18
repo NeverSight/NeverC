@@ -377654,6 +377654,382 @@ int main(){std::valarray<int> a(3);std::valarray<int> b(2);std::swap(a,b);return
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2BitsetZeroLayoutRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-zero-layout.cpp");
+  const auto Output = tmpFile("bitset-zero-layout.nc");
+  writeFile(Source, R"r19bitzero(#include <bitset>
+static unsigned calls;unsigned long long value(){++calls;return ~0ULL;}
+int main(){std::bitset<0> a(value());if(calls!=1||sizeof(a)!=1||alignof(decltype(a))!=1)return 1;
+if(a.size()||a.count()||a.any()||!a.none()||!a.all())return 2;
+if(&a.set()!=&a||&a.flip()!=&a||&a.reset()!=&a)return 3;
+const std::bitset<0> b(a);std::bitset<0> c(b);c=b;
+return c.size()||c.count()||c.any()||!c.none()||!c.all();}
+)r19bitzero");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-zero-layout" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetWholeMasksRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-whole-masks.cpp");
+  const auto Output = tmpFile("bitset-whole-masks.nc");
+  writeFile(Source, R"r19bitzero(#include <bitset>
+template<unsigned N> int check(){std::bitset<N> a;if(a.size()!=N||a.count()||a.any()||!a.none())return 1;
+if(&a.set()!=&a||a.count()!=N||!a.all()||a.none())return 2;
+if(&a.flip()!=&a||a.count()||a.any()||!a.none())return 3;
+a.flip();if(a.count()!=N||!a.all())return 4;
+if(&a.reset()!=&a||a.count()||a.any()||!a.none())return 5;return 0;}
+int main(){return check<1>()||check<63>()||check<64>()||check<65>()||check<70>()||check<127>()||check<128>()||check<129>();}
+)r19bitzero");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-whole-masks" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetWholeReturnAliasRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-whole-return-alias.cpp");
+  const auto Output = tmpFile("bitset-whole-return-alias.nc");
+  writeFile(Source, R"r19bitzero(#include <bitset>
+int main(){std::bitset<70> a;auto& x=a.set();auto& y=x.flip();auto& z=y.reset();
+if(&x!=&a||&y!=&a||&z!=&a||a.count())return 1;
+a.set().flip().flip();if(a.count()!=70||!a.all())return 2;
+a.reset().flip().reset();if(a.any()||!a.none())return 3;return 0;}
+)r19bitzero");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-whole-return-alias" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetWholeUnsignedMaskRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-whole-unsigned-mask.cpp");
+  const auto Output = tmpFile("bitset-whole-unsigned-mask.nc");
+  writeFile(Source, R"r19bitzero(#include <bitset>
+int main(){std::bitset<1> a(~0ULL);std::bitset<7> b(0x181ULL);std::bitset<63> c(~0ULL);
+std::bitset<64> d(~0ULL);std::bitset<70> e(~0ULL);if(a.count()!=1||b.count()!=1||c.count()!=63||d.count()!=64||e.count()!=64)return 1;
+if(!a.all()||b.all()||!c.all()||!d.all()||e.all()||e.none())return 2;
+e.flip();if(e.count()!=6||e.all()||e.none())return 3;
+b.flip();if(b.count()!=6||b.all())return 4;return 0;}
+)r19bitzero");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-whole-unsigned-mask" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetWholeConstCopyRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-whole-const-copy.cpp");
+  const auto Output = tmpFile("bitset-whole-const-copy.nc");
+  writeFile(Source, R"r19bitzero(#include <bitset>
+int main(){std::bitset<129> a;a.set();const std::bitset<129> b(a);std::bitset<129> c(b);
+if(b.size()!=129||b.count()!=129||!b.any()||b.none()||!b.all()||c.count()!=129)return 1;
+a.reset();if(b.count()!=129||c.count()!=129)return 2;c.flip();if(c.any()||!c.none()||c.all())return 3;
+c=b;if(c.count()!=129||!c.all())return 4;return 0;}
+)r19bitzero");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-whole-const-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetWholeReceiverEffectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-whole-receiver-effects.cpp");
+  const auto Output = tmpFile("bitset-whole-receiver-effects.nc");
+  writeFile(Source, R"r19bitzero(#include <bitset>
+static std::bitset<70>* owner;static unsigned calls;
+std::bitset<70>& receiver(){++calls;return *owner;}
+int main(){std::bitset<70> a;owner=&a;if(&receiver().set()!=&a||calls!=1)return 1;
+if(receiver().size()!=70||calls!=2)return 2;if(!receiver().all()||calls!=3)return 3;
+if(receiver().none()||calls!=4)return 4;if(&receiver().flip()!=&a||calls!=5)return 5;
+if(receiver().any()||calls!=6)return 6;if(receiver().count()||calls!=7)return 7;
+if(&receiver().reset()!=&a||calls!=8)return 8;return 0;}
+)r19bitzero");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-whole-receiver-effects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetZeroOwnedSizeRejected) {
+  const auto Source = tmpFile("bitset-zero-size-source.cpp");
+  writeFile(Source, R"r19bitzero(#include <bitset>
+namespace std { inline namespace __1 {
+template<> inline constexpr size_t bitset<0>::size() const noexcept { return 0; }
+}}
+int main(){std::bitset<0> a;return a.size();}
+)r19bitzero");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetWholeOwnedSetRejected) {
+  const auto Source = tmpFile("bitset-whole-set-source.cpp");
+  writeFile(Source, R"r19bitzero(#include <bitset>
+namespace std { inline namespace __1 {
+template<> inline bitset<70>& bitset<70>::set() noexcept { return *this; }
+}}
+int main(){std::bitset<70> a;a.set();return a.any();}
+)r19bitzero");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetWholeOwnedResetRejected) {
+  const auto Source = tmpFile("bitset-whole-reset-source.cpp");
+  writeFile(Source, R"r19bitzero(#include <bitset>
+namespace std { inline namespace __1 {
+template<> inline bitset<70>& bitset<70>::reset() noexcept { return *this; }
+}}
+int main(){std::bitset<70> a;a.reset();return a.any();}
+)r19bitzero");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetWholeOwnedFlipRejected) {
+  const auto Source = tmpFile("bitset-whole-flip-source.cpp");
+  writeFile(Source, R"r19bitzero(#include <bitset>
+namespace std { inline namespace __1 {
+template<> inline bitset<70>& bitset<70>::flip() noexcept { return *this; }
+}}
+int main(){std::bitset<70> a;a.flip();return a.any();}
+)r19bitzero");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBitwiseZeroRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bitwise-zero.cpp");
+  const auto Output = tmpFile("bitset-bitwise-zero.nc");
+  writeFile(Source, R"r19bitops(#include <bitset>
+int main(){std::bitset<0> a,b;auto c=~a;auto d=a&b;auto e=a|b;auto f=a^b;
+if(!(a==b)||a!=b||c.any()||d.any()||e.any()||f.any()||!c.all())return 1;
+if(&(a&=b)!=&a||&(a|=b)!=&a||&(a^=b)!=&a)return 2;return a.count()!=0;}
+)r19bitops");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bitwise-zero" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBitwiseSingleWordRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bitwise-single-word.cpp");
+  const auto Output = tmpFile("bitset-bitwise-single-word.nc");
+  writeFile(Source, R"r19bitops(#include <bitset>
+int main(){std::bitset<1> a,b;b.set();auto c=~a;if(c!=b||a==b||(a|b)!=b||(a&b)!=a||(a^b)!=b)return 1;
+std::bitset<63> x,y;x.set();y.set(0);auto n=~y;if(n.count()!=62||(x&y)!=y||(x|y)!=x||(x^y)!=n)return 2;
+std::bitset<64> all,edge;all.set();edge.set(63);auto opposite=~edge;
+return opposite.count()!=63||(all&edge)!=edge||(all^edge)!=opposite||(~all).any();}
+)r19bitops");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bitwise-single-word" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBitwiseMultiWordRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bitwise-multi-word.cpp");
+  const auto Output = tmpFile("bitset-bitwise-multi-word.nc");
+  writeFile(Source, R"r19bitops(#include <bitset>
+int main(){std::bitset<70> a,b;a.set(0).set(63).set(69);b.set(63).set(64);
+auto both=a&b,either=a|b,different=a^b,opposite=~a;
+if(both.count()!=1||!both.test(63)||either.count()!=4||different.count()!=3||different.test(63)||opposite.count()!=67)return 1;
+if(!opposite.test(64)||opposite.test(69)||a.count()!=3||b.count()!=2)return 2;
+auto chained=(a&b)|(a^b);return chained!=either;}
+)r19bitops");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bitwise-multi-word" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBitwiseWordBoundariesRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bitwise-word-boundaries.cpp");
+  const auto Output = tmpFile("bitset-bitwise-word-boundaries.nc");
+  writeFile(Source, R"r19bitops(#include <bitset>
+int main(){std::bitset<65> a,b;a.set();b.set(0).set(64);auto c=a^b;
+if(c.count()!=63||c.test(0)||c.test(64)||(~a).any()||(a&b)!=b)return 1;
+std::bitset<129> x,y;x.set(0).set(63).set(64).set(127).set(128);y.set(64).set(128);
+auto both=x&y,opposite=~x;if(both!=y||opposite.count()!=124||opposite.test(128)||!opposite.test(126))return 2;
+auto combined=x|opposite;return !combined.all()||combined.count()!=129||(x^x).any();}
+)r19bitops");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bitwise-word-boundaries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBitwiseAssignmentAliasRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bitwise-assignment-alias.cpp");
+  const auto Output = tmpFile("bitset-bitwise-assignment-alias.nc");
+  writeFile(Source, R"r19bitops(#include <bitset>
+int main(){std::bitset<70> a,b;a.set(0).set(69);b.set(63).set(69);auto both=a&b,either=a|b,different=a^b;
+auto c=a;if(&(c&=b)!=&c||c!=both)return 1;c=a;if(&(c|=b)!=&c||c!=either)return 2;c=a;
+if(&(c^=b)!=&c||c!=different)return 3;c=a;c&=c;if(c!=a)return 4;c|=c;if(c!=a)return 5;c^=c;
+if(c.any())return 6;const auto saved=a;auto copy=saved;copy&=saved;return copy!=saved||a!=saved;}
+)r19bitops");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bitwise-assignment-alias" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBitwiseAssignmentSequencingRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bitwise-assignment-sequencing.cpp");
+  const auto Output = tmpFile("bitset-bitwise-assignment-sequencing.nc");
+  writeFile(Source, R"r19bitops(#include <bitset>
+static std::bitset<70>* left;static std::bitset<70>* right;static int events;
+std::bitset<70>& receiver(){events=events*10+1;right->set(69);return *left;}
+const std::bitset<70>& source(){events=events*10+2;return *right;}
+int main(){std::bitset<70> a,b;a.set();left=&a;right=&b;events=0;
+if(&(receiver()&=source())!=&a||events!=21||a.count()!=1||!a.test(69))return 1;
+a.reset();b.reset();events=0;receiver().operator|=(source());if(events!=12||a.count()!=1||!a.test(69))return 2;
+a.set();b.reset();events=0;receiver()^=source();return events!=21||a.count()!=69||a.test(69);}
+)r19bitops");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bitwise-assignment-sequencing" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBitwiseOwnedEqualRejected) {
+  const auto Source = tmpFile("bitset-bitwise-owned-equal.cpp");
+  writeFile(Source, R"r19bitops(#include <bitset>
+namespace std { inline namespace __1 {
+template<> bool bitset<70>::operator==(const bitset<70>& source) const noexcept {return true;}
+}}
+int main(){std::bitset<70> a,b;return a==b;}
+)r19bitops");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBitwiseOwnedComplementRejected) {
+  const auto Source = tmpFile("bitset-bitwise-owned-complement.cpp");
+  writeFile(Source, R"r19bitops(#include <bitset>
+namespace std { inline namespace __1 {
+template<> bitset<70> bitset<70>::operator~() const noexcept {return {};}
+}}
+int main(){std::bitset<70> a,b;auto c=~a;return c.count();}
+)r19bitops");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBitwiseOwnedAndAssignmentRejected) {
+  const auto Source = tmpFile("bitset-bitwise-owned-and-assignment.cpp");
+  writeFile(Source, R"r19bitops(#include <bitset>
+namespace std { inline namespace __1 {
+template<> bitset<70>& bitset<70>::operator&=(const bitset<70>& source) noexcept {return *this;}
+}}
+int main(){std::bitset<70> a,b;a&=b;return a.count();}
+)r19bitops");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBitwiseOwnedFreeOrRejected) {
+  const auto Source = tmpFile("bitset-bitwise-owned-free-or.cpp");
+  writeFile(Source, R"r19bitops(#include <bitset>
+namespace std { inline namespace __1 {
+template<> bitset<70> operator|(const bitset<70>& a,const bitset<70>& b) noexcept {return {};}
+}}
+int main(){std::bitset<70> a,b;auto c=a|b;return c.count();}
+)r19bitops");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");
