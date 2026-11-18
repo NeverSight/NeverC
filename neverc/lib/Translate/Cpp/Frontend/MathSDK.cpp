@@ -49769,13 +49769,42 @@ bool dequeEmplaceTemplate(const CXXMethodDecl *Method, const ASTContext &Context
   return true;
 }
 
+bool dequePointerInsertTemplate(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const ASTContext &Context) {
+  if (!Method || Method->isStatic() || Method->isConst() || Method->isVolatile() ||
+      Method->getRefQualifier() != RQ_None || Method->getNumParams() != 3 ||
+      !Method->getIdentifier() || Method->getName() != "insert" ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedUtilityDequeRecord(S, SM, Method->getParent(), Context) ||
+      !dequeIteratorType(S, SM, Method->getReturnType(), false, Context)) return false;
+  const auto Position = Method->getParamDecl(0)->getType();
+  if (Position->isReferenceType() || Position.hasLocalQualifiers() ||
+      !dequeIteratorType(S, SM, Position, true, Context)) return false;
+  const auto *Primary = Method->getPrimaryTemplate();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  if (!Primary || Primary->getTemplateParameters()->size() != 2 || !Arguments || Arguments->size() != 2) return false;
+  const auto *Input = dyn_cast<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(0));
+  const auto *Enable = dyn_cast<NonTypeTemplateParmDecl>(Primary->getTemplateParameters()->getParam(1));
+  if (!Input || Input->isParameterPack() || !Enable || Enable->isParameterPack() || !Enable->hasDefaultArgument() ||
+      Arguments->get(0).getKind() != TemplateArgument::Type || Arguments->get(1).getKind() != TemplateArgument::Integral ||
+      !Arguments->get(1).getAsIntegral().isZero() ||
+      !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.IntTy)) return false;
+  const auto Iterator = Arguments->get(0).getAsType();
+  if (!Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy)) &&
+      !Context.hasSameType(Iterator, Context.getPointerType(Context.IntTy.withConst()))) return false;
+  for (const auto *Parameter : Method->parameters()) if (Parameter->hasDefaultArg()) return false;
+  return Context.hasSameType(Method->getParamDecl(1)->getType(), Iterator) &&
+      Context.hasSameType(Method->getParamDecl(2)->getType(), Iterator);
+}
+
 std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const SourceManager &SM,
     const CXXMethodDecl *M, const ASTContext &Context) {
   if (!M || M->isStatic() || M->isVolatile() ||
       (M->getPrimaryTemplate() && !dequeEmplaceTemplate(M, Context) &&
-       !dequePointerRangeTemplate(S, SM, M, Context)) ||
+       !dequePointerInsertTemplate(S, SM, M, Context) && !dequePointerRangeTemplate(S, SM, M, Context)) ||
       !dequeFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (approvedUtilityDequeRecord(S, SM, M->getParent(), Context)) {
+    if (dequePointerInsertTemplate(S, SM, M, Context)) return UtilityDequeOperation::InsertPointerRange;
     if (!isa<CXXConstructorDecl>(M) && dequePointerRangeTemplate(S, SM, M, Context))
       return UtilityDequeOperation::AssignPointerRange;
     if (!isa<CXXConstructorDecl>(M) &&
@@ -49819,6 +49848,21 @@ std::optional<UtilityDequeOperation> dequeMethodSignature(const State &S, const 
     }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
+    if (Name == "insert" && !Stack && !Queue && !M->isConst() && M->getRefQualifier() == RQ_None &&
+        !M->getPrimaryTemplate() && M->getNumParams() == 2 &&
+        dequeIteratorType(S, SM, M->getReturnType(), false, Context)) {
+      const auto Position = M->getParamDecl(0)->getType();
+      const auto Value = M->getParamDecl(1)->getType();
+      if (!M->getParamDecl(0)->hasDefaultArg() && !M->getParamDecl(1)->hasDefaultArg() &&
+          !Position->isReferenceType() && !Position.hasLocalQualifiers() &&
+          dequeIteratorType(S, SM, Position, true, Context) &&
+          !Value->isReferenceType() && !Value.hasLocalQualifiers()) {
+        const auto List = approvedUtilityInitializerListRecord(S, SM, dequeRecordType(Value), Context);
+        if (List && Context.hasSameType(List->ElementType, Context.IntTy) &&
+            Context.hasSameType(Value, Context.getRecordType(List->Record)))
+          return UtilityDequeOperation::InsertInitializerList;
+      }
+    }
     if (Name == "insert" && !Stack && !Queue && !M->isConst() &&
         M->getRefQualifier() == RQ_None && !M->getPrimaryTemplate() && M->getNumParams() == 3 &&
         !M->getReturnType()->isReferenceType() &&
@@ -52402,7 +52446,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       (*CountOperation == UtilityDequeOperation::Erase || *CountOperation == UtilityDequeOperation::EraseRange);
   const bool DequeInsert = CountOperation &&
       (*CountOperation == UtilityDequeOperation::InsertCopy || *CountOperation == UtilityDequeOperation::InsertMove ||
-       *CountOperation == UtilityDequeOperation::InsertCount);
+       *CountOperation == UtilityDequeOperation::InsertCount ||
+       *CountOperation == UtilityDequeOperation::InsertPointerRange ||
+       *CountOperation == UtilityDequeOperation::InsertInitializerList);
   const bool ClosedCopyProof = DequeValueCopy || DequePointerAssign || DequeErase || DequeInsert || SharedStatements;
   const bool DequePointerRange = !PriorityRoot && RootMethod &&
       dequePointerRangeTemplate(S, SM, RootMethod, Context);
@@ -52479,7 +52525,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
         dequeClosedIteratorPrimitive(S, SM, F, Context) || dequeClosedOwnerQuery(S, SM, F, Context, &Queries))) return true;
     if (ClosedCopyProof) {
       std::vector<const FunctionDecl *> Dependencies;
-      if ((CountOperation && *CountOperation == UtilityDequeOperation::InsertCount &&
+      if ((CountOperation && (*CountOperation == UtilityDequeOperation::InsertCount ||
+            *CountOperation == UtilityDequeOperation::InsertPointerRange ||
+            *CountOperation == UtilityDequeOperation::InsertInitializerList) &&
            dequeIntegerMapEmplacement(S, SM, F, Context, Dependencies)) ||
           (DequeInsert && dequeIntegerMoveDispatcher(S, SM, F, Context, Dependencies)) ||
           dequeTransferWrapper(S, SM, F, Context, Dependencies) ||

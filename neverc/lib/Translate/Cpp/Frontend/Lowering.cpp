@@ -27905,6 +27905,71 @@ class FunctionLowering {
     return Result;
   }
 
+  Expression insertDequeRange(Expression Place, Expression Position, Expression Count,
+      Expression Input, QualType IteratorType, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Diff = type(A.Context.getPointerDiffType(), L);
+    auto OldSize = snapshot(dequeOwnerMember(Place, "nct_deque_size", L), L);
+    auto NewSize = snapshot(binary("+", OldSize, Count, Size, L), L);
+    auto Cursor = temporary(Size, L);
+    const auto Nonempty = labelName(), Front = labelName(), Back = labelName(), Fill = labelName(), Done = labelName();
+    // Evaluated arguments remain live for count zero, but no value is read.
+    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Nonempty, Done, L);
+    label(Nonempty, L);
+    branch(binary("<", Position, binary("-", OldSize, Position, Size, L), "bool", L), Front, Back, L);
+    label(Front, L);
+    const auto FrontGrow = labelName(), FrontReady = labelName();
+    branch(binary(">", Count, dequeOwnerMember(Place, "nct_deque_start", L), "bool", L), FrontGrow, FrontReady, L);
+    label(FrontGrow, L);
+    dequeGrowFrontBy(Place, binary("-", Count, dequeOwnerMember(Place, "nct_deque_start", L), Size, L), L);
+    jump(FrontReady, L); label(FrontReady, L);
+    // Valid input ranges are external to this deque. All integer transfers
+    // and input reads follow capacity callbacks, without further user calls.
+    assign(dequeOwnerMember(Place, "nct_deque_start", L),
+        binary("-", dequeOwnerMember(Place, "nct_deque_start", L), Count, Size, L), L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), NewSize, L);
+    assign(Cursor, quantity(0, Size, L), L);
+    const auto FrontCheck = labelName(), FrontMove = labelName();
+    jump(FrontCheck, L); label(FrontCheck, L);
+    branch(binary("<", Cursor, Position, "bool", L), FrontMove, Fill, L);
+    label(FrontMove, L);
+    assign(dequeOwnerValue(Place, Cursor, false, L),
+        dequeOwnerValue(Place, binary("+", Cursor, Count, Size, L), false, L), L);
+    assign(Cursor, binary("+", Cursor, quantity(1, Size, L), Size, L), L);
+    jump(FrontCheck, L);
+    label(Back, L);
+    auto Spare = snapshot(dequeBackSpare(Place, L), L);
+    const auto BackGrow = labelName(), BackReady = labelName();
+    branch(binary(">", Count, Spare, "bool", L), BackGrow, BackReady, L);
+    label(BackGrow, L); dequeGrowBackBy(Place, binary("-", Count, Spare, Size, L), L);
+    jump(BackReady, L); label(BackReady, L);
+    assign(dequeOwnerMember(Place, "nct_deque_size", L), NewSize, L);
+    assign(Cursor, OldSize, L);
+    const auto BackCheck = labelName(), BackMove = labelName();
+    jump(BackCheck, L); label(BackCheck, L);
+    branch(binary(">", Cursor, Position, "bool", L), BackMove, Fill, L);
+    label(BackMove, L);
+    assign(Cursor, binary("-", Cursor, quantity(1, Size, L), Size, L), L);
+    assign(dequeOwnerValue(Place, binary("+", Cursor, Count, Size, L), false, L),
+        dequeOwnerValue(Place, Cursor, false, L), L);
+    jump(BackCheck, L);
+    label(Fill, L);
+    assign(Cursor, Position, L);
+    const auto FillCheck = labelName(), Store = labelName();
+    jump(FillCheck, L); label(FillCheck, L);
+    branch(binary("<", Cursor, binary("+", Position, Count, Size, L), "bool", L), Store, Done, L);
+    label(Store, L);
+    auto InputPointer = cast(dequePointerOffset(Input, cast(binary("-", Cursor, Position, Size, L), Diff, L), L),
+        type(A.Context.getPointerType(A.Context.IntTy.withConst()), L), L);
+    assign(dequeOwnerValue(Place, Cursor, false, L), dereference(InputPointer, L), L);
+    assign(Cursor, binary("+", Cursor, quantity(1, Size, L), Size, L), L);
+    jump(FillCheck, L);
+    label(Done, L);
+    auto Result = dequeOwnerIterator(Place, IteratorType, false, L);
+    advanceDequeIterator(Result, cast(Position, Diff, L), L);
+    return Result;
+  }
+
   Expression insertDequeCount(Expression Place, Expression Position, Expression Count,
       Expression Reference, QualType IteratorType, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
@@ -28093,6 +28158,23 @@ class FunctionLowering {
           : Operation == UtilityDequeOperation::Front ? quantity(0, Size, L)
           : binary("-", dequeOwnerMember(Place, "nct_deque_size", L), quantity(1, Size, L), Size, L);
       return dequeOwnerValue(Place, Position, Method->isConst(), L);
+    }
+    if (Operation == UtilityDequeOperation::InsertPointerRange || Operation == UtilityDequeOperation::InsertInitializerList) {
+      const auto Diff = type(A.Context.getPointerDiffType(), L);
+      auto Begin = dequeOwnerIterator(Place, Method->getReturnType(), false, L);
+      auto Position = snapshot(cast(dequeIteratorDifference(dereference(Operands[0], L), Begin, L), Size, L), L);
+      if (Operation == UtilityDequeOperation::InsertInitializerList) {
+        const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
+            Method->getParamDecl(1)->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!List) reject(L, "deque initializer insertion", "The pinned integer initializer-list carrier is required.");
+        auto Input = snapshot(fieldStorage(dereference(Operands[1], L), List->Begin, L), L);
+        auto Count = snapshot(fieldStorage(dereference(Operands[1], L), List->Size, L), L);
+        return insertDequeRange(Place, Position, Count, Input, Method->getReturnType(), L);
+      }
+      const auto Pointer = type(A.Context.getPointerType(A.Context.IntTy.withConst()), L);
+      auto Input = snapshot(cast(Operands[1], Pointer, L), L);
+      auto Count = snapshot(cast(binary("-", cast(Operands[2], Pointer, L), Input, Diff, L), Size, L), L);
+      return insertDequeRange(Place, Position, Count, Input, Method->getReturnType(), L);
     }
     if (Operation == UtilityDequeOperation::InsertCount) {
       auto Begin = dequeOwnerIterator(Place, Method->getReturnType(), false, L);
