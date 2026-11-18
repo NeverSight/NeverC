@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -47078,22 +47079,24 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   Function = [&](const FunctionDecl *F, unsigned Depth) {
-    if (!F || Depth > 64 || ++Nodes > 4096) return false;
+    if (!F || Depth > 64 || ++Nodes > 4096) { llvm::errs() << "NEVERC_BITSET_GRAPH function-budget depth=" << Depth << " nodes=" << Nodes << "\n"; return false; }
     if (F->getBuiltinID()) {
       // Clang creates these global builtin declarations lazily at their
       // SDK call token. They are not ordinary declarations in namespace std.
       // Every explicit or user-sourced redeclaration still fails closed.
       for (const auto *D : F->redecls())
         if (D->getLocation().isValid() && !bitsetPinned(S, SM, D) &&
-            !bitsetImplicitPopcountBuiltin(S, SM, D, F->getBuiltinID())) return false;
+            !bitsetImplicitPopcountBuiltin(S, SM, D, F->getBuiltinID())) { llvm::errs() << "NEVERC_BITSET_GRAPH builtin-origin " << F->getQualifiedNameAsString() << " at " << SM.getFilename(SM.getSpellingLoc(D->getLocation())) << "\n"; return false; }
       if (F->hasBody()) return false;
       const auto Name = F->getName();
-      return Name == "__builtin_is_constant_evaluated" ||
+      const bool Allowed = Name == "__builtin_is_constant_evaluated" ||
              Name == "__builtin_popcount" || Name == "__builtin_popcountl" ||
              Name == "__builtin_popcountll" || Name == "__builtin_expect" ||
              Name == "__builtin_assume" || Name == "__builtin_unreachable";
+      if (!Allowed) llvm::errs() << "NEVERC_BITSET_GRAPH builtin-not-listed " << Name << "\n";
+      return Allowed;
     }
-    if (!bitsetPinnedFunction(S, SM, F)) return false;
+    if (!bitsetPinnedFunction(S, SM, F)) { llvm::errs() << "NEVERC_BITSET_GRAPH function-origin " << F->getQualifiedNameAsString() << " at " << SM.getFilename(SM.getSpellingLoc(F->getLocation())) << "\n"; return false; }
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
     // Position-taking operations below require a constant in-range index.
     // Their error branch cannot execute, but its declaration remains pinned.
@@ -47105,11 +47108,12 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
       for (const auto *Init : Constructor->inits())
         if (!Statement(Init->getInit(), Depth + 1)) return false;
     const auto *Body = F->getBody();
+    if (!Body) llvm::errs() << "NEVERC_BITSET_GRAPH no-body " << F->getQualifiedNameAsString() << "\n";
     return Body && Statement(Body, Depth + 1);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
-    if (Depth > 64 || ++Nodes > 4096) return false;
+    if (Depth > 64 || ++Nodes > 4096) { llvm::errs() << "NEVERC_BITSET_GRAPH statement-budget depth=" << Depth << " nodes=" << Nodes << "\n"; return false; }
     auto PinnedMacro = [&](SourceLocation Location) {
       if (!Location.isMacroID()) return true;
       const auto File = S.sdkFile(SM, SM.getSpellingLoc(Location));
