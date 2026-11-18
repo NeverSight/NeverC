@@ -1298,7 +1298,7 @@ enum class UtilityOperation {
   StringViewSize,
   BitsetCount, BitsetAny, BitsetTest, BitsetSet, BitsetReset, BitsetFlip,
   BitsetToUnsigned,
-  BitsetSize, BitsetNone, BitsetAll, BitsetSetAll, BitsetResetAll, BitsetFlipAll, BitsetAssign,
+  BitsetSize, BitsetNone, BitsetAll, BitsetSetAll, BitsetResetAll, BitsetFlipAll, BitsetAssign, BitsetToString, BitsetHash,
   BitsetNot, BitsetEqual, BitsetNotEqual, BitsetAnd, BitsetOr, BitsetXor,
   BitsetAndAssign, BitsetOrAssign, BitsetXorAssign,
   BitsetShiftLeft, BitsetShiftRight, BitsetShiftLeftAssign, BitsetShiftRightAssign,
@@ -3682,7 +3682,7 @@ std::optional<UtilityBitsetProxyRecord> approvedUtilityBitsetProxyRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
-enum class UtilityBitsetConstruction { Default, UnsignedValue, Copy };
+enum class UtilityBitsetConstruction { Default, UnsignedValue, Copy, LiteralText };
 struct UtilityBitsetCall {
   UtilityOperation Operation;
   uint64_t Position = 0;
@@ -3694,6 +3694,12 @@ struct UtilityBitsetCall {
 std::optional<UtilityBitsetRecord> approvedUtilityBitsetRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<UtilityBitsetRecord> approvedBitsetHashObject(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Input,
+    const clang::ASTContext &Context);
+std::optional<std::vector<uint64_t>> approvedUtilityBitsetLiteralWords(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *C,
+    const clang::ASTContext &Context);
 std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);

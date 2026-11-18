@@ -803,6 +803,9 @@ static bool functionalObjectOrigin(const State &S, const SourceManager &SM,
       return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
                             "__memory/unique_ptr.h");
   if (const auto *Method = dyn_cast<CXXMethodDecl>(Declaration))
+    if (approvedBitsetHashObject(S, SM, Method->getParent(), Method->getASTContext()))
+      return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "bitset");
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(Declaration))
     if (auto StringHash = approvedStringHashObject(
             S, SM, Method->getParent(), Method->getASTContext()))
       return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
@@ -1473,6 +1476,8 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
     return FunctionalObjectRecord{UniqueHash->Record};
   if (auto StringHash = approvedStringHashObject(S, SM, Record, Context))
     return FunctionalObjectRecord{StringHash->Record};
+  if (approvedBitsetHashObject(S, SM, Record, Context))
+    return FunctionalObjectRecord{Record->getDefinition()};
   if (functionTraitObjectValue(S, SM, Record, Context))
     return FunctionalObjectRecord{Record->getDefinition()};
   const auto *Definition = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
@@ -47291,17 +47296,50 @@ bool bitsetConstantEvaluationBuiltin(const State &S, const SourceManager &SM,
   return Declarations != 0;
 }
 
+bool bitsetStringResultSubscript(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call, const CXXRecordDecl *String,
+                                  const ASTContext &Context) {
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+  const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+  return M && M->getOverloadedOperator() == OO_Subscript && Operator &&
+      Operator->getNumArgs() == 2 && M->getParent()->getCanonicalDecl() == String->getCanonicalDecl() &&
+      !M->isStatic() && !M->isConst() && !M->isVolatile() && !M->isVariadic() &&
+      M->getNumParams() == 1 && Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) &&
+      Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Context.CharTy)) &&
+      bitsetPinnedHeader(S, SM, M, "string") && bitsetPinnedFunction(S, SM, M);
+}
+
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
-                        const FunctionDecl *Root) {
+                        const FunctionDecl *Root, bool KnownValidText = false,
+                        const CXXRecordDecl *StringResult = nullptr) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
+  // Clang may create the global declaration at the pinned SDK strlen call.
+  auto IsTextLengthBuiltin = [&](const FunctionDecl *F) {
+    if (F->getBuiltinID() != Builtin::BI__builtin_strlen || F->hasBody() ||
+        F->getNumParams() != 1 || F->isVariadic()) return false;
+    const auto &Context = Root->getASTContext();
+    if (!Context.hasSameType(F->getReturnType(), Context.getSizeType()) ||
+        !Context.hasSameType(F->getParamDecl(0)->getType(),
+                            Context.getPointerType(Context.CharTy.withConst()))) return false;
+    for (const auto *D : F->redecls()) {
+      if (D->getTypeSourceInfo()) return false;
+      if (D->getLocation().isInvalid()) continue;
+      const auto File = S.sdkFile(SM, D->getLocation());
+      if (!File || File->Root != "libcxx" ||
+          File->Path != "__string/constexpr_c_functions.h") return false;
+    }
+    return true;
+  };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
     if (!F || Depth > 64 || ++Nodes > 4096) return false;
     if (bitsetBuiltinLibraryCast(S, SM, F, Root->getASTContext())) return true;
     if (F->getBuiltinID() == Builtin::BI__builtin_is_constant_evaluated)
       return bitsetConstantEvaluationBuiltin(S, SM, F, Root->getASTContext());
+    if (KnownValidText && F->getBuiltinID() == Builtin::BI__builtin_strlen)
+      return IsTextLengthBuiltin(F);
     if (F->getBuiltinID()) {
       // Clang creates these global builtin declarations lazily at their
       // SDK call token. They are not ordinary declarations in namespace std.
@@ -47321,6 +47359,10 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
     // Position-taking operations below require a constant in-range index.
     // Their error branch cannot execute, but its declaration remains pinned.
     if (F->getIdentifier() && F->getName() == "__throw_out_of_range" && F->getNumParams() == 1)
+      return true;
+    if (KnownValidText && F->getIdentifier() &&
+        F->getName() == "__throw_invalid_argument" && F->getNumParams() == 1 &&
+        F->isNoReturn() && bitsetPinnedHeader(S, SM, F, "stdexcept"))
       return true;
     if (const auto *M = dyn_cast<CXXMethodDecl>(F);
         M && M->isImplicit() && M->isTrivial()) return true;
@@ -47346,11 +47388,23 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
     if (const auto *Call = dyn_cast<CallExpr>(Node)) {
       const auto &Context = Root->getASTContext();
       if (bitsetPinnedWordRangeQuery(S, SM, Call, Context)) return true;
-      if (!bitsetPinnedWordTransfer(S, SM, Call, Context) &&
+      if (!(StringResult && bitsetStringResultSubscript(S, SM, Call, StringResult, Context)) &&
+          !bitsetPinnedWordTransfer(S, SM, Call, Context) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     }
-    if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
-      if (!Function(C->getConstructor(), Depth + 1)) return false;
+    if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
+      bool StringConstruction = false;
+      if (StringResult) {
+        const auto *Record = C->getType()->getAsCXXRecordDecl();
+        if (Record && Record->getCanonicalDecl() == StringResult->getCanonicalDecl()) {
+          const auto Kind = approvedUtilityStringConstruction(S, SM, C, Root->getASTContext());
+          StringConstruction = (Kind == UtilityStringConstruction::Fill || Kind == UtilityStringConstruction::Move ||
+                                Kind == UtilityStringConstruction::Copy) &&
+              bitsetPinnedFunction(S, SM, C->getConstructor());
+        }
+      }
+      if (!StringConstruction && !Function(C->getConstructor(), Depth + 1)) return false;
+    }
     for (const auto *Child : Node->children())
       if (!Statement(Child, Depth + 1)) return false;
     return true;
@@ -47503,9 +47557,86 @@ std::optional<UtilityBitsetProxyRecord> approvedUtilityBitsetProxyRecord(
   return UtilityBitsetProxyRecord{Record, Base, Word, Mask, ReadOnly};
 }
 
+static bool bitsetLiteralCharacterConstructor(const State &S, const SourceManager &SM,
+                                              const CXXConstructorDecl *M,
+                                              const ASTContext &Context) {
+  return M && M->getPrimaryTemplate() &&
+      M->getTemplateSpecializationKind() == TSK_ImplicitInstantiation &&
+      !M->isVariadic() && M->getNumParams() == 4 &&
+      Context.hasSameType(M->getParamDecl(0)->getType(),
+                          Context.getPointerType(Context.CharTy.withConst())) &&
+      Context.hasSameType(M->getParamDecl(1)->getType(), Context.getSizeType()) &&
+      Context.hasSameType(M->getParamDecl(2)->getType(), Context.CharTy) &&
+      Context.hasSameType(M->getParamDecl(3)->getType(), Context.CharTy) &&
+      approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) &&
+      bitsetPinned(S, SM, M, true) && bitsetPinnedFunction(S, SM, M);
+}
+
+static std::optional<uint64_t> bitsetLiteralTextArgument(
+    const State &S, const SourceManager &SM, const Expr *Argument,
+    const CXXConstructorDecl *M, unsigned Index, const ASTContext &Context) {
+  const auto *Parameter = M->getParamDecl(Index);
+  const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument);
+  if (Default) {
+    if (Default->getParam() != Parameter || !bitsetPinned(S, SM, Parameter, true))
+      return std::nullopt;
+    Argument = selectedDefaultArgument(Default, Context);
+    if (!Argument || !cstddefOrigin(S, SM, Argument->getExprLoc(), "libcxx", "bitset"))
+      return std::nullopt;
+  } else {
+    const auto *Literal = Argument->IgnoreParenImpCasts();
+    if ((Index == 1 && !isa<IntegerLiteral>(Literal)) ||
+        (Index != 1 && !isa<CharacterLiteral>(Literal)) ||
+        !S.owns(SM, Literal->getExprLoc()))
+      return std::nullopt;
+  }
+  Expr::EvalResult Result;
+  if (!Argument->EvaluateAsInt(Result, Context) || !Result.Val.isInt() ||
+      Result.Val.getInt().getActiveBits() > 64)
+    return std::nullopt;
+  uint64_t Value = Result.Val.getInt().getZExtValue();
+  if (Index != 1) Value = static_cast<unsigned char>(Value);
+  if (Default && Value != (Index == 1 ? UINT64_MAX : Index == 2 ? '0' : '1'))
+    return std::nullopt;
+  return Value;
+}
+
+std::optional<std::vector<uint64_t>> approvedUtilityBitsetLiteralWords(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *C,
+    const ASTContext &Context) {
+  if (!C || C->getNumArgs() != 4 || C->isTypeDependent() || C->isValueDependent() ||
+      C->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Text = dyn_cast<StringLiteral>(C->getArg(0)->IgnoreParenImpCasts());
+  const auto *M = C->getConstructor();
+  if (!Text || Text->getCharByteWidth() != 1 || !S.owns(SM, Text->getBeginLoc()) ||
+      !bitsetLiteralCharacterConstructor(S, SM, M, Context))
+    return std::nullopt;
+  const auto Count = bitsetLiteralTextArgument(S, SM, C->getArg(1), M, 1, Context);
+  const auto Zero = bitsetLiteralTextArgument(S, SM, C->getArg(2), M, 2, Context);
+  const auto One = bitsetLiteralTextArgument(S, SM, C->getArg(3), M, 3, Context);
+  if (!Count || !Zero || !One) return std::nullopt;
+  const auto Bytes = Text->getBytes().split('\0').first;
+  const auto Length = std::min<uint64_t>(Bytes.size(), *Count);
+  for (uint64_t I = 0; I != Length; ++I) {
+    const auto Digit = static_cast<unsigned char>(Bytes[I]);
+    if (Digit != *Zero && Digit != *One) return std::nullopt;
+  }
+  if (!bitsetSourceGraph(S, SM, M, /*KnownValidText=*/true)) return std::nullopt;
+  const auto Info = approvedUtilityBitsetRecord(S, SM, M->getParent(), Context);
+  const auto Width = std::min(Length, Info->Bits);
+  std::vector<uint64_t> Words((Width + 63) / 64);
+  for (uint64_t I = 0; I != Width; ++I)
+    if (static_cast<unsigned char>(Bytes[Width - 1 - I]) == *One)
+      Words[I / 64] |= uint64_t(1) << (I % 64);
+  return Words;
+}
+
 std::optional<UtilityBitsetConstruction> approvedUtilityBitsetConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *C,
     const ASTContext &Context) {
+  if (C && C->getNumArgs() == 4 && approvedUtilityBitsetLiteralWords(S, SM, C, Context))
+    return UtilityBitsetConstruction::LiteralText;
   if (!C || C->isTypeDependent() || C->isValueDependent() ||
       C->getConstructionKind() != CXXConstructionKind::Complete) return std::nullopt;
   const auto *M = C->getConstructor();
@@ -47560,7 +47691,12 @@ static std::optional<UtilityBitsetCall> bitsetProxyCall(
       return std::nullopt;
     const auto Left = Proxy(F->getParamDecl(0)->getType());
     const auto Right = Proxy(F->getParamDecl(1)->getType());
-    if (Left && Right && !Left->ReadOnly && !Right->ReadOnly && Origin("__bit_reference"))
+    const auto BoolReference = Context.getLValueReferenceType(Context.BoolTy);
+    const bool LeftMatches = Left ? !Left->ReadOnly :
+        Context.hasSameType(F->getParamDecl(0)->getType(), BoolReference);
+    const bool RightMatches = Right ? !Right->ReadOnly :
+        Context.hasSameType(F->getParamDecl(1)->getType(), BoolReference);
+    if ((Left || Right) && LeftMatches && RightMatches && Origin("__bit_reference"))
       return UtilityBitsetCall{UtilityOperation::BitsetProxySwap};
     return std::nullopt;
   }
@@ -47627,10 +47763,134 @@ static std::optional<UtilityBitsetCall> bitsetProxyCall(
   return std::nullopt;
 }
 
+std::optional<UtilityBitsetRecord> approvedBitsetHashObject(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    const ASTContext &Context) {
+  const auto *Hash = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Input && Input->getIdentifier() && Input->getName() == "hash"
+          ? Input->getDefinition() : nullptr);
+  const auto *Partial = Hash ? Hash->getSpecializedTemplateOrPartial()
+      .dyn_cast<ClassTemplatePartialSpecializationDecl *>() : nullptr;
+  if (!Hash || Hash->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !bitsetPinned(S, SM, Hash, true) || !bitsetPinned(S, SM, Partial, true) ||
+      Hash->getTemplateArgs().size() != 1 ||
+      Hash->getTemplateArgs()[0].getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Value = Hash->getTemplateArgs()[0].getAsType();
+  const auto Bits = approvedUtilityBitsetRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
+  if (!Bits || Value.hasQualifiers() || !stringHashRecordSource(S, SM, Hash, "hash", "bitset"))
+    return std::nullopt;
+  auto Empty = [&](const CXXRecordDecl *Record, unsigned Bases) {
+    return Record && Record->isEmpty() && Record->isStandardLayout() &&
+        Record->isTriviallyCopyable() && Record->hasTrivialDestructor() &&
+        !Record->hasUserDeclaredConstructor() && !Record->hasUserDeclaredDestructor() &&
+        Record->field_empty() && Record->getNumBases() == Bases &&
+        !Record->getNumVBases() &&
+        Context.getTypeSize(Context.getRecordType(Record)) == Context.getCharWidth() &&
+        Context.getTypeAlign(Context.getRecordType(Record)) == Context.getTypeAlign(Context.CharTy);
+  };
+  if (!Empty(Hash, 1) || Hash->bases_begin()->isVirtual() ||
+      Hash->bases_begin()->getAccessSpecifier() != AS_public)
+    return std::nullopt;
+  const auto *R = Hash->bases_begin()->getType()->getAsCXXRecordDecl();
+  const auto *Base = dyn_cast_or_null<ClassTemplateSpecializationDecl>(R ? R->getDefinition() : nullptr);
+  if (!Empty(Base, 0) ||
+      Base->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !stringHashRecordSource(S, SM, Base, "__unary_function_keep_layout_base",
+                              "__functional/unary_function.h"))
+    return std::nullopt;
+  const auto &Arguments = Base->getTemplateArgs();
+  if (Arguments.size() != 2 || Arguments[0].getKind() != TemplateArgument::Type ||
+      Arguments[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments[0].getAsType(), Value) ||
+      !Context.hasSameType(Arguments[1].getAsType(), Context.getSizeType()))
+    return std::nullopt;
+  return Bits;
+}
+
+static std::optional<UtilityBitsetCall> bitsetHashCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+  const auto *Prototype = M ? M->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!M || M->getOverloadedOperator() != OO_Call || M->getNumParams() != 1 ||
+      M->isStatic() || !M->isConst() || M->isVolatile() || M->isVariadic() ||
+      M->getRefQualifier() != RQ_None || !Prototype || !Prototype->isNothrow() ||
+      !Context.hasSameType(M->getReturnType(), Context.getSizeType()))
+    return std::nullopt;
+  const auto Bits = approvedBitsetHashObject(S, SM, M->getParent(), Context);
+  if (!Bits || !Context.hasSameType(M->getParamDecl(0)->getType(),
+      Context.getLValueReferenceType(Context.getRecordType(Bits->Record).withConst())))
+    return std::nullopt;
+  const Expr *Receiver = nullptr;
+  unsigned Offset = 0;
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+    if (Operator->getNumArgs() != 2 || !S.owns(SM, Operator->getOperatorLoc()))
+      return std::nullopt;
+    Receiver = Operator->getArg(0);
+    Offset = 1;
+  } else if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
+    const auto *Reference = directMethodReference(Member);
+    if (Member->getNumArgs() != 1 || !Reference || !S.owns(SM, Reference->getExprLoc()))
+      return std::nullopt;
+    Receiver = Member->getImplicitObjectArgument();
+  }
+  if (!Receiver || !bitsetPinned(S, SM, M, true) || !bitsetSourceGraph(S, SM, M))
+    return std::nullopt;
+  return UtilityBitsetCall{UtilityOperation::BitsetHash, 0, Receiver, Offset, Bits->Record};
+}
+
+static std::optional<UtilityStringRecord> bitsetStringResultSignature(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *M,
+    const ASTContext &Context) {
+  if (!M || !M->getIdentifier() || M->getName() != "to_string" ||
+      !M->isConst() || M->isStatic() || M->isVolatile() || M->isVariadic() ||
+      M->getRefQualifier() != RQ_None || M->getNumParams() != 2 ||
+      !Context.hasSameType(M->getParamDecl(0)->getType(), Context.CharTy) ||
+      !Context.hasSameType(M->getParamDecl(1)->getType(), Context.CharTy) ||
+      !approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) ||
+      !bitsetPinned(S, SM, M, true) || !bitsetPinnedFunction(S, SM, M))
+    return std::nullopt;
+  return approvedUtilityStringRecord(S, SM, M->getReturnType()->getAsCXXRecordDecl(), Context);
+}
+
+static bool bitsetStringResultDefault(const State &S, const SourceManager &SM,
+                                      const CXXDefaultArgExpr *Default,
+                                      const CXXMethodDecl *M, unsigned Index,
+                                      const ASTContext &Context) {
+  if (!Default || Index >= 2 || !bitsetStringResultSignature(S, SM, M, Context) ||
+      Default->getParam() != M->getParamDecl(Index) ||
+      !bitsetPinned(S, SM, Default->getParam(), true)) return false;
+  const auto *Init = selectedDefaultArgument(Default, Context);
+  Expr::EvalResult Evaluated;
+  return Init && cstddefOrigin(S, SM, Init->getExprLoc(), "libcxx", "bitset") &&
+      Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt() &&
+      Evaluated.Val.getInt() == (Index ? '1' : '0');
+}
+
+static std::optional<UtilityBitsetCall> bitsetStringResultCall(
+    const State &S, const SourceManager &SM, const CXXMemberCallExpr *Call,
+    const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() != 2) return std::nullopt;
+  const auto *Member = directMethodReference(Call);
+  const auto *M = Call->getMethodDecl();
+  const auto String = bitsetStringResultSignature(S, SM, M, Context);
+  if (!String || !Member || !S.owns(SM, Member->getExprLoc()) ||
+      !bitsetSourceGraph(S, SM, M, /*KnownValidText=*/false, String->Record))
+    return std::nullopt;
+  const auto *Receiver = Call->getImplicitObjectArgument();
+  if (!Receiver) return std::nullopt;
+  return UtilityBitsetCall{UtilityOperation::BitsetToString, 0, Receiver, 0, M->getParent()};
+}
+
 std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
+  if (Call && S.owns(SM, Call->getExprLoc()))
+    if (auto Hash = bitsetHashCall(S, SM, Call, Context)) return Hash;
   if (auto Proxy = bitsetProxyCall(S, SM, Call, Context)) return Proxy;
+  if (auto String = bitsetStringResultCall(S, SM, dyn_cast_or_null<CXXMemberCallExpr>(Call), Context))
+    return String;
   const auto *Callee = Call ? Call->getDirectCallee() : nullptr;
   if (Callee && Callee->isOverloadedOperator() && !Callee->isVariadic() &&
       bitsetPinnedFunction(S, SM, Callee) && bitsetSourceGraph(S, SM, Callee) &&
@@ -54112,6 +54372,12 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
     return false;
   if (priorityQueueComparatorDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
   if (bitsetDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
+  if (bitsetStringResultDefault(S, SM, Default, dyn_cast_or_null<CXXMethodDecl>(Function), Index, Context))
+    return true;
+  if (const auto *M = dyn_cast_or_null<CXXConstructorDecl>(Function);
+      Default && Index >= 1 && Index <= 3 && bitsetLiteralCharacterConstructor(S, SM, M, Context) &&
+      bitsetLiteralTextArgument(S, SM, Default, M, Index, Context))
+    return true;
   if (valarrayResizeDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
   if (approvedUtilityUnorderedMapDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
