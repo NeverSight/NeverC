@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_text_hash_swap_registered = cls.registered
+        cls.bitset_text_hash_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_text_hash_swap_original = cls.adapter.restore_original_gtests(cls.bitset_text_hash_swap_registered,cls.bitset_text_hash_swap_suffix)
+        cls.registered = cls.adapter.restore_bitset_text_hash_swap_history(cls.bitset_text_hash_swap_registered)
         cls.bitset_checked_operations_registered = cls.registered
         cls.bitset_checked_operations_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_checked_operations_original = cls.adapter.restore_original_gtests(cls.bitset_checked_operations_registered,cls.bitset_checked_operations_suffix)
@@ -1572,6 +1576,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_checked_operations_registered,self.bitset_checked_operations_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_checked_operations_original+b' ',['TranslateTest.CoreV2BitsetReferenceMaskedWordsRunAtBothOptimizations'])
+
+    def test_bitset_text_hash_swap_preserves_all_previous_registry_bytes_and_extracts_fifty_six_tests(self):
+        self.assertEqual(self.bitset_text_hash_swap_original+self.bitset_text_hash_swap_suffix,self.bitset_text_hash_swap_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_text_hash_swap_original,self.bitset_text_hash_swap_suffix),self.bitset_text_hash_swap_original)
+        self.assertEqual(self.adapter.restore_bitset_text_hash_swap_history(self.bitset_text_hash_swap_registered),self.bitset_checked_operations_registered)
+        self.assertEqual(self.adapter.restore_bitset_text_hash_swap_history(self.bitset_text_hash_swap_original),self.bitset_checked_operations_original)
+        selected = ['TranslateTest.CoreV2BitsetHashZeroSizeRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashSingleWordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashXorCancellationRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashNonzeroTailRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashCopiedCarrierRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetLiteralTextDefaultAndTruncationRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetLiteralTextCrossWordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetLiteralTextBoundedLengthAndNulRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetLiteralTextCustomCharactersRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetLiteralTextEqualCharactersRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetLiteralTextEmptyInputAndResultRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringShortDefaultDigitsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringLongCrossWordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringEmptyReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringEmbeddedNulRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringPersistentCopyRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetToStringDefaultReturnTemplateRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetBoolSwapProxyFirstRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetBoolSwapBoolFirstRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetBoolSwapCopiedAliasRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetBoolSwapUnchangedOtherWordsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetBoolSwapCaptureOnceRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetBoolSwapReadAfterCaptureRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetHashWordStorageRejected', 'TranslateTest.CoreV2BitsetHashBitsetBaseRejected', 'TranslateTest.CoreV2BitsetHashHashImplementationRejected', 'TranslateTest.CoreV2BitsetHashHashBaseRejected', 'TranslateTest.CoreV2BitsetHashHashCarrierRejected', 'TranslateTest.CoreV2BitsetHashLegacyBaseRejected', 'TranslateTest.CoreV2BitsetHashSpecializedOperatorRejected', 'TranslateTest.CoreV2BitsetHashSpecializedEmptyOperatorRejected', 'TranslateTest.CoreV2BitsetLiteralTextInvalidDigitRejected', 'TranslateTest.CoreV2BitsetLiteralTextInvalidBeyondWidthRejected', 'TranslateTest.CoreV2BitsetLiteralTextDynamicPointerRejected', 'TranslateTest.CoreV2BitsetLiteralTextDynamicLengthRejected', 'TranslateTest.CoreV2BitsetLiteralTextDynamicDigitRejected', 'TranslateTest.CoreV2BitsetLiteralTextWideCharacterRejected', 'TranslateTest.CoreV2BitsetLiteralTextOwnedDecoderRejected', 'TranslateTest.CoreV2BitsetLiteralTextOwnedLengthRejected', 'TranslateTest.CoreV2BitsetToStringWideCharacterRejected', 'TranslateTest.CoreV2BitsetToStringCustomTraitsRejected', 'TranslateTest.CoreV2BitsetToStringCustomAllocatorRejected', 'TranslateTest.CoreV2BitsetToStringExplicitUserImplementationRejected', 'TranslateTest.CoreV2BitsetToStringOwnedRootNameRejected', 'TranslateTest.CoreV2BitsetToStringOwnedBitsetStorageRejected', 'TranslateTest.CoreV2BitsetToStringOwnedBitReferenceRejected', 'TranslateTest.CoreV2BitsetToStringOwnedStringTypeRejected', 'TranslateTest.CoreV2BitsetBoolSwapGuardSegmentRejected', 'TranslateTest.CoreV2BitsetBoolSwapGuardMaskRejected', 'TranslateTest.CoreV2BitsetBoolSwapGuardMakeReferenceRejected', 'TranslateTest.CoreV2BitsetBoolSwapGuardReferenceCarrierRejected', 'TranslateTest.CoreV2BitsetBoolSwapGuardStorageBaseRejected', 'TranslateTest.CoreV2BitsetBoolSwapGuardStorageRejected', 'TranslateTest.CoreV2BitsetBoolSwapGuardOverloadNameRejected', 'TranslateTest.CoreV2BitsetBoolSwapGuardOwnedSubscriptRejected']
+        generated,proof = self.extractor.extract(self.bitset_text_hash_swap_original,selected)
+        self.assertEqual(proof['original_test_names'],7886)
+        self.assertEqual(proof['selected_count'],56)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7830)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bithash',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_text_hash_swap_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_text_hash_swap_registered+b' ',
+                        self.bitset_text_hash_swap_registered.replace(b'r19bithash',b'q.push(11)',1),
+                        self.bitset_text_hash_swap_registered+self.bitset_text_hash_swap_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_text_hash_swap_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_text_hash_swap_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_text_hash_swap_registered,self.bitset_text_hash_swap_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_text_hash_swap_original+b' ',['TranslateTest.CoreV2BitsetHashZeroSizeRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
