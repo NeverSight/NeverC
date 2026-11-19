@@ -47311,9 +47311,31 @@ bool bitsetStringResultSubscript(const State &S, const SourceManager &SM,
 
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
                         const FunctionDecl *Root, bool KnownValidText = false,
-                        const CXXRecordDecl *StringResult = nullptr) {
+                        const CXXRecordDecl *StringResult = nullptr, bool TraceOwned = false) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
+  bool Logged = false;
+  auto Failure = [&](llvm::StringRef Reason, const FunctionDecl *F, const Stmt *Node = nullptr, SourceLocation Macro = {}) {
+    if (TraceOwned && !Logged) {
+      Logged = true;
+      llvm::errs() << "bitset-owned-text graph " << Reason;
+      if (F) {
+        if (F->getIdentifier()) llvm::errs() << " symbol=" << F->getName();
+        llvm::errs() << " builtin=" << F->getBuiltinID();
+        if (const auto File = S.sdkFile(SM, F->getLocation()))
+          llvm::errs() << " sdk=" << File->Root << '/' << File->Path;
+      }
+      if (Node) llvm::errs() << " node=" << Node->getStmtClassName();
+      if (Macro.isMacroID()) {
+        llvm::errs() << " macro=" << Lexer::getImmediateMacroName(Macro, SM, Root->getASTContext().getLangOpts());
+        if (const auto File = S.sdkFile(SM, SM.getExpansionLoc(Macro)))
+          llvm::errs() << " site=" << File->Root << '/' << File->Path
+                       << ':' << SM.getExpansionLineNumber(Macro);
+      }
+      llvm::errs() << '\n';
+    }
+    return false;
+  };
   std::function<bool(const FunctionDecl *, unsigned)> Function;
   std::function<bool(const Stmt *, unsigned)> Statement;
   // Clang may create the global declaration at the pinned SDK strlen call.
@@ -47334,27 +47356,27 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
     return true;
   };
   Function = [&](const FunctionDecl *F, unsigned Depth) {
-    if (!F || Depth > 64 || ++Nodes > 4096) return false;
+    if (!F || Depth > 64 || ++Nodes > 4096) return Failure("callee or budget", F);
     if (bitsetBuiltinLibraryCast(S, SM, F, Root->getASTContext())) return true;
     if (F->getBuiltinID() == Builtin::BI__builtin_is_constant_evaluated)
-      return bitsetConstantEvaluationBuiltin(S, SM, F, Root->getASTContext());
+      return bitsetConstantEvaluationBuiltin(S, SM, F, Root->getASTContext()) || Failure("constant builtin", F);
     if (KnownValidText && F->getBuiltinID() == Builtin::BI__builtin_strlen)
-      return IsTextLengthBuiltin(F);
+      return IsTextLengthBuiltin(F) || Failure("length builtin", F);
     if (F->getBuiltinID()) {
       // Clang creates these global builtin declarations lazily at their
       // SDK call token. They are not ordinary declarations in namespace std.
       // Every explicit or user-sourced redeclaration still fails closed.
       for (const auto *D : F->redecls())
         if (D->getLocation().isValid() && !bitsetPinned(S, SM, D) &&
-            !bitsetImplicitPopcountBuiltin(S, SM, D, F->getBuiltinID())) return false;
-      if (F->hasBody()) return false;
+            !bitsetImplicitPopcountBuiltin(S, SM, D, F->getBuiltinID())) return Failure("builtin declaration", D);
+      if (F->hasBody()) return Failure("builtin body", F);
       const auto Name = F->getName();
       return Name == "__builtin_is_constant_evaluated" ||
              Name == "__builtin_popcount" || Name == "__builtin_popcountl" ||
              Name == "__builtin_popcountll" || Name == "__builtin_expect" ||
-             Name == "__builtin_assume" || Name == "__builtin_unreachable";
+             Name == "__builtin_assume" || Name == "__builtin_unreachable" || Failure("other builtin", F);
     }
-    if (!bitsetPinnedFunction(S, SM, F)) return false;
+    if (!bitsetPinnedFunction(S, SM, F)) return Failure("callee origin", F);
     if (!Seen.insert(F->getCanonicalDecl()).second) return true;
     // Position-taking operations below require a constant in-range index.
     // Their error branch cannot execute, but its declaration remains pinned.
@@ -47370,21 +47392,24 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
       for (const auto *Init : Constructor->inits())
         if (!Statement(Init->getInit(), Depth + 1)) return false;
     const auto *Body = F->getBody();
-    return Body && Statement(Body, Depth + 1);
+    return Body ? Statement(Body, Depth + 1) : Failure("body missing", F);
   };
   Statement = [&](const Stmt *Node, unsigned Depth) {
     if (!Node) return true;
-    if (Depth > 64 || ++Nodes > 4096) return false;
+    if (Depth > 64 || ++Nodes > 4096) return Failure("statement budget", nullptr, Node);
     auto PinnedMacro = [&](SourceLocation Location) {
       if (!Location.isMacroID()) return true;
       const auto File = S.sdkFile(SM, SM.getSpellingLoc(Location));
       return File && (File->Root == "libcxx" || File->Root == "resource");
     };
-    if (!PinnedMacro(Node->getBeginLoc()) || !PinnedMacro(Node->getEndLoc())) return false;
+    if (!PinnedMacro(Node->getBeginLoc()))
+      return Failure("statement begin macro", nullptr, Node, Node->getBeginLoc());
+    if (!PinnedMacro(Node->getEndLoc()))
+      return Failure("statement end macro", nullptr, Node, Node->getEndLoc());
     if (const auto *E = dyn_cast<Expr>(Node))
-      if (!PinnedMacro(E->getExprLoc())) return false;
+      if (!PinnedMacro(E->getExprLoc())) return Failure("expression macro", nullptr, E, E->getExprLoc());
     if (const auto *E = dyn_cast<MemberExpr>(Node))
-      if (!PinnedMacro(E->getMemberLoc())) return false;
+      if (!PinnedMacro(E->getMemberLoc())) return Failure("member macro", nullptr, E, E->getMemberLoc());
     if (const auto *Call = dyn_cast<CallExpr>(Node)) {
       const auto &Context = Root->getASTContext();
       if (bitsetPinnedWordRangeQuery(S, SM, Call, Context)) return true;
@@ -47575,50 +47600,65 @@ static bool bitsetLiteralCharacterConstructor(const State &S, const SourceManage
 static bool bitsetLiteralStringConstructor(const State &S, const SourceManager &SM,
                                            const CXXConstructorDecl *M,
                                            const ASTContext &Context) {
+  auto Signature = [&](llvm::StringRef Why, bool Passed = false) {
+    if (M && M->getNumParams() == 5 && approvedUtilityBitsetRecord(S, SM, M->getParent(), Context))
+      llvm::errs() << "bitset-owned-text signature " << Why << '\n';
+    return Passed;
+  };
   if (!M || !M->getPrimaryTemplate() ||
       M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       M->isVariadic() || M->getNumParams() != 5 ||
       !approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) ||
       !bitsetPinned(S, SM, M, true) || !bitsetPinnedFunction(S, SM, M))
-    return false;
+    return Signature("origin or template");
   const auto Parameter = M->getParamDecl(0)->getType();
-  if (!Parameter->isLValueReferenceType()) return false;
+  if (!Parameter->isLValueReferenceType()) return Signature("argument is not an lvalue reference");
   const auto Type = Parameter->getPointeeType();
   const auto String = approvedUtilityStringRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
-  return String && Context.hasSameType(Type, Context.getRecordType(String->Record).withConst()) &&
+  const bool Exact = String && Context.hasSameType(Type, Context.getRecordType(String->Record).withConst()) &&
       Context.hasSameType(M->getParamDecl(1)->getType(), Context.getSizeType()) &&
       Context.hasSameType(M->getParamDecl(2)->getType(), Context.getSizeType()) &&
       Context.hasSameType(M->getParamDecl(3)->getType(), Context.CharTy) &&
       Context.hasSameType(M->getParamDecl(4)->getType(), Context.CharTy);
+  return Exact ? Signature("accepted", true) : Signature("string or parameter type");
 }
 
 static std::optional<llvm::StringRef> bitsetLiteralStringBytes(
     const State &S, const SourceManager &SM, const Expr *Argument, const ASTContext &Context) {
+  auto Reject = [](llvm::StringRef Why, const Expr *Expression = nullptr) -> std::optional<llvm::StringRef> {
+    llvm::errs() << "bitset-owned-text argument " << Why;
+    if (Expression) llvm::errs() << " node=" << Expression->getStmtClassName();
+    llvm::errs() << '\n';
+    return std::nullopt;
+  };
   // IgnoreParenImpCasts also skips the materialization this proof requires.
   const auto *Binding = Argument->IgnoreParens();
   if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Binding);
       Cast && Cast->getCastKind() == CK_NoOp)
     Binding = Cast->getSubExpr()->IgnoreParens();
   const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Binding);
-  if (!Temporary || Temporary->getExtendingDecl() ||
-      Temporary->getStorageDuration() != SD_FullExpression)
-    return std::nullopt;
+  if (!Temporary) return Reject("materialization missing", Binding);
+  llvm::errs() << "bitset-owned-text argument duration="
+               << static_cast<unsigned>(Temporary->getStorageDuration())
+               << " extending=" << (Temporary->getExtendingDecl() != nullptr) << '\n';
+  if (Temporary->getExtendingDecl() || Temporary->getStorageDuration() != SD_FullExpression)
+    return Reject("materialization lifetime", Binding);
   const Expr *Value = Temporary->getSubExpr()->IgnoreImplicit()->IgnoreParens();
   if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(Value)) {
     if (Cast->getCastKind() != CK_ConstructorConversion && Cast->getCastKind() != CK_NoOp)
-      return std::nullopt;
+      return Reject("cast", Cast);
     Value = Cast->getSubExpr()->IgnoreImplicit()->IgnoreParens();
   }
   const auto *C = dyn_cast<CXXConstructExpr>(Value);
   const auto Kind = approvedUtilityStringConstruction(S, SM, C, Context);
   if (!Kind || !S.owns(SM, C->getExprLoc()) || !bitsetPinnedFunction(S, SM, C->getConstructor()))
-    return std::nullopt;
+    return Reject("constructor", Value);
   if (*Kind == UtilityStringConstruction::Default) return llvm::StringRef("");
   if (*Kind != UtilityStringConstruction::CString && *Kind != UtilityStringConstruction::PointerLength)
-    return std::nullopt;
+    return Reject("construction kind", Value);
   const auto *Text = dyn_cast<StringLiteral>(C->getArg(0)->IgnoreParenImpCasts());
   if (!Text || Text->getCharByteWidth() != 1 || !S.owns(SM, Text->getBeginLoc()))
-    return std::nullopt;
+    return Reject("literal text", C->getArg(0));
   const auto Bytes = Text->getBytes();
   if (*Kind == UtilityStringConstruction::CString) return Bytes.split('\0').first;
   const auto *Count = dyn_cast<IntegerLiteral>(C->getArg(1)->IgnoreParenImpCasts());
@@ -47626,7 +47666,7 @@ static std::optional<llvm::StringRef> bitsetLiteralStringBytes(
   if (!Count || !S.owns(SM, Count->getExprLoc()) ||
       !C->getArg(1)->EvaluateAsInt(Result, Context) || !Result.Val.isInt() ||
       Result.Val.getInt().getActiveBits() > 64 || Result.Val.getInt().getZExtValue() > Bytes.size())
-    return std::nullopt;
+    return Reject("literal size", C->getArg(1));
   return Bytes.take_front(Result.Val.getInt().getZExtValue());
 }
 
@@ -47680,6 +47720,8 @@ std::optional<std::vector<uint64_t>> approvedUtilityBitsetLiteralWords(
   } else if (C->getNumArgs() == 5 && bitsetLiteralStringConstructor(S, SM, M, Context)) {
     const auto Text = bitsetLiteralStringBytes(S, SM, C->getArg(0), Context);
     const auto Position = bitsetLiteralTextArgument(S, SM, C->getArg(1), M, 1, Context);
+    llvm::errs() << "bitset-owned-text argument text=" << static_cast<bool>(Text)
+                 << " position=" << static_cast<bool>(Position) << '\n';
     if (!Text || !Position || *Position > Text->size()) return std::nullopt;
     Bytes = Text->drop_front(*Position);
     CountIndex = 2;
@@ -47689,13 +47731,18 @@ std::optional<std::vector<uint64_t>> approvedUtilityBitsetLiteralWords(
   const auto Count = bitsetLiteralTextArgument(S, SM, C->getArg(CountIndex), M, CountIndex, Context);
   const auto Zero = bitsetLiteralTextArgument(S, SM, C->getArg(CountIndex + 1), M, CountIndex + 1, Context);
   const auto One = bitsetLiteralTextArgument(S, SM, C->getArg(CountIndex + 2), M, CountIndex + 2, Context);
+  if (CountIndex == 2)
+    llvm::errs() << "bitset-owned-text argument count=" << static_cast<bool>(Count)
+                 << " zero=" << static_cast<bool>(Zero) << " one=" << static_cast<bool>(One) << '\n';
   if (!Count || !Zero || !One) return std::nullopt;
   const auto Length = std::min<uint64_t>(Bytes.size(), *Count);
   for (uint64_t I = 0; I != Length; ++I) {
     const auto Digit = static_cast<unsigned char>(Bytes[I]);
     if (Digit != *Zero && Digit != *One) return std::nullopt;
   }
-  if (!bitsetSourceGraph(S, SM, M, /*KnownValidText=*/true)) return std::nullopt;
+  if (!bitsetSourceGraph(S, SM, M, /*KnownValidText=*/true, nullptr, CountIndex == 2))
+    return std::nullopt;
+  if (CountIndex == 2) llvm::errs() << "bitset-owned-text words accepted\n";
   const auto Info = approvedUtilityBitsetRecord(S, SM, M->getParent(), Context);
   const auto Width = std::min(Length, Info->Bits);
   std::vector<uint64_t> Words((Width + 63) / 64);
