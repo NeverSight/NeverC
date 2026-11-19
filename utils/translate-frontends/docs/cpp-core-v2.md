@@ -17369,8 +17369,17 @@ SDK return type.
 
 `to_ulong()` and `to_ullong()` preserve the value when the receiving unsigned
 type can represent all `N` bits. Their limits follow the selected target ABI.
-The checked operations require an in-range proof. Conversions whose high
-bits may overflow require further work.
+For wider bitsets, a directly constructed temporary can also be converted
+when its authenticated default or unsigned-value constructor proves that
+every bit above the result width is clear. This includes unsigned operands
+bounded by the supported masks and moduli. Conversion evaluates the receiver
+once. The checked operations require an in-range proof. A wider receiver
+whose high bits can overflow requires additional support.
+
+The pinned whole-value `std::swap` exchanges two mutable bitsets of the same
+type. Copies follow the selected SDK move and assignment path. Self-swap
+preserves the value, and existing bit proxies keep their binding to the
+original storage.
 
 The pinned `std::hash<std::bitset<N>>` object reads its bitset argument once.
 Its result follows the embedded SDK's zero value for an empty bitset and
@@ -17395,6 +17404,10 @@ targets, and 36 C23 executions at O0 and O2 on 64-bit Linux. The hash, literal t
 string result and mixed swap suites add 56 registered tests. A combined
 replay covers 588 source requests on the six 64-bit targets and 98 formal tests
 on 64-bit Linux, including 84 generated C23 executions at O0 and O2.
+Wide conversion and whole swap add 27 registered tests. The combined
+coverage includes 750 source requests on the six 64-bit targets and
+125 formal tests, with 108 generated C23 executions checked against
+native C++ at O0 and O2.
 
 SDK template, specialization and function redeclarations remain authenticated.
 The used body graph rejects source-owned macro spelling, replaced declarations

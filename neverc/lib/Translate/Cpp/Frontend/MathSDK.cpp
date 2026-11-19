@@ -47309,9 +47309,82 @@ bool bitsetStringResultSubscript(const State &S, const SourceManager &SM,
       bitsetPinnedHeader(S, SM, M, "string") && bitsetPinnedFunction(S, SM, M);
 }
 
+bool bitsetPinnedTrailingZeroCount(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call->getDirectCallee();
+  if (!F || F->isInvalidDecl() || !F->getIdentifier() || F->hasBody() ||
+      F->isVariadic() || F->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !F->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      !Context.hasSameType(F->getReturnType(), Context.IntTy))
+    return false;
+  const auto ID = F->getBuiltinID();
+  QualType Word;
+  unsigned ExpectedLine;
+  if (ID == Builtin::BI__builtin_ctzl && F->getName() == "__builtin_ctzl") {
+    Word = Context.UnsignedLongTy;
+    ExpectedLine = 34;
+  } else if (ID == Builtin::BI__builtin_ctzll && F->getName() == "__builtin_ctzll") {
+    Word = Context.UnsignedLongLongTy;
+    ExpectedLine = 38;
+  } else {
+    return false;
+  }
+  if (!Context.hasSameType(F->getParamDecl(0)->getType(), Word) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Word))
+    return false;
+  auto PinnedSite = [&](SourceLocation Location) {
+    return Location.isValid() && !Location.isMacroID() &&
+        cstddefOrigin(S, SM, Location, "libcxx", "__bit/countr.h") &&
+        SM.getExpansionLineNumber(Location) == ExpectedLine;
+  };
+  if (!PinnedSite(Call->getExprLoc())) return false;
+  unsigned Declarations = 0;
+  for (const auto *D : F->redecls())
+    if (++Declarations > 64 || !D->isImplicit() || D->hasBody() ||
+        D->getBuiltinID() != ID || !PinnedSite(D->getLocation()))
+      return false;
+  const auto *Reference = dyn_cast<DeclRefExpr>(Call->getArg(0)->IgnoreParenImpCasts());
+  const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
+  const auto *Owner = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  if (!Owner || !Owner->getIdentifier() || Owner->getName() != "__libcpp_ctz" ||
+      !bitsetStandardNamespace(Owner->getDeclContext()) || Owner->isVariadic() ||
+      Owner->getNumParams() != 1 || Owner->getParamDecl(0) != Parameter ||
+      !Context.hasSameType(Parameter->getType(), Word) ||
+      !Context.hasSameType(Owner->getReturnType(), Context.IntTy) ||
+      !bitsetPinnedHeader(S, SM, Owner, "__bit/countr.h") || !bitsetPinnedFunction(S, SM, Owner))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Owner->getBody());
+  if (!Body || Body->size() != 1) return false;
+  const auto *Return = dyn_cast<ReturnStmt>(*Body->body_begin());
+  return Return && Return->getRetValue() && Return->getRetValue()->IgnoreParenImpCasts() == Call;
+}
+
+bool bitsetPinnedOverflowCharWidth(const State &S, const SourceManager &SM,
+                                   SourceLocation Location, const ASTContext &Context) {
+  if (!Location.isMacroID() || Context.getCharWidth() != 8) return false;
+  const auto &Language = Context.getLangOpts();
+  const auto Spelling = SM.getSpellingLoc(Location);
+  if (!SM.isWrittenInBuiltinFile(Spelling) ||
+      Lexer::getImmediateMacroName(Location, SM, Language) != "__CHAR_BIT__" ||
+      Lexer::getSourceText(CharSourceRange::getTokenRange(Spelling, Spelling),
+                           SM, Language) != "8")
+    return false;
+  const auto Outer = SM.getImmediateExpansionRange(Location).getBegin();
+  if (!Outer.isMacroID() || Lexer::getImmediateMacroName(Outer, SM, Language) != "CHAR_BIT")
+    return false;
+  const auto Resource = SM.getSpellingLoc(Outer);
+  if (!cstddefOrigin(S, SM, Resource, "resource", "include/limits.h") ||
+      SM.getExpansionLineNumber(Resource) != 71)
+    return false;
+  const auto Site = SM.getExpansionLoc(Location);
+  const auto Line = SM.getExpansionLineNumber(Site);
+  return (Line == 342 || Line == 359) && cstddefOrigin(S, SM, Site, "libcxx", "bitset");
+}
+
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
                         const FunctionDecl *Root, bool KnownValidText = false,
-                        const CXXRecordDecl *StringResult = nullptr) {
+                        const CXXRecordDecl *StringResult = nullptr,
+                        bool ProvenNoOverflow = false) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -47364,6 +47437,13 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
         F->getName() == "__throw_invalid_argument" && F->getNumParams() == 1 &&
         F->isNoReturn() && bitsetPinnedHeader(S, SM, F, "stdexcept"))
       return true;
+    if (ProvenNoOverflow && F->getIdentifier() && F->getName() == "__throw_overflow_error" &&
+        F->getNumParams() == 1 && !F->isVariadic() && F->isNoReturn() &&
+        bitsetPinnedHeader(S, SM, F, "stdexcept")) {
+      const auto &Context = Root->getASTContext();
+      return Context.hasSameType(F->getReturnType(), Context.VoidTy) &&
+          Context.hasSameType(F->getParamDecl(0)->getType(), Context.getPointerType(Context.CharTy.withConst()));
+    }
     if (const auto *M = dyn_cast<CXXMethodDecl>(F);
         M && M->isImplicit() && M->isTrivial()) return true;
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(F))
@@ -47377,6 +47457,8 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
     if (Depth > 64 || ++Nodes > 4096) return false;
     auto PinnedMacro = [&](SourceLocation Location) {
       if (!Location.isMacroID()) return true;
+      if (ProvenNoOverflow && bitsetPinnedOverflowCharWidth(S, SM, Location, Root->getASTContext()))
+        return true;
       const auto File = S.sdkFile(SM, SM.getSpellingLoc(Location));
       return File && (File->Root == "libcxx" || File->Root == "resource");
     };
@@ -47390,6 +47472,7 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
       if (bitsetPinnedWordRangeQuery(S, SM, Call, Context)) return true;
       if (!(StringResult && bitsetStringResultSubscript(S, SM, Call, StringResult, Context)) &&
           !bitsetPinnedWordTransfer(S, SM, Call, Context) &&
+          !(ProvenNoOverflow && bitsetPinnedTrailingZeroCount(S, SM, Call, Context)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     }
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
@@ -47883,6 +47966,34 @@ static std::optional<UtilityBitsetCall> bitsetStringResultCall(
   return UtilityBitsetCall{UtilityOperation::BitsetToString, 0, Receiver, 0, M->getParent()};
 }
 
+static bool bitsetTemporaryFitsUnsigned(const State &S, const SourceManager &SM,
+                                        const Expr *Receiver, QualType Result,
+                                        const ASTContext &Context) {
+  if (!Receiver) return false;
+  const Expr *Value = Receiver->IgnoreParenImpCasts();
+  if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Value))
+    Value = Temporary->getSubExpr()->IgnoreParenImpCasts();
+  if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(Value)) {
+    if (Cast->getCastKind() != CK_ConstructorConversion && Cast->getCastKind() != CK_NoOp)
+      return false;
+    Value = Cast->getSubExpr()->IgnoreImplicit()->IgnoreParens();
+  }
+  const auto *Constructor = dyn_cast<CXXConstructExpr>(Value);
+  const auto Construction = approvedUtilityBitsetConstruction(S, SM, Constructor, Context);
+  if (Construction == UtilityBitsetConstruction::Default) return true;
+  if (Construction != UtilityBitsetConstruction::UnsignedValue) return false;
+  // This constructor zeros every bit above the converted unsigned operand.
+  const auto Width = Context.getTypeSize(Result);
+  if (Width >= Context.getTypeSize(Context.UnsignedLongLongTy)) return true;
+  if (!Width || Width >= 64) return false;
+  const auto *Argument = Constructor->getArg(0);
+  Expr::EvalResult Evaluated;
+  if (Argument->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt() &&
+      Evaluated.Val.getInt().getActiveBits() <= Width)
+    return true;
+  return bitsetBoundedPosition(Argument, Context, uint64_t(1) << Width);
+}
+
 std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
@@ -47979,17 +48090,21 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *M = Member ? Member->getMethodDecl() : nullptr;
   const auto Info = M ? approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) : std::nullopt;
-  if (!Info || (!directMethodReference(Call) || !S.owns(SM, directMethodReference(Call)->getExprLoc())) || !M->getIdentifier() || M->isStatic() || M->isVariadic() || !bitsetPinnedFunction(S, SM, M) ||
-      !bitsetSourceGraph(S, SM, M)) return std::nullopt;
+  if (!Info || (!directMethodReference(Call) || !S.owns(SM, directMethodReference(Call)->getExprLoc())) || !M->getIdentifier() || M->isStatic() || M->isVariadic() || !bitsetPinnedFunction(S, SM, M)) return std::nullopt;
   const auto Name = M->getName();
+  const auto Result = M->getReturnType();
+  const bool ToUnsigned = M->isConst() && M->getNumParams() == 0 && Call->getNumArgs() == 0 &&
+      ((Name == "to_ulong" && Context.hasSameType(Result, Context.UnsignedLongTy)) ||
+       (Name == "to_ullong" && Context.hasSameType(Result, Context.UnsignedLongLongTy)));
+  const bool NeedsOverflowProof = ToUnsigned && Info->Bits > Context.getTypeSize(Result);
+  if (NeedsOverflowProof && !bitsetTemporaryFitsUnsigned(S, SM,
+      Member->getImplicitObjectArgument(), Result, Context))
+    return std::nullopt;
+  if (!bitsetSourceGraph(S, SM, M, /*KnownValidText=*/false, /*StringResult=*/nullptr,
+                         NeedsOverflowProof))
+    return std::nullopt;
+  if (ToUnsigned) return UtilityBitsetCall{UtilityOperation::BitsetToUnsigned, 0};
   if (M->isConst() && M->getNumParams() == 0 && Call->getNumArgs() == 0) {
-    if ((Name == "to_ulong" && Context.hasSameType(M->getReturnType(), Context.UnsignedLongTy)) ||
-        (Name == "to_ullong" && Context.hasSameType(M->getReturnType(), Context.UnsignedLongLongTy))) {
-      // An oversized bitset can reach the checked overflow path.
-      if (Info->Bits > Context.getTypeSize(M->getReturnType()) || Info->Words > 1)
-        return std::nullopt;
-      return UtilityBitsetCall{UtilityOperation::BitsetToUnsigned, 0};
-    }
     if (Name == "count" && Context.hasSameType(M->getReturnType(), Context.getSizeType()))
       return UtilityBitsetCall{UtilityOperation::BitsetCount, 0};
     if (Name == "any" && Context.hasSameType(M->getReturnType(), Context.BoolTy))
@@ -130559,8 +130674,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               S, SM, Left->getPointeeType()->getAsCXXRecordDecl(), Context) &&
           approvedUtilityPairElementSwap(S, SM, Function,
                                          Left->getPointeeType(), Context);
+      const auto Type = Left->getPointeeType();
+      const bool Bitset = !Type.hasQualifiers() && Call->getArg(0)->isLValue() &&
+          Call->getArg(1)->isLValue() &&
+          approvedUtilityBitsetRecord(S, SM, Type->getAsCXXRecordDecl(), Context) &&
+          utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/swap.h") &&
+          bitsetSourceGraph(S, SM, Function) &&
+          utilitySwapTrivialBody(S, SM, Function->getBody(), Type, Context);
       if (Prototype->isNothrow() &&
-          (Wrapper || utilityScalar(Context, Left->getPointeeType()) ||
+          (Wrapper || Bitset || utilityScalar(Context, Type) ||
            (Left->getPointeeType()->isFunctionPointerType() &&
             approvedUtilityNativeArrayAssociatedSwap(
                 S, SM, Function, Left->getPointeeType(), Context))))
