@@ -47684,16 +47684,34 @@ static std::optional<uint64_t> bitsetLiteralTextArgument(
   return Value;
 }
 
+static const StringLiteral *bitsetCharacterText(
+    const State &S, const SourceManager &SM, const Expr *Argument,
+    const ASTContext &Context) {
+  const auto *Value = Argument->IgnoreParenImpCasts();
+  if (const auto *Reference = dyn_cast<DeclRefExpr>(Value)) {
+    const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+    const auto Pointer = Context.getPointerType(Context.CharTy.withConst()).withConst();
+    if (!Variable || !Variable->isConstexpr() || !Variable->hasInit() ||
+        !Context.hasSameType(Variable->getType(), Pointer) ||
+        !S.owns(SM, Variable->getLocation()) || !S.owns(SM, Reference->getExprLoc()))
+      return nullptr;
+    // The pointer is immutable and reading it has no runtime effects.
+    Value = Variable->getInit()->IgnoreParenImpCasts();
+  }
+  const auto *Text = dyn_cast<StringLiteral>(Value);
+  return Text && Text->getCharByteWidth() == 1 && S.owns(SM, Text->getBeginLoc())
+      ? Text : nullptr;
+}
+
 std::optional<std::vector<uint64_t>> approvedUtilityBitsetLiteralWords(
     const State &S, const SourceManager &SM, const CXXConstructExpr *C,
     const ASTContext &Context) {
   if (!C || C->getNumArgs() != 4 || C->isTypeDependent() || C->isValueDependent() ||
       C->getConstructionKind() != CXXConstructionKind::Complete)
     return std::nullopt;
-  const auto *Text = dyn_cast<StringLiteral>(C->getArg(0)->IgnoreParenImpCasts());
+  const auto *Text = bitsetCharacterText(S, SM, C->getArg(0), Context);
   const auto *M = C->getConstructor();
-  if (!Text || Text->getCharByteWidth() != 1 || !S.owns(SM, Text->getBeginLoc()) ||
-      !bitsetLiteralCharacterConstructor(S, SM, M, Context))
+  if (!Text || !bitsetLiteralCharacterConstructor(S, SM, M, Context))
     return std::nullopt;
   const auto Count = bitsetLiteralTextArgument(S, SM, C->getArg(1), M, 1, Context);
   const auto Zero = bitsetLiteralTextArgument(S, SM, C->getArg(2), M, 2, Context);
