@@ -130293,8 +130293,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               S, SM, Left->getPointeeType()->getAsCXXRecordDecl(), Context) &&
           approvedUtilityPairElementSwap(S, SM, Function,
                                          Left->getPointeeType(), Context);
+      const auto Type = Left->getPointeeType();
+      const bool Bitset = !Type.hasQualifiers() && Call->getArg(0)->isLValue() &&
+          Call->getArg(1)->isLValue() &&
+          approvedUtilityBitsetRecord(S, SM, Type->getAsCXXRecordDecl(), Context) &&
+          utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/swap.h") &&
+          bitsetSourceGraph(S, SM, Function) &&
+          utilitySwapTrivialBody(S, SM, Function->getBody(), Type, Context);
       if (Prototype->isNothrow() &&
-          (Wrapper || utilityScalar(Context, Left->getPointeeType()) ||
+          (Wrapper || Bitset || utilityScalar(Context, Type) ||
            (Left->getPointeeType()->isFunctionPointerType() &&
             approvedUtilityNativeArrayAssociatedSwap(
                 S, SM, Function, Left->getPointeeType(), Context))))
