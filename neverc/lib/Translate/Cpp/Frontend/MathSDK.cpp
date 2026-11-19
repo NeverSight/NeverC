@@ -47594,8 +47594,15 @@ static bool bitsetLiteralStringConstructor(const State &S, const SourceManager &
 
 static std::optional<llvm::StringRef> bitsetLiteralStringBytes(
     const State &S, const SourceManager &SM, const Expr *Argument, const ASTContext &Context) {
-  const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Argument->IgnoreParenImpCasts());
-  if (!Temporary || Temporary->getExtendingDecl()) return std::nullopt;
+  // IgnoreParenImpCasts also skips the materialization this proof requires.
+  const auto *Binding = Argument->IgnoreParens();
+  if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Binding);
+      Cast && Cast->getCastKind() == CK_NoOp)
+    Binding = Cast->getSubExpr()->IgnoreParens();
+  const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Binding);
+  if (!Temporary || Temporary->getExtendingDecl() ||
+      Temporary->getStorageDuration() != SD_FullExpression)
+    return std::nullopt;
   const Expr *Value = Temporary->getSubExpr()->IgnoreImplicit()->IgnoreParens();
   if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(Value)) {
     if (Cast->getCastKind() != CK_ConstructorConversion && Cast->getCastKind() != CK_NoOp)
