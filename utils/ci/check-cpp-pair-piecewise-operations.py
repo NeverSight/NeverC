@@ -31,7 +31,9 @@ def write(path: Path, value):
 
 class Gate:
     target = "arm64-apple-macosx15.0.0"
-    catalog_digest = "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167"
+    # SDK snapshot for the compiler under test. The historical comparison
+    # compiler is pinned independently in refusal_baseline().
+    catalog_digest = "b4a7b597150882cd93285481cc060d2eab6949b5c8d50b7ce234579cc814bd77"
 
     def __init__(self, args):
         self.root = args.repo.resolve()
@@ -71,13 +73,16 @@ class Gate:
         return text
 
     def sdk_check(self):
-        assert digest(self.sdk / "catalog.json") == self.catalog_digest
-        assert self.catalog["distribution_id"] == "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r17"
-        assert len(self.catalog["headers"]) == 664 and len(self.catalog["metadata"]) == 1
+        actual_digest = digest(self.sdk / "catalog.json")
+        assert actual_digest == self.catalog_digest, (
+            f"SDK catalog SHA-256 mismatch: expected {self.catalog_digest}, got {actual_digest}"
+        )
+        assert self.catalog["distribution_id"] == "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r19"
+        assert len(self.catalog["headers"]) == 686 and len(self.catalog["metadata"]) == 1
         for entry in self.catalog["headers"] + self.catalog["metadata"]:
             assert digest(self.sdk / entry["root"] / entry["path"]) == entry["sha256"]
         self.report["sdk_catalog_sha256"] = self.catalog_digest
-        self.report["sdk_entries"] = 665
+        self.report["sdk_entries"] = 687
         self.save()
 
     def stable(self):
