@@ -47753,8 +47753,17 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
       !Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) return std::nullopt;
   const auto *Index = Call->getArg(0);
   const auto Position = bitsetFixedPosition(Index, Context, Info->Bits);
-  if (!Position && !bitsetBoundedPosition(Index, Context, Info->Bits))
-    return std::nullopt;
+  if (!Position && !bitsetBoundedPosition(Index, Context, Info->Bits)) {
+    // Prove the converted runtime value without assuming a constant context.
+    // Lowering still evaluates the original expression.
+    Expr::EvalResult Value;
+    if (!Index->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects,
+                              /*InConstantContext=*/false) || !Value.Val.isInt())
+      return std::nullopt;
+    const auto &Constant = Value.Val.getInt();
+    if (Constant.isNegative() || Constant.getLimitedValue(Info->Bits) >= Info->Bits)
+      return std::nullopt;
+  }
   auto Indexed = [&](UtilityOperation Operation) {
     UtilityBitsetCall Result{Operation, Position.value_or(0)};
     Result.DynamicPosition = !Position.has_value();
