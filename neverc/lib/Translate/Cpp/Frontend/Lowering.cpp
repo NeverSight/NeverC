@@ -38406,8 +38406,10 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         const auto Info = approvedUtilityBitsetRecord(A.S, A.Sources,
             T->getAsCXXRecordDecl(), A.Context);
         if (!Info) reject(L, "bitset construction", "The authenticated word storage is unavailable.");
+        if (*Kind == UtilityBitsetConstruction::LiteralString)
+          (void)argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType());
         initializeZero(bitsetStorage(Place, *Info, L), bitsetArrayType(*Info), L);
-        if (*Kind == UtilityBitsetConstruction::LiteralText) {
+        if (*Kind == UtilityBitsetConstruction::LiteralText || *Kind == UtilityBitsetConstruction::LiteralString) {
           const auto Words = approvedUtilityBitsetLiteralWords(A.S, A.Sources, C, A.Context);
           if (!Words) reject(L, "bitset text", "The exact validated literal words are required.");
           for (uint64_t Index = 0; Index != Words->size(); ++Index) {
