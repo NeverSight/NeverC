@@ -47341,6 +47341,28 @@ bool bitsetPinnedTrailingZeroCount(const State &S, const SourceManager &SM,
   return Return && Return->getRetValue() && Return->getRetValue()->IgnoreParenImpCasts() == Call;
 }
 
+bool bitsetPinnedOverflowCharWidth(const State &S, const SourceManager &SM,
+                                   SourceLocation Location, const ASTContext &Context) {
+  if (!Location.isMacroID() || Context.getCharWidth() != 8) return false;
+  const auto &Language = Context.getLangOpts();
+  const auto Spelling = SM.getSpellingLoc(Location);
+  if (!SM.isWrittenInBuiltinFile(Spelling) ||
+      Lexer::getImmediateMacroName(Location, SM, Language) != "__CHAR_BIT__" ||
+      Lexer::getSourceText(CharSourceRange::getTokenRange(Spelling, Spelling),
+                           SM, Language) != "8")
+    return false;
+  const auto Outer = SM.getImmediateExpansionRange(Location).getBegin();
+  if (!Outer.isMacroID() || Lexer::getImmediateMacroName(Outer, SM, Language) != "CHAR_BIT")
+    return false;
+  const auto Resource = SM.getSpellingLoc(Outer);
+  if (!cstddefOrigin(S, SM, Resource, "resource", "include/limits.h") ||
+      SM.getExpansionLineNumber(Resource) != 71)
+    return false;
+  const auto Site = SM.getExpansionLoc(Location);
+  const auto Line = SM.getExpansionLineNumber(Site);
+  return (Line == 342 || Line == 359) && cstddefOrigin(S, SM, Site, "libcxx", "bitset");
+}
+
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
                         const FunctionDecl *Root, bool ProvenNoOverflow = false) {
   std::set<const FunctionDecl *> Seen;
@@ -47392,6 +47414,8 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
     if (Depth > 64 || ++Nodes > 4096) return false;
     auto PinnedMacro = [&](SourceLocation Location) {
       if (!Location.isMacroID()) return true;
+      if (ProvenNoOverflow && bitsetPinnedOverflowCharWidth(S, SM, Location, Root->getASTContext()))
+        return true;
       const auto File = S.sdkFile(SM, SM.getSpellingLoc(Location));
       return File && (File->Root == "libcxx" || File->Root == "resource");
     };
