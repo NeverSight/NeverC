@@ -1,0 +1,283 @@
+{
+  "positive_cases": [
+    {
+      "name": "bitset-owned-literal-default-digits",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralDefaultDigitsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9348028bd1ef486c1772a6ae8b4da28f527f270c559fbe011f7a34d48e41f2bd",
+      "original_case_source_sha256": "9348028bd1ef486c1772a6ae8b4da28f527f270c559fbe011f7a34d48e41f2bd",
+      "gtest_body_sha256": "6e1e62ade1eca147e0187f31b73c13249c47db49819a87a0b9633845e5c03a8c"
+    },
+    {
+      "name": "bitset-owned-literal-offset-and-count",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralOffsetAndCountRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4f9dbca19233b43a8c3b9649899005b6c93854b5d64432a8f6a75c5c7c01810a",
+      "original_case_source_sha256": "4f9dbca19233b43a8c3b9649899005b6c93854b5d64432a8f6a75c5c7c01810a",
+      "gtest_body_sha256": "7959ba3c6bf6cd45fa38c45fe1998064c659015d435b8718703f58b9b8b3feae"
+    },
+    {
+      "name": "bitset-owned-literal-allocated-string-crosses-word",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralAllocatedStringCrossesWordRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a27884c537f3219418935f3d9a9c344c05ab654dc1488db26dde628600036c5c",
+      "original_case_source_sha256": "a27884c537f3219418935f3d9a9c344c05ab654dc1488db26dde628600036c5c",
+      "gtest_body_sha256": "05f703801d84e56a2780a5bbe6f0db50c966846bda90be52b5ef5b42cffe9dc4"
+    },
+    {
+      "name": "bitset-owned-literal-zero-as-a-digit",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralZeroAsADigitRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b12fea61c28d81af40dd882bb45ef75a84c07a3e60848ea03946880d0502c89a",
+      "original_case_source_sha256": "b12fea61c28d81af40dd882bb45ef75a84c07a3e60848ea03946880d0502c89a",
+      "gtest_body_sha256": "5f92ea53d6087aff48588eee5a72122379fd0aeef132271fba4979524793469b"
+    },
+    {
+      "name": "bitset-owned-literal-empty-input",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralEmptyInputRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9d244f2509e8dbf74516964257f693ad7aab8be6f2e8b7bfbfaa557a67f091a9",
+      "original_case_source_sha256": "9d244f2509e8dbf74516964257f693ad7aab8be6f2e8b7bfbfaa557a67f091a9",
+      "gtest_body_sha256": "c2d3813798802c5d26ef094c60e1832b61f9b6bd290a140692f209af7bf16465"
+    },
+    {
+      "name": "bitset-owned-literal-equal-digits",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralEqualDigitsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "146b2a4dd5bc433c65a2e5ef240200578fe6228b07d8bfc27c188cae90ed902b",
+      "original_case_source_sha256": "146b2a4dd5bc433c65a2e5ef240200578fe6228b07d8bfc27c188cae90ed902b",
+      "gtest_body_sha256": "5ab3960fc43f65ef06ce9a8b404fc714d37b128013b370abeaa284a9a0078e24"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "bitset-owned-literal-guard-named-string",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralGuardNamedStringRejected",
+      "expected": "reject",
+      "source_sha256": "8519bea842b897dca5415227223e1f708d7e6054cc295331e1c59fe0fd38738d",
+      "original_case_source_sha256": "8519bea842b897dca5415227223e1f708d7e6054cc295331e1c59fe0fd38738d",
+      "gtest_body_sha256": "62ffc5b88d3e78442485bc8b8217d8cbed839d224519b87bdc37b770baa4979d"
+    },
+    {
+      "name": "bitset-owned-literal-guard-factory-string",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralGuardFactoryStringRejected",
+      "expected": "reject",
+      "source_sha256": "b86072010e29bf3f8ac5d56ac80d03c64e9463dd64734fa9983aef2bca1eb70b",
+      "original_case_source_sha256": "b86072010e29bf3f8ac5d56ac80d03c64e9463dd64734fa9983aef2bca1eb70b",
+      "gtest_body_sha256": "af670a8fc9cdae3a9820895044db619d7a5f867ff5638c519e8ed40b8639eb0c"
+    },
+    {
+      "name": "bitset-owned-literal-guard-out-of-range-offset",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralGuardOutOfRangeOffsetRejected",
+      "expected": "reject",
+      "source_sha256": "b107b5f0e2f72a034436beff70811cc6246e1223271432a5cf06720fcbcc03b2",
+      "original_case_source_sha256": "b107b5f0e2f72a034436beff70811cc6246e1223271432a5cf06720fcbcc03b2",
+      "gtest_body_sha256": "56cda778b10742cde3c62cc88bdfca68ba28beeca3b4228ba05a9b87b0eea5d5"
+    },
+    {
+      "name": "bitset-owned-literal-guard-runtime-offset",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralGuardRuntimeOffsetRejected",
+      "expected": "reject",
+      "source_sha256": "d0171b3564ea0111063d0f274ba6047654bafa2bd81a68770dabf88385d8df28",
+      "original_case_source_sha256": "d0171b3564ea0111063d0f274ba6047654bafa2bd81a68770dabf88385d8df28",
+      "gtest_body_sha256": "7abc0b75e342ef99ebc22dbe282212ffe11f93422499295c612fd5f66b55008f"
+    },
+    {
+      "name": "bitset-owned-literal-guard-invalid-selected-digit",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralGuardInvalidSelectedDigitRejected",
+      "expected": "reject",
+      "source_sha256": "d264e4e56f55622c4f26cf9e15a0407e217a8fc8ace4d83b3db0554fc916f07a",
+      "original_case_source_sha256": "d264e4e56f55622c4f26cf9e15a0407e217a8fc8ace4d83b3db0554fc916f07a",
+      "gtest_body_sha256": "f701196d338ac8c4549d50a532d519ffba566c305df7ce9640948ef1b37dc063"
+    },
+    {
+      "name": "bitset-owned-literal-guard-nonliteral-constructor-input",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralGuardNonliteralConstructorInputRejected",
+      "expected": "reject",
+      "source_sha256": "cf9051f8ca54cfe5ed99bfff66983dd8d93528cfab7ae5fc1e16bda2bcef893c",
+      "original_case_source_sha256": "cf9051f8ca54cfe5ed99bfff66983dd8d93528cfab7ae5fc1e16bda2bcef893c",
+      "gtest_body_sha256": "6c8776fff20c3a3e448470f026ddbaef454adb977e68d07269cd8b39f18739cd"
+    },
+    {
+      "name": "bitset-owned-literal-guard-non-char-traits",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralGuardNonCharTraitsRejected",
+      "expected": "reject",
+      "source_sha256": "229dc1be92ceb2d86f03b90b42bfda91ac213aa45562bea17b6158af1b2ee6a0",
+      "original_case_source_sha256": "229dc1be92ceb2d86f03b90b42bfda91ac213aa45562bea17b6158af1b2ee6a0",
+      "gtest_body_sha256": "ed410af4cc5c2ee228921d69e3729a41eb07dd90d8f44a4371c17ba8f47e70c6"
+    },
+    {
+      "name": "bitset-owned-literal-guard-sdk-body",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralGuardSdkBodyRejected",
+      "expected": "reject",
+      "source_sha256": "a8df9139371fa08e0aa5e8d058209cc6ebe48f7db00e57c188c16a4e612da6ef",
+      "original_case_source_sha256": "a8df9139371fa08e0aa5e8d058209cc6ebe48f7db00e57c188c16a4e612da6ef",
+      "gtest_body_sha256": "29093d2ccc25ec35980b79108fd2b0b6cdb203bbf03c5f3b81ff66460c413b45"
+    },
+    {
+      "name": "bitset-owned-literal-guard-representation-query",
+      "formal_test_name": "TranslateTest.CoreV2BitsetOwnedLiteralGuardRepresentationQueryRejected",
+      "expected": "reject",
+      "source_sha256": "96367f3a9d119d6d7d966892357fac7c6c2eb28da6feac73eab77bfa1af0eb0e",
+      "original_case_source_sha256": "96367f3a9d119d6d7d966892357fac7c6c2eb28da6feac73eab77bfa1af0eb0e",
+      "gtest_body_sha256": "107d58c9a1d92105030989051487f252d37e963bc064c35a42419eacc6e37ee1"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2BitsetOwnedLiteralDefaultDigitsRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetOwnedLiteralOffsetAndCountRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetOwnedLiteralAllocatedStringCrossesWordRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetOwnedLiteralZeroAsADigitRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetOwnedLiteralEmptyInputRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetOwnedLiteralEqualDigitsRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetOwnedLiteralGuardNamedStringRejected",
+    "TranslateTest.CoreV2BitsetOwnedLiteralGuardFactoryStringRejected",
+    "TranslateTest.CoreV2BitsetOwnedLiteralGuardOutOfRangeOffsetRejected",
+    "TranslateTest.CoreV2BitsetOwnedLiteralGuardRuntimeOffsetRejected",
+    "TranslateTest.CoreV2BitsetOwnedLiteralGuardInvalidSelectedDigitRejected",
+    "TranslateTest.CoreV2BitsetOwnedLiteralGuardNonliteralConstructorInputRejected",
+    "TranslateTest.CoreV2BitsetOwnedLiteralGuardNonCharTraitsRejected",
+    "TranslateTest.CoreV2BitsetOwnedLiteralGuardSdkBodyRejected",
+    "TranslateTest.CoreV2BitsetOwnedLiteralGuardRepresentationQueryRejected"
+  ],
+  "native_reference_authentication_sha256": "07e846ae1ab33e30136acbdfdf50b65df7fe748295c6416fdfb5b6cc630d478e",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "7cd86cfe19e87d8c65bf26a10e47c2f0ad11e00ddb78229165a853e679b91edc",
+  "maintained_original_sha256": "35cf93789ced487fbee0d5f30f10cb9de9c9da03d43b4761ba03f089924cdf83",
+  "previous_registered_source_sha256": "eae422e9ef2d272eee3f5b8443ec0619ef2464c8c9311d7e60afe5dcb4fd4596",
+  "previous_maintained_original_sha256": "865a77f3c06eff31e2a1c905487cb44ae4b626b6642e8639c5f8b4ccc4c51535",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7845,
+  "current_python_registry_tests": 108,
+  "previous7830_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "20682899cb9822fc76955eca4af212fd39a55244f8bab67c053330d8cf834410",
+  "extractor_sha256": "7303d2b16ab48466b45aae70dd3e4519f0ac0b1de9a7434863f38f803ae68acf",
+  "source_cases": [
+    {
+      "name": "bitset-owned-literal-default-digits",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<7> value{std::string(\"0010110\")};\n  return value.to_ulong() != 22 || value.count() != 3;\n}\n",
+      "source_sha256": "9348028bd1ef486c1772a6ae8b4da28f527f270c559fbe011f7a34d48e41f2bd",
+      "expected": "accept",
+      "kind": "bitset-owned-literal-operations"
+    },
+    {
+      "name": "bitset-owned-literal-offset-and-count",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<8> value{std::string(\"prefixyxxymore\"), 6, 4, 'x', 'y'};\n  return value.to_ulong() != 9 || value.count() != 2;\n}\n",
+      "source_sha256": "4f9dbca19233b43a8c3b9649899005b6c93854b5d64432a8f6a75c5c7c01810a",
+      "expected": "accept",
+      "kind": "bitset-owned-literal-operations"
+    },
+    {
+      "name": "bitset-owned-literal-allocated-string-crosses-word",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<70> value{std::string(\"1000000000000000000000000000000000000000000000000000000000000000001001\", 70)};\n  return value.count() != 3 || !value.test(69) || !value.test(3) || !value.test(0);\n}\n",
+      "source_sha256": "a27884c537f3219418935f3d9a9c344c05ab654dc1488db26dde628600036c5c",
+      "expected": "accept",
+      "kind": "bitset-owned-literal-operations"
+    },
+    {
+      "name": "bitset-owned-literal-zero-as-a-digit",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<6> value{std::string(\"A\\0A?\", 4), 0, 3, 'A', '\\0'};\n  return value.to_ulong() != 2 || value.count() != 1;\n}\n",
+      "source_sha256": "b12fea61c28d81af40dd882bb45ef75a84c07a3e60848ea03946880d0502c89a",
+      "expected": "accept",
+      "kind": "bitset-owned-literal-operations"
+    },
+    {
+      "name": "bitset-owned-literal-empty-input",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<0> empty{std::string{}};\n  std::bitset<8> end{std::string(\"11\"), 2};\n  std::bitset<8> zero{std::string(\"invalid\"), 0, 0};\n  return empty.any() || !empty.all() || end.any() || zero.any();\n}\n",
+      "source_sha256": "9d244f2509e8dbf74516964257f693ad7aab8be6f2e8b7bfbfaa557a67f091a9",
+      "expected": "accept",
+      "kind": "bitset-owned-literal-operations"
+    },
+    {
+      "name": "bitset-owned-literal-equal-digits",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<4> value{std::string(\"zzz\"), 0, 3, 'z', 'z'};\n  return value.to_ulong() != 7 || value.count() != 3;\n}\n",
+      "source_sha256": "146b2a4dd5bc433c65a2e5ef240200578fe6228b07d8bfc27c188cae90ed902b",
+      "expected": "accept",
+      "kind": "bitset-owned-literal-operations"
+    },
+    {
+      "name": "bitset-owned-literal-guard-named-string",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main(){std::string text(\"101\");return std::bitset<8>{text}.any();}\n",
+      "source_sha256": "8519bea842b897dca5415227223e1f708d7e6054cc295331e1c59fe0fd38738d",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-owned-literal-guard-factory-string",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nstd::string text(){return std::string(\"101\");}\nint main(){return std::bitset<8>{text()}.any();}\n",
+      "source_sha256": "b86072010e29bf3f8ac5d56ac80d03c64e9463dd64734fa9983aef2bca1eb70b",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-owned-literal-guard-out-of-range-offset",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main(){return std::bitset<8>{std::string(\"101\"),4}.any();}\n",
+      "source_sha256": "b107b5f0e2f72a034436beff70811cc6246e1223271432a5cf06720fcbcc03b2",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-owned-literal-guard-runtime-offset",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nbool use(unsigned position){return std::bitset<8>{std::string(\"101\"),position}.any();}\nint main(){return use(1)!=true;}\n",
+      "source_sha256": "d0171b3564ea0111063d0f274ba6047654bafa2bd81a68770dabf88385d8df28",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-owned-literal-guard-invalid-selected-digit",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main(){return std::bitset<1>{std::string(\"1x\"),0,2}.any();}\n",
+      "source_sha256": "d264e4e56f55622c4f26cf9e15a0407e217a8fc8ace4d83b3db0554fc916f07a",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-owned-literal-guard-nonliteral-constructor-input",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nbool use(const char* data){return std::bitset<8>{std::string(data)}.any();}\nint main(){return use(\"101\")!=true;}\n",
+      "source_sha256": "cf9051f8ca54cfe5ed99bfff66983dd8d93528cfab7ae5fc1e16bda2bcef893c",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-owned-literal-guard-non-char-traits",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main(){return std::bitset<8>{std::u16string(u\"101\")}.any();}\n",
+      "source_sha256": "229dc1be92ceb2d86f03b90b42bfda91ac213aa45562bea17b6158af1b2ee6a0",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-owned-literal-guard-sdk-body",
+      "public_header": "bitset",
+      "source": "#define __init_from_string_view nct_alternate_init\n#include <bitset>\n#include <string>\n#undef __init_from_string_view\nint main(){return std::bitset<8>{std::string(\"101\")}.to_ulong()!=5;}\n",
+      "source_sha256": "a8df9139371fa08e0aa5e8d058209cc6ebe48f7db00e57c188c16a4e612da6ef",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-owned-literal-guard-representation-query",
+      "public_header": "bitset",
+      "source": "#define __builtin_constant_p(...) 0\n#include <bitset>\n#include <string>\n#undef __builtin_constant_p\nint main(){return std::bitset<8>{std::string(\"101\")}.to_ulong()!=5;}\n",
+      "source_sha256": "96367f3a9d119d6d7d966892357fac7c6c2eb28da6feac73eab77bfa1af0eb0e",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_sha256": "92f6bf06b6ffb990ef213b9e67d935eaab39c0ac6c70f1ca4bf0f6876c87b6a0"
+}

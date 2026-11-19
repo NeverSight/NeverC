@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_owned_string_representation_registered = cls.registered
+        cls.bitset_owned_string_representation_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_owned_string_representation_original = cls.adapter.restore_original_gtests(cls.bitset_owned_string_representation_registered,cls.bitset_owned_string_representation_suffix)
+        cls.registered = cls.adapter.restore_bitset_owned_string_representation_history(cls.bitset_owned_string_representation_registered)
         cls.bitset_checked_operations_registered = cls.registered
         cls.bitset_checked_operations_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_checked_operations_original = cls.adapter.restore_original_gtests(cls.bitset_checked_operations_registered,cls.bitset_checked_operations_suffix)
@@ -1572,6 +1576,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_checked_operations_registered,self.bitset_checked_operations_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_checked_operations_original+b' ',['TranslateTest.CoreV2BitsetReferenceMaskedWordsRunAtBothOptimizations'])
+
+    def test_bitset_owned_string_representation_preserves_all_previous_registry_bytes_and_extracts_fifteen_tests(self):
+        self.assertEqual(self.bitset_owned_string_representation_original+self.bitset_owned_string_representation_suffix,self.bitset_owned_string_representation_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_owned_string_representation_original,self.bitset_owned_string_representation_suffix),self.bitset_owned_string_representation_original)
+        self.assertEqual(self.adapter.restore_bitset_owned_string_representation_history(self.bitset_owned_string_representation_registered),self.bitset_checked_operations_registered)
+        self.assertEqual(self.adapter.restore_bitset_owned_string_representation_history(self.bitset_owned_string_representation_original),self.bitset_checked_operations_original)
+        selected = ['TranslateTest.CoreV2BitsetOwnedLiteralDefaultDigitsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralOffsetAndCountRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralAllocatedStringCrossesWordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralZeroAsADigitRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralEmptyInputRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralEqualDigitsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardNamedStringRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardFactoryStringRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardOutOfRangeOffsetRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardRuntimeOffsetRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardInvalidSelectedDigitRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardNonliteralConstructorInputRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardNonCharTraitsRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardSdkBodyRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardRepresentationQueryRejected']
+        generated,proof = self.extractor.extract(self.bitset_owned_string_representation_original,selected)
+        self.assertEqual(proof['original_test_names'],7845)
+        self.assertEqual(proof['selected_count'],15)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7830)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bitowned',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_owned_string_representation_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_owned_string_representation_registered+b' ',
+                        self.bitset_owned_string_representation_registered.replace(b'r19bitowned',b'q.push(11)',1),
+                        self.bitset_owned_string_representation_registered+self.bitset_owned_string_representation_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_owned_string_representation_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_owned_string_representation_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_owned_string_representation_registered,self.bitset_owned_string_representation_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_owned_string_representation_original+b' ',['TranslateTest.CoreV2BitsetOwnedLiteralDefaultDigitsRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
