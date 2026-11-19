@@ -47367,6 +47367,21 @@ std::optional<uint64_t> bitsetFixedPosition(const Expr *E,
 }
 
 bool bitsetBoundedPosition(const Expr *E, const ASTContext &Context, uint64_t Bits) {
+  // Only the value range before the final implicit conversion is needed.
+  // The original expression still executes through the dynamic position path.
+  const auto *Conversion = dyn_cast<ImplicitCastExpr>(E->IgnoreParens());
+  if (Conversion && Conversion->getCastKind() == CK_IntegralCast &&
+      Conversion->getType()->isUnsignedIntegerType()) {
+    const auto SourceType = Conversion->getSubExpr()->getType();
+    if (SourceType->getAs<BuiltinType>() && SourceType->isUnsignedIntegerType() &&
+        !SourceType.isVolatileQualified() && !SourceType.isRestrictQualified() &&
+        SourceType.getAddressSpace() == LangAS::Default) {
+      const auto Width = Context.getIntWidth(SourceType);
+      if (Width < 64 && Width < Context.getIntWidth(Conversion->getType()) &&
+          (uint64_t(1) << Width) <= Bits)
+        return true;
+    }
+  }
   const auto *Op = dyn_cast<BinaryOperator>(E->IgnoreParenImpCasts());
   if (!Op || !Op->getType()->isUnsignedIntegerType() ||
       Context.getTypeSize(Op->getType()) > 64)
