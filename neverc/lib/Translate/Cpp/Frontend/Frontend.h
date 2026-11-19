@@ -4305,6 +4305,8 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
 bool approvedSequenceContainerMetadataRecord(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
+bool pinnedAssociativeContainerType(const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record);
 bool approvedAssociativeContainerMetadataRecord(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);

@@ -131249,6 +131249,20 @@ bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
          Context.hasSameType(Pair->getTemplateArgs()[1].getAsType(), Context.IntTy);
 }
 
+bool pinnedAssociativeContainerType(const State &S,
+                                   const SourceManager &SM, const CXXRecordDecl *Record) {
+  const auto *Spec = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Primary = Spec ? Spec->getSpecializedTemplate()->getCanonicalDecl() : nullptr;
+  if (!S.coreV2() || !Primary || !Primary->getIdentifier() ||
+      !approvedStandardSDKDeclaration(S, SM, Primary))
+    return false;
+  const auto Name = Primary->getName();
+  return (Name == "map" || Name == "set" || Name == "unordered_set") &&
+         (cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", Name) ||
+          (Name == "unordered_set" &&
+           cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__hash_table")));
+}
+
 bool approvedAssociativeContainerMetadataRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context) {
