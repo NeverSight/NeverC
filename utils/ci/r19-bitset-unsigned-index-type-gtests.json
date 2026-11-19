@@ -1,0 +1,266 @@
+{
+  "positive_cases": [
+    {
+      "name": "bitset-index-type-last-byte-index",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeLastByteIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ab13deea57a15238c005ad2ddf0be20972297515850739c0eb03210b17889b53",
+      "original_case_source_sha256": "ab13deea57a15238c005ad2ddf0be20972297515850739c0eb03210b17889b53",
+      "gtest_body_sha256": "4f9d03b789abee30f5448802f5526e11c37e2e7760b4e0671d1a391d60b78e83"
+    },
+    {
+      "name": "bitset-index-type-word-boundaries",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeWordBoundariesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "95ac24f0e6a977b594201822fae8669120ed5572d69f206b2f1a56f5a242fc80",
+      "original_case_source_sha256": "95ac24f0e6a977b594201822fae8669120ed5572d69f206b2f1a56f5a242fc80",
+      "gtest_body_sha256": "469c5e7ef7f573abf3c2ee84ca034d6b53511b1b1c69c789e07812da2c13cc1e"
+    },
+    {
+      "name": "bitset-index-type-boolean-index",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeBooleanIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4aeb5642e5dcfe6887be2f4c3a5228a8673d9654b8f3ed30944719eb69b8f504",
+      "original_case_source_sha256": "4aeb5642e5dcfe6887be2f4c3a5228a8673d9654b8f3ed30944719eb69b8f504",
+      "gtest_body_sha256": "661736fbc7d85d5953808a730fb3445d896830dc86fadb5f389be59a0e088064"
+    },
+    {
+      "name": "bitset-index-type-reset-and-flip",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeResetAndFlipRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "20d58a3a3ef5155fc3db13b84fb7446440f226c2a41fa56a96f96c416942a255",
+      "original_case_source_sha256": "20d58a3a3ef5155fc3db13b84fb7446440f226c2a41fa56a96f96c416942a255",
+      "gtest_body_sha256": "7a0b73b78baa5c4c0dffdd111deb46b635b19de58ae0bf4ca8ea8120644421f5"
+    },
+    {
+      "name": "bitset-index-type-unsigned-pointer-load",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeUnsignedPointerLoadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7e22bd09a4cc809054a41664dcccd5b739660e41bfe99ec0270f3dae1c53e324",
+      "original_case_source_sha256": "7e22bd09a4cc809054a41664dcccd5b739660e41bfe99ec0270f3dae1c53e324",
+      "gtest_body_sha256": "6423a11865dfd0f2f0e5d887ea1ea9e6db6cbb98004265d59fb7a1e42de126c8"
+    },
+    {
+      "name": "bitset-index-type-index-called-once",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeIndexCalledOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9f27794aa0d593cbbb26ecfa5836fe04dd183543225d5aced30c6decd5f7eecd",
+      "original_case_source_sha256": "9f27794aa0d593cbbb26ecfa5836fe04dd183543225d5aced30c6decd5f7eecd",
+      "gtest_body_sha256": "b7a6cffd5e466a87e03df041f70729a781b2368c4caee66cc2629b332f8da752"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "bitset-index-type-guard-signed-byte",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeGuardSignedByteRejected",
+      "expected": "reject",
+      "source_sha256": "3bd187bea6b4dc9e9e16b51555c9d44b7965789118da84db2e95151d84470c1a",
+      "original_case_source_sha256": "3bd187bea6b4dc9e9e16b51555c9d44b7965789118da84db2e95151d84470c1a",
+      "gtest_body_sha256": "7ec08552f30376e14c52c27dee84a461b96658685fea4af875495749caacd103"
+    },
+    {
+      "name": "bitset-index-type-guard-too-short-for-byte",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeGuardTooShortForByteRejected",
+      "expected": "reject",
+      "source_sha256": "9369354f31cd47e0795176329483262798bd718b029963e4eec9aa4c4fdf00fa",
+      "original_case_source_sha256": "9369354f31cd47e0795176329483262798bd718b029963e4eec9aa4c4fdf00fa",
+      "gtest_body_sha256": "943a69bc96231786d0ef10730178d77e50fb97e6ec1e1aca314a28fb1583c4aa"
+    },
+    {
+      "name": "bitset-index-type-guard-too-short-for-bool",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeGuardTooShortForBoolRejected",
+      "expected": "reject",
+      "source_sha256": "10ad7b56641c86f0bcb8f3486a20bbd132f2a390227509395cd9384f14d78988",
+      "original_case_source_sha256": "10ad7b56641c86f0bcb8f3486a20bbd132f2a390227509395cd9384f14d78988",
+      "gtest_body_sha256": "083ffd8d0150287afde54b3b1550c3cdf84cad65d873e3c387d1afac90e19f3b"
+    },
+    {
+      "name": "bitset-index-type-guard-offset-after-promotion",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeGuardOffsetAfterPromotionRejected",
+      "expected": "reject",
+      "source_sha256": "11bcddff16be20c2e03f6f3227220d11ec9c445b2085964114e52c370143b5dc",
+      "original_case_source_sha256": "11bcddff16be20c2e03f6f3227220d11ec9c445b2085964114e52c370143b5dc",
+      "gtest_body_sha256": "a3bcf0aa38ad3888eb00ad7819c54b86c30fcfd51e1a5ebb13078f64f5297526"
+    },
+    {
+      "name": "bitset-index-type-guard-wide-unsigned",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeGuardWideUnsignedRejected",
+      "expected": "reject",
+      "source_sha256": "19d2113971050ecbd4e02e3b51ea055f3cc18a6fc635aec5f7b8219be34676f1",
+      "original_case_source_sha256": "19d2113971050ecbd4e02e3b51ea055f3cc18a6fc635aec5f7b8219be34676f1",
+      "gtest_body_sha256": "b0ccfae1e2707962db38ff0e69575a7d60046a81538d85902f84ca86794a86aa"
+    },
+    {
+      "name": "bitset-index-type-guard-explicit-size-conversion",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeGuardExplicitSizeConversionRejected",
+      "expected": "reject",
+      "source_sha256": "d77cbf153a2084ce27bacc8fea16d6a5626fe9779222a0207cc4aa742f35d1ff",
+      "original_case_source_sha256": "d77cbf153a2084ce27bacc8fea16d6a5626fe9779222a0207cc4aa742f35d1ff",
+      "gtest_body_sha256": "dadafda616ed765f9837d9beaa7b34d18ec52239ef68f59aeaffcb024a30fac3"
+    },
+    {
+      "name": "bitset-index-type-guard-enum-operand",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeGuardEnumOperandRejected",
+      "expected": "reject",
+      "source_sha256": "cdb0e26ca1d67e356a6ca3a9d82802f93f81ee3c7688f811f52f3d84db6c5fa9",
+      "original_case_source_sha256": "cdb0e26ca1d67e356a6ca3a9d82802f93f81ee3c7688f811f52f3d84db6c5fa9",
+      "gtest_body_sha256": "1a652c3315e9bcd671162b231c3ef418d06f7a725befc1b24742649f7c884a23"
+    },
+    {
+      "name": "bitset-index-type-guard-owned-sdk-body",
+      "formal_test_name": "TranslateTest.CoreV2BitsetIndexTypeGuardOwnedSdkBodyRejected",
+      "expected": "reject",
+      "source_sha256": "ff588f897604da7720f0bcf82a977eb71f4023328ca555a961f2815fd996ecbf",
+      "original_case_source_sha256": "ff588f897604da7720f0bcf82a977eb71f4023328ca555a961f2815fd996ecbf",
+      "gtest_body_sha256": "e062ee0e4d5b5631d0e47da7aaa8da040d2135f27fe356b5e332b6b1775732f0"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2BitsetIndexTypeLastByteIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetIndexTypeWordBoundariesRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetIndexTypeBooleanIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetIndexTypeResetAndFlipRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetIndexTypeUnsignedPointerLoadRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetIndexTypeIndexCalledOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetIndexTypeGuardSignedByteRejected",
+    "TranslateTest.CoreV2BitsetIndexTypeGuardTooShortForByteRejected",
+    "TranslateTest.CoreV2BitsetIndexTypeGuardTooShortForBoolRejected",
+    "TranslateTest.CoreV2BitsetIndexTypeGuardOffsetAfterPromotionRejected",
+    "TranslateTest.CoreV2BitsetIndexTypeGuardWideUnsignedRejected",
+    "TranslateTest.CoreV2BitsetIndexTypeGuardExplicitSizeConversionRejected",
+    "TranslateTest.CoreV2BitsetIndexTypeGuardEnumOperandRejected",
+    "TranslateTest.CoreV2BitsetIndexTypeGuardOwnedSdkBodyRejected"
+  ],
+  "native_reference_authentication_sha256": "af6abbe53a224b21e46ecc2b7803fb918b4ca574b5ceb0bb519e8b4112811941",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "ef91987c1bb535d9d78a42f62aa8eb62e8e41065f1d6b41fd073ca4e4d6acf86",
+  "maintained_original_sha256": "6c549fe6336042ae7992a3538b9aa50686a0f861d7e72929b823b8d00c8bbb79",
+  "previous_registered_source_sha256": "8f39ae701d5dc5483b284091d2adb6e49a4a4a4727d2f4ffb9617d4dc5c81807",
+  "previous_maintained_original_sha256": "d1a727ce98c8674a967556695c22046c8b0b20d2fe737fbbdfcbbacdc38af4e3",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7858,
+  "current_python_registry_tests": 110,
+  "previous7844_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "a9815c8ab62d156db64f9f4a452955007505c6170f941f272efe65cde789bdc4",
+  "extractor_sha256": "974ae58113122039a863b14046cc2b3dc6d5d0a62e72e012ec6a1cd09dbae80f",
+  "source_cases": [
+    {
+      "name": "bitset-index-type-last-byte-index",
+      "source": "#include <bitset>\nvoid set(std::bitset<256>& bits, unsigned char pos) { bits.set(pos); }\nint main() {\n  std::bitset<256> bits;\n  set(bits, 255);\n  return !bits.test(255) || bits.count() != 1;\n}\n",
+      "source_sha256": "ab13deea57a15238c005ad2ddf0be20972297515850739c0eb03210b17889b53",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-unsigned-index-type-operations"
+    },
+    {
+      "name": "bitset-index-type-word-boundaries",
+      "source": "#include <bitset>\nvoid update(std::bitset<257>& bits, unsigned char a, unsigned char b) {\n  bits.set(a).flip(b);\n}\nint main() {\n  std::bitset<257> bits;\n  update(bits, 63, 64);\n  return !bits.test(63) || !bits.test(64) || bits.count() != 2;\n}\n",
+      "source_sha256": "95ac24f0e6a977b594201822fae8669120ed5572d69f206b2f1a56f5a242fc80",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-unsigned-index-type-operations"
+    },
+    {
+      "name": "bitset-index-type-boolean-index",
+      "source": "#include <bitset>\nbool set_and_test(std::bitset<2>& bits, bool position) {\n  bits.set(position);\n  return bits.test(position);\n}\nint main() {\n  std::bitset<2> bits;\n  if (!set_and_test(bits, true) || !set_and_test(bits, false)) return 1;\n  return !bits.all();\n}\n",
+      "source_sha256": "4aeb5642e5dcfe6887be2f4c3a5228a8673d9654b8f3ed30944719eb69b8f504",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-unsigned-index-type-operations"
+    },
+    {
+      "name": "bitset-index-type-reset-and-flip",
+      "source": "#include <bitset>\nvoid change(std::bitset<256>& bits, unsigned char pos) {\n  bits.flip(pos).reset(pos);\n}\nint main() {\n  std::bitset<256> bits;\n  bits.set(128);\n  change(bits, 127);\n  change(bits, 128);\n  return bits.any();\n}\n",
+      "source_sha256": "20d58a3a3ef5155fc3db13b84fb7446440f226c2a41fa56a96f96c416942a255",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-unsigned-index-type-operations"
+    },
+    {
+      "name": "bitset-index-type-unsigned-pointer-load",
+      "source": "#include <bitset>\nbool test(const std::bitset<256>& bits, const unsigned char* pos) {\n  return bits.test(*pos);\n}\nint main() {\n  std::bitset<256> bits;\n  bits.set(211);\n  unsigned char p = 211;\n  return !test(bits, &p);\n}\n",
+      "source_sha256": "7e22bd09a4cc809054a41664dcccd5b739660e41bfe99ec0270f3dae1c53e324",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-unsigned-index-type-operations"
+    },
+    {
+      "name": "bitset-index-type-index-called-once",
+      "source": "#include <bitset>\nstatic unsigned calls;\nunsigned char position() { ++calls; return 201; }\nint main() {\n  std::bitset<256> bits;\n  bits.set(position());\n  return calls != 1 || !bits.test(201) || bits.count() != 1;\n}\n",
+      "source_sha256": "9f27794aa0d593cbbb26ecfa5836fe04dd183543225d5aced30c6decd5f7eecd",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-unsigned-index-type-operations"
+    },
+    {
+      "name": "bitset-index-type-guard-signed-byte",
+      "source": "#include <bitset>\nbool check(signed char p){std::bitset<256> bits;return bits.test(p);}\nint main(){return check(2);}\n",
+      "source_sha256": "3bd187bea6b4dc9e9e16b51555c9d44b7965789118da84db2e95151d84470c1a",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-index-type-guard-too-short-for-byte",
+      "source": "#include <bitset>\nbool check(unsigned char p){std::bitset<255> bits;return bits.test(p);}\nint main(){return check(2);}\n",
+      "source_sha256": "9369354f31cd47e0795176329483262798bd718b029963e4eec9aa4c4fdf00fa",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-index-type-guard-too-short-for-bool",
+      "source": "#include <bitset>\nbool check(bool p){std::bitset<1> bits;return bits.test(p);}\nint main(){return check(false);}\n",
+      "source_sha256": "10ad7b56641c86f0bcb8f3486a20bbd132f2a390227509395cd9384f14d78988",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-index-type-guard-offset-after-promotion",
+      "source": "#include <bitset>\nbool check(unsigned char p){std::bitset<256> bits;return bits.test(p+1);}\nint main(){return check(2);}\n",
+      "source_sha256": "11bcddff16be20c2e03f6f3227220d11ec9c445b2085964114e52c370143b5dc",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-index-type-guard-wide-unsigned",
+      "source": "#include <bitset>\nbool check(unsigned p){std::bitset<256> bits;return bits.test(p);}\nint main(){return check(2);}\n",
+      "source_sha256": "19d2113971050ecbd4e02e3b51ea055f3cc18a6fc635aec5f7b8219be34676f1",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-index-type-guard-explicit-size-conversion",
+      "source": "#include <bitset>\nbool check(unsigned char p){std::bitset<256> bits;return bits.test(static_cast<std::size_t>(p));}\nint main(){return check(2);}\n",
+      "source_sha256": "d77cbf153a2084ce27bacc8fea16d6a5626fe9779222a0207cc4aa742f35d1ff",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-index-type-guard-enum-operand",
+      "source": "#include <bitset>\nenum Position:unsigned char {p=2};\nbool check(Position i){std::bitset<256> bits;return bits.test(i);}\nint main(){return check(p);}\n",
+      "source_sha256": "cdb0e26ca1d67e356a6ca3a9d82802f93f81ee3c7688f811f52f3d84db6c5fa9",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-index-type-guard-owned-sdk-body",
+      "source": "#include <bitset>\nnamespace std{template<> bool bitset<256>::test(size_t) const{return true;}}\nbool check(unsigned char p){std::bitset<256> bits;return bits.test(p);}\nint main(){return check(2);}\n",
+      "source_sha256": "ff588f897604da7720f0bcf82a977eb71f4023328ca555a961f2815fd996ecbf",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_sha256": "c8e9a4fb90fe7e10fdd76edb0a2c3690f74c6dd6d56d7924ee5ef5484e6d3ac7"
+}

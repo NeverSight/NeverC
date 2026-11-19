@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_unsigned_index_type_registered = cls.registered
+        cls.bitset_unsigned_index_type_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_unsigned_index_type_original = cls.adapter.restore_original_gtests(cls.bitset_unsigned_index_type_registered,cls.bitset_unsigned_index_type_suffix)
+        cls.registered = cls.adapter.restore_bitset_unsigned_index_type_history(cls.bitset_unsigned_index_type_registered)
         cls.bitset_constant_position_registered = cls.registered
         cls.bitset_constant_position_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_constant_position_original = cls.adapter.restore_original_gtests(cls.bitset_constant_position_registered,cls.bitset_constant_position_suffix)
@@ -1605,6 +1609,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_constant_position_registered,self.bitset_constant_position_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_constant_position_original+b' ',['TranslateTest.CoreV2BitsetConstantPositionNamespaceConstantRunAtBothOptimizations'])
+
+    def test_bitset_unsigned_index_type_preserves_all_previous_registry_bytes_and_extracts_fourteen_tests(self):
+        self.assertEqual(self.bitset_unsigned_index_type_original+self.bitset_unsigned_index_type_suffix,self.bitset_unsigned_index_type_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_unsigned_index_type_original,self.bitset_unsigned_index_type_suffix),self.bitset_unsigned_index_type_original)
+        self.assertEqual(self.adapter.restore_bitset_unsigned_index_type_history(self.bitset_unsigned_index_type_registered),self.bitset_constant_position_registered)
+        self.assertEqual(self.adapter.restore_bitset_unsigned_index_type_history(self.bitset_unsigned_index_type_original),self.bitset_constant_position_original)
+        selected = ['TranslateTest.CoreV2BitsetIndexTypeLastByteIndexRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeWordBoundariesRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeBooleanIndexRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeResetAndFlipRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeUnsignedPointerLoadRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeIndexCalledOnceRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeGuardSignedByteRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardTooShortForByteRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardTooShortForBoolRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardOffsetAfterPromotionRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardWideUnsignedRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardExplicitSizeConversionRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardEnumOperandRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardOwnedSdkBodyRejected']
+        generated,proof = self.extractor.extract(self.bitset_unsigned_index_type_original,selected)
+        self.assertEqual(proof['original_test_names'],7858)
+        self.assertEqual(proof['selected_count'],14)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7844)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bitwiden',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_unsigned_index_type_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_unsigned_index_type_registered+b' ',
+                        self.bitset_unsigned_index_type_registered.replace(b'r19bitwiden',b'q.push(11)',1),
+                        self.bitset_unsigned_index_type_registered+self.bitset_unsigned_index_type_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_unsigned_index_type_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_unsigned_index_type_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_unsigned_index_type_registered,self.bitset_unsigned_index_type_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_unsigned_index_type_original+b' ',['TranslateTest.CoreV2BitsetIndexTypeLastByteIndexRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
