@@ -1,43 +1,172 @@
-name: not-fn-next-signature-source-diagnostics
+name: Native C23 regression for Windows optional layout
 'on':
   workflow_dispatch: {}
 permissions:
   contents: read
   actions: read
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
 jobs:
-  observe-original-signature-source:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 20
+  x64:
+    name: Optional native Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      SCCACHE_IDLE_TIMEOUT: '0'
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
-    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Set up CPython 3.12.10 for official artifacts
+      id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
       with:
         python-version: 3.12.10
-    - name: Observe one original signature failure with the actual existing diagnostic
-        ELF
+    - name: Setup build deps
+      shell: pwsh
+      run: 'choco install ninja 7zip -y
+
+
+        # Pin CMake to the version the arm64 runner uses. CMake 4.4''s
+
+        # gtest_discover_tests only appends to the generated CTest file, where
+
+        # 3.31 truncated it first, so any target whose POST_BUILD discovery
+
+        # runs twice registers its tests twice and the suite inventory stops
+
+        # being reproducible across runs.
+
+        $cmakeVer = ''3.31.11''
+
+        Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-x86_64.zip"
+        -OutFile cmake.zip
+
+        Expand-Archive cmake.zip C:\tools -Force
+
+        Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-x86_64\bin"
+
+        '
+    - name: Resolve latest LLVM version
+      shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: python3 utils/ci/observe-not-fn-next-signature-source.py --repo "$GITHUB_WORKSPACE"
-        --plan "$GITHUB_WORKSPACE/utils/ci/not-fn-next-signature-trace-replay-plan.json"
-        --output "$RUNNER_TEMP/not-fn-next-signature-trace-replay" --build "$RUNNER_TEMP/not-fn-next-signature-trace-replay-binary-remote-only"
-    - name: Preserve source responses, raw trace and all ten PID records
-      if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+        LLVM_VERIFY_ASSET_SUFFIX: win64.exe
+      run: bash ./.github/scripts/resolve-llvm-version.sh
+    - name: Cache LLVM toolchain
+      uses: actions/cache@v4
       with:
-        name: not-fn-next-signature-trace-replay-text-${{ github.sha }}
-        path: '${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.json
-
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.cpp
-
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.log
-
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.txt
-
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.tsv'
+        path: C:\LLVM
+        key: llvm-${{ env.LLVM_VER }}-win64
+    - name: Install PGO-optimised Clang
+      shell: pwsh
+      run: ./.github/scripts/install-llvm-windows.ps1
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+    - name: Build the native stage-1 neverc
+      shell: bash
+      run: "cmake -S llvm -B build -G Ninja \\\n  -C neverc/cmake/caches/NeverC.cmake\
+        \ \\\n  -DNEVERC_INCLUDE_TESTS=OFF \\\n  -DPython3_EXECUTABLE=\"${{ steps.python.outputs.python-path\
+        \ }}\" \\\n  -DNEVERC_ENABLE_PYTHON_PLUGINS=OFF \\\n  -DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF\
+        \ \\\n  -DCMAKE_INSTALL_PREFIX=install \\\n  -DCMAKE_BUILD_TYPE=Release \\\
+        \n  -DCMAKE_C_FLAGS_RELEASE=\"-O2 -DNDEBUG\" \\\n  -DCMAKE_CXX_FLAGS_RELEASE=\"\
+        -O2 -DNDEBUG\" \\\n  -DCMAKE_EXE_LINKER_FLAGS=\"\"\ncmake --build build --target\
+        \ neverc --parallel $NUMBER_OF_PROCESSORS\n"
+    - name: Translate and run the exact optional sources
+      id: optional_test
+      shell: pwsh
+      run: '& ''${{ steps.python.outputs.python-path }}'' -I -B ''utils/ci/check-cpp-optional-win64-native.py''
+        --compiler ''build/bin/neverc.exe'' --arch x64 --output ''${{ runner.temp
+        }}/optional-empty-bases'''
+    - name: Upload source and execution evidence
+      uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() && steps.optional_test.outcome != 'skipped' }}
+      with:
+        name: windows-optional-c23-text-x64-${{ github.sha }}
         if-no-files-found: error
+        path: '${{ runner.temp }}/optional-empty-bases/results.json
+
+          ${{ runner.temp }}/optional-empty-bases/logs/*.log'
+        retention-days: 14
+  arm64:
+    name: Optional native Windows ARM64
+    runs-on: windows-11-arm
+    timeout-minutes: 240
+    env:
+      SCCACHE_IDLE_TIMEOUT: '0'
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Set up CPython 3.12.10 for official artifacts
+      id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+        architecture: arm64
+    - name: Install ARM64-native CMake & Ninja
+      shell: pwsh
+      run: '$cmakeVer = ''3.31.11''
+
+        Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-arm64.zip"
+        -OutFile cmake.zip
+
+        Expand-Archive cmake.zip C:\tools -Force
+
+        Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-arm64\bin"
+
+
+        $ninjaVer = ''1.13.1''
+
+        Invoke-WebRequest "https://github.com/ninja-build/ninja/releases/download/v$ninjaVer/ninja-winarm64.zip"
+        -OutFile ninja.zip
+
+        Expand-Archive ninja.zip C:\tools\ninja -Force
+
+        Add-Content $env:GITHUB_PATH "C:\tools\ninja"
+
+
+        choco install 7zip -y
+
+        '
+    - name: Resolve latest LLVM version
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        LLVM_VERIFY_ASSET_SUFFIX: win64.exe
+      run: bash ./.github/scripts/resolve-llvm-version.sh
+    - name: Cache LLVM toolchain
+      uses: actions/cache@v4
+      with:
+        path: C:\LLVM
+        key: llvm-${{ env.LLVM_VER }}-win64
+    - name: Install PGO-optimised Clang
+      shell: pwsh
+      run: ./.github/scripts/install-llvm-windows.ps1
+    - name: Setup MSVC (native arm64)
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: arm64
+    - name: Build the native stage-1 neverc
+      shell: bash
+      run: "cmake -S llvm -B build -G Ninja \\\n  -DCMAKE_SYSTEM_PROCESSOR=ARM64 \\\
+        \n  -DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc \\\n  -DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc\
+        \ \\\n  -DCMAKE_ASM_COMPILER_TARGET=aarch64-pc-windows-msvc \\\n  -C neverc/cmake/caches/NeverC.cmake\
+        \ \\\n  -DNEVERC_INCLUDE_TESTS=OFF \\\n  -DPython3_EXECUTABLE=\"${{ steps.python.outputs.python-path\
+        \ }}\" \\\n  -DNEVERC_ENABLE_PYTHON_PLUGINS=OFF \\\n  -DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF\
+        \ \\\n  -DNEVERC_NATIVE_ARCH=OFF \\\n  -DCMAKE_INSTALL_PREFIX=install \\\n\
+        \  -DCMAKE_BUILD_TYPE=Release \\\n  -DCMAKE_C_FLAGS_RELEASE=\"-O2 -DNDEBUG\"\
+        \ \\\n  -DCMAKE_CXX_FLAGS_RELEASE=\"-O2 -DNDEBUG\" \\\n  -DCMAKE_EXE_LINKER_FLAGS=\"\
+        \"\ncmake --build build --target neverc --parallel $NUMBER_OF_PROCESSORS\n"
+    - name: Translate and run the exact optional sources
+      id: optional_test
+      shell: pwsh
+      run: '& ''${{ steps.python.outputs.python-path }}'' -I -B ''utils/ci/check-cpp-optional-win64-native.py''
+        --compiler ''build/bin/neverc.exe'' --arch arm64 --output ''${{ runner.temp
+        }}/optional-empty-bases'''
+    - name: Upload source and execution evidence
+      uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() && steps.optional_test.outcome != 'skipped' }}
+      with:
+        name: windows-optional-c23-text-arm64-${{ github.sha }}
+        if-no-files-found: error
+        path: '${{ runner.temp }}/optional-empty-bases/results.json
+
+          ${{ runner.temp }}/optional-empty-bases/logs/*.log'
         retention-days: 14
