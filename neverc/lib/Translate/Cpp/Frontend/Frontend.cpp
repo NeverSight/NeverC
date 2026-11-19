@@ -2406,7 +2406,8 @@ static bool memoryTemplateMetadataType(Adapter &A, QualType T) {
     if (const auto *Record = Raw->getAsCXXRecordDecl())
       return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value() ||
              approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context) ||
-             approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context);
+             approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context) ||
+             approvedUtilityAnyMetadata(A.S, A.Sources, Record, A.Context);
     if (const auto *Array = dyn_cast<ArrayType>(Raw))
       T = Array->getElementType();
     else if (Raw->isPointerType() || Raw->isReferenceType())
@@ -2590,6 +2591,9 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       for (const auto &Argument : Arguments.get(0).pack_elements())
         checkQueryType(Argument.getAsType(), L, AllowIncompleteArrays,
                        AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               approvedUtilityAnyMetadata(S, Sources, T->getAsCXXRecordDecl(), Context)) {
+      // Type queries need the pinned layout and no type-erased object storage.
     } else if (AllowIncompleteRecords &&
                approvedUtilityArrayMetadata(S, Sources,
                                             T->getAsCXXRecordDecl())) {
@@ -30438,6 +30442,10 @@ public:
           // A pointer has its own layout even when its pointee only has type
           // identity. Preserve the full written type/source checks without
           // completing that pointee or admitting a runtime pointer carrier.
+          A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+        else if (Query->isArgumentType() &&
+                 approvedUtilityAnyMetadata(A.S, A.Sources,
+                     Operand.getNonReferenceType()->getAsCXXRecordDecl(), A.Context))
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (approvedUnorderedMapMetadataRecord(A.S, A.Sources,
                      A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context) ||
