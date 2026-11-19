@@ -43470,6 +43470,14 @@ std::optional<UtilityOptionalRecord>
 approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record,
                               const ASTContext &Context) {
+  const bool Trace = Record && Record->getIdentifier() && Record->getName() == "optional" &&
+      Context.getTargetInfo().getCXXABI().isMicrosoft() &&
+      Context.getTypeSize(Context.VoidPtrTy) == 64;
+  auto Reject = [&](llvm::StringRef Stage) -> std::optional<UtilityOptionalRecord> {
+    if (Trace)
+      llvm::errs() << "optional-ms64-layout reject=" << Stage << '\n';
+    return std::nullopt;
+  };
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -43486,9 +43494,13 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Specialization) ||
       !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx",
                      "optional"))
-    return std::nullopt;
+    return Reject("specialization");
 
   const auto Element = Specialization->getTemplateArgs().get(0).getAsType();
+  if (Trace)
+    llvm::errs() << "optional-ms64-layout element standard_layout="
+                 << Specialization->isStandardLayout() << " integral="
+                 << (!Element.isNull() && Element->isIntegerType()) << '\n';
   const auto *ElementRecord =
       Element.isNull() ? nullptr
                        : Element.getUnqualifiedType()->getAsCXXRecordDecl();
@@ -43499,7 +43511,7 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
       !utilityTupleValue(S, SM, Context, Element) ||
       (!Specialization->isStandardLayout() &&
        !approvedUtilityTupleMetadata(S, SM, ElementRecord)))
-    return std::nullopt;
+    return Reject("element");
 
   const auto &TopLayout = Context.getASTRecordLayout(Specialization);
   const bool MicrosoftABI = Context.getTargetInfo().getCXXABI().isMicrosoft();
@@ -43559,6 +43571,13 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
   const bool PaddedSFINAEStorage =
       MicrosoftABI && CtorOffset == MainSize + CharUnits::One() &&
       AssignOffset == MainSize + CharUnits::fromQuantity(2);
+  if (Trace)
+    llvm::errs() << "optional-ms64-layout base_bytes top=" << TopLayout.getSize().getQuantity()
+                 << " main=" << MainSize.getQuantity() << " data=" << MainDataSize.getQuantity()
+                 << " ctor=" << CtorOffset.getQuantity() << " assign=" << AssignOffset.getQuantity()
+                 << " valid_bases=" << MainBase << CtorBase << AssignBase
+                 << " separate=" << SeparateSFINAEStorage << " padded=" << PaddedSFINAEStorage
+                 << " empty_bases_attr=" << Specialization->hasAttr<EmptyBasesAttr>() << '\n';
   if (Base != Bases.end() || !MainBase || !CtorBase || !AssignBase ||
       (!SharedSFINAEStorage && !SeparateSFINAEStorage &&
        !PaddedSFINAEStorage) ||
@@ -43571,7 +43590,7 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
       !CtorSFINAE->isEmpty() || !AssignSFINAE->isEmpty() ||
       CtorSFINAE->getNumBases() || AssignSFINAE->getNumBases() ||
       !CtorSFINAE->field_empty() || !AssignSFINAE->field_empty())
-    return std::nullopt;
+    return Reject("empty-bases");
 
   const llvm::StringRef ChainNames[] = {
       "__optional_move_assign_base", "__optional_copy_assign_base",
@@ -43582,36 +43601,36 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
   for (unsigned I = 0; I < std::size(ChainNames); ++I) {
     if (!optionalInternalRecord(S, SM, Current, ChainNames[I]) ||
         Current->getNumVBases() || Current->isDynamicClass())
-      return std::nullopt;
+      return Reject("chain-record");
     const auto *Internal = dyn_cast<ClassTemplateSpecializationDecl>(Current);
     if (!Internal || Internal->getTemplateArgs().size() == 0 ||
         Internal->getTemplateArgs().get(0).getKind() !=
             TemplateArgument::Type ||
         !Context.hasSameType(Internal->getTemplateArgs().get(0).getAsType(),
                              Element))
-      return std::nullopt;
+      return Reject("chain-arguments");
     for (unsigned J = 1; J < Internal->getTemplateArgs().size(); ++J) {
       const auto &Argument = Internal->getTemplateArgs().get(J);
       if (Argument.getKind() != TemplateArgument::Integral ||
           !Argument.getIntegralType()->isBooleanType())
-        return std::nullopt;
+        return Reject("chain-flags");
     }
     Chain[I] = Current;
     if (I + 1 == std::size(ChainNames)) {
       if (Current->getNumBases())
-        return std::nullopt;
+        return Reject("chain-terminal");
       break;
     }
     if (Current->getNumBases() != 1 ||
         Current->field_begin() != Current->field_end())
-      return std::nullopt;
+      return Reject("chain-fields");
     const auto &Layout = Context.getASTRecordLayout(Current);
     const auto &OnlyBase = *Current->bases_begin();
     const auto *Next = definedRecord(OnlyBase.getType());
     if (!Next || OnlyBase.isVirtual() ||
         OnlyBase.getAccessSpecifier() != AS_public ||
         Layout.getBaseClassOffset(Next).getQuantity() != 0)
-      return std::nullopt;
+      return Reject("chain-offset");
     Current = Next;
   }
   const auto *Storage = Chain[4];
@@ -43634,7 +43653,7 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
       !cstddefOrigin(S, SM, Anonymous->getLocation(), "libcxx", "optional") ||
       !cstddefOrigin(S, SM, Engaged->getLocation(), "libcxx", "optional") ||
       !cstddefOrigin(S, SM, Union->getLocation(), "libcxx", "optional"))
-    return std::nullopt;
+    return Reject("storage-fields");
   auto UnionFields = Union->fields();
   auto UnionIt = UnionFields.begin();
   const auto *NullState = UnionIt == UnionFields.end() ? nullptr : *UnionIt++;
@@ -43652,7 +43671,7 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Value) ||
       !cstddefOrigin(S, SM, NullState->getLocation(), "libcxx", "optional") ||
       !cstddefOrigin(S, SM, Value->getLocation(), "libcxx", "optional"))
-    return std::nullopt;
+    return Reject("union-fields");
 
   const auto &MainLayout = Context.getASTRecordLayout(Main);
   const auto &StorageLayout = Context.getASTRecordLayout(Storage);
@@ -43670,6 +43689,15 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
   const uint64_t ExpectedTopBits =
       ((ExpectedBits + SFINAEStorageBits + ValueAlign - 1) / ValueAlign) *
       ValueAlign;
+  if (Trace)
+    llvm::errs() << "optional-ms64-layout carrier_bits value=" << ValueBits
+                 << " alignment=" << ValueAlign << " expected_main=" << ExpectedBits
+                 << " expected_top=" << ExpectedTopBits << " top_bytes=" << TopLayout.getSize().getQuantity()
+                 << " main_bytes=" << MainLayout.getSize().getQuantity()
+                 << " storage_bytes=" << StorageLayout.getSize().getQuantity()
+                 << " destruct_bytes=" << DestructLayout.getSize().getQuantity()
+                 << " union_bytes=" << UnionLayout.getSize().getQuantity()
+                 << " engagement_offset=" << DestructLayout.getFieldOffset(1) << '\n';
   if (MainLayout.getSize() != StorageLayout.getSize() ||
       TopLayout.getAlignment() != MainLayout.getAlignment() ||
       TopLayout.getAlignment() != StorageLayout.getAlignment() ||
@@ -43684,7 +43712,7 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
       uint64_t(MainLayout.getSize().getQuantity()) * 8 != ExpectedBits ||
       uint64_t(TopLayout.getSize().getQuantity()) * 8 != ExpectedTopBits ||
       uint64_t(TopLayout.getAlignment().getQuantity()) * 8 != ValueAlign)
-    return std::nullopt;
+    return Reject("carrier-size");
 
   // MS ABI's two proven empty SFINAE bases occupy storage after Main.
   // Include Main's intervening tail padding in the byte carrier so its
