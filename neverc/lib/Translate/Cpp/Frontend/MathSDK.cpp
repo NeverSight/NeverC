@@ -6782,6 +6782,115 @@ static bool utilityTupleDirectConversion(const State &S,
          Context.hasSameUnqualifiedType(From, To);
 }
 
+bool pinnedUtilityAnyType(const State &S, const SourceManager &SM,
+                          const CXXRecordDecl *Record) {
+  return S.coreV2() && Record && Record->getIdentifier() &&
+         Record->getName() == "any" &&
+         approvedStandardSDKDeclaration(S, SM, Record->getCanonicalDecl()) &&
+         cstddefOrigin(S, SM, Record->getCanonicalDecl()->getLocation(), "libcxx", "any");
+}
+
+bool approvedUtilityAnyMetadata(const State &S, const SourceManager &SM,
+                                const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!S.coreV2() || !Record || !Record->getIdentifier() || Record->getName() != "any" ||
+      Context.getTypeSize(Context.CharTy) != 8 || Context.getTypeSize(Context.VoidPtrTy) != 64)
+    return false;
+  const auto *Any = Record->getDefinition();
+  if (!Any || Any->isInvalidDecl() || !Any->isStandardLayout() || Any->isUnion() ||
+      Any->isDynamicClass() || Any->getNumBases() || Any->getNumVBases() ||
+      std::distance(Any->field_begin(), Any->field_end()) != 2)
+    return false;
+  auto Pinned = [&](const Decl *D, llvm::StringRef Path) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  for (const auto *D : Any->redecls())
+    if (!Pinned(D, "any"))
+      return false;
+  const auto AnyType = Context.getRecordType(Any);
+  auto Fields = Any->field_begin();
+  const auto *Handle = *Fields++;
+  const auto *Storage = *Fields;
+  auto Field = [&](const FieldDecl *D, llvm::StringRef Name, llvm::StringRef Path) {
+    return D->getIdentifier() && D->getName() == Name && !D->isBitField() &&
+           !D->isMutable() && Pinned(D, Path);
+  };
+  if (!Field(Handle, "__h_", "any") || !Field(Storage, "__s_", "any") ||
+      !Handle->getType()->isFunctionPointerType())
+    return false;
+  const auto *Init = Handle->getInClassInitializer();
+  if (!Init || !isa<CXXNullPtrLiteralExpr>(Init->IgnoreParenImpCasts()))
+    return false;
+  const auto *Signature = Handle->getType()->getPointeeType()->getAs<FunctionProtoType>();
+  if (!Signature || Signature->isVariadic() || Signature->getNumParams() != 5 ||
+      !Context.hasSameType(Signature->getReturnType(), Context.VoidPtrTy) ||
+      !Context.hasSameType(Signature->getParamType(1), Context.getPointerType(AnyType.withConst())) ||
+      !Context.hasSameType(Signature->getParamType(2), Context.getPointerType(AnyType)) ||
+      !Context.hasSameType(Signature->getParamType(4), Context.getPointerType(Context.VoidTy.withConst())))
+    return false;
+  const auto *TagType = Signature->getParamType(0)->getAs<EnumType>();
+  const auto *Tag = TagType ? TagType->getDecl()->getDefinition() : nullptr;
+  const auto RTTIPointer = Signature->getParamType(3);
+  const auto RTTI = RTTIPointer->isPointerType() ? RTTIPointer->getPointeeType() : QualType{};
+  const auto *Info = RTTI.isNull() ? nullptr : RTTI->getAsCXXRecordDecl();
+  if (!Tag || !Tag->getIdentifier() || Tag->getName() != "_Action" || !Tag->isScoped() ||
+      !Pinned(Tag, "any") || !Info || !Info->getIdentifier() || Info->getName() != "type_info" ||
+      !Info->getDefinition() || !Pinned(Info->getDefinition(), "typeinfo") ||
+      !RTTI.isConstQualified() || RTTI.isVolatileQualified())
+    return false;
+
+  auto Definition = [](QualType T) {
+    const auto *D = T->getAsCXXRecordDecl();
+    return D ? D->getDefinition() : nullptr;
+  };
+  const auto *Union = Definition(Storage->getType());
+  if (!Union || !Union->getIdentifier() || Union->getName() != "_Storage" ||
+      !Union->isUnion() || !Union->isStandardLayout() || Union->getNumBases() ||
+      !Pinned(Union, "any") || Union->getDeclContext() != Any ||
+      std::distance(Union->field_begin(), Union->field_end()) != 2)
+    return false;
+  auto Members = Union->field_begin();
+  const auto *Pointer = *Members++;
+  const auto *Buffer = *Members;
+  if (!Field(Pointer, "__ptr", "any") || !Field(Buffer, "__buf", "any") ||
+      !Context.hasSameType(Pointer->getType(), Context.VoidPtrTy))
+    return false;
+  const auto *BufferRecord = Definition(Buffer->getType());
+  const auto *Aligned = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      BufferRecord ? BufferRecord->getDeclContext() : nullptr);
+  constexpr llvm::StringLiteral AlignedHeader = "__type_traits/aligned_storage.h";
+  if (!BufferRecord || !BufferRecord->getIdentifier() || BufferRecord->getName() != "type" ||
+      !BufferRecord->isUnion() || !BufferRecord->isStandardLayout() ||
+      !Aligned || !Aligned->getIdentifier() || Aligned->getName() != "aligned_storage" ||
+      Aligned->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Pinned(Aligned, AlignedHeader) || !Pinned(BufferRecord, AlignedHeader) ||
+      BufferRecord->field_empty() || std::next(BufferRecord->field_begin()) != BufferRecord->field_end())
+    return false;
+  const auto &Args = Aligned->getTemplateArgs();
+  if (Args.size() != 2 || Args.get(0).getKind() != TemplateArgument::Integral ||
+      Args.get(1).getKind() != TemplateArgument::Integral ||
+      Args.get(0).getAsIntegral().getLimitedValue(25) != 24 ||
+      Args.get(1).getAsIntegral().getLimitedValue(9) != 8)
+    return false;
+  const auto *Bytes = *BufferRecord->field_begin();
+  const auto *Array = Context.getAsConstantArrayType(Bytes->getType());
+  if (!Field(Bytes, "__data", AlignedHeader) || !Array ||
+      !Context.hasSameType(Array->getElementType(), Context.UnsignedCharTy) ||
+      Array->getSize().getLimitedValue(25) != 24)
+    return false;
+  const auto &BufferLayout = Context.getASTRecordLayout(BufferRecord);
+  const auto &UnionLayout = Context.getASTRecordLayout(Union);
+  const auto &AnyLayout = Context.getASTRecordLayout(Any);
+  const auto Align = Context.getTypeAlignInChars(Context.VoidPtrTy);
+  const auto Word = Context.getTypeSizeInChars(Context.VoidPtrTy);
+  return BufferLayout.getSize() == Word * 3 && BufferLayout.getAlignment() == Align &&
+         BufferLayout.getFieldOffset(0) == 0 && UnionLayout.getSize() == Word * 3 &&
+         UnionLayout.getAlignment() == Align && !UnionLayout.getFieldOffset(0) &&
+         !UnionLayout.getFieldOffset(1) && AnyLayout.getSize() == Word * 4 &&
+         AnyLayout.getAlignment() == Align && !AnyLayout.getFieldOffset(0) &&
+         AnyLayout.getFieldOffset(1) == Context.getTypeSize(Context.VoidPtrTy);
+}
+
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
                                   const CXXRecordDecl *Record) {
   const auto *Specialization =
