@@ -6782,6 +6782,242 @@ static bool utilityTupleDirectConversion(const State &S,
          Context.hasSameUnqualifiedType(From, To);
 }
 
+bool pinnedUtilityVariantType(const State &S, const SourceManager &SM,
+                              const CXXRecordDecl *Record) {
+  const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Primary = Variant ? Variant->getSpecializedTemplate() : nullptr;
+  return S.coreV2() && Primary && Primary->getIdentifier() &&
+         Primary->getName() == "variant" &&
+         approvedStandardSDKDeclaration(S, SM, Primary->getCanonicalDecl()) &&
+         cstddefOrigin(S, SM, Primary->getCanonicalDecl()->getLocation(), "libcxx",
+                       "__fwd/variant.h");
+}
+
+bool approvedUtilityVariantMetadata(const State &S, const SourceManager &SM,
+                                    const CXXRecordDecl *Record) {
+  // The callers use this identity only for compile-time type metadata.
+  const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  if (!pinnedUtilityVariantType(S, SM, Variant) || Variant->isInvalidDecl() || Variant->isUnion() ||
+      Variant->isDependentContext() || !Variant->getIdentifier() ||
+      Variant->getName() != "variant" ||
+      (Variant->getSpecializationKind() != TSK_ImplicitInstantiation &&
+       Variant->getSpecializationKind() != TSK_Undeclared))
+    return false;
+  const auto *Primary = Variant->getSpecializedTemplate();
+  auto Pinned = [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           (cstddefOrigin(S, SM, D->getLocation(), "libcxx", "variant") ||
+            cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__fwd/variant.h"));
+  };
+  for (const auto *D : Primary->redecls()) {
+    if (!Pinned(D))
+      return false;
+    for (const auto *Pattern : D->getTemplatedDecl()->redecls())
+      if (!Pinned(Pattern))
+        return false;
+  }
+  for (const auto *D : Variant->redecls())
+    if (!Pinned(D))
+      return false;
+  const auto &Arguments = Variant->getTemplateArgs();
+  if (Arguments.size() != 1 || Arguments.get(0).getKind() != TemplateArgument::Pack)
+    return false;
+  const auto Alternatives = Arguments.get(0).pack_elements();
+  if (Alternatives.empty() || Alternatives.size() > 64)
+    return false;
+  return llvm::all_of(Alternatives, [](const TemplateArgument &Argument) {
+    if (Argument.getKind() != TemplateArgument::Type)
+      return false;
+    const auto Type = Argument.getAsType();
+    return !Type.isNull() && Type->isObjectType() && !Type->isArrayType() &&
+           !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+           Type.getAddressSpace() == LangAS::Default;
+  });
+}
+
+bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
+                                       QualType Type, const ASTContext &Context) {
+  if (Type.isNull() || Context.getTypeSize(Context.VoidPtrTy) != 64 ||
+      Context.getTypeSize(Context.CharTy) != 8 || Type.isVolatileQualified() ||
+      Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
+    return false;
+  auto Definition = [](QualType Object) {
+    const auto *Record = Object->getAsCXXRecordDecl();
+    return Record ? Record->getDefinition() : nullptr;
+  };
+  const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition(Type));
+  if (!approvedUtilityVariantMetadata(S, SM, Variant) ||
+      Variant->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Variant->getNumBases() != 2 || Variant->getNumVBases() ||
+      Variant->isDynamicClass() || !Variant->hasTrivialDestructor())
+    return false;
+  const auto Alternatives = Variant->getTemplateArgs().get(0).pack_elements();
+  auto Pinned = [&](const Decl *D, llvm::StringRef Path) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  auto Storage = [&](const CXXRecordDecl *D, llvm::StringRef Name, llvm::StringRef Path) {
+    const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(D);
+    if (!Record || !Record->getIdentifier() || Record->getName() != Name ||
+        Record->isInvalidDecl() || Record->isDependentContext() || Record->getNumVBases() ||
+        Record->isDynamicClass() || !Record->hasTrivialDestructor() ||
+        Record->getSpecializationKind() != TSK_ImplicitInstantiation || !Pinned(Record, Path))
+      return false;
+    const auto *Primary = Record->getSpecializedTemplate();
+    if (!Primary || !Primary->getIdentifier() || Primary->getName() != Name)
+      return false;
+    for (const auto *Decl : Primary->redecls())
+      if (!Pinned(Decl, Path) || !Pinned(Decl->getTemplatedDecl(), Path))
+        return false;
+    for (const auto *Decl : Record->redecls())
+      if (!Pinned(Decl, Path))
+        return false;
+    return true;
+  };
+  auto PackMatches = [&](const TemplateArgument &Pack,
+                         llvm::ArrayRef<TemplateArgument> Elements) {
+    if (Pack.getKind() != TemplateArgument::Pack || Pack.pack_size() != Elements.size())
+      return false;
+    for (unsigned I = 0; I < Elements.size(); ++I) {
+      const auto &Actual = Pack.pack_elements()[I];
+      if (Actual.getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Actual.getAsType(), Elements[I].getAsType()))
+        return false;
+    }
+    return true;
+  };
+  auto Field = [&](const FieldDecl *F, llvm::StringRef Name) {
+    return F->getIdentifier() && F->getName() == Name && !F->isBitField() &&
+           !F->isMutable() && !F->hasInClassInitializer() && Pinned(F, "variant");
+  };
+  auto EqualLayout = [&](const CXXRecordDecl *Left, const CXXRecordDecl *Right) {
+    const auto &L = Context.getASTRecordLayout(Left);
+    const auto &R = Context.getASTRecordLayout(Right);
+    return L.getAlignment() == R.getAlignment() && L.getSize() == R.getSize();
+  };
+  for (const auto &Alternative : Alternatives) {
+    const auto T = Alternative.getAsType();
+    if (T->isIncompleteType() || !utilityScalar(Context, T))
+      return false;
+  }
+
+  const auto &Top = Context.getASTRecordLayout(Variant);
+  const llvm::StringRef EmptyBases[] = {"__sfinae_ctor_base", "__sfinae_assign_base"};
+  unsigned BaseIndex = 0;
+  for (const auto &Base : Variant->bases()) {
+    const auto *D = Definition(Base.getType());
+    if (Base.isVirtual() || Base.getAccessSpecifier() != AS_private ||
+        !Storage(D, EmptyBases[BaseIndex++], "__tuple/sfinae_helpers.h") ||
+        !D->isEmpty() || D->getNumBases() || !D->field_empty() ||
+        !Top.getBaseClassOffset(D).isZero())
+      return false;
+  }
+  if (Variant->field_empty() || std::next(Variant->field_begin()) != Variant->field_end())
+    return false;
+  const auto *Impl = *Variant->field_begin();
+  const CXXRecordDecl *Current = Definition(Impl->getType());
+  if (!Field(Impl, "__impl_") || Top.getFieldOffset(0) != 0 ||
+      !Storage(Current, "__impl", "variant") || Current->isUnion() ||
+      !EqualLayout(Variant, Current))
+    return false;
+  const auto &ImplArgs = cast<ClassTemplateSpecializationDecl>(Current)->getTemplateArgs();
+  if (ImplArgs.size() != 1 || !PackMatches(ImplArgs.get(0), Alternatives))
+    return false;
+  const llvm::StringRef Chain[] = {
+      "__copy_assignment", "__move_assignment", "__assignment", "__copy_constructor",
+      "__move_constructor", "__ctor", "__dtor", "__base"};
+  for (auto Name : Chain) {
+    if (Current->getNumBases() != 1 || !Current->field_empty())
+      return false;
+    const auto &Base = *Current->bases_begin();
+    const auto *Next = Definition(Base.getType());
+    if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public ||
+        !Storage(Next, Name, "variant") || Next->isUnion() ||
+        !Context.getASTRecordLayout(Current).getBaseClassOffset(Next).isZero() ||
+        !EqualLayout(Current, Next))
+      return false;
+    Current = Next;
+  }
+
+  const auto &BaseArgs = cast<ClassTemplateSpecializationDecl>(Current)->getTemplateArgs();
+  if (Current->getNumBases() || BaseArgs.size() != 2 ||
+      BaseArgs.get(0).getKind() != TemplateArgument::Integral ||
+      !PackMatches(BaseArgs.get(1), Alternatives) ||
+      std::distance(Current->field_begin(), Current->field_end()) != 2)
+    return false;
+  auto Element = Current->field_begin();
+  const auto *Value = *Element++;
+  const auto *Index = *Element;
+  if (!Field(Value, "__data") || !Field(Index, "__index") ||
+      (!Context.hasSameType(Index->getType(), Context.UnsignedIntTy) &&
+       !Context.hasSameType(Index->getType(), Context.UnsignedCharTy)))
+    return false;
+  const auto &BaseLayout = Context.getASTRecordLayout(Current);
+  const uint64_t IndexAlign = Context.getTypeAlign(Index->getType());
+  const uint64_t ValueAlign = Context.getTypeAlign(Value->getType());
+  const uint64_t Offset = llvm::alignTo(Context.getTypeSize(Value->getType()), IndexAlign);
+  const auto LayoutAlign = std::max(IndexAlign, ValueAlign);
+  if (BaseLayout.getFieldOffset(0) || BaseLayout.getFieldOffset(1) != Offset ||
+      uint64_t(BaseLayout.getAlignment().getQuantity()) * 8 != LayoutAlign ||
+      uint64_t(BaseLayout.getSize().getQuantity()) * 8 !=
+          llvm::alignTo(Offset + Context.getTypeSize(Index->getType()), LayoutAlign))
+    return false;
+
+  auto IndexMatches = [](const TemplateArgument &Argument, unsigned I) {
+    return Argument.getKind() == TemplateArgument::Integral &&
+           Argument.getAsIntegral().getLimitedValue(65) == I;
+  };
+  Current = Definition(Value->getType());
+  for (unsigned I = 0; I <= Alternatives.size(); ++I) {
+    if (!Storage(Current, "__union", "variant") || !Current->isUnion() ||
+        Current->getNumBases() || !Current->isStandardLayout())
+      return false;
+    const auto &Args = cast<ClassTemplateSpecializationDecl>(Current)->getTemplateArgs();
+    if (Args.size() != 3 || !Args.get(0).structurallyEquals(BaseArgs.get(0)) ||
+        !IndexMatches(Args.get(1), I) || !PackMatches(Args.get(2), Alternatives.drop_front(I)))
+      return false;
+    const auto &Layout = Context.getASTRecordLayout(Current);
+    if (I == Alternatives.size())
+      return Current->field_empty() && Layout.getSize() == CharUnits::One() &&
+             Layout.getAlignment() == CharUnits::One();
+    if (std::distance(Current->field_begin(), Current->field_end()) != 3 ||
+        Layout.getFieldOffset(0) || Layout.getFieldOffset(1) || Layout.getFieldOffset(2))
+      return false;
+    auto FieldIt = Current->field_begin();
+    const auto *Dummy = *FieldIt++;
+    const auto *Head = *FieldIt++;
+    const auto *Tail = *FieldIt;
+    if (!Field(Dummy, "__dummy") || !Context.hasSameType(Dummy->getType(), Context.CharTy) ||
+        !Field(Head, "__head") || !Field(Tail, "__tail"))
+      return false;
+    const uint64_t UnionAlign = std::max(Context.getTypeAlign(Head->getType()),
+                                        Context.getTypeAlign(Tail->getType()));
+    const uint64_t UnionWidth = std::max(Context.getTypeSize(Head->getType()),
+                                        Context.getTypeSize(Tail->getType()));
+    if (uint64_t(Layout.getAlignment().getQuantity()) * 8 != UnionAlign ||
+        uint64_t(Layout.getSize().getQuantity()) * 8 != llvm::alignTo(UnionWidth, UnionAlign))
+      return false;
+    const auto *Alternative = Definition(Head->getType());
+    if (!Storage(Alternative, "__alt", "variant") || Alternative->isUnion() ||
+        !Alternative->isStandardLayout() || Alternative->getNumBases() ||
+        std::distance(Alternative->field_begin(), Alternative->field_end()) != 1)
+      return false;
+    const auto &AltArgs = cast<ClassTemplateSpecializationDecl>(Alternative)->getTemplateArgs();
+    const auto *Item = *Alternative->field_begin();
+    const auto ItemType = Alternatives[I].getAsType();
+    const auto &AltLayout = Context.getASTRecordLayout(Alternative);
+    if (AltArgs.size() != 2 || !IndexMatches(AltArgs.get(0), I) ||
+        AltArgs.get(1).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(AltArgs.get(1).getAsType(), ItemType) ||
+        !Field(Item, "__value") || !Context.hasSameType(Item->getType(), ItemType) ||
+        AltLayout.getFieldOffset(0) || AltLayout.getSize() != Context.getTypeSizeInChars(ItemType) ||
+        AltLayout.getAlignment() != Context.getTypeAlignInChars(ItemType))
+      return false;
+    Current = Definition(Tail->getType());
+  }
+  return false;
+}
+
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
                                   const CXXRecordDecl *Record) {
   const auto *Specialization =
