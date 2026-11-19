@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_layout_registered = cls.registered
+        cls.variant_layout_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_layout_original = cls.adapter.restore_original_gtests(cls.variant_layout_registered,cls.variant_layout_suffix)
+        cls.registered = cls.adapter.restore_variant_layout_history(cls.variant_layout_registered)
         cls.bitset_text_hash_swap_registered = cls.registered
         cls.bitset_text_hash_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_text_hash_swap_original = cls.adapter.restore_original_gtests(cls.bitset_text_hash_swap_registered,cls.bitset_text_hash_swap_suffix)
@@ -1605,6 +1609,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_text_hash_swap_registered,self.bitset_text_hash_swap_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_text_hash_swap_original+b' ',['TranslateTest.CoreV2BitsetHashZeroSizeRunAtBothOptimizations'])
+
+    def test_variant_layout_preserves_all_previous_registry_bytes_and_extracts_eight_tests(self):
+        self.assertEqual(self.variant_layout_original+self.variant_layout_suffix,self.variant_layout_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.variant_layout_original,self.variant_layout_suffix),self.variant_layout_original)
+        self.assertEqual(self.adapter.restore_variant_layout_history(self.variant_layout_registered),self.bitset_text_hash_swap_registered)
+        self.assertEqual(self.adapter.restore_variant_layout_history(self.variant_layout_original),self.bitset_text_hash_swap_original)
+        selected = ['TranslateTest.CoreV2VariantLayoutMixedScalarRunAtBothOptimizations', 'TranslateTest.CoreV2VariantLayoutReferenceAndConstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantLayoutPointerAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantLayoutDuplicateTypesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantLayoutDeclarationIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantLayoutAlteredIndexMemberRejected', 'TranslateTest.CoreV2VariantLayoutUnsupportedLargeFloatRejected', 'TranslateTest.CoreV2VariantLayoutRuntimeRecordRejected']
+        generated,proof = self.extractor.extract(self.variant_layout_original,selected)
+        self.assertEqual(proof['original_test_names'],7894)
+        self.assertEqual(proof['selected_count'],8)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7886)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19variantlayout',generated)
+        self.assertIn(b'variant-layout-',generated)
+        self.assertIn(b'std::variant<',generated)
+
+    def test_variant_layout_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.variant_layout_registered+b' ',
+                        self.variant_layout_registered.replace(b'r19variantlayout',b'q.push(11)',1),
+                        self.variant_layout_registered+self.variant_layout_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.variant_layout_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_variant_layout_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_layout_registered,self.variant_layout_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.variant_layout_original+b' ',['TranslateTest.CoreV2VariantLayoutMixedScalarRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
