@@ -17357,8 +17357,11 @@ Overloaded shift assignment evaluates the right operand before the receiver.
 Explicit member calls evaluate the receiver first.
 
 `test(pos)`, `set(pos[, value])`, `reset(pos)` and `flip(pos)` accept in-range
-literals and unsigned expressions whose bounds follow from a literal mask or
-modulus. The omitted `set` value uses the pinned SDK default.
+literals, side-effect-free expressions with a proved converted value, and
+unsigned expressions bounded by a literal mask or modulus. A widening
+conversion from a built-in unsigned type also qualifies when its entire
+range fits, including `bool` and `unsigned char` at sufficient widths. The
+omitted `set` value uses the pinned SDK default.
 
 Mutable `operator[]` exposes a proxy that aliases the selected bit. Proxy
 copies preserve that alias. Conversion to `bool`, complement, `flip()`, bool
@@ -17371,9 +17374,9 @@ SDK return type.
 type can represent all `N` bits. Their limits follow the selected target ABI.
 For wider bitsets, a directly constructed temporary can also be converted
 when its authenticated default or unsigned-value constructor proves that
-every bit above the result width is clear. This includes unsigned operands
-bounded by the supported masks and moduli. Conversion evaluates the receiver
-once. The checked operations require an in-range proof. A wider receiver
+every bit above the result width is clear. A const local initialized by the
+same constructor retains its bound. This includes unsigned operands bounded
+by the supported masks and moduli. Conversion evaluates the receiver once. The checked operations require an in-range proof. A wider receiver
 whose high bits can overflow requires additional support.
 
 The pinned whole-value `std::swap` exchanges two mutable bitsets of the same
@@ -17389,7 +17392,11 @@ The narrow character-pointer constructor accepts a literal whose selected
 range uses the checked zero and one characters. It authenticates the selected
 count and digit defaults, stops at the literal's first null byte, and validates
 each selected character before setting the bits represented by the first
-`N` characters. Other input forms require additional source proofs.
+`N` characters. An immutable `constexpr const char *` initialized directly
+from such a literal follows the same check. The owning `std::string`
+overload accepts full-expression temporaries built from a checked literal
+or default construction. It validates the selected position, count and
+digits and retains the temporary's construction and destruction.
 
 `to_string()` produces an owning narrow string with one character per bit in
 most-significant-first order. It supports the pinned default digits and
@@ -17407,6 +17414,9 @@ on 64-bit Linux, including 84 generated C23 executions at O0 and O2.
 Wide conversion and whole swap add 27 registered tests. The combined
 coverage includes 750 source requests on the six 64-bit targets and
 125 formal tests, with 108 generated C23 executions checked against
+native C++ at O0 and O2. The composed text and index replay adds 73 cases
+and checks 438 requests across the six 64-bit targets. The cumulative suite
+runs 198 formal tests, including 170 generated C23 executions matched to
 native C++ at O0 and O2.
 
 SDK template, specialization and function redeclarations remain authenticated.
