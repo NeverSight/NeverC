@@ -30443,10 +30443,16 @@ public:
           // identity. Preserve the full written type/source checks without
           // completing that pointee or admitting a runtime pointer carrier.
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
-        else if (Query->isArgumentType() &&
-                 approvedUtilityAnyMetadata(A.S, A.Sources,
-                     Operand.getNonReferenceType()->getAsCXXRecordDecl(), A.Context))
-          A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+        else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
+                 pinnedUtilityAnyType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
+          if (Query->isArgumentType() && !Value.isVolatileQualified() && !Value.isRestrictQualified() &&
+              Value.getAddressSpace() == LangAS::Default &&
+              approvedUtilityAnyMetadata(A.S, A.Sources, Value->getAsCXXRecordDecl(), A.Context))
+            A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+          else
+            A.reject(Query->getExprLoc(), "any size and alignment",
+                     "Expected a type-form query using the authenticated SDK layout.", "TR0203");
+        }
         else if (approvedUnorderedMapMetadataRecord(A.S, A.Sources,
                      A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context) ||
                  approvedSequenceContainerMetadataRecord(A.S, A.Sources,

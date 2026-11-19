@@ -6782,6 +6782,14 @@ static bool utilityTupleDirectConversion(const State &S,
          Context.hasSameUnqualifiedType(From, To);
 }
 
+bool pinnedUtilityAnyType(const State &S, const SourceManager &SM,
+                          const CXXRecordDecl *Record) {
+  return S.coreV2() && Record && Record->getIdentifier() &&
+         Record->getName() == "any" &&
+         approvedStandardSDKDeclaration(S, SM, Record->getCanonicalDecl()) &&
+         cstddefOrigin(S, SM, Record->getCanonicalDecl()->getLocation(), "libcxx", "any");
+}
+
 bool approvedUtilityAnyMetadata(const State &S, const SourceManager &SM,
                                 const CXXRecordDecl *Record, const ASTContext &Context) {
   if (!S.coreV2() || !Record || !Record->getIdentifier() || Record->getName() != "any" ||
