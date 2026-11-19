@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_value_swap_checked_registered = cls.registered
+        cls.bitset_value_swap_checked_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_value_swap_checked_original = cls.adapter.restore_original_gtests(cls.bitset_value_swap_checked_registered,cls.bitset_value_swap_checked_suffix)
+        cls.registered = cls.adapter.restore_bitset_value_swap_checked_history(cls.bitset_value_swap_checked_registered)
         cls.bitset_checked_operations_registered = cls.registered
         cls.bitset_checked_operations_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_checked_operations_original = cls.adapter.restore_original_gtests(cls.bitset_checked_operations_registered,cls.bitset_checked_operations_suffix)
@@ -1572,6 +1576,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_checked_operations_registered,self.bitset_checked_operations_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_checked_operations_original+b' ',['TranslateTest.CoreV2BitsetReferenceMaskedWordsRunAtBothOptimizations'])
+
+    def test_bitset_value_swap_checked_preserves_all_previous_registry_bytes_and_extracts_ten_tests(self):
+        self.assertEqual(self.bitset_value_swap_checked_original+self.bitset_value_swap_checked_suffix,self.bitset_value_swap_checked_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_value_swap_checked_original,self.bitset_value_swap_checked_suffix),self.bitset_value_swap_checked_original)
+        self.assertEqual(self.adapter.restore_bitset_value_swap_checked_history(self.bitset_value_swap_checked_registered),self.bitset_checked_operations_registered)
+        self.assertEqual(self.adapter.restore_bitset_value_swap_checked_history(self.bitset_value_swap_checked_original),self.bitset_checked_operations_original)
+        selected = ['TranslateTest.CoreV2BitsetValueSwapEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetValueSwapOneWordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetValueSwapMultiwordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetValueSwapExactTemplateRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetValueSwapSelfAliasAndEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetValueSwapExistingProxyRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetValueSwapGuardSdkOperandRejected', 'TranslateTest.CoreV2BitsetValueSwapGuardSdkTemporaryRejected', 'TranslateTest.CoreV2BitsetValueSwapGuardIndirectCallRejected', 'TranslateTest.CoreV2BitsetValueSwapGuardCastCalleeRejected']
+        generated,proof = self.extractor.extract(self.bitset_value_swap_checked_original,selected)
+        self.assertEqual(proof['original_test_names'],7840)
+        self.assertEqual(proof['selected_count'],10)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7830)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bitvalswap',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_value_swap_checked_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_value_swap_checked_registered+b' ',
+                        self.bitset_value_swap_checked_registered.replace(b'r19bitvalswap',b'q.push(11)',1),
+                        self.bitset_value_swap_checked_registered+self.bitset_value_swap_checked_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_value_swap_checked_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_value_swap_checked_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_value_swap_checked_registered,self.bitset_value_swap_checked_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_value_swap_checked_original+b' ',['TranslateTest.CoreV2BitsetValueSwapEmptyRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
