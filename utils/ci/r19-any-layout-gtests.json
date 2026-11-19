@@ -1,0 +1,164 @@
+{
+  "positive_cases": [
+    {
+      "name": "any-layout-direct-size-align",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "201a27f97d7608f76199eb51db1c5f0ee52ff11ec42f6b00aebe22f850fd2d0e",
+      "original_case_source_sha256": "201a27f97d7608f76199eb51db1c5f0ee52ff11ec42f6b00aebe22f850fd2d0e",
+      "gtest_body_sha256": "d1b9f8164e9fcfc157872e6e15d98a68fc69d62ad5606456c19d3e2e9464f512"
+    },
+    {
+      "name": "any-layout-const-reference-size",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5277fc2d120c71cde0ac3b24ca68223ff28b929d70c41e2d1f2a7d829331e0e6",
+      "original_case_source_sha256": "5277fc2d120c71cde0ac3b24ca68223ff28b929d70c41e2d1f2a7d829331e0e6",
+      "gtest_body_sha256": "9935e0fdd45a9d0503ce76e708ffa250304005796a22c79b4e8e90be4fef50b6"
+    },
+    {
+      "name": "any-layout-wrapped-pointer-type",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6a682c1046de8dfb62a522c14193363c122f222148a4a5d922754efc64d0ad7c",
+      "original_case_source_sha256": "6a682c1046de8dfb62a522c14193363c122f222148a4a5d922754efc64d0ad7c",
+      "gtest_body_sha256": "813a84526b66ebee3c14a9dd47f486ee235888ae7ec0332965d9bf78d1e87d77"
+    },
+    {
+      "name": "any-layout-constant-array-bound",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9ad0f23c43c9ed005c1b09d17cd7ddc1137da356f97a13b8c6eceae0f697fc29",
+      "original_case_source_sha256": "9ad0f23c43c9ed005c1b09d17cd7ddc1137da356f97a13b8c6eceae0f697fc29",
+      "gtest_body_sha256": "9dac99bd61c4e166d86d4376daaa57891288ef117e1faa7002fad1e9738c3892"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "any-layout-volatile-type",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutVolatileTypeRejected",
+      "expected": "reject",
+      "source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
+      "original_case_source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
+      "gtest_body_sha256": "13b3f15901461b080b4c298532d43864515a132a41af9ed067aa842f5120afda"
+    },
+    {
+      "name": "any-layout-runtime-construction",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected",
+      "expected": "reject",
+      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "original_case_source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "gtest_body_sha256": "3adf6e457e78ddfb8770de5f6febb1d5fd7edbc370dfe53785f0844d06c6e3ba"
+    },
+    {
+      "name": "any-layout-unevaluated-object",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected",
+      "expected": "reject",
+      "source_sha256": "5278dfce87347efa957ae0f03e37f99eecffa766b587b335e4549476911d1f86",
+      "original_case_source_sha256": "5278dfce87347efa957ae0f03e37f99eecffa766b587b335e4549476911d1f86",
+      "gtest_body_sha256": "a6778dda6a59a35b4bc32be180b7a1ccd15e03fe53ef9f420b6bea7a19de73a0"
+    },
+    {
+      "name": "any-layout-altered-handler-field",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected",
+      "expected": "reject",
+      "source_sha256": "0139ae2709d2c40215491b158005e081a1643be08431f3da8dfd8acc92f6968a",
+      "original_case_source_sha256": "0139ae2709d2c40215491b158005e081a1643be08431f3da8dfd8acc92f6968a",
+      "gtest_body_sha256": "379e84e0204fd7c335a7decc34c43487fc04fe2f3e38644d634bb7e508b3f8cd"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutVolatileTypeRejected",
+    "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected",
+    "TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected",
+    "TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected"
+  ],
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "c3bd59e76174c4d1542d4d4eeab63b2dfa3265f6822053504140a1c2078c7e99",
+  "maintained_original_sha256": "5601f6d1b31652e4d3b85505b3828de5a0c6fef90d29c0f60945849728bf22d5",
+  "previous_registered_source_sha256": "95a924286f0ff80716c24d4cb11db47a8df5aba32e8bfebf19224ab84bad0cf1",
+  "previous_maintained_original_sha256": "7be41ba79cf42d57a4686a0741e1f8ca4a2b6f75ce61f2028e55ff971261f0dd",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7894,
+  "current_python_registry_tests": 110,
+  "previous7886_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "ffef943cb645552c94164da314dea0e79c37c98640adafb105180c199460aded",
+  "extractor_sha256": "abd4167a8380000386de0330b3d024c70d889890389ce1550afc6c5573aeb99a",
+  "source_cases": [
+    {
+      "name": "any-layout-direct-size-align",
+      "source": "#include <any>\nint main() {\n  return sizeof(std::any) != 4 * sizeof(void*) || alignof(std::any) != alignof(void*);\n}\n",
+      "source_sha256": "201a27f97d7608f76199eb51db1c5f0ee52ff11ec42f6b00aebe22f850fd2d0e",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-layout-const-reference-size",
+      "source": "#include <any>\nusing A = std::any;\nint main() { return sizeof(const A&) != sizeof(A) || alignof(const A&) != alignof(void*); }\n",
+      "source_sha256": "5277fc2d120c71cde0ac3b24ca68223ff28b929d70c41e2d1f2a7d829331e0e6",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-layout-wrapped-pointer-type",
+      "source": "#include <any>\n#include <type_traits>\nusing A = const std::any;\nstatic_assert(std::is_same_v<A*, const std::any*>);\nint main() { return sizeof(A) != 4 * sizeof(void*); }\n",
+      "source_sha256": "6a682c1046de8dfb62a522c14193363c122f222148a4a5d922754efc64d0ad7c",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-layout-constant-array-bound",
+      "source": "#include <any>\nconstexpr auto Count = sizeof(std::any);\nint main() { unsigned char bytes[Count]{}; return sizeof(bytes) != 4 * sizeof(void*); }\n",
+      "source_sha256": "9ad0f23c43c9ed005c1b09d17cd7ddc1137da356f97a13b8c6eceae0f697fc29",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-layout-volatile-type",
+      "source": "#include <any>\nint main() { return sizeof(volatile std::any) == 0; }\n",
+      "source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
+      "public_header": "any",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-layout-runtime-construction",
+      "source": "#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n",
+      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "public_header": "any",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-layout-unevaluated-object",
+      "source": "#include <any>\nint main() { return sizeof(std::any{}) == 0; }\n",
+      "source_sha256": "5278dfce87347efa957ae0f03e37f99eecffa766b587b335e4549476911d1f86",
+      "public_header": "any",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-layout-altered-handler-field",
+      "source": "#define __h_ altered_handler\n#include <any>\n#undef __h_\nint main() { return sizeof(std::any) == 0; }\n",
+      "source_sha256": "0139ae2709d2c40215491b158005e081a1643be08431f3da8dfd8acc92f6968a",
+      "public_header": "any",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_sha256": "e985b2b8c984c5f06dbfbdda6862bbc4a0bb8edf7adec6d43a94249ee120b594",
+  "native_reference_authentication_sha256": "d89e6931c9771241a94eaf5f31750e55821fa0ad1d094572d74c24deb800234a"
+}

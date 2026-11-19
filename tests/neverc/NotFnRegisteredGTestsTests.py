@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.any_layout_registered = cls.registered
+        cls.any_layout_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_layout_original = cls.adapter.restore_original_gtests(cls.any_layout_registered,cls.any_layout_suffix)
+        cls.registered = cls.adapter.restore_any_layout_history(cls.any_layout_registered)
         cls.bitset_text_hash_swap_registered = cls.registered
         cls.bitset_text_hash_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_text_hash_swap_original = cls.adapter.restore_original_gtests(cls.bitset_text_hash_swap_registered,cls.bitset_text_hash_swap_suffix)
@@ -1605,6 +1609,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_text_hash_swap_registered,self.bitset_text_hash_swap_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_text_hash_swap_original+b' ',['TranslateTest.CoreV2BitsetHashZeroSizeRunAtBothOptimizations'])
+
+    def test_any_layout_preserves_all_previous_registry_bytes_and_extracts_eight_tests(self):
+        self.assertEqual(self.any_layout_original+self.any_layout_suffix,self.any_layout_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.any_layout_original,self.any_layout_suffix),self.any_layout_original)
+        self.assertEqual(self.adapter.restore_any_layout_history(self.any_layout_registered),self.bitset_text_hash_swap_registered)
+        self.assertEqual(self.adapter.restore_any_layout_history(self.any_layout_original),self.bitset_text_hash_swap_original)
+        selected = ['TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutVolatileTypeRejected', 'TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected', 'TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected', 'TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected']
+        generated,proof = self.extractor.extract(self.any_layout_original,selected)
+        self.assertEqual(proof['original_test_names'],7894)
+        self.assertEqual(proof['selected_count'],8)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7886)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19any',generated)
+        self.assertIn(b'any-layout-',generated)
+        self.assertIn(b'std::any',generated)
+
+    def test_any_layout_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.any_layout_registered+b' ',
+                        self.any_layout_registered.replace(b'r19any',b'q.push(11)',1),
+                        self.any_layout_registered+self.any_layout_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.any_layout_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_any_layout_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_layout_registered,self.any_layout_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.any_layout_original+b' ',['TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
