@@ -1,0 +1,249 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-metadata-size-and-sentinel",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1821c930c7718dab2e4a1c85fac35a2a54df1b6b44077ce27d1216d9a8417b59",
+      "original_case_source_sha256": "1821c930c7718dab2e4a1c85fac35a2a54df1b6b44077ce27d1216d9a8417b59",
+      "gtest_body_sha256": "086c0731825e85822e9fcd814724d5d11e2583d52602b175c72d738e06ef81cd"
+    },
+    {
+      "name": "variant-metadata-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c6096b784cc92dfbd53c4da37ca52def7be97935ccd286a7c96771e0d2cddb8c",
+      "original_case_source_sha256": "c6096b784cc92dfbd53c4da37ca52def7be97935ccd286a7c96771e0d2cddb8c",
+      "gtest_body_sha256": "effc29e487b99776fd6708636ed298280c917b1b3bce79091b37668b96d0fec3"
+    },
+    {
+      "name": "variant-metadata-const-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataConstAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d17457b2d0cd393586073f44d8a703a41aed7dc90a2ee6f4a4b4fa62f488b814",
+      "original_case_source_sha256": "d17457b2d0cd393586073f44d8a703a41aed7dc90a2ee6f4a4b4fa62f488b814",
+      "gtest_body_sha256": "6353b941310765ff57988b73440b43a41741d46e1aa11706b9029fae233a512c"
+    },
+    {
+      "name": "variant-metadata-nested-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataNestedAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "dc4c8c56ad858f2a29353ae3e21cb65e84d78ad259e8f20e4075034c125e4b45",
+      "original_case_source_sha256": "dc4c8c56ad858f2a29353ae3e21cb65e84d78ad259e8f20e4075034c125e4b45",
+      "gtest_body_sha256": "ed27beb5d208a377bdbfc48e9e217fa1c7721a1cb6378d2aa692a3759b8bf5d4"
+    },
+    {
+      "name": "variant-metadata-size-qualification",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSizeQualificationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fb3190c6d9b4abd963420756d30e2c9edda2d28506854de8f1e2bc0a663ed6a5",
+      "original_case_source_sha256": "fb3190c6d9b4abd963420756d30e2c9edda2d28506854de8f1e2bc0a663ed6a5",
+      "gtest_body_sha256": "3fec3a18d3389770d1941f628ff3ad46300ce56f9a1f3d26a1e9af263455d220"
+    },
+    {
+      "name": "variant-metadata-written-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataWrittenIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "817fe49de65c4603ec824163283f406e0ed3b28684d6e0d36bb6129655f67cd6",
+      "original_case_source_sha256": "817fe49de65c4603ec824163283f406e0ed3b28684d6e0d36bb6129655f67cd6",
+      "gtest_body_sha256": "545c797c00f6e2273c647caf01555efdd214b44f5afcef1d6632667aaa80be81"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-metadata-runtime-value",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataRuntimeValueRejected",
+      "expected": "reject",
+      "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+      "original_case_source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+      "gtest_body_sha256": "0a68bd1b8bc1e39971114960268bb43bbeeea32446948c39ce4570ac7021dd79"
+    },
+    {
+      "name": "variant-metadata-layout-query",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataLayoutQueryRejected",
+      "expected": "reject",
+      "source_sha256": "aff6d66fb87467b2291666da8bda8c8b15272d149be04a78f52fce0a168b1265",
+      "original_case_source_sha256": "aff6d66fb87467b2291666da8bda8c8b15272d149be04a78f52fce0a168b1265",
+      "gtest_body_sha256": "6adea4ea8afb0a24de574a0991541e91e87ce3e788a0feee9c900fe1dc5a1bf1"
+    },
+    {
+      "name": "variant-metadata-variant-size-storage",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataVariantSizeStorageRejected",
+      "expected": "reject",
+      "source_sha256": "9ccf2c93a351e40824802f652a81e40589492c8647f92d6bfc561905145f1e70",
+      "original_case_source_sha256": "9ccf2c93a351e40824802f652a81e40589492c8647f92d6bfc561905145f1e70",
+      "gtest_body_sha256": "c49d023f5e7e7bd910c2c3bccf6afb30ad1de4b22d7e0be9e5816e28caabe367"
+    },
+    {
+      "name": "variant-metadata-sentinel-storage",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSentinelStorageRejected",
+      "expected": "reject",
+      "source_sha256": "24f80a6c04f4fe1b2f45c803ffca08f1615e3e7175a99461c5e021ea59c95c1e",
+      "original_case_source_sha256": "24f80a6c04f4fe1b2f45c803ffca08f1615e3e7175a99461c5e021ea59c95c1e",
+      "gtest_body_sha256": "01b8370bc57c1a4e89733b9209b18f4414337bc793d785a6eed0032eb50f960b"
+    },
+    {
+      "name": "variant-metadata-source-specialization",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSourceSpecializationRejected",
+      "expected": "reject",
+      "source_sha256": "420061391e62da7a022135e4665a6b2634d3d7c185d59226f3467fdb06599652",
+      "original_case_source_sha256": "420061391e62da7a022135e4665a6b2634d3d7c185d59226f3467fdb06599652",
+      "gtest_body_sha256": "5553f65a0eafecf76958629f7117eba5f2b47c376428a247ed60b2dd07e3f9e6"
+    },
+    {
+      "name": "variant-metadata-volatile-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataVolatileAlternativeRejected",
+      "expected": "reject",
+      "source_sha256": "183d66330ac3a342ba78e7de509f31634693734f5cb099a54eb8ee30b0b4202a",
+      "original_case_source_sha256": "183d66330ac3a342ba78e7de509f31634693734f5cb099a54eb8ee30b0b4202a",
+      "gtest_body_sha256": "f52bec6bc945f86d1e0be4a949e29fd308f6a38fc3b3d66d525f866c176e55ed"
+    },
+    {
+      "name": "variant-metadata-direct-volatile-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataDirectVolatileAlternativeRejected",
+      "expected": "reject",
+      "source_sha256": "f16a98dec1073e3828959c3c26a467a3cc5bffb020543a584d5df2f14089a8a9",
+      "original_case_source_sha256": "f16a98dec1073e3828959c3c26a467a3cc5bffb020543a584d5df2f14089a8a9",
+      "gtest_body_sha256": "f627ebc08b54fc6570e48ed635401d31bcd5b7f308e106dba374a68497a24a17"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataConstAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataNestedAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataSizeQualificationRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataWrittenIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataRuntimeValueRejected",
+    "TranslateTest.CoreV2VariantMetadataLayoutQueryRejected",
+    "TranslateTest.CoreV2VariantMetadataVariantSizeStorageRejected",
+    "TranslateTest.CoreV2VariantMetadataSentinelStorageRejected",
+    "TranslateTest.CoreV2VariantMetadataSourceSpecializationRejected",
+    "TranslateTest.CoreV2VariantMetadataVolatileAlternativeRejected",
+    "TranslateTest.CoreV2VariantMetadataDirectVolatileAlternativeRejected"
+  ],
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "a4dcd159e62bed65eada0fbd7d1769331fb662a89dabfd38e62a37bb09f6b742",
+  "maintained_original_sha256": "09f32a1c9b257433a231dc1059be46dee5b44051e7510feee6910ac8fee89144",
+  "previous_registered_source_sha256": "95a924286f0ff80716c24d4cb11db47a8df5aba32e8bfebf19224ab84bad0cf1",
+  "previous_maintained_original_sha256": "7be41ba79cf42d57a4686a0741e1f8ca4a2b6f75ce61f2028e55ff971261f0dd",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7899,
+  "current_python_registry_tests": 110,
+  "previous7886_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "8adcb52a9829c1a607ad6cc8d1a9842de3a87ce481cd717e9a1c42c06cf316a5",
+  "extractor_sha256": "533bf1df5edc8213178201be1d6a3b57023503020fda0b0dfaf45379904cf819",
+  "source_cases": [
+    {
+      "name": "variant-metadata-size-and-sentinel",
+      "source": "#include <variant>\nusing V = std::variant<int,double,unsigned long long>;\nint main() {\n  return std::variant_size_v<V> != 3 ||\n         std::variant_npos != static_cast<decltype(sizeof(int))>(-1);\n}\n",
+      "source_sha256": "1821c930c7718dab2e4a1c85fac35a2a54df1b6b44077ce27d1216d9a8417b59",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-alternative",
+      "source": "#include <variant>\nusing V = std::variant<int,double>;\nusing R = std::variant_alternative_t<1,V>;\nR answer(){return 3.5;}\nint main(){return answer()!=3.5;}\n",
+      "source_sha256": "c6096b784cc92dfbd53c4da37ca52def7be97935ccd286a7c96771e0d2cddb8c",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-const-alternative",
+      "source": "#include <variant>\n#include <type_traits>\nusing V = std::variant<int,int,float>;\nusing R = std::variant_alternative_t<1,const V>;\nstatic_assert(std::is_same_v<R,const int>);\nint main(){R value=17;return value!=17;}\n",
+      "source_sha256": "d17457b2d0cd393586073f44d8a703a41aed7dc90a2ee6f4a4b4fa62f488b814",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-nested-alternative",
+      "source": "#include <variant>\nusing Inner = std::variant<int,float>;\nusing Outer = std::variant<Inner,char>;\nusing Selected = std::variant_alternative_t<0,Outer>;\nint main(){return std::variant_size_v<Selected>!=2;}\n",
+      "source_sha256": "dc4c8c56ad858f2a29353ae3e21cb65e84d78ad259e8f20e4075034c125e4b45",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-size-qualification",
+      "source": "#include <variant>\nusing V = std::variant<int,char>;\nint main(){return std::variant_size_v<const V>!=2;}\n",
+      "source_sha256": "fb3190c6d9b4abd963420756d30e2c9edda2d28506854de8f1e2bc0a663ed6a5",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-written-index",
+      "source": "#include <variant>\nusing V = std::variant<int,float,unsigned long>;\nconstexpr unsigned last(){return 3-1;}\nusing R = std::variant_alternative_t<last(),V>;\nint main(){R v=19UL;return v!=19UL;}\n",
+      "source_sha256": "817fe49de65c4603ec824163283f406e0ed3b28684d6e0d36bb6129655f67cd6",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-runtime-value",
+      "source": "#include <variant>\nusing V = std::variant<int,double>;\nint main(){V value(7);return value.index();}\n",
+      "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-layout-query",
+      "source": "#include <variant>\nusing V = std::variant<int,double>;\nint main(){return sizeof(V)==0;}\n",
+      "source_sha256": "aff6d66fb87467b2291666da8bda8c8b15272d149be04a78f52fce0a168b1265",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-variant-size-storage",
+      "source": "#include <variant>\nusing V=std::variant<int,double>;\nint main(){const auto *p=&std::variant_size_v<V>;return *p!=2;}\n",
+      "source_sha256": "9ccf2c93a351e40824802f652a81e40589492c8647f92d6bfc561905145f1e70",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-sentinel-storage",
+      "source": "#include <variant>\nint main(){auto p=&std::variant_npos;return *p==0;}\n",
+      "source_sha256": "24f80a6c04f4fe1b2f45c803ffca08f1615e3e7175a99461c5e021ea59c95c1e",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-source-specialization",
+      "source": "#include <variant>\nstruct Record {};\nnamespace std { template<> struct variant_size<Record> : integral_constant<size_t,1> {}; }\nint main(){return std::variant_size_v<Record>!=1;}\n",
+      "source_sha256": "420061391e62da7a022135e4665a6b2634d3d7c185d59226f3467fdb06599652",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-volatile-alternative",
+      "source": "#include <variant>\nusing V = std::variant<int,volatile int>;\nint main(){return std::variant_size_v<V>!=2;}\n",
+      "source_sha256": "183d66330ac3a342ba78e7de509f31634693734f5cb099a54eb8ee30b0b4202a",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-direct-volatile-alternative",
+      "source": "#include <variant>\nint main() { return std::variant_size_v<std::variant<int, volatile int>> != 2; }\n",
+      "source_sha256": "f16a98dec1073e3828959c3c26a467a3cc5bffb020543a584d5df2f14089a8a9",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_sha256": "9fa0c28c1567ce4eaed763482ba75b71df6ddfe92eae468c5c834fc9f1638058",
+  "native_reference_authentication_sha256": "37c926d3a816cce4411301df04883c05f8e59b6c612cd6978712b11f2a47511b"
+}

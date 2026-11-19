@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_type_metadata_registered = cls.registered
+        cls.variant_type_metadata_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_type_metadata_original = cls.adapter.restore_original_gtests(cls.variant_type_metadata_registered,cls.variant_type_metadata_suffix)
+        cls.registered = cls.adapter.restore_variant_type_metadata_history(cls.variant_type_metadata_registered)
         cls.bitset_text_hash_swap_registered = cls.registered
         cls.bitset_text_hash_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_text_hash_swap_original = cls.adapter.restore_original_gtests(cls.bitset_text_hash_swap_registered,cls.bitset_text_hash_swap_suffix)
@@ -1605,6 +1609,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_text_hash_swap_registered,self.bitset_text_hash_swap_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_text_hash_swap_original+b' ',['TranslateTest.CoreV2BitsetHashZeroSizeRunAtBothOptimizations'])
+
+    def test_variant_type_metadata_preserves_all_previous_registry_bytes_and_extracts_thirteen_tests(self):
+        self.assertEqual(self.variant_type_metadata_original+self.variant_type_metadata_suffix,self.variant_type_metadata_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.variant_type_metadata_original,self.variant_type_metadata_suffix),self.variant_type_metadata_original)
+        self.assertEqual(self.adapter.restore_variant_type_metadata_history(self.variant_type_metadata_registered),self.bitset_text_hash_swap_registered)
+        self.assertEqual(self.adapter.restore_variant_type_metadata_history(self.variant_type_metadata_original),self.bitset_text_hash_swap_original)
+        selected = ['TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataConstAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataNestedAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataSizeQualificationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataWrittenIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataRuntimeValueRejected', 'TranslateTest.CoreV2VariantMetadataLayoutQueryRejected', 'TranslateTest.CoreV2VariantMetadataVariantSizeStorageRejected', 'TranslateTest.CoreV2VariantMetadataSentinelStorageRejected', 'TranslateTest.CoreV2VariantMetadataSourceSpecializationRejected', 'TranslateTest.CoreV2VariantMetadataVolatileAlternativeRejected', 'TranslateTest.CoreV2VariantMetadataDirectVolatileAlternativeRejected']
+        generated,proof = self.extractor.extract(self.variant_type_metadata_original,selected)
+        self.assertEqual(proof['original_test_names'],7899)
+        self.assertEqual(proof['selected_count'],13)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7886)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19variant',generated)
+        self.assertIn(b'variant-metadata-',generated)
+        self.assertIn(b'std::variant<',generated)
+
+    def test_variant_type_metadata_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.variant_type_metadata_registered+b' ',
+                        self.variant_type_metadata_registered.replace(b'r19variant',b'q.push(11)',1),
+                        self.variant_type_metadata_registered+self.variant_type_metadata_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.variant_type_metadata_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_variant_type_metadata_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_type_metadata_registered,self.variant_type_metadata_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.variant_type_metadata_original+b' ',['TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
