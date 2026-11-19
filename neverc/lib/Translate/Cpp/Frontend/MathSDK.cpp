@@ -43550,12 +43550,16 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
                                 : CharUnits::Zero();
   const auto MainDataSize =
       Main ? Context.getASTRecordLayout(Main).getDataSize() : CharUnits::Zero();
+  // The pinned 64-bit MSVC layout can elide both empty SFINAE bases.
+  const bool MicrosoftEmptyBases =
+      MicrosoftABI && Context.getTargetInfo().getTriple().isArch64Bit() &&
+      Specialization->hasAttr<EmptyBasesAttr>();
   const bool SharedSFINAEStorage =
-      !MicrosoftABI &&
-      ((CtorOffset.isZero() && AssignOffset.isZero()) ||
-       (approvedUtilityOptionalMetadata(S, SM, ElementRecord) &&
-        CtorOffset == MainDataSize && AssignOffset == MainDataSize &&
-        MainDataSize < MainSize));
+      (CtorOffset.isZero() && AssignOffset.isZero() &&
+       (!MicrosoftABI || MicrosoftEmptyBases)) ||
+      (!MicrosoftABI && approvedUtilityOptionalMetadata(S, SM, ElementRecord) &&
+       CtorOffset == MainDataSize && AssignOffset == MainDataSize &&
+       MainDataSize < MainSize);
   const bool SeparateSFINAEStorage =
       MicrosoftABI && CtorOffset == MainSize &&
       AssignOffset == MainSize + CharUnits::One();
@@ -43691,9 +43695,8 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
       uint64_t(TopLayout.getAlignment().getQuantity()) * 8 != ValueAlign)
     return std::nullopt;
 
-  // MS ABI's two proven empty SFINAE bases occupy storage after Main.
-  // Include Main's intervening tail padding in the byte carrier so its
-  // natural placement follows the value and engagement flag exactly.
+  // When the MS ABI places the SFINAE bases after the main base,
+  // include its tail padding so the carrier follows the value and flag.
   const uint64_t TailPaddingBytes = SFINAEStorageBits
       ? (ExpectedTopBits - ValueBits - BoolBits) / Context.getCharWidth()
       : 0;
