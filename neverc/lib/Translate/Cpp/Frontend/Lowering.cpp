@@ -32619,6 +32619,10 @@ class FunctionLowering {
         assign(Place, dereference(std::move(Right), L), L);
         return Place;
       }
+      if (const auto Get = approvedUtilityVariantGet(A.S, A.Sources, Call, A.Context)) {
+        auto Place = variantStorage(lvalue(Call->getArg(0)), Get->Variant, L);
+        return fieldStorage(std::move(Place), Get->Variant.Alternatives[Get->Index], L);
+      }
       if (const auto GetIf = approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context)) {
         auto Pointer = snapshot(expression(Call->getArg(0)), L);
         const auto &V = GetIf->Variant;

@@ -3427,6 +3427,9 @@ struct UtilityVariantAlternative {
   UtilityVariantRecord Variant;
   unsigned Index;
 };
+std::optional<UtilityVariantAlternative> approvedUtilityVariantGet(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 std::optional<UtilityVariantAlternative> approvedUtilityVariantGetIf(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);

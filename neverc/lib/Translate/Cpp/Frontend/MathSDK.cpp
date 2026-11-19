@@ -7030,11 +7030,11 @@ static bool variantDeclaration(const State &S, const SourceManager &SM,
 }
 
 static bool variantFunction(const State &S, const SourceManager &SM,
-                            const FunctionDecl *F, unsigned Arity) {
+                            const FunctionDecl *F, unsigned Arity, bool NoThrow = true) {
   const auto *Proto = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
   if (!F || !F->getIdentifier() || F->isDeleted() || F->isInvalidDecl() ||
       F->getNumParams() != Arity || F->isVariadic() || !F->isConstexpr() ||
-      !Proto || !Proto->isNothrow() || !variantDeclaration(S, SM, F))
+      !Proto || Proto->isNothrow() != NoThrow || !variantDeclaration(S, SM, F))
     return false;
   for (const auto *D : F->redecls())
     if (!variantDeclaration(S, SM, D))
@@ -7457,6 +7457,131 @@ static bool variantGetIfBody(const State &S, const SourceManager &SM, const Func
   return Selected && Selected->getNumArgs() == 1 &&
          variantDereferenceParameter(Selected->getArg(0), P) &&
          variantAlternativeProjection(S, SM, Selected, V, I, Context);
+}
+
+// The throwing branch is reachable only when the requested alternative is
+// inactive. Accept a const local whose selected constructor instantiates the
+// same alternative and whose lifetime is independent from any source object.
+static bool variantGetHasActiveAlternative(const State &S,
+    const SourceManager &SM, const Expr *Argument,
+    const UtilityVariantRecord &V, unsigned I, const ASTContext &Context) {
+  const auto *Ref = variantReference(Argument);
+  const auto *Local = Ref ? dyn_cast<VarDecl>(Ref->getDecl()) : nullptr;
+  if (!Local || !Local->hasLocalStorage() || !Local->getType().isConstQualified() ||
+      !Context.hasSameType(Local->getType(), Argument->getType()))
+    return false;
+  const auto *Ctor = variantConstruct(Local->getInit());
+  const auto Init = approvedUtilityVariantConstruction(S, SM, Ctor, Context);
+  return Init && !Init->Copy && Init->Index == I &&
+         Init->Variant.Record->getCanonicalDecl() == V.Record->getCanonicalDecl();
+}
+
+static bool variantGetBody(const State &S, const SourceManager &SM,
+    const FunctionDecl *Indexed, const UtilityVariantRecord &V,
+    unsigned I, const ASTContext &Context) {
+  const auto *GenericCall = variantReturnCall(Indexed);
+  const auto *Generic = GenericCall ? GenericCall->getDirectCallee() : nullptr;
+  if (!variantFunction(S, SM, Generic, 1, false) ||
+      Generic->getName() != "__generic_get" ||
+      !variantDeclaration(S, SM, Generic->getPrimaryTemplate()) ||
+      !variantSelectedIndex(Generic, I) || GenericCall->getNumArgs() != 1 ||
+      !variantParameter(GenericCall->getArg(0), Indexed->getParamDecl(0)) ||
+      !Context.hasSameType(Generic->getReturnType(), Indexed->getReturnType()))
+    return false;
+
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Generic->getBody());
+  if (!Body || Body->size() != 3)
+    return false;
+  const auto *Using = dyn_cast<DeclStmt>(Body->body_front());
+  const auto *Access = Using && Using->isSingleDecl()
+      ? dyn_cast<UsingDecl>(Using->getSingleDecl()) : nullptr;
+  const auto *Guard = dyn_cast<IfStmt>(*std::next(Body->body_begin()));
+  if (!Access || !Access->getIdentifier() || Access->getName() != "__variant" ||
+      !Guard || Guard->getInit() || Guard->getConditionVariable() ||
+      Guard->getElse() || Guard->isConstexpr())
+    return false;
+  const auto *Not = dyn_cast<UnaryOperator>(Guard->getCond()->IgnoreParenImpCasts());
+  const auto *Test = Not && Not->getOpcode() == UO_LNot
+      ? dyn_cast<CallExpr>(Not->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+  if (!Test || Test->getNumArgs() != 1 ||
+      !variantParameter(Test->getArg(0), Generic->getParamDecl(0)) ||
+      !variantHoldsBody(S, SM, Test->getDirectCallee(), V, I, Context))
+    return false;
+  const auto *Failure = dyn_cast<CompoundStmt>(Guard->getThen());
+  const auto *ThrowCall = Failure && Failure->size() == 1
+      ? dyn_cast<CallExpr>(Failure->body_front()) : nullptr;
+  const auto *Throw = ThrowCall ? ThrowCall->getDirectCallee() : nullptr;
+  if (!Throw || ThrowCall->getNumArgs() || Throw->getNumParams() ||
+      !Throw->getIdentifier() || Throw->getName() != "__throw_bad_variant_access" ||
+      !Throw->isNoReturn() || !variantDeclaration(S, SM, Throw))
+    return false;
+
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Item = Return && Return->getRetValue()
+      ? dyn_cast<MemberExpr>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Select = Item ? dyn_cast<CallExpr>(Item->getBase()->IgnoreParenImpCasts()) : nullptr;
+  return Item && !Item->isArrow() &&
+         Item->getMemberDecl()->getCanonicalDecl() == V.Alternatives[I]->getCanonicalDecl() &&
+         Select && Select->getNumArgs() == 1 &&
+         variantForward(S, SM, Select->getArg(0), Generic->getParamDecl(0), Context) &&
+         variantAlternativeProjection(S, SM, Select, V, I, Context);
+}
+
+std::optional<UtilityVariantAlternative> approvedUtilityVariantGet(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!variantFunction(S, SM, F, 1, false) || F->getName() != "get" ||
+      !variantDeclaration(S, SM, F->getPrimaryTemplate()) ||
+      Call->getNumArgs() != 1 || !Call->isLValue() || !directFunctionReference(Call))
+    return std::nullopt;
+  const auto *Argument = Call->getArg(0);
+  const auto Owner = Argument->getType();
+  if (!Argument->isLValue() || !Owner.isConstQualified() ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), Context.getLValueReferenceType(Owner)))
+    return std::nullopt;
+  const auto V = approvedUtilityVariantRecord(S, SM, Owner, Context);
+  const auto *Args = F->getTemplateSpecializationArgs();
+  if (!V || !Args || Args->size() != 2 || Args->get(1).getKind() != TemplateArgument::Pack ||
+      Args->get(1).pack_size() != V->Alternatives.size())
+    return std::nullopt;
+  const auto Pack = Args->get(1).pack_elements();
+  for (unsigned I = 0; I < Pack.size(); ++I)
+    if (Pack[I].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Pack[I].getAsType(), V->Alternatives[I]->getType()))
+      return std::nullopt;
+
+  const auto &Selected = Args->get(0);
+  const FunctionDecl *Indexed = F;
+  std::optional<unsigned> Index;
+  if (Selected.getKind() == TemplateArgument::Integral) {
+    const auto Value = Selected.getAsIntegral().getLimitedValue(V->Alternatives.size());
+    if (Value < V->Alternatives.size())
+      Index = unsigned(Value);
+  } else if (Selected.getKind() == TemplateArgument::Type) {
+    for (unsigned I = 0; I < V->Alternatives.size(); ++I)
+      if (Context.hasSameType(Selected.getAsType(), V->Alternatives[I]->getType())) {
+        if (Index)
+          return std::nullopt;
+        Index = I;
+      }
+    const auto *Forward = variantReturnCall(F);
+    Indexed = Forward ? Forward->getDirectCallee() : nullptr;
+    if (!variantFunction(S, SM, Indexed, 1, false) || Indexed->getName() != "get" ||
+        !variantDeclaration(S, SM, Indexed->getPrimaryTemplate()) ||
+        Forward->getNumArgs() != 1 || !variantParameter(Forward->getArg(0), F->getParamDecl(0)) ||
+        !Context.hasSameType(Indexed->getReturnType(), F->getReturnType()))
+      return std::nullopt;
+  }
+  if (!Index || !variantSelectedIndex(Indexed, *Index) ||
+      !variantGetHasActiveAlternative(S, SM, Argument, *V, *Index, Context))
+    return std::nullopt;
+  const auto Element = V->Alternatives[*Index]->getType().withConst();
+  if (!Context.hasSameType(Call->getType(), Element) ||
+      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Element)) ||
+      !variantGetBody(S, SM, Indexed, *V, *Index, Context))
+    return std::nullopt;
+  return UtilityVariantAlternative{*V, *Index};
 }
 
 std::optional<UtilityVariantAlternative> approvedUtilityVariantGetIf(

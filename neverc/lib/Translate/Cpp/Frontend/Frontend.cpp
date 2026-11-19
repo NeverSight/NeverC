@@ -30136,6 +30136,7 @@ public:
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantGet(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantHolds(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -30810,6 +30811,12 @@ public:
           checkBinding(VariantAssignment->Receiver, true);
         checkBinding(VariantAssignment->Source, true);
         A.type(VariantAssignment->Source->getType(), L);
+        return true;
+      }
+      if (const auto Get = approvedUtilityVariantGet(A.S, A.Sources, C, A.Context)) {
+        checkBinding(C->getArg(0), true);
+        A.type(A.Context.getRecordType(Get->Variant.Record), L);
+        A.type(C->getType(), L);
         return true;
       }
       if (const auto GetIf = approvedUtilityVariantGetIf(A.S, A.Sources, C, A.Context)) {
