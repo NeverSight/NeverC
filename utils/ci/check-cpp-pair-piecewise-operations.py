@@ -31,7 +31,7 @@ def write(path: Path, value):
 
 class Gate:
     target = "arm64-apple-macosx15.0.0"
-    catalog_digest = "1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167"
+    catalog_digest = "b4a7b597150882cd93285481cc060d2eab6949b5c8d50b7ce234579cc814bd77"
 
     def __init__(self, args):
         self.root = args.repo.resolve()
@@ -71,13 +71,18 @@ class Gate:
         return text
 
     def sdk_check(self):
-        assert digest(self.sdk / "catalog.json") == self.catalog_digest
-        assert self.catalog["distribution_id"] == "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r17"
-        assert len(self.catalog["headers"]) == 664 and len(self.catalog["metadata"]) == 1
-        for entry in self.catalog["headers"] + self.catalog["metadata"]:
-            assert digest(self.sdk / entry["root"] / entry["path"]) == entry["sha256"]
-        self.report["sdk_catalog_sha256"] = self.catalog_digest
-        self.report["sdk_entries"] = 665
+        catalog_digest = digest(self.sdk / "catalog.json")
+        assert catalog_digest == self.catalog_digest, (
+            f"Expected SDK catalog {self.catalog_digest}, got {catalog_digest}"
+        )
+        assert self.catalog["distribution_id"] == "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r19"
+        assert len(self.catalog["headers"]) == 686 and len(self.catalog["metadata"]) == 1
+        entries = self.catalog["headers"] + self.catalog["metadata"]
+        for entry in entries:
+            relative = Path(entry["root"]) / entry["path"]
+            assert digest(self.sdk / relative) == entry["sha256"], f"SDK file changed: {relative}"
+        self.report["sdk_catalog_sha256"] = catalog_digest
+        self.report["sdk_entries"] = len(entries)
         self.save()
 
     def stable(self):
@@ -334,7 +339,7 @@ class Gate:
                            documentation_files=14, documentation_locales=11)
         self.save()
         print("PASS selected pair CI gate: 124 formal suites, 35 runtime programs/105 modes, 3 queries/9 modes, "
-              "27 guards, 31 controls, 88 protocols/66 objects, SDK665 and multilingual docs", flush=True)
+              f"27 guards, 31 controls, 88 protocols/66 objects, SDK{self.report['sdk_entries']} and multilingual docs", flush=True)
 
 
 def main():
