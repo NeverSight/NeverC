@@ -2406,7 +2406,8 @@ static bool memoryTemplateMetadataType(Adapter &A, QualType T) {
     if (const auto *Record = Raw->getAsCXXRecordDecl())
       return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value() ||
              approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context) ||
-             approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context);
+             approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context) ||
+             approvedUtilityVariantMetadata(A.S, A.Sources, Record);
     if (const auto *Array = dyn_cast<ArrayType>(Raw))
       T = Array->getElementType();
     else if (Raw->isPointerType() || Raw->isReferenceType())
@@ -2589,6 +2590,13 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       const auto &Arguments = Tuple->getTemplateArgs();
       for (const auto &Argument : Arguments.get(0).pack_elements())
         checkQueryType(Argument.getAsType(), L, AllowIncompleteArrays,
+                       AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               approvedUtilityVariantMetadata(S, Sources, T->getAsCXXRecordDecl())) {
+      const auto *Variant =
+          cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+      for (const auto &Alternative : Variant->getTemplateArgs().get(0).pack_elements())
+        checkQueryType(Alternative.getAsType(), L, AllowIncompleteArrays,
                        AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
                approvedUtilityArrayMetadata(S, Sources,

@@ -6782,6 +6782,52 @@ static bool utilityTupleDirectConversion(const State &S,
          Context.hasSameUnqualifiedType(From, To);
 }
 
+bool approvedUtilityVariantMetadata(const State &S, const SourceManager &SM,
+                                    const CXXRecordDecl *Record) {
+  // The callers use this identity only for compile-time type metadata.
+  const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  if (!S.coreV2() || !Variant || Variant->isInvalidDecl() || Variant->isUnion() ||
+      Variant->isDependentContext() || !Variant->getIdentifier() ||
+      Variant->getName() != "variant" ||
+      (Variant->getSpecializationKind() != TSK_ImplicitInstantiation &&
+       Variant->getSpecializationKind() != TSK_Undeclared))
+    return false;
+  const auto *Primary = Variant->getSpecializedTemplate();
+  if (!Primary || !Primary->getIdentifier() || Primary->getName() != "variant" ||
+      !cstddefOrigin(S, SM, Primary->getCanonicalDecl()->getLocation(), "libcxx",
+                    "__fwd/variant.h"))
+    return false;
+  auto Pinned = [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           (cstddefOrigin(S, SM, D->getLocation(), "libcxx", "variant") ||
+            cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__fwd/variant.h"));
+  };
+  for (const auto *D : Primary->redecls()) {
+    if (!Pinned(D))
+      return false;
+    for (const auto *Pattern : D->getTemplatedDecl()->redecls())
+      if (!Pinned(Pattern))
+        return false;
+  }
+  for (const auto *D : Variant->redecls())
+    if (!Pinned(D))
+      return false;
+  const auto &Arguments = Variant->getTemplateArgs();
+  if (Arguments.size() != 1 || Arguments.get(0).getKind() != TemplateArgument::Pack)
+    return false;
+  const auto Alternatives = Arguments.get(0).pack_elements();
+  if (Alternatives.empty() || Alternatives.size() > 64)
+    return false;
+  return llvm::all_of(Alternatives, [](const TemplateArgument &Argument) {
+    if (Argument.getKind() != TemplateArgument::Type)
+      return false;
+    const auto Type = Argument.getAsType();
+    return !Type.isNull() && Type->isObjectType() && !Type->isArrayType() &&
+           !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+           Type.getAddressSpace() == LangAS::Default;
+  });
+}
+
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
                                   const CXXRecordDecl *Record) {
   const auto *Specialization =

@@ -3392,6 +3392,8 @@ bool shouldRetainFunctionalNotFnSpecialMemberSource(
     const clang::CXXMethodDecl *Method, const clang::ASTContext &Context);
 
 
+bool approvedUtilityVariantMetadata(const State &S,
+    const clang::SourceManager &SM, const clang::CXXRecordDecl *Record);
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CXXRecordDecl *Record);
