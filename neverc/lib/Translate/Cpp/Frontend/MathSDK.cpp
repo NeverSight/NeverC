@@ -6828,12 +6828,12 @@ bool approvedUtilityVariantMetadata(const State &S, const SourceManager &SM,
   });
 }
 
-bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
+std::optional<UtilityVariantRecord> approvedUtilityVariantRecord(const State &S, const SourceManager &SM,
                                        QualType Type, const ASTContext &Context) {
   if (Type.isNull() || Context.getTypeSize(Context.VoidPtrTy) != 64 ||
       Context.getTypeSize(Context.CharTy) != 8 || Type.isVolatileQualified() ||
       Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
-    return false;
+    return std::nullopt;
   auto Definition = [](QualType Object) {
     const auto *Record = Object->getAsCXXRecordDecl();
     return Record ? Record->getDefinition() : nullptr;
@@ -6843,7 +6843,7 @@ bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
       Variant->getSpecializationKind() != TSK_ImplicitInstantiation ||
       Variant->getNumBases() != 2 || Variant->getNumVBases() ||
       Variant->isDynamicClass() || !Variant->hasTrivialDestructor())
-    return false;
+    return std::nullopt;
   const auto Alternatives = Variant->getTemplateArgs().get(0).pack_elements();
   auto Pinned = [&](const Decl *D, llvm::StringRef Path) {
     return approvedStandardSDKDeclaration(S, SM, D) &&
@@ -6891,7 +6891,7 @@ bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
   for (const auto &Alternative : Alternatives) {
     const auto T = Alternative.getAsType();
     if (T->isIncompleteType() || !utilityScalar(Context, T))
-      return false;
+      return std::nullopt;
   }
 
   const auto &Top = Context.getASTRecordLayout(Variant);
@@ -6903,32 +6903,32 @@ bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
         !Storage(D, EmptyBases[BaseIndex++], "__tuple/sfinae_helpers.h") ||
         !D->isEmpty() || D->getNumBases() || !D->field_empty() ||
         !Top.getBaseClassOffset(D).isZero())
-      return false;
+      return std::nullopt;
   }
   if (Variant->field_empty() || std::next(Variant->field_begin()) != Variant->field_end())
-    return false;
+    return std::nullopt;
   const auto *Impl = *Variant->field_begin();
   const CXXRecordDecl *Current = Definition(Impl->getType());
   if (!Field(Impl, "__impl_") || Top.getFieldOffset(0) != 0 ||
       !Storage(Current, "__impl", "variant") || Current->isUnion() ||
       !EqualLayout(Variant, Current))
-    return false;
+    return std::nullopt;
   const auto &ImplArgs = cast<ClassTemplateSpecializationDecl>(Current)->getTemplateArgs();
   if (ImplArgs.size() != 1 || !PackMatches(ImplArgs.get(0), Alternatives))
-    return false;
+    return std::nullopt;
   const llvm::StringRef Chain[] = {
       "__copy_assignment", "__move_assignment", "__assignment", "__copy_constructor",
       "__move_constructor", "__ctor", "__dtor", "__base"};
   for (auto Name : Chain) {
     if (Current->getNumBases() != 1 || !Current->field_empty())
-      return false;
+      return std::nullopt;
     const auto &Base = *Current->bases_begin();
     const auto *Next = Definition(Base.getType());
     if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public ||
         !Storage(Next, Name, "variant") || Next->isUnion() ||
         !Context.getASTRecordLayout(Current).getBaseClassOffset(Next).isZero() ||
         !EqualLayout(Current, Next))
-      return false;
+      return std::nullopt;
     Current = Next;
   }
 
@@ -6937,14 +6937,14 @@ bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
       BaseArgs.get(0).getKind() != TemplateArgument::Integral ||
       !PackMatches(BaseArgs.get(1), Alternatives) ||
       std::distance(Current->field_begin(), Current->field_end()) != 2)
-    return false;
+    return std::nullopt;
   auto Element = Current->field_begin();
   const auto *Value = *Element++;
   const auto *Index = *Element;
   if (!Field(Value, "__data") || !Field(Index, "__index") ||
       (!Context.hasSameType(Index->getType(), Context.UnsignedIntTy) &&
        !Context.hasSameType(Index->getType(), Context.UnsignedCharTy)))
-    return false;
+    return std::nullopt;
   const auto &BaseLayout = Context.getASTRecordLayout(Current);
   const uint64_t IndexAlign = Context.getTypeAlign(Index->getType());
   const uint64_t ValueAlign = Context.getTypeAlign(Value->getType());
@@ -6954,47 +6954,51 @@ bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
       uint64_t(BaseLayout.getAlignment().getQuantity()) * 8 != LayoutAlign ||
       uint64_t(BaseLayout.getSize().getQuantity()) * 8 !=
           llvm::alignTo(Offset + Context.getTypeSize(Index->getType()), LayoutAlign))
-    return false;
+    return std::nullopt;
 
   auto IndexMatches = [](const TemplateArgument &Argument, unsigned I) {
     return Argument.getKind() == TemplateArgument::Integral &&
            Argument.getAsIntegral().getLimitedValue(65) == I;
   };
+  UtilityVariantRecord Result{Variant, Impl, Value, Index, {}};
   Current = Definition(Value->getType());
   for (unsigned I = 0; I <= Alternatives.size(); ++I) {
     if (!Storage(Current, "__union", "variant") || !Current->isUnion() ||
         Current->getNumBases() || !Current->isStandardLayout())
-      return false;
+      return std::nullopt;
     const auto &Args = cast<ClassTemplateSpecializationDecl>(Current)->getTemplateArgs();
     if (Args.size() != 3 || !Args.get(0).structurallyEquals(BaseArgs.get(0)) ||
         !IndexMatches(Args.get(1), I) || !PackMatches(Args.get(2), Alternatives.drop_front(I)))
-      return false;
+      return std::nullopt;
     const auto &Layout = Context.getASTRecordLayout(Current);
-    if (I == Alternatives.size())
-      return Current->field_empty() && Layout.getSize() == CharUnits::One() &&
-             Layout.getAlignment() == CharUnits::One();
+    if (I == Alternatives.size()) {
+      if (!Current->field_empty() || Layout.getSize() != CharUnits::One() ||
+          Layout.getAlignment() != CharUnits::One())
+        return std::nullopt;
+      return Result;
+    }
     if (std::distance(Current->field_begin(), Current->field_end()) != 3 ||
         Layout.getFieldOffset(0) || Layout.getFieldOffset(1) || Layout.getFieldOffset(2))
-      return false;
+      return std::nullopt;
     auto FieldIt = Current->field_begin();
     const auto *Dummy = *FieldIt++;
     const auto *Head = *FieldIt++;
     const auto *Tail = *FieldIt;
     if (!Field(Dummy, "__dummy") || !Context.hasSameType(Dummy->getType(), Context.CharTy) ||
         !Field(Head, "__head") || !Field(Tail, "__tail"))
-      return false;
+      return std::nullopt;
     const uint64_t UnionAlign = std::max(Context.getTypeAlign(Head->getType()),
                                         Context.getTypeAlign(Tail->getType()));
     const uint64_t UnionWidth = std::max(Context.getTypeSize(Head->getType()),
                                         Context.getTypeSize(Tail->getType()));
     if (uint64_t(Layout.getAlignment().getQuantity()) * 8 != UnionAlign ||
         uint64_t(Layout.getSize().getQuantity()) * 8 != llvm::alignTo(UnionWidth, UnionAlign))
-      return false;
+      return std::nullopt;
     const auto *Alternative = Definition(Head->getType());
     if (!Storage(Alternative, "__alt", "variant") || Alternative->isUnion() ||
         !Alternative->isStandardLayout() || Alternative->getNumBases() ||
         std::distance(Alternative->field_begin(), Alternative->field_end()) != 1)
-      return false;
+      return std::nullopt;
     const auto &AltArgs = cast<ClassTemplateSpecializationDecl>(Alternative)->getTemplateArgs();
     const auto *Item = *Alternative->field_begin();
     const auto ItemType = Alternatives[I].getAsType();
@@ -7005,10 +7009,495 @@ bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
         !Field(Item, "__value") || !Context.hasSameType(Item->getType(), ItemType) ||
         AltLayout.getFieldOffset(0) || AltLayout.getSize() != Context.getTypeSizeInChars(ItemType) ||
         AltLayout.getAlignment() != Context.getTypeAlignInChars(ItemType))
-      return false;
+      return std::nullopt;
+    Result.Alternatives.push_back(Item);
     Current = Definition(Tail->getType());
   }
-  return false;
+  return std::nullopt;
+}
+
+static bool variantDeclaration(const State &S, const SourceManager &SM,
+                               const Decl *D, llvm::StringRef Path = "variant") {
+  return approvedStandardSDKDeclaration(S, SM, D) &&
+         cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+}
+
+static bool variantFunction(const State &S, const SourceManager &SM,
+                            const FunctionDecl *F, unsigned Arity) {
+  const auto *Proto = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!F || !F->getIdentifier() || F->isDeleted() || F->isInvalidDecl() ||
+      F->getNumParams() != Arity || F->isVariadic() || !F->isConstexpr() ||
+      !Proto || !Proto->isNothrow() || !variantDeclaration(S, SM, F))
+    return false;
+  for (const auto *D : F->redecls())
+    if (!variantDeclaration(S, SM, D))
+      return false;
+  return true;
+}
+
+static const Expr *variantReturned(const FunctionDecl *F) {
+  const auto *Body = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
+  if (!Body || Body->body_empty() || Body->size() > 3)
+    return nullptr;
+  for (auto It = Body->body_begin(); It != std::prev(Body->body_end()); ++It) {
+    const auto *Assertion = dyn_cast<DeclStmt>(*It);
+    if (!Assertion || !Assertion->isSingleDecl() ||
+        !isa<StaticAssertDecl>(Assertion->getSingleDecl()))
+      return nullptr;
+  }
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  return Return ? Return->getRetValue() : nullptr;
+}
+
+static const DeclRefExpr *variantReference(const Expr *E) {
+  return E ? dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts()) : nullptr;
+}
+
+static bool variantIntegerConstant(const State &S, const SourceManager &SM,
+                                   const Expr *E, const ASTContext &Context,
+                                   llvm::StringRef Name, QualType Type) {
+  const auto *Ref = variantReference(E);
+  const auto *V = Ref ? dyn_cast<VarDecl>(Ref->getDecl()) : nullptr;
+  if (!V || !V->getIdentifier() || V->getName() != Name ||
+      !Context.hasSameType(V->getType().getUnqualifiedType(), Type) ||
+      !variantDeclaration(S, SM, V))
+    return false;
+  const auto Constant = approvedSDKIntegerConstant(S, SM, V, Context);
+  return Constant && Constant->getBitWidth() == Context.getTypeSize(Type) &&
+         Constant->isUnsigned() && Constant->isAllOnes();
+}
+
+static bool variantThisField(const Expr *E, const FieldDecl *Field) {
+  const auto *Access = E ? dyn_cast<MemberExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  return Access && Access->getMemberDecl()->getCanonicalDecl() ==
+                       Field->getCanonicalDecl() &&
+         isa<CXXThisExpr>(Access->getBase()->IgnoreParenImpCasts());
+}
+
+static bool variantIndexBody(const State &S, const SourceManager &SM,
+                             const CXXMethodDecl *F, const UtilityVariantRecord &V,
+                             const ASTContext &Context) {
+  if (!variantFunction(S, SM, F, 0) || F->getName() != "index" ||
+      F->getParent()->getCanonicalDecl() != V.Index->getParent()->getCanonicalDecl() ||
+      !F->isConst() || F->isVolatile() || F->isStatic() ||
+      !Context.hasSameType(F->getReturnType(), Context.getSizeType()))
+    return false;
+  const auto *E = variantReturned(F);
+  const auto *If = E ? dyn_cast<ConditionalOperator>(E->IgnoreParenImpCasts()) : nullptr;
+  const auto *Test = If ? dyn_cast<BinaryOperator>(If->getCond()->IgnoreParenImpCasts()) : nullptr;
+  return Test && Test->getOpcode() == BO_EQ &&
+         variantThisField(Test->getLHS(), V.Index) &&
+         variantIntegerConstant(S, SM, Test->getRHS(), Context, "__variant_npos",
+                                V.Index->getType()) &&
+         variantIntegerConstant(S, SM, If->getTrueExpr(), Context, "variant_npos",
+                                Context.getSizeType()) &&
+         variantThisField(If->getFalseExpr(), V.Index);
+}
+
+std::optional<UtilityVariantQuery> approvedUtilityVariantQuery(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *MethodCall = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = MethodCall ? MethodCall->getMethodDecl() : nullptr;
+  const auto *Member = MethodCall
+      ? dyn_cast<MemberExpr>(MethodCall->getCallee()->IgnoreParens()) : nullptr;
+  if (!Method || !Member || MethodCall->getNumArgs() ||
+      Member->getMemberDecl() != Method || !Method->getIdentifier() ||
+      (Method->getName() != "index" && Method->getName() != "valueless_by_exception") ||
+      !variantFunction(S, SM, Method, 0) || Method->isStatic() ||
+      !Method->isConst() || Method->isVolatile())
+    return std::nullopt;
+  QualType Owner = Member->getBase()->getType();
+  if (Member->isArrow())
+    Owner = Owner->getPointeeType();
+  const auto Variant = approvedUtilityVariantRecord(S, SM, Owner, Context);
+  if (!Variant || Method->getParent()->getCanonicalDecl() != Variant->Record->getCanonicalDecl())
+    return std::nullopt;
+
+  const bool Valueless = Method->getName() == "valueless_by_exception";
+  if (!Context.hasSameType(Method->getReturnType(), Valueless ? Context.BoolTy : Context.getSizeType()))
+    return std::nullopt;
+  const auto *E = variantReturned(Method);
+  const auto *Forward = E ? dyn_cast<CXXMemberCallExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  const auto *Inner = Forward ? Forward->getMethodDecl() : nullptr;
+  if (!Inner || !Forward->getImplicitObjectArgument() ||
+      !variantThisField(Forward->getImplicitObjectArgument(), Variant->Implementation))
+    return std::nullopt;
+  if (!Valueless) {
+    if (!variantIndexBody(S, SM, Inner, *Variant, Context))
+      return std::nullopt;
+  } else {
+    if (!variantFunction(S, SM, Inner, 0) || Inner->getName() != Method->getName() ||
+        Inner->getParent()->getCanonicalDecl() != Variant->Index->getParent()->getCanonicalDecl() ||
+        !Inner->isConst() || Inner->isVolatile() || Inner->isStatic() ||
+        !Context.hasSameType(Inner->getReturnType(), Context.BoolTy))
+      return std::nullopt;
+    const auto *Returned = variantReturned(Inner);
+    const auto *Equals = Returned ? dyn_cast<BinaryOperator>(Returned->IgnoreParens()) : nullptr;
+    const auto *Index = Equals ? dyn_cast<CXXMemberCallExpr>(Equals->getLHS()->IgnoreParenImpCasts()) : nullptr;
+    if (!Equals || Equals->getOpcode() != BO_EQ || !Index ||
+        !Index->getImplicitObjectArgument() ||
+        !isa<CXXThisExpr>(Index->getImplicitObjectArgument()->IgnoreParenImpCasts()) ||
+        !variantIndexBody(S, SM, Index->getMethodDecl(), *Variant, Context) ||
+        !variantIntegerConstant(S, SM, Equals->getRHS(), Context, "variant_npos",
+                                Context.getSizeType()))
+      return std::nullopt;
+  }
+  return UtilityVariantQuery{*Variant, Member, Valueless};
+}
+
+static const CXXConstructExpr *variantConstruct(const Expr *E) {
+  return E ? dyn_cast<CXXConstructExpr>(E->IgnoreImplicit()->IgnoreParens()) : nullptr;
+}
+
+static const Expr *variantMemberInit(const CXXConstructorDecl *C, const FieldDecl *Field) {
+  for (const auto *Init : C->inits())
+    if (Init->isMemberInitializer() && Init->isWritten() &&
+        Init->getMember()->getCanonicalDecl() == Field->getCanonicalDecl())
+      return Init->getInit();
+  return nullptr;
+}
+
+static bool variantEmptyBody(const CXXConstructorDecl *C) {
+  const auto *Body = C ? dyn_cast_or_null<CompoundStmt>(C->getBody()) : nullptr;
+  return Body && Body->body_empty();
+}
+
+static std::optional<unsigned> variantIndexTag(const State &S, const SourceManager &SM,
+                                               const Expr *E) {
+  const auto *R = E ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                           E->getType()->getAsCXXRecordDecl()) : nullptr;
+  const auto *Primary = R ? R->getSpecializedTemplate() : nullptr;
+  if (!Primary || Primary->getName() != "in_place_index_t" || R->getTemplateArgs().size() != 1 ||
+      !variantDeclaration(S, SM, R, "__utility/in_place.h") ||
+      !variantDeclaration(S, SM, Primary, "__utility/in_place.h"))
+    return std::nullopt;
+  const auto &Arg = R->getTemplateArgs().get(0);
+  if (Arg.getKind() != TemplateArgument::Integral || Arg.getAsIntegral().getLimitedValue(64) >= 64)
+    return std::nullopt;
+  const auto *Copy = variantConstruct(E);
+  if (Copy && (!Copy->getConstructor()->isTrivial() ||
+               !Copy->getConstructor()->isCopyOrMoveConstructor() ||
+               Copy->getNumArgs() != 1 ||
+               !variantDeclaration(S, SM, Copy->getConstructor(), "__utility/in_place.h")))
+    return std::nullopt;
+  const auto *Ref = variantReference(Copy ? Copy->getArg(0) : E);
+  const auto *V = Ref ? dyn_cast<VarTemplateSpecializationDecl>(Ref->getDecl()) : nullptr;
+  const auto *Template = V ? V->getSpecializedTemplate() : nullptr;
+  if (!Template || Template->getName() != "in_place_index" || !V->isInline() || !V->isConstexpr() ||
+      V->getTemplateArgs().size() != 1 || !V->getTemplateArgs().get(0).structurallyEquals(Arg) ||
+      !variantDeclaration(S, SM, V, "__utility/in_place.h") ||
+      !variantDeclaration(S, SM, Template, "__utility/in_place.h"))
+    return std::nullopt;
+  return unsigned(Arg.getAsIntegral().getLimitedValue());
+}
+
+static bool variantForward(const State &S, const SourceManager &SM, const Expr *E,
+                           const ParmVarDecl *P, const ASTContext &Context) {
+  if (!approvedFunctionalForwardingCall(S, SM, E, P))
+    return false;
+  const auto *Call = E ? dyn_cast<CallExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  return Context.hasSameType(Call->getDirectCallee()->getReturnType(), P->getType());
+}
+
+std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  if (!Construction || Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Construction->isInstantiationDependent())
+    return std::nullopt;
+  const auto *C = Construction->getConstructor();
+  const auto Variant = approvedUtilityVariantRecord(S, SM, Construction->getType(), Context);
+  const unsigned Arity = Construction->getNumArgs();
+  if (!C || !Variant || C->isDeleted() || C->isVariadic() || Arity > 1 ||
+      C->getNumParams() != Arity || C->getParent()->getCanonicalDecl() != Variant->Record->getCanonicalDecl() ||
+      !variantDeclaration(S, SM, C))
+    return std::nullopt;
+  if (Arity == 1 && C->isDefaulted() && C->isTrivial() && C->isCopyOrMoveConstructor() &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(), Construction->getType()))
+    return UtilityVariantConstruction{*Variant, true, 0};
+
+  if (!C->isConstexpr() || !C->getPrimaryTemplate() || (Arity == 0 && !C->isDefaultConstructor()) ||
+      !variantDeclaration(S, SM, C->getPrimaryTemplate()) || !variantEmptyBody(C))
+    return std::nullopt;
+  const auto *Proto = C->getType()->getAs<FunctionProtoType>();
+  if (!Proto || !Proto->isNothrow())
+    return std::nullopt;
+  for (const auto *Init : C->inits())
+    if (!Init->isMemberInitializer() || Init->getMember() != Variant->Implementation) {
+      const auto *Empty = variantConstruct(Init->getInit());
+      if (Init->isWritten() || !Init->isBaseInitializer() || Init->isBaseVirtual() ||
+          !Empty || Empty->getNumArgs() || !Empty->getConstructor()->isTrivial() ||
+          !Empty->getConstructor()->isDefaultConstructor() ||
+          !variantDeclaration(S, SM, Empty->getConstructor(), "__tuple/sfinae_helpers.h"))
+        return std::nullopt;
+    }
+  const auto *Impl = variantConstruct(variantMemberInit(C, Variant->Implementation));
+  if (!Impl || Impl->getNumArgs() != Arity + 1 ||
+      !Context.hasSameType(Impl->getType(), Variant->Implementation->getType()))
+    return std::nullopt;
+  const auto I = variantIndexTag(S, SM, Impl->getArg(0));
+  if (!I || *I >= Variant->Alternatives.size() || (!Arity && *I != 0))
+    return std::nullopt;
+  if (Arity && (!C->getParamDecl(0)->getType()->isReferenceType() ||
+                !variantForward(S, SM, Impl->getArg(1), C->getParamDecl(0), Context) ||
+                !Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                                Variant->Alternatives[*I]->getType())))
+    return std::nullopt;
+  // Inherited constructors introduce no user-written arguments. Confirm each
+  // selecting declaration ends in the exact storage base constructor.
+  const auto *Base = Impl->getConstructor();
+  for (unsigned Level = 0; Base && Base->isInheritingConstructor() && Level < 8; ++Level) {
+    const auto Inherited = Base->getInheritedConstructor();
+    if (!Inherited || !variantDeclaration(S, SM, Base) ||
+        !variantDeclaration(S, SM, Inherited.getShadowDecl()) ||
+        Base->getNumParams() != Arity + 1)
+      return std::nullopt;
+    Base = Inherited.getConstructor();
+  }
+  if (!Base || Base->isInheritingConstructor() || Base->getNumParams() != Arity + 1 ||
+      Base->getParent()->getCanonicalDecl() != Variant->Index->getParent()->getCanonicalDecl() ||
+      !variantDeclaration(S, SM, Base) || !variantEmptyBody(Base) ||
+      Base->getNumCtorInitializers() != 2)
+    return std::nullopt;
+  const auto *TagInit = variantMemberInit(Base, Variant->Index);
+  const auto *Data = variantConstruct(variantMemberInit(Base, Variant->Value));
+  Expr::EvalResult Constant;
+  if (!TagInit || !TagInit->EvaluateAsInt(Constant, Context) ||
+      Constant.Val.getInt().getLimitedValue(64) != *I ||
+      !Data || Data->getNumArgs() != Arity + 1 ||
+      variantIndexTag(S, SM, Data->getArg(0)) != I ||
+      (Arity && !variantForward(S, SM, Data->getArg(1), Base->getParamDecl(1), Context)))
+    return std::nullopt;
+
+  // Walk each selected union constructor, including the last alternative
+  // constructor, and verify the actual field and forwarding at every hop.
+  const auto *Alt = Variant->Alternatives[*I];
+  for (unsigned Remaining = *I; ; --Remaining) {
+    const auto *Selected = Data->getConstructor();
+    if (!Selected || !Selected->getParent()->isUnion() ||
+        !variantDeclaration(S, SM, Selected) || !variantEmptyBody(Selected) ||
+        Selected->getNumCtorInitializers() != 1 || Selected->getNumParams() != Arity + 1)
+      return std::nullopt;
+    const auto *Init = *Selected->init_begin();
+    const auto *Field = Init->isMemberInitializer() ? Init->getMember() : nullptr;
+    if (!Field || !Init->isWritten() || !variantDeclaration(S, SM, Field) ||
+        Field->getName() != (Remaining ? "__tail" : "__head"))
+      return std::nullopt;
+    Data = variantConstruct(Init->getInit());
+    if (!Data || Data->getNumArgs() != Arity + 1 ||
+        !Context.hasSameType(Data->getType(), Field->getType()) ||
+        (Arity && !variantForward(S, SM, Data->getArg(1), Selected->getParamDecl(1), Context)))
+      return std::nullopt;
+    if (!Remaining)
+      break;
+    const auto Next = variantIndexTag(S, SM, Data->getArg(0));
+    if (!Next || *Next != Remaining - 1)
+      return std::nullopt;
+  }
+  const auto *Item = Data->getConstructor();
+  if (!Item || Item->getParent()->getCanonicalDecl() != Alt->getParent()->getCanonicalDecl() ||
+      !variantDeclaration(S, SM, Item) || !variantEmptyBody(Item) ||
+      Item->getNumCtorInitializers() != 1 || Item->getNumParams() != Arity + 1)
+    return std::nullopt;
+  const auto *Initialization = variantMemberInit(Item, Alt);
+  if (!Initialization || (Arity
+          ? !variantForward(S, SM, Initialization, Item->getParamDecl(1), Context)
+          : !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Initialization->IgnoreParens())))
+    return std::nullopt;
+  return UtilityVariantConstruction{*Variant, false, *I};
+}
+
+static bool variantSelectedIndex(const FunctionDecl *F, unsigned I) {
+  const auto *Args = F ? F->getTemplateSpecializationArgs() : nullptr;
+  return Args && Args->size() == 2 && Args->get(0).getKind() == TemplateArgument::Integral &&
+         Args->get(0).getAsIntegral().getLimitedValue(64) == I;
+}
+
+static const CallExpr *variantReturnCall(const FunctionDecl *F) {
+  const auto *E = variantReturned(F);
+  return E ? dyn_cast<CallExpr>(E->IgnoreParenImpCasts()) : nullptr;
+}
+
+static bool variantParameter(const Expr *E, const ParmVarDecl *P) {
+  const auto *R = variantReference(E);
+  return R && R->getDecl() == P;
+}
+
+static bool variantDereferenceParameter(const Expr *E, const ParmVarDecl *P) {
+  const auto *Deref = E ? dyn_cast<UnaryOperator>(E->IgnoreParenImpCasts()) : nullptr;
+  return Deref && Deref->getOpcode() == UO_Deref && variantParameter(Deref->getSubExpr(), P);
+}
+
+static const FunctionDecl *variantAccessFunction(const State &S, const SourceManager &SM,
+                                                 const CallExpr *Call, llvm::StringRef Owner,
+                                                 unsigned Arity) {
+  const auto *F = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  const auto *NS = F ? dyn_cast<NamespaceDecl>(F->getParent()->getDeclContext()) : nullptr;
+  const auto *Outer = NS ? dyn_cast<NamespaceDecl>(NS->getDeclContext()) : nullptr;
+  if (!F || !F->getIdentifier() || F->getName() != "__get_alt" ||
+      F->getParent()->getName() != Owner || !NS || NS->getName() != "__access" ||
+      !Outer || Outer->getName() != "__variant_detail" || !F->isStatic() ||
+      F->getNumParams() != Arity || Call->getNumArgs() != Arity ||
+      F->isInvalidDecl() || F->isDeleted() || !F->isConstexpr() ||
+      !variantDeclaration(S, SM, F) || !variantDeclaration(S, SM, F->getPrimaryTemplate()) ||
+      !variantDeclaration(S, SM, F->getParent()))
+    return nullptr;
+  return F;
+}
+
+static const MemberExpr *variantForwardedField(const State &S, const SourceManager &SM,
+                                                const Expr *E, const ParmVarDecl *P,
+                                                const ASTContext &Context) {
+  const auto *Member = E ? dyn_cast<MemberExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  return Member && !Member->isArrow() && variantForward(S, SM, Member->getBase(), P, Context)
+      ? Member : nullptr;
+}
+
+static bool variantAlternativeProjection(const State &S, const SourceManager &SM,
+                                          const CallExpr *Call, const UtilityVariantRecord &V,
+                                          unsigned I, const ASTContext &Context) {
+  const auto *Variant = variantAccessFunction(S, SM, Call, "__variant", 1);
+  if (!variantSelectedIndex(Variant, I))
+    return false;
+  const auto *BaseCall = variantReturnCall(Variant);
+  const auto *Base = variantAccessFunction(S, SM, BaseCall, "__base", 1);
+  if (!variantSelectedIndex(Base, I))
+    return false;
+  const auto *Impl = variantForwardedField(S, SM, BaseCall->getArg(0), Variant->getParamDecl(0), Context);
+  if (!Impl || Impl->getMemberDecl()->getCanonicalDecl() != V.Implementation->getCanonicalDecl())
+    return false;
+  const auto *UnionCall = variantReturnCall(Base);
+  if (!UnionCall || UnionCall->getNumArgs() != 2)
+    return false;
+  const auto *Value = variantForwardedField(S, SM, UnionCall->getArg(0), Base->getParamDecl(0), Context);
+  if (!Value || Value->getMemberDecl()->getCanonicalDecl() != V.Value->getCanonicalDecl())
+    return false;
+  for (unsigned Remaining = I; ; --Remaining) {
+    const auto *Access = variantAccessFunction(S, SM, UnionCall, "__union", 2);
+    const auto Tag = Access ? variantIndexTag(S, SM, UnionCall->getArg(1)) : std::nullopt;
+    if (!Tag || *Tag != Remaining)
+      return false;
+    const auto *E = variantReturned(Access);
+    if (!Remaining) {
+      const auto *Head = variantForwardedField(S, SM, E, Access->getParamDecl(0), Context);
+      const auto *Field = Head ? dyn_cast<FieldDecl>(Head->getMemberDecl()) : nullptr;
+      const auto *Record = Field ? Field->getType()->getAsCXXRecordDecl() : nullptr;
+      return Record && Field->getName() == "__head" && variantDeclaration(S, SM, Field) &&
+             Record->getCanonicalDecl() == V.Alternatives[I]->getParent()->getCanonicalDecl();
+    }
+    UnionCall = E ? dyn_cast<CallExpr>(E->IgnoreParenImpCasts()) : nullptr;
+    if (!UnionCall || UnionCall->getNumArgs() != 2)
+      return false;
+    const auto *Tail = variantForwardedField(S, SM, UnionCall->getArg(0), Access->getParamDecl(0), Context);
+    const auto *Field = Tail ? dyn_cast<FieldDecl>(Tail->getMemberDecl()) : nullptr;
+    if (!Field || Field->getName() != "__tail" || !variantDeclaration(S, SM, Field))
+      return false;
+  }
+}
+
+static bool variantHoldsBody(const State &S, const SourceManager &SM, const FunctionDecl *F,
+                             const UtilityVariantRecord &V, unsigned I, const ASTContext &Context) {
+  if (!variantFunction(S, SM, F, 1) || F->getName() != "__holds_alternative" ||
+      !variantSelectedIndex(F, I))
+    return false;
+  const auto *E = variantReturned(F);
+  const auto *Test = E ? dyn_cast<BinaryOperator>(E->IgnoreParenImpCasts()) : nullptr;
+  const auto *Call = Test ? dyn_cast<CXXMemberCallExpr>(Test->getLHS()->IgnoreParenImpCasts()) : nullptr;
+  Expr::EvalResult Index;
+  const auto Query = approvedUtilityVariantQuery(S, SM, Call, Context);
+  return Test && Test->getOpcode() == BO_EQ && Query && !Query->Valueless &&
+         Query->Variant.Record->getCanonicalDecl() == V.Record->getCanonicalDecl() &&
+         variantParameter(Query->Callee->getBase(), F->getParamDecl(0)) &&
+         Test->getRHS()->EvaluateAsInt(Index, Context) && Index.Val.getInt().getLimitedValue(64) == I;
+}
+
+static bool variantGetIfBody(const State &S, const SourceManager &SM, const FunctionDecl *Public,
+                             const UtilityVariantRecord &V, unsigned I, const ASTContext &Context) {
+  const auto *Outer = variantReturnCall(Public);
+  const auto *Generic = Outer ? Outer->getDirectCallee() : nullptr;
+  if (!variantFunction(S, SM, Generic, 1) || Generic->getName() != "__generic_get_if" ||
+      !variantSelectedIndex(Generic, I) || Outer->getNumArgs() != 1 ||
+      !variantParameter(Outer->getArg(0), Public->getParamDecl(0)) ||
+      !Context.hasSameType(Generic->getReturnType(), Public->getReturnType()))
+    return false;
+  const auto *P = Generic->getParamDecl(0);
+  const auto *E = variantReturned(Generic);
+  const auto *If = E ? dyn_cast<ConditionalOperator>(E->IgnoreParenImpCasts()) : nullptr;
+  const auto *Test = If ? dyn_cast<BinaryOperator>(If->getCond()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Holds = Test ? dyn_cast<CallExpr>(Test->getRHS()->IgnoreParenImpCasts()) : nullptr;
+  if (!Test || Test->getOpcode() != BO_LAnd || !variantParameter(Test->getLHS(), P) ||
+      !Holds || Holds->getNumArgs() != 1 || !variantDereferenceParameter(Holds->getArg(0), P) ||
+      !variantHoldsBody(S, SM, Holds->getDirectCallee(), V, I, Context) ||
+      !isa<CXXNullPtrLiteralExpr>(If->getFalseExpr()->IgnoreParenImpCasts()))
+    return false;
+  const auto *Address = dyn_cast<CallExpr>(If->getTrueExpr()->IgnoreParenImpCasts());
+  const auto *F = Address ? Address->getDirectCallee() : nullptr;
+  const auto *Member = Address && Address->getNumArgs() == 1
+      ? dyn_cast<MemberExpr>(Address->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+  if (!F || F->getName() != "addressof" ||
+      !variantDeclaration(S, SM, F, "__memory/addressof.h") ||
+      !variantDeclaration(S, SM, F->getPrimaryTemplate(), "__memory/addressof.h") ||
+      !Member || Member->getMemberDecl()->getCanonicalDecl() != V.Alternatives[I]->getCanonicalDecl())
+    return false;
+  const auto *BuiltinCall = variantReturnCall(F);
+  if (!BuiltinCall || !BuiltinCall->getDirectCallee() ||
+      BuiltinCall->getDirectCallee()->getBuiltinID() != Builtin::BI__builtin_addressof ||
+      BuiltinCall->getNumArgs() != 1 ||
+      !variantParameter(BuiltinCall->getArg(0), F->getParamDecl(0)))
+    return false;
+  const auto *Selected = dyn_cast<CallExpr>(Member->getBase()->IgnoreParenImpCasts());
+  return Selected && Selected->getNumArgs() == 1 &&
+         variantDereferenceParameter(Selected->getArg(0), P) &&
+         variantAlternativeProjection(S, SM, Selected, V, I, Context);
+}
+
+std::optional<UtilityVariantGetIf> approvedUtilityVariantGetIf(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!F || !F->getIdentifier() || F->getName() != "get_if" || Call->getNumArgs() != 1 ||
+      !variantFunction(S, SM, F, 1) || !directFunctionReference(Call) ||
+      !variantDeclaration(S, SM, F->getPrimaryTemplate()))
+    return std::nullopt;
+  const auto Owner = Call->getArg(0)->getType()->getPointeeType();
+  const auto V = approvedUtilityVariantRecord(S, SM, Owner, Context);
+  const auto *Args = F->getTemplateSpecializationArgs();
+  if (!V || !Args || Args->size() != 2 || Args->get(1).getKind() != TemplateArgument::Pack ||
+      Args->get(1).pack_size() != V->Alternatives.size())
+    return std::nullopt;
+  const auto Alternatives = Args->get(1).pack_elements();
+  for (unsigned I = 0; I < Alternatives.size(); ++I)
+    if (Alternatives[I].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Alternatives[I].getAsType(), V->Alternatives[I]->getType()))
+      return std::nullopt;
+  const auto &Selection = Args->get(0);
+  unsigned I = V->Alternatives.size();
+  const FunctionDecl *Indexed = F;
+  if (Selection.getKind() == TemplateArgument::Integral) {
+    I = Selection.getAsIntegral().getLimitedValue(64);
+  } else if (Selection.getKind() == TemplateArgument::Type) {
+    for (unsigned N = 0; N < V->Alternatives.size(); ++N)
+      if (Context.hasSameType(V->Alternatives[N]->getType(), Selection.getAsType())) {
+        if (I != V->Alternatives.size())
+          return std::nullopt;
+        I = N;
+      }
+    const auto *Dispatch = variantReturnCall(F);
+    Indexed = Dispatch ? Dispatch->getDirectCallee() : nullptr;
+    if (!variantFunction(S, SM, Indexed, 1) || Indexed->getName() != "get_if" ||
+        Dispatch->getNumArgs() != 1 || !variantParameter(Dispatch->getArg(0), F->getParamDecl(0)) ||
+        !Context.hasSameType(Indexed->getReturnType(), F->getReturnType()))
+      return std::nullopt;
+  }
+  if (I >= V->Alternatives.size() || !variantSelectedIndex(Indexed, I))
+    return std::nullopt;
+  auto Element = V->Alternatives[I]->getType();
+  if (Owner.isConstQualified())
+    Element = Element.withConst();
+  if (!Context.hasSameType(Call->getType(), Context.getPointerType(Element)) ||
+      !variantGetIfBody(S, SM, Indexed, *V, I, Context))
+    return std::nullopt;
+  return UtilityVariantGetIf{*V, I};
 }
 
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
