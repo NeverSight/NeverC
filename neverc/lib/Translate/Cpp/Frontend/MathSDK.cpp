@@ -48147,12 +48147,29 @@ static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
     Value = Cast->getSubExpr()->IgnoreImplicit()->IgnoreParens();
   }
   const auto *Constructor = dyn_cast<CXXConstructExpr>(Value);
+  const auto Width = Context.getTypeSize(Result);
+  if (Constructor && (Constructor->getNumArgs() == 4 ||
+                      Constructor->getNumArgs() == 5)) {
+    const auto Words = approvedUtilityBitsetLiteralWords(S, SM, Constructor, Context);
+    if (!Words)
+      return false;
+    uint64_t Remaining = Width;
+    for (const uint64_t Word : *Words) {
+      if (Remaining >= 64) {
+        Remaining -= 64;
+      } else {
+        if ((Word >> Remaining) != 0)
+          return false;
+        Remaining = 0;
+      }
+    }
+    return true;
+  }
   const auto Construction = approvedUtilityBitsetConstruction(S, SM, Constructor, Context);
   if (Construction == UtilityBitsetConstruction::Default) return true;
   if (Construction != UtilityBitsetConstruction::UnsignedValue) return false;
   // The pinned constructor clears all bits above the converted unsigned operand.
   // A const local with the same non-mutable layout retains that bound.
-  const auto Width = Context.getTypeSize(Result);
   if (Width >= Context.getTypeSize(Context.UnsignedLongLongTy)) return true;
   if (!Width || Width >= 64) return false;
   const auto *Argument = Constructor->getArg(0);
