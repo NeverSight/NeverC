@@ -47504,6 +47504,21 @@ std::optional<uint64_t> bitsetFixedPosition(const Expr *E,
 }
 
 bool bitsetBoundedPosition(const Expr *E, const ASTContext &Context, uint64_t Bits) {
+  // Only the value range before the final implicit conversion is needed.
+  // The original expression still executes through the dynamic position path.
+  const auto *Conversion = dyn_cast<ImplicitCastExpr>(E->IgnoreParens());
+  if (Conversion && Conversion->getCastKind() == CK_IntegralCast &&
+      Conversion->getType()->isUnsignedIntegerType()) {
+    const auto SourceType = Conversion->getSubExpr()->getType();
+    if (SourceType->getAs<BuiltinType>() && SourceType->isUnsignedIntegerType() &&
+        !SourceType.isVolatileQualified() && !SourceType.isRestrictQualified() &&
+        SourceType.getAddressSpace() == LangAS::Default) {
+      const auto Width = Context.getIntWidth(SourceType);
+      if (Width < 64 && Width < Context.getIntWidth(Conversion->getType()) &&
+          (uint64_t(1) << Width) <= Bits)
+        return true;
+    }
+  }
   const auto *Op = dyn_cast<BinaryOperator>(E->IgnoreParenImpCasts());
   if (!Op || !Op->getType()->isUnsignedIntegerType() ||
       Context.getTypeSize(Op->getType()) > 64)
@@ -47966,11 +47981,24 @@ static std::optional<UtilityBitsetCall> bitsetStringResultCall(
   return UtilityBitsetCall{UtilityOperation::BitsetToString, 0, Receiver, 0, M->getParent()};
 }
 
-static bool bitsetTemporaryFitsUnsigned(const State &S, const SourceManager &SM,
+static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
                                         const Expr *Receiver, QualType Result,
                                         const ASTContext &Context) {
   if (!Receiver) return false;
   const Expr *Value = Receiver->IgnoreParenImpCasts();
+  if (const auto *Reference = dyn_cast<DeclRefExpr>(Value)) {
+    const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+    if (!Variable || isa<ParmVarDecl>(Variable) || Variable->isImplicit() ||
+        !Variable->hasLocalStorage() || !Variable->hasInit() || !S.owns(SM, Variable->getLocation()))
+      return false;
+    const auto Type = Variable->getType();
+    if (Type->isReferenceType() || !Type.isConstQualified() || Type.isVolatileQualified() ||
+        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
+      return false;
+    const auto Bitset = approvedUtilityBitsetRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+    if (!Bitset || (Bitset->Storage && Bitset->Storage->isMutable())) return false;
+    Value = Variable->getInit()->IgnoreImplicit()->IgnoreParens();
+  }
   if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Value))
     Value = Temporary->getSubExpr()->IgnoreParenImpCasts();
   if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(Value)) {
@@ -47982,7 +48010,8 @@ static bool bitsetTemporaryFitsUnsigned(const State &S, const SourceManager &SM,
   const auto Construction = approvedUtilityBitsetConstruction(S, SM, Constructor, Context);
   if (Construction == UtilityBitsetConstruction::Default) return true;
   if (Construction != UtilityBitsetConstruction::UnsignedValue) return false;
-  // This constructor zeros every bit above the converted unsigned operand.
+  // The pinned constructor clears all bits above the converted unsigned operand.
+  // A const local with the same non-mutable layout retains that bound.
   const auto Width = Context.getTypeSize(Result);
   if (Width >= Context.getTypeSize(Context.UnsignedLongLongTy)) return true;
   if (!Width || Width >= 64) return false;
@@ -48097,7 +48126,7 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
       ((Name == "to_ulong" && Context.hasSameType(Result, Context.UnsignedLongTy)) ||
        (Name == "to_ullong" && Context.hasSameType(Result, Context.UnsignedLongLongTy)));
   const bool NeedsOverflowProof = ToUnsigned && Info->Bits > Context.getTypeSize(Result);
-  if (NeedsOverflowProof && !bitsetTemporaryFitsUnsigned(S, SM,
+  if (NeedsOverflowProof && !bitsetReceiverFitsUnsigned(S, SM,
       Member->getImplicitObjectArgument(), Result, Context))
     return std::nullopt;
   if (!bitsetSourceGraph(S, SM, M, /*KnownValidText=*/false, /*StringResult=*/nullptr,
@@ -48128,8 +48157,17 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
       !Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) return std::nullopt;
   const auto *Index = Call->getArg(0);
   const auto Position = bitsetFixedPosition(Index, Context, Info->Bits);
-  if (!Position && !bitsetBoundedPosition(Index, Context, Info->Bits))
-    return std::nullopt;
+  if (!Position && !bitsetBoundedPosition(Index, Context, Info->Bits)) {
+    // Prove the converted runtime value without assuming a constant context.
+    // Lowering still evaluates the original expression.
+    Expr::EvalResult Value;
+    if (!Index->EvaluateAsInt(Value, Context, Expr::SE_NoSideEffects,
+                              /*InConstantContext=*/false) || !Value.Val.isInt())
+      return std::nullopt;
+    const auto &Constant = Value.Val.getInt();
+    if (Constant.isNegative() || Constant.getLimitedValue(Info->Bits) >= Info->Bits)
+      return std::nullopt;
+  }
   auto Indexed = [&](UtilityOperation Operation) {
     UtilityBitsetCall Result{Operation, Position.value_or(0)};
     Result.DynamicPosition = !Position.has_value();
