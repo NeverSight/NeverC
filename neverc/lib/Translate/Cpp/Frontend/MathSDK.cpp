@@ -47709,11 +47709,24 @@ static std::optional<UtilityBitsetCall> bitsetProxyCall(
   return std::nullopt;
 }
 
-static bool bitsetTemporaryFitsUnsigned(const State &S, const SourceManager &SM,
+static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
                                         const Expr *Receiver, QualType Result,
                                         const ASTContext &Context) {
   if (!Receiver) return false;
   const Expr *Value = Receiver->IgnoreParenImpCasts();
+  if (const auto *Reference = dyn_cast<DeclRefExpr>(Value)) {
+    const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+    if (!Variable || isa<ParmVarDecl>(Variable) || Variable->isImplicit() ||
+        !Variable->hasLocalStorage() || !Variable->hasInit() || !S.owns(SM, Variable->getLocation()))
+      return false;
+    const auto Type = Variable->getType();
+    if (Type->isReferenceType() || !Type.isConstQualified() || Type.isVolatileQualified() ||
+        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
+      return false;
+    const auto Bitset = approvedUtilityBitsetRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+    if (!Bitset || (Bitset->Storage && Bitset->Storage->isMutable())) return false;
+    Value = Variable->getInit()->IgnoreImplicit()->IgnoreParens();
+  }
   if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Value))
     Value = Temporary->getSubExpr()->IgnoreParenImpCasts();
   if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(Value)) {
@@ -47725,7 +47738,8 @@ static bool bitsetTemporaryFitsUnsigned(const State &S, const SourceManager &SM,
   const auto Construction = approvedUtilityBitsetConstruction(S, SM, Constructor, Context);
   if (Construction == UtilityBitsetConstruction::Default) return true;
   if (Construction != UtilityBitsetConstruction::UnsignedValue) return false;
-  // This constructor zeros every bit above the converted unsigned operand.
+  // The pinned constructor clears all bits above the converted unsigned operand.
+  // A const local with the same non-mutable layout retains that bound.
   const auto Width = Context.getTypeSize(Result);
   if (Width >= Context.getTypeSize(Context.UnsignedLongLongTy)) return true;
   if (!Width || Width >= 64) return false;
@@ -47836,7 +47850,7 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
       ((Name == "to_ulong" && Context.hasSameType(Result, Context.UnsignedLongTy)) ||
        (Name == "to_ullong" && Context.hasSameType(Result, Context.UnsignedLongLongTy)));
   const bool NeedsOverflowProof = ToUnsigned && Info->Bits > Context.getTypeSize(Result);
-  if (NeedsOverflowProof && !bitsetTemporaryFitsUnsigned(S, SM,
+  if (NeedsOverflowProof && !bitsetReceiverFitsUnsigned(S, SM,
       Member->getImplicitObjectArgument(), Result, Context))
     return std::nullopt;
   if (!bitsetSourceGraph(S, SM, M, NeedsOverflowProof)) return std::nullopt;
