@@ -643,11 +643,14 @@ class Emitter {
       line("");
     }
   }
+  static const char *recordTag(const Record &R) {
+    return R.Layout && R.Layout->IsUnion ? "union " : "struct ";
+  }
   void record(const Record &R) {
     const bool ForwardDeclared = M.Profile == "cpp-core-v2";
     for (const auto &F : R.Fields)
       lifetimeType(F.ValueType);
-    line(std::string(ForwardDeclared ? "struct " : "typedef struct ") +
+    line(std::string(ForwardDeclared ? "" : "typedef ") + recordTag(R) +
              (M.MemoryLifetimes ? "__attribute__((may_alias)) " : "") +
              R.ID + " {", &R.Loc);
     for (const auto &F : R.Fields)
@@ -890,7 +893,7 @@ public:
     helpers();
     if (M.Profile == "cpp-core-v2")
       for (const auto &R : M.Records)
-        line(std::string("typedef struct ") +
+        line(std::string("typedef ") + recordTag(R) +
                  (M.MemoryLifetimes ? "__attribute__((may_alias)) " : "") +
                  R.ID + " " + R.ID + ";", &R.Loc);
     for (const auto &R : M.Records)
