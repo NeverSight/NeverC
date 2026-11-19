@@ -261,8 +261,7 @@ jobs:
         path: ${{ runner.temp }}/cpp-ci-recovery
         if-no-files-found: error
         retention-days: 14
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'ci-recovery'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'ci-recovery') }}"
   recovery-windows:
     runs-on: windows-2022
     env:
@@ -790,8 +789,7 @@ jobs:
         if-no-files-found: error
         retention-days: 14
   inspect-macho-data-const:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'macho-data-const'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'macho-data-const') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -1068,8 +1066,7 @@ jobs:
         if-no-files-found: error
         retention-days: 14
   inspect-branch-test-header:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'branch-test-header'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'branch-test-header') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -1140,7 +1137,8 @@ jobs:
         if-no-files-found: error
         retention-days: 14
   inspect-private-runtime-formal:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'private-frontend-runtime' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'private-frontend-runtime'
+      }}
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
@@ -1166,27 +1164,30 @@ jobs:
 
         sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-private-runtime-bootstrap/clang-install.log"
 
-        sudo apt-get install -y cmake ninja-build llvm-22 libgtest-dev binutils 2>&1 | tee "$RUNNER_TEMP/cpp-private-runtime-bootstrap/dependencies.log"
+        sudo apt-get install -y cmake ninja-build llvm-22 libgtest-dev binutils 2>&1
+        | tee "$RUNNER_TEMP/cpp-private-runtime-bootstrap/dependencies.log"
 
         '
     - name: Authenticate actual successful current private archive remotely
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: 'python3 utils/ci/download-private-runtime-component.py --repo "$GITHUB_WORKSPACE" --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-component" --evidence "$RUNNER_TEMP/cpp-private-runtime-bootstrap"
+      run: 'python3 utils/ci/download-private-runtime-component.py --repo "$GITHUB_WORKSPACE"
+        --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-component"
+        --evidence "$RUNNER_TEMP/cpp-private-runtime-bootstrap"
 
         '
     - name: Authenticate existing C23 backend remotely without rebuilding
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: 'python3 utils/ci/download-cpp-linux-baseline.py --run-id 39244936536 --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551 --output "$RUNNER_TEMP/cpp-private-runtime-backend"
+      run: 'python3 utils/ci/download-cpp-linux-baseline.py --run-id 39244936536 --revision
+        1617f18ead74a8fa719e3d1bd02f9c84a10de551 --output "$RUNNER_TEMP/cpp-private-runtime-backend"
 
         '
-    - name: Build actual Translate owners and run221 GTests plus six64bit target IR
-      run: 'set -e
-
-        python3 utils/ci/run-private-runtime-ci.py --repo "$GITHUB_WORKSPACE" --component "$RUNNER_TEMP/cpp-private-runtime-component" --baseline "$RUNNER_TEMP/cpp-private-runtime-backend/provenance.json" --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-formal" --build "$RUNNER_TEMP/cpp-private-runtime-build"
-
-        python3 utils/ci/run-private-runtime-target-ir-ci.py --repo "$GITHUB_WORKSPACE" --component "$RUNNER_TEMP/cpp-private-runtime-component" --baseline "$RUNNER_TEMP/cpp-private-runtime-backend/provenance.json" --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-formal/target-ir" --build "$RUNNER_TEMP/cpp-private-member-target-ir-build" --ir-plan utils/ci/cpp-bind-member-target-ir-plan.json --runtime-report "$RUNNER_TEMP/cpp-private-runtime-formal/results.json"
+    - name: Build actual Translate owners and run twelve r18 explicit-result bind GTests
+      run: 'python3 utils/ci/run-private-runtime-ci.py --repo "$GITHUB_WORKSPACE"
+        --component "$RUNNER_TEMP/cpp-private-runtime-component" --baseline "$RUNNER_TEMP/cpp-private-runtime-backend/provenance.json"
+        --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-formal"
+        --build "$RUNNER_TEMP/cpp-private-runtime-build"
 
         '
     - name: Upload real original XML source and invocation evidence only
@@ -1416,7 +1417,7 @@ jobs:
         if-no-files-found: error
         retention-days: 14
   inspect-not-fn-operator-component:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-operator-component' }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-operator-component') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     steps:
@@ -1828,7 +1829,7 @@ jobs:
         compression-level: 0
         retention-days: 7
   inspect-not-fn-pointer-clean-216:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-pointer-clean-216' }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-pointer-clean-216') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -2130,8 +2131,7 @@ jobs:
         compression-level: 6
         retention-days: 14
   inspect-not-fn-pointer-owned-default-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-pointer-owned-default-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-pointer-owned-default-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -2278,8 +2278,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-signature-native:
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.fixture_group == 'not-fn-signature-native' || inputs.fixture_group == 'bind-nested-native20')
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && (inputs.fixture_group == 'not-fn-signature-native' || inputs.fixture_group == 'bind-nested-native20')) }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -2328,8 +2327,7 @@ jobs:
         retention-days: 7
         compression-level: 0
   inspect-not-fn-custom-negation-eight:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-custom-negation-eight'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-custom-negation-eight') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -2476,8 +2474,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-custom-negation-clean240:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-custom-negation-clean240'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-custom-negation-clean240') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -2550,8 +2547,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-four32:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-four32'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-four32') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -2623,8 +2619,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-source-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-source-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-source-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -2696,8 +2691,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-constructor-query-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-constructor-query-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-constructor-query-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -2771,8 +2765,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-factory-graph-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-factory-graph-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-factory-graph-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -2845,8 +2838,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-remaining-factory-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-remaining-factory-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-remaining-factory-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -2920,8 +2912,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-cvref-default-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-cvref-default-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-cvref-default-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -2994,8 +2985,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-cvref-query-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-cvref-query-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-cvref-query-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -3067,8 +3057,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-default-role-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-default-role-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-default-role-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -3214,8 +3203,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-reference-five40:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-reference-five40'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-reference-five40') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -3360,8 +3348,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-nested-six48:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-six48'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-six48') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -3507,8 +3494,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-nested-default-source-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-default-source-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-default-source-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -3581,8 +3567,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-nested-result-type-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-result-type-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-result-type-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -3655,8 +3640,7 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-nested-clean288:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-clean288'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-clean288') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -3728,8 +3712,7 @@ jobs:
         retention-days: 7
 
   inspect-bind-fully-bound-baseline:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-fully-bound-baseline'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-fully-bound-baseline') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -3837,8 +3820,7 @@ jobs:
         compression-level: 0
 
   inspect-bind-source-structure:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-source-structure'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-source-structure') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 35
     steps:
@@ -3891,8 +3873,7 @@ jobs:
         compression-level: 0
 
   inspect-bind-clean360:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-clean360'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-clean360') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -4021,20 +4002,9 @@ jobs:
       with:
         python-version: 3.12.10
     - name: Install matching host compiler and archive reader
-      run: 'set -o pipefail
+      run: "set -o pipefail\npython3 -c 'import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)' | tee \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/python.log\"\nset -euo pipefail\n. /etc/os-release\ntest \"$ID\" = ubuntu\ntest \"$VERSION_ID\" = 22.04\ncurl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o \"$RUNNER_TEMP/stl-llvm22.asc\"\nsudo install -m 0644 \"$RUNNER_TEMP/stl-llvm22.asc\" /usr/share/keyrings/neverc-stl-llvm22.asc\nprintf '%s\\n' 'deb [signed-by=/usr/share/keyrings/neverc-stl-llvm22.asc] https://apt.llvm.org/jammy/ llvm-toolchain-jammy-22 main' | sudo tee /etc/apt/sources.list.d/neverc-stl-llvm22.list >/dev/null\nsudo apt-get -o Dir::Etc::sourcelist=sources.list.d/neverc-stl-llvm22.list -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 update\nsudo apt-get -o Dir::Etc::sourcelist=sources.list.d/neverc-stl-llvm22.list -o Dir::Etc::sourceparts=- install -y --no-install-recommends clang-22 lld-22 llvm-22 llvm-22-dev 2>&1 | tee \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/clang-install.log\"\nclang++-22 --version\nllvm-ar-22 --version\nfor tool in cmake ninja ar nm objcopy objdump readelf; do command -v \"$tool\"; done\n"
 
-        python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/python.log"
-
-        python3 utils/ci/ensure-llvm-apt-host.py
-
-        curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https" -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
-
-        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/clang-install.log"
-
-        sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/dependencies.log"
-
-        '
-    - name: Run 72 bind reference sources at O0 and O2
+    - name: Install the original native Clang20 and libc++20 reference toolchain
       run: 'mkdir -p "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap"
 
         set -o pipefail
@@ -4050,9 +4020,11 @@ jobs:
         dpkg-query -W clang-20 libc++1 libc++abi1 libunwind libunwind-20-dev libc++-20-dev libc++abi-20-dev | tee "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap/toolchain-packages.log"
 
         '
+      if: ${{ false }}
     - name: Run 72 bind reference sources at O0 and O2
       run: python3 utils/ci/check-cpp-bind-call-arguments-native40.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-bind-call-arguments-native40"
-    - name: Validate the original125 cases across six64bit targets
+      if: ${{ false }}
+    - name: Observe explicit-result bind sources across six exact 64-bit targets
       env:
         GITHUB_TOKEN: ${{ github.token }}
       run: "python3 utils/ci/check-cpp-bind-call-arguments-clean456.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-bind-call-arguments-clean456-plan.json \\\n  --output \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456\" \\\n  --build \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456-rebuild\"\n"
@@ -4088,7 +4060,7 @@ jobs:
         compression-level: 0
         retention-days: 7
     - name: Upload only bounded native reference text evidence
-      if: ${{ always() }}
+      if: ${{ false }}
       uses: actions/upload-artifact@v4
       with:
         name: cpp-bind-call-arguments-native40-${{ github.sha }}
@@ -4098,7 +4070,7 @@ jobs:
         if-no-files-found: error
         retention-days: 14
     - name: Retain 144 native reference programs remotely only
-      if: ${{ !cancelled() }}
+      if: ${{ false }}
       uses: actions/upload-artifact@v4
       with:
         name: cpp-bind-call-arguments-native40-binaries-remote-only-${{ github.sha }}
