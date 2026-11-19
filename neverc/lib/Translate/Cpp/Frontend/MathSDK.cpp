@@ -6782,21 +6782,28 @@ static bool utilityTupleDirectConversion(const State &S,
          Context.hasSameUnqualifiedType(From, To);
 }
 
+bool pinnedUtilityVariantType(const State &S, const SourceManager &SM,
+                              const CXXRecordDecl *Record) {
+  const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Primary = Variant ? Variant->getSpecializedTemplate() : nullptr;
+  return S.coreV2() && Primary && Primary->getIdentifier() &&
+         Primary->getName() == "variant" &&
+         approvedStandardSDKDeclaration(S, SM, Primary->getCanonicalDecl()) &&
+         cstddefOrigin(S, SM, Primary->getCanonicalDecl()->getLocation(), "libcxx",
+                       "__fwd/variant.h");
+}
+
 bool approvedUtilityVariantMetadata(const State &S, const SourceManager &SM,
                                     const CXXRecordDecl *Record) {
   // The callers use this identity only for compile-time type metadata.
   const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
-  if (!S.coreV2() || !Variant || Variant->isInvalidDecl() || Variant->isUnion() ||
+  if (!pinnedUtilityVariantType(S, SM, Variant) || Variant->isInvalidDecl() || Variant->isUnion() ||
       Variant->isDependentContext() || !Variant->getIdentifier() ||
       Variant->getName() != "variant" ||
       (Variant->getSpecializationKind() != TSK_ImplicitInstantiation &&
        Variant->getSpecializationKind() != TSK_Undeclared))
     return false;
   const auto *Primary = Variant->getSpecializedTemplate();
-  if (!Primary || !Primary->getIdentifier() || Primary->getName() != "variant" ||
-      !cstddefOrigin(S, SM, Primary->getCanonicalDecl()->getLocation(), "libcxx",
-                    "__fwd/variant.h"))
-    return false;
   auto Pinned = [&](const Decl *D) {
     return approvedStandardSDKDeclaration(S, SM, D) &&
            (cstddefOrigin(S, SM, D->getLocation(), "libcxx", "variant") ||

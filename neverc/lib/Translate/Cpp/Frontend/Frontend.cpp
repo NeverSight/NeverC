@@ -30518,6 +30518,12 @@ public:
           // identity. Preserve the full written type/source checks without
           // completing that pointee or admitting a runtime pointer carrier.
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+        else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
+                 pinnedUtilityVariantType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
+          A.reject(Query->getExprLoc(), "variant size and alignment",
+                   "Variant size and alignment require an authenticated object layout.",
+                   "TR0203");
+        }
         else if (approvedUnorderedMapMetadataRecord(A.S, A.Sources,
                      A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context) ||
                  approvedSequenceContainerMetadataRecord(A.S, A.Sources,
