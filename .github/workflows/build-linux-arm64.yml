@@ -99,7 +99,27 @@ jobs:
 
     - name: Build Linux ARM64 install dependencies
       # The generated Ninja install target normally builds all before installing.
-      run: cmake --build build --config "$BUILD_TYPE" --target all
+      # Bound only this phase while investigating hosted runner disconnects.
+      env:
+        NINJA_STATUS: "[%f/%t running=%r elapsed=%es] "
+      run: |
+        snapshot() {
+          printf '\nARM64 runner resources (%s)\n' "$1"
+          nproc || true
+          free -m || true
+          df -h . || true
+          for metric in /proc/loadavg /proc/pressure/memory; do
+            if [[ -r "$metric" ]]; then
+              printf '%s\n' "$metric"
+              cat "$metric" || true
+            fi
+          done
+        }
+        snapshot before
+        status=0
+        time cmake --build build --config "$BUILD_TYPE" --target all --parallel 2 || status=$?
+        snapshot after
+        exit "$status"
 
     - name: Install neverc
       working-directory: build
