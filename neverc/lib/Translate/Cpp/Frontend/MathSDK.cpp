@@ -7452,7 +7452,7 @@ static bool variantGetIfBody(const State &S, const SourceManager &SM, const Func
          variantAlternativeProjection(S, SM, Selected, V, I, Context);
 }
 
-std::optional<UtilityVariantGetIf> approvedUtilityVariantGetIf(
+std::optional<UtilityVariantAlternative> approvedUtilityVariantGetIf(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *F = Call ? Call->getDirectCallee() : nullptr;
   if (!F || !F->getIdentifier() || F->getName() != "get_if" || Call->getNumArgs() != 1 ||
@@ -7497,7 +7497,82 @@ std::optional<UtilityVariantGetIf> approvedUtilityVariantGetIf(
   if (!Context.hasSameType(Call->getType(), Context.getPointerType(Element)) ||
       !variantGetIfBody(S, SM, Indexed, *V, I, Context))
     return std::nullopt;
-  return UtilityVariantGetIf{*V, I};
+  return UtilityVariantAlternative{*V, I};
+}
+
+std::optional<UtilityVariantAlternative> approvedUtilityVariantHolds(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!F || !F->getIdentifier() || F->getName() != "holds_alternative" ||
+      !variantFunction(S, SM, F, 1) || !variantDeclaration(S, SM, F->getPrimaryTemplate()) ||
+      Call->getNumArgs() != 1 || !Call->getType()->isBooleanType() ||
+      !directFunctionReference(Call))
+    return std::nullopt;
+  const auto V = approvedUtilityVariantRecord(S, SM, Call->getArg(0)->getType(), Context);
+  const auto *Args = F->getTemplateSpecializationArgs();
+  if (!V || !Args || Args->size() != 2 || Args->get(0).getKind() != TemplateArgument::Type ||
+      Args->get(1).getKind() != TemplateArgument::Pack ||
+      Args->get(1).pack_size() != V->Alternatives.size())
+    return std::nullopt;
+  const auto Wanted = Args->get(0).getAsType();
+  const auto Actual = Args->get(1).pack_elements();
+  std::optional<unsigned> Index;
+  for (unsigned I = 0; I < Actual.size(); ++I) {
+    const auto Alternative = V->Alternatives[I]->getType();
+    if (Actual[I].getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Actual[I].getAsType(), Alternative))
+      return std::nullopt;
+    if (Context.hasSameType(Wanted, Alternative)) {
+      if (Index)
+        return std::nullopt;
+      Index = I;
+    }
+  }
+  const auto *Selected = variantReturnCall(F);
+  if (!Index || !Selected || Selected->getNumArgs() != 1 ||
+      !variantParameter(Selected->getArg(0), F->getParamDecl(0)) ||
+      !variantHoldsBody(S, SM, Selected->getDirectCallee(), *V, *Index, Context))
+    return std::nullopt;
+  return UtilityVariantAlternative{*V, *Index};
+}
+
+std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  if (!Method || !(Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) ||
+      Method->isDeleted() || Method->isInvalidDecl() || !Method->isDefaulted() ||
+      !Method->isTrivial() || Method->getNumParams() != 1 || Method->isVariadic() ||
+      !variantDeclaration(S, SM, Method))
+    return std::nullopt;
+  for (const auto *D : Method->redecls())
+    if (!variantDeclaration(S, SM, D))
+      return std::nullopt;
+  const Expr *Receiver = nullptr;
+  bool Arrow = false;
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+    if (Operator->getOperator() != OO_Equal || Operator->getNumArgs() != 2)
+      return std::nullopt;
+    Receiver = Operator->getArg(0);
+  } else if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
+    const auto *Member = dyn_cast_or_null<MemberExpr>(directMethodReference(MemberCall));
+    if (!Member || Member->getMemberDecl() != Method || MemberCall->getNumArgs() != 1)
+      return std::nullopt;
+    Receiver = Member->getBase();
+    Arrow = Member->isArrow();
+  } else {
+    return std::nullopt;
+  }
+  const Expr *Input = Call->getArg(Call->getNumArgs() - 1);
+  const auto Type = Arrow ? Receiver->getType()->getPointeeType() : Receiver->getType();
+  const auto V = approvedUtilityVariantRecord(S, SM, Type, Context);
+  if (!V || Type.isConstQualified() || (!Arrow && !Receiver->isGLValue()) || !Input->isGLValue() ||
+      Method->getParent()->getCanonicalDecl() != V->Record->getCanonicalDecl() ||
+      !Context.hasSameUnqualifiedType(Input->getType(), Type) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type)))
+    return std::nullopt;
+  return UtilityVariantAssignment{Receiver,Input,Arrow,isa<CXXOperatorCallExpr>(Call)};
 }
 
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,

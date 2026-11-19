@@ -30137,6 +30137,8 @@ public:
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantHolds(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
               A.S.UnevaluatedFunctionalCalls.count(Call) ||
               A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
@@ -30676,6 +30678,7 @@ public:
           A.S.coreV2() && approvedUtilityStringAssignment(
                               A.S, A.Sources, Operator, A.Context)
                               .has_value();
+      const auto VariantAssignment = approvedUtilityVariantAssignment(A.S, A.Sources, C, A.Context);
       const bool UtilityOptionalAssignment =
           A.S.coreV2() &&
           approvedUtilityOptionalAssignment(A.S, A.Sources, Operator, A.Context)
@@ -30715,6 +30718,7 @@ public:
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityStringViewAssignment &&
             !UtilityStringAssignment && !UtilityVectorAssignment &&
+            !VariantAssignment &&
             !UtilityOptionalAssignment && !UtilityWrapIteratorAssignment &&
             !UtilityReverseIteratorAssignment && !UtilityAllocatorAssignment &&
             !UtilityDefaultDelete && !UtilityUniquePtr && !Ordinary &&
@@ -30788,6 +30792,18 @@ public:
           checkBinding(Receiver, true);
         }
         A.type(A.Context.getRecordType(Variant->Variant.Record), L);
+        return true;
+      }
+      if (const auto Holds = approvedUtilityVariantHolds(A.S, A.Sources, C, A.Context)) {
+        checkBinding(C->getArg(0), true);
+        A.type(A.Context.getRecordType(Holds->Variant.Record), L);
+        return true;
+      }
+      if (VariantAssignment) {
+        if (!VariantAssignment->Arrow)
+          checkBinding(VariantAssignment->Receiver, true);
+        checkBinding(VariantAssignment->Source, true);
+        A.type(VariantAssignment->Source->getType(), L);
         return true;
       }
       if (const auto GetIf = approvedUtilityVariantGetIf(A.S, A.Sources, C, A.Context)) {

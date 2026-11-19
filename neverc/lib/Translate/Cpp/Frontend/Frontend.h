@@ -3421,11 +3421,23 @@ struct UtilityVariantQuery {
 std::optional<UtilityVariantQuery> approvedUtilityVariantQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-struct UtilityVariantGetIf {
+struct UtilityVariantAlternative {
   UtilityVariantRecord Variant;
   unsigned Index;
 };
-std::optional<UtilityVariantGetIf> approvedUtilityVariantGetIf(
+std::optional<UtilityVariantAlternative> approvedUtilityVariantGetIf(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityVariantAlternative> approvedUtilityVariantHolds(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UtilityVariantAssignment {
+  const clang::Expr *Receiver;
+  const clang::Expr *Source;
+  bool Arrow;
+  bool SourceFirst;
+};
+std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 bool approvedUtilityTupleMetadata(const State &S,

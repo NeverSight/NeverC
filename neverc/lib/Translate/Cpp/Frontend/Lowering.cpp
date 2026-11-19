@@ -32592,6 +32592,33 @@ class FunctionLowering {
         label(End, L);
         return Result;
       }
+      if (const auto Holds = approvedUtilityVariantHolds(A.S, A.Sources, Call, A.Context)) {
+        auto Receiver = lvalue(Call->getArg(0));
+        const auto *Field = Holds->Variant.Index;
+        return binary("==", fieldStorage(std::move(Receiver), Field, L),
+                      quantity(Holds->Index, type(Field->getType(), L), L), "bool", L);
+      }
+      if (const auto Assignment = approvedUtilityVariantAssignment(A.S, A.Sources, Call, A.Context)) {
+        auto Receive = [&] {
+          return Assignment->Arrow
+              ? snapshot(expression(Assignment->Receiver), L)
+              : snapshot(address(lvalue(Assignment->Receiver), Assignment->Receiver->getType(), L), L);
+        };
+        auto Input = [&] {
+          return snapshot(address(lvalue(Assignment->Source), Assignment->Source->getType(), L), L);
+        };
+        Expression Left, Right;
+        if (Assignment->SourceFirst) {
+          Right = Input();
+          Left = Receive();
+        } else {
+          Left = Receive();
+          Right = Input();
+        }
+        auto Place = dereference(std::move(Left), L);
+        assign(Place, dereference(std::move(Right), L), L);
+        return Place;
+      }
       if (const auto GetIf = approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context)) {
         auto Pointer = snapshot(expression(Call->getArg(0)), L);
         const auto &V = GetIf->Variant;
