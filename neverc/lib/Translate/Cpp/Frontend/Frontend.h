@@ -4305,6 +4305,12 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
 bool approvedSequenceContainerMetadataRecord(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
+bool approvedAssociativeContainerMetadataRecord(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+bool approvedAssociativeContainerLayoutQuery(
+    const State &S, const clang::SourceManager &SM, clang::QualType Type,
+    const clang::ASTContext &Context);
 bool approvedUnorderedMapMetadataRecord(const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 bool approvedCstddefTypeQuery(const State &S,

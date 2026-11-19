@@ -2406,7 +2406,8 @@ static bool memoryTemplateMetadataType(Adapter &A, QualType T) {
     if (const auto *Record = Raw->getAsCXXRecordDecl())
       return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value() ||
              approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context) ||
-             approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context);
+             approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context) ||
+             approvedAssociativeContainerMetadataRecord(A.S, A.Sources, Record, A.Context);
     if (const auto *Array = dyn_cast<ArrayType>(Raw))
       T = Array->getElementType();
     else if (Raw->isPointerType() || Raw->isReferenceType())
@@ -2641,8 +2642,9 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
                unorderedNodeTypeQueryMetadata(*this, T->getAsCXXRecordDecl(), L)) {
       // Exact SDK storage is checked without constructing an owner or its methods.
     } else if (AllowIncompleteRecords &&
-               approvedSequenceContainerMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context)) {
-      // The proof already checks the exact int/default-allocator arguments.
+               (approvedSequenceContainerMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context) ||
+                approvedAssociativeContainerMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context))) {
+      // The proof already checks the integer element and SDK policy types.
       checkQueryType(Context.IntTy, L, AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
                approvedUnorderedMapMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context)) {
@@ -19295,7 +19297,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             return;
           }
         }
-        if (approvedSequenceContainerMetadataRecord(A.S, A.Sources, Declaration, A.Context)) {
+        if (approvedSequenceContainerMetadataRecord(A.S, A.Sources, Declaration, A.Context) ||
+            approvedAssociativeContainerMetadataRecord(A.S, A.Sources, Declaration, A.Context)) {
           Self(Self, A.Context.IntTy, true, Depth + 1);
           return;
         }
@@ -30438,6 +30441,10 @@ public:
           // A pointer has its own layout even when its pointee only has type
           // identity. Preserve the full written type/source checks without
           // completing that pointee or admitting a runtime pointer carrier.
+          A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+        else if (Query->isArgumentType() &&
+                 approvedAssociativeContainerLayoutQuery(A.S, A.Sources,
+                     A.Context.getBaseElementType(Operand.getNonReferenceType()), A.Context))
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (approvedUnorderedMapMetadataRecord(A.S, A.Sources,
                      A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context) ||
