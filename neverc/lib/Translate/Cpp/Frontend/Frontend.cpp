@@ -24207,6 +24207,13 @@ public:
             functionalNotFnLayout(A.S, A.Sources,
                 UtilityCall->getArg(0)->IgnoreParenImpCasts()->getType()->getAsCXXRecordDecl(), A.Context)));
 
+      if (Construction && Construction->getNumArgs() == 5 &&
+          approvedUtilityBitsetRecord(A.S, A.Sources, ConstructionRecord, A.Context)) {
+        llvm::errs() << "bitset-owned-text retained construction=" << UtilityConstruction
+                     << " selected=" << (Selected && Selected == Source.Function)
+                     << " concrete=" << (Selected && concreteFunctionTemplate(Selected))
+                     << " source=" << A.S.owns(A.Sources, Source.Location) << '\n';
+      }
       if (!Selected || Selected != Source.Function ||
           !concreteFunctionTemplate(Selected) ||
           !A.S.owns(A.Sources, Source.Location)) {
