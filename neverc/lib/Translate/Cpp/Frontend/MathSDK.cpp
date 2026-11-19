@@ -7065,9 +7065,15 @@ static bool variantIntegerConstant(const State &S, const SourceManager &SM,
                                    llvm::StringRef Name, QualType Type) {
   const auto *Ref = variantReference(E);
   const auto *V = Ref ? dyn_cast<VarDecl>(Ref->getDecl()) : nullptr;
+  const llvm::StringRef Header = Name == "variant_npos" ? "__fwd/variant.h" : "variant";
   if (!V || !V->getIdentifier() || V->getName() != Name ||
-      !Context.hasSameType(V->getType().getUnqualifiedType(), Type) ||
-      !variantDeclaration(S, SM, V))
+      !Context.hasSameType(V->getType().getUnqualifiedType(), Type))
+    return false;
+  for (const auto *Declaration : V->redecls())
+    if (!variantDeclaration(S, SM, Declaration, Header))
+      return false;
+  const VarDecl *Initializer = nullptr;
+  if (!V->getAnyInitializer(Initializer) || !variantDeclaration(S, SM, Initializer, Header))
     return false;
   const auto Constant = approvedSDKIntegerConstant(S, SM, V, Context);
   return Constant && Constant->getBitWidth() == Context.getTypeSize(Type) &&
@@ -7419,6 +7425,26 @@ static bool variantHoldsBody(const State &S, const SourceManager &SM, const Func
          Test->getRHS()->EvaluateAsInt(Index, Context) && Index.Val.getInt().getLimitedValue(64) == I;
 }
 
+static bool variantAccessUsing(const State &S, const SourceManager &SM,
+                               const Stmt *Statement) {
+  const auto *Declaration = dyn_cast<DeclStmt>(Statement);
+  const auto *Alias = Declaration && Declaration->isSingleDecl()
+      ? dyn_cast<UsingDecl>(Declaration->getSingleDecl()) : nullptr;
+  if (!Alias || !Alias->getIdentifier() || Alias->getName() != "__variant" ||
+      !variantDeclaration(S, SM, Alias))
+    return false;
+  const auto Shadows = Alias->shadows();
+  if (std::distance(Shadows.begin(), Shadows.end()) != 1)
+    return false;
+  const auto *Record = dyn_cast<CXXRecordDecl>((*Shadows.begin())->getTargetDecl());
+  const auto *Namespace = Record ? dyn_cast<NamespaceDecl>(Record->getDeclContext()) : nullptr;
+  const auto *Detail = Namespace ? dyn_cast<NamespaceDecl>(Namespace->getDeclContext()) : nullptr;
+  return Record && Record->getIdentifier() && Record->getName() == "__variant" &&
+         Namespace && Namespace->getIdentifier() && Namespace->getName() == "__access" &&
+         Detail && Detail->getIdentifier() && Detail->getName() == "__variant_detail" &&
+         variantDeclaration(S, SM, Record->getCanonicalDecl());
+}
+
 static bool variantGetIfBody(const State &S, const SourceManager &SM, const FunctionDecl *Public,
                              const UtilityVariantRecord &V, unsigned I, const ASTContext &Context) {
   const auto *Outer = variantReturnCall(Public);
@@ -7428,8 +7454,12 @@ static bool variantGetIfBody(const State &S, const SourceManager &SM, const Func
       !variantParameter(Outer->getArg(0), Public->getParamDecl(0)) ||
       !Context.hasSameType(Generic->getReturnType(), Public->getReturnType()))
     return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Generic->getBody());
+  if (!Body || Body->size() != 2 || !variantAccessUsing(S, SM, Body->body_front()))
+    return false;
   const auto *P = Generic->getParamDecl(0);
-  const auto *E = variantReturned(Generic);
+  const auto *Result = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *E = Result ? Result->getRetValue() : nullptr;
   const auto *If = E ? dyn_cast<ConditionalOperator>(E->IgnoreParenImpCasts()) : nullptr;
   const auto *Test = If ? dyn_cast<BinaryOperator>(If->getCond()->IgnoreParenImpCasts()) : nullptr;
   const auto *Holds = Test ? dyn_cast<CallExpr>(Test->getRHS()->IgnoreParenImpCasts()) : nullptr;
@@ -7492,11 +7522,8 @@ static bool variantGetBody(const State &S, const SourceManager &SM,
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Generic->getBody());
   if (!Body || Body->size() != 3)
     return false;
-  const auto *Using = dyn_cast<DeclStmt>(Body->body_front());
-  const auto *Access = Using && Using->isSingleDecl()
-      ? dyn_cast<UsingDecl>(Using->getSingleDecl()) : nullptr;
   const auto *Guard = dyn_cast<IfStmt>(*std::next(Body->body_begin()));
-  if (!Access || !Access->getIdentifier() || Access->getName() != "__variant" ||
+  if (!variantAccessUsing(S, SM, Body->body_front()) ||
       !Guard || Guard->getInit() || Guard->getConditionVariable() ||
       Guard->getElse() || Guard->isConstexpr())
     return false;
