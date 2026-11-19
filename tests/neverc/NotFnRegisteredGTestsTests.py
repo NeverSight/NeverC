@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_constexpr_text_pointer_registered = cls.registered
+        cls.bitset_constexpr_text_pointer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_constexpr_text_pointer_original = cls.adapter.restore_original_gtests(cls.bitset_constexpr_text_pointer_registered,cls.bitset_constexpr_text_pointer_suffix)
+        cls.registered = cls.adapter.restore_bitset_constexpr_text_pointer_history(cls.bitset_constexpr_text_pointer_registered)
         cls.bitset_wide_and_value_swap_registered = cls.registered
         cls.bitset_wide_and_value_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_wide_and_value_swap_original = cls.adapter.restore_original_gtests(cls.bitset_wide_and_value_swap_registered,cls.bitset_wide_and_value_swap_suffix)
@@ -1638,6 +1642,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_wide_and_value_swap_registered,self.bitset_wide_and_value_swap_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_wide_and_value_swap_original+b' ',['TranslateTest.CoreV2BitsetWideTemporaryEmptyMultiwordRunAtBothOptimizations'])
+
+    def test_bitset_constexpr_text_pointer_preserves_all_previous_registry_bytes_and_extracts_fourteen_tests(self):
+        self.assertEqual(self.bitset_constexpr_text_pointer_original+self.bitset_constexpr_text_pointer_suffix,self.bitset_constexpr_text_pointer_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_constexpr_text_pointer_original,self.bitset_constexpr_text_pointer_suffix),self.bitset_constexpr_text_pointer_original)
+        self.assertEqual(self.adapter.restore_bitset_constexpr_text_pointer_history(self.bitset_constexpr_text_pointer_registered),self.bitset_wide_and_value_swap_registered)
+        self.assertEqual(self.adapter.restore_bitset_constexpr_text_pointer_history(self.bitset_constexpr_text_pointer_original),self.bitset_wide_and_value_swap_original)
+        selected = ['TranslateTest.CoreV2BitsetConstexprTextPointerLocalRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerNamespaceRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerFirstNullRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerCustomDigitsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerPointerTypeAliasRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerZeroCountRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardMutablePointerRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardMutableGlobalRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardPointerArithmeticRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardNullRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardIndirectInitializerRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardQualifiedWithoutConstexprRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardInvalidBeyondWidthRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardOwnedDecoderRejected']
+        generated,proof = self.extractor.extract(self.bitset_constexpr_text_pointer_original,selected)
+        self.assertEqual(proof['original_test_names'],7927)
+        self.assertEqual(proof['selected_count'],14)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7913)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bitctxptr',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_constexpr_text_pointer_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_constexpr_text_pointer_registered+b' ',
+                        self.bitset_constexpr_text_pointer_registered.replace(b'r19bitctxptr',b'q.push(11)',1),
+                        self.bitset_constexpr_text_pointer_registered+self.bitset_constexpr_text_pointer_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_constexpr_text_pointer_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_constexpr_text_pointer_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_constexpr_text_pointer_registered,self.bitset_constexpr_text_pointer_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_constexpr_text_pointer_original+b' ',['TranslateTest.CoreV2BitsetConstexprTextPointerLocalRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
