@@ -47309,6 +47309,51 @@ bool bitsetStringResultSubscript(const State &S, const SourceManager &SM,
       bitsetPinnedHeader(S, SM, M, "string") && bitsetPinnedFunction(S, SM, M);
 }
 
+bool bitsetPinnedStringRepresentationQuery(const State &S, const SourceManager &SM,
+                                           const FunctionDecl *Root, const CallExpr *Call,
+                                           const ASTContext &Context) {
+  const auto *Callee = Call->getDirectCallee();
+  if (!Callee || Callee->isInvalidDecl() || Callee->hasBody() ||
+      Callee->getBuiltinID() != Builtin::BI__builtin_constant_p ||
+      !Callee->getIdentifier() || Callee->getName() != "__builtin_constant_p" ||
+      !Callee->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      !Context.hasSameType(Callee->getReturnType(), Context.IntTy) || Call->getNumArgs() != 1)
+    return false;
+  const auto *Constructor = dyn_cast<CXXConstructorDecl>(Root);
+  if (!Constructor || Constructor->getNumParams() != 5) return false;
+  const auto Parameter = Constructor->getParamDecl(0)->getType();
+  if (!Parameter->isLValueReferenceType()) return false;
+  const auto String = approvedUtilityStringRecord(
+      S, SM, Parameter->getPointeeType()->getAsCXXRecordDecl(), Context);
+  if (!String || !Context.hasSameType(Parameter->getPointeeType(),
+                                      Context.getRecordType(String->Record).withConst())) return false;
+  auto AtFlagQuery = [&](SourceLocation L) {
+    return L.isValid() && !L.isMacroID() && SM.getExpansionLineNumber(L) == 1889 &&
+        cstddefOrigin(S, SM, L, "libcxx", "string");
+  };
+  const auto Site = Call->getExprLoc();
+  if (!AtFlagQuery(Site) || !StringHashSourceClosure(S, SM, Context).function(Callee, 0, Site))
+    return false;
+  const auto *Argument = Call->getArg(0)->IgnoreParenImpCasts();
+  if (!Context.hasSameUnqualifiedType(Argument->getType(), Context.getSizeType()) ||
+      Lexer::getSourceText(CharSourceRange::getTokenRange(Argument->getSourceRange()),
+                          SM, Context.getLangOpts()) != "__rep_.__l.__is_long_")
+    return false;
+  // The packed string layout may insert anonymous member access nodes.
+  const Expr *Base = Argument;
+  unsigned Members = 0;
+  while (const auto *Member = dyn_cast<MemberExpr>(Base)) {
+    const auto Location = Member->getMemberLoc();
+    if (++Members > 6 || !bitsetPinned(S, SM, Member->getMemberDecl()) ||
+        (Location.isValid() && !AtFlagQuery(Location)))
+      return false;
+    Base = Member->getBase()->IgnoreParenImpCasts();
+  }
+  const auto *This = dyn_cast<CXXThisExpr>(Base);
+  return Members >= 3 && This &&
+      Context.hasSameType(This->getType(), Context.getPointerType(Context.getRecordType(String->Record).withConst()));
+}
+
 bool bitsetSourceGraph(const State &S, const SourceManager &SM,
                         const FunctionDecl *Root, bool KnownValidText = false,
                         const CXXRecordDecl *StringResult = nullptr) {
@@ -47388,6 +47433,8 @@ bool bitsetSourceGraph(const State &S, const SourceManager &SM,
     if (const auto *Call = dyn_cast<CallExpr>(Node)) {
       const auto &Context = Root->getASTContext();
       if (bitsetPinnedWordRangeQuery(S, SM, Call, Context)) return true;
+      if (KnownValidText && bitsetPinnedStringRepresentationQuery(S, SM, Root, Call, Context))
+        return true;
       if (!(StringResult && bitsetStringResultSubscript(S, SM, Call, StringResult, Context)) &&
           !bitsetPinnedWordTransfer(S, SM, Call, Context) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
