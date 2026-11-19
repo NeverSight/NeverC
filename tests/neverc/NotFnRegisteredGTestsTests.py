@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_wide_char_width_registered = cls.registered
+        cls.bitset_wide_char_width_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_wide_char_width_original = cls.adapter.restore_original_gtests(cls.bitset_wide_char_width_registered,cls.bitset_wide_char_width_suffix)
+        cls.registered = cls.adapter.restore_bitset_wide_char_width_history(cls.bitset_wide_char_width_registered)
         cls.bitset_shift_registered = cls.registered
         cls.bitset_shift_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_shift_original = cls.adapter.restore_original_gtests(cls.bitset_shift_registered,cls.bitset_shift_suffix)
@@ -1539,6 +1543,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_shift_registered,self.bitset_shift_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_shift_original+b' ',['TranslateTest.CoreV2BitsetShiftZeroRunAtBothOptimizations'])
+
+    def test_bitset_wide_char_width_preserves_all_previous_registry_bytes_and_extracts_seventeen_tests(self):
+        self.assertEqual(self.bitset_wide_char_width_original+self.bitset_wide_char_width_suffix,self.bitset_wide_char_width_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_wide_char_width_original,self.bitset_wide_char_width_suffix),self.bitset_wide_char_width_original)
+        self.assertEqual(self.adapter.restore_bitset_wide_char_width_history(self.bitset_wide_char_width_registered),self.bitset_shift_registered)
+        self.assertEqual(self.adapter.restore_bitset_wide_char_width_history(self.bitset_wide_char_width_original),self.bitset_shift_original)
+        selected = ['TranslateTest.CoreV2BitsetWideTemporaryEmptyMultiwordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWideTemporaryMaxUnsignedWordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWideTemporaryKnownNarrowResultRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWideTemporaryArgumentCalledOnceRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWideTemporaryMaskFitRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWideTemporaryModulusFitRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWideTemporaryGuardSavedObjectRejected', 'TranslateTest.CoreV2BitsetWideTemporaryGuardOverflowingWordRejected', 'TranslateTest.CoreV2BitsetWideTemporaryGuardFactoryValueRejected', 'TranslateTest.CoreV2BitsetWideTemporaryGuardIndirectReceiverRejected', 'TranslateTest.CoreV2BitsetWideTemporaryGuardCopyConstructionRejected', 'TranslateTest.CoreV2BitsetWideTemporaryGuardStorageRejected', 'TranslateTest.CoreV2BitsetWideTemporaryGuardRangeDependencyRejected', 'TranslateTest.CoreV2BitsetWideTemporaryGuardOverflowDeclarationRejected', 'TranslateTest.CoreV2BitsetWideTemporaryGuardCtzMacroRejected', 'TranslateTest.CoreV2BitsetWideTemporaryGuardCharBitRejected', 'TranslateTest.CoreV2BitsetWideTemporaryGuardCompilerCharBitRejected']
+        generated,proof = self.extractor.extract(self.bitset_wide_char_width_original,selected)
+        self.assertEqual(proof['original_test_names'],7805)
+        self.assertEqual(proof['selected_count'],17)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7788)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bitwidechar',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_wide_char_width_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_wide_char_width_registered+b' ',
+                        self.bitset_wide_char_width_registered.replace(b'r19bitwidechar',b'q.push(11)',1),
+                        self.bitset_wide_char_width_registered+self.bitset_wide_char_width_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_wide_char_width_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_wide_char_width_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_wide_char_width_registered,self.bitset_wide_char_width_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_wide_char_width_original+b' ',['TranslateTest.CoreV2BitsetWideTemporaryEmptyMultiwordRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':

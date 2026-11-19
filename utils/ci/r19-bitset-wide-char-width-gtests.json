@@ -1,0 +1,317 @@
+{
+  "positive_cases": [
+    {
+      "name": "bitset-wide-temporary-empty-multiword",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryEmptyMultiwordRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4416f2f51eab7c721606a19d7841aafc5e7ffaa6efb4b436155ffd5b883c10f2",
+      "original_case_source_sha256": "4416f2f51eab7c721606a19d7841aafc5e7ffaa6efb4b436155ffd5b883c10f2",
+      "gtest_body_sha256": "3ac982823c4d6edff3976d74ebf561615e4759929a8585c1b057883507f64f9b"
+    },
+    {
+      "name": "bitset-wide-temporary-max-unsigned-word",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryMaxUnsignedWordRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a22b5bc0f2be69618c2b14e47b405dd502866d965271b9157c41770703bd203b",
+      "original_case_source_sha256": "a22b5bc0f2be69618c2b14e47b405dd502866d965271b9157c41770703bd203b",
+      "gtest_body_sha256": "c0bd2958dae7ec922f1111cb6c47c8b41378d6dbf36ea3a885beddeb79f13954"
+    },
+    {
+      "name": "bitset-wide-temporary-known-narrow-result",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryKnownNarrowResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6bac19b67245be5d654b587ccb6e9d648c555e8540df2085e686997f86800136",
+      "original_case_source_sha256": "6bac19b67245be5d654b587ccb6e9d648c555e8540df2085e686997f86800136",
+      "gtest_body_sha256": "fe36719ba0d90c46f3ccf0d8ffc6f894e55505a6ea028d312d64dc7224376757"
+    },
+    {
+      "name": "bitset-wide-temporary-argument-called-once",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryArgumentCalledOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f4fe64be857cf29c156a84380651b862c6505e9bd12e333ef886de3924aafd52",
+      "original_case_source_sha256": "f4fe64be857cf29c156a84380651b862c6505e9bd12e333ef886de3924aafd52",
+      "gtest_body_sha256": "49bb5dc0ad4c888c3fddbcb4ae439d532a9594f22d961386f8c4e14a7f9e6b10"
+    },
+    {
+      "name": "bitset-wide-temporary-mask-fit",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryMaskFitRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "11fa73c17309276bb9f6010effdac416cec62a5e126982f41024bbc35ecbda28",
+      "original_case_source_sha256": "11fa73c17309276bb9f6010effdac416cec62a5e126982f41024bbc35ecbda28",
+      "gtest_body_sha256": "7412b449c4389fcf5c0bbc16f5ec9192ea8cd553934a27c8f19fd9736936eebe"
+    },
+    {
+      "name": "bitset-wide-temporary-modulus-fit",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryModulusFitRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2955a59a2283e0276e7c6d7c76d9254ecf3cea1f996df59eea6287498aae8752",
+      "original_case_source_sha256": "2955a59a2283e0276e7c6d7c76d9254ecf3cea1f996df59eea6287498aae8752",
+      "gtest_body_sha256": "67d4173eea3dfe03bc85dacd7d710177d119e52261d82b5b2375802f813310e7"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "bitset-wide-temporary-guard-saved-object",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardSavedObjectRejected",
+      "expected": "reject",
+      "source_sha256": "6f6fe55bb8e07448a1082b667ae79e56604479566a5814aa572f9d3cbe3d8c8b",
+      "original_case_source_sha256": "6f6fe55bb8e07448a1082b667ae79e56604479566a5814aa572f9d3cbe3d8c8b",
+      "gtest_body_sha256": "28fdaf29f5ab4ab891b8e0beb874924f9f872945d2707af75f59f0484bb60e00"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-overflowing-word",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardOverflowingWordRejected",
+      "expected": "reject",
+      "source_sha256": "745be577f4c5ba6690e4e9eefe2efb201b3a238869b51260f5dad3843cdf2ea3",
+      "original_case_source_sha256": "745be577f4c5ba6690e4e9eefe2efb201b3a238869b51260f5dad3843cdf2ea3",
+      "gtest_body_sha256": "6c1e6be4da74b5577e1c4a1fd0eedd602f99095d71061fc395055696adafb0b0"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-factory-value",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardFactoryValueRejected",
+      "expected": "reject",
+      "source_sha256": "f04276cfd4e3c601deb9637bd9f781ec153b6b2537d6aa69b981a739b6a6d84c",
+      "original_case_source_sha256": "f04276cfd4e3c601deb9637bd9f781ec153b6b2537d6aa69b981a739b6a6d84c",
+      "gtest_body_sha256": "78fc1cf5758f2a32b01ae94314f0f84ae92f9d28561af64ec413c62db3e4f61c"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-indirect-receiver",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardIndirectReceiverRejected",
+      "expected": "reject",
+      "source_sha256": "a5bcaf2d8006b7534e3c8abafa871f79ba8b76a8487bb0ff06df0400268f7540",
+      "original_case_source_sha256": "a5bcaf2d8006b7534e3c8abafa871f79ba8b76a8487bb0ff06df0400268f7540",
+      "gtest_body_sha256": "ebbdc70a9cc4c13d441406a58036bd843ca85d552715e95a30d8da3579e565b8"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-copy-construction",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardCopyConstructionRejected",
+      "expected": "reject",
+      "source_sha256": "34115a0e65b5faec366c4dad0860c663592438a95e47294eef9fa163519de453",
+      "original_case_source_sha256": "34115a0e65b5faec366c4dad0860c663592438a95e47294eef9fa163519de453",
+      "gtest_body_sha256": "263729907727412a0a0876f02b5e11cf3e059dae6c39cba30e7362672c23acbf"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-storage",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardStorageRejected",
+      "expected": "reject",
+      "source_sha256": "d0a98d49a9fc9bc9ffc5b6ca47d9f4ae9044d234a1ca6a7861f3a322c18643b3",
+      "original_case_source_sha256": "d0a98d49a9fc9bc9ffc5b6ca47d9f4ae9044d234a1ca6a7861f3a322c18643b3",
+      "gtest_body_sha256": "19321fad938882206715263163d22f2403e5111b45b7f8b2ee3029ffa2694e04"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-range-dependency",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardRangeDependencyRejected",
+      "expected": "reject",
+      "source_sha256": "16953b800d1865ae4486fd279ccd5279fe2203a6fcb1f70d112e9a8b3c436adb",
+      "original_case_source_sha256": "16953b800d1865ae4486fd279ccd5279fe2203a6fcb1f70d112e9a8b3c436adb",
+      "gtest_body_sha256": "99f6c8732cff55a5dc7a582eca7156c5896817fe4db53445e41ff34c72906acc"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-overflow-declaration",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardOverflowDeclarationRejected",
+      "expected": "reject",
+      "source_sha256": "1920646d3eb4de2e4e79b5357135159cc4071323615025f5254656ad3c258dad",
+      "original_case_source_sha256": "1920646d3eb4de2e4e79b5357135159cc4071323615025f5254656ad3c258dad",
+      "gtest_body_sha256": "b20842c0a78e5fe2d90e2578cedb74506a4081eef2b32b69e3ae19cc7e985ed1"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-ctz-macro",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardCtzMacroRejected",
+      "expected": "reject",
+      "source_sha256": "f5ce10424f289e9ddb1553f384f14879bc8b7c8c9524fef9cb086402ac987772",
+      "original_case_source_sha256": "f5ce10424f289e9ddb1553f384f14879bc8b7c8c9524fef9cb086402ac987772",
+      "gtest_body_sha256": "cdfa538a40eac7d60b20460b4da04d4a9e365ba051769ab095f6e606cad2c217"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-char-bit",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardCharBitRejected",
+      "expected": "reject",
+      "source_sha256": "d6be4ca4c67e06766ce4e18f910bf4b09af22cebe5cad93090c6caea39643d68",
+      "original_case_source_sha256": "d6be4ca4c67e06766ce4e18f910bf4b09af22cebe5cad93090c6caea39643d68",
+      "gtest_body_sha256": "e1223d4755f3a39bd41c103099af0bc9c7dddf0a79dbb0eb26d71b4a41ecc105"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-compiler-char-bit",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardCompilerCharBitRejected",
+      "expected": "reject",
+      "source_sha256": "b72bc2a2cdb3e88f7bbb5d6266312d8ab422b746d65519b98eded18d3d160c09",
+      "original_case_source_sha256": "b72bc2a2cdb3e88f7bbb5d6266312d8ab422b746d65519b98eded18d3d160c09",
+      "gtest_body_sha256": "f243ff34c5e9fe4218bec5d4462bbbbf7e742bb1ca01f184ec455da08ee45774"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2BitsetWideTemporaryEmptyMultiwordRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetWideTemporaryMaxUnsignedWordRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetWideTemporaryKnownNarrowResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetWideTemporaryArgumentCalledOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetWideTemporaryMaskFitRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetWideTemporaryModulusFitRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardSavedObjectRejected",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardOverflowingWordRejected",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardFactoryValueRejected",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardIndirectReceiverRejected",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardCopyConstructionRejected",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardStorageRejected",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardRangeDependencyRejected",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardOverflowDeclarationRejected",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardCtzMacroRejected",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardCharBitRejected",
+    "TranslateTest.CoreV2BitsetWideTemporaryGuardCompilerCharBitRejected"
+  ],
+  "native_reference_authentication_sha256": "7b4bc987235e0a8244730c200e65355f2564f425e077852be5e7ac14e7ab6296",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "ed14d59df1ba88d01de478e8bfb30299d8eb90938e17d9fa33d2274ba4640737",
+  "maintained_original_sha256": "74c99ffd28d87d0f772104578436035a2ca3159ec6bb1d1245f017f99d4812b2",
+  "previous_registered_source_sha256": "db1c33c4535a2c3fe53012f3acf2ee6b9dfe700813b1c4c038d1ca0c9a0c7e23",
+  "previous_maintained_original_sha256": "8f1fa8e34a5758b14e300009995b640ac0f931e16bb0909fc207f88f97a70014",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7805,
+  "current_python_registry_tests": 106,
+  "previous7788_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "534e63454191bd2a78c6c62272d2f4ac88f71943f3d3f0f70194618097551361",
+  "extractor_sha256": "0f5400b320ef95863d11cb6ab630d6f17a978a8eb7a06a482dc97ddf297d7e78",
+  "source_cases": [
+    {
+      "name": "bitset-wide-temporary-empty-multiword",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){return std::bitset<129>{}.to_ulong()!=0UL;}\n",
+      "source_sha256": "4416f2f51eab7c721606a19d7841aafc5e7ffaa6efb4b436155ffd5b883c10f2",
+      "expected": "accept",
+      "kind": "bitset-wide-temporary-operations"
+    },
+    {
+      "name": "bitset-wide-temporary-max-unsigned-word",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){return std::bitset<129>{~0ULL}.to_ullong()!=~0ULL;}\n",
+      "source_sha256": "a22b5bc0f2be69618c2b14e47b405dd502866d965271b9157c41770703bd203b",
+      "expected": "accept",
+      "kind": "bitset-wide-temporary-operations"
+    },
+    {
+      "name": "bitset-wide-temporary-known-narrow-result",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){return std::bitset<65>(0xfedcba98ULL).to_ulong()!=0xfedcba98UL;}\n",
+      "source_sha256": "6bac19b67245be5d654b587ccb6e9d648c555e8540df2085e686997f86800136",
+      "expected": "accept",
+      "kind": "bitset-wide-temporary-operations"
+    },
+    {
+      "name": "bitset-wide-temporary-argument-called-once",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nstatic int calls;\nunsigned long long word(){++calls;return 0x8000000000000000ULL;}\nint main(){auto v=std::bitset<65>(word()).to_ullong();return v!=0x8000000000000000ULL||calls!=1;}\n",
+      "source_sha256": "f4fe64be857cf29c156a84380651b862c6505e9bd12e333ef886de3924aafd52",
+      "expected": "accept",
+      "kind": "bitset-wide-temporary-operations"
+    },
+    {
+      "name": "bitset-wide-temporary-mask-fit",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nstatic int calls;\nunsigned long long word(){++calls;return 0x1020304005060708ULL;}\nint main(){auto v=std::bitset<129>(word()&0xffffffffULL).to_ulong();return v!=0x05060708UL||calls!=1;}\n",
+      "source_sha256": "11fa73c17309276bb9f6010effdac416cec62a5e126982f41024bbc35ecbda28",
+      "expected": "accept",
+      "kind": "bitset-wide-temporary-operations"
+    },
+    {
+      "name": "bitset-wide-temporary-modulus-fit",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nstatic int calls;\nunsigned long long source(){++calls;return 9876543210ULL;}\nint main(){auto v=std::bitset<65>(source()%257ULL).to_ulong();return v!=9876543210ULL%257ULL||calls!=1;}\n",
+      "source_sha256": "2955a59a2283e0276e7c6d7c76d9254ecf3cea1f996df59eea6287498aae8752",
+      "expected": "accept",
+      "kind": "bitset-wide-temporary-operations"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-saved-object",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<129> b(33);return b.to_ullong()!=33;}\n",
+      "source_sha256": "6f6fe55bb8e07448a1082b667ae79e56604479566a5814aa572f9d3cbe3d8c8b",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-overflowing-word",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<129> b(33);b.set(128);return b.to_ullong()!=33;}\n",
+      "source_sha256": "745be577f4c5ba6690e4e9eefe2efb201b3a238869b51260f5dad3843cdf2ea3",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-factory-value",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nstd::bitset<129> make(){return std::bitset<129>{33};}\nint main(){return make().to_ullong()!=33;}\n",
+      "source_sha256": "f04276cfd4e3c601deb9637bd9f781ec153b6b2537d6aa69b981a739b6a6d84c",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-indirect-receiver",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){auto* b=new std::bitset<129>{33};auto v=b->to_ullong();delete b;return v!=33;}\n",
+      "source_sha256": "a5bcaf2d8006b7534e3c8abafa871f79ba8b76a8487bb0ff06df0400268f7540",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-copy-construction",
+      "public_header": "bitset",
+      "source": "#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n",
+      "source_sha256": "34115a0e65b5faec366c4dad0860c663592438a95e47294eef9fa163519de453",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-storage",
+      "public_header": "bitset",
+      "source": "#define __first_ nct_alternate_first\n#include <bitset>\n#undef __first_\nint main(){return std::bitset<129>{33}.to_ullong()!=33;}\n",
+      "source_sha256": "d0a98d49a9fc9bc9ffc5b6ca47d9f4ae9044d234a1ca6a7861f3a322c18643b3",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-range-dependency",
+      "public_header": "bitset",
+      "source": "#define __make_iter nct_alternate_make_iter\n#include <bitset>\n#undef __make_iter\nint main(){return std::bitset<129>{33}.to_ullong()!=33;}\n",
+      "source_sha256": "16953b800d1865ae4486fd279ccd5279fe2203a6fcb1f70d112e9a8b3c436adb",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-overflow-declaration",
+      "public_header": "bitset",
+      "source": "#define __throw_overflow_error nct_alternate_throw_overflow_error\n#include <bitset>\n#undef __throw_overflow_error\nint main(){return std::bitset<129>{33}.to_ullong()!=33;}\n",
+      "source_sha256": "1920646d3eb4de2e4e79b5357135159cc4071323615025f5254656ad3c258dad",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-ctz-macro",
+      "public_header": "bitset",
+      "source": "int alternate_l(unsigned long value) { return value ? __builtin_ctzl(value) : 0; }\nint alternate_ll(unsigned long long value) { return value ? __builtin_ctzll(value) : 0; }\n#define __builtin_ctzl alternate_l\n#define __builtin_ctzll alternate_ll\n#include <bitset>\n#undef __builtin_ctzll\n#undef __builtin_ctzl\nint main() { return std::bitset<129>{33}.to_ullong() != 33; }\n",
+      "source_sha256": "f5ce10424f289e9ddb1553f384f14879bc8b7c8c9524fef9cb086402ac987772",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-char-bit",
+      "public_header": "bitset",
+      "source": "#include <climits>\n#undef CHAR_BIT\n#define CHAR_BIT 8\n#include <bitset>\nint main(){return std::bitset<129>{33}.to_ullong()!=33;}\n",
+      "source_sha256": "d6be4ca4c67e06766ce4e18f910bf4b09af22cebe5cad93090c6caea39643d68",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-compiler-char-bit",
+      "public_header": "bitset",
+      "source": "#include <climits>\n#undef __CHAR_BIT__\n#define __CHAR_BIT__ 8\n#include <bitset>\nint main(){return std::bitset<129>{33}.to_ullong()!=33;}\n",
+      "source_sha256": "b72bc2a2cdb3e88f7bbb5d6266312d8ab422b746d65519b98eded18d3d160c09",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_sha256": "b3d32e6beffc1f3f66066ffe5dd307a0a0ef06e6cd4b9e15a9ba634102ded346"
+}
