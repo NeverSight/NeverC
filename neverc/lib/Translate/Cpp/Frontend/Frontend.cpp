@@ -3101,6 +3101,8 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
     return FunctionalObjectRecord{UniqueHash->Record};
   if (auto StringHash = approvedStringHashObject(A.S, A.Sources, Record, A.Context))
     return FunctionalObjectRecord{StringHash->Record};
+  if (approvedBitsetHashObject(A.S, A.Sources, Record, A.Context))
+    return FunctionalObjectRecord{Record->getDefinition()};
   const auto Object =
       approvedFunctionalObjectRecord(A.S, A.Sources, Record, A.Context);
   if (!Object)

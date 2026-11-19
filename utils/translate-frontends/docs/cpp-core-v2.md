@@ -17362,19 +17362,39 @@ modulus. The omitted `set` value uses the pinned SDK default.
 
 Mutable `operator[]` exposes a proxy that aliases the selected bit. Proxy
 copies preserve that alias. Conversion to `bool`, complement, `flip()`, bool
-and proxy assignment, and the pinned two-proxy `swap` overload preserve their
-selected SDK semantics. Const subscript follows the selected SDK return type.
+and proxy assignment preserve their selected SDK semantics. The pinned
+`swap` overloads accept two mutable proxies or a mutable proxy and a
+`bool&` in either argument position. Const subscript follows the selected
+SDK return type.
 
 `to_ulong()` and `to_ullong()` preserve the value when the receiving unsigned
 type can represent all `N` bits. Their limits follow the selected target ABI.
-The checked operations still require an in-range proof. String operations and
-conversions that can overflow require further work.
+The checked operations require an in-range proof. Conversions whose high
+bits may overflow require further work.
+
+The pinned `std::hash<std::bitset<N>>` object reads its bitset argument once.
+Its result follows the embedded SDK's zero value for an empty bitset and
+exclusive-or reduction across occupied storage words.
+
+The narrow character-pointer constructor accepts a literal whose selected
+range uses the checked zero and one characters. It authenticates the selected
+count and digit defaults, stops at the literal's first null byte, and validates
+each selected character before setting the bits represented by the first
+`N` characters. Other input forms require additional source proofs.
+
+`to_string()` produces an owning narrow string with one character per bit in
+most-significant-first order. It supports the pinned default digits and
+explicit narrow character replacements. Receiver and argument expressions
+are evaluated once, and the result follows the existing string lifetime rules.
 
 The additional bitset suites cover 36 registered tests, 180 source requests
 across the six 64-bit targets, and 36 generated C23 executions against matching
 native C++ programs at O0 and O2. The proxy, integer conversion and checked
 index suites add 42 registered tests, 252 source requests across the same
-targets, and 36 C23 executions at O0 and O2 on 64-bit Linux.
+targets, and 36 C23 executions at O0 and O2 on 64-bit Linux. The hash, literal text,
+string result and mixed swap suites add 56 registered tests. A combined
+replay covers 588 source requests on the six 64-bit targets and 98 formal tests
+on 64-bit Linux, including 84 generated C23 executions at O0 and O2.
 
 SDK template, specialization and function redeclarations remain authenticated.
 The used body graph rejects source-owned macro spelling, replaced declarations

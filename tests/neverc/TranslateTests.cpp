@@ -378963,6 +378963,892 @@ int main(){std::bitset<65> b;std::size_t i=2;return b.test(i%65);}
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2BitsetHashZeroSizeRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-hash-zero-size.cpp");
+  const auto Output = tmpFile("bitset-hash-zero-size.nc");
+  writeFile(Source, R"r19bithash(#include <bitset>
+static int calls;
+const std::bitset<0>& source(const std::bitset<0>& value){++calls;return value;}
+int main(){std::bitset<0> value;std::hash<std::bitset<0>> hash;
+return hash(source(value))!=0||calls!=1;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-hash-zero-size" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashSingleWordRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-hash-single-word.cpp");
+  const auto Output = tmpFile("bitset-hash-single-word.nc");
+  writeFile(Source, R"r19bithash(#include <bitset>
+int main(){std::hash<std::bitset<64>> hash;
+const std::bitset<64> a(0x8899aabb01020304ull);const std::bitset<7> b(0xffull);
+return hash(a)!=0x8899aabb01020304ull||std::hash<std::bitset<7>>{}(b)!=127;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-hash-single-word" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashXorCancellationRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-hash-xor-cancellation.cpp");
+  const auto Output = tmpFile("bitset-hash-xor-cancellation.nc");
+  writeFile(Source, R"r19bithash(#include <bitset>
+int main(){std::hash<std::bitset<129>> hash;
+std::bitset<129> a;a.set(0).set(64).set(128);if(hash(a)!=1)return 1;
+a.reset(128);if(hash(a)!=0)return 2;a.set(127);return hash(a)!=(1ull<<63);}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-hash-xor-cancellation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashNonzeroTailRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-hash-nonzero-tail.cpp");
+  const auto Output = tmpFile("bitset-hash-nonzero-tail.nc");
+  writeFile(Source, R"r19bithash(#include <bitset>
+int main(){std::bitset<193> a(2ull);
+a.set(64).set(130).set(192);const std::hash<std::bitset<193>> hash;
+if(hash.operator()(a)!=6)return 1;a.set(191);return hash(a)!=(6ull|(1ull<<63));}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-hash-nonzero-tail" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashReceiverOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-hash-receiver-once.cpp");
+  const auto Output = tmpFile("bitset-hash-receiver-once.nc");
+  writeFile(Source, R"r19bithash(#include <bitset>
+using Hash=std::hash<std::bitset<65>>;
+static int order;
+Hash* caller(Hash& hash){order=order*10+1;return &hash;}
+const std::bitset<65>& operand(const std::bitset<65>& value){order=order*10+2;return value;}
+int main(){Hash hash;std::bitset<65> a(3);a.set(64);
+return caller(hash)->operator()(operand(a))!=2||order!=12;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-hash-receiver-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashCopiedCarrierRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-hash-copied-carrier.cpp");
+  const auto Output = tmpFile("bitset-hash-copied-carrier.nc");
+  writeFile(Source, R"r19bithash(#include <bitset>
+using Hash=std::hash<std::bitset<65>>;
+int main(){Hash a;Hash b(a);std::bitset<65> bits;bits.set(64);
+if(b(bits)!=1)return 1;const Hash c(b);bits.flip(0);return c(bits)!=0;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-hash-copied-carrier" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashWordStorageRejected) {
+  const auto Source = tmpFile("bitset-hash-word-storage.cpp");
+  writeFile(Source, R"r19bithash(#define __first_ nct_foreign_hash_storage
+#include <bitset>
+#undef __first_
+int main(){std::bitset<65> bits(3);return std::hash<std::bitset<65>>{}(bits)!=3;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashBitsetBaseRejected) {
+  const auto Source = tmpFile("bitset-hash-bitset-base.cpp");
+  writeFile(Source, R"r19bithash(#define __bitset nct_foreign_hash_base
+#include <bitset>
+#undef __bitset
+int main(){std::bitset<65> bits(3);return std::hash<std::bitset<65>>{}(bits)!=3;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashHashImplementationRejected) {
+  const auto Source = tmpFile("bitset-hash-hash-implementation.cpp");
+  writeFile(Source, R"r19bithash(#define __hash_code nct_foreign_hash_code
+#include <bitset>
+#undef __hash_code
+int main(){std::bitset<65> bits(3);return std::hash<std::bitset<65>>{}(bits)!=3;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashHashBaseRejected) {
+  const auto Source = tmpFile("bitset-hash-hash-base.cpp");
+  writeFile(Source, R"r19bithash(#define __unary_function_keep_layout_base nct_foreign_hash_carrier
+#include <bitset>
+#undef __unary_function_keep_layout_base
+int main(){std::bitset<65> bits(3);return std::hash<std::bitset<65>>{}(bits)!=3;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashHashCarrierRejected) {
+  const auto Source = tmpFile("bitset-hash-hash-carrier.cpp");
+  writeFile(Source, R"r19bithash(#define hash nct_foreign_hash
+#include <bitset>
+#undef hash
+int main(){std::bitset<65> bits(3);return std::nct_foreign_hash<std::bitset<65>>{}(bits)!=3;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashLegacyBaseRejected) {
+  const auto Source = tmpFile("bitset-hash-legacy-base.cpp");
+  writeFile(Source, R"r19bithash(#define _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION
+#include <bitset>
+int main(){std::bitset<65> bits(3);return std::hash<std::bitset<65>>{}(bits)!=3;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashSpecializedOperatorRejected) {
+  const auto Source = tmpFile("bitset-hash-specialized-operator.cpp");
+  writeFile(Source, R"r19bithash(#include <bitset>
+namespace std{template<> size_t hash<bitset<65>>::operator()(const bitset<65>&) const noexcept{return 5;}}
+int main(){std::bitset<65> bits(3);return std::hash<std::bitset<65>>{}(bits)!=3;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetHashSpecializedEmptyOperatorRejected) {
+  const auto Source = tmpFile("bitset-hash-specialized-empty-operator.cpp");
+  writeFile(Source, R"r19bithash(#include <bitset>
+namespace std{template<> size_t hash<bitset<0>>::operator()(const bitset<0>&) const noexcept{return 5;}}
+int main(){std::bitset<0> a;return std::hash<std::bitset<0>>{}(a)!=5;}
+)r19bithash");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextDefaultAndTruncationRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-literal-text-default-and-truncation.cpp");
+  const auto Output = tmpFile("bitset-literal-text-default-and-truncation.nc");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){const std::bitset<3> a("1011");
+return a.count()!=2||!a.test(0)||a.test(1)||!a.test(2);}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-literal-text-default-and-truncation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextCrossWordRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-literal-text-cross-word.cpp");
+  const auto Output = tmpFile("bitset-literal-text-cross-word.nc");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){std::bitset<129> a("100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001");
+return a.count()!=3||!a.test(0)||!a.test(64)||!a.test(128);}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-literal-text-cross-word" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextBoundedLengthAndNulRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-literal-text-bounded-length-and-nul.cpp");
+  const auto Output = tmpFile("bitset-literal-text-bounded-length-and-nul.nc");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){
+std::bitset<16> a("101bad",3);std::bitset<16> b("01\0bad",7);
+return a.count()!=2||!a.test(2)||!a.test(0)||b.count()!=1||!b.test(0);}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-literal-text-bounded-length-and-nul" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextCustomCharactersRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-literal-text-custom-characters.cpp");
+  const auto Output = tmpFile("bitset-literal-text-custom-characters.nc");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){
+std::bitset<7> a("AABA",4,'A','B');std::bitset<4> b("\xff\xfe",2,'\xfe','\xff');
+return a.count()!=1||!a.test(1)||b.count()!=1||!b.test(1);}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-literal-text-custom-characters" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextEqualCharactersRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-literal-text-equal-characters.cpp");
+  const auto Output = tmpFile("bitset-literal-text-equal-characters.nc");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){std::bitset<5> a("xx",2,'x','x');
+return a.count()!=2||!a.test(0)||!a.test(1)||a.test(2);}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-literal-text-equal-characters" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextEmptyInputAndResultRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-literal-text-empty-input-and-result.cpp");
+  const auto Output = tmpFile("bitset-literal-text-empty-input-and-result.nc");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){std::bitset<0> a("0101");
+std::bitset<65> b("");std::bitset<4> c("invalid",0);
+return a.any()||b.any()||c.any()||!a.all();}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-literal-text-empty-input-and-result" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextInvalidDigitRejected) {
+  const auto Source = tmpFile("bitset-literal-text-invalid-digit.cpp");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){std::bitset<8> a("10x");return a.any();}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextInvalidBeyondWidthRejected) {
+  const auto Source = tmpFile("bitset-literal-text-invalid-beyond-width.cpp");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){std::bitset<1> a("1x");return a.any();}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextDynamicPointerRejected) {
+  const auto Source = tmpFile("bitset-literal-text-dynamic-pointer.cpp");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){const char* p="01";std::bitset<8> a(p);return a.any();}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextDynamicLengthRejected) {
+  const auto Source = tmpFile("bitset-literal-text-dynamic-length.cpp");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){std::size_t n=2;std::bitset<8> a("01",n);return a.any();}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextDynamicDigitRejected) {
+  const auto Source = tmpFile("bitset-literal-text-dynamic-digit.cpp");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){char digit='x';std::bitset<8> a("ox",2,'o',digit);return a.any();}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextWideCharacterRejected) {
+  const auto Source = tmpFile("bitset-literal-text-wide-character.cpp");
+  writeFile(Source, R"r19bitlit(#include <bitset>
+int main(){std::bitset<8> a(u"01");return a.any();}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextOwnedDecoderRejected) {
+  const auto Source = tmpFile("bitset-literal-text-owned-decoder.cpp");
+  writeFile(Source, R"r19bitlit(#define __init_from_string_view nct_foreign_text_init
+#include <bitset>
+#undef __init_from_string_view
+int main(){std::bitset<8> a("01");return a.any();}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetLiteralTextOwnedLengthRejected) {
+  const auto Source = tmpFile("bitset-literal-text-owned-length.cpp");
+  writeFile(Source, R"r19bitlit(#define __constexpr_strlen nct_foreign_text_length
+#include <bitset>
+#undef __constexpr_strlen
+int main(){std::bitset<8> a("1010");return a.any();}
+)r19bitlit");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringShortDefaultDigitsRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-to-string-short-default-digits.cpp");
+  const auto Output = tmpFile("bitset-to-string-short-default-digits.nc");
+  writeFile(Source, R"r19bitstr(#include <bitset>
+int main(){
+std::bitset<6> b(33);const auto s=b.to_string();
+return s.size()!=6||s[0]!='1'||s[1]!='0'||s[4]!='0'||s[5]!='1';}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-to-string-short-default-digits" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringLongCrossWordRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-to-string-long-cross-word.cpp");
+  const auto Output = tmpFile("bitset-to-string-long-cross-word.nc");
+  writeFile(Source, R"r19bitstr(#include <bitset>
+int main(){
+std::bitset<129> b;b.set(0).set(64).set(128);
+const std::string s=b.to_string('.', '*');
+return s.size()!=129||s[0]!='*'||s[64]!='*'||s[128]!='*'||s[63]!='.'||s[127]!='.';}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-to-string-long-cross-word" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringEmptyReceiverRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-to-string-empty-receiver.cpp");
+  const auto Output = tmpFile("bitset-to-string-empty-receiver.nc");
+  writeFile(Source, R"r19bitstr(#include <bitset>
+static int calls;
+const std::bitset<0>& observe(const std::bitset<0>& b){++calls;return b;}
+int main(){std::bitset<0> b;const auto s=observe(b).to_string();
+return !s.empty()||calls!=1;}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-to-string-empty-receiver" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringEmbeddedNulRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-to-string-embedded-nul.cpp");
+  const auto Output = tmpFile("bitset-to-string-embedded-nul.nc");
+  writeFile(Source, R"r19bitstr(#include <bitset>
+int main(){
+std::bitset<12> b;b.set(1).set(10);
+auto s=b.to_string<char>('\0','X');
+return s.size()!=12||s[0]!='\0'||s[1]!='X'||s[2]!='\0'||s[10]!='X'||s[11]!='\0';}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-to-string-embedded-nul" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringPersistentCopyRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-to-string-persistent-copy.cpp");
+  const auto Output = tmpFile("bitset-to-string-persistent-copy.nc");
+  writeFile(Source, R"r19bitstr(#include <bitset>
+int main(){
+std::bitset<65> b;b.set(64);std::string s;s=b.to_string();
+b.reset().set(0);auto next=b.to_string();
+return s.size()!=65||next.size()!=65||s[0]!='1'||s[64]!='0'||next[0]!='0'||next[64]!='1';}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-to-string-persistent-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringDefaultReturnTemplateRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-to-string-default-return-template.cpp");
+  const auto Output = tmpFile("bitset-to-string-default-return-template.nc");
+  writeFile(Source, R"r19bitstr(#include <bitset>
+static int events;
+const std::bitset<65>& observe(const std::bitset<65>& b){events|=1;return b;}
+char zero(){events|=(events&1)?2:8;return 'o';}
+char one(){events|=(events&1)?4:16;return 'x';}
+int main(){
+std::bitset<65> b;b.set(0).set(64);
+auto s=observe(b).to_string<char,std::char_traits<char>,std::allocator<char>>(zero(),one());
+return events!=7||s.size()!=65||s[0]!='x'||s[1]!='o'||s[64]!='x';}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-to-string-default-return-template" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringWideCharacterRejected) {
+  const auto Source = tmpFile("bitset-to-string-wide-character.cpp");
+  writeFile(Source, R"r19bitstr(#include <bitset>
+int main(){std::bitset<8> b(2);return b.to_string<char16_t>().size()!=8;}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringCustomTraitsRejected) {
+  const auto Source = tmpFile("bitset-to-string-custom-traits.cpp");
+  writeFile(Source, R"r19bitstr(#include <bitset>
+struct Traits : std::char_traits<char>{};
+int main(){std::bitset<8> b;return b.to_string<char,Traits>().size()!=8;}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringCustomAllocatorRejected) {
+  const auto Source = tmpFile("bitset-to-string-custom-allocator.cpp");
+  writeFile(Source, R"r19bitstr(#include <bitset>
+template<class T> struct CustomAllocator : std::allocator<T>{template<class U> struct rebind{using other=CustomAllocator<U>;};};
+int main(){std::bitset<65> b;return b.to_string<char,std::char_traits<char>,CustomAllocator<char>>().size()!=65;}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringExplicitUserImplementationRejected) {
+  const auto Source = tmpFile("bitset-to-string-explicit-user-implementation.cpp");
+  writeFile(Source, R"r19bitstr(#include <bitset>
+namespace std{template<> template<> basic_string<char,char_traits<char>,allocator<char>> bitset<65>::to_string<char,char_traits<char>,allocator<char>>(char,char)const{return string(4,'x');}}
+int main(){std::bitset<65> b;return b.to_string<char,std::char_traits<char>,std::allocator<char>>('0','1').size()!=4;}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringOwnedRootNameRejected) {
+  const auto Source = tmpFile("bitset-to-string-owned-root-name.cpp");
+  writeFile(Source, R"r19bitstr(#define to_string nct_custom_to_string
+#include <bitset>
+#undef to_string
+int main(){std::bitset<65> b(3);return b.nct_custom_to_string().size()!=65;}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringOwnedBitsetStorageRejected) {
+  const auto Source = tmpFile("bitset-to-string-owned-bitset-storage.cpp");
+  writeFile(Source, R"r19bitstr(#define __first_ nct_custom_to_string_storage
+#include <bitset>
+#undef __first_
+int main(){std::bitset<65> b(3);return b.to_string().size()!=65;}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringOwnedBitReferenceRejected) {
+  const auto Source = tmpFile("bitset-to-string-owned-bit-reference.cpp");
+  writeFile(Source, R"r19bitstr(#define __make_ref nct_custom_string_bit_reference
+#include <bitset>
+#undef __make_ref
+int main(){std::bitset<65> b(3);return b.to_string().size()!=65;}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetToStringOwnedStringTypeRejected) {
+  const auto Source = tmpFile("bitset-to-string-owned-string-type.cpp");
+  writeFile(Source, R"r19bitstr(#define basic_string nct_custom_result_string
+#include <bitset>
+#undef basic_string
+int main(){std::bitset<65> b(3);return b.to_string().size()!=65;}
+)r19bitstr");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapProxyFirstRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bool-swap-proxy-first.cpp");
+  const auto Output = tmpFile("bitset-bool-swap-proxy-first.nc");
+  writeFile(Source, R"r19bitmix(#include <bitset>
+int main(){std::bitset<65> b;bool v=true;using std::swap;
+swap(b[64],v);return v||!b.test(64)||b.count()!=1;}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bool-swap-proxy-first" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapBoolFirstRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bool-swap-bool-first.cpp");
+  const auto Output = tmpFile("bitset-bool-swap-bool-first.nc");
+  writeFile(Source, R"r19bitmix(#include <bitset>
+int main(){std::bitset<65> b(1);bool v=false;using std::swap;
+swap(v,b[0]);return !v||b.any();}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bool-swap-bool-first" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapCopiedAliasRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bool-swap-copied-alias.cpp");
+  const auto Output = tmpFile("bitset-bool-swap-copied-alias.nc");
+  writeFile(Source, R"r19bitmix(#include <bitset>
+int main(){std::bitset<129> b;auto original=b[128];auto alias=original;
+bool v=true;using std::swap;swap(alias,v);if(v||!bool(original))return 1;
+swap(v,original);return !v||b.any()||bool(alias);}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bool-swap-copied-alias" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapUnchangedOtherWordsRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bool-swap-unchanged-other-words.cpp");
+  const auto Output = tmpFile("bitset-bool-swap-unchanged-other-words.nc");
+  writeFile(Source, R"r19bitmix(#include <bitset>
+int main(){std::bitset<129> b;b.set(64).set(128);
+bool a=false;bool c=true;using std::swap;swap(a,b[64]);swap(b[0],c);
+return !a||c||b.count()!=2||!b.test(0)||b.test(64)||!b.test(128);}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bool-swap-unchanged-other-words" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapCaptureOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bool-swap-capture-once.cpp");
+  const auto Output = tmpFile("bitset-bool-swap-capture-once.nc");
+  writeFile(Source, R"r19bitmix(#include <bitset>
+static int events;
+std::bitset<65>& observe(std::bitset<65>& b){events+=10;return b;}
+bool& reference(bool& v){++events;return v;}
+int main(){std::bitset<65> b;b.set(63);bool v=false;using std::swap;
+swap(observe(b)[63],reference(v));return !v||b.any()||events!=11;}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bool-swap-capture-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapReadAfterCaptureRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-bool-swap-read-after-capture.cpp");
+  const auto Output = tmpFile("bitset-bool-swap-read-after-capture.nc");
+  writeFile(Source, R"r19bitmix(#include <bitset>
+static std::bitset<65>* selected;
+bool& set_bit(bool& v){selected->set(64);return v;}
+int main(){std::bitset<65> b;selected=&b;bool v=false;using std::swap;
+swap(set_bit(v),b[64]);return !v||b.any();}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-bool-swap-read-after-capture" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapGuardSegmentRejected) {
+  const auto Source = tmpFile("bitset-bool-swap-guard-segment.cpp");
+  writeFile(Source, R"r19bitmix(#define __seg_ nct_alternate_seg
+#include <bitset>
+#undef __seg_
+int main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapGuardMaskRejected) {
+  const auto Source = tmpFile("bitset-bool-swap-guard-mask.cpp");
+  writeFile(Source, R"r19bitmix(#define __mask_ nct_alternate_mask
+#include <bitset>
+#undef __mask_
+int main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapGuardMakeReferenceRejected) {
+  const auto Source = tmpFile("bitset-bool-swap-guard-make-reference.cpp");
+  writeFile(Source, R"r19bitmix(#define __make_ref nct_alternate_make_ref
+#include <bitset>
+#undef __make_ref
+int main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapGuardReferenceCarrierRejected) {
+  const auto Source = tmpFile("bitset-bool-swap-guard-reference-carrier.cpp");
+  writeFile(Source, R"r19bitmix(#define __bit_reference nct_alternate_bit_reference
+#include <bitset>
+#undef __bit_reference
+int main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapGuardStorageBaseRejected) {
+  const auto Source = tmpFile("bitset-bool-swap-guard-storage-base.cpp");
+  writeFile(Source, R"r19bitmix(#define __bitset nct_alternate_bitset
+#include <bitset>
+#undef __bitset
+int main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapGuardStorageRejected) {
+  const auto Source = tmpFile("bitset-bool-swap-guard-storage.cpp");
+  writeFile(Source, R"r19bitmix(#define __first_ nct_alternate_first
+#include <bitset>
+#undef __first_
+int main(){std::bitset<65> b;bool value=true;using std::swap;swap(b[64],value);return value;}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapGuardOverloadNameRejected) {
+  const auto Source = tmpFile("bitset-bool-swap-guard-overload-name.cpp");
+  writeFile(Source, R"r19bitmix(#define swap nct_alternate_swap
+#include <bitset>
+#undef swap
+int main(){std::bitset<65> b;bool value=true;using std::nct_alternate_swap;nct_alternate_swap(b[64],value);return value;}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetBoolSwapGuardOwnedSubscriptRejected) {
+  const auto Source = tmpFile("bitset-bool-swap-guard-owned-subscript.cpp");
+  writeFile(Source, R"r19bitmix(#include <bitset>
+namespace std{template<> auto bitset<65>::operator[](size_t) -> reference{return this->__make_ref(0);}}
+int main(){std::bitset<65> b;bool value=true;using std::swap;swap(value,b[64]);return value;}
+)r19bitmix");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

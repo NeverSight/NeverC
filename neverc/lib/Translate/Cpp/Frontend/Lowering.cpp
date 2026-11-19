@@ -26180,14 +26180,24 @@ class FunctionLowering {
       // By-value record arguments point to their caller-owned copies.
       auto Left = dereference(argument(Call->getArg(0), F->getParamDecl(0)->getType()), L);
       auto Right = dereference(argument(Call->getArg(1), F->getParamDecl(1)->getType()), L);
-      const auto LInfo = Describe(F->getParamDecl(0)->getType());
-      const auto RInfo = Describe(F->getParamDecl(1)->getType());
-      auto Saved = snapshot(Read(Left, LInfo), L);
-      auto Value = snapshot(Read(Right, RInfo), L);
-      Write(dereference(fieldStorage(Left, LInfo.Word, L), L),
-            fieldStorage(Left, LInfo.Mask, L), Value);
-      Write(dereference(fieldStorage(Right, RInfo.Word, L), L),
-            fieldStorage(Right, RInfo.Mask, L), Saved);
+      const auto BoolReference = Context.getLValueReferenceType(Context.BoolTy);
+      auto Layout = [&](unsigned Index) -> std::optional<UtilityBitsetProxyRecord> {
+        const auto T = F->getParamDecl(Index)->getType();
+        if (Context.hasSameType(T, BoolReference)) return std::nullopt;
+        return Describe(T);
+      };
+      const auto LInfo = Layout(0), RInfo = Layout(1);
+      auto Saved = snapshot(LInfo ? Read(Left, *LInfo) : Left, L);
+      auto Value = snapshot(RInfo ? Read(Right, *RInfo) : Right, L);
+      auto Store = [&](Expression Place, const auto &Info, Expression NewValue) {
+        if (Info)
+          Write(dereference(fieldStorage(Place, Info->Word, L), L),
+                fieldStorage(Place, Info->Mask, L), std::move(NewValue));
+        else
+          assign(std::move(Place), std::move(NewValue), L);
+      };
+      Store(Left, LInfo, Value);
+      Store(Right, RInfo, Saved);
       return {};
     }
     const auto *M = llvm::cast<CXXMethodDecl>(F);
@@ -26242,6 +26252,89 @@ class FunctionLowering {
         ? snapshot(Read(dereference(*Right, L), Info), L) : *Right;
     Write(Word, Mask, Value);
     return Place;
+  }
+
+  Expression utilityBitsetHash(const CallExpr *Call) {
+    const auto L = Call->getExprLoc();
+    const auto Proof = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
+    const auto Info = Proof && Proof->Record ? approvedUtilityBitsetRecord(
+        A.S, A.Sources, Proof->Record, A.Context) : std::nullopt;
+    if (!Proof || !Info || !Proof->Receiver || Proof->Operation != UtilityOperation::BitsetHash)
+      reject(L, "bitset hash", "The exact pinned hash and bitset operand are required.");
+    const auto *Receiver = Proof->Receiver;
+    (void)snapshot(Receiver->getType()->isPointerType() ? expression(Receiver)
+        : address(lvalue(Receiver), Receiver->getType(), L), L);
+    auto Value = argument(Call->getArg(Proof->ArgumentOffset),
+        Call->getDirectCallee()->getParamDecl(0)->getType());
+    if (!Info->Words)
+      return cast(quantity(0, "u64", L), type(Call->getType(), L), L);
+    auto Place = dereference(std::move(Value), L);
+    if (Info->Words == 1)
+      return cast(bitsetWord(Place, *Info, quantity(0, "u64", L), L, true),
+                  type(Call->getType(), L), L);
+    auto Result = temporary("u64", L), Position = temporary("u64", L);
+    assign(Result, quantity(0, "u64", L), L);
+    assign(Position, quantity(0, "u64", L), L);
+    const auto Check = labelName(), Body = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", Position, quantity(Info->Words, "u64", L), "bool", L), Body, Done, L);
+    label(Body, L);
+    assign(Result, binary("^", Result, bitsetWord(Place, *Info, Position, L, true), "u64", L), L);
+    assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
+    jump(Check, L);
+    label(Done, L);
+    return cast(Result, type(Call->getType(), L), L);
+  }
+
+  Expression utilityBitsetToString(const CallExpr *Call,
+                                   std::optional<Expression> Destination) {
+    const auto L = Call->getExprLoc();
+    const auto Bitset = approvedUtilityBitsetCall(A.S, A.Sources, Call, A.Context);
+    const auto Layout = Bitset ? approvedUtilityBitsetRecord(
+        A.S, A.Sources, Bitset->Record, A.Context) : std::nullopt;
+    const auto ResultType = Call->getType();
+    const auto String = approvedUtilityStringRecord(
+        A.S, A.Sources, ResultType->getAsCXXRecordDecl(), A.Context);
+    if (!Bitset || Bitset->Operation != UtilityOperation::BitsetToString ||
+        !Bitset->Receiver || !Layout || !String)
+      reject(L, "bitset string result", "The pinned bitset and owning narrow string layouts are required.");
+    const auto *Receiver = Bitset->Receiver;
+    auto Self = snapshot(Receiver->getType()->isPointerType() ? expression(Receiver)
+        : address(lvalue(Receiver), Receiver->getType(), L), L);
+    auto Zero = snapshot(argument(Call->getArg(0), A.Context.CharTy), L);
+    auto One = snapshot(argument(Call->getArg(1), A.Context.CharTy), L);
+    auto Result = Destination ? std::move(*Destination) : objectTemporary(ResultType, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Pointer = type(String->PointerType, L);
+    auto Limit = snapshot(quantity(Layout->Bits, Size, L), L);
+    auto Data = constructStringBytes(Result, ResultType, &*String,
+        quantity(0, Pointer, L), Limit, std::move(Zero), L);
+    if (!Layout->Bits) return Result;
+    auto Place = dereference(std::move(Self), L);
+    auto Position = temporary(Size, L);
+    assign(Position, quantity(0, Size, L), L);
+    const auto Check = labelName(), Read = labelName(), Set = labelName(), Advance = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", Position, Limit, "bool", L), Read, Done, L);
+    label(Read, L);
+    auto WordIndex = binary("/", Position, quantity(64, Size, L), Size, L);
+    auto Offset = binary("%", Position, quantity(64, Size, L), Size, L);
+    auto Bits = bitsetWord(Place, *Layout, WordIndex, L, true);
+    auto Mask = binary("<<", quantity(1, "u64", L), Offset, "u64", L);
+    branch(binary("!=", binary("&", Bits, Mask, "u64", L), quantity(0, "u64", L), "bool", L),
+           Set, Advance, L);
+    label(Set, L);
+    auto Index = binary("-", quantity(Layout->Bits - 1, Size, L), Position, Size, L);
+    assign(dereference(binary("+", Data, cast(Index, Difference, L), Pointer, L), L), One, L);
+    jump(Advance, L);
+    label(Advance, L);
+    assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(Done, L);
+    return Result;
   }
 
   Expression utilityBitsetShiftOperation(const CallExpr *Call, UtilityOperation Operation) {
@@ -29000,6 +29093,10 @@ class FunctionLowering {
     if (Operation >= UtilityOperation::BitsetProxySubscript &&
         Operation <= UtilityOperation::BitsetProxySwap)
       return utilityBitsetProxyOperation(Call, Operation, std::move(Destination));
+    if (Operation == UtilityOperation::BitsetHash)
+      return utilityBitsetHash(Call);
+    if (Operation == UtilityOperation::BitsetToString)
+      return utilityBitsetToString(Call, std::move(Destination));
     if (Operation == UtilityOperation::BitsetShiftLeft || Operation == UtilityOperation::BitsetShiftRight ||
         Operation == UtilityOperation::BitsetShiftLeftAssign || Operation == UtilityOperation::BitsetShiftRightAssign) {
       auto Result = utilityBitsetShiftOperation(Call, Operation);
@@ -34256,7 +34353,7 @@ class FunctionLowering {
                                 {"args", std::move(Args)},
                                 {"loc", A.loc(L)}});
   }
-  void constructStringBytes(Expression Place, QualType T,
+  Expression constructStringBytes(Expression Place, QualType T,
                             const UtilityStringRecord *String, Expression Input,
                             Expression Length,
                             std::optional<Expression> FillCharacter,
@@ -34399,6 +34496,7 @@ class FunctionLowering {
     label(Finish, L);
     assign(dereference(std::move(TargetCurrent), L),
            quantity(0, type(A.Context.CharTy, L), L), L);
+    return Data;
   }
 
   void constructVectorNestedEmplace(Expression Place,
@@ -38309,6 +38407,15 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
             T->getAsCXXRecordDecl(), A.Context);
         if (!Info) reject(L, "bitset construction", "The authenticated word storage is unavailable.");
         initializeZero(bitsetStorage(Place, *Info, L), bitsetArrayType(*Info), L);
+        if (*Kind == UtilityBitsetConstruction::LiteralText) {
+          const auto Words = approvedUtilityBitsetLiteralWords(A.S, A.Sources, C, A.Context);
+          if (!Words) reject(L, "bitset text", "The exact validated literal words are required.");
+          for (uint64_t Index = 0; Index != Words->size(); ++Index) {
+            if ((*Words)[Index])
+              assign(bitsetWord(Place, *Info, quantity(Index, "u64", L), L),
+                     quantity((*Words)[Index], "u64", L), L);
+          }
+        }
         if (*Kind == UtilityBitsetConstruction::UnsignedValue) {
           auto Value = snapshot(cast(argument(C->getArg(0), A.Context.UnsignedLongLongTy), "u64", L), L);
           if (Info->Bits < 64)
