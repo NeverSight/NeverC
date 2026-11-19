@@ -131249,18 +131249,31 @@ bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
          Context.hasSameType(Pair->getTemplateArgs()[1].getAsType(), Context.IntTy);
 }
 
-bool pinnedAssociativeContainerType(const State &S,
-                                   const SourceManager &SM, const CXXRecordDecl *Record) {
+static llvm::StringRef associativeContainerForwardHeader(llvm::StringRef Name) {
+  if (Name == "map" || Name == "set")
+    return "__tree";
+  if (Name == "unordered_map" || Name == "unordered_set")
+    return "__hash_table";
+  return {};
+}
+
+bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
+                                    const CXXRecordDecl *Record) {
   const auto *Spec = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
-  const auto *Primary = Spec ? Spec->getSpecializedTemplate()->getCanonicalDecl() : nullptr;
-  if (!S.coreV2() || !Primary || !Primary->getIdentifier() ||
-      !approvedStandardSDKDeclaration(S, SM, Primary))
+  const auto *Primary = Spec ? Spec->getSpecializedTemplate() : nullptr;
+  if (!S.coreV2() || !Primary || !Primary->getIdentifier())
     return false;
   const auto Name = Primary->getName();
-  return (Name == "map" || Name == "set" || Name == "unordered_set") &&
-         (cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", Name) ||
-          (Name == "unordered_set" &&
-           cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "__hash_table")));
+  const auto Forward = associativeContainerForwardHeader(Name);
+  if (Forward.empty())
+    return false;
+  // Route every SDK specialization to its query gate, including those with
+  // an unsupported argument or a source-owned redeclaration.
+  return llvm::any_of(Primary->redecls(), [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           (cstddefOrigin(S, SM, D->getLocation(), "libcxx", Name) ||
+            cstddefOrigin(S, SM, D->getLocation(), "libcxx", Forward));
+  });
 }
 
 bool approvedAssociativeContainerMetadataRecord(
@@ -131274,7 +131287,8 @@ bool approvedAssociativeContainerMetadataRecord(
   const bool Map = Name == "map";
   const bool HashTable = Name == "unordered_set";
   const auto *Container = associativeTypeIdentity(
-      S, SM, Record, Name, Name, HashTable ? "__hash_table" : "", Map || HashTable ? 4 : 3);
+      S, SM, Record, Name, Name, associativeContainerForwardHeader(Name),
+      Map || HashTable ? 4 : 3);
   if (!Container || (Container->getSpecializationKind() != TSK_ImplicitInstantiation &&
                      Container->getSpecializationKind() != TSK_Undeclared))
     return false;

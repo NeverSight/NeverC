@@ -30444,16 +30444,15 @@ public:
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
                  pinnedAssociativeContainerType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
-          if (Query->isArgumentType() && approvedAssociativeContainerLayoutQuery(A.S, A.Sources, Value, A.Context))
+          if (approvedUnorderedMapMetadataRecord(A.S, A.Sources, Value->getAsCXXRecordDecl(), A.Context) ||
+              (Query->isArgumentType() &&
+               approvedAssociativeContainerLayoutQuery(A.S, A.Sources, Value, A.Context)))
             A.checkQueryType(Operand, Query->getExprLoc(), true, true);
           else
             A.reject(Query->getExprLoc(), "associative size and alignment",
-                     "Expected a type-form query using the authenticated SDK layout.", "TR0203");
-        }
-        else if (approvedUnorderedMapMetadataRecord(A.S, A.Sources,
-                     A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context) ||
-                 approvedSequenceContainerMetadataRecord(A.S, A.Sources,
-                     A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context))
+                     "Expected an admitted SDK associative container and layout query.", "TR0203");
+        } else if (approvedSequenceContainerMetadataRecord(A.S, A.Sources,
+                       Value->getAsCXXRecordDecl(), A.Context))
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (!Query->isArgumentType() &&
                  checkTupleCatQueryExpressionType(Query->getArgumentExpr())) {
