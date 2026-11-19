@@ -3392,6 +3392,11 @@ bool shouldRetainFunctionalNotFnSpecialMemberSource(
     const clang::CXXMethodDecl *Method, const clang::ASTContext &Context);
 
 
+bool pinnedUtilityMonostateType(const State &S, const clang::SourceManager &SM,
+                                const clang::CXXRecordDecl *Record);
+bool approvedUtilityMonostateMetadata(const State &S, const clang::SourceManager &SM,
+                                      const clang::CXXRecordDecl *Record,
+                                      const clang::ASTContext &Context);
 bool pinnedUtilityVariantType(const State &S, const clang::SourceManager &SM,
                               const clang::CXXRecordDecl *Record);
 bool approvedUtilityVariantMetadata(const State &S,

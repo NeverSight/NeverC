@@ -6782,6 +6782,38 @@ static bool utilityTupleDirectConversion(const State &S,
          Context.hasSameUnqualifiedType(From, To);
 }
 
+bool pinnedUtilityMonostateType(const State &S, const SourceManager &SM,
+                                const CXXRecordDecl *Record) {
+  if (!S.coreV2() || !Record || !Record->getIdentifier() ||
+      Record->getName() != "monostate")
+    return false;
+  const auto *Definition = Record->getDefinition();
+  return Definition && approvedStandardSDKDeclaration(S, SM, Definition) &&
+         cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
+                       "__variant/monostate.h");
+}
+
+bool approvedUtilityMonostateMetadata(const State &S, const SourceManager &SM,
+                                      const CXXRecordDecl *Record,
+                                      const ASTContext &Context) {
+  if (!pinnedUtilityMonostateType(S, SM, Record))
+    return false;
+  const auto *Definition = Record->getDefinition();
+  if (Definition->isInvalidDecl() || Definition->isUnion() ||
+      !Definition->isEmpty() || !Definition->isStandardLayout() ||
+      !Definition->isTriviallyCopyable() || Definition->getNumBases() ||
+      !Definition->field_empty() || Context.getCharWidth() != 8)
+    return false;
+  for (const auto *D : Definition->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__variant/monostate.h"))
+      return false;
+  const auto &Layout = Context.getASTRecordLayout(Definition);
+  return Layout.getFieldCount() == 0 && Layout.getSize() == CharUnits::One() &&
+         Layout.getAlignment() == CharUnits::One();
+}
+
 bool pinnedUtilityVariantType(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record) {
   const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
@@ -6897,7 +6929,9 @@ bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
   };
   for (const auto &Alternative : Alternatives) {
     const auto T = Alternative.getAsType();
-    if (T->isIncompleteType() || !utilityScalar(Context, T))
+    if (T->isIncompleteType() ||
+        (!utilityScalar(Context, T) &&
+         !approvedUtilityMonostateMetadata(S, SM, T->getAsCXXRecordDecl(), Context)))
       return false;
   }
 

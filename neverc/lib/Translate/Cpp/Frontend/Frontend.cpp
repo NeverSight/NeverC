@@ -2407,7 +2407,8 @@ static bool memoryTemplateMetadataType(Adapter &A, QualType T) {
       return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value() ||
              approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context) ||
              approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context) ||
-             approvedUtilityVariantMetadata(A.S, A.Sources, Record);
+             approvedUtilityVariantMetadata(A.S, A.Sources, Record) ||
+             approvedUtilityMonostateMetadata(A.S, A.Sources, Record, A.Context);
     if (const auto *Array = dyn_cast<ArrayType>(Raw))
       T = Array->getElementType();
     else if (Raw->isPointerType() || Raw->isReferenceType())
@@ -2591,6 +2592,9 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       for (const auto &Argument : Arguments.get(0).pack_elements())
         checkQueryType(Argument.getAsType(), L, AllowIncompleteArrays,
                        AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               approvedUtilityMonostateMetadata(S, Sources, T->getAsCXXRecordDecl(), Context)) {
+      // The authenticated empty alternative has no nested type dependencies.
     } else if (AllowIncompleteRecords &&
                approvedUtilityVariantMetadata(S, Sources, T->getAsCXXRecordDecl())) {
       const auto *Variant =
@@ -30518,6 +30522,15 @@ public:
           // identity. Preserve the full written type/source checks without
           // completing that pointee or admitting a runtime pointer carrier.
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+        else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
+                 pinnedUtilityMonostateType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
+          if (Query->isArgumentType() && approvedUtilityMonostateMetadata(
+                  A.S, A.Sources, Value->getAsCXXRecordDecl(), A.Context))
+            A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+          else
+            A.reject(Query->getExprLoc(), "monostate size and alignment",
+                     "Expected a type-form query using the authenticated SDK layout.", "TR0203");
+        }
         else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
                  pinnedUtilityVariantType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
           if (Query->isArgumentType() &&
