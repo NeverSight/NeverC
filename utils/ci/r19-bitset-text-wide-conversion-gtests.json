@@ -1,0 +1,232 @@
+{
+  "positive_cases": [
+    {
+      "name": "bitset-text-wide-conversion-unsigned-long-width",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionUnsignedLongWidthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8d51377ef60b254b88eb50d44cd15bbaa040edafd4cf57564053f42306572330",
+      "original_case_source_sha256": "8d51377ef60b254b88eb50d44cd15bbaa040edafd4cf57564053f42306572330",
+      "gtest_body_sha256": "3c553dc1cb4c13c51b0a44f6aa86694ec7c482f8e7d7f7f6fcf36b80b262edee"
+    },
+    {
+      "name": "bitset-text-wide-conversion-unsigned-long-long-width",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionUnsignedLongLongWidthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d5a8b7edcc15ff2290d8b38496fc27333d0770f88aea83c1a8a3333302d6a046",
+      "original_case_source_sha256": "d5a8b7edcc15ff2290d8b38496fc27333d0770f88aea83c1a8a3333302d6a046",
+      "gtest_body_sha256": "0bfb3a8751847571fab28540944c27ddc78e2f592f877f974c462e040a712222"
+    },
+    {
+      "name": "bitset-text-wide-conversion-constexpr-pointer",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionConstexprPointerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a45cfbe946c104e25d23e7f6af95364a98ad7642fdac42241729dbecd9fb9532",
+      "original_case_source_sha256": "a45cfbe946c104e25d23e7f6af95364a98ad7642fdac42241729dbecd9fb9532",
+      "gtest_body_sha256": "71f72b12e44a35f1df4c0b08b91eb053804f41b5d628af11b24e8d54410fb83b"
+    },
+    {
+      "name": "bitset-text-wide-conversion-owning-substring",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionOwningSubstringRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a1bb9db6f74da09fd9a5137c189d6269e9e153ee3f9cec42314ee35a0a8d54f5",
+      "original_case_source_sha256": "a1bb9db6f74da09fd9a5137c189d6269e9e153ee3f9cec42314ee35a0a8d54f5",
+      "gtest_body_sha256": "8c9354283e93ffabda684ae2c62b0f8b21d14ac6828ea93cf68560a7e8462a7b"
+    },
+    {
+      "name": "bitset-text-wide-conversion-empty-owning",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionEmptyOwningRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a00830e424ae992cb5d720d43fc12d9362fe40589e0a05e954e42b4e95f83ee0",
+      "original_case_source_sha256": "a00830e424ae992cb5d720d43fc12d9362fe40589e0a05e954e42b4e95f83ee0",
+      "gtest_body_sha256": "c0ce34f1215ca710c58b1e99e31e140e205e1249e529b427f36707c3ee3e4955"
+    },
+    {
+      "name": "bitset-text-wide-conversion-zero-upper-storage",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionZeroUpperStorageRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "168cd7299169c6e85564cbf2af701a764c2a8f5e91bb4466fc9193a8d6c2dfc8",
+      "original_case_source_sha256": "168cd7299169c6e85564cbf2af701a764c2a8f5e91bb4466fc9193a8d6c2dfc8",
+      "gtest_body_sha256": "bbbf5b275d448b0c6264ab4e055ac892260206d2fb00f84b566e479ad99b7854"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "bitset-text-wide-conversion-above-unsigned-long",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionAboveUnsignedLongRejected",
+      "expected": "reject",
+      "source_sha256": "c0e8fbc6cd9c84a0d26e71aa6e9c59760701eb2efd8ade22fd5069e9ae3316e1",
+      "original_case_source_sha256": "c0e8fbc6cd9c84a0d26e71aa6e9c59760701eb2efd8ade22fd5069e9ae3316e1",
+      "gtest_body_sha256": "0274f6e44b381337e9c3ecefbfe4fcd731bf7799ad702432447d0b30994072b3"
+    },
+    {
+      "name": "bitset-text-wide-conversion-above-unsigned-long-long",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionAboveUnsignedLongLongRejected",
+      "expected": "reject",
+      "source_sha256": "1b3e9744869d5b39ab61c5f5c81aec439f13568dba442193cb8829b277cc117c",
+      "original_case_source_sha256": "1b3e9744869d5b39ab61c5f5c81aec439f13568dba442193cb8829b277cc117c",
+      "gtest_body_sha256": "2f7df716d6105d922c9f138059fdde87a2155b036c19c25880fb578528122bf8"
+    },
+    {
+      "name": "bitset-text-wide-conversion-high-word-from-custom-digits",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionHighWordFromCustomDigitsRejected",
+      "expected": "reject",
+      "source_sha256": "c90189ac69f12acb98c9367cd58f107e77478e48691d7e081eb70deb06819a64",
+      "original_case_source_sha256": "c90189ac69f12acb98c9367cd58f107e77478e48691d7e081eb70deb06819a64",
+      "gtest_body_sha256": "1acfefe622d8ed9fffc702cbe0ee97d583e2061eadd8254c9223c54d255172fa"
+    },
+    {
+      "name": "bitset-text-wide-conversion-mutable-object",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionMutableObjectRejected",
+      "expected": "reject",
+      "source_sha256": "0fb0e9e577a2ae88c4a39718c22b672101f2ae477d28e315da3f7cc2deb94ad3",
+      "original_case_source_sha256": "0fb0e9e577a2ae88c4a39718c22b672101f2ae477d28e315da3f7cc2deb94ad3",
+      "gtest_body_sha256": "209aad29d39d110219a982669289c9c4d31ad46af01c4e3b52415345a4cc0b82"
+    },
+    {
+      "name": "bitset-text-wide-conversion-runtime-text",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionRuntimeTextRejected",
+      "expected": "reject",
+      "source_sha256": "e6f20d0f218f2d58f2ee5b8a08ec402e91671fb2b94cdbefa9a70a21fb9e9144",
+      "original_case_source_sha256": "e6f20d0f218f2d58f2ee5b8a08ec402e91671fb2b94cdbefa9a70a21fb9e9144",
+      "gtest_body_sha256": "7257b6bf6df0788821d0e93160db3b1eaed0979ef47ad8390dfdd228dea9ee58"
+    },
+    {
+      "name": "bitset-text-wide-conversion-invalid-digit-in-selected-range",
+      "formal_test_name": "TranslateTest.CoreV2BitsetTextWideConversionInvalidDigitInSelectedRangeRejected",
+      "expected": "reject",
+      "source_sha256": "d3512107afddc43e50b3085dd39d8e5eb01a467c187bc1b6ba09dbe90b3e1669",
+      "original_case_source_sha256": "d3512107afddc43e50b3085dd39d8e5eb01a467c187bc1b6ba09dbe90b3e1669",
+      "gtest_body_sha256": "b4e72f1588ff23ebe3db198146157dbb9035efa11c25b9217faba554c998be1d"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2BitsetTextWideConversionUnsignedLongWidthRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetTextWideConversionUnsignedLongLongWidthRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetTextWideConversionConstexprPointerRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetTextWideConversionOwningSubstringRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetTextWideConversionEmptyOwningRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetTextWideConversionZeroUpperStorageRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetTextWideConversionAboveUnsignedLongRejected",
+    "TranslateTest.CoreV2BitsetTextWideConversionAboveUnsignedLongLongRejected",
+    "TranslateTest.CoreV2BitsetTextWideConversionHighWordFromCustomDigitsRejected",
+    "TranslateTest.CoreV2BitsetTextWideConversionMutableObjectRejected",
+    "TranslateTest.CoreV2BitsetTextWideConversionRuntimeTextRejected",
+    "TranslateTest.CoreV2BitsetTextWideConversionInvalidDigitInSelectedRangeRejected"
+  ],
+  "native_reference_authentication_sha256": "44f23391326ed8f590012cef9d9ee34f500e77a484b944a82a42717b4c0ffa84",
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "c23b5f61465eec15d0a7e48992c6a66fad3fb5636633654c2583de09ff9269b8",
+  "maintained_original_sha256": "5dec5107c672e2d98010536328d6da133584a829770ae2e0cb6d26992c342212",
+  "previous_registered_source_sha256": "e88349bdbbf761084cd35088c30bb569c1cc20b177fcf7ca6c7346925604c856",
+  "previous_maintained_original_sha256": "2fc74a2cbbe835d84e893f1dd81f47ae645edc0d181e562d130f9e4bac867495",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7998,
+  "current_python_registry_tests": 114,
+  "previous7986_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "93a4589323345dcb9fb49b26ade7e3f4442d1b082b89edee7cdf495aba489305",
+  "extractor_sha256": "f0604997c60440a188c473de23851dcc4e6fc619e6a9ce488685e04241003305",
+  "source_cases": [
+    {
+      "name": "bitset-text-wide-conversion-unsigned-long-width",
+      "source": "#include <bitset>\n#include <string>\nint main(){return std::bitset<128>(\"11111111111111111111111111111111\").to_ulong()!=0xffffffffUL;}\n",
+      "source_sha256": "8d51377ef60b254b88eb50d44cd15bbaa040edafd4cf57564053f42306572330",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-text-wide-conversion-operations"
+    },
+    {
+      "name": "bitset-text-wide-conversion-unsigned-long-long-width",
+      "source": "#include <bitset>\n#include <string>\nint main(){return std::bitset<128>(\"1000000000000000000000000000000000000000000000000000000000000001\").to_ullong()!=0x8000000000000001ULL;}\n",
+      "source_sha256": "d5a8b7edcc15ff2290d8b38496fc27333d0770f88aea83c1a8a3333302d6a046",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-text-wide-conversion-operations"
+    },
+    {
+      "name": "bitset-text-wide-conversion-constexpr-pointer",
+      "source": "#include <bitset>\n#include <string>\nconstexpr const char* text=\"00100111\";\nint main(){return std::bitset<257>(text).to_ullong()!=39ULL;}\n",
+      "source_sha256": "a45cfbe946c104e25d23e7f6af95364a98ad7642fdac42241729dbecd9fb9532",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-text-wide-conversion-operations"
+    },
+    {
+      "name": "bitset-text-wide-conversion-owning-substring",
+      "source": "#include <bitset>\n#include <string>\nint main(){\n  const std::bitset<129> value(std::string(\"skipxoo\"),4,3,'o','x');\n  return value.to_ulong()!=4UL;\n}\n",
+      "source_sha256": "a1bb9db6f74da09fd9a5137c189d6269e9e153ee3f9cec42314ee35a0a8d54f5",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-text-wide-conversion-operations"
+    },
+    {
+      "name": "bitset-text-wide-conversion-empty-owning",
+      "source": "#include <bitset>\n#include <string>\nint main(){return std::bitset<129>(std::string()).to_ulong()!=0UL;}\n",
+      "source_sha256": "a00830e424ae992cb5d720d43fc12d9362fe40589e0a05e954e42b4e95f83ee0",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-text-wide-conversion-operations"
+    },
+    {
+      "name": "bitset-text-wide-conversion-zero-upper-storage",
+      "source": "#include <bitset>\n#include <string>\nint main(){\n  const std::bitset<194> value(\"0000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000001\");\n  return value.to_ullong()!=0x8000000000000001ULL;\n}\n",
+      "source_sha256": "168cd7299169c6e85564cbf2af701a764c2a8f5e91bb4466fc9193a8d6c2dfc8",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "bitset-text-wide-conversion-operations"
+    },
+    {
+      "name": "bitset-text-wide-conversion-above-unsigned-long",
+      "source": "#include <bitset>\n#include <string>\nint main(){return std::bitset<128>(\"10000000000000000000000000000000000000000000000000000000000000000\").to_ulong()==0UL;}\n",
+      "source_sha256": "c0e8fbc6cd9c84a0d26e71aa6e9c59760701eb2efd8ade22fd5069e9ae3316e1",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-text-wide-conversion-above-unsigned-long-long",
+      "source": "#include <bitset>\n#include <string>\nint main(){\n  const std::bitset<129> value(std::string(\"10000000000000000000000000000000000000000000000000000000000000000\"));\n  return value.to_ullong()==0ULL;\n}\n",
+      "source_sha256": "1b3e9744869d5b39ab61c5f5c81aec439f13568dba442193cb8829b277cc117c",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-text-wide-conversion-high-word-from-custom-digits",
+      "source": "#include <bitset>\n#include <string>\nint main(){return std::bitset<129>(\"xoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\",65,'o','x').to_ullong()==0ULL;}\n",
+      "source_sha256": "c90189ac69f12acb98c9367cd58f107e77478e48691d7e081eb70deb06819a64",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-text-wide-conversion-mutable-object",
+      "source": "#include <bitset>\n#include <string>\nint main(){std::bitset<129> value(\"1\");value.set(128);return value.to_ullong()==0ULL;}\n",
+      "source_sha256": "0fb0e9e577a2ae88c4a39718c22b672101f2ae477d28e315da3f7cc2deb94ad3",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-text-wide-conversion-runtime-text",
+      "source": "#include <bitset>\n#include <string>\nint main(int argc,char** argv){\n  return argc==2 && std::bitset<129>(argv[1]).to_ullong()==0ULL;\n}\n",
+      "source_sha256": "e6f20d0f218f2d58f2ee5b8a08ec402e91671fb2b94cdbefa9a70a21fb9e9144",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-text-wide-conversion-invalid-digit-in-selected-range",
+      "source": "#include <bitset>\n#include <string>\nint main(){return std::bitset<129>(std::string(\"101?\")).to_ullong()==0ULL;}\n",
+      "source_sha256": "d3512107afddc43e50b3085dd39d8e5eb01a467c187bc1b6ba09dbe90b3e1669",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_sha256": "03456bb8774858413241405c61dc91f8d910f87792103bf348b3e7e00ac33d21"
+}
