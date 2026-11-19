@@ -87,8 +87,13 @@ def main():
                     assert 8 <= align <= width and align & (align - 1) == 0
                 for record in data["records"]:
                     record_layout = record["layout"]
-                    assert set(record_layout) == {"size_bits", "abi_align_bits", "field_offsets_bits"}
-                    assert len(record_layout["field_offsets_bits"]) == len(record["fields"])
+                    fields = {"size_bits", "abi_align_bits", "field_offsets_bits"}
+                    offsets = record_layout["field_offsets_bits"]
+                    if "union" in record_layout:
+                        fields.add("union")
+                        assert record_layout["union"] is True and offsets and all(offset == 0 for offset in offsets)
+                    assert set(record_layout) == fields
+                    assert len(offsets) == len(record["fields"])
             else:
                 assert "carrier_layout" not in data["target"]
                 assert all("layout" not in record for record in data["records"])
@@ -18190,6 +18195,22 @@ bool query(){return noexcept(Items{R(1),R(2)});}
         check("v2-" + 'array_temporary_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
     check("v1-array-temporary-reference", "using A=int[2];int f(){const A&r={1,2};return r[0];}", "TR0201")
     check("v1-array-temporary-decay", "using A=int[2];int f(){return A{1,2}[0];}", "TR0201")
+    scalar_variant = check("v2-scalar-variant-union",
+        """#include <variant>
+int main() {
+  std::variant<int, double> value = 2.5;
+  const auto *p = std::get_if<1>(&value);
+  return !p || *p != 2.5 || value.index() != 1;
+}
+""", profile="cpp-core-v2", sdk=True)
+    union_record, = [record for record in scalar_variant["records"] if record["layout"].get("union")]
+    assert union_record["layout"] == {"union": True, "size_bits": 64, "abi_align_bits": 64,
+                                      "field_offsets_bits": [0, 0]}
+    assert [field["type"] for field in union_record["fields"]] == ["int", "double"]
+    variant_record, = [record for record in scalar_variant["records"]
+                       if any(field["type"] == union_record["id"] for field in record["fields"])]
+    assert variant_record["layout"] == {"size_bits": 128, "abi_align_bits": 64,
+                                        "field_offsets_bits": [0, 64]}
     er_schema = json.loads((repository / "utils/translate-frontends/docs/schemas/manifest.schema.json").read_text())
     er_layout_schema = er_schema["properties"]["record_layouts"]["items"]["properties"]
     assert er_layout_schema["field_offsets_bits"]["minItems"] == 0

@@ -16118,7 +16118,9 @@ or mismatching layout fields are rejected. Source sizes and ABI alignments
 must agree, with supported byte sizes and power-of-two alignment.
 
 Each response record also requires `layout` containing `size_bits`,
-`abi_align_bits` and `field_offsets_bits` in declaration order. The verifier
+`abi_align_bits` and `field_offsets_bits` in declaration order. Internal SDK
+union carriers set `union` to `true` and have one or more zero offsets. The verifier
+checks their size and alignment using the largest admitted members. It also
 reconstructs the natural layout of the currently supported standard-layout records
 from matched carriers, arrays and earlier records. Arithmetic is bounded;
 layout size is at most 25,600,000 bits and field offsets must agree exactly.
