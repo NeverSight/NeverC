@@ -97,9 +97,13 @@ jobs:
         neverc/llvm
         time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
 
+    - name: Build Linux ARM64 install dependencies
+      # The generated Ninja install target normally builds all before installing.
+      run: cmake --build build --config "$BUILD_TYPE" --target all
+
     - name: Install neverc
-      run: |
-        cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+      working-directory: build
+      run: cmake --install . --config "$BUILD_TYPE"
 
     - name: Package neverc
       run: 7z a linux-arm64-neverc.zip install
