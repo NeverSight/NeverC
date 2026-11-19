@@ -1,43 +1,97 @@
-name: not-fn-next-signature-source-diagnostics
+name: macOS pair regression with the r19 SDK
 'on':
   workflow_dispatch: {}
 permissions:
   contents: read
   actions: read
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
 jobs:
-  observe-original-signature-source:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 20
+  pair-r19:
+    name: Verify the macOS pair regression gate
+    runs-on: macos-15
+    timeout-minutes: 240
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      NEVERC_PCG_STRICT: '1'
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Repo
+      uses: actions/checkout@v4
       with:
-        fetch-depth: 1
-    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        path: neverc
+    - name: Set up CPython 3.12.10 for official artifacts
+      id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
       with:
         python-version: 3.12.10
-    - name: Observe one original signature failure with the actual existing diagnostic
-        ELF
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: python3 utils/ci/observe-not-fn-next-signature-source.py --repo "$GITHUB_WORKSPACE"
-        --plan "$GITHUB_WORKSPACE/utils/ci/not-fn-next-signature-trace-replay-plan.json"
-        --output "$RUNNER_TEMP/not-fn-next-signature-trace-replay" --build "$RUNNER_TEMP/not-fn-next-signature-trace-replay-binary-remote-only"
-    - name: Preserve source responses, raw trace and all ten PID records
-      if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+    - name: Select latest stable Xcode SDK
+      uses: maxim-lobanov/setup-xcode@v1
       with:
-        name: not-fn-next-signature-trace-replay-text-${{ github.sha }}
-        path: '${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.json
+        xcode-version: latest-stable
+    - name: Show Apple SDK
+      run: 'xcodebuild -version
 
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.cpp
+        xcrun --show-sdk-path
 
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.log
+        '
+    - name: Setup build deps
+      run: brew install ninja cmake p7zip openssl@3 llvm@22 lld@22
+    - name: Select matching Homebrew LLVM 22 toolchain
+      run: 'LLVM_PREFIX="$(brew --prefix llvm@22)"
 
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.txt
+        LLD_PREFIX="$(brew --prefix lld@22)"
 
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.tsv'
+        echo "CC=${LLVM_PREFIX}/bin/clang" >> "$GITHUB_ENV"
+
+        echo "CXX=${LLVM_PREFIX}/bin/clang++" >> "$GITHUB_ENV"
+
+        echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
+
+        echo "${LLD_PREFIX}/bin" >> "$GITHUB_PATH"
+
+        "${LLVM_PREFIX}/bin/clang" --version
+
+        "${LLD_PREFIX}/bin/ld64.lld" --version
+
+        '
+    - name: Build neverc
+      run: "cmake -GNinja -Bbuild \\\n  -DCMAKE_INSTALL_PREFIX=install \\\n  -DCMAKE_C_COMPILER=\"\
+        $CC\" \\\n  -DCMAKE_CXX_COMPILER=\"$CXX\" \\\n  -DLLVM_ENABLE_ASSERTIONS=OFF\
+        \ \\\n  -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \\\n  -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0\
+        \ \\\n  -DNEVERC_INCLUDE_TESTS=ON \\\n  -DPython3_EXECUTABLE=\"${{ steps.python.outputs.python-path\
+        \ }}\" \\\n  -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \\\n  -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON\
+        \ \\\n  -DCMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE=PRE_TEST \\\n  -DNEVERC_STRIP_BINARY=OFF\
+        \ \\\n  -DNEVERC_ENABLE_LTO=ON \\\n  -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE\
+        \ }} \\\n  -C neverc/neverc/cmake/caches/NeverC.cmake \\\n  neverc/llvm\n\
+        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode\n"
+    - name: Validate selected C++ pair operations and source boundaries
+      id: cpp_pair_gate
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: "set -o pipefail\nmkdir -p \"$RUNNER_TEMP/cpp-pair-selected\"\nbrew install\
+        \ llvm@20\ncmake --build build --config ${{ env.BUILD_TYPE }} \\\n  --target\
+        \ neverc-translate-tests --parallel 2 \\\n  2>&1 | tee \"$RUNNER_TEMP/cpp-pair-selected/formal-build.log\"\
+        \n\"${{ steps.python.outputs.python-path }}\" \\\n  neverc/utils/ci/download-cpp-pair-comparison-baseline.py\
+        \ \\\n  --run-id 39244936666 \\\n  --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-pair-comparison-baseline\" \\\n  2>&1\
+        \ | tee \"$RUNNER_TEMP/cpp-pair-selected/baseline-download.log\"\ncp \"$RUNNER_TEMP/cpp-pair-comparison-baseline/provenance.json\"\
+        \ \\\n  \"$RUNNER_TEMP/cpp-pair-selected/baseline-provenance.json\"\n\"${{\
+        \ steps.python.outputs.python-path }}\" \\\n  neverc/utils/ci/check-cpp-pair-piecewise-operations.py\
+        \ \\\n  --repo neverc --build build \\\n  --clangxx \"$(brew --prefix llvm@20)/bin/clang++\"\
+        \ \\\n  --baseline-provenance \"$RUNNER_TEMP/cpp-pair-comparison-baseline/provenance.json\"\
+        \ \\\n  --output \"$RUNNER_TEMP/cpp-pair-selected\"\n"
+    - name: Preserve pair execution evidence
+      uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() && steps.cpp_pair_gate.outcome != 'skipped' }}
+      with:
+        name: macos-pair-r19-gate-text-${{ github.sha }}
         if-no-files-found: error
         retention-days: 14
+        path: '${{ runner.temp }}/cpp-pair-selected/results.json
+
+          ${{ runner.temp }}/cpp-pair-selected/formal/results.json
+
+          ${{ runner.temp }}/cpp-pair-selected/formal/*.xml
+
+          ${{ runner.temp }}/cpp-pair-selected/revision.log
+
+          ${{ runner.temp }}/cpp-pair-selected/native-clang-version.log'
