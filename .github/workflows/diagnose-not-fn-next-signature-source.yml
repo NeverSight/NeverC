@@ -1,43 +1,97 @@
-name: not-fn-next-signature-source-diagnostics
+name: Native scalar variant execution
 'on':
   workflow_dispatch: {}
 permissions:
   contents: read
   actions: read
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
 jobs:
-  observe-original-signature-source:
+  scalar-variant:
+    name: Scalar variant native Linux x64
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      NEVERC_PCG_STRICT: '1'
+      LLVM_APT_VER: '22'
+    timeout-minutes: 240
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Repo
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
-        fetch-depth: 1
-    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        path: neverc
+    - name: Set up CPython 3.12.10 for official artifacts
+      id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
       with:
         python-version: 3.12.10
-    - name: Observe one original signature failure with the actual existing diagnostic
-        ELF
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: python3 utils/ci/observe-not-fn-next-signature-source.py --repo "$GITHUB_WORKSPACE"
-        --plan "$GITHUB_WORKSPACE/utils/ci/not-fn-next-signature-trace-replay-plan.json"
-        --output "$RUNNER_TEMP/not-fn-next-signature-trace-replay" --build "$RUNNER_TEMP/not-fn-next-signature-trace-replay-binary-remote-only"
-    - name: Preserve source responses, raw trace and all ten PID records
-      if: ${{ always() }}
+    - name: Setup build deps
+      run: 'bash neverc/.github/scripts/configure-apt-ubuntu.sh
+
+        sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full
+        gdb elfutils openssl patchelf
+
+        '
+    - name: Install Clang (apt.llvm.org, non-PGO)
+      run: 'wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+
+        chmod +x /tmp/llvm.sh
+
+        sudo /tmp/llvm.sh "$LLVM_APT_VER"
+
+        echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+
+        echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+
+        clang-${LLVM_APT_VER} --version
+
+        '
+    - name: Build neverc
+      run: 'cmake -GNinja -Bbuild \
+
+        -DCMAKE_C_COMPILER=$CC \
+
+        -DCMAKE_CXX_COMPILER=$CXX \
+
+        -DCMAKE_INSTALL_PREFIX=install \
+
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+
+        -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+
+        -DNEVERC_INCLUDE_TESTS=ON \
+
+        -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+
+        -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
+
+        -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
+
+        -DNEVERC_STRIP_BINARY=OFF \
+
+        -DNEVERC_ENABLE_LTO=OFF \
+
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+
+        -C neverc/neverc/cmake/caches/NeverC.cmake \
+
+        neverc/llvm
+
+        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc neverc-translate-tests
+
+        '
+    - name: Run scalar variant C23 and C++17 comparisons
+      id: variant_scalar
+      run: '"${{ steps.python.outputs.python-path }}" -I -B neverc/utils/ci/check-cpp-variant-scalar-native.py
+        --repo neverc --compiler build/bin/neverc --formal build/bin/neverc-translate-tests
+        --clangxx "$CXX" --output "${{ runner.temp }}/variant-scalar"'
+    - name: Upload scalar variant text evidence
       uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() && steps.variant_scalar.outcome != 'skipped' }}
       with:
-        name: not-fn-next-signature-trace-replay-text-${{ github.sha }}
-        path: '${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.json
-
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.cpp
-
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.log
-
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.txt
-
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.tsv'
+        name: scalar-variant-c23-text-${{ github.sha }}
         if-no-files-found: error
         retention-days: 14
+        path: '${{ runner.temp }}/variant-scalar/results.json
+
+          ${{ runner.temp }}/variant-scalar/formal.xml
+
+          ${{ runner.temp }}/variant-scalar/logs/*.log'
