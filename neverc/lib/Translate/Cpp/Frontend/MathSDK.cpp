@@ -8130,7 +8130,8 @@ bool approvedUtilityAnyEmptyConstruction(const State &S, const SourceManager &SM
   if (!Construction || Construction->isInstantiationDependent() || Construction->getNumArgs() > 1 ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete)
     return false;
-  const auto *Record = Construction->getType()->getAsCXXRecordDecl();
+  const auto *Record = Context.getBaseElementType(Construction->getType())
+                           ->getAsCXXRecordDecl();
   const auto *Ctor = Construction->getConstructor();
   if (!approvedUtilityAnyEmptyRecord(S, SM, Record, Context) || !Ctor ||
       Ctor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
