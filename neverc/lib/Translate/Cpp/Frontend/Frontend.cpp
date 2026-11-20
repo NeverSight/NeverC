@@ -30175,6 +30175,7 @@ public:
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantEmplace(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantGet(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantHolds(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -30858,6 +30859,20 @@ public:
           checkBinding(VariantAssignment->Receiver, true);
         checkBinding(VariantAssignment->Source, true);
         A.type(VariantAssignment->Source->getType(), L);
+        return true;
+      }
+      if (const auto Emplace = approvedUtilityVariantEmplace(A.S, A.Sources, C, A.Context)) {
+        const auto *Receiver = Emplace->Callee->getBase();
+        if (Emplace->Callee->isArrow()) {
+          if (temporaryArrayBase(Receiver, true))
+            A.reject(L, "variant receiver", "Expected a live variant object.");
+        } else {
+          checkBinding(Receiver, true);
+        }
+        if (Emplace->Input)
+          checkBinding(Emplace->Input, true);
+        A.type(A.Context.getRecordType(Emplace->Variant.Record), L);
+        A.type(C->getType(), L);
         return true;
       }
       if (const auto Get = approvedUtilityVariantGet(A.S, A.Sources, C, A.Context)) {
