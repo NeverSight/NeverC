@@ -3422,6 +3422,18 @@ struct UtilityVariantConstruction {
 std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+struct UtilityVariantValueAssignment {
+  UtilityVariantRecord Variant;
+  const clang::Expr *Receiver;
+  const clang::Expr *Input;
+  clang::QualType Parameter;
+  unsigned Index;
+  bool Arrow;
+  bool InputFirst;
+};
+std::optional<UtilityVariantValueAssignment> approvedUtilityVariantValueAssignment(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 struct UtilityVariantEmplace {
   UtilityVariantRecord Variant;
   const clang::MemberExpr *Callee;
