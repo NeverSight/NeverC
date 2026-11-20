@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_text_wide_conversion_registered = cls.registered
+        cls.bitset_text_wide_conversion_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_text_wide_conversion_original = cls.adapter.restore_original_gtests(cls.bitset_text_wide_conversion_registered,cls.bitset_text_wide_conversion_suffix)
+        cls.registered = cls.adapter.restore_bitset_text_wide_conversion_history(cls.bitset_text_wide_conversion_registered)
         cls.bitset_composed_text_index_registered = cls.registered
         cls.bitset_composed_text_index_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_composed_text_index_original = cls.adapter.restore_original_gtests(cls.bitset_composed_text_index_registered,cls.bitset_composed_text_index_suffix)
@@ -1671,6 +1675,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_composed_text_index_registered,self.bitset_composed_text_index_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_composed_text_index_original+b' ',['TranslateTest.CoreV2BitsetConstLocalEmptyRunAtBothOptimizations'])
+
+    def test_bitset_text_wide_conversion_preserves_all_previous_registry_bytes_and_extracts_twelve_tests(self):
+        self.assertEqual(self.bitset_text_wide_conversion_original+self.bitset_text_wide_conversion_suffix,self.bitset_text_wide_conversion_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_text_wide_conversion_original,self.bitset_text_wide_conversion_suffix),self.bitset_text_wide_conversion_original)
+        self.assertEqual(self.adapter.restore_bitset_text_wide_conversion_history(self.bitset_text_wide_conversion_registered),self.bitset_composed_text_index_registered)
+        self.assertEqual(self.adapter.restore_bitset_text_wide_conversion_history(self.bitset_text_wide_conversion_original),self.bitset_composed_text_index_original)
+        selected = ['TranslateTest.CoreV2BitsetTextWideConversionUnsignedLongWidthRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionUnsignedLongLongWidthRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionConstexprPointerRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionOwningSubstringRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionEmptyOwningRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionZeroUpperStorageRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionAboveUnsignedLongRejected', 'TranslateTest.CoreV2BitsetTextWideConversionAboveUnsignedLongLongRejected', 'TranslateTest.CoreV2BitsetTextWideConversionHighWordFromCustomDigitsRejected', 'TranslateTest.CoreV2BitsetTextWideConversionMutableObjectRejected', 'TranslateTest.CoreV2BitsetTextWideConversionRuntimeTextRejected', 'TranslateTest.CoreV2BitsetTextWideConversionInvalidDigitInSelectedRangeRejected']
+        generated,proof = self.extractor.extract(self.bitset_text_wide_conversion_original,selected)
+        self.assertEqual(proof['original_test_names'],7998)
+        self.assertEqual(proof['selected_count'],12)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7986)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bittextwide',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_text_wide_conversion_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_text_wide_conversion_registered+b' ',
+                        self.bitset_text_wide_conversion_registered.replace(b'r19bittextwide',b'q.push(11)',1),
+                        self.bitset_text_wide_conversion_registered+self.bitset_text_wide_conversion_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_text_wide_conversion_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_text_wide_conversion_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_text_wide_conversion_registered,self.bitset_text_wide_conversion_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_text_wide_conversion_original+b' ',['TranslateTest.CoreV2BitsetTextWideConversionUnsignedLongWidthRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
