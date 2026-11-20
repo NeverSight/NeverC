@@ -500,3 +500,10 @@ C++ references at O0 and O2.
 The combined bitset and variant replay passes 630 source requests across
 the six 64-bit targets and 230 formal tests. On Linux x86-64, 102 generated
 C23 programs match their native C++ references at O0 and O2.
+
+## R19 monostate, any, and associative layout queries
+
+The combined bitset, variant and layout suite passes 858 source requests
+across the six 64-bit targets. The 266 formal tests include 122 generated
+C23 programs matched against native C++ at O0 and O2 on Linux x86-64.
+The original 750 requests pass with the same private frontend source.

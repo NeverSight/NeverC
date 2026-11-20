@@ -17851,3 +17851,19 @@ variants with supported scalar and pointer alternatives. The layout proof
 checks the pinned storage chain, discriminator and recursively selected union
 fields on the six 64-bit targets. The regressions include duplicate
 alternatives, const references, mixed scalar widths and pointer alternatives.
+
+## Additional STL type and layout queries
+
+The pinned SDK admits type-form size and alignment queries for
+`std::monostate` and for variants containing that empty alternative. The
+frontend checks the complete empty record and the enclosing variant storage.
+
+The profile also admits `std::any` type identity and type-form size and
+alignment. The layout proof checks the SDK handler signature, aligned buffer,
+and storage union.
+
+For the checked default integer specializations of `map`, `multimap`, `set`,
+`multiset`, `unordered_set`, and `unordered_multiset`, the frontend admits
+type aliases and type-form size and alignment. Existing `unordered_map`
+cases retain their checked behavior. The proofs follow the selected SDK
+declarations and storage for the six 64-bit target descriptors.

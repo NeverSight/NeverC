@@ -2407,7 +2407,10 @@ static bool memoryTemplateMetadataType(Adapter &A, QualType T) {
       return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value() ||
              approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context) ||
              approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context) ||
-             approvedUtilityVariantMetadata(A.S, A.Sources, Record);
+             approvedUtilityVariantMetadata(A.S, A.Sources, Record) ||
+             approvedUtilityMonostateMetadata(A.S, A.Sources, Record, A.Context) ||
+             approvedUtilityAnyMetadata(A.S, A.Sources, Record, A.Context) ||
+             approvedAssociativeContainerMetadataRecord(A.S, A.Sources, Record, A.Context);
     if (const auto *Array = dyn_cast<ArrayType>(Raw))
       T = Array->getElementType();
     else if (Raw->isPointerType() || Raw->isReferenceType())
@@ -2592,12 +2595,18 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
         checkQueryType(Argument.getAsType(), L, AllowIncompleteArrays,
                        AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
+               approvedUtilityMonostateMetadata(S, Sources, T->getAsCXXRecordDecl(), Context)) {
+      // The authenticated empty alternative has no nested type dependencies.
+    } else if (AllowIncompleteRecords &&
                approvedUtilityVariantMetadata(S, Sources, T->getAsCXXRecordDecl())) {
       const auto *Variant =
           cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
       for (const auto &Alternative : Variant->getTemplateArgs().get(0).pack_elements())
         checkQueryType(Alternative.getAsType(), L, AllowIncompleteArrays,
                        AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               approvedUtilityAnyMetadata(S, Sources, T->getAsCXXRecordDecl(), Context)) {
+      // Type queries need the pinned layout and no type-erased object storage.
     } else if (AllowIncompleteRecords &&
                approvedUtilityArrayMetadata(S, Sources,
                                             T->getAsCXXRecordDecl())) {
@@ -2649,8 +2658,9 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
                unorderedNodeTypeQueryMetadata(*this, T->getAsCXXRecordDecl(), L)) {
       // Exact SDK storage is checked without constructing an owner or its methods.
     } else if (AllowIncompleteRecords &&
-               approvedSequenceContainerMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context)) {
-      // The proof already checks the exact int/default-allocator arguments.
+               (approvedSequenceContainerMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context) ||
+                approvedAssociativeContainerMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context))) {
+      // The proof already checks the integer element and SDK policy types.
       checkQueryType(Context.IntTy, L, AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
                approvedUnorderedMapMetadataRecord(S, Sources, T->getAsCXXRecordDecl(), Context)) {
@@ -19303,7 +19313,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             return;
           }
         }
-        if (approvedSequenceContainerMetadataRecord(A.S, A.Sources, Declaration, A.Context)) {
+        if (approvedSequenceContainerMetadataRecord(A.S, A.Sources, Declaration, A.Context) ||
+            approvedAssociativeContainerMetadataRecord(A.S, A.Sources, Declaration, A.Context)) {
           Self(Self, A.Context.IntTy, true, Depth + 1);
           return;
         }
@@ -30519,6 +30530,15 @@ public:
           // completing that pointee or admitting a runtime pointer carrier.
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
+                 pinnedUtilityMonostateType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
+          if (Query->isArgumentType() && approvedUtilityMonostateMetadata(
+                  A.S, A.Sources, Value->getAsCXXRecordDecl(), A.Context))
+            A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+          else
+            A.reject(Query->getExprLoc(), "monostate size and alignment",
+                     "Expected a type-form query using the authenticated SDK layout.", "TR0203");
+        }
+        else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
                  pinnedUtilityVariantType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
           if (Query->isArgumentType() &&
               approvedUtilityVariantLayoutQuery(A.S, A.Sources, Value, A.Context))
@@ -30528,10 +30548,26 @@ public:
                      "Expected a type-form query using the authenticated SDK variant layout.",
                      "TR0203");
         }
-        else if (approvedUnorderedMapMetadataRecord(A.S, A.Sources,
-                     A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context) ||
-                 approvedSequenceContainerMetadataRecord(A.S, A.Sources,
-                     A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context))
+        else if (pinnedUtilityAnyType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
+          if (Query->isArgumentType() && !Value.isVolatileQualified() && !Value.isRestrictQualified() &&
+              Value.getAddressSpace() == LangAS::Default &&
+              approvedUtilityAnyMetadata(A.S, A.Sources, Value->getAsCXXRecordDecl(), A.Context))
+            A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+          else
+            A.reject(Query->getExprLoc(), "any size and alignment",
+                     "Expected a type-form query using the authenticated SDK layout.", "TR0203");
+        }
+        else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
+                 pinnedAssociativeContainerType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
+          if (approvedUnorderedMapMetadataRecord(A.S, A.Sources, Value->getAsCXXRecordDecl(), A.Context) ||
+              (Query->isArgumentType() &&
+               approvedAssociativeContainerLayoutQuery(A.S, A.Sources, Value, A.Context)))
+            A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+          else
+            A.reject(Query->getExprLoc(), "associative size and alignment",
+                     "Expected an admitted SDK associative container and layout query.", "TR0203");
+        } else if (approvedSequenceContainerMetadataRecord(A.S, A.Sources,
+                       Value->getAsCXXRecordDecl(), A.Context))
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (!Query->isArgumentType() &&
                  checkTupleCatQueryExpressionType(Query->getArgumentExpr())) {

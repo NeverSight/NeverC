@@ -3392,12 +3392,22 @@ bool shouldRetainFunctionalNotFnSpecialMemberSource(
     const clang::CXXMethodDecl *Method, const clang::ASTContext &Context);
 
 
+bool pinnedUtilityMonostateType(const State &S, const clang::SourceManager &SM,
+                                const clang::CXXRecordDecl *Record);
+bool approvedUtilityMonostateMetadata(const State &S, const clang::SourceManager &SM,
+                                      const clang::CXXRecordDecl *Record,
+                                      const clang::ASTContext &Context);
 bool pinnedUtilityVariantType(const State &S, const clang::SourceManager &SM,
                               const clang::CXXRecordDecl *Record);
 bool approvedUtilityVariantMetadata(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record);
 bool approvedUtilityVariantLayoutQuery(const State &S,
     const clang::SourceManager &SM, clang::QualType Type,
+    const clang::ASTContext &Context);
+bool pinnedUtilityAnyType(const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record);
+bool approvedUtilityAnyMetadata(const State &S,
+    const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,
@@ -4311,6 +4321,14 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
     const clang::ASTContext &Context);
 bool approvedSequenceContainerMetadataRecord(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+bool pinnedAssociativeContainerType(const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record);
+bool approvedAssociativeContainerMetadataRecord(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+bool approvedAssociativeContainerLayoutQuery(
+    const State &S, const clang::SourceManager &SM, clang::QualType Type,
     const clang::ASTContext &Context);
 bool approvedUnorderedMapMetadataRecord(const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
