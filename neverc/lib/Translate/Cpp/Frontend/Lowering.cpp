@@ -937,6 +937,18 @@ class FunctionLowering {
         {"type", A.variantStorageType(V.Record)}, {"args", json::Array{std::move(Place)}},
         {"loc", A.loc(L)}};
   }
+  Expression initializeVariantAlternative(Expression Place, const UtilityVariantRecord &V,
+                                         unsigned Index, const Expr *Input, SourceLocation L) {
+    const auto *Field = V.Alternatives[Index];
+    auto Item = fieldStorage(variantStorage(json::Object(Place), V, L), Field, L);
+    if (Input)
+      assign(Item, cast(expression(Input), type(Field->getType(), L), L), L);
+    else
+      initializeZero(Item, Field->getType(), L);
+    assign(fieldStorage(std::move(Place), V.Index, L),
+           quantity(Index, type(V.Index->getType(), L), L), L);
+    return Item;
+  }
   Expression unorderedMapMember(Expression Place, const UtilityUnorderedMapRecord &Info,
                                 llvm::StringRef Name, SourceLocation L) {
     QualType FieldType = Name == "nct_unordered_buckets" ? Info.BucketPointerType
@@ -32605,6 +32617,11 @@ class FunctionLowering {
         snapshot(std::move(Tag), L);
         return {};
       }
+      if (const auto Compare = approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context)) {
+        for (const auto *Operand : Call->arguments())
+          discard(Operand);
+        return *Compare ? one("bool", L) : A.zero(A.Context.BoolTy, L);
+      }
       if (const auto Query = approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Query->Callee->getBase();
         auto Receiver = Query->Callee->isArrow()
@@ -32653,6 +32670,14 @@ class FunctionLowering {
         auto Place = dereference(std::move(Left), L);
         assign(Place, dereference(std::move(Right), L), L);
         return Place;
+      }
+      if (const auto Emplace = approvedUtilityVariantEmplace(A.S, A.Sources, Call, A.Context)) {
+        const auto *Base = Emplace->Callee->getBase();
+        auto Receiver = Emplace->Callee->isArrow()
+            ? snapshot(expression(Base), L)
+            : snapshot(address(lvalue(Base), Base->getType(), L), L);
+        return initializeVariantAlternative(dereference(std::move(Receiver), L),
+                                           Emplace->Variant, Emplace->Index, Emplace->Input, L);
       }
       if (const auto Get = approvedUtilityVariantGet(A.S, A.Sources, Call, A.Context)) {
         auto Place = variantStorage(lvalue(Call->getArg(0)), Get->Variant, L);
@@ -38525,20 +38550,19 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       initializeZero(std::move(Place), T, L);
       return;
     }
+    if (approvedUtilityMonostateConstruction(A.S, A.Sources, C, A.Context)) {
+      if (C->getNumArgs())
+        discard(C->getArg(0));
+      initializeZero(std::move(Place), T, L);
+      return;
+    }
     if (const auto Construction = approvedUtilityVariantConstruction(A.S, A.Sources, C, A.Context)) {
       if (Construction->Copy) {
         assign(std::move(Place), expression(Construction->Input), L);
         return;
       }
-      const auto &V = Construction->Variant;
-      const auto *Field = V.Alternatives[Construction->Index];
-      auto Item = fieldStorage(variantStorage(json::Object(Place), V, L), Field, L);
-      if (Construction->Input)
-        assign(std::move(Item), cast(expression(Construction->Input), type(Field->getType(), L), L), L);
-      else
-        initializeZero(std::move(Item), Field->getType(), L);
-      assign(fieldStorage(std::move(Place), V.Index, L),
-             quantity(Construction->Index, type(V.Index->getType(), L), L), L);
+      initializeVariantAlternative(std::move(Place), Construction->Variant,
+                                   Construction->Index, Construction->Input, L);
       return;
     }
     if (auto Kind = approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context)) {
