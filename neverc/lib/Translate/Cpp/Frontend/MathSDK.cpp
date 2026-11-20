@@ -7398,6 +7398,11 @@ static bool anyEmptySwapBody(const State &S, const SourceManager &SM,
          IsInputHandle(Right->getCond());
 }
 
+namespace {
+bool bitsetBuiltinLibraryCast(const State &S, const SourceManager &SM,
+                              const FunctionDecl *F, const ASTContext &Context);
+}
+
 static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *E,
                            const ParmVarDecl *Input, QualType Any, const ASTContext &Context) {
   const auto *Call = E ? dyn_cast<CallExpr>(E->IgnoreParenImpCasts()) : nullptr;
@@ -7408,7 +7413,9 @@ static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *
            cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__utility/move.h");
   };
   if (!Move || !Primary || !Move->getIdentifier() || Move->getName() != "move" ||
-      Call->getNumArgs() != 1 || Move->getNumParams() != 1 || Move->isDeleted() ||
+      Call->getNumArgs() != 1 || !Call->isXValue() ||
+      Move->getNumParams() != 1 || Move->isDeleted() ||
+      Move->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !Pinned(Primary) || !anyParameter(Call->getArg(0), Input) ||
       !Context.hasSameType(Move->getReturnType(), Context.getRValueReferenceType(Any)))
     return false;
@@ -7419,11 +7426,26 @@ static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *
   for (const auto *D : Move->redecls())
     if (!Pinned(D))
       return false;
-  const auto *Return = anyReturn(dyn_cast_or_null<CompoundStmt>(Move->getBody()));
-  const auto *Cast = Return ? dyn_cast<CXXStaticCastExpr>(Return->IgnoreParens()) : nullptr;
+  const FunctionDecl *Definition = nullptr;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Move->getBody(Definition));
+  if (!Body)
+    return Move->getBuiltinID() == Builtin::BImove &&
+           bitsetBuiltinLibraryCast(S, SM, Move, Context);
+  if (Body->size() != 2 || !Pinned(Definition))
+    return false;
+  // The SDK spells the destination through a local remove-reference alias.
+  const auto *Declaration = dyn_cast<DeclStmt>(Body->body_front());
+  const auto *Alias = Declaration && Declaration->isSingleDecl()
+      ? dyn_cast<TypeAliasDecl>(Declaration->getSingleDecl()) : nullptr;
+  if (!Alias || Alias->getName() != "_Up" || Alias->getDeclContext() != Definition ||
+      !Pinned(Alias) || !Context.hasSameType(Alias->getUnderlyingType(), Any))
+    return false;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Result = Return ? Return->getRetValue() : nullptr;
+  const auto *Cast = Result ? dyn_cast<CXXStaticCastExpr>(Result->IgnoreParens()) : nullptr;
   return Cast && Cast->getCastKind() == CK_NoOp && Cast->isXValue() &&
          Context.hasSameType(Cast->getType(), Any) &&
-         anyParameter(Cast->getSubExpr(), Move->getParamDecl(0));
+         anyParameter(Cast->getSubExpr(), Definition->getParamDecl(0));
 }
 
 static bool anyEmptyAssignmentBody(const State &S, const SourceManager &SM,
