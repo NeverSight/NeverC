@@ -47,6 +47,14 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.variant_metadata_layout_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_metadata_layout_original = cls.adapter.restore_original_gtests(cls.variant_metadata_layout_registered,cls.variant_metadata_layout_suffix)
         cls.registered = cls.adapter.restore_variant_metadata_layout_history(cls.variant_metadata_layout_registered)
+        cls.bitset_text_wide_conversion_registered = cls.registered
+        cls.bitset_text_wide_conversion_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_text_wide_conversion_original = cls.adapter.restore_original_gtests(cls.bitset_text_wide_conversion_registered,cls.bitset_text_wide_conversion_suffix)
+        cls.registered = cls.adapter.restore_bitset_text_wide_conversion_history(cls.bitset_text_wide_conversion_registered)
+        cls.bitset_composed_text_index_registered = cls.registered
+        cls.bitset_composed_text_index_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_composed_text_index_original = cls.adapter.restore_original_gtests(cls.bitset_composed_text_index_registered,cls.bitset_composed_text_index_suffix)
+        cls.registered = cls.adapter.restore_bitset_composed_text_index_history(cls.bitset_composed_text_index_registered)
         cls.bitset_wide_and_value_swap_registered = cls.registered
         cls.bitset_wide_and_value_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_wide_and_value_swap_original = cls.adapter.restore_original_gtests(cls.bitset_wide_and_value_swap_registered,cls.bitset_wide_and_value_swap_suffix)
@@ -1643,16 +1651,74 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_wide_and_value_swap_original+b' ',['TranslateTest.CoreV2BitsetWideTemporaryEmptyMultiwordRunAtBothOptimizations'])
 
+    def test_bitset_composed_text_index_preserves_all_previous_registry_bytes_and_extracts_seventy_three_tests(self):
+        self.assertEqual(self.bitset_composed_text_index_original+self.bitset_composed_text_index_suffix,self.bitset_composed_text_index_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_composed_text_index_original,self.bitset_composed_text_index_suffix),self.bitset_composed_text_index_original)
+        self.assertEqual(self.adapter.restore_bitset_composed_text_index_history(self.bitset_composed_text_index_registered),self.bitset_wide_and_value_swap_registered)
+        self.assertEqual(self.adapter.restore_bitset_composed_text_index_history(self.bitset_composed_text_index_original),self.bitset_wide_and_value_swap_original)
+        selected = ['TranslateTest.CoreV2BitsetConstLocalEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstLocalSingleWordFitRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstLocalWideUnsignedArgumentRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstLocalOneTimeInitializationRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstLocalLiveSourceIndependenceRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstLocalConstAliasTypeRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstantPositionNamespaceConstantRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstantPositionArithmeticRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstantPositionEnumIndexRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstantPositionTypeSizeIndexRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstantPositionConstexprFunctionRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstantPositionReceiverAndValueRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeLastByteIndexRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeWordBoundariesRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeBooleanIndexRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeResetAndFlipRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeUnsignedPointerLoadRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetIndexTypeIndexCalledOnceRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralDefaultDigitsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralOffsetAndCountRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralAllocatedStringCrossesWordRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralZeroAsADigitRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralEmptyInputRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetOwnedLiteralEqualDigitsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerLocalRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerNamespaceRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerFirstNullRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerCustomDigitsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerPointerTypeAliasRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstexprTextPointerZeroCountRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetWideSwapAndCheckedPositionsRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetConstLocalGuardMutableLocalRejected', 'TranslateTest.CoreV2BitsetConstLocalGuardAliasToMutableRejected', 'TranslateTest.CoreV2BitsetConstLocalGuardConstReferenceRejected', 'TranslateTest.CoreV2BitsetConstLocalGuardStaticConstRejected', 'TranslateTest.CoreV2BitsetConstLocalGuardConstParameterRejected', 'TranslateTest.CoreV2BitsetConstLocalGuardCopyInitializedRejected', 'TranslateTest.CoreV2BitsetConstLocalGuardConstMemberRejected', 'TranslateTest.CoreV2BitsetConstLocalGuardConditionalReceiverRejected', 'TranslateTest.CoreV2BitsetConstantPositionGuardNegativeRejected', 'TranslateTest.CoreV2BitsetConstantPositionGuardOnePastRejected', 'TranslateTest.CoreV2BitsetConstantPositionGuardConvertedTooLargeRejected', 'TranslateTest.CoreV2BitsetConstantPositionGuardEmptyRejected', 'TranslateTest.CoreV2BitsetConstantPositionGuardConstantContextOnlyRejected', 'TranslateTest.CoreV2BitsetConstantPositionGuardIndexWithEffectRejected', 'TranslateTest.CoreV2BitsetConstantPositionGuardConstexprCallWithRuntimeInputRejected', 'TranslateTest.CoreV2BitsetConstantPositionGuardSourceBodyRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardSignedByteRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardTooShortForByteRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardTooShortForBoolRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardOffsetAfterPromotionRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardWideUnsignedRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardExplicitSizeConversionRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardEnumOperandRejected', 'TranslateTest.CoreV2BitsetIndexTypeGuardOwnedSdkBodyRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardNamedStringRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardFactoryStringRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardOutOfRangeOffsetRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardRuntimeOffsetRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardInvalidSelectedDigitRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardNonliteralConstructorInputRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardNonCharTraitsRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardSdkBodyRejected', 'TranslateTest.CoreV2BitsetOwnedLiteralGuardRepresentationQueryRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardMutablePointerRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardMutableGlobalRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardPointerArithmeticRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardNullRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardIndirectInitializerRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardQualifiedWithoutConstexprRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardInvalidBeyondWidthRejected', 'TranslateTest.CoreV2BitsetConstexprTextPointerGuardOwnedDecoderRejected', 'TranslateTest.CoreV2BitsetWideSwapAndOutOfBoundsPositionRejected']
+        generated,proof = self.extractor.extract(self.bitset_composed_text_index_original,selected)
+        self.assertEqual(proof['original_test_names'],7986)
+        self.assertEqual(proof['selected_count'],73)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7913)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bitcomposed',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_composed_text_index_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_composed_text_index_registered+b' ',
+                        self.bitset_composed_text_index_registered.replace(b'r19bitcomposed',b'q.push(11)',1),
+                        self.bitset_composed_text_index_registered+self.bitset_composed_text_index_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_composed_text_index_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_composed_text_index_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_composed_text_index_registered,self.bitset_composed_text_index_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_composed_text_index_original+b' ',['TranslateTest.CoreV2BitsetConstLocalEmptyRunAtBothOptimizations'])
+
+    def test_bitset_text_wide_conversion_preserves_all_previous_registry_bytes_and_extracts_twelve_tests(self):
+        self.assertEqual(self.bitset_text_wide_conversion_original+self.bitset_text_wide_conversion_suffix,self.bitset_text_wide_conversion_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.bitset_text_wide_conversion_original,self.bitset_text_wide_conversion_suffix),self.bitset_text_wide_conversion_original)
+        self.assertEqual(self.adapter.restore_bitset_text_wide_conversion_history(self.bitset_text_wide_conversion_registered),self.bitset_composed_text_index_registered)
+        self.assertEqual(self.adapter.restore_bitset_text_wide_conversion_history(self.bitset_text_wide_conversion_original),self.bitset_composed_text_index_original)
+        selected = ['TranslateTest.CoreV2BitsetTextWideConversionUnsignedLongWidthRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionUnsignedLongLongWidthRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionConstexprPointerRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionOwningSubstringRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionEmptyOwningRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionZeroUpperStorageRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetTextWideConversionAboveUnsignedLongRejected', 'TranslateTest.CoreV2BitsetTextWideConversionAboveUnsignedLongLongRejected', 'TranslateTest.CoreV2BitsetTextWideConversionHighWordFromCustomDigitsRejected', 'TranslateTest.CoreV2BitsetTextWideConversionMutableObjectRejected', 'TranslateTest.CoreV2BitsetTextWideConversionRuntimeTextRejected', 'TranslateTest.CoreV2BitsetTextWideConversionInvalidDigitInSelectedRangeRejected']
+        generated,proof = self.extractor.extract(self.bitset_text_wide_conversion_original,selected)
+        self.assertEqual(proof['original_test_names'],7998)
+        self.assertEqual(proof['selected_count'],12)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7986)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19bittextwide',generated)
+        self.assertIn(b'bitset-',generated)
+        self.assertIn(b'std::bitset<',generated)
+
+    def test_bitset_text_wide_conversion_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.bitset_text_wide_conversion_registered+b' ',
+                        self.bitset_text_wide_conversion_registered.replace(b'r19bittextwide',b'q.push(11)',1),
+                        self.bitset_text_wide_conversion_registered+self.bitset_text_wide_conversion_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.bitset_text_wide_conversion_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_bitset_text_wide_conversion_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_text_wide_conversion_registered,self.bitset_text_wide_conversion_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.bitset_text_wide_conversion_original+b' ',['TranslateTest.CoreV2BitsetTextWideConversionUnsignedLongWidthRunAtBothOptimizations'])
+
     def test_variant_metadata_layout_preserves_all_previous_registry_bytes_and_extracts_twenty_tests(self):
         self.assertEqual(self.variant_metadata_layout_original+self.variant_metadata_layout_suffix,self.variant_metadata_layout_registered)
         self.assertEqual(self.adapter.restore_original_gtests(self.variant_metadata_layout_original,self.variant_metadata_layout_suffix),self.variant_metadata_layout_original)
-        self.assertEqual(self.adapter.restore_variant_metadata_layout_history(self.variant_metadata_layout_registered),self.bitset_wide_and_value_swap_registered)
-        self.assertEqual(self.adapter.restore_variant_metadata_layout_history(self.variant_metadata_layout_original),self.bitset_wide_and_value_swap_original)
+        self.assertEqual(self.adapter.restore_variant_metadata_layout_history(self.variant_metadata_layout_registered),self.bitset_text_wide_conversion_registered)
+        self.assertEqual(self.adapter.restore_variant_metadata_layout_history(self.variant_metadata_layout_original),self.bitset_text_wide_conversion_original)
         selected = ['TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataConstAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataNestedAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataSizeQualificationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataWrittenIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantLayoutMixedScalarRunAtBothOptimizations', 'TranslateTest.CoreV2VariantLayoutReferenceAndConstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantLayoutPointerAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantLayoutDuplicateTypesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantLayoutDeclarationIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMetadataRuntimeValueRejected', 'TranslateTest.CoreV2VariantMetadataVariantSizeStorageRejected', 'TranslateTest.CoreV2VariantMetadataSentinelStorageRejected', 'TranslateTest.CoreV2VariantMetadataSourceSpecializationRejected', 'TranslateTest.CoreV2VariantMetadataVolatileAlternativeRejected', 'TranslateTest.CoreV2VariantMetadataDirectVolatileAlternativeRejected', 'TranslateTest.CoreV2VariantLayoutAlteredIndexMemberRejected', 'TranslateTest.CoreV2VariantLayoutUnsupportedLargeFloatRejected', 'TranslateTest.CoreV2VariantLayoutRuntimeRecordRejected']
         generated,proof = self.extractor.extract(self.variant_metadata_layout_original,selected)
-        self.assertEqual(proof['original_test_names'],7933)
+        self.assertEqual(proof['original_test_names'],8018)
         self.assertEqual(proof['selected_count'],20)
-        self.assertEqual(len(proof['nonselected_original_test_bodies']),7913)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7998)
         self.assertFalse(proof['selected_bodies_modified'])
         self.assertIn(b'r19variantlayout',generated)
         self.assertIn(b'variant-layout-',generated)

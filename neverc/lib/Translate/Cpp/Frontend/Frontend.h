@@ -3689,7 +3689,7 @@ std::optional<UtilityBitsetProxyRecord> approvedUtilityBitsetProxyRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
-enum class UtilityBitsetConstruction { Default, UnsignedValue, Copy, LiteralText };
+enum class UtilityBitsetConstruction { Default, UnsignedValue, Copy, LiteralText, LiteralString };
 struct UtilityBitsetCall {
   UtilityOperation Operation;
   uint64_t Position = 0;
