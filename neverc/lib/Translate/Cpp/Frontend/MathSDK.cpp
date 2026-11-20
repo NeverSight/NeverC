@@ -7445,6 +7445,11 @@ static bool variantAccessUsing(const State &S, const SourceManager &SM,
          variantDeclaration(S, SM, Record->getCanonicalDecl());
 }
 
+namespace {
+bool bitsetBuiltinLibraryCast(const State &S, const SourceManager &SM,
+                              const FunctionDecl *F, const ASTContext &Context);
+} // namespace
+
 static bool variantGetIfBody(const State &S, const SourceManager &SM, const FunctionDecl *Public,
                              const UtilityVariantRecord &V, unsigned I, const ASTContext &Context) {
   const auto *Outer = variantReturnCall(Public);
@@ -7477,11 +7482,20 @@ static bool variantGetIfBody(const State &S, const SourceManager &SM, const Func
       !variantDeclaration(S, SM, F->getPrimaryTemplate(), "__memory/addressof.h") ||
       !Member || Member->getMemberDecl()->getCanonicalDecl() != V.Alternatives[I]->getCanonicalDecl())
     return false;
-  const auto *BuiltinCall = variantReturnCall(F);
-  if (!BuiltinCall || !BuiltinCall->getDirectCallee() ||
-      BuiltinCall->getDirectCallee()->getBuiltinID() != Builtin::BI__builtin_addressof ||
-      BuiltinCall->getNumArgs() != 1 ||
-      !variantParameter(BuiltinCall->getArg(0), F->getParamDecl(0)))
+  const FunctionDecl *Definition = F;
+  if (!Definition->hasBody()) {
+    // Clang can omit the body of an implicitly instantiated library builtin.
+    // Check that exact specialization before examining its pinned template.
+    if (F->getBuiltinID() != Builtin::BIaddressof || !bitsetBuiltinLibraryCast(S, SM, F, Context))
+      return false;
+    Definition = F->getPrimaryTemplate()->getTemplatedDecl();
+  }
+  const auto *BuiltinCall = variantReturnCall(Definition);
+  const auto *Builtin = BuiltinCall ? BuiltinCall->getDirectCallee() : nullptr;
+  if (!Builtin || Builtin->getBuiltinID() != Builtin::BI__builtin_addressof ||
+      Builtin->hasBody() || BuiltinCall->getNumArgs() != 1 ||
+      !cstddefOrigin(S, SM, BuiltinCall->getExprLoc(), "libcxx", "__memory/addressof.h") ||
+      !variantParameter(BuiltinCall->getArg(0), Definition->getParamDecl(0)))
     return false;
   const auto *Selected = dyn_cast<CallExpr>(Member->getBase()->IgnoreParenImpCasts());
   return Selected && Selected->getNumArgs() == 1 &&
