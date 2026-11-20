@@ -1,43 +1,109 @@
-name: not-fn-next-signature-source-diagnostics
+name: Native Windows x64 STL check
 'on':
   workflow_dispatch: {}
 permissions:
   contents: read
   actions: read
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
 jobs:
-  observe-original-signature-source:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 20
+  stl-windows-x64:
+    name: Native Windows x64 published bitset and variant C23
+    runs-on: windows-2022
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      NEVERC_PCG_STRICT: '1'
+    timeout-minutes: 360
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Repo
+      uses: actions/checkout@v4
       with:
-        fetch-depth: 1
-    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        path: neverc
+    - name: Set up CPython 3.12.10 for official artifacts
+      id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
       with:
         python-version: 3.12.10
-    - name: Observe one original signature failure with the actual existing diagnostic
-        ELF
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: python3 utils/ci/observe-not-fn-next-signature-source.py --repo "$GITHUB_WORKSPACE"
-        --plan "$GITHUB_WORKSPACE/utils/ci/not-fn-next-signature-trace-replay-plan.json"
-        --output "$RUNNER_TEMP/not-fn-next-signature-trace-replay" --build "$RUNNER_TEMP/not-fn-next-signature-trace-replay-binary-remote-only"
-    - name: Preserve source responses, raw trace and all ten PID records
-      if: ${{ always() }}
+    - name: Setup build deps
+      shell: pwsh
+      run: 'choco install ninja 7zip -y
+
+
+        # Pin CMake to the version the arm64 runner uses. CMake 4.4''s
+
+        # gtest_discover_tests only appends to the generated CTest file, where
+
+        # 3.31 truncated it first, so any target whose POST_BUILD discovery runs
+
+        # twice registers its tests twice and the suite inventory stops being
+
+        # reproducible across runs.
+
+        $cmakeVer = ''3.31.11''
+
+        Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-x86_64.zip"
+        -OutFile cmake.zip
+
+        Expand-Archive cmake.zip C:\tools -Force
+
+        Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-x86_64\bin"
+
+        '
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+    - name: Build neverc
+      shell: bash
+      run: 'cmake -GNinja -Bbuild \
+
+        -DCMAKE_INSTALL_PREFIX=install \
+
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+
+        -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+
+        -DNEVERC_INCLUDE_TESTS=ON \
+
+        -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+
+        -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
+
+        -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
+
+        -DNEVERC_STRIP_BINARY=OFF \
+
+        -DNEVERC_ENABLE_LTO=ON \
+
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+
+        -C neverc/neverc/cmake/caches/NeverC.cmake \
+
+        neverc/llvm
+
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+
+        '
+    - name: Prepare the registered STL test bodies
+      shell: bash
+      run: '"${{ steps.python.outputs.python-path }}" -I -B neverc/utils/ci/check-cpp-stl-windows-x64-native.py
+        --repo neverc --compiler build/bin/neverc.exe --tests build/bin/neverc-translate-tests.exe
+        --output "${{ runner.temp }}/stl-win-x64-native" --prepare-tests'
+    - name: Build the selected STL tests
+      shell: bash
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-translate-tests
+        --parallel 2
+    - name: Run the selected Windows x64 STL translation tests
+      id: stl_native
+      shell: bash
+      run: '"${{ steps.python.outputs.python-path }}" -I -B neverc/utils/ci/check-cpp-stl-windows-x64-native.py
+        --repo neverc --compiler build/bin/neverc.exe --tests build/bin/neverc-translate-tests.exe
+        --output "${{ runner.temp }}/stl-win-x64-native"'
+    - name: Upload bounded Windows x64 STL text evidence
       uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() && steps.stl_native.outcome != 'skipped' }}
       with:
-        name: not-fn-next-signature-trace-replay-text-${{ github.sha }}
-        path: '${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.json
+        name: stl-win-x64-native-text-${{ github.sha }}
+        path: '${{ runner.temp }}/stl-win-x64-native/results.json
 
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.cpp
+          ${{ runner.temp }}/stl-win-x64-native/stl-win-x64.xml
 
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.log
-
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.txt
-
-          ${{ runner.temp }}/not-fn-next-signature-trace-replay/**/*.tsv'
+          ${{ runner.temp }}/stl-win-x64-native/gtest.log'
         if-no-files-found: error
         retention-days: 14
