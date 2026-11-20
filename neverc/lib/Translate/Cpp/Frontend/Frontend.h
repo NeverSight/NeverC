@@ -36,6 +36,7 @@ class CXXDefaultArgExpr;
 class CXXForRangeStmt;
 class CXXPseudoDestructorExpr;
 class MaterializeTemporaryExpr;
+class MemberExpr;
 class SubstNonTypeTemplateParmExpr;
 class SizeOfPackExpr;
 class InitListExpr;
@@ -3396,8 +3397,53 @@ bool pinnedUtilityVariantType(const State &S, const clang::SourceManager &SM,
                               const clang::CXXRecordDecl *Record);
 bool approvedUtilityVariantMetadata(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record);
-bool approvedUtilityVariantLayoutQuery(const State &S,
-    const clang::SourceManager &SM, clang::QualType Type,
+struct UtilityVariantRecord {
+  const clang::CXXRecordDecl *Record;
+  const clang::FieldDecl *Implementation;
+  const clang::FieldDecl *Value;
+  const clang::FieldDecl *Index;
+  std::vector<const clang::FieldDecl *> Alternatives;
+};
+std::optional<UtilityVariantRecord> approvedUtilityVariantRecord(
+    const State &S, const clang::SourceManager &SM, clang::QualType Type,
+    const clang::ASTContext &Context);
+struct UtilityVariantConstruction {
+  UtilityVariantRecord Variant;
+  bool Copy;
+  unsigned Index;
+};
+std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+struct UtilityVariantQuery {
+  UtilityVariantRecord Variant;
+  const clang::MemberExpr *Callee;
+  bool Valueless;
+};
+std::optional<UtilityVariantQuery> approvedUtilityVariantQuery(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UtilityVariantAlternative {
+  UtilityVariantRecord Variant;
+  unsigned Index;
+};
+std::optional<UtilityVariantAlternative> approvedUtilityVariantGet(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityVariantAlternative> approvedUtilityVariantGetIf(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityVariantAlternative> approvedUtilityVariantHolds(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UtilityVariantAssignment {
+  const clang::Expr *Receiver;
+  const clang::Expr *Source;
+  bool Arrow;
+  bool SourceFirst;
+};
+std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,
@@ -4524,6 +4570,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredScalarRealDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
   std::set<const clang::CXXRecordDecl *> RequiredVectorDistributionRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityVariants;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityWrapIterators;
@@ -4631,6 +4678,7 @@ public:
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
                             unsigned Depth = 0);
+  std::string variantStorageType(const clang::CXXRecordDecl *Record);
   bool requireUtilityOptional(const clang::CXXRecordDecl *Record,
                               clang::SourceLocation Location,
                               unsigned Depth = 0);

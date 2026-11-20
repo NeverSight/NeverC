@@ -139,8 +139,11 @@ public:
   }
   bool recordLayout(const llvm::json::Object &O, RecordLayout &Out) {
     const auto *Offsets = O.getArray("field_offsets_bits");
-    if (O.size() != 3 || !storageLayout(O, Out.Storage) || !Offsets)
+    const bool HasUnion = O.get("union") != nullptr;
+    if (O.size() != (HasUnion ? 4u : 3u) || !storageLayout(O, Out.Storage) || !Offsets)
       return error("Missing or invalid record layout fields.");
+    if (HasUnion && (!boolean(O, "union", Out.IsUnion) || !Out.IsUnion))
+      return error("Union layout requires a true union marker.");
     for (const auto &V : *Offsets) {
       int64_t Bits = 0;
       if (!node() || !V.getAsInteger(Bits) || Bits < 0 ||
@@ -1232,10 +1235,13 @@ class Verifier {
       }
       if (E.ValueType.Kind != TypeKind::Record)
         return error(E.Loc, "Aggregate expression must have record type.");
-      const auto &Fields = Records.at(E.ValueType.RecordID)->Fields;
-      if (!Arity(Fields.size()))
+      const auto *R = Records.at(E.ValueType.RecordID);
+      const auto &Fields = R->Fields;
+      // A positional C union initializer selects the first named member.
+      const auto Count = R->Layout && R->Layout->IsUnion ? 1 : Fields.size();
+      if (!Arity(Count))
         return false;
-      for (std::size_t I = 0; I < Fields.size(); ++I)
+      for (std::size_t I = 0; I < Count; ++I)
         if (E.Args[I].ValueType != Fields[I].ValueType)
           return error(E.Loc, "Aggregate field initializer type mismatch.");
       return true;
@@ -1853,6 +1859,9 @@ class Verifier {
       return !R.Layout || error(R.Loc, "Record layout evidence requires core v2.");
     if (!R.Layout || R.Layout->FieldOffsetsBits.size() != R.Fields.size())
       return error(R.Loc, "Missing record layout or mismatched field offsets.");
+    const bool IsUnion = R.Layout->IsUnion;
+    if (IsUnion && R.Fields.empty())
+      return error(R.Loc, "A union layout requires at least one field.");
     // A complete empty C++ object occupies one byte; it has no field offsets.
     uint64_t End = R.Fields.empty() ? 8 : 0;
     uint32_t Align = 8;
@@ -1861,9 +1870,9 @@ class Verifier {
       if (!Field)
         return error(R.Loc, "Record layout exceeds the storage budget.");
       Align = std::max(Align, Field->ABIAlignBits);
-      uint64_t Offset = (End + Field->ABIAlignBits - 1) /
-                        Field->ABIAlignBits * Field->ABIAlignBits;
-      End = Offset + Field->SizeBits;
+      const uint64_t Offset = IsUnion ? 0 :
+          (End + Field->ABIAlignBits - 1) / Field->ABIAlignBits * Field->ABIAlignBits;
+      End = std::max(End, Offset + Field->SizeBits);
       if (End > MaxLayoutBits || R.Layout->FieldOffsetsBits[I] != Offset)
         return error(R.Loc, "Record field offset disagrees with target layout.");
     }

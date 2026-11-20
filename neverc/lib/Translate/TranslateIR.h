@@ -155,6 +155,7 @@ struct CarrierLayout {
 struct RecordLayout {
   StorageLayout Storage;
   std::vector<uint32_t> FieldOffsetsBits;
+  bool IsUnion = false;
 };
 struct Record {
   std::string ID;

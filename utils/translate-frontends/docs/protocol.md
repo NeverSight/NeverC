@@ -324,6 +324,15 @@ source contexts. No template value or source-proof metadata is added to the wire
 Pointer-typed null template arguments remain rejected. See
 [nullptr_t template values](cpp-core-v2.md#nullptr-template-values).
 
+## Core v2 union storage
+
+An internal SDK carrier can set `union` to `true` in its record layout and the
+corresponding manifest entry. It has at least one field. Every field offset
+is zero. The verifier derives the size by rounding the largest member up to
+the largest member alignment. A positional aggregate initializer contains the
+first member's value. Subsequent operations select a member explicitly.
+Ordinary record layouts omit the marker.
+
 ## Core v2 integral representations
 
 Core v2 adds canonical `i8`, `u8`, `i16`, `u16`, `i64` and `u64` type spellings;

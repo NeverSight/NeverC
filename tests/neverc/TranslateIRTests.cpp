@@ -2268,6 +2268,63 @@ TEST(TranslateIR, CoreV2MutableStaticArraysPreserveStoresAndReadonlyAliases) {
   ASSERT_TRUE(verifyModule(M, context(M), D));
 }
 
+TEST(TranslateIR, CoreV2UnionCarrierChecksLayoutAndEmitsUnionMembers) {
+  constexpr auto RecordWire = R"json([{
+    "id": "nct_union_storage",
+    "loc": {"file": "input.cpp", "line": 1, "column": 1},
+    "layout": {"size_bits": 64, "abi_align_bits": 64,
+               "field_offsets_bits": [0, 0], "union": true},
+    "fields": [{"name": "small", "type": "int"},
+               {"name": "large", "type": "double"}]
+  }])json";
+  auto JSON = wireModule(true);
+  replaceOnce(JSON, "\"records\": []", std::string("\"records\": ") + RecordWire);
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(JSON, M, D));
+  ASSERT_EQ(M.Records.size(), 1u);
+  ASSERT_TRUE(M.Records.front().Layout->IsUnion);
+
+  const Type Storage{TypeKind::Record, "nct_union_storage"};
+  const auto Value = pointerExpr(ExprKind::Aggregate, Storage, {literal("24")});
+  M.Globals.push_back({"nct_value", Storage, Value, InputLoc});
+  auto Member = pointerExpr(ExprKind::Member, intType(),
+                            {variable("nct_value", Storage)});
+  Member.Name = "small";
+  M.Functions[0].Result = intType();
+  M.Functions[0].Body.back() = ret(Member);
+
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("typedef union nct_union_storage nct_union_storage;"),
+            std::string::npos);
+  EXPECT_NE(Output.Text.find("union nct_union_storage {"), std::string::npos);
+  EXPECT_NE(Output.Text.find("__builtin_offsetof(nct_union_storage, large) * __CHAR_BIT__ == 0"),
+            std::string::npos);
+  EXPECT_NE(Output.Text.find("nct_value = {"), std::string::npos);
+
+  auto Wrong = M;
+  Wrong.Records[0].Layout->FieldOffsetsBits[1] = 32;
+  invalid(Wrong, "field offset");
+  Wrong = M;
+  Wrong.Records[0].Layout->Storage.SizeBits = 128;
+  invalid(Wrong, "size or alignment");
+  Wrong = M;
+  Wrong.Records[0].Layout->IsUnion = false;
+  invalid(Wrong, "field offset");
+  Wrong = M;
+  Wrong.Globals[0].Value.Args.push_back(literal("33"));
+  invalid(Wrong, "operand count");
+  Wrong = M;
+  Wrong.Globals[0].Value.Args[0] = literal("24", uintType());
+  invalid(Wrong, "field initializer type");
+
+  replaceOnce(JSON, "\"union\": true", "\"union\": false");
+  Module Invalid;
+  D.clear();
+  EXPECT_FALSE(parseModule(JSON, Invalid, D));
+}
+
 TEST(TranslateIR, CoreV2MutableStaticArrayTreesRetainNestedStorage) {
   auto M = module(true);
   const auto Row = arrayType(intType(), 2);
