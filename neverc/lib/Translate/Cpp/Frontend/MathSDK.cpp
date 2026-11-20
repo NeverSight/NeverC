@@ -51292,6 +51292,58 @@ std::optional<UtilityDequeConstruction> dequeExplicitAllocatorConstructorSignatu
   return UtilityDequeConstruction::PointerRangeAllocator;
 }
 
+std::optional<UtilityDequeConstruction> dequeAdapterContainerConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructorDecl *C,
+    const ASTContext &Context) {
+  if (!C || !C->isExplicit() || C->getPrimaryTemplate() || C->getAccess() != AS_public ||
+      C->getNumParams() != 1 || C->getParamDecl(0)->hasDefaultArg())
+    return std::nullopt;
+  const auto Adapter = dequeAdapterRecord(S, SM, C->getParent(), Context);
+  if (!Adapter || !dequeFunctionDeclarations(S, SM, C))
+    return std::nullopt;
+  const auto *Storage = *Adapter->Record->field_begin();
+  const auto Container = Storage->getType();
+  const auto Parameter = C->getParamDecl(0)->getType();
+  const bool Copy = Context.hasSameType(Parameter, Context.getLValueReferenceType(Container.withConst()));
+  if (!Copy && !Context.hasSameType(Parameter, Context.getRValueReferenceType(Container)))
+    return std::nullopt;
+  const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(C->getDefinition());
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  if (!Body || !Body->body_empty() || Definition->getNumCtorInitializers() != 1 ||
+      Definition->isDelegatingConstructor())
+    return std::nullopt;
+  const auto *Init = *Definition->init_begin();
+  const auto *Build = Init->isMemberInitializer() && Init->isWritten() &&
+      Init->getMember()->getCanonicalDecl() == Storage->getCanonicalDecl()
+      ? dyn_cast<CXXConstructExpr>(Init->getInit()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Constructor = Build ? Build->getConstructor() : nullptr;
+  if (!Constructor || Build->getNumArgs() != 1 ||
+      !Context.hasSameType(Build->getType(), Container) || Constructor->getNumParams() != 1 ||
+      !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Parameter) ||
+      !(Copy ? Constructor->isCopyConstructor() : Constructor->isMoveConstructor()) ||
+      !dequeFunctionDeclarations(S, SM, Constructor))
+    return std::nullopt;
+  const auto *Argument = Build->getArg(0)->IgnoreParenImpCasts();
+  if (!Copy) {
+    const auto *Move = dyn_cast<CallExpr>(Argument);
+    const auto *F = Move ? Move->getDirectCallee() : nullptr;
+    const auto *Primary = F ? F->getPrimaryTemplate() : nullptr;
+    if (!F || !F->getIdentifier() || F->getName() != "move" ||
+        F->getNumParams() != 1 || Move->getNumArgs() != 1 || !Move->isXValue() ||
+        !Context.hasSameType(F->getReturnType(), Parameter) ||
+        !dequePinned(S, SM, Primary, "__utility/move.h"))
+      return std::nullopt;
+    for (const auto *D : F->redecls())
+      if (!dequePinned(S, SM, D, "__utility/move.h"))
+        return std::nullopt;
+    Argument = Move->getArg(0)->IgnoreParenImpCasts();
+  }
+  const auto *Reference = dyn_cast<DeclRefExpr>(Argument);
+  if (!Reference || Reference->getDecl() != Definition->getParamDecl(0))
+    return std::nullopt;
+  return Copy ? UtilityDequeConstruction::Copy : UtilityDequeConstruction::Move;
+}
+
 std::optional<UtilityDequeConstruction> dequeConstructorSignature(const State &S, const SourceManager &SM,
     const CXXConstructorDecl *C, const ASTContext &Context) {
   if (!C || !dequeFunctionDeclarations(S, SM, C)) return std::nullopt;
@@ -51299,6 +51351,8 @@ std::optional<UtilityDequeConstruction> dequeConstructorSignature(const State &S
     if (const auto Allocator = dequeExplicitAllocatorConstructorSignature(S, SM, C, Context)) return Allocator;
     if (dequePointerRangeTemplate(S, SM, C, Context)) return UtilityDequeConstruction::PointerRange;
     if (C->getPrimaryTemplate()) return std::nullopt;
+    if (const auto Adapter = dequeAdapterContainerConstruction(S, SM, C, Context))
+      return Adapter;
     if (C->getNumParams() == 1 && !C->getParamDecl(0)->hasDefaultArg()) {
       const auto Record = Context.getRecordType(C->getParent());
       const auto Parameter = C->getParamDecl(0)->getType();
@@ -54423,7 +54477,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       ? dequeExplicitAllocatorConstructorSignature(S, SM, RootConstructor, Context) : std::nullopt;
   const bool DequeValueCopy = !PriorityRoot && RootMethod &&
       approvedUtilityDequeRecord(S, SM, RootMethod->getParent(), Context) &&
-      ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator() ||
+      ((RootConstructor && (RootConstructor->isCopyConstructor() ||
+        dequeAdapterContainerConstruction(S, SM, RootConstructor, Context) ==
+            UtilityDequeConstruction::Copy)) || RootMethod->isCopyAssignmentOperator() ||
        // The allocator move constructor's generic unequal-allocator branch
        // uses the same pinned integer transfer graph. Retain its complete
        // existing closed proofs and shared node/depth budgets.
