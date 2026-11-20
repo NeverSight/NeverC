@@ -3393,6 +3393,11 @@ bool shouldRetainFunctionalNotFnSpecialMemberSource(
     const clang::CXXMethodDecl *Method, const clang::ASTContext &Context);
 
 
+bool pinnedUtilityMonostateType(const State &S, const clang::SourceManager &SM,
+                                const clang::CXXRecordDecl *Record);
+bool approvedUtilityMonostateMetadata(const State &S, const clang::SourceManager &SM,
+                                      const clang::CXXRecordDecl *Record,
+                                      const clang::ASTContext &Context);
 bool pinnedUtilityVariantType(const State &S, const clang::SourceManager &SM,
                               const clang::CXXRecordDecl *Record);
 bool approvedUtilityVariantMetadata(const State &S,
@@ -4570,6 +4575,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredScalarRealDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
   std::set<const clang::CXXRecordDecl *> RequiredVectorDistributionRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityMonostates;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVariants;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;

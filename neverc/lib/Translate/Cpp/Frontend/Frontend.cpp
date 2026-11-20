@@ -2407,7 +2407,8 @@ static bool memoryTemplateMetadataType(Adapter &A, QualType T) {
       return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value() ||
              approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context) ||
              approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context) ||
-             approvedUtilityVariantMetadata(A.S, A.Sources, Record);
+             approvedUtilityVariantMetadata(A.S, A.Sources, Record) ||
+             approvedUtilityMonostateMetadata(A.S, A.Sources, Record, A.Context);
     if (const auto *Array = dyn_cast<ArrayType>(Raw))
       T = Array->getElementType();
     else if (Raw->isPointerType() || Raw->isReferenceType())
@@ -2591,6 +2592,9 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       for (const auto &Argument : Arguments.get(0).pack_elements())
         checkQueryType(Argument.getAsType(), L, AllowIncompleteArrays,
                        AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               approvedUtilityMonostateMetadata(S, Sources, T->getAsCXXRecordDecl(), Context)) {
+      // The authenticated empty alternative has no nested type dependencies.
     } else if (AllowIncompleteRecords &&
                approvedUtilityVariantMetadata(S, Sources, T->getAsCXXRecordDecl())) {
       const auto *Variant =
@@ -13903,12 +13907,19 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityVectorRecord(S, Sources, D, Context) &&
                  !requireUtilityVector(D, L, Depth + 1)) {
         return {};
+      } else if (pinnedUtilityMonostateType(S, Sources, D)) {
+        if (!approvedUtilityMonostateMetadata(S, Sources, D, Context)) {
+          reject(L, "monostate object layout", "The authenticated empty alternative is required.", "TR0203");
+          return {};
+        }
+        if (RequiredUtilityMonostates.insert(D->getCanonicalDecl()).second)
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
       } else if (approvedUtilityVariantMetadata(S, Sources, D)) {
         const auto Variant = approvedUtilityVariantRecord(S, Sources, T, Context);
         if (!Variant || llvm::any_of(Variant->Alternatives,
                 [](const FieldDecl *F) { return F->getType().isConstQualified(); })) {
           reject(L, "variant object layout",
-                 "Expected the pinned variant layout with mutable scalar alternatives.", "TR0203");
+                 "Expected the pinned variant layout with mutable scalar or monostate alternatives.", "TR0203");
           return {};
         }
         if (RequiredUtilityVariants.insert(D->getCanonicalDecl()).second) {
@@ -30550,7 +30561,15 @@ public:
           // completing that pointee or admitting a runtime pointer carrier.
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
-                 pinnedUtilityVariantType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
+                 pinnedUtilityMonostateType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
+          if (Query->isArgumentType() && approvedUtilityMonostateMetadata(
+                  A.S, A.Sources, Value->getAsCXXRecordDecl(), A.Context))
+            A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+          else
+            A.reject(Query->getExprLoc(), "monostate size and alignment",
+                     "Expected a type-form query using the authenticated SDK layout.", "TR0203");
+        }
+        else if (pinnedUtilityVariantType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
           if (Query->isArgumentType() &&
               approvedUtilityVariantRecord(A.S, A.Sources, Value, A.Context))
             A.checkQueryType(Operand, Query->getExprLoc(), true, true);

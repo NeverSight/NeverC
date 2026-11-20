@@ -6782,6 +6782,45 @@ static bool utilityTupleDirectConversion(const State &S,
          Context.hasSameUnqualifiedType(From, To);
 }
 
+bool pinnedUtilityMonostateType(const State &S, const SourceManager &SM,
+                                const CXXRecordDecl *Record) {
+  if (!S.coreV2() || !Record || !Record->getIdentifier() ||
+      Record->getName() != "monostate")
+    return false;
+  const auto *Definition = Record->getDefinition();
+  return Definition && approvedStandardSDKDeclaration(S, SM, Definition) &&
+         cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
+                       "__variant/monostate.h");
+}
+
+bool approvedUtilityMonostateMetadata(const State &S, const SourceManager &SM,
+                                      const CXXRecordDecl *Record,
+                                      const ASTContext &Context) {
+  if (!pinnedUtilityMonostateType(S, SM, Record))
+    return false;
+  const auto *Definition = Record->getDefinition();
+  if (Definition->isInvalidDecl() || Definition->isUnion() ||
+      !Definition->isEmpty() || !Definition->isStandardLayout() ||
+      !Definition->isTriviallyCopyable() || Definition->getNumBases() ||
+      !Definition->field_empty() || Context.getCharWidth() != 8)
+    return false;
+  for (const auto *D : Definition->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__variant/monostate.h"))
+      return false;
+  const auto &Layout = Context.getASTRecordLayout(Definition);
+  return Layout.getFieldCount() == 0 && Layout.getSize() == CharUnits::One() &&
+         Layout.getAlignment() == CharUnits::One();
+}
+
+static bool utilityVariantAlternativeType(const State &S, const SourceManager &SM,
+                                          QualType T, const ASTContext &Context) {
+  return !T->isIncompleteType() &&
+         (utilityScalar(Context, T) ||
+          approvedUtilityMonostateMetadata(S, SM, T->getAsCXXRecordDecl(), Context));
+}
+
 bool pinnedUtilityVariantType(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record) {
   const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
@@ -6897,7 +6936,7 @@ std::optional<UtilityVariantRecord> approvedUtilityVariantRecord(const State &S,
   };
   for (const auto &Alternative : Alternatives) {
     const auto T = Alternative.getAsType();
-    if (T->isIncompleteType() || !utilityScalar(Context, T))
+    if (!utilityVariantAlternativeType(S, SM, T, Context))
       return std::nullopt;
   }
 
@@ -7314,10 +7353,22 @@ std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
       Item->getNumCtorInitializers() != 1 || Item->getNumParams() != Arity + 1)
     return std::nullopt;
   const auto *Initialization = variantMemberInit(Item, Alt);
-  if (!Initialization || (Arity
-          ? !variantForward(S, SM, Initialization, Item->getParamDecl(1), Context)
-          : !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Initialization->IgnoreParens())))
+  if (!Initialization)
     return std::nullopt;
+  if (const auto *Empty = Alt->getType()->getAsCXXRecordDecl()) {
+    const auto *Build = variantConstruct(Initialization);
+    const auto *Selected = Build ? Build->getConstructor() : nullptr;
+    if (Arity || !Selected || Build->getNumArgs() || !Build->requiresZeroInitialization() ||
+        !Context.hasSameType(Build->getType(), Alt->getType()) ||
+        Selected->getParent()->getCanonicalDecl() != Empty->getCanonicalDecl() ||
+        !Selected->isDefaultConstructor() || !Selected->isImplicit() || !Selected->isDefaulted() ||
+        !Selected->isTrivial() || Selected->isDeleted() || Selected->getNumCtorInitializers() ||
+        !variantDeclaration(S, SM, Selected, "__variant/monostate.h"))
+      return std::nullopt;
+  } else if (Arity ? !variantForward(S, SM, Initialization, Item->getParamDecl(1), Context)
+                   : !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Initialization->IgnoreParens())) {
+    return std::nullopt;
+  }
   return UtilityVariantConstruction{*Variant, false, *I};
 }
 
