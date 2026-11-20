@@ -1,0 +1,91 @@
+{
+  "positive_cases": [
+    {
+      "name": "monostate-comparison-all-six",
+      "formal_test_name": "TranslateTest.CoreV2MonostateComparisonAllSixRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3cfb2f5234f5a297c03957241896bc84b1355deea1ead81221d4281278f39cb2",
+      "original_case_source_sha256": "3cfb2f5234f5a297c03957241896bc84b1355deea1ead81221d4281278f39cb2",
+      "gtest_body_sha256": "8aab6d2a25d7e3008c223c5fd7961461106bb91a31f834a49f1b54276b2838b3"
+    },
+    {
+      "name": "monostate-comparison-operand-effects",
+      "formal_test_name": "TranslateTest.CoreV2MonostateComparisonOperandEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8790f93ccbb8476d16c27cf9391bcfe90eda43a8c2d81b6b5d1987152d860bc0",
+      "original_case_source_sha256": "8790f93ccbb8476d16c27cf9391bcfe90eda43a8c2d81b6b5d1987152d860bc0",
+      "gtest_body_sha256": "40f805e73185b8b1814d6d1edd1fd3873c4130b3ebcd447099892882821fa0df"
+    },
+    {
+      "name": "monostate-comparison-explicit-function",
+      "formal_test_name": "TranslateTest.CoreV2MonostateComparisonExplicitFunctionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "dcd1b534a5a6052c3124ec746bce753ab256746cd096ed81d05ff0a0b5788f45",
+      "original_case_source_sha256": "dcd1b534a5a6052c3124ec746bce753ab256746cd096ed81d05ff0a0b5788f45",
+      "gtest_body_sha256": "a5a0c59514e8beab045f9a2579bb810c869ca2e1b52fd50d3635d3c25aeb6888"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "monostate-comparison-sdk-address",
+      "formal_test_name": "TranslateTest.CoreV2MonostateComparisonSdkAddressRejected",
+      "expected": "reject",
+      "source_sha256": "cf706f72fd130f9dc22b4be366546fbdb5b480f1ee5857c2f86f12fc77f5a584",
+      "original_case_source_sha256": "cf706f72fd130f9dc22b4be366546fbdb5b480f1ee5857c2f86f12fc77f5a584",
+      "gtest_body_sha256": "b28ea595171225fa65d3b19d22b2f0e56df01c2892389e9e6782b447d1159753"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2MonostateComparisonAllSixRunAtBothOptimizations",
+    "TranslateTest.CoreV2MonostateComparisonOperandEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2MonostateComparisonExplicitFunctionRunAtBothOptimizations",
+    "TranslateTest.CoreV2MonostateComparisonSdkAddressRejected"
+  ],
+  "source_cases": [
+    {
+      "name": "monostate-comparison-all-six",
+      "public_header": "variant",
+      "source": "#include <variant>\nint main() {\n  std::monostate a{};\n  std::monostate b;\n  return !(a == b) || a != b || a < b || a > b || !(a <= b) || !(a >= b);\n}\n",
+      "source_sha256": "3cfb2f5234f5a297c03957241896bc84b1355deea1ead81221d4281278f39cb2",
+      "expected": "accept",
+      "kind": "variant-runtime-control"
+    },
+    {
+      "name": "monostate-comparison-operand-effects",
+      "public_header": "variant",
+      "source": "#include <variant>\nstd::monostate touch(int& count) { ++count; return {}; }\nint main() {\n  int left = 0, right = 0;\n  bool equal = touch(left) == touch(right);\n  bool unequal = touch(left) != touch(right);\n  return !equal || unequal || left != 2 || right != 2;\n}\n",
+      "source_sha256": "8790f93ccbb8476d16c27cf9391bcfe90eda43a8c2d81b6b5d1987152d860bc0",
+      "expected": "accept",
+      "kind": "variant-runtime-control"
+    },
+    {
+      "name": "monostate-comparison-explicit-function",
+      "public_header": "variant",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, std::monostate> value(std::in_place_index<1>);\n  const std::monostate* mono = std::get_if<1>(&value);\n  if (!mono)\n    return 1;\n  std::monostate second(*mono);\n  return !std::operator==(*mono, second) || std::operator<(*mono, second);\n}\n",
+      "source_sha256": "dcd1b534a5a6052c3124ec746bce753ab256746cd096ed81d05ff0a0b5788f45",
+      "expected": "accept",
+      "kind": "variant-runtime-control"
+    },
+    {
+      "name": "monostate-comparison-sdk-address",
+      "public_header": "variant",
+      "source": "#include <variant>\nint f() {\n  using Compare = bool (*)(std::monostate, std::monostate) noexcept;\n  auto call = static_cast<Compare>(&std::operator==);\n  return call({}, {});\n}\n",
+      "source_sha256": "cf706f72fd130f9dc22b4be366546fbdb5b480f1ee5857c2f86f12fc77f5a584",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_gate_pending": true,
+  "full_stl_complete": false,
+  "registered_source_sha256": "00d3ccbb2297bce33b4c1fbd6ad79548268ae5d0da50e68c2eb77a4bf1e15c31",
+  "maintained_original_sha256": "54e8fed8f089bb8b18c31c027027db3c25c90a939f8d4a5e7b6b8773a102445f",
+  "previous_registered_source_sha256": "b9edcfff742416f040ee4bbf6be01c818cacc7f7a9baa73c0b75e7748963566e",
+  "previous_maintained_original_sha256": "70c22aaaf2d43f9901f0204b31029f5a53daf0c56301f20b4e8c3301a69388e6",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "restorer_sha256": "389611470e351c2048e7d79739611289ef3e94f9c2ab900c3c6cb92a3fea84e0",
+  "extractor_sha256": "95496c522e72ffc35b4c903b942a138923d722ec76b76114553b537c1afae86b",
+  "current_registry_count": 7986,
+  "current_python_registry_tests": 118,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6
+}

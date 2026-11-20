@@ -234,16 +234,42 @@
   "planned_generated_c23_executions": 32,
   "actual_new_gtests_executed": 0,
   "actual_new_generated_c23_executions": 0,
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
-  "registered_source_sha256": "607bf7026c3f3749d2ebb58cf1451f5daeb674067aa8169de88192ac649f6fda",
-  "maintained_original_sha256": "53152db6299ae5a9c0b71100ce0b00383a8ae85e35b812d001f0a9c63a5f02d6",
+  "registered_source_sha256": "a0dd068a3f1e0d714dca780fd303df7fa4de6a4ca325b4f660edfbfb3384ba28",
+  "maintained_original_sha256": "7bb6f00197c38bec66585ded3bb7a600e74372c2a572a0772a4042b391f468ee",
   "previous_registered_source_sha256": "48f9e910917ad8e47e7c924c168d2a2fbbe692cc7440705ce59ea3183f66e346",
   "previous_maintained_original_sha256": "b1e6c7297a0323b8f1bf260e7eed718517cfdcee9b4197ba8caf895f06ade006",
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 7958,
   "current_python_registry_tests": 114,
   "previous7933_and_raw109_gtest_bytes_unchanged": true,
-  "restorer_sha256": "cfe00c645e9e63080f4c9a49d743a4bfb65be262ca006631f5c29f46ce184341",
-  "extractor_sha256": "2bfb54f604d3e4fe73b7ee466532d4a8588b2db41d457351ece98240b2d86039"
+  "restorer_sha256": "2f854bf760741624a7d74fbc0bc323ecae193d71f8044ebb721705435fd63629",
+  "extractor_sha256": "be07bdeb426d7a14e1b9dacaa4087dbf784d7b95dacf7bfdff691383928ef06f",
+  "admitted_construction_fixture": {
+    "name": "variant-metadata-runtime-value",
+    "source": "#include <variant>\nusing V = std::variant<int,double>;\nint main(){V value(7);return value.index();}\n",
+    "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+    "public_header": "variant",
+    "expected": "accept",
+    "kind": "variant-runtime-control"
+  },
+  "prior_construction_guard": {
+    "name": "variant-metadata-runtime-value",
+    "formal_test_name": "TranslateTest.CoreV2VariantMetadataRuntimeValueRejected",
+    "expected": "reject",
+    "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+    "original_case_source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+    "gtest_body_sha256": "0a68bd1b8bc1e39971114960268bb43bbeeea32446948c39ce4570ac7021dd79"
+  },
+  "active_construction_test": {
+    "name": "variant-metadata-runtime-value",
+    "formal_test_name": "TranslateTest.CoreV2VariantMetadataRuntimeValueRunAtBothOptimizations",
+    "expected": "accept",
+    "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+    "original_case_source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+    "gtest_body_sha256": "58e22ba548a034a2f603bf3692ae3db7d8342baa032459f8b0b83f8012535f5a"
+  },
+  "source_proof_sha256": "122c9f42e385630a2383fadef8b86f6ac8749b8c12e5472cebb2796d07a49575",
+  "native_reference_authentication_sha256": "07ea60a20ba37e38c9239712660b6c63e9c4c8598061d0af9c36008b349c6e29"
 }
