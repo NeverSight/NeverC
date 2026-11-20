@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_in_place_registered = cls.registered
+        cls.variant_in_place_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_in_place_original = cls.adapter.restore_original_gtests(
+            cls.variant_in_place_registered, cls.variant_in_place_suffix)
+        cls.registered = cls.adapter.restore_variant_in_place_history(cls.variant_in_place_registered)
         cls.variant_scalar_registered = cls.registered
         cls.variant_scalar_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_scalar_original = cls.adapter.restore_original_gtests(cls.variant_scalar_registered,cls.variant_scalar_suffix)
@@ -1704,6 +1709,29 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.variant_scalar_registered,self.variant_scalar_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.variant_scalar_original+b' ',['TranslateTest.CoreV2VariantObjectsDefaultRunAtBothOptimizations'])
+
+
+    def test_variant_in_place_preserves_earlier_fixtures_and_extracts_added_cases(self):
+        self.assertEqual(self.variant_in_place_original + self.variant_in_place_suffix,
+                         self.variant_in_place_registered)
+        self.assertEqual(self.adapter.restore_variant_in_place_history(self.variant_in_place_original),
+                         self.variant_scalar_original)
+        generated, proof = self.extractor.extract(self.variant_in_place_original, ['TranslateTest.CoreV2VariantMonostateIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateStandaloneLayoutRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateVariantLayoutRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateMonostateOnlyVariantRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueActiveEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueConstAddressRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueCopyAndAssignRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueDuplicateEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionRepeatedTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionZeroInitializedRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionArgumentEffectRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionEmptyNonfirstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionValueAndEffectRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionValueInitializePointerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionEmptyAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionZeroIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateSourceRedeclarationRejected', 'TranslateTest.CoreV2VariantMonostateVolatileLayoutRejected', 'TranslateTest.CoreV2VariantMonostateValueForeignEmptyRejected', 'TranslateTest.CoreV2VariantMonostateValueRuntimeRedeclarationRejected', 'TranslateTest.CoreV2VariantIndexConstructionWrittenTagObjectRejected', 'TranslateTest.CoreV2VariantIndexConstructionEscapingTagRejected', 'TranslateTest.CoreV2VariantTypeConstructionWrittenTagObjectRejected', 'TranslateTest.CoreV2VariantTypeConstructionEffectfulTagRejected'])
+        self.assertEqual(proof['original_test_names'], 7982)
+        self.assertEqual(proof['selected_count'], 24)
+        self.assertTrue(proof['all_non_test_source_retained'])
+        for name in (b'variant-monostate-', b'variant-index-construction-', b'variant-type-construction-'):
+            self.assertIn(name, generated)
+
+    def test_variant_in_place_rejects_altered_fixture_source_and_suffix(self):
+        for altered in (self.variant_in_place_registered + b' ', self.variant_in_place_registered[:-1]):
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_original_gtests(altered, self.variant_in_place_suffix)
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_variant_in_place_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_in_place_registered,
+                                                 self.variant_in_place_suffix + b' ')
 
 
 if __name__ == '__main__':
