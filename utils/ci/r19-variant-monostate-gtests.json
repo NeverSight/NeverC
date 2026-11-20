@@ -1,0 +1,514 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-metadata-size-and-sentinel",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1821c930c7718dab2e4a1c85fac35a2a54df1b6b44077ce27d1216d9a8417b59",
+      "original_case_source_sha256": "1821c930c7718dab2e4a1c85fac35a2a54df1b6b44077ce27d1216d9a8417b59",
+      "gtest_body_sha256": "086c0731825e85822e9fcd814724d5d11e2583d52602b175c72d738e06ef81cd"
+    },
+    {
+      "name": "variant-metadata-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c6096b784cc92dfbd53c4da37ca52def7be97935ccd286a7c96771e0d2cddb8c",
+      "original_case_source_sha256": "c6096b784cc92dfbd53c4da37ca52def7be97935ccd286a7c96771e0d2cddb8c",
+      "gtest_body_sha256": "effc29e487b99776fd6708636ed298280c917b1b3bce79091b37668b96d0fec3"
+    },
+    {
+      "name": "variant-metadata-const-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataConstAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d17457b2d0cd393586073f44d8a703a41aed7dc90a2ee6f4a4b4fa62f488b814",
+      "original_case_source_sha256": "d17457b2d0cd393586073f44d8a703a41aed7dc90a2ee6f4a4b4fa62f488b814",
+      "gtest_body_sha256": "6353b941310765ff57988b73440b43a41741d46e1aa11706b9029fae233a512c"
+    },
+    {
+      "name": "variant-metadata-nested-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataNestedAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "dc4c8c56ad858f2a29353ae3e21cb65e84d78ad259e8f20e4075034c125e4b45",
+      "original_case_source_sha256": "dc4c8c56ad858f2a29353ae3e21cb65e84d78ad259e8f20e4075034c125e4b45",
+      "gtest_body_sha256": "ed27beb5d208a377bdbfc48e9e217fa1c7721a1cb6378d2aa692a3759b8bf5d4"
+    },
+    {
+      "name": "variant-metadata-size-qualification",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSizeQualificationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fb3190c6d9b4abd963420756d30e2c9edda2d28506854de8f1e2bc0a663ed6a5",
+      "original_case_source_sha256": "fb3190c6d9b4abd963420756d30e2c9edda2d28506854de8f1e2bc0a663ed6a5",
+      "gtest_body_sha256": "3fec3a18d3389770d1941f628ff3ad46300ce56f9a1f3d26a1e9af263455d220"
+    },
+    {
+      "name": "variant-metadata-written-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataWrittenIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "817fe49de65c4603ec824163283f406e0ed3b28684d6e0d36bb6129655f67cd6",
+      "original_case_source_sha256": "817fe49de65c4603ec824163283f406e0ed3b28684d6e0d36bb6129655f67cd6",
+      "gtest_body_sha256": "545c797c00f6e2273c647caf01555efdd214b44f5afcef1d6632667aaa80be81"
+    },
+    {
+      "name": "variant-layout-mixed-scalar",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutMixedScalarRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fd5375fe54e55082f24f29d9606b7071d2e1d079e40efc6fbf53933d9c290039",
+      "original_case_source_sha256": "fd5375fe54e55082f24f29d9606b7071d2e1d079e40efc6fbf53933d9c290039",
+      "gtest_body_sha256": "071ea05b5b07f01aaf86f291fbd9ca5eaf5134e1e0e8085b20c35d655eed79f7"
+    },
+    {
+      "name": "variant-layout-reference-and-const",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutReferenceAndConstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3954097a772508976bbb4722aaf6e3be9d4508d9c8c66e16dd2848779915516b",
+      "original_case_source_sha256": "3954097a772508976bbb4722aaf6e3be9d4508d9c8c66e16dd2848779915516b",
+      "gtest_body_sha256": "d82b4ef6fc2261197074b365fd6eccd3ba3b6504c25be3955cdc5aded89d8e09"
+    },
+    {
+      "name": "variant-layout-pointer-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutPointerAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "36bd58a2cd3d28d3b4d803004210174b9ae7221f0412c8d20344dc11cfca58ac",
+      "original_case_source_sha256": "36bd58a2cd3d28d3b4d803004210174b9ae7221f0412c8d20344dc11cfca58ac",
+      "gtest_body_sha256": "82495d30210191dd2a4d8083210ed49da383f87b1c9d39201185018b7527e711"
+    },
+    {
+      "name": "variant-layout-duplicate-types",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutDuplicateTypesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4ebf37513236931e7c03fd748b6ead4d1b844a2eaf11841b2d6b13aca6c6a435",
+      "original_case_source_sha256": "4ebf37513236931e7c03fd748b6ead4d1b844a2eaf11841b2d6b13aca6c6a435",
+      "gtest_body_sha256": "769f264aa93001fdb76ab9f7f94943027f5f4fcc5887c3cfa9078b7bc6e3c3ce"
+    },
+    {
+      "name": "variant-layout-declaration-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutDeclarationIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
+      "original_case_source_sha256": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
+      "gtest_body_sha256": "5d50f9f290933a59324d0bd10ee555be37b6290261809cce5dd31c4fea02ec14"
+    },
+    {
+      "name": "variant-monostate-identity",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6eaa811a2d866010b224bc31e5095e25cddb79b56f1ea35319c69740834ea064",
+      "original_case_source_sha256": "6eaa811a2d866010b224bc31e5095e25cddb79b56f1ea35319c69740834ea064",
+      "gtest_body_sha256": "9c68361faedb231b2e6bb7d82302df692c6a77ef4960df2e0ec24be045e07a65"
+    },
+    {
+      "name": "variant-monostate-standalone-layout",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateStandaloneLayoutRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "654846929b3599b627c09a02bc3f350c8eadbb0a2fc143871296579635df435b",
+      "original_case_source_sha256": "654846929b3599b627c09a02bc3f350c8eadbb0a2fc143871296579635df435b",
+      "gtest_body_sha256": "d234ee3a09c3eb7e4d6e22f314bfcd73bfa49fe2e02af3322b33c8f1ef2a58fe"
+    },
+    {
+      "name": "variant-monostate-variant-layout",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateVariantLayoutRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "18dd81925dea008036b74a96b96027f39edf01ec89832cb811aa12383853ca48",
+      "original_case_source_sha256": "18dd81925dea008036b74a96b96027f39edf01ec89832cb811aa12383853ca48",
+      "gtest_body_sha256": "174be3ab1bef29a11fec07e863438fee740aeeae32a064ca521814a6d67330cb"
+    },
+    {
+      "name": "variant-monostate-monostate-only-variant",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateMonostateOnlyVariantRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "aa78be3e0d17d9aa244c6b44e624dfca84b279db0e0b8bbf28c47d4237c517d0",
+      "original_case_source_sha256": "aa78be3e0d17d9aa244c6b44e624dfca84b279db0e0b8bbf28c47d4237c517d0",
+      "gtest_body_sha256": "23da7305d682b9b9a531d19da27de1ab73fa0ca55a43b67ec7c04a335c625b96"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-metadata-runtime-value",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataRuntimeValueRejected",
+      "expected": "reject",
+      "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+      "original_case_source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+      "gtest_body_sha256": "0a68bd1b8bc1e39971114960268bb43bbeeea32446948c39ce4570ac7021dd79"
+    },
+    {
+      "name": "variant-metadata-variant-size-storage",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataVariantSizeStorageRejected",
+      "expected": "reject",
+      "source_sha256": "9ccf2c93a351e40824802f652a81e40589492c8647f92d6bfc561905145f1e70",
+      "original_case_source_sha256": "9ccf2c93a351e40824802f652a81e40589492c8647f92d6bfc561905145f1e70",
+      "gtest_body_sha256": "c49d023f5e7e7bd910c2c3bccf6afb30ad1de4b22d7e0be9e5816e28caabe367"
+    },
+    {
+      "name": "variant-metadata-sentinel-storage",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSentinelStorageRejected",
+      "expected": "reject",
+      "source_sha256": "24f80a6c04f4fe1b2f45c803ffca08f1615e3e7175a99461c5e021ea59c95c1e",
+      "original_case_source_sha256": "24f80a6c04f4fe1b2f45c803ffca08f1615e3e7175a99461c5e021ea59c95c1e",
+      "gtest_body_sha256": "01b8370bc57c1a4e89733b9209b18f4414337bc793d785a6eed0032eb50f960b"
+    },
+    {
+      "name": "variant-metadata-source-specialization",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSourceSpecializationRejected",
+      "expected": "reject",
+      "source_sha256": "420061391e62da7a022135e4665a6b2634d3d7c185d59226f3467fdb06599652",
+      "original_case_source_sha256": "420061391e62da7a022135e4665a6b2634d3d7c185d59226f3467fdb06599652",
+      "gtest_body_sha256": "5553f65a0eafecf76958629f7117eba5f2b47c376428a247ed60b2dd07e3f9e6"
+    },
+    {
+      "name": "variant-metadata-volatile-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataVolatileAlternativeRejected",
+      "expected": "reject",
+      "source_sha256": "183d66330ac3a342ba78e7de509f31634693734f5cb099a54eb8ee30b0b4202a",
+      "original_case_source_sha256": "183d66330ac3a342ba78e7de509f31634693734f5cb099a54eb8ee30b0b4202a",
+      "gtest_body_sha256": "f52bec6bc945f86d1e0be4a949e29fd308f6a38fc3b3d66d525f866c176e55ed"
+    },
+    {
+      "name": "variant-metadata-direct-volatile-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataDirectVolatileAlternativeRejected",
+      "expected": "reject",
+      "source_sha256": "f16a98dec1073e3828959c3c26a467a3cc5bffb020543a584d5df2f14089a8a9",
+      "original_case_source_sha256": "f16a98dec1073e3828959c3c26a467a3cc5bffb020543a584d5df2f14089a8a9",
+      "gtest_body_sha256": "f627ebc08b54fc6570e48ed635401d31bcd5b7f308e106dba374a68497a24a17"
+    },
+    {
+      "name": "variant-layout-altered-index-member",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutAlteredIndexMemberRejected",
+      "expected": "reject",
+      "source_sha256": "e4b3d865a8d1c2101b4e04d54256c44cb28fca5ee43b800c39cc3440bb87e824",
+      "original_case_source_sha256": "e4b3d865a8d1c2101b4e04d54256c44cb28fca5ee43b800c39cc3440bb87e824",
+      "gtest_body_sha256": "a584a06dd4fc11530973e3e2ae9254d954dcf100b0eb3ea7ee86cc9e9696dbf4"
+    },
+    {
+      "name": "variant-layout-unsupported-large-float",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutUnsupportedLargeFloatRejected",
+      "expected": "reject",
+      "source_sha256": "948e0238367d06624aa1f69088027f1fdcf1e57342f18224b5c73cab10af9621",
+      "original_case_source_sha256": "948e0238367d06624aa1f69088027f1fdcf1e57342f18224b5c73cab10af9621",
+      "gtest_body_sha256": "9d2c1d31de0885936ba68119e30dbe272eef0b7d571fb5630d5f168aa69e6dc3"
+    },
+    {
+      "name": "variant-layout-runtime-record",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutRuntimeRecordRejected",
+      "expected": "reject",
+      "source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
+      "original_case_source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
+      "gtest_body_sha256": "f87f718b59266881a236fb0e5780344e1ecc795e06b7279bec17bbc46202531f"
+    },
+    {
+      "name": "variant-monostate-source-redeclaration",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateSourceRedeclarationRejected",
+      "expected": "reject",
+      "source_sha256": "dbbbe7f8e323793aca965ec0869fb6c63bb16dc1508eeb952bcebba76171280f",
+      "original_case_source_sha256": "dbbbe7f8e323793aca965ec0869fb6c63bb16dc1508eeb952bcebba76171280f",
+      "gtest_body_sha256": "b0ace9396eb2ee68550635cb234a0ec05ced20e72d1d7bd0c4677775b3afe032"
+    },
+    {
+      "name": "variant-monostate-volatile-layout",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateVolatileLayoutRejected",
+      "expected": "reject",
+      "source_sha256": "9108cce766d2798ef2ef952082f60edb1642c83aa3cb57a37705781d1fc4fa1b",
+      "original_case_source_sha256": "9108cce766d2798ef2ef952082f60edb1642c83aa3cb57a37705781d1fc4fa1b",
+      "gtest_body_sha256": "f3990629c2dc83ee6d98477dd3c460d6b0c762f5b74a04b30fc5080fc97295c1"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataConstAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataNestedAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataSizeQualificationRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataWrittenIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantLayoutMixedScalarRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantLayoutReferenceAndConstRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantLayoutPointerAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantLayoutDuplicateTypesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantLayoutDeclarationIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateStandaloneLayoutRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateVariantLayoutRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateMonostateOnlyVariantRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataRuntimeValueRejected",
+    "TranslateTest.CoreV2VariantMetadataVariantSizeStorageRejected",
+    "TranslateTest.CoreV2VariantMetadataSentinelStorageRejected",
+    "TranslateTest.CoreV2VariantMetadataSourceSpecializationRejected",
+    "TranslateTest.CoreV2VariantMetadataVolatileAlternativeRejected",
+    "TranslateTest.CoreV2VariantMetadataDirectVolatileAlternativeRejected",
+    "TranslateTest.CoreV2VariantLayoutAlteredIndexMemberRejected",
+    "TranslateTest.CoreV2VariantLayoutUnsupportedLargeFloatRejected",
+    "TranslateTest.CoreV2VariantLayoutRuntimeRecordRejected",
+    "TranslateTest.CoreV2VariantMonostateSourceRedeclarationRejected",
+    "TranslateTest.CoreV2VariantMonostateVolatileLayoutRejected"
+  ],
+  "native_reference_selected_executions": 30,
+  "planned_generated_c23_executions": 30,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "d5c91b50652dc03a93db9df6ec1328699a5f9c0a19755b44cb433828a9b954d5",
+  "maintained_original_sha256": "f018f96a86a0bc3a92657c59c0c4780a75fc7a2a7fc3e4632f0868947586ca9a",
+  "previous_registered_source_sha256": "68e45028b4bfeb66fb70d61831804be27fb3ffbaf0efa80b6a9e9bd0794afd73",
+  "previous_maintained_original_sha256": "c0fc72639d8af8570b3e7d545de2e008d1d2efdd7ec0bd947ef7b0ead94ef2b2",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7939,
+  "current_python_registry_tests": 112,
+  "previous7886_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "829467dc66934491b46fcfa03ecf075270f671351bc6b93b2dc0e86ccb2df425",
+  "extractor_sha256": "4f22918a75625b371168caca695c61b01d661e08f665a7b7197fc5c5190e7d2b",
+  "source_cases": [
+    {
+      "name": "variant-metadata-size-and-sentinel",
+      "source": "#include <variant>\nusing V = std::variant<int,double,unsigned long long>;\nint main() {\n  return std::variant_size_v<V> != 3 ||\n         std::variant_npos != static_cast<decltype(sizeof(int))>(-1);\n}\n",
+      "source_sha256": "1821c930c7718dab2e4a1c85fac35a2a54df1b6b44077ce27d1216d9a8417b59",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-alternative",
+      "source": "#include <variant>\nusing V = std::variant<int,double>;\nusing R = std::variant_alternative_t<1,V>;\nR answer(){return 3.5;}\nint main(){return answer()!=3.5;}\n",
+      "source_sha256": "c6096b784cc92dfbd53c4da37ca52def7be97935ccd286a7c96771e0d2cddb8c",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-const-alternative",
+      "source": "#include <variant>\n#include <type_traits>\nusing V = std::variant<int,int,float>;\nusing R = std::variant_alternative_t<1,const V>;\nstatic_assert(std::is_same_v<R,const int>);\nint main(){R value=17;return value!=17;}\n",
+      "source_sha256": "d17457b2d0cd393586073f44d8a703a41aed7dc90a2ee6f4a4b4fa62f488b814",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-nested-alternative",
+      "source": "#include <variant>\nusing Inner = std::variant<int,float>;\nusing Outer = std::variant<Inner,char>;\nusing Selected = std::variant_alternative_t<0,Outer>;\nint main(){return std::variant_size_v<Selected>!=2;}\n",
+      "source_sha256": "dc4c8c56ad858f2a29353ae3e21cb65e84d78ad259e8f20e4075034c125e4b45",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-size-qualification",
+      "source": "#include <variant>\nusing V = std::variant<int,char>;\nint main(){return std::variant_size_v<const V>!=2;}\n",
+      "source_sha256": "fb3190c6d9b4abd963420756d30e2c9edda2d28506854de8f1e2bc0a663ed6a5",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-written-index",
+      "source": "#include <variant>\nusing V = std::variant<int,float,unsigned long>;\nconstexpr unsigned last(){return 3-1;}\nusing R = std::variant_alternative_t<last(),V>;\nint main(){R v=19UL;return v!=19UL;}\n",
+      "source_sha256": "817fe49de65c4603ec824163283f406e0ed3b28684d6e0d36bb6129655f67cd6",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-metadata-runtime-value",
+      "source": "#include <variant>\nusing V = std::variant<int,double>;\nint main(){V value(7);return value.index();}\n",
+      "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-variant-size-storage",
+      "source": "#include <variant>\nusing V=std::variant<int,double>;\nint main(){const auto *p=&std::variant_size_v<V>;return *p!=2;}\n",
+      "source_sha256": "9ccf2c93a351e40824802f652a81e40589492c8647f92d6bfc561905145f1e70",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-sentinel-storage",
+      "source": "#include <variant>\nint main(){auto p=&std::variant_npos;return *p==0;}\n",
+      "source_sha256": "24f80a6c04f4fe1b2f45c803ffca08f1615e3e7175a99461c5e021ea59c95c1e",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-source-specialization",
+      "source": "#include <variant>\nstruct Record {};\nnamespace std { template<> struct variant_size<Record> : integral_constant<size_t,1> {}; }\nint main(){return std::variant_size_v<Record>!=1;}\n",
+      "source_sha256": "420061391e62da7a022135e4665a6b2634d3d7c185d59226f3467fdb06599652",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-volatile-alternative",
+      "source": "#include <variant>\nusing V = std::variant<int,volatile int>;\nint main(){return std::variant_size_v<V>!=2;}\n",
+      "source_sha256": "183d66330ac3a342ba78e7de509f31634693734f5cb099a54eb8ee30b0b4202a",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-direct-volatile-alternative",
+      "source": "#include <variant>\nint main() { return std::variant_size_v<std::variant<int, volatile int>> != 2; }\n",
+      "source_sha256": "f16a98dec1073e3828959c3c26a467a3cc5bffb020543a584d5df2f14089a8a9",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-layout-mixed-scalar",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nint main() { return sizeof(V) != 2 * sizeof(double) || alignof(V) != alignof(double); }\n",
+      "source_sha256": "fd5375fe54e55082f24f29d9606b7071d2e1d079e40efc6fbf53933d9c290039",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-layout-reference-and-const",
+      "source": "#include <variant>\nusing V = std::variant<long long, char>;\nint main() { return sizeof(const V&) != sizeof(V) || alignof(const V&) != alignof(long long); }\n",
+      "source_sha256": "3954097a772508976bbb4722aaf6e3be9d4508d9c8c66e16dd2848779915516b",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-layout-pointer-alternative",
+      "source": "#include <variant>\nusing V = std::variant<int*, bool>;\nint main() { return sizeof(V) != 2 * sizeof(int*) || alignof(V) != alignof(int*); }\n",
+      "source_sha256": "36bd58a2cd3d28d3b4d803004210174b9ae7221f0412c8d20344dc11cfca58ac",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-layout-duplicate-types",
+      "source": "#include <variant>\nusing V = std::variant<double, int, double>;\nint main() { return sizeof(V) != 2 * sizeof(double) || alignof(V) != alignof(double); }\n",
+      "source_sha256": "4ebf37513236931e7c03fd748b6ead4d1b844a2eaf11841b2d6b13aca6c6a435",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-layout-declaration-index",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nconstexpr auto Width = sizeof(V);\nint main() { unsigned char bytes[Width]{}; return sizeof(bytes) != 2 * sizeof(double); }\n",
+      "source_sha256": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-layout-altered-index-member",
+      "source": "#define __index substituted_index\n#include <variant>\n#undef __index\nusing V = std::variant<int, double>;\nint main() { return sizeof(V) == 0; }\n",
+      "source_sha256": "e4b3d865a8d1c2101b4e04d54256c44cb28fca5ee43b800c39cc3440bb87e824",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-layout-unsupported-large-float",
+      "source": "#include <variant>\nusing V = std::variant<int, long double>;\nint main() { return sizeof(V) == 0; }\n",
+      "source_sha256": "948e0238367d06624aa1f69088027f1fdcf1e57342f18224b5c73cab10af9621",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-layout-runtime-record",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nint main() { V value{9}; return sizeof(value) == 0; }\n",
+      "source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-monostate-identity",
+      "source": "#include <variant>\n#include <type_traits>\nusing M = std::monostate;\nusing V = std::variant<M, int>;\nint main() {\n  return !std::is_same_v<M, std::variant_alternative_t<0, V>> ||\n         !std::is_same_v<const M, std::variant_alternative_t<0, const V>> ||\n         std::variant_size_v<V> != 2;\n}\n",
+      "source_sha256": "6eaa811a2d866010b224bc31e5095e25cddb79b56f1ea35319c69740834ea064",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-monostate-standalone-layout",
+      "source": "#include <variant>\nusing M = std::monostate;\nint main() { return sizeof(M) != 1 || alignof(const M&) != 1 || sizeof(M[5]) != 5; }\n",
+      "source_sha256": "654846929b3599b627c09a02bc3f350c8eadbb0a2fc143871296579635df435b",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-monostate-variant-layout",
+      "source": "#include <variant>\nusing V = std::variant<std::monostate, int>;\nusing R = std::variant<unsigned char, int>;\nint main() { return sizeof(V) != sizeof(R) || alignof(const V&) != alignof(R); }\n",
+      "source_sha256": "18dd81925dea008036b74a96b96027f39edf01ec89832cb811aa12383853ca48",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-monostate-monostate-only-variant",
+      "source": "#include <variant>\nusing V = std::variant<std::monostate, std::monostate>;\nusing R = std::variant<unsigned char, unsigned char>;\nint main() { return sizeof(V) != sizeof(R) || alignof(V) != alignof(R); }\n",
+      "source_sha256": "aa78be3e0d17d9aa244c6b44e624dfca84b279db0e0b8bbf28c47d4237c517d0",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "variant-type-metadata-operations"
+    },
+    {
+      "name": "variant-monostate-source-redeclaration",
+      "source": "#include <variant>\n_LIBCPP_BEGIN_NAMESPACE_STD\nstruct monostate;\n_LIBCPP_END_NAMESPACE_STD\nusing V = std::variant<std::monostate, int>;\nint main() { return sizeof(V) == 0; }\n",
+      "source_sha256": "dbbbe7f8e323793aca965ec0869fb6c63bb16dc1508eeb952bcebba76171280f",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-monostate-volatile-layout",
+      "source": "#include <variant>\nusing M = volatile std::monostate;\nint main() { return sizeof(M) == 0; }\n",
+      "source_sha256": "9108cce766d2798ef2ef952082f60edb1642c83aa3cb57a37705781d1fc4fa1b",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_sha256": "c1a6386d195d2305d2b3461c0873bca723cc02ee394ad8748f32bc78fb60314f",
+  "native_reference_authentication_sha256": "bf435677f94f07928028e6b92e80db3e9b2a9e6b6d6d34849af06d12675501d6",
+  "native_references": {
+    "native_actual_executions": 30,
+    "native_reference_receipts": [
+      {
+        "run": 44498386318,
+        "job": 135471372952,
+        "artifact": 14543206208,
+        "proof_sha256": "37c926d3a816cce4411301df04883c05f8e59b6c612cd6978712b11f2a47511b",
+        "execution_count": 12
+      },
+      {
+        "run": 44573344570,
+        "job": 135734107603,
+        "artifact": 14556481094,
+        "proof_sha256": "62dd3c2eda3434c67c160f1e474e20e7e9dc9e12134ac0f3d83754b17c79a769",
+        "execution_count": 10
+      },
+      {
+        "run": 44640791670,
+        "job": 135971035238,
+        "artifact": 14612103921,
+        "proof_sha256": "725e2069a94a7808daf9190645bb6017a127be69a46cd8d215db9a067f8d9b6e",
+        "execution_count": 8
+      }
+    ],
+    "program_sha256_by_name": {
+      "variant-metadata-size-and-sentinel": "1821c930c7718dab2e4a1c85fac35a2a54df1b6b44077ce27d1216d9a8417b59",
+      "variant-metadata-alternative": "c6096b784cc92dfbd53c4da37ca52def7be97935ccd286a7c96771e0d2cddb8c",
+      "variant-metadata-const-alternative": "d17457b2d0cd393586073f44d8a703a41aed7dc90a2ee6f4a4b4fa62f488b814",
+      "variant-metadata-nested-alternative": "dc4c8c56ad858f2a29353ae3e21cb65e84d78ad259e8f20e4075034c125e4b45",
+      "variant-metadata-size-qualification": "fb3190c6d9b4abd963420756d30e2c9edda2d28506854de8f1e2bc0a663ed6a5",
+      "variant-metadata-written-index": "817fe49de65c4603ec824163283f406e0ed3b28684d6e0d36bb6129655f67cd6",
+      "variant-layout-mixed-scalar": "fd5375fe54e55082f24f29d9606b7071d2e1d079e40efc6fbf53933d9c290039",
+      "variant-layout-reference-and-const": "3954097a772508976bbb4722aaf6e3be9d4508d9c8c66e16dd2848779915516b",
+      "variant-layout-pointer-alternative": "36bd58a2cd3d28d3b4d803004210174b9ae7221f0412c8d20344dc11cfca58ac",
+      "variant-layout-duplicate-types": "4ebf37513236931e7c03fd748b6ead4d1b844a2eaf11841b2d6b13aca6c6a435",
+      "variant-layout-declaration-index": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
+      "variant-monostate-identity": "6eaa811a2d866010b224bc31e5095e25cddb79b56f1ea35319c69740834ea064",
+      "variant-monostate-standalone-layout": "654846929b3599b627c09a02bc3f350c8eadbb0a2fc143871296579635df435b",
+      "variant-monostate-variant-layout": "18dd81925dea008036b74a96b96027f39edf01ec89832cb811aa12383853ca48",
+      "variant-monostate-monostate-only-variant": "aa78be3e0d17d9aa244c6b44e624dfca84b279db0e0b8bbf28c47d4237c517d0"
+    },
+    "sdk_sha256": "b91a0044f703a56b0c443d8425ec9f99076fcbe2152d244de74014d0b56abe27"
+  }
+}
