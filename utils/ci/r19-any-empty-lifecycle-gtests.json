@@ -1,0 +1,331 @@
+{
+  "positive_cases": [
+    {
+      "name": "any-layout-direct-size-align",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "201a27f97d7608f76199eb51db1c5f0ee52ff11ec42f6b00aebe22f850fd2d0e",
+      "original_case_source_sha256": "201a27f97d7608f76199eb51db1c5f0ee52ff11ec42f6b00aebe22f850fd2d0e",
+      "gtest_body_sha256": "d1b9f8164e9fcfc157872e6e15d98a68fc69d62ad5606456c19d3e2e9464f512"
+    },
+    {
+      "name": "any-layout-const-reference-size",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5277fc2d120c71cde0ac3b24ca68223ff28b929d70c41e2d1f2a7d829331e0e6",
+      "original_case_source_sha256": "5277fc2d120c71cde0ac3b24ca68223ff28b929d70c41e2d1f2a7d829331e0e6",
+      "gtest_body_sha256": "9935e0fdd45a9d0503ce76e708ffa250304005796a22c79b4e8e90be4fef50b6"
+    },
+    {
+      "name": "any-layout-wrapped-pointer-type",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6a682c1046de8dfb62a522c14193363c122f222148a4a5d922754efc64d0ad7c",
+      "original_case_source_sha256": "6a682c1046de8dfb62a522c14193363c122f222148a4a5d922754efc64d0ad7c",
+      "gtest_body_sha256": "813a84526b66ebee3c14a9dd47f486ee235888ae7ec0332965d9bf78d1e87d77"
+    },
+    {
+      "name": "any-layout-constant-array-bound",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9ad0f23c43c9ed005c1b09d17cd7ddc1137da356f97a13b8c6eceae0f697fc29",
+      "original_case_source_sha256": "9ad0f23c43c9ed005c1b09d17cd7ddc1137da356f97a13b8c6eceae0f697fc29",
+      "gtest_body_sha256": "9dac99bd61c4e166d86d4376daaa57891288ef117e1faa7002fad1e9738c3892"
+    },
+    {
+      "name": "any-empty-default-local",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyDefaultLocalRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e399a21f07a466b7426a6c217dac0324998aeeb8a6dc914f92df8df2d8926874",
+      "original_case_source_sha256": "e399a21f07a466b7426a6c217dac0324998aeeb8a6dc914f92df8df2d8926874",
+      "gtest_body_sha256": "4cf0e0b84c5ba4898963bd85c1ebada7600bedc77509cd373b1a384cab4540d0"
+    },
+    {
+      "name": "any-empty-receiver-evaluation",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyReceiverEvaluationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ab0625ffa0cf84bad9c0db281c30b24d07e80f0a238f05d691e2c5693dfdd06c",
+      "original_case_source_sha256": "ab0625ffa0cf84bad9c0db281c30b24d07e80f0a238f05d691e2c5693dfdd06c",
+      "gtest_body_sha256": "089fb986cb83db276e4e6942a1c3200321e2aaf59ba5610beb0c24e0bb5637c3"
+    },
+    {
+      "name": "any-empty-temporary",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyTemporaryRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ef4cb6dea33875f5738078979e04d31fcb456880bc9b2270892aa0b7c1709665",
+      "original_case_source_sha256": "ef4cb6dea33875f5738078979e04d31fcb456880bc9b2270892aa0b7c1709665",
+      "gtest_body_sha256": "1b890a994890aae65f09f59a1989f86f8b30c6dd769595ea337ee00fc2fdb4d0"
+    },
+    {
+      "name": "any-empty-member-lifetime",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyMemberLifetimeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "67aace76f54980f76ec0b125fd0416a22ab1c0471ae28d27da5398a051164592",
+      "original_case_source_sha256": "67aace76f54980f76ec0b125fd0416a22ab1c0471ae28d27da5398a051164592",
+      "gtest_body_sha256": "f27ff1e6bf725162731b7d1a70c0871e2603d6c7c9446ae2a1baa0ef5d18367d"
+    },
+    {
+      "name": "any-empty-array-lifetime",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyArrayLifetimeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "856e0ea7c38cbd16b8b71fb4995f47e2b5eb75183f3912e0256c62d13c9bfab3",
+      "original_case_source_sha256": "856e0ea7c38cbd16b8b71fb4995f47e2b5eb75183f3912e0256c62d13c9bfab3",
+      "gtest_body_sha256": "004971d87dd6b9593ceb2e73c6ee688fcf1d19ac62625b4c33859cc8c21a0fed"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "any-layout-volatile-type",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutVolatileTypeRejected",
+      "expected": "reject",
+      "source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
+      "original_case_source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
+      "gtest_body_sha256": "13b3f15901461b080b4c298532d43864515a132a41af9ed067aa842f5120afda"
+    },
+    {
+      "name": "any-layout-runtime-construction",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected",
+      "expected": "reject",
+      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "original_case_source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "gtest_body_sha256": "3adf6e457e78ddfb8770de5f6febb1d5fd7edbc370dfe53785f0844d06c6e3ba"
+    },
+    {
+      "name": "any-layout-unevaluated-object",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected",
+      "expected": "reject",
+      "source_sha256": "5278dfce87347efa957ae0f03e37f99eecffa766b587b335e4549476911d1f86",
+      "original_case_source_sha256": "5278dfce87347efa957ae0f03e37f99eecffa766b587b335e4549476911d1f86",
+      "gtest_body_sha256": "a6778dda6a59a35b4bc32be180b7a1ccd15e03fe53ef9f420b6bea7a19de73a0"
+    },
+    {
+      "name": "any-layout-altered-handler-field",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected",
+      "expected": "reject",
+      "source_sha256": "0139ae2709d2c40215491b158005e081a1643be08431f3da8dfd8acc92f6968a",
+      "original_case_source_sha256": "0139ae2709d2c40215491b158005e081a1643be08431f3da8dfd8acc92f6968a",
+      "gtest_body_sha256": "379e84e0204fd7c335a7decc34c43487fc04fe2f3e38644d634bb7e508b3f8cd"
+    },
+    {
+      "name": "any-empty-altered-observer",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyAlteredObserverRejected",
+      "expected": "reject",
+      "source_sha256": "44541f8636ab83a23f8d0641313b9aa5a91a685482d21263f790d08c36807bec",
+      "original_case_source_sha256": "44541f8636ab83a23f8d0641313b9aa5a91a685482d21263f790d08c36807bec",
+      "gtest_body_sha256": "595f932c5fcb6c5fd6dbb8771565cac9778034c37f4020de9ae1b6270222c339"
+    },
+    {
+      "name": "any-empty-altered-reset",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyAlteredResetRejected",
+      "expected": "reject",
+      "source_sha256": "fe48449cd9f6decbd9bf43a1461978456d319abb0ea13b5a40e044788c99b466",
+      "original_case_source_sha256": "fe48449cd9f6decbd9bf43a1461978456d319abb0ea13b5a40e044788c99b466",
+      "gtest_body_sha256": "953a5d253b79fb85997a64b994a0218d7fbd11e7c403f22c4fb1e42a6f3e9663"
+    },
+    {
+      "name": "any-empty-unproved-copy",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyUnprovedCopyRejected",
+      "expected": "reject",
+      "source_sha256": "fdb1b4aa621ea589bf033cb811c2b287eece8341bbd8bd80e5b79b3975e97073",
+      "original_case_source_sha256": "fdb1b4aa621ea589bf033cb811c2b287eece8341bbd8bd80e5b79b3975e97073",
+      "gtest_body_sha256": "26afc9f0243f21f828ba47dc9574c05feb464c2b4a9849ea96ded3697947e069"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyDefaultLocalRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyReceiverEvaluationRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyTemporaryRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyMemberLifetimeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyArrayLifetimeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutVolatileTypeRejected",
+    "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected",
+    "TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected",
+    "TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected",
+    "TranslateTest.CoreV2AnyEmptyAlteredObserverRejected",
+    "TranslateTest.CoreV2AnyEmptyAlteredResetRejected",
+    "TranslateTest.CoreV2AnyEmptyUnprovedCopyRejected"
+  ],
+  "native_reference_selected_executions": 18,
+  "planned_generated_c23_executions": 18,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "270972b38b919398a62b33a4c62613101d80aa5e65d397592b0afd6175bab90b",
+  "maintained_original_sha256": "13da4b4217bf3714bf7d91aed104b18da7b748b72114fb55290eec3c1ee3954e",
+  "previous_registered_source_sha256": "68e45028b4bfeb66fb70d61831804be27fb3ffbaf0efa80b6a9e9bd0794afd73",
+  "previous_maintained_original_sha256": "c0fc72639d8af8570b3e7d545de2e008d1d2efdd7ec0bd947ef7b0ead94ef2b2",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 7929,
+  "current_python_registry_tests": 112,
+  "previous7913_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "a11759245bdb18c79d32e0e18a1998cb778e1d8acdfa94cc72bfd913c373c580",
+  "extractor_sha256": "65359a50d8be66554378df06a09d7a74b44db9fb8b30cdd2f3f9918a2bb97c9e",
+  "source_cases": [
+    {
+      "name": "any-layout-direct-size-align",
+      "source": "#include <any>\nint main() {\n  return sizeof(std::any) != 4 * sizeof(void*) || alignof(std::any) != alignof(void*);\n}\n",
+      "source_sha256": "201a27f97d7608f76199eb51db1c5f0ee52ff11ec42f6b00aebe22f850fd2d0e",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-layout-const-reference-size",
+      "source": "#include <any>\nusing A = std::any;\nint main() { return sizeof(const A&) != sizeof(A) || alignof(const A&) != alignof(void*); }\n",
+      "source_sha256": "5277fc2d120c71cde0ac3b24ca68223ff28b929d70c41e2d1f2a7d829331e0e6",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-layout-wrapped-pointer-type",
+      "source": "#include <any>\n#include <type_traits>\nusing A = const std::any;\nstatic_assert(std::is_same_v<A*, const std::any*>);\nint main() { return sizeof(A) != 4 * sizeof(void*); }\n",
+      "source_sha256": "6a682c1046de8dfb62a522c14193363c122f222148a4a5d922754efc64d0ad7c",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-layout-constant-array-bound",
+      "source": "#include <any>\nconstexpr auto Count = sizeof(std::any);\nint main() { unsigned char bytes[Count]{}; return sizeof(bytes) != 4 * sizeof(void*); }\n",
+      "source_sha256": "9ad0f23c43c9ed005c1b09d17cd7ddc1137da356f97a13b8c6eceae0f697fc29",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-layout-volatile-type",
+      "source": "#include <any>\nint main() { return sizeof(volatile std::any) == 0; }\n",
+      "source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
+      "public_header": "any",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-layout-runtime-construction",
+      "source": "#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n",
+      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "public_header": "any",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-layout-unevaluated-object",
+      "source": "#include <any>\nint main() { return sizeof(std::any{}) == 0; }\n",
+      "source_sha256": "5278dfce87347efa957ae0f03e37f99eecffa766b587b335e4549476911d1f86",
+      "public_header": "any",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-layout-altered-handler-field",
+      "source": "#define __h_ altered_handler\n#include <any>\n#undef __h_\nint main() { return sizeof(std::any) == 0; }\n",
+      "source_sha256": "0139ae2709d2c40215491b158005e081a1643be08431f3da8dfd8acc92f6968a",
+      "public_header": "any",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-empty-default-local",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any a;\n  if (a.has_value()) return 1;\n  a.reset();\n  a.reset();\n  return a.has_value();\n}\n",
+      "source_sha256": "e399a21f07a466b7426a6c217dac0324998aeeb8a6dc914f92df8df2d8926874",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-empty-receiver-evaluation",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint visits;\nstd::any* receive(std::any* p) { ++visits; return p; }\nint main() {\n  std::any a;\n  receive(&a)->reset();\n  const std::any* p = receive(&a);\n  return visits != 2 || p->has_value();\n}\n",
+      "source_sha256": "ab0625ffa0cf84bad9c0db281c30b24d07e80f0a238f05d691e2c5693dfdd06c",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-empty-temporary",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  return std::any{}.has_value();\n}\n",
+      "source_sha256": "ef4cb6dea33875f5738078979e04d31fcb456880bc9b2270892aa0b7c1709665",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-empty-member-lifetime",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nstruct Owner { std::any any; int marker; };\nint main() {\n  Owner object{{}, 2};\n  object.any.reset();\n  return object.marker != 2 || object.any.has_value();\n}\n",
+      "source_sha256": "67aace76f54980f76ec0b125fd0416a22ab1c0471ae28d27da5398a051164592",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-empty-array-lifetime",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any values[2];\n  values[1].reset();\n  return values[0].has_value() || values[1].has_value();\n}\n",
+      "source_sha256": "856e0ea7c38cbd16b8b71fb4995f47e2b5eb75183f3912e0256c62d13c9bfab3",
+      "kind": "any-layout-operations"
+    },
+    {
+      "name": "any-empty-altered-observer",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#define has_value changed_observer\n#include <any>\n#undef has_value\nint main() {\n  std::any a;\n  return a.changed_observer();\n}\n",
+      "source_sha256": "44541f8636ab83a23f8d0641313b9aa5a91a685482d21263f790d08c36807bec",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-empty-altered-reset",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#define reset changed_reset\n#include <any>\n#undef reset\nint main() {\n  std::any a;\n  a.changed_reset();\n  return a.has_value();\n}\n",
+      "source_sha256": "fe48449cd9f6decbd9bf43a1461978456d319abb0ea13b5a40e044788c99b466",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-empty-unproved-copy",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any a;\n  std::any b(a);\n  return b.has_value();\n}\n",
+      "source_sha256": "fdb1b4aa621ea589bf033cb811c2b287eece8341bbd8bd80e5b79b3975e97073",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_sha256": "ec36846780d33e6cd6420b0a08732124c5628ca9f74ba0399ded3ab579dc3f83",
+  "native_reference_authentication_sha256": "248d9729881ff834cade42d8444dc6af02bae36abc8daf1363499e2890658053",
+  "native_references": {
+    "native_actual_executions": 18,
+    "native_reference_receipts": [
+      {
+        "run": 44515740878,
+        "job": 135531171500,
+        "artifact": 14539726385,
+        "proof_sha256": "d89e6931c9771241a94eaf5f31750e55821fa0ad1d094572d74c24deb800234a",
+        "execution_count": 8
+      },
+      {
+        "run": 44644576755,
+        "job": 135983815064,
+        "artifact": 14596631601,
+        "proof_sha256": "f9fd12adf57297c28b653038fcd4e441cb624e2c12906cb3981aac7289645d37",
+        "execution_count": 10
+      }
+    ],
+    "program_sha256_by_name": {
+      "any-layout-direct-size-align": "201a27f97d7608f76199eb51db1c5f0ee52ff11ec42f6b00aebe22f850fd2d0e",
+      "any-layout-const-reference-size": "5277fc2d120c71cde0ac3b24ca68223ff28b929d70c41e2d1f2a7d829331e0e6",
+      "any-layout-wrapped-pointer-type": "6a682c1046de8dfb62a522c14193363c122f222148a4a5d922754efc64d0ad7c",
+      "any-layout-constant-array-bound": "9ad0f23c43c9ed005c1b09d17cd7ddc1137da356f97a13b8c6eceae0f697fc29",
+      "any-empty-default-local": "e399a21f07a466b7426a6c217dac0324998aeeb8a6dc914f92df8df2d8926874",
+      "any-empty-receiver-evaluation": "ab0625ffa0cf84bad9c0db281c30b24d07e80f0a238f05d691e2c5693dfdd06c",
+      "any-empty-temporary": "ef4cb6dea33875f5738078979e04d31fcb456880bc9b2270892aa0b7c1709665",
+      "any-empty-member-lifetime": "67aace76f54980f76ec0b125fd0416a22ab1c0471ae28d27da5398a051164592",
+      "any-empty-array-lifetime": "856e0ea7c38cbd16b8b71fb4995f47e2b5eb75183f3912e0256c62d13c9bfab3"
+    },
+    "sdk_sha256": "b91a0044f703a56b0c443d8425ec9f99076fcbe2152d244de74014d0b56abe27"
+  }
+}

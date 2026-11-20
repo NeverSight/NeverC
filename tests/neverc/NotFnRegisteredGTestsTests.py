@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.any_empty_lifecycle_registered = cls.registered
+        cls.any_empty_lifecycle_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_empty_lifecycle_original = cls.adapter.restore_original_gtests(cls.any_empty_lifecycle_registered,cls.any_empty_lifecycle_suffix)
+        cls.registered = cls.adapter.restore_any_empty_lifecycle_history(cls.any_empty_lifecycle_registered)
         cls.bitset_wide_and_value_swap_registered = cls.registered
         cls.bitset_wide_and_value_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_wide_and_value_swap_original = cls.adapter.restore_original_gtests(cls.bitset_wide_and_value_swap_registered,cls.bitset_wide_and_value_swap_suffix)
@@ -1638,6 +1642,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_wide_and_value_swap_registered,self.bitset_wide_and_value_swap_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_wide_and_value_swap_original+b' ',['TranslateTest.CoreV2BitsetWideTemporaryEmptyMultiwordRunAtBothOptimizations'])
+
+    def test_any_empty_lifecycle_preserves_all_previous_registry_bytes_and_extracts_sixteen_tests(self):
+        self.assertEqual(self.any_empty_lifecycle_original+self.any_empty_lifecycle_suffix,self.any_empty_lifecycle_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.any_empty_lifecycle_original,self.any_empty_lifecycle_suffix),self.any_empty_lifecycle_original)
+        self.assertEqual(self.adapter.restore_any_empty_lifecycle_history(self.any_empty_lifecycle_registered),self.bitset_wide_and_value_swap_registered)
+        self.assertEqual(self.adapter.restore_any_empty_lifecycle_history(self.any_empty_lifecycle_original),self.bitset_wide_and_value_swap_original)
+        selected = ['TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyDefaultLocalRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyReceiverEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyTemporaryRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyMemberLifetimeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyArrayLifetimeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutVolatileTypeRejected', 'TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected', 'TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected', 'TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected', 'TranslateTest.CoreV2AnyEmptyAlteredObserverRejected', 'TranslateTest.CoreV2AnyEmptyAlteredResetRejected', 'TranslateTest.CoreV2AnyEmptyUnprovedCopyRejected']
+        generated,proof = self.extractor.extract(self.any_empty_lifecycle_original,selected)
+        self.assertEqual(proof['original_test_names'],7929)
+        self.assertEqual(proof['selected_count'],16)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7913)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19any',generated)
+        self.assertIn(b'any-layout-',generated)
+        self.assertIn(b'std::any',generated)
+
+    def test_any_empty_lifecycle_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.any_empty_lifecycle_registered+b' ',
+                        self.any_empty_lifecycle_registered.replace(b'r19any',b'q.push(11)',1),
+                        self.any_empty_lifecycle_registered+self.any_empty_lifecycle_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.any_empty_lifecycle_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_any_empty_lifecycle_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_empty_lifecycle_registered,self.any_empty_lifecycle_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.any_empty_lifecycle_original+b' ',['TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
