@@ -13899,6 +13899,14 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityVectorRecord(S, Sources, D, Context) &&
                  !requireUtilityVector(D, L, Depth + 1)) {
         return {};
+      } else if (pinnedUtilityAnyType(S, Sources, D)) {
+        if (!approvedUtilityAnyEmptyRecord(S, Sources, D, Context)) {
+          reject(L, "any object layout",
+                 "The pinned empty any layout and cleanup source are required.", "TR0203");
+          return {};
+        }
+        if (RequiredUtilityEmptyAnys.insert(D->getCanonicalDecl()).second)
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
       } else if (approvedUtilityOptionalMetadata(S, Sources, D) &&
                  !requireUtilityOptional(D, L, Depth + 1)) {
         return {};
@@ -14750,6 +14758,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     } else if (auto Array = approvedUtilityArrayRecord(S, Sources, R, Context);
                Array && !Array->Size) {
       Args.push_back(zero(Array->ElementType, L));
+    } else if (RequiredUtilityEmptyAnys.count(R->getCanonicalDecl())) {
+      const auto Word = Context.UnsignedLongLongTy;
+      const auto Storage = Context.getConstantArrayType(
+          Word, llvm::APInt(64, 3), nullptr, ArraySizeModifier::Normal, 0);
+      Args.push_back(zero(Word, L));
+      Args.push_back(zero(Storage, L));
     } else if (auto Optional =
                    approvedUtilityOptionalRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Optional->Value->getType(), L));
@@ -18620,6 +18634,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   void checkConstruction(const CXXConstructExpr *C, SourceLocation L) {
     if (!CheckedConstructions.insert(C).second)
       return;
+    if (approvedUtilityAnyEmptyConstruction(A.S, A.Sources, C, A.Context)) {
+      A.type(C->getType(), L);
+      return;
+    }
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() && Constructor && Constructor->isCopyOrMoveConstructor() &&
         (describeFunctionalNotFnOwnedStorage(A.S, A.Sources, Constructor->getParent(), A.Context) ||
@@ -30038,6 +30056,7 @@ public:
               A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
+              approvedUtilityAnyEmptyCall(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
               approvedFunctionalReferenceAssignment(
@@ -30695,6 +30714,10 @@ public:
         A.S.Module["memory_lifetimes"] = true;
         return true;
       }
+      if (const auto Any = approvedUtilityAnyEmptyCall(A.S, A.Sources, C, A.Context)) {
+        A.type(A.Context.getRecordType(Any->Record), L);
+        return true;
+      }
       APValue UtilityValue;
       if (A.S.coreV2() &&
           approvedUtilityConstant(A.S, A.Sources, C, A.Context,
@@ -31067,6 +31090,7 @@ public:
                                                               A.Context) ||
                    approvedUtilityStringViewConstruction(A.S, A.Sources, C,
                                                          A.Context) ||
+                   approvedUtilityAnyEmptyConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityOptionalConstruction(A.S, A.Sources, C,
                                                        A.Context) ||
                    approvedUtilityWrapIteratorConstruction(A.S, A.Sources, C,
@@ -31338,7 +31362,9 @@ static void orderCoreV2Records(Adapter &A) {
       Heights[I] = Heights[Found->second] + 1;
     }
     std::vector<std::pair<QualType, SourceLocation>> DependencyTypes;
-    if (UtilityTuple) {
+    if (A.RequiredUtilityEmptyAnys.count(R->getCanonicalDecl())) {
+      // The C23 carrier uses an integer tag and inline scalar storage.
+    } else if (UtilityTuple) {
       for (const auto &Field : UtilityTuple->Elements)
         if (!BindTuple || Field.Field)
           DependencyTypes.emplace_back(Field.getType(), Field.getLocation());
@@ -31551,6 +31577,17 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   }
   json::Array RecordData, GlobalData, FunctionData;
   for (const auto *R : Records) {
+    if (RequiredUtilityEmptyAnys.count(R->getCanonicalDecl())) {
+      const auto &Layout = Context.getASTRecordLayout(R);
+      RecordData.push_back(json::Object{
+          {"id", name(R)}, {"loc", loc(R->getLocation())},
+          {"fields", json::Array{json::Object{{"name", UtilityAnyTag.str()}, {"type", "u64"}},
+                                 json::Object{{"name", UtilityAnyStorage.str()}, {"type", "arr:3:u64"}}}},
+          {"layout", json::Object{{"size_bits", uint64_t(Layout.getSize().getQuantity()) * 8},
+                                  {"abi_align_bits", uint64_t(Layout.getAlignment().getQuantity()) * 8},
+                                  {"field_offsets_bits", json::Array{uint64_t(0), Layout.getFieldOffset(1)}}}}});
+      continue;
+    }
     json::Array Fields;
     const bool UtilityReverse =
         S.coreV2() &&

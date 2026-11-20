@@ -3392,6 +3392,25 @@ bool shouldRetainFunctionalNotFnSpecialMemberSource(
     const clang::CXXMethodDecl *Method, const clang::ASTContext &Context);
 
 
+inline constexpr llvm::StringLiteral UtilityAnyTag = "nct_any_tag";
+inline constexpr llvm::StringLiteral UtilityAnyStorage = "nct_any_storage";
+enum class UtilityAnyEmptyOperation { HasValue, Reset };
+struct UtilityAnyEmptyCall {
+  UtilityAnyEmptyOperation Operation;
+  const clang::MemberExpr *Callee;
+  const clang::CXXRecordDecl *Record;
+};
+
+bool approvedUtilityAnyEmptyRecord(const State &S, const clang::SourceManager &SM,
+                                    const clang::CXXRecordDecl *Record,
+                                    const clang::ASTContext &Context);
+bool approvedUtilityAnyEmptyConstruction(const State &S, const clang::SourceManager &SM,
+                                          const clang::CXXConstructExpr *Construction,
+                                          const clang::ASTContext &Context);
+std::optional<UtilityAnyEmptyCall> approvedUtilityAnyEmptyCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 bool pinnedUtilityAnyType(const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record);
 bool approvedUtilityAnyMetadata(const State &S,
@@ -4522,6 +4541,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredScalarRealDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
   std::set<const clang::CXXRecordDecl *> RequiredVectorDistributionRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityEmptyAnys;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityWrapIterators;
