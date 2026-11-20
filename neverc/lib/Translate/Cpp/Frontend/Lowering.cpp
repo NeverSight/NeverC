@@ -38419,6 +38419,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
     if (approvedUtilityAnyEmptyConstruction(A.S, A.Sources, C, A.Context)) {
+      if (C->getNumArgs())
+        snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
       initializeZero(std::move(Place), T, L);
       return;
     }

@@ -18643,6 +18643,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!CheckedConstructions.insert(C).second)
       return;
     if (approvedUtilityAnyEmptyConstruction(A.S, A.Sources, C, A.Context)) {
+      if (C->getNumArgs())
+        checkBinding(C->getArg(0), true);
       A.type(C->getType(), L);
       return;
     }

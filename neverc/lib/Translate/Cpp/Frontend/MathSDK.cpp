@@ -7169,12 +7169,9 @@ static const Expr *anyInitializer(const CXXConstructorDecl *Ctor, const FieldDec
   return nullptr;
 }
 
-static bool anyDefaultConstructor(const State &S, const SourceManager &SM,
-                                  const CXXConstructorDecl *Ctor,
-                                  const CXXRecordDecl *Any) {
-  const auto *Body = anyBody(S, SM, Ctor, 0);
-  if (!Body || !Body->body_empty() || !Ctor->isDefaultConstructor() ||
-      !Ctor->isConstexpr() || Ctor->getNumCtorInitializers() != 2)
+static bool anyCarrierInitialization(const State &S, const SourceManager &SM,
+                                     const CXXConstructorDecl *Ctor, const CXXRecordDecl *Any) {
+  if (Ctor->getNumCtorInitializers() != 2)
     return false;
   auto Fields = Any->field_begin();
   if (!anyNull(anyInitializer(Ctor, *Fields++)))
@@ -7190,6 +7187,14 @@ static bool anyDefaultConstructor(const State &S, const SourceManager &SM,
          Nested->getParent()->getCanonicalDecl() == Union->getCanonicalDecl() &&
          Nested->getNumCtorInitializers() == 1 &&
          anyNull(anyInitializer(Nested, *Union->field_begin()));
+}
+
+static bool anyDefaultConstructor(const State &S, const SourceManager &SM,
+                                  const CXXConstructorDecl *Ctor,
+                                  const CXXRecordDecl *Any) {
+  const auto *Body = anyBody(S, SM, Ctor, 0);
+  return Body && Body->body_empty() && Ctor->isDefaultConstructor() &&
+         Ctor->isConstexpr() && anyCarrierInitialization(S, SM, Ctor, Any);
 }
 
 static bool anyResetBody(const State &S, const SourceManager &SM,
@@ -7249,23 +7254,72 @@ bool approvedUtilityAnyEmptyRecord(const State &S, const SourceManager &SM,
   const auto *Dtor = Any->getDestructor();
   const auto *Body = anyBody(S, SM, Dtor, 0);
   const auto *Call = Body && Body->size() == 1 ? dyn_cast<CXXMemberCallExpr>(Body->body_front()) : nullptr;
-  // Only default construction enters this carrier. Its empty state never
+  // Admitted constructors initialize an empty carrier. Its state never
   // reaches the SDK's dynamic handler during reset or destruction.
   return Call && !Call->getNumArgs() && anyThis(Call->getImplicitObjectArgument()) &&
          anyResetBody(S, SM, Call->getMethodDecl(), Any, Context);
 }
 
+static bool anyParameter(const Expr *E, const ParmVarDecl *Parameter);
+
+static bool anyEmptyCopyOrMove(const State &S, const SourceManager &SM,
+                             const CXXConstructorDecl *Ctor, const CXXRecordDecl *Any,
+                             const ASTContext &Context) {
+  const bool Copy = Ctor->isCopyConstructor();
+  const bool Move = Ctor->isMoveConstructor();
+  const auto *Body = anyBody(S, SM, Ctor, 1);
+  const auto *Proto = Ctor->getType()->getAs<FunctionProtoType>();
+  if ((!Copy && !Move) || !Body || Body->size() != 1 ||
+      !Proto || Proto->isNothrow() != Move || !anyCarrierInitialization(S, SM, Ctor, Any))
+    return false;
+  const auto *Argument = Ctor->getParamDecl(0);
+  const auto Type = Context.getRecordType(Any);
+  const auto Expected = Copy ? Context.getLValueReferenceType(Type.withConst())
+                             : Context.getRValueReferenceType(Type);
+  if (!Context.hasSameType(Argument->getType(), Expected))
+    return false;
+  const auto *Gate = dyn_cast<IfStmt>(Body->body_front());
+  if (!Gate || Gate->getElse() || Gate->getInit() || Gate->getConditionVariable())
+    return false;
+  const auto *Handle = dyn_cast<MemberExpr>(Gate->getCond()->IgnoreParenImpCasts());
+  if (!Handle || Handle->isArrow() || Handle->getMemberDecl() != *Any->field_begin() ||
+      !anyParameter(Handle->getBase(), Argument))
+    return false;
+  const auto *Invoke = dyn_cast<CXXMemberCallExpr>(Gate->getThen());
+  const auto *Dispatch = Invoke ? Invoke->getMethodDecl() : nullptr;
+  if (!Dispatch || Dispatch->getName() != "__call" || Dispatch->isConst() != Copy ||
+      Dispatch->getParent()->getCanonicalDecl() != Any->getCanonicalDecl() ||
+      !anyBody(S, SM, Dispatch, 4) || Invoke->getNumArgs() != 4 ||
+      !anyParameter(Invoke->getImplicitObjectArgument(), Argument) || !anyThis(Invoke->getArg(1)))
+    return false;
+  const auto *ActionRef = dyn_cast<DeclRefExpr>(Invoke->getArg(0)->IgnoreParenImpCasts());
+  const auto *Action = ActionRef ? dyn_cast<EnumConstantDecl>(ActionRef->getDecl()) : nullptr;
+  if (!Action || Action->getName() != (Copy ? "_Copy" : "_Move") || !anyDeclaration(S, SM, Action))
+    return false;
+  for (unsigned I = 2; I < 4; ++I) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Invoke->getArg(I));
+    if (!Default || Default->getParam() != Dispatch->getParamDecl(I) || !anyNull(Default->getExpr()))
+      return false;
+  }
+  return true;
+}
+
 bool approvedUtilityAnyEmptyConstruction(const State &S, const SourceManager &SM,
                                           const CXXConstructExpr *Construction,
                                           const ASTContext &Context) {
-  if (!Construction || Construction->isInstantiationDependent() || Construction->getNumArgs() ||
+  if (!Construction || Construction->isInstantiationDependent() || Construction->getNumArgs() > 1 ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete)
     return false;
   const auto *Record = Construction->getType()->getAsCXXRecordDecl();
   const auto *Ctor = Construction->getConstructor();
-  return approvedUtilityAnyEmptyRecord(S, SM, Record, Context) && Ctor &&
-         Ctor->getParent()->getCanonicalDecl() == Record->getCanonicalDecl() &&
-         anyDefaultConstructor(S, SM, Ctor, Record->getDefinition());
+  if (!approvedUtilityAnyEmptyRecord(S, SM, Record, Context) || !Ctor ||
+      Ctor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+    return false;
+  const auto *Any = Record->getDefinition();
+  if (!Construction->getNumArgs())
+    return anyDefaultConstructor(S, SM, Ctor, Any);
+  return Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(), Construction->getType()) &&
+         anyEmptyCopyOrMove(S, SM, Ctor, Any, Context);
 }
 
 std::optional<UtilityAnyEmptyCall> approvedUtilityAnyEmptyCall(
