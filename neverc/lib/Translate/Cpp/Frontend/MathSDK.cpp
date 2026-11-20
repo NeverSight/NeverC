@@ -7018,6 +7018,282 @@ bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
   return false;
 }
 
+bool pinnedUtilityAnyType(const State &S, const SourceManager &SM,
+                          const CXXRecordDecl *Record) {
+  return S.coreV2() && Record && Record->getIdentifier() &&
+         Record->getName() == "any" &&
+         approvedStandardSDKDeclaration(S, SM, Record->getCanonicalDecl()) &&
+         cstddefOrigin(S, SM, Record->getCanonicalDecl()->getLocation(), "libcxx", "any");
+}
+
+bool approvedUtilityAnyMetadata(const State &S, const SourceManager &SM,
+                                const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!S.coreV2() || !Record || !Record->getIdentifier() || Record->getName() != "any" ||
+      Context.getTypeSize(Context.CharTy) != 8 || Context.getTypeSize(Context.VoidPtrTy) != 64)
+    return false;
+  const auto *Any = Record->getDefinition();
+  if (!Any || Any->isInvalidDecl() || !Any->isStandardLayout() || Any->isUnion() ||
+      Any->isDynamicClass() || Any->getNumBases() || Any->getNumVBases() ||
+      std::distance(Any->field_begin(), Any->field_end()) != 2)
+    return false;
+  auto Pinned = [&](const Decl *D, llvm::StringRef Path) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  for (const auto *D : Any->redecls())
+    if (!Pinned(D, "any"))
+      return false;
+  const auto AnyType = Context.getRecordType(Any);
+  auto Fields = Any->field_begin();
+  const auto *Handle = *Fields++;
+  const auto *Storage = *Fields;
+  auto Field = [&](const FieldDecl *D, llvm::StringRef Name, llvm::StringRef Path) {
+    return D->getIdentifier() && D->getName() == Name && !D->isBitField() &&
+           !D->isMutable() && Pinned(D, Path);
+  };
+  if (!Field(Handle, "__h_", "any") || !Field(Storage, "__s_", "any") ||
+      !Handle->getType()->isFunctionPointerType())
+    return false;
+  const auto *Init = Handle->getInClassInitializer();
+  if (!Init || !isa<CXXNullPtrLiteralExpr>(Init->IgnoreParenImpCasts()))
+    return false;
+  const auto *Signature = Handle->getType()->getPointeeType()->getAs<FunctionProtoType>();
+  if (!Signature || Signature->isVariadic() || Signature->getNumParams() != 5 ||
+      !Context.hasSameType(Signature->getReturnType(), Context.VoidPtrTy) ||
+      !Context.hasSameType(Signature->getParamType(1), Context.getPointerType(AnyType.withConst())) ||
+      !Context.hasSameType(Signature->getParamType(2), Context.getPointerType(AnyType)) ||
+      !Context.hasSameType(Signature->getParamType(4), Context.getPointerType(Context.VoidTy.withConst())))
+    return false;
+  const auto *TagType = Signature->getParamType(0)->getAs<EnumType>();
+  const auto *Tag = TagType ? TagType->getDecl()->getDefinition() : nullptr;
+  const auto RTTIPointer = Signature->getParamType(3);
+  const auto RTTI = RTTIPointer->isPointerType() ? RTTIPointer->getPointeeType() : QualType{};
+  const auto *Info = RTTI.isNull() ? nullptr : RTTI->getAsCXXRecordDecl();
+  if (!Tag || !Tag->getIdentifier() || Tag->getName() != "_Action" || !Tag->isScoped() ||
+      !Pinned(Tag, "any") || !Info || !Info->getIdentifier() || Info->getName() != "type_info" ||
+      !Info->getDefinition() || !Pinned(Info->getDefinition(), "typeinfo") ||
+      !RTTI.isConstQualified() || RTTI.isVolatileQualified())
+    return false;
+
+  auto Definition = [](QualType T) {
+    const auto *D = T->getAsCXXRecordDecl();
+    return D ? D->getDefinition() : nullptr;
+  };
+  const auto *Union = Definition(Storage->getType());
+  if (!Union || !Union->getIdentifier() || Union->getName() != "_Storage" ||
+      !Union->isUnion() || !Union->isStandardLayout() || Union->getNumBases() ||
+      !Pinned(Union, "any") || Union->getDeclContext() != Any ||
+      std::distance(Union->field_begin(), Union->field_end()) != 2)
+    return false;
+  auto Members = Union->field_begin();
+  const auto *Pointer = *Members++;
+  const auto *Buffer = *Members;
+  if (!Field(Pointer, "__ptr", "any") || !Field(Buffer, "__buf", "any") ||
+      !Context.hasSameType(Pointer->getType(), Context.VoidPtrTy))
+    return false;
+  const auto *BufferRecord = Definition(Buffer->getType());
+  const auto *Aligned = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      BufferRecord ? BufferRecord->getDeclContext() : nullptr);
+  constexpr llvm::StringLiteral AlignedHeader = "__type_traits/aligned_storage.h";
+  if (!BufferRecord || !BufferRecord->getIdentifier() || BufferRecord->getName() != "type" ||
+      !BufferRecord->isUnion() || !BufferRecord->isStandardLayout() ||
+      !Aligned || !Aligned->getIdentifier() || Aligned->getName() != "aligned_storage" ||
+      Aligned->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Pinned(Aligned, AlignedHeader) || !Pinned(BufferRecord, AlignedHeader) ||
+      BufferRecord->field_empty() || std::next(BufferRecord->field_begin()) != BufferRecord->field_end())
+    return false;
+  const auto &Args = Aligned->getTemplateArgs();
+  if (Args.size() != 2 || Args.get(0).getKind() != TemplateArgument::Integral ||
+      Args.get(1).getKind() != TemplateArgument::Integral ||
+      Args.get(0).getAsIntegral().getLimitedValue(25) != 24 ||
+      Args.get(1).getAsIntegral().getLimitedValue(9) != 8)
+    return false;
+  const auto *Bytes = *BufferRecord->field_begin();
+  const auto *Array = Context.getAsConstantArrayType(Bytes->getType());
+  if (!Field(Bytes, "__data", AlignedHeader) || !Array ||
+      !Context.hasSameType(Array->getElementType(), Context.UnsignedCharTy) ||
+      Array->getSize().getLimitedValue(25) != 24)
+    return false;
+  const auto &BufferLayout = Context.getASTRecordLayout(BufferRecord);
+  const auto &UnionLayout = Context.getASTRecordLayout(Union);
+  const auto &AnyLayout = Context.getASTRecordLayout(Any);
+  const auto Align = Context.getTypeAlignInChars(Context.VoidPtrTy);
+  const auto Word = Context.getTypeSizeInChars(Context.VoidPtrTy);
+  return BufferLayout.getSize() == Word * 3 && BufferLayout.getAlignment() == Align &&
+         BufferLayout.getFieldOffset(0) == 0 && UnionLayout.getSize() == Word * 3 &&
+         UnionLayout.getAlignment() == Align && !UnionLayout.getFieldOffset(0) &&
+         !UnionLayout.getFieldOffset(1) && AnyLayout.getSize() == Word * 4 &&
+         AnyLayout.getAlignment() == Align && !AnyLayout.getFieldOffset(0) &&
+         AnyLayout.getFieldOffset(1) == Context.getTypeSize(Context.VoidPtrTy);
+}
+
+static bool anyDeclaration(const State &S, const SourceManager &SM,
+                           const Decl *Declaration) {
+  return approvedStandardSDKDeclaration(S, SM, Declaration) &&
+         cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "any");
+}
+
+static const CompoundStmt *anyBody(const State &S, const SourceManager &SM,
+                                   const CXXMethodDecl *Method, unsigned Parameters) {
+  if (!Method || Method->isDeleted() || Method->isVirtual() || Method->isStatic() ||
+      Method->isVolatile() || Method->isVariadic() || Method->getNumParams() != Parameters)
+    return nullptr;
+  for (const auto *D : Method->redecls())
+    if (!anyDeclaration(S, SM, D))
+      return nullptr;
+  return dyn_cast_or_null<CompoundStmt>(Method->getBody());
+}
+
+static bool anyThis(const Expr *E) {
+  return E && isa<CXXThisExpr>(E->IgnoreParenImpCasts());
+}
+
+static bool anyThisField(const Expr *E, const FieldDecl *Field) {
+  const auto *Member = E ? dyn_cast<MemberExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  return Member && Member->getMemberDecl() == Field && anyThis(Member->getBase());
+}
+
+static bool anyNull(const Expr *E) {
+  return E && isa<CXXNullPtrLiteralExpr>(E->IgnoreParenImpCasts());
+}
+
+static const Expr *anyReturn(const CompoundStmt *Body) {
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  return Return ? Return->getRetValue() : nullptr;
+}
+
+static const Expr *anyInitializer(const CXXConstructorDecl *Ctor, const FieldDecl *Field) {
+  for (const auto *Init : Ctor->inits())
+    if (Init->isMemberInitializer() && Init->getMember() == Field)
+      return Init->getInit();
+  return nullptr;
+}
+
+static bool anyDefaultConstructor(const State &S, const SourceManager &SM,
+                                  const CXXConstructorDecl *Ctor,
+                                  const CXXRecordDecl *Any) {
+  const auto *Body = anyBody(S, SM, Ctor, 0);
+  if (!Body || !Body->body_empty() || !Ctor->isDefaultConstructor() ||
+      !Ctor->isConstexpr() || Ctor->getNumCtorInitializers() != 2)
+    return false;
+  auto Fields = Any->field_begin();
+  if (!anyNull(anyInitializer(Ctor, *Fields++)))
+    return false;
+  const auto *Storage = *Fields;
+  const auto *Input = anyInitializer(Ctor, Storage);
+  const auto *Build = Input ? dyn_cast<CXXConstructExpr>(Input->IgnoreParenImpCasts()) : nullptr;
+  const auto *Union = Storage->getType()->getAsCXXRecordDecl()->getDefinition();
+  const auto *Nested = Build ? Build->getConstructor() : nullptr;
+  const auto *NestedBody = anyBody(S, SM, Nested, 0);
+  return Build && !Build->getNumArgs() && NestedBody && NestedBody->body_empty() &&
+         Nested->isDefaultConstructor() &&
+         Nested->getParent()->getCanonicalDecl() == Union->getCanonicalDecl() &&
+         Nested->getNumCtorInitializers() == 1 &&
+         anyNull(anyInitializer(Nested, *Union->field_begin()));
+}
+
+static bool anyResetBody(const State &S, const SourceManager &SM,
+                         const CXXMethodDecl *Reset, const CXXRecordDecl *Any,
+                         const ASTContext &Context) {
+  const auto *Body = anyBody(S, SM, Reset, 0);
+  if (!Body || Body->size() != 1 || Reset->getName() != "reset" || Reset->isConst() ||
+      !Reset->getReturnType()->isVoidType() ||
+      Reset->getParent()->getCanonicalDecl() != Any->getCanonicalDecl())
+    return false;
+  const auto *Handle = *Any->field_begin();
+  const auto *If = dyn_cast<IfStmt>(Body->body_front());
+  if (!If || If->getInit() || If->getConditionVariable() || If->getElse() ||
+      !anyThisField(If->getCond(), Handle))
+    return false;
+  const auto *Invoke = dyn_cast<CXXMemberCallExpr>(If->getThen());
+  const auto *Dispatch = Invoke ? Invoke->getMethodDecl() : nullptr;
+  const auto *DispatchBody = anyBody(S, SM, Dispatch, 4);
+  if (!DispatchBody || Invoke->getNumArgs() != 4 || Dispatch->getName() != "__call" ||
+      Dispatch->isConst() || Dispatch->getParent()->getCanonicalDecl() != Any->getCanonicalDecl() ||
+      !anyThis(Invoke->getImplicitObjectArgument()) ||
+      !Context.hasSameType(Dispatch->getReturnType(), Context.VoidPtrTy))
+    return false;
+  const auto *Action = dyn_cast<DeclRefExpr>(Invoke->getArg(0)->IgnoreParenImpCasts());
+  const auto *Destroy = Action ? dyn_cast<EnumConstantDecl>(Action->getDecl()) : nullptr;
+  const auto *Signature = Handle->getType()->getPointeeType()->getAs<FunctionProtoType>();
+  if (!Destroy || Destroy->getName() != "_Destroy" || !anyDeclaration(S, SM, Destroy) ||
+      !Context.hasSameType(Action->getType(), Signature->getParamType(0)))
+    return false;
+  for (unsigned I = 1; I < 4; ++I) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Invoke->getArg(I));
+    if (!Default || Default->getParam() != Dispatch->getParamDecl(I) || !anyNull(Default->getExpr()))
+      return false;
+  }
+  const auto *Result = anyReturn(DispatchBody);
+  const auto *Indirect = Result ? dyn_cast<CallExpr>(Result->IgnoreParenImpCasts()) : nullptr;
+  if (!Indirect || Indirect->getNumArgs() != 5 || Indirect->getDirectCallee() ||
+      !anyThisField(Indirect->getCallee(), Handle) || !anyThis(Indirect->getArg(1)))
+    return false;
+  constexpr unsigned Operand[] = {0, 2, 3, 4};
+  for (unsigned I = 0; I < 4; ++I) {
+    const auto *Ref = dyn_cast<DeclRefExpr>(Indirect->getArg(Operand[I])->IgnoreParenImpCasts());
+    if (!Ref || Ref->getDecl() != Dispatch->getParamDecl(I))
+      return false;
+  }
+  return true;
+}
+
+bool approvedUtilityAnyEmptyRecord(const State &S, const SourceManager &SM,
+                                    const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!approvedUtilityAnyMetadata(S, SM, Record, Context) ||
+      Context.getTypeSize(Context.UnsignedLongLongTy) != 64 ||
+      Context.getTypeAlign(Context.UnsignedLongLongTy) != Context.getTypeAlign(Context.VoidPtrTy) ||
+      Context.getTypeAlign(Context.VoidPtrTy) != 64)
+    return false;
+  const auto *Any = Record->getDefinition();
+  const auto *Dtor = Any->getDestructor();
+  const auto *Body = anyBody(S, SM, Dtor, 0);
+  const auto *Call = Body && Body->size() == 1 ? dyn_cast<CXXMemberCallExpr>(Body->body_front()) : nullptr;
+  // Only default construction enters this carrier. Its empty state never
+  // reaches the SDK's dynamic handler during reset or destruction.
+  return Call && !Call->getNumArgs() && anyThis(Call->getImplicitObjectArgument()) &&
+         anyResetBody(S, SM, Call->getMethodDecl(), Any, Context);
+}
+
+bool approvedUtilityAnyEmptyConstruction(const State &S, const SourceManager &SM,
+                                          const CXXConstructExpr *Construction,
+                                          const ASTContext &Context) {
+  if (!Construction || Construction->isInstantiationDependent() || Construction->getNumArgs() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return false;
+  const auto *Record = Construction->getType()->getAsCXXRecordDecl();
+  const auto *Ctor = Construction->getConstructor();
+  return approvedUtilityAnyEmptyRecord(S, SM, Record, Context) && Ctor &&
+         Ctor->getParent()->getCanonicalDecl() == Record->getCanonicalDecl() &&
+         anyDefaultConstructor(S, SM, Ctor, Record->getDefinition());
+}
+
+std::optional<UtilityAnyEmptyCall> approvedUtilityAnyEmptyCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = MemberCall ? MemberCall->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || MemberCall->getNumArgs() ||
+      (Method->getName() != "reset" && Method->getName() != "has_value"))
+    return std::nullopt;
+  const auto *Member = dyn_cast_or_null<MemberExpr>(directMethodReference(Call));
+  const auto *Any = Method->getParent()->getDefinition();
+  if (!Member || !approvedUtilityAnyEmptyRecord(S, SM, Any, Context))
+    return std::nullopt;
+  if (Method->getName() == "reset") {
+    if (anyResetBody(S, SM, Method, Any, Context))
+      return UtilityAnyEmptyCall{UtilityAnyEmptyOperation::Reset, Member, Any};
+    return std::nullopt;
+  }
+  const auto *Returned = anyReturn(anyBody(S, SM, Method, 0));
+  const auto *Comparison = Returned ? dyn_cast<BinaryOperator>(Returned->IgnoreParenImpCasts()) : nullptr;
+  if (Method->isConst() && Context.hasSameType(Method->getReturnType(), Context.BoolTy) &&
+      Comparison && Comparison->getOpcode() == BO_NE &&
+      anyThisField(Comparison->getLHS(), *Any->field_begin()) && anyNull(Comparison->getRHS()))
+    return UtilityAnyEmptyCall{UtilityAnyEmptyOperation::HasValue, Member, Any};
+  return std::nullopt;
+}
+
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
                                   const CXXRecordDecl *Record) {
   const auto *Specialization =
