@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.associative_metadata_registered = cls.registered
+        cls.associative_metadata_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.associative_metadata_original = cls.adapter.restore_original_gtests(cls.associative_metadata_registered,cls.associative_metadata_suffix)
+        cls.registered = cls.adapter.restore_associative_metadata_history(cls.associative_metadata_registered)
         cls.bitset_text_hash_swap_registered = cls.registered
         cls.bitset_text_hash_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.bitset_text_hash_swap_original = cls.adapter.restore_original_gtests(cls.bitset_text_hash_swap_registered,cls.bitset_text_hash_swap_suffix)
@@ -1605,6 +1609,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.bitset_text_hash_swap_registered,self.bitset_text_hash_swap_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.bitset_text_hash_swap_original+b' ',['TranslateTest.CoreV2BitsetHashZeroSizeRunAtBothOptimizations'])
+
+    def test_associative_metadata_preserves_all_previous_registry_bytes_and_extracts_twenty_two_tests(self):
+        self.assertEqual(self.associative_metadata_original+self.associative_metadata_suffix,self.associative_metadata_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.associative_metadata_original,self.associative_metadata_suffix),self.associative_metadata_original)
+        self.assertEqual(self.adapter.restore_associative_metadata_history(self.associative_metadata_registered),self.bitset_text_hash_swap_registered)
+        self.assertEqual(self.adapter.restore_associative_metadata_history(self.associative_metadata_original),self.bitset_text_hash_swap_original)
+        selected = ['TranslateTest.CoreV2AssociativeMapIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeMapRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeMapRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeSetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeSetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeSetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeUnorderedSetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeUnorderedSetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeUnorderedSetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeUnorderedMapNonDefaultKeyRejected']
+        generated,proof = self.extractor.extract(self.associative_metadata_original,selected)
+        self.assertEqual(proof['original_test_names'],7908)
+        self.assertEqual(proof['selected_count'],22)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),7886)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19assoc',generated)
+        self.assertIn(b'associative-',generated)
+        self.assertIn(b'std::map<',generated)
+
+    def test_associative_metadata_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.associative_metadata_registered+b' ',
+                        self.associative_metadata_registered.replace(b'r19assoc',b'q.push(11)',1),
+                        self.associative_metadata_registered+self.associative_metadata_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.associative_metadata_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_associative_metadata_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.associative_metadata_registered,self.associative_metadata_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.associative_metadata_original+b' ',['TranslateTest.CoreV2AssociativeMapIdentityRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
