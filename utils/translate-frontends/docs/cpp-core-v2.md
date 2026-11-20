@@ -17372,12 +17372,14 @@ SDK return type.
 
 `to_ulong()` and `to_ullong()` preserve the value when the receiving unsigned
 type can represent all `N` bits. Their limits follow the selected target ABI.
-For wider bitsets, a directly constructed temporary can also be converted
-when its authenticated default or unsigned-value constructor proves that
-every bit above the result width is clear. A const local initialized by the
-same constructor retains its bound. This includes unsigned operands bounded
-by the supported masks and moduli. Conversion evaluates the receiver once. The checked operations require an in-range proof. A wider receiver
-whose high bits can overflow requires additional support.
+For wider bitsets, a directly constructed temporary or a const local
+can be converted when the selected constructor proves that every bit above
+the target result width is clear. The proof uses the default value, the
+range of the unsigned operand, or the exact words produced by a checked
+text constructor. Text forms include the literal, its directly initialized
+`constexpr` pointer and the checked owning-string temporary. Positions,
+counts and custom digits determine which text contributes bits. Conversion
+evaluates the receiver once and preserves temporary cleanup.
 
 The pinned whole-value `std::swap` exchanges two mutable bitsets of the same
 type. Copies follow the selected SDK move and assignment path. Self-swap
@@ -17414,10 +17416,10 @@ on 64-bit Linux, including 84 generated C23 executions at O0 and O2.
 Wide conversion and whole swap add 27 registered tests. The combined
 coverage includes 750 source requests on the six 64-bit targets and
 125 formal tests, with 108 generated C23 executions checked against
-native C++ at O0 and O2. The composed text and index replay adds 73 cases
-and checks 438 requests across the six 64-bit targets. The cumulative suite
-runs 198 formal tests, including 170 generated C23 executions matched to
-native C++ at O0 and O2.
+native C++ at O0 and O2. The composed text, index and high-word conversion
+replay covers 510 source requests across the six 64-bit targets. The
+cumulative suite passes 210 GTests. It matches 91 generated C23 programs to
+their native C++ references at both O0 and O2.
 
 SDK template, specialization and function redeclarations remain authenticated.
 The used body graph rejects source-owned macro spelling, replaced declarations
