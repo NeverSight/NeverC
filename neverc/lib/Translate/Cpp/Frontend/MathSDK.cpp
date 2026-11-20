@@ -8179,11 +8179,13 @@ static bool anyEmptySwapBody(const State &S, const SourceManager &SM,
                              const ASTContext &Context) {
   const auto *Body = anyBody(S, SM, Swap, 1);
   const auto *Type = Swap ? Swap->getType()->getAs<FunctionProtoType>() : nullptr;
-  if (!Body || Body->size() != 2 || !Swap->getIdentifier() || Swap->getName() != "swap" ||
+  const auto *Definition = Swap ? Swap->getDefinition() : nullptr;
+  if (!Body || !Definition || Body->size() != 2 || !Swap->getIdentifier() || Swap->getName() != "swap" ||
       !Type || !Type->isNothrow() || Swap->isConst() || !Swap->getReturnType()->isVoidType() ||
       Swap->getParent()->getCanonicalDecl() != Any->getCanonicalDecl())
     return false;
-  const auto *Input = Swap->getParamDecl(0);
+  // The assignment body can select the in-class declaration of swap.
+  const auto *Input = Definition->getParamDecl(0);
   if (!Context.hasSameType(Input->getType(), Context.getLValueReferenceType(Context.getRecordType(Any))))
     return false;
   const auto *Handle = *Any->field_begin();
