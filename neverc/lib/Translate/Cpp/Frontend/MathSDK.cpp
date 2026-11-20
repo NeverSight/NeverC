@@ -8082,7 +8082,8 @@ static bool variantAssignmentFlag(const State &S, const SourceManager &SM,
   if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(E))
     E = Cast->getSubExpr()->IgnoreParenImpCasts();
   const auto *List = dyn_cast<InitListExpr>(E);
-  return List && List->getNumInits() == 0 && variantDeclaration(S, SM, List);
+  return List && List->getNumInits() == 0 &&
+         cstddefOrigin(S, SM, List->getBeginLoc(), "libcxx", "variant");
 }
 
 static bool variantForwardedCapture(const State &S, const SourceManager &SM,
