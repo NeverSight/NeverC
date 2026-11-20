@@ -19,6 +19,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/raw_ostream.h"
 #include <deque>
 #include <functional>
 #include <set>
@@ -7763,10 +7764,87 @@ std::optional<UtilityVariantAlternative> approvedUtilityVariantGetIf(
   return UtilityVariantAlternative{*V, I};
 }
 
+static void traceVariantVisit(const State &S, const SourceManager &SM,
+    const FunctionDecl *Visit, const CallExpr *Call) {
+  if (!Visit || !Visit->getIdentifier() || Visit->getName() != "visit" ||
+      !variantDeclaration(S, SM, Visit) || !S.owns(SM, Call->getExprLoc()))
+    return;
+
+  llvm::DenseSet<const FunctionDecl *> Functions;
+  llvm::DenseSet<const Stmt *> Statements;
+  std::function<void(const FunctionDecl *, unsigned)> Function;
+  std::function<void(const Stmt *, unsigned, unsigned)> Statement;
+  unsigned Budget = 1024;
+  auto SDKPath = [&](const Decl *D) -> llvm::StringRef {
+    const auto Origin = S.sdkFile(SM, D->getLocation());
+    if (!Origin || Origin->Root != "libcxx")
+      return {};
+    if (Origin->Path == "variant") return "variant";
+    if (Origin->Path == "__functional/invoke.h") return "__functional/invoke.h";
+    if (Origin->Path == "__type_traits/invoke.h") return "__type_traits/invoke.h";
+    return {};
+  };
+  Function = [&](const FunctionDecl *F, unsigned Depth) {
+    if (!F || Depth > 14 || Functions.size() >= 140 || Budget == 0 ||
+        !Functions.insert(F->getCanonicalDecl()).second)
+      return;
+    const auto Path = SDKPath(F);
+    if (Path.empty() && !S.owns(SM, F->getLocation()))
+      return;
+    const auto *Body = F->getBody();
+    auto &Out = llvm::errs();
+    Out << "NEVERC_VARIANT_VISIT_DECL depth=" << Depth
+        << " file=" << (Path.empty() ? "owned" : Path)
+        << " name=" << F->getNameAsString()
+        << " args=" << F->getNumParams()
+        << " body=" << (Body ? Body->getStmtClassName() : "none");
+    if (const auto *Method = dyn_cast<CXXMethodDecl>(F))
+      Out << " parent=" << Method->getParent()->getNameAsString()
+          << " const=" << Method->isConst() << " static=" << Method->isStatic();
+    if (const auto *Arguments = F->getTemplateSpecializationArgs()) {
+      Out << " template=";
+      for (unsigned I = 0; I < Arguments->size() && I < 6; ++I) {
+        const auto &Item = Arguments->get(I);
+        if (Item.getKind() == TemplateArgument::Pack)
+          Out << "p" << Item.pack_size();
+        else if (Item.getKind() == TemplateArgument::Integral)
+          Out << "i" << Item.getAsIntegral().getLimitedValue(64);
+        else
+          Out << "k" << unsigned(Item.getKind());
+        Out << ",";
+      }
+    }
+    Out << '\n';
+    if (!Path.empty()) Statement(Body, Depth, 0);
+  };
+  Statement = [&](const Stmt *Node, unsigned FunctionDepth, unsigned NodeDepth) {
+    if (!Node || NodeDepth > 12 || Budget == 0 || !Statements.insert(Node).second)
+      return;
+    --Budget;
+    if (const auto *Call = dyn_cast<CallExpr>(Node)) {
+      const auto *Callee = Call->getDirectCallee();
+      llvm::errs() << "NEVERC_VARIANT_VISIT_CALL depth=" << FunctionDepth
+                   << " node=" << Node->getStmtClassName()
+                   << " name=" << (Callee ? Callee->getNameAsString() : "indirect")
+                   << " args=" << Call->getNumArgs() << '\n';
+      Function(Callee, FunctionDepth + 1);
+    } else if (const auto *Reference = dyn_cast<DeclRefExpr>(Node)) {
+      Function(dyn_cast<FunctionDecl>(Reference->getDecl()), FunctionDepth + 1);
+    }
+    for (const auto *Child : Node->children())
+      Statement(Child, FunctionDepth, NodeDepth + 1);
+  };
+  llvm::errs() << "NEVERC_VARIANT_VISIT_START args=" << Call->getNumArgs() << '\n';
+  Function(Visit, 0);
+  llvm::errs() << "NEVERC_VARIANT_VISIT_END nodes=" << 1024 - Budget
+               << " declarations=" << Functions.size() << '\n';
+}
+
 std::optional<UtilityVariantAlternative> approvedUtilityVariantHolds(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  traceVariantVisit(S, SM, F, Call);
   if (!F || !F->getIdentifier() || F->getName() != "holds_alternative" ||
       !variantFunction(S, SM, F, 1) || !variantDeclaration(S, SM, F->getPrimaryTemplate()) ||
       Call->getNumArgs() != 1 || !Call->getType()->isBooleanType() ||
