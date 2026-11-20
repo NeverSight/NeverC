@@ -6782,6 +6782,38 @@ static bool utilityTupleDirectConversion(const State &S,
          Context.hasSameUnqualifiedType(From, To);
 }
 
+bool pinnedUtilityMonostateType(const State &S, const SourceManager &SM,
+                                const CXXRecordDecl *Record) {
+  if (!S.coreV2() || !Record || !Record->getIdentifier() ||
+      Record->getName() != "monostate")
+    return false;
+  const auto *Definition = Record->getDefinition();
+  return Definition && approvedStandardSDKDeclaration(S, SM, Definition) &&
+         cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
+                       "__variant/monostate.h");
+}
+
+bool approvedUtilityMonostateMetadata(const State &S, const SourceManager &SM,
+                                      const CXXRecordDecl *Record,
+                                      const ASTContext &Context) {
+  if (!pinnedUtilityMonostateType(S, SM, Record))
+    return false;
+  const auto *Definition = Record->getDefinition();
+  if (Definition->isInvalidDecl() || Definition->isUnion() ||
+      !Definition->isEmpty() || !Definition->isStandardLayout() ||
+      !Definition->isTriviallyCopyable() || Definition->getNumBases() ||
+      !Definition->field_empty() || Context.getCharWidth() != 8)
+    return false;
+  for (const auto *D : Definition->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__variant/monostate.h"))
+      return false;
+  const auto &Layout = Context.getASTRecordLayout(Definition);
+  return Layout.getFieldCount() == 0 && Layout.getSize() == CharUnits::One() &&
+         Layout.getAlignment() == CharUnits::One();
+}
+
 bool pinnedUtilityVariantType(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record) {
   const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
@@ -6897,7 +6929,9 @@ bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
   };
   for (const auto &Alternative : Alternatives) {
     const auto T = Alternative.getAsType();
-    if (T->isIncompleteType() || !utilityScalar(Context, T))
+    if (T->isIncompleteType() ||
+        (!utilityScalar(Context, T) &&
+         !approvedUtilityMonostateMetadata(S, SM, T->getAsCXXRecordDecl(), Context)))
       return false;
   }
 
@@ -7016,6 +7050,115 @@ bool approvedUtilityVariantLayoutQuery(const State &S, const SourceManager &SM,
     Current = Definition(Tail->getType());
   }
   return false;
+}
+
+bool pinnedUtilityAnyType(const State &S, const SourceManager &SM,
+                          const CXXRecordDecl *Record) {
+  return S.coreV2() && Record && Record->getIdentifier() &&
+         Record->getName() == "any" &&
+         approvedStandardSDKDeclaration(S, SM, Record->getCanonicalDecl()) &&
+         cstddefOrigin(S, SM, Record->getCanonicalDecl()->getLocation(), "libcxx", "any");
+}
+
+bool approvedUtilityAnyMetadata(const State &S, const SourceManager &SM,
+                                const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!S.coreV2() || !Record || !Record->getIdentifier() || Record->getName() != "any" ||
+      Context.getTypeSize(Context.CharTy) != 8 || Context.getTypeSize(Context.VoidPtrTy) != 64)
+    return false;
+  const auto *Any = Record->getDefinition();
+  if (!Any || Any->isInvalidDecl() || !Any->isStandardLayout() || Any->isUnion() ||
+      Any->isDynamicClass() || Any->getNumBases() || Any->getNumVBases() ||
+      std::distance(Any->field_begin(), Any->field_end()) != 2)
+    return false;
+  auto Pinned = [&](const Decl *D, llvm::StringRef Path) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  for (const auto *D : Any->redecls())
+    if (!Pinned(D, "any"))
+      return false;
+  const auto AnyType = Context.getRecordType(Any);
+  auto Fields = Any->field_begin();
+  const auto *Handle = *Fields++;
+  const auto *Storage = *Fields;
+  auto Field = [&](const FieldDecl *D, llvm::StringRef Name, llvm::StringRef Path) {
+    return D->getIdentifier() && D->getName() == Name && !D->isBitField() &&
+           !D->isMutable() && Pinned(D, Path);
+  };
+  if (!Field(Handle, "__h_", "any") || !Field(Storage, "__s_", "any") ||
+      !Handle->getType()->isFunctionPointerType())
+    return false;
+  const auto *Init = Handle->getInClassInitializer();
+  if (!Init || !isa<CXXNullPtrLiteralExpr>(Init->IgnoreParenImpCasts()))
+    return false;
+  const auto *Signature = Handle->getType()->getPointeeType()->getAs<FunctionProtoType>();
+  if (!Signature || Signature->isVariadic() || Signature->getNumParams() != 5 ||
+      !Context.hasSameType(Signature->getReturnType(), Context.VoidPtrTy) ||
+      !Context.hasSameType(Signature->getParamType(1), Context.getPointerType(AnyType.withConst())) ||
+      !Context.hasSameType(Signature->getParamType(2), Context.getPointerType(AnyType)) ||
+      !Context.hasSameType(Signature->getParamType(4), Context.getPointerType(Context.VoidTy.withConst())))
+    return false;
+  const auto *TagType = Signature->getParamType(0)->getAs<EnumType>();
+  const auto *Tag = TagType ? TagType->getDecl()->getDefinition() : nullptr;
+  const auto RTTIPointer = Signature->getParamType(3);
+  const auto RTTI = RTTIPointer->isPointerType() ? RTTIPointer->getPointeeType() : QualType{};
+  const auto *Info = RTTI.isNull() ? nullptr : RTTI->getAsCXXRecordDecl();
+  if (!Tag || !Tag->getIdentifier() || Tag->getName() != "_Action" || !Tag->isScoped() ||
+      !Pinned(Tag, "any") || !Info || !Info->getIdentifier() || Info->getName() != "type_info" ||
+      !Info->getDefinition() || !Pinned(Info->getDefinition(), "typeinfo") ||
+      !RTTI.isConstQualified() || RTTI.isVolatileQualified())
+    return false;
+
+  auto Definition = [](QualType T) {
+    const auto *D = T->getAsCXXRecordDecl();
+    return D ? D->getDefinition() : nullptr;
+  };
+  const auto *Union = Definition(Storage->getType());
+  if (!Union || !Union->getIdentifier() || Union->getName() != "_Storage" ||
+      !Union->isUnion() || !Union->isStandardLayout() || Union->getNumBases() ||
+      !Pinned(Union, "any") || Union->getDeclContext() != Any ||
+      std::distance(Union->field_begin(), Union->field_end()) != 2)
+    return false;
+  auto Members = Union->field_begin();
+  const auto *Pointer = *Members++;
+  const auto *Buffer = *Members;
+  if (!Field(Pointer, "__ptr", "any") || !Field(Buffer, "__buf", "any") ||
+      !Context.hasSameType(Pointer->getType(), Context.VoidPtrTy))
+    return false;
+  const auto *BufferRecord = Definition(Buffer->getType());
+  const auto *Aligned = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      BufferRecord ? BufferRecord->getDeclContext() : nullptr);
+  constexpr llvm::StringLiteral AlignedHeader = "__type_traits/aligned_storage.h";
+  if (!BufferRecord || !BufferRecord->getIdentifier() || BufferRecord->getName() != "type" ||
+      !BufferRecord->isUnion() || !BufferRecord->isStandardLayout() ||
+      !Aligned || !Aligned->getIdentifier() || Aligned->getName() != "aligned_storage" ||
+      Aligned->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Pinned(Aligned, AlignedHeader) || !Pinned(BufferRecord, AlignedHeader) ||
+      BufferRecord->field_empty() || std::next(BufferRecord->field_begin()) != BufferRecord->field_end())
+    return false;
+  const auto &Args = Aligned->getTemplateArgs();
+  if (Args.size() != 2 || Args.get(0).getKind() != TemplateArgument::Integral ||
+      Args.get(1).getKind() != TemplateArgument::Integral ||
+      Args.get(0).getAsIntegral().getLimitedValue(25) != 24 ||
+      Args.get(1).getAsIntegral().getLimitedValue(9) != 8)
+    return false;
+  const auto *Bytes = *BufferRecord->field_begin();
+  const auto *Array = Context.getAsConstantArrayType(Bytes->getType());
+  if (!Field(Bytes, "__data", AlignedHeader) || !Array ||
+      !Context.hasSameType(Array->getElementType(), Context.UnsignedCharTy) ||
+      Array->getSize().getLimitedValue(25) != 24)
+    return false;
+  const auto &BufferLayout = Context.getASTRecordLayout(BufferRecord);
+  const auto &UnionLayout = Context.getASTRecordLayout(Union);
+  const auto &AnyLayout = Context.getASTRecordLayout(Any);
+  const auto Align = Context.getTypeAlignInChars(Context.VoidPtrTy);
+  const auto Word = Context.getTypeSizeInChars(Context.VoidPtrTy);
+  return BufferLayout.getSize() == Word * 3 && BufferLayout.getAlignment() == Align &&
+         BufferLayout.getFieldOffset(0) == 0 && UnionLayout.getSize() == Word * 3 &&
+         UnionLayout.getAlignment() == Align && !UnionLayout.getFieldOffset(0) &&
+         !UnionLayout.getFieldOffset(1) && AnyLayout.getSize() == Word * 4 &&
+         AnyLayout.getAlignment() == Align && !AnyLayout.getFieldOffset(0) &&
+         AnyLayout.getFieldOffset(1) == Context.getTypeSize(Context.VoidPtrTy);
 }
 
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
@@ -131744,9 +131887,9 @@ bool approvedSequenceContainerMetadataRecord(const State &S,
          Context.hasSameType(Allocator->getTemplateArgs()[0].getAsType(), Context.IntTy);
 }
 
-bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
-    const CXXRecordDecl *Record, const ASTContext &Context) {
-  if (!S.coreV2()) return false;
+static const ClassTemplateSpecializationDecl *associativeTypeIdentity(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
+    llvm::StringRef Name, llvm::StringRef Header, llvm::StringRef Forward, unsigned Count) {
   auto StandardNamespace = [](const DeclContext *Context) {
     for (unsigned Depth = 0; Context && Depth < 8; ++Depth) {
       const auto *Namespace = dyn_cast<NamespaceDecl>(Context);
@@ -131757,91 +131900,160 @@ bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
     }
     return false;
   };
-  auto Specialization = [&](const CXXRecordDecl *Input, llvm::StringRef Name,
-                            llvm::StringRef Header, llvm::StringRef Forward,
-                            unsigned Count) -> const ClassTemplateSpecializationDecl * {
-    const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input);
-    const auto *Template = R ? R->getSpecializedTemplate() : nullptr;
-    if (!Template || Template->getName() != Name || !StandardNamespace(Template->getDeclContext()) ||
-        R->isInvalidDecl() || R->getTemplateArgs().size() != Count) return nullptr;
-    auto Pinned = [&](const Decl *D) {
-      const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
-      return File && File->Root == "libcxx" &&
-             (File->Path == Header || (!Forward.empty() && File->Path == Forward) ||
-              (Name == "allocator" && File->Path == "__memory/allocator_traits.h") ||
-              (Name == "hash" && (File->Path == "__memory/unique_ptr.h" ||
-                                  File->Path == "__memory/shared_ptr.h"))) &&
-             approvedStandardSDKDeclaration(S, SM, D);
-    };
-    for (const auto *D : Template->redecls()) {
-      if (!Pinned(D)) return nullptr;
-      for (const auto *Pattern : D->getTemplatedDecl()->redecls())
-        if (!Pinned(Pattern)) return nullptr;
-    }
-    for (const auto *D : R->redecls()) if (!Pinned(D)) return nullptr;
-    if (R->getDefinition() && !Pinned(R->getDefinition())) return nullptr;
-    for (const auto &Argument : R->getTemplateArgs().asArray())
-      if (Argument.getKind() != TemplateArgument::Type) return nullptr;
-    return R;
+  const auto *R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Input);
+  const auto *Template = R ? R->getSpecializedTemplate() : nullptr;
+  if (!Template || Template->getName() != Name || !StandardNamespace(Template->getDeclContext()) ||
+      R->isInvalidDecl() || R->getTemplateArgs().size() != Count) return nullptr;
+  auto Pinned = [&](const Decl *D) {
+    const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+    return File && File->Root == "libcxx" &&
+           (File->Path == Header || (!Forward.empty() && File->Path == Forward) ||
+            (Name == "allocator" && File->Path == "__memory/allocator_traits.h") ||
+            (Name == "hash" && (File->Path == "__memory/unique_ptr.h" ||
+                                File->Path == "__memory/shared_ptr.h"))) &&
+           approvedStandardSDKDeclaration(S, SM, D);
   };
-  const auto *Map = Specialization(Record, "unordered_map", "unordered_map",
+  for (const auto *D : Template->redecls()) {
+    if (!Pinned(D)) return nullptr;
+    for (const auto *Pattern : D->getTemplatedDecl()->redecls())
+      if (!Pinned(Pattern)) return nullptr;
+  }
+  for (const auto *D : R->redecls()) if (!Pinned(D)) return nullptr;
+  if (R->getDefinition() && !Pinned(R->getDefinition())) return nullptr;
+  for (const auto &Argument : R->getTemplateArgs().asArray())
+    if (Argument.getKind() != TemplateArgument::Type) return nullptr;
+  return R;
+}
+
+bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!S.coreV2()) return false;
+  const auto *Map = associativeTypeIdentity(S, SM, Record, "unordered_map", "unordered_map",
                                     "__hash_table", 5);
   if (!Map || (Map->getSpecializationKind() != TSK_ImplicitInstantiation &&
                Map->getSpecializationKind() != TSK_Undeclared)) return false;
   const auto &Arguments = Map->getTemplateArgs();
   if (!Context.hasSameType(Arguments[0].getAsType(), Context.IntTy) ||
       !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return false;
-  const auto *Hash = Specialization(Arguments[2].getAsType()->getAsCXXRecordDecl(),
+  const auto *Hash = associativeTypeIdentity(S, SM, Arguments[2].getAsType()->getAsCXXRecordDecl(),
       "hash", "__functional/hash.h", "__fwd/functional.h", 1);
-  const auto *Equal = Specialization(Arguments[3].getAsType()->getAsCXXRecordDecl(),
+  const auto *Equal = associativeTypeIdentity(S, SM, Arguments[3].getAsType()->getAsCXXRecordDecl(),
       "equal_to", "__functional/operations.h", "__fwd/functional.h", 1);
-  const auto *Allocator = Specialization(Arguments[4].getAsType()->getAsCXXRecordDecl(),
+  const auto *Allocator = associativeTypeIdentity(S, SM, Arguments[4].getAsType()->getAsCXXRecordDecl(),
       "allocator", "__memory/allocator.h", "__fwd/memory.h", 1);
   if (!Hash || !Equal || !Allocator ||
       !Context.hasSameType(Hash->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
       !Context.hasSameType(Equal->getTemplateArgs()[0].getAsType(), Context.IntTy)) return false;
-  const auto *Pair = Specialization(Allocator->getTemplateArgs()[0].getAsType()->getAsCXXRecordDecl(),
+  const auto *Pair = associativeTypeIdentity(S, SM, Allocator->getTemplateArgs()[0].getAsType()->getAsCXXRecordDecl(),
       "pair", "__utility/pair.h", "__fwd/pair.h", 2);
   return Pair && Context.hasSameType(Pair->getTemplateArgs()[0].getAsType(), Context.IntTy.withConst()) &&
          Context.hasSameType(Pair->getTemplateArgs()[1].getAsType(), Context.IntTy);
 }
 
-std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
+static llvm::StringRef associativeContainerForwardHeader(llvm::StringRef Name) {
+  if (Name == "map" || Name == "set")
+    return "__tree";
+  if (Name == "unordered_map" || Name == "unordered_set")
+    return "__hash_table";
+  return {};
+}
+
+bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
+                                    const CXXRecordDecl *Record) {
+  const auto *Spec = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Primary = Spec ? Spec->getSpecializedTemplate() : nullptr;
+  if (!S.coreV2() || !Primary || !Primary->getIdentifier())
+    return false;
+  const auto Name = Primary->getName();
+  const auto Forward = associativeContainerForwardHeader(Name);
+  if (Forward.empty())
+    return false;
+  // Route every SDK specialization to its query gate, including those with
+  // an unsupported argument or a source-owned redeclaration.
+  return llvm::any_of(Primary->redecls(), [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           (cstddefOrigin(S, SM, D->getLocation(), "libcxx", Name) ||
+            cstddefOrigin(S, SM, D->getLocation(), "libcxx", Forward));
+  });
+}
+
+bool approvedAssociativeContainerMetadataRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
-    const ASTContext &Context,
-    const std::function<bool(QualType)> &Complete) {
-  if (!Record || !approvedUnorderedMapMetadataRecord(S, SM, Record, Context))
-    return std::nullopt;
-  if (!Record->getDefinition() && Complete &&
-      !Complete(Context.getRecordType(Record))) return std::nullopt;
-  const auto *Map = Record->getDefinition();
-  if (!Map || !approvedUnorderedMapMetadataRecord(S, SM, Map, Context) ||
-      Map->isInvalidDecl() || Map->isDynamicClass() || Map->getNumBases())
-    return std::nullopt;
-  auto Pinned = [&](const Decl *D) {
-    const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
-    if (File && File->Root == "libcxx" && !S.owns(SM, D->getLocation()) &&
-        approvedStandardSDKDeclaration(S, SM, D)) return true;
-    const auto *Field = dyn_cast_or_null<FieldDecl>(D);
-    const auto *Owner = Field ? dyn_cast<CXXRecordDecl>(Field->getDeclContext()) : nullptr;
-    const auto *Padding = Field ? Field->getType()->getAsCXXRecordDecl() : nullptr;
-    const auto L = Field ? Field->getLocation() : SourceLocation();
-    const auto Expansion = L.isValid() ? S.sdkFile(SM, SM.getExpansionLoc(L)) : std::nullopt;
-    const auto PaddingFile = Padding ? S.sdkFile(SM, Padding->getLocation()) : std::nullopt;
-    // The SDK concatenates padding member names in scratch space. Admit only
-    // those exact typed fields expanded by its authenticated storage records.
-    return Field && L.isMacroID() && SM.isWrittenInScratchSpace(SM.getSpellingLoc(L)) &&
-           Field->getName().starts_with("__padding") && Padding &&
-           Padding->getName() == "__compressed_pair_padding" &&
-           PaddingFile && PaddingFile->Root == "libcxx" &&
-           PaddingFile->Path == "__memory/compressed_pair.h" &&
-           approvedStandardSDKDeclaration(S, SM, Padding) && Owner &&
-           approvedStandardSDKDeclaration(S, SM, Owner) && Expansion &&
-           Expansion->Root == "libcxx" &&
-           (Expansion->Path == "__hash_table" || Expansion->Path == "__memory/unique_ptr.h");
+    const ASTContext &Context) {
+  if (!S.coreV2() || !Record || !Record->getIdentifier())
+    return false;
+  const auto Name = Record->getName();
+  if (Name != "map" && Name != "set" && Name != "unordered_set")
+    return false;
+  const bool Map = Name == "map";
+  const bool HashTable = Name == "unordered_set";
+  const auto *Container = associativeTypeIdentity(
+      S, SM, Record, Name, Name, associativeContainerForwardHeader(Name),
+      Map || HashTable ? 4 : 3);
+  if (!Container || (Container->getSpecializationKind() != TSK_ImplicitInstantiation &&
+                     Container->getSpecializationKind() != TSK_Undeclared))
+    return false;
+  const auto &Args = Container->getTemplateArgs();
+  if (!Context.hasSameType(Args.get(0).getAsType(), Context.IntTy) ||
+      (Map && !Context.hasSameType(Args.get(1).getAsType(), Context.IntTy)))
+    return false;
+  auto PolicyFor = [&](unsigned I, llvm::StringRef Policy, llvm::StringRef Header) {
+    const auto *Spec = associativeTypeIdentity(S, SM, Args.get(I).getAsType()->getAsCXXRecordDecl(),
+                                               Policy, Header, "__fwd/functional.h", 1);
+    return Spec && Context.hasSameType(Spec->getTemplateArgs().get(0).getAsType(), Context.IntTy);
   };
+  if (HashTable) {
+    if (!PolicyFor(1, "hash", "__functional/hash.h") ||
+        !PolicyFor(2, "equal_to", "__functional/operations.h"))
+      return false;
+  } else if (!PolicyFor(Map ? 2 : 1, "less", "__functional/operations.h")) {
+    return false;
+  }
+  const auto *Allocator = associativeTypeIdentity(
+      S, SM, Args.get(Args.size() - 1).getAsType()->getAsCXXRecordDecl(),
+      "allocator", "__memory/allocator.h", "__fwd/memory.h", 1);
+  if (!Allocator)
+    return false;
+  const auto Value = Allocator->getTemplateArgs().get(0).getAsType();
+  if (!Map)
+    return Context.hasSameType(Value, Context.IntTy);
+  const auto *Pair = associativeTypeIdentity(S, SM, Value->getAsCXXRecordDecl(),
+      "pair", "__utility/pair.h", "__fwd/pair.h", 2);
+  return Pair && Context.hasSameType(Pair->getTemplateArgs().get(0).getAsType(), Context.IntTy.withConst()) &&
+         Context.hasSameType(Pair->getTemplateArgs().get(1).getAsType(), Context.IntTy);
+}
+
+static bool associativeStorageDeclaration(const State &S, const SourceManager &SM,
+                                          const Decl *D, bool Ordered) {
+  const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
+  if (File && File->Root == "libcxx" && !S.owns(SM, D->getLocation()) &&
+      approvedStandardSDKDeclaration(S, SM, D)) return true;
+  const auto *Field = dyn_cast_or_null<FieldDecl>(D);
+  const auto *Owner = Field ? dyn_cast<CXXRecordDecl>(Field->getDeclContext()) : nullptr;
+  const auto *Padding = Field ? Field->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto L = Field ? Field->getLocation() : SourceLocation();
+  const auto Expansion = L.isValid() ? S.sdkFile(SM, SM.getExpansionLoc(L)) : std::nullopt;
+  const auto PaddingFile = Padding ? S.sdkFile(SM, Padding->getLocation()) : std::nullopt;
+  // The SDK concatenates padding member names in scratch space. Admit only
+  // those exact typed fields expanded by its authenticated storage records.
+  return Field && L.isMacroID() && SM.isWrittenInScratchSpace(SM.getSpellingLoc(L)) &&
+         Field->getName().starts_with("__padding") && Padding &&
+         Padding->getName() == "__compressed_pair_padding" &&
+         PaddingFile && PaddingFile->Root == "libcxx" &&
+         PaddingFile->Path == "__memory/compressed_pair.h" &&
+         approvedStandardSDKDeclaration(S, SM, Padding) && Owner &&
+         approvedStandardSDKDeclaration(S, SM, Owner) && Expansion &&
+         Expansion->Root == "libcxx" &&
+         (Expansion->Path == "__hash_table" || Expansion->Path == "__memory/unique_ptr.h" ||
+          (Ordered && Expansion->Path == "__tree"));
+}
+
+static bool approvedAssociativeStorageGraph(const State &S, const SourceManager &SM,
+                                            QualType Type, const ASTContext &Context,
+                                            bool Ordered) {
+  auto Pinned = [&](const Decl *D) { return associativeStorageDeclaration(S, SM, D, Ordered); };
   // Authenticate the concrete storage graph, including selected internal
-  // specializations. A source specialization must not borrow the outer map's
+  // specializations. A source specialization must not borrow the owner's
   // header identity even when its physical layout happens to match.
   llvm::DenseSet<const Decl *> Seen;
   unsigned Nodes = 0;
@@ -131881,7 +132093,140 @@ std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
       if (!Pinned(Field) || !Self(Self, Field->getType(), Depth + 1)) return false;
     return true;
   };
-  if (!CheckType(CheckType, Context.getRecordType(Map), 0)) return std::nullopt;
+  return CheckType(CheckType, Type, 0);
+}
+
+bool approvedAssociativeContainerLayoutQuery(
+    const State &S, const SourceManager &SM, QualType Type,
+    const ASTContext &Context) {
+  if (Type.isNull() || Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default || Context.getTypeSize(Context.VoidPtrTy) != 64 ||
+      Context.getTypeSize(Context.CharTy) != 8)
+    return false;
+  const auto *Input = Type->getAsCXXRecordDecl();
+  const auto *Record = Input ? Input->getDefinition() : nullptr;
+  if (!approvedAssociativeContainerMetadataRecord(S, SM, Record, Context) ||
+      Record->getNumBases() || Record->getNumVBases() || Record->isDynamicClass() ||
+      Record->field_empty() || std::next(Record->field_begin()) != Record->field_end())
+    return false;
+  const auto Name = Record->getName();
+  const bool Ordered = Name != "unordered_set";
+  if (!approvedAssociativeStorageGraph(S, SM, Type, Context, Ordered))
+    return false;
+  const auto *Storage = *Record->field_begin();
+  if (!Storage->getIdentifier() || Storage->getName() != (Ordered ? "__tree_" : "__table_") ||
+      Storage->isBitField() || Storage->isMutable() || Storage->hasInClassInitializer() ||
+      !cstddefOrigin(S, SM, Storage->getLocation(), "libcxx", Name))
+    return false;
+  const auto StorageName = Ordered ? "__tree" : "__hash_table";
+  const auto *Impl = associativeTypeIdentity(S, SM, Storage->getType()->getAsCXXRecordDecl(),
+      StorageName, StorageName, "", Ordered ? 3 : 4);
+  const auto *Table = Impl ? Impl->getDefinition() : nullptr;
+  if (!Table || Table->getNumBases() || Table->isDynamicClass())
+    return false;
+  const auto &Layout = Context.getASTRecordLayout(Record);
+  const auto &StorageLayout = Context.getASTRecordLayout(Table);
+  if (Layout.getFieldOffset(0) || Layout.getSize() != StorageLayout.getSize() ||
+      Layout.getAlignment() != StorageLayout.getAlignment() ||
+      Context.getTypeAlign(Type) != Context.getTypeAlign(Context.VoidPtrTy))
+    return false;
+
+  const auto &Public = cast<ClassTemplateSpecializationDecl>(Record)->getTemplateArgs();
+  const auto &Private = Impl->getTemplateArgs();
+  if (Name == "map") {
+    const auto Value = Private.get(0).getAsType();
+    const auto *Pair = associativeTypeIdentity(S, SM, Value->getAsCXXRecordDecl(),
+        "__value_type", "map", "__tree", 2);
+    const auto *Rebound = associativeTypeIdentity(S, SM, Private.get(2).getAsType()->getAsCXXRecordDecl(),
+        "allocator", "__memory/allocator.h", "__fwd/memory.h", 1);
+    const auto *Compare = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Private.get(1).getAsType()->getAsCXXRecordDecl());
+    const auto *Pattern = Compare ? Compare->getSpecializedTemplate() : nullptr;
+    if (!Pair || !Rebound || !Pattern || Pattern->getName() != "__map_value_compare" ||
+        !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx", "map") ||
+        Compare->getSpecializationKind() != TSK_ImplicitInstantiation)
+      return false;
+    const auto &Args = Compare->getTemplateArgs();
+    if (Args.size() != 4 || Args.get(0).getKind() != TemplateArgument::Type ||
+        Args.get(1).getKind() != TemplateArgument::Type || Args.get(2).getKind() != TemplateArgument::Type ||
+        Args.get(3).getKind() != TemplateArgument::Integral || !Args.get(3).getAsIntegral().isOne() ||
+        !Context.hasSameType(Pair->getTemplateArgs().get(0).getAsType(), Context.IntTy) ||
+        !Context.hasSameType(Pair->getTemplateArgs().get(1).getAsType(), Context.IntTy) ||
+        !Context.hasSameType(Rebound->getTemplateArgs().get(0).getAsType(), Value) ||
+        !Context.hasSameType(Args.get(0).getAsType(), Context.IntTy) ||
+        !Context.hasSameType(Args.get(1).getAsType(), Value) ||
+        !Context.hasSameType(Args.get(2).getAsType(), Public.get(2).getAsType()))
+      return false;
+  } else {
+    for (unsigned I = 0; I < Private.size(); ++I)
+      if (!Context.hasSameType(Private.get(I).getAsType(), Public.get(I).getAsType()))
+        return false;
+  }
+
+  auto Field = [&](const CXXRecordDecl *R, llvm::StringRef Name) -> const FieldDecl * {
+    const auto *D = R ? R->getDefinition() : nullptr;
+    const FieldDecl *Found = nullptr;
+    if (D)
+      for (const auto *F : D->fields()) {
+        if (!F->getIdentifier() || F->getName() != Name)
+          continue;
+        if (Found || F->isBitField())
+          return nullptr;
+        Found = F;
+      }
+    return Found;
+  };
+  auto Offset = [&](const FieldDecl *F) {
+    return F ? Context.getASTRecordLayout(F->getParent()).getFieldOffset(F->getFieldIndex())
+             : std::numeric_limits<uint64_t>::max();
+  };
+  auto Child = [](const FieldDecl *F) {
+    return F ? F->getType()->getAsCXXRecordDecl() : nullptr;
+  };
+  const uint64_t P = Context.getTypeSize(Context.VoidPtrTy);
+  const auto *Size = Field(Table, "__size_");
+  if (!Size || !Context.hasSameType(Size->getType(), Context.getSizeType()))
+    return false;
+  if (Ordered) {
+    const auto *Begin = Field(Table, "__begin_node_");
+    const auto *End = Field(Table, "__end_node_");
+    const auto *Left = Field(Child(End), "__left_");
+    return Begin && End && Left && Offset(Begin) == 0 && Offset(End) == P &&
+           Offset(Left) == 0 && Offset(Size) == 2 * P &&
+           Begin->getType()->isPointerType() && Left->getType()->isPointerType() &&
+           Context.getTypeSize(End->getType()) == P && Context.getTypeSize(Type) == 3 * P;
+  }
+  const auto *Buckets = Field(Table, "__bucket_list_");
+  const auto *BucketData = Field(Child(Buckets), "__ptr_");
+  const auto *Deleter = Field(Child(Buckets), "__deleter_");
+  const auto *BucketCount = Field(Child(Deleter), "__size_");
+  const auto *First = Field(Table, "__first_node_");
+  const auto *Next = Field(Child(First), "__next_");
+  const auto *Maximum = Field(Table, "__max_load_factor_");
+  return BucketData && BucketCount && Next && Maximum &&
+         Offset(Buckets) == 0 && Offset(BucketData) == 0 && Offset(Deleter) == P &&
+         Offset(BucketCount) == 0 && Offset(First) == 2 * P && Offset(Next) == 0 &&
+         Offset(Size) == 3 * P && Offset(Maximum) == 4 * P &&
+         BucketData->getType()->isPointerType() &&
+         Context.hasSameType(BucketCount->getType(), Context.getSizeType()) &&
+         Next->getType()->isPointerType() && Context.hasSameType(Maximum->getType(), Context.FloatTy) &&
+         Context.getTypeSize(Type) == 5 * P;
+}
+
+std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context,
+    const std::function<bool(QualType)> &Complete) {
+  if (!Record || !approvedUnorderedMapMetadataRecord(S, SM, Record, Context))
+    return std::nullopt;
+  if (!Record->getDefinition() && Complete &&
+      !Complete(Context.getRecordType(Record))) return std::nullopt;
+  const auto *Map = Record->getDefinition();
+  if (!Map || !approvedUnorderedMapMetadataRecord(S, SM, Map, Context) ||
+      Map->isInvalidDecl() || Map->isDynamicClass() || Map->getNumBases())
+    return std::nullopt;
+  auto Pinned = [&](const Decl *D) { return associativeStorageDeclaration(S, SM, D, false); };
+  if (!approvedAssociativeStorageGraph(S, SM, Context.getRecordType(Map), Context, false))
+    return std::nullopt;
   auto Field = [&](const CXXRecordDecl *R, llvm::StringRef Name) -> const FieldDecl * {
     R = R ? R->getDefinition() : nullptr;
     if (!R) return nullptr;
@@ -131941,8 +132286,8 @@ std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
   if (Node && !Node->getDefinition() && Complete) {
     if (!Complete(NodeType)) return std::nullopt;
     // Completion can select a previously unmaterialized specialization.
-    Seen.clear();
-    if (!CheckType(CheckType, Context.getRecordType(Map), 0)) return std::nullopt;
+    if (!approvedAssociativeStorageGraph(S, SM, Context.getRecordType(Map), Context, false))
+      return std::nullopt;
   }
   Node = Node ? Node->getDefinition() : nullptr;
   const auto *Hash = Field(Node, "__hash_");
