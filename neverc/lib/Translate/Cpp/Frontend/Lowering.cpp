@@ -32564,6 +32564,41 @@ class FunctionLowering {
       if (approvedUtilityConstant(A.S, A.Sources, Call, A.Context,
                                   UtilityValue))
         return A.constant(UtilityValue, Call->getType(), L);
+      if (approvedUtilityAnyEmptyPointerCast(A.S, A.Sources, Call, A.Context)) {
+        // Admitted any constructors only create an empty object. The SDK
+        // skips its handler in that state, but the pointer still evaluates.
+        snapshot(expression(Call->getArg(0)), L);
+        return A.zero(Call->getType(), L);
+      }
+      if (const auto Any = approvedUtilityAnyEmptyTransfer(A.S, A.Sources, Call, A.Context)) {
+        auto Receiver = [&] {
+          return Any->Arrow ? snapshot(expression(Any->Receiver), L)
+                            : snapshot(address(lvalue(Any->Receiver), Any->Receiver->getType(), L), L);
+        };
+        auto Input = [&] {
+          snapshot(address(lvalue(Any->Input), Any->Input->getType(), L), L);
+        };
+        if (Any->InputFirst)
+          Input();
+        auto Left = Receiver();
+        if (!Any->InputFirst)
+          Input();
+        // No selected handler is reachable; the assignment still returns the receiver.
+        if (Any->ReturnsReceiver)
+          return dereference(std::move(Left), L);
+        return {};
+      }
+      if (const auto Any = approvedUtilityAnyEmptyCall(A.S, A.Sources, Call, A.Context)) {
+        const auto *Base = Any->Callee->getBase();
+        auto Receiver = Any->Callee->isArrow() ? dereference(expression(Base), L) : lvalue(Base);
+        auto Tag = Expression{{"kind", "member"}, {"type", "u64"},
+            {"name", UtilityAnyTag.str()}, {"args", json::Array{std::move(Receiver)}},
+            {"loc", A.loc(L)}};
+        if (Any->Operation == UtilityAnyEmptyOperation::HasValue)
+          return binary("!=", std::move(Tag), quantity(0, "u64", L), "bool", L);
+        snapshot(std::move(Tag), L);
+        return {};
+      }
       if (auto Info = unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context))
         return unorderedGenericSwapOperation(Call, *Info);
       if (auto Info = unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context))
@@ -34344,6 +34379,8 @@ class FunctionLowering {
     const auto *Record = T->getAsCXXRecordDecl();
     if (!Record || !Record->getDefinition())
       reject(L, "destruction", "A complete admitted record is required.");
+    if (approvedUtilityAnyEmptyRecord(A.S, A.Sources, Record, A.Context))
+      return;
     A.requireDestruction(Record, L);
     json::Array Args;
     Args.push_back(snapshot(address(std::move(Place), T.getUnqualifiedType(), L), L));
@@ -38399,6 +38436,12 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
 
+    if (approvedUtilityAnyEmptyConstruction(A.S, A.Sources, C, A.Context)) {
+      if (C->getNumArgs())
+        snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
+      initializeZero(std::move(Place), T, L);
+      return;
+    }
     if (auto Kind = approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context)) {
       if (*Kind == UtilityBitsetConstruction::Copy) {
         assign(Place, expression(C->getArg(0)), L);

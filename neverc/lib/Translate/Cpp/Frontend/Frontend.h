@@ -3404,6 +3404,41 @@ bool approvedUtilityVariantMetadata(const State &S,
 bool approvedUtilityVariantLayoutQuery(const State &S,
     const clang::SourceManager &SM, clang::QualType Type,
     const clang::ASTContext &Context);
+inline constexpr llvm::StringLiteral UtilityAnyTag = "nct_any_tag";
+inline constexpr llvm::StringLiteral UtilityAnyStorage = "nct_any_storage";
+enum class UtilityAnyEmptyOperation { HasValue, Reset };
+struct UtilityAnyEmptyCall {
+  UtilityAnyEmptyOperation Operation;
+  const clang::MemberExpr *Callee;
+  const clang::CXXRecordDecl *Record;
+};
+
+struct UtilityAnyEmptyTransfer {
+  const clang::CXXRecordDecl *Record;
+  const clang::Expr *Receiver;
+  const clang::Expr *Input;
+  bool Arrow;
+  bool InputFirst;
+  bool ReturnsReceiver;
+};
+std::optional<UtilityAnyEmptyTransfer> approvedUtilityAnyEmptyTransfer(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+bool approvedUtilityAnyEmptyRecord(const State &S, const clang::SourceManager &SM,
+                                    const clang::CXXRecordDecl *Record,
+                                    const clang::ASTContext &Context);
+bool approvedUtilityAnyEmptyConstruction(const State &S, const clang::SourceManager &SM,
+                                          const clang::CXXConstructExpr *Construction,
+                                          const clang::ASTContext &Context);
+std::optional<UtilityAnyEmptyCall> approvedUtilityAnyEmptyCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+const clang::CXXRecordDecl *approvedUtilityAnyEmptyPointerCast(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 bool pinnedUtilityAnyType(const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record);
 bool approvedUtilityAnyMetadata(const State &S,
@@ -4542,6 +4577,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredScalarRealDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
   std::set<const clang::CXXRecordDecl *> RequiredVectorDistributionRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityEmptyAnys;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityWrapIterators;
