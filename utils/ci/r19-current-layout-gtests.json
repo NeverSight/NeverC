@@ -619,7 +619,7 @@
       "kind": "source-body-guard"
     }
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "native_reference_selected_executions": 40,
   "planned_generated_c23_executions": 40,
@@ -633,5 +633,12 @@
   "extractor_sha256": "ac04394add71b8cd45f5fde1ec9ee31699d9f07930a12651b3c6d852c86b7af5",
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8054,
-  "current_python_registry_tests": 118
+  "current_python_registry_tests": 118,
+  "native_reference_proofs": {
+    "monostate-layout": "bf435677f94f07928028e6b92e80db3e9b2a9e6b6d6d34849af06d12675501d6",
+    "any-layout": "d89e6931c9771241a94eaf5f31750e55821fa0ad1d094572d74c24deb800234a",
+    "associative-metadata": "c2b4b1e86ecb64c73bdaec0c5c07756cbad3a260c465a48f1a9676bcdbc13572"
+  },
+  "native_reference_authentication_sha256": "bb8e7f79dd0740dac63c13b78fad4d2004922cde50a55a237767dcc5f35bd49c",
+  "source_proof_sha256": "7e1e032efd3da9fd15c161faaf7759bb28b903d5f2524f1ce8bda540fe6050d8"
 }
