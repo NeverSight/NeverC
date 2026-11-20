@@ -279,7 +279,7 @@
   "planned_generated_c23_executions": 42,
   "actual_new_gtests_executed": 0,
   "actual_new_generated_c23_executions": 0,
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "source_cases": [
     {
@@ -539,5 +539,7 @@
   "extractor_sha256": "9c451382fb3b3dd64d21c7f16635f474c3fca73ef63be5ce6f14b761ca5c00e8",
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 7963,
-  "current_python_registry_tests": 114
+  "current_python_registry_tests": 114,
+  "source_proof_sha256": "d0b6a7dd5412853ae489b53db4b344d1722933e24491310f37424308c9330726",
+  "native_reference_authentication_sha256": "0bb71d358ea25b5e0ae51a6353aff89c50f729178cb2f0aece8f990c247da948"
 }
