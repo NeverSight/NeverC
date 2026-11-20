@@ -380435,16 +380435,23 @@ int main(){R v=19UL;return v!=19UL;}
   }
 }
 
-TEST_F(TranslateTest, CoreV2VariantMetadataRuntimeValueRejected) {
+TEST_F(TranslateTest, CoreV2VariantMetadataRuntimeValueRunAtBothOptimizations) {
   const auto Source = tmpFile("variant-metadata-runtime-value.cpp");
   writeFile(Source, R"r19variant(#include <variant>
 using V = std::variant<int,double>;
 int main(){V value(7);return value.index();}
 )r19variant");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("variant-metadata-runtime-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-metadata-runtime-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2VariantMetadataVariantSizeStorageRejected) {
