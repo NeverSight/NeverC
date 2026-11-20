@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.any_runtime_registered = cls.registered
+        cls.any_runtime_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_runtime_original = cls.adapter.restore_original_gtests(
+            cls.any_runtime_registered, cls.any_runtime_suffix)
+        cls.registered = cls.adapter.restore_any_runtime_history(cls.any_runtime_registered)
         cls.variant_metadata_layout_registered = cls.registered
         cls.variant_metadata_layout_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_metadata_layout_original = cls.adapter.restore_original_gtests(cls.variant_metadata_layout_registered,cls.variant_metadata_layout_suffix)
@@ -1671,6 +1676,30 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.variant_metadata_layout_registered,self.variant_metadata_layout_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.variant_metadata_layout_original+b' ',['TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations'])
+
+
+    def test_any_runtime_preserves_historical_fixtures_and_extracts_new_tests(self):
+        self.assertEqual(self.any_runtime_original + self.any_runtime_suffix,
+                         self.any_runtime_registered)
+        self.assertEqual(self.adapter.restore_any_runtime_history(self.any_runtime_original),
+                         self.variant_metadata_layout_original)
+        names = ['TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyDefaultLocalRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyReceiverEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyTemporaryRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyMemberLifetimeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyArrayLifetimeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyUnprovedCopyRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastMutableRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastConstRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastNullAndEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastPointerTypeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyCopyMoveRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyCopyCopyEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentCopyIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentOperatorNotationOrderRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentExplicitAssignmentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentMoveAndSelfRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentSwapSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutVolatileTypeRejected', 'TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected', 'TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected', 'TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected', 'TranslateTest.CoreV2AnyEmptyAlteredObserverRejected', 'TranslateTest.CoreV2AnyEmptyAlteredResetRejected', 'TranslateTest.CoreV2AnyEmptyPointerCastValueFormRejected', 'TranslateTest.CoreV2AnyEmptyPointerCastUserRedeclarationRejected', 'TranslateTest.CoreV2AnyEmptyAssignmentRenamedSwapRejected']
+        generated, proof = self.extractor.extract(self.any_runtime_original, names)
+        self.assertEqual(proof['original_test_names'], 7963)
+        self.assertEqual(proof['selected_count'], 30)
+        self.assertTrue(proof['all_non_test_source_retained'])
+        for name in (b'any-empty-assignment-', b'any-layout-', b'any-empty-pointer-cast-'):
+            self.assertIn(name, generated)
+
+    def test_any_runtime_rejects_modified_fixture_source_and_suffix(self):
+        for changed in (self.any_runtime_registered + b' ', self.any_runtime_registered[:-1]):
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_original_gtests(changed, self.any_runtime_suffix)
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_any_runtime_history(changed)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_runtime_registered,
+                                                 self.any_runtime_suffix + b' ')
 
 
 if __name__ == '__main__':

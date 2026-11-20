@@ -585,6 +585,30 @@ def restore_variant_metadata_layout_history(source):
     return restored
 
 
+R19_ANY_RUNTIME_REGISTERED_SHA256 = '710ce54d8d6d19cfe02c4d080629b2bf2220d5ca65f36e9fa2cdefc46a8f89d0'
+R19_ANY_RUNTIME_MAINTAINED_SHA256 = 'e0b5df00968d44490616ba8b303b2cae1e3aff4dd9635ef6060f131de19190c1'
+R19_ANY_RUNTIME_PREVIOUS_REGISTERED_SHA256 = '48f9e910917ad8e47e7c924c168d2a2fbbe692cc7440705ce59ea3183f66e346'
+R19_ANY_RUNTIME_PREVIOUS_MAINTAINED_SHA256 = 'b1e6c7297a0323b8f1bf260e7eed718517cfdcee9b4197ba8caf895f06ade006'
+R19_ANY_RUNTIME_ADDITIONS_SHA256 = '29757603b0f12bf03a916fd04f452ba65ca2c0399ab6dade50c503ba4fd182e8'
+R19_ANY_RUNTIME_MAINTAINED_SIZE = 19635869
+R19_ANY_RUNTIME_ADDITIONS_SIZE = 26424
+
+
+def restore_any_runtime_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_RUNTIME_REGISTERED_SHA256, R19_ANY_RUNTIME_MAINTAINED_SHA256}
+    stop = R19_ANY_RUNTIME_MAINTAINED_SIZE
+    start = stop - R19_ANY_RUNTIME_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_RUNTIME_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_RUNTIME_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_RUNTIME_REGISTERED_SHA256
+             else R19_ANY_RUNTIME_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -627,6 +651,13 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
+    if source_digest == R19_ANY_RUNTIME_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_RUNTIME_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_RUNTIME_MAINTAINED_SHA256
+        return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
     if source_digest == R19_VARIANT_METADATA_LAYOUT_REGISTERED_SHA256:
