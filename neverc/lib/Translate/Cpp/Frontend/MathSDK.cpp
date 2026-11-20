@@ -7215,33 +7215,40 @@ static bool variantEmptyBody(const CXXConstructorDecl *C) {
   return Body && Body->body_empty();
 }
 
-static std::optional<unsigned> variantIndexTag(const State &S, const SourceManager &SM,
-                                               const Expr *E) {
+static const TemplateArgument *variantInPlaceTag(const State &S, const SourceManager &SM,
+    const Expr *E, llvm::StringRef TypeName, llvm::StringRef ValueName) {
   const auto *R = E ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
                            E->getType()->getAsCXXRecordDecl()) : nullptr;
   const auto *Primary = R ? R->getSpecializedTemplate() : nullptr;
-  if (!Primary || Primary->getName() != "in_place_index_t" || R->getTemplateArgs().size() != 1 ||
+  if (!Primary || Primary->getName() != TypeName || R->getTemplateArgs().size() != 1 ||
       !variantDeclaration(S, SM, R, "__utility/in_place.h") ||
       !variantDeclaration(S, SM, Primary, "__utility/in_place.h"))
-    return std::nullopt;
+    return nullptr;
   const auto &Arg = R->getTemplateArgs().get(0);
-  if (Arg.getKind() != TemplateArgument::Integral || Arg.getAsIntegral().getLimitedValue(64) >= 64)
-    return std::nullopt;
   const auto *Copy = variantConstruct(E);
   if (Copy && (!Copy->getConstructor()->isTrivial() ||
                !Copy->getConstructor()->isCopyOrMoveConstructor() ||
                Copy->getNumArgs() != 1 ||
                !variantDeclaration(S, SM, Copy->getConstructor(), "__utility/in_place.h")))
-    return std::nullopt;
+    return nullptr;
   const auto *Ref = variantReference(Copy ? Copy->getArg(0) : E);
   const auto *V = Ref ? dyn_cast<VarTemplateSpecializationDecl>(Ref->getDecl()) : nullptr;
   const auto *Template = V ? V->getSpecializedTemplate() : nullptr;
-  if (!Template || Template->getName() != "in_place_index" || !V->isInline() || !V->isConstexpr() ||
+  if (!Template || Template->getName() != ValueName || !V->isInline() || !V->isConstexpr() ||
       V->getTemplateArgs().size() != 1 || !V->getTemplateArgs().get(0).structurallyEquals(Arg) ||
       !variantDeclaration(S, SM, V, "__utility/in_place.h") ||
       !variantDeclaration(S, SM, Template, "__utility/in_place.h"))
+    return nullptr;
+  return &Arg;
+}
+
+static std::optional<unsigned> variantIndexTag(const State &S, const SourceManager &SM,
+                                               const Expr *E) {
+  const auto *Arg = variantInPlaceTag(S, SM, E, "in_place_index_t", "in_place_index");
+  if (!Arg || Arg->getKind() != TemplateArgument::Integral ||
+      Arg->getAsIntegral().getLimitedValue(64) >= 64)
     return std::nullopt;
-  return unsigned(Arg.getAsIntegral().getLimitedValue());
+  return unsigned(Arg->getAsIntegral().getLimitedValue());
 }
 
 static bool variantForward(const State &S, const SourceManager &SM, const Expr *E,
@@ -7270,14 +7277,31 @@ std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
       Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(), Construction->getType()))
     return UtilityVariantConstruction{*Variant, true, 0, Construction->getArg(0), nullptr};
   const Expr *Tag = C->isExplicit() && TotalArguments ? Construction->getArg(0) : nullptr;
-  const auto Requested = variantIndexTag(S, SM, Tag);
+  std::optional<unsigned> Requested;
   if (Tag) {
     const auto *Args = C->getTemplateSpecializationArgs();
-    if (!Requested || !S.owns(SM, Tag->getExprLoc()) ||
-        !Args || !Args->size() || Args->get(0).getKind() != TemplateArgument::Integral ||
-        Args->get(0).getAsIntegral().getLimitedValue(64) != *Requested ||
+    if (!S.owns(SM, Tag->getExprLoc()) || !Args || !Args->size() ||
         !Context.hasSameUnqualifiedType(Tag->getType(), C->getParamDecl(0)->getType()))
       return std::nullopt;
+    const auto &Selection = Args->get(0);
+    if (Selection.getKind() == TemplateArgument::Integral) {
+      Requested = variantIndexTag(S, SM, Tag);
+      if (!Requested || Selection.getAsIntegral().getLimitedValue(64) != *Requested)
+        return std::nullopt;
+    } else {
+      const auto *Type = variantInPlaceTag(S, SM, Tag, "in_place_type_t", "in_place_type");
+      // The pinned overload selects its unambiguous index in the third parameter.
+      if (!Type || Type->getKind() != TemplateArgument::Type ||
+          Selection.getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Type->getAsType(), Selection.getAsType()) ||
+          Args->size() != 4 || Args->get(2).getKind() != TemplateArgument::Integral)
+        return std::nullopt;
+      const auto Index = Args->get(2).getAsIntegral().getLimitedValue(64);
+      if (Index >= Variant->Alternatives.size() ||
+          !Context.hasSameType(Type->getAsType(), Variant->Alternatives[Index]->getType()))
+        return std::nullopt;
+      Requested = unsigned(Index);
+    }
   }
   const unsigned Offset = Tag ? 1 : 0;
   const unsigned Arity = TotalArguments - Offset;
