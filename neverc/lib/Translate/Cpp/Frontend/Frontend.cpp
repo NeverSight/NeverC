@@ -2406,7 +2406,8 @@ static bool memoryTemplateMetadataType(Adapter &A, QualType T) {
     if (const auto *Record = Raw->getAsCXXRecordDecl())
       return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value() ||
              approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context) ||
-             approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context);
+             approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context) ||
+             approvedUtilityVariantMetadata(A.S, A.Sources, Record);
     if (const auto *Array = dyn_cast<ArrayType>(Raw))
       T = Array->getElementType();
     else if (Raw->isPointerType() || Raw->isReferenceType())
@@ -2589,6 +2590,13 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       const auto &Arguments = Tuple->getTemplateArgs();
       for (const auto &Argument : Arguments.get(0).pack_elements())
         checkQueryType(Argument.getAsType(), L, AllowIncompleteArrays,
+                       AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               approvedUtilityVariantMetadata(S, Sources, T->getAsCXXRecordDecl())) {
+      const auto *Variant =
+          cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+      for (const auto &Alternative : Variant->getTemplateArgs().get(0).pack_elements())
+        checkQueryType(Alternative.getAsType(), L, AllowIncompleteArrays,
                        AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
                approvedUtilityArrayMetadata(S, Sources,
@@ -25573,6 +25581,70 @@ public:
            TraverseNestedNameSpecifierLoc(Reference->getQualifierLoc()) &&
            TraverseDeclarationNameInfo(Reference->getNameInfo());
   }
+  bool checkVariantSizeReference(const DeclRefExpr *Reference,
+                                 const VarTemplateSpecializationDecl *Variable) {
+    const auto L = Reference->getLocation();
+    const auto *Primary = Variable->getSpecializedTemplate();
+    auto Pinned = [&](const Decl *D) {
+      const auto File = A.S.sdkFile(A.Sources, D->getLocation());
+      return approvedStandardSDKDeclaration(A.S, A.Sources, D) && File &&
+             File->Root == "libcxx" && File->Path == "__fwd/variant.h";
+    };
+    auto Reject = [&] {
+      A.reject(L, "variant size source",
+               "The pinned variant size constant requires its exact written "
+               "variant template argument.", "TR0203");
+      return true;
+    };
+    if (Variable->isInvalidDecl() ||
+        Variable->getSpecializationKind() != TSK_ImplicitInstantiation)
+      return Reject();
+    for (const auto *D : Primary->redecls())
+      if (!Pinned(D) || !Pinned(D->getTemplatedDecl()))
+        return Reject();
+    for (const auto *D : Variable->redecls())
+      if (!Pinned(D))
+        return Reject();
+
+    const auto &Arguments = Variable->getTemplateArgs();
+    const auto Written = Reference->template_arguments();
+    const auto Found = VariableSources.find({Variable, L.getRawEncoding()});
+    if (Arguments.size() != 1 || Arguments.get(0).getKind() != TemplateArgument::Type ||
+        Written.size() != 1 || Found == VariableSources.end() || Found->second.empty())
+      return Reject();
+    const auto Type = Arguments.get(0).getAsType();
+    const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        Type->getAsCXXRecordDecl());
+    if (!approvedUtilityVariantMetadata(A.S, A.Sources, Record))
+      return Reject();
+    const TemplateUseSource *First = nullptr;
+    for (const auto *Source : sourceCandidates(Found->second)) {
+      A.chargeExpansion(1, L);
+      if (Source->Kind != TemplateSourceKind::VariableUse ||
+          Source->Declaration != Variable || !Source->Template ||
+          Source->Template->getCanonicalDecl() != Primary->getCanonicalDecl() ||
+          !sameArguments(Source->Canonical, &Arguments) ||
+          !sameCanonicalArguments(Source->Canonical, Source->Sugared) ||
+          !Source->Written || Source->Written->NumTemplateArgs != 1 ||
+          !sameArgumentSource(Written[0], Source->Written->arguments()[0]) ||
+          Source->DefaultsOverflow || !Source->Defaults.empty() ||
+          (First && !equivalentUse(*First, *Source)))
+        return Reject();
+      First = Source;
+      if (!checkTemplateUse(*Source, Written))
+        return false;
+    }
+    A.checkQueryType(Type, L, true, true);
+
+    const auto Value = approvedSDKIntegerConstant(A.S, A.Sources, Variable, A.Context);
+    const auto Count = Record->getTemplateArgs().get(0).pack_size();
+    if (!Value || Value->getLimitedValue(65) != Count)
+      return Reject();
+    if (Reference->isNonOdrUse() == NOUR_None)
+      A.reject(L, "standard trait storage",
+               "A variant size constant has no admitted storage identity.");
+    return true;
+  }
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()))
       return true;
@@ -25611,6 +25683,13 @@ public:
       else
         A.functionAddressTarget(Target, Reference->getLocation());
       return true;
+    }
+    if (const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl());
+        Variable && Variable->getIdentifier() && Variable->getName() == "variant_size_v") {
+      const auto *Primary = Variable->getSpecializedTemplate();
+      const auto File = A.S.sdkFile(A.Sources, Primary->getCanonicalDecl()->getLocation());
+      if (File && File->Root == "libcxx" && File->Path == "__fwd/variant.h")
+        return checkVariantSizeReference(Reference, Variable);
     }
     if (auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
         approvedSDKIntegerConstant(A.S, A.Sources, Variable, A.Context)) {
@@ -30439,6 +30518,16 @@ public:
           // identity. Preserve the full written type/source checks without
           // completing that pointee or admitting a runtime pointer carrier.
           A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+        else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
+                 pinnedUtilityVariantType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
+          if (Query->isArgumentType() &&
+              approvedUtilityVariantLayoutQuery(A.S, A.Sources, Value, A.Context))
+            A.checkQueryType(Operand, Query->getExprLoc(), true, true);
+          else
+            A.reject(Query->getExprLoc(), "variant size and alignment",
+                     "Expected a type-form query using the authenticated SDK variant layout.",
+                     "TR0203");
+        }
         else if (approvedUnorderedMapMetadataRecord(A.S, A.Sources,
                      A.Context.getBaseElementType(Operand.getNonReferenceType())->getAsCXXRecordDecl(), A.Context) ||
                  approvedSequenceContainerMetadataRecord(A.S, A.Sources,

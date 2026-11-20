@@ -1,0 +1,204 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-metadata-size-and-sentinel",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1821c930c7718dab2e4a1c85fac35a2a54df1b6b44077ce27d1216d9a8417b59",
+      "original_case_source_sha256": "1821c930c7718dab2e4a1c85fac35a2a54df1b6b44077ce27d1216d9a8417b59",
+      "gtest_body_sha256": "086c0731825e85822e9fcd814724d5d11e2583d52602b175c72d738e06ef81cd"
+    },
+    {
+      "name": "variant-metadata-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c6096b784cc92dfbd53c4da37ca52def7be97935ccd286a7c96771e0d2cddb8c",
+      "original_case_source_sha256": "c6096b784cc92dfbd53c4da37ca52def7be97935ccd286a7c96771e0d2cddb8c",
+      "gtest_body_sha256": "effc29e487b99776fd6708636ed298280c917b1b3bce79091b37668b96d0fec3"
+    },
+    {
+      "name": "variant-metadata-const-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataConstAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d17457b2d0cd393586073f44d8a703a41aed7dc90a2ee6f4a4b4fa62f488b814",
+      "original_case_source_sha256": "d17457b2d0cd393586073f44d8a703a41aed7dc90a2ee6f4a4b4fa62f488b814",
+      "gtest_body_sha256": "6353b941310765ff57988b73440b43a41741d46e1aa11706b9029fae233a512c"
+    },
+    {
+      "name": "variant-metadata-nested-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataNestedAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "dc4c8c56ad858f2a29353ae3e21cb65e84d78ad259e8f20e4075034c125e4b45",
+      "original_case_source_sha256": "dc4c8c56ad858f2a29353ae3e21cb65e84d78ad259e8f20e4075034c125e4b45",
+      "gtest_body_sha256": "ed27beb5d208a377bdbfc48e9e217fa1c7721a1cb6378d2aa692a3759b8bf5d4"
+    },
+    {
+      "name": "variant-metadata-size-qualification",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSizeQualificationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fb3190c6d9b4abd963420756d30e2c9edda2d28506854de8f1e2bc0a663ed6a5",
+      "original_case_source_sha256": "fb3190c6d9b4abd963420756d30e2c9edda2d28506854de8f1e2bc0a663ed6a5",
+      "gtest_body_sha256": "3fec3a18d3389770d1941f628ff3ad46300ce56f9a1f3d26a1e9af263455d220"
+    },
+    {
+      "name": "variant-metadata-written-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataWrittenIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "817fe49de65c4603ec824163283f406e0ed3b28684d6e0d36bb6129655f67cd6",
+      "original_case_source_sha256": "817fe49de65c4603ec824163283f406e0ed3b28684d6e0d36bb6129655f67cd6",
+      "gtest_body_sha256": "545c797c00f6e2273c647caf01555efdd214b44f5afcef1d6632667aaa80be81"
+    },
+    {
+      "name": "variant-layout-mixed-scalar",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutMixedScalarRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fd5375fe54e55082f24f29d9606b7071d2e1d079e40efc6fbf53933d9c290039",
+      "original_case_source_sha256": "fd5375fe54e55082f24f29d9606b7071d2e1d079e40efc6fbf53933d9c290039",
+      "gtest_body_sha256": "071ea05b5b07f01aaf86f291fbd9ca5eaf5134e1e0e8085b20c35d655eed79f7"
+    },
+    {
+      "name": "variant-layout-reference-and-const",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutReferenceAndConstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3954097a772508976bbb4722aaf6e3be9d4508d9c8c66e16dd2848779915516b",
+      "original_case_source_sha256": "3954097a772508976bbb4722aaf6e3be9d4508d9c8c66e16dd2848779915516b",
+      "gtest_body_sha256": "d82b4ef6fc2261197074b365fd6eccd3ba3b6504c25be3955cdc5aded89d8e09"
+    },
+    {
+      "name": "variant-layout-pointer-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutPointerAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "36bd58a2cd3d28d3b4d803004210174b9ae7221f0412c8d20344dc11cfca58ac",
+      "original_case_source_sha256": "36bd58a2cd3d28d3b4d803004210174b9ae7221f0412c8d20344dc11cfca58ac",
+      "gtest_body_sha256": "82495d30210191dd2a4d8083210ed49da383f87b1c9d39201185018b7527e711"
+    },
+    {
+      "name": "variant-layout-duplicate-types",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutDuplicateTypesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4ebf37513236931e7c03fd748b6ead4d1b844a2eaf11841b2d6b13aca6c6a435",
+      "original_case_source_sha256": "4ebf37513236931e7c03fd748b6ead4d1b844a2eaf11841b2d6b13aca6c6a435",
+      "gtest_body_sha256": "769f264aa93001fdb76ab9f7f94943027f5f4fcc5887c3cfa9078b7bc6e3c3ce"
+    },
+    {
+      "name": "variant-layout-declaration-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutDeclarationIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
+      "original_case_source_sha256": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
+      "gtest_body_sha256": "5d50f9f290933a59324d0bd10ee555be37b6290261809cce5dd31c4fea02ec14"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-metadata-runtime-value",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataRuntimeValueRejected",
+      "expected": "reject",
+      "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+      "original_case_source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+      "gtest_body_sha256": "0a68bd1b8bc1e39971114960268bb43bbeeea32446948c39ce4570ac7021dd79"
+    },
+    {
+      "name": "variant-metadata-variant-size-storage",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataVariantSizeStorageRejected",
+      "expected": "reject",
+      "source_sha256": "9ccf2c93a351e40824802f652a81e40589492c8647f92d6bfc561905145f1e70",
+      "original_case_source_sha256": "9ccf2c93a351e40824802f652a81e40589492c8647f92d6bfc561905145f1e70",
+      "gtest_body_sha256": "c49d023f5e7e7bd910c2c3bccf6afb30ad1de4b22d7e0be9e5816e28caabe367"
+    },
+    {
+      "name": "variant-metadata-sentinel-storage",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSentinelStorageRejected",
+      "expected": "reject",
+      "source_sha256": "24f80a6c04f4fe1b2f45c803ffca08f1615e3e7175a99461c5e021ea59c95c1e",
+      "original_case_source_sha256": "24f80a6c04f4fe1b2f45c803ffca08f1615e3e7175a99461c5e021ea59c95c1e",
+      "gtest_body_sha256": "01b8370bc57c1a4e89733b9209b18f4414337bc793d785a6eed0032eb50f960b"
+    },
+    {
+      "name": "variant-metadata-source-specialization",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataSourceSpecializationRejected",
+      "expected": "reject",
+      "source_sha256": "420061391e62da7a022135e4665a6b2634d3d7c185d59226f3467fdb06599652",
+      "original_case_source_sha256": "420061391e62da7a022135e4665a6b2634d3d7c185d59226f3467fdb06599652",
+      "gtest_body_sha256": "5553f65a0eafecf76958629f7117eba5f2b47c376428a247ed60b2dd07e3f9e6"
+    },
+    {
+      "name": "variant-metadata-volatile-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataVolatileAlternativeRejected",
+      "expected": "reject",
+      "source_sha256": "183d66330ac3a342ba78e7de509f31634693734f5cb099a54eb8ee30b0b4202a",
+      "original_case_source_sha256": "183d66330ac3a342ba78e7de509f31634693734f5cb099a54eb8ee30b0b4202a",
+      "gtest_body_sha256": "f52bec6bc945f86d1e0be4a949e29fd308f6a38fc3b3d66d525f866c176e55ed"
+    },
+    {
+      "name": "variant-metadata-direct-volatile-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMetadataDirectVolatileAlternativeRejected",
+      "expected": "reject",
+      "source_sha256": "f16a98dec1073e3828959c3c26a467a3cc5bffb020543a584d5df2f14089a8a9",
+      "original_case_source_sha256": "f16a98dec1073e3828959c3c26a467a3cc5bffb020543a584d5df2f14089a8a9",
+      "gtest_body_sha256": "f627ebc08b54fc6570e48ed635401d31bcd5b7f308e106dba374a68497a24a17"
+    },
+    {
+      "name": "variant-layout-altered-index-member",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutAlteredIndexMemberRejected",
+      "expected": "reject",
+      "source_sha256": "e4b3d865a8d1c2101b4e04d54256c44cb28fca5ee43b800c39cc3440bb87e824",
+      "original_case_source_sha256": "e4b3d865a8d1c2101b4e04d54256c44cb28fca5ee43b800c39cc3440bb87e824",
+      "gtest_body_sha256": "a584a06dd4fc11530973e3e2ae9254d954dcf100b0eb3ea7ee86cc9e9696dbf4"
+    },
+    {
+      "name": "variant-layout-unsupported-large-float",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutUnsupportedLargeFloatRejected",
+      "expected": "reject",
+      "source_sha256": "948e0238367d06624aa1f69088027f1fdcf1e57342f18224b5c73cab10af9621",
+      "original_case_source_sha256": "948e0238367d06624aa1f69088027f1fdcf1e57342f18224b5c73cab10af9621",
+      "gtest_body_sha256": "9d2c1d31de0885936ba68119e30dbe272eef0b7d571fb5630d5f168aa69e6dc3"
+    },
+    {
+      "name": "variant-layout-runtime-record",
+      "formal_test_name": "TranslateTest.CoreV2VariantLayoutRuntimeRecordRejected",
+      "expected": "reject",
+      "source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
+      "original_case_source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
+      "gtest_body_sha256": "f87f718b59266881a236fb0e5780344e1ecc795e06b7279bec17bbc46202531f"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataConstAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataNestedAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataSizeQualificationRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataWrittenIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantLayoutMixedScalarRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantLayoutReferenceAndConstRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantLayoutPointerAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantLayoutDuplicateTypesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantLayoutDeclarationIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMetadataRuntimeValueRejected",
+    "TranslateTest.CoreV2VariantMetadataVariantSizeStorageRejected",
+    "TranslateTest.CoreV2VariantMetadataSentinelStorageRejected",
+    "TranslateTest.CoreV2VariantMetadataSourceSpecializationRejected",
+    "TranslateTest.CoreV2VariantMetadataVolatileAlternativeRejected",
+    "TranslateTest.CoreV2VariantMetadataDirectVolatileAlternativeRejected",
+    "TranslateTest.CoreV2VariantLayoutAlteredIndexMemberRejected",
+    "TranslateTest.CoreV2VariantLayoutUnsupportedLargeFloatRejected",
+    "TranslateTest.CoreV2VariantLayoutRuntimeRecordRejected"
+  ],
+  "native_reference_selected_executions": 22,
+  "planned_generated_c23_executions": 22,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": true,
+  "full_stl_complete": false,
+  "registered_source_sha256": "37e42c15db2bcd9a9d39b25b1ee8af5407e13fe5419eb392fb2672120813a706",
+  "maintained_original_sha256": "e51b392c0556e228dc98fa264fa5fc80232273c8bf68b4645b4f1c78b9cd1951",
+  "previous_registered_source_sha256": "48730f5a93a1ed063bcfbaed9b08291eca234a98b8f033f5e180bcad34dd9ecc",
+  "previous_maintained_original_sha256": "1dbff1fae5daafe294034608d7cf1d9e0117c2b9b760b3c1d1af614bdd5ea49a",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8018,
+  "current_python_registry_tests": 116,
+  "previous7998_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "8c2cd05e26a532785d225e7c042e0517335fae384c82cdce0857d865937e2113",
+  "extractor_sha256": "dc88f0f93bcad019f21001d0a16cd9334cb8a644c74693cd4318e47dfaa06f81"
+}
