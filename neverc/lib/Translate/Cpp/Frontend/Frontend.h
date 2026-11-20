@@ -3418,6 +3418,10 @@ std::optional<UtilityAnyEmptyCall> approvedUtilityAnyEmptyCall(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+const clang::CXXRecordDecl *approvedUtilityAnyEmptyPointerCast(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 bool pinnedUtilityAnyType(const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record);
 bool approvedUtilityAnyMetadata(const State &S,

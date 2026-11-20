@@ -7294,6 +7294,107 @@ std::optional<UtilityAnyEmptyCall> approvedUtilityAnyEmptyCall(
   return std::nullopt;
 }
 
+static bool anyParameter(const Expr *E, const ParmVarDecl *Parameter) {
+  const auto *Ref = E ? dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  return Ref && Ref->getDecl() == Parameter;
+}
+
+static const CXXRecordDecl *anyEmptyCast(const State &S, const SourceManager &SM,
+                                       const FunctionDecl *F, const ASTContext &Context,
+                                       bool AllowConst) {
+  const auto *Type = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Args = F ? F->getTemplateSpecializationArgs() : nullptr;
+  if (!F || !F->getIdentifier() || F->getName() != "any_cast" || F->isDeleted() ||
+      F->isInvalidDecl() || F->isVariadic() || F->getNumParams() != 1 || !Type ||
+      !Type->isNothrow() || !Args || Args->size() != 1 ||
+      Args->get(0).getKind() != TemplateArgument::Type ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return nullptr;
+  const auto *Primary = F->getPrimaryTemplate();
+  if (!Primary)
+    return nullptr;
+  for (const auto *D : Primary->redecls())
+    if (!anyDeclaration(S, SM, D) || !anyDeclaration(S, SM, D->getTemplatedDecl()))
+      return nullptr;
+  for (const auto *D : F->redecls())
+    if (!anyDeclaration(S, SM, D))
+      return nullptr;
+
+  const auto Value = Args->get(0).getAsType();
+  const auto Object = F->getParamDecl(0)->getType()->getPointeeType();
+  if (Object.isNull() || Object.isVolatileQualified() || Object.isRestrictQualified() ||
+      Object.getAddressSpace() != LangAS::Default || !utilityScalar(Context, Value) ||
+      Value.isVolatileQualified() || Value.isRestrictQualified() ||
+      Value.getAddressSpace() != LangAS::Default)
+    return nullptr;
+  const auto *Record = Object->getAsCXXRecordDecl();
+  if (!approvedUtilityAnyEmptyRecord(S, SM, Record, Context))
+    return nullptr;
+  const auto *Any = Record->getDefinition();
+  const bool Const = Object.isConstQualified();
+  if ((Const && !AllowConst) ||
+      !Context.hasSameType(F->getReturnType(),
+                           Context.getPointerType(Const ? Value.withConst() : Value)))
+    return nullptr;
+
+  const FunctionDecl *Definition = nullptr;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody(Definition));
+  if (!Body || !anyDeclaration(S, SM, Definition) || Body->size() > 8)
+    return nullptr;
+  auto Statement = Body->body_begin();
+  for (; Statement != Body->body_end(); ++Statement) {
+    const auto *Decls = dyn_cast<DeclStmt>(*Statement);
+    if (!Decls)
+      break;
+    for (const auto *D : Decls->decls())
+      if (!isa<UsingDecl, StaticAssertDecl, TypedefNameDecl>(D) ||
+          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "any"))
+        return nullptr;
+  }
+  const auto *Parameter = Definition->getParamDecl(0);
+  if (Const) {
+    if (std::distance(Statement, Body->body_end()) != 1)
+      return nullptr;
+    const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+    const auto *Result = Return ? Return->getRetValue() : nullptr;
+    const auto *Forward = Result ? dyn_cast<CallExpr>(Result->IgnoreParenImpCasts()) : nullptr;
+    const auto *Cast = Forward && Forward->getNumArgs() == 1
+        ? dyn_cast<CXXConstCastExpr>(Forward->getArg(0)->IgnoreParens()) : nullptr;
+    if (!Cast || !anyParameter(Cast->getSubExpr(), Parameter) ||
+        !Context.hasSameType(Cast->getType(), Context.getPointerType(Context.getRecordType(Any))))
+      return nullptr;
+    const auto *Target = Forward->getDirectCallee();
+    const auto *ForwardArgs = Target ? Target->getTemplateSpecializationArgs() : nullptr;
+    if (!ForwardArgs || ForwardArgs->size() != 1 ||
+        !ForwardArgs->get(0).structurallyEquals(Args->get(0)))
+      return nullptr;
+    return anyEmptyCast(S, SM, Target, Context, false) == Any ? Any : nullptr;
+  }
+
+  if (std::distance(Statement, Body->body_end()) != 2)
+    return nullptr;
+  const auto *Guard = dyn_cast<IfStmt>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  if (!Guard || Guard->getInit() || Guard->getConditionVariable() || Guard->getElse() ||
+      !Return || !anyNull(Return->getRetValue()))
+    return nullptr;
+  const auto *Condition = dyn_cast<BinaryOperator>(Guard->getCond()->IgnoreParenImpCasts());
+  if (!Condition || Condition->getOpcode() != BO_LAnd ||
+      !anyParameter(Condition->getLHS(), Parameter))
+    return nullptr;
+  const auto *Handle = dyn_cast<MemberExpr>(Condition->getRHS()->IgnoreParenImpCasts());
+  return Handle && Handle->isArrow() && Handle->getMemberDecl() == *Any->field_begin() &&
+         anyParameter(Handle->getBase(), Parameter) ? Any : nullptr;
+}
+
+const CXXRecordDecl *approvedUtilityAnyEmptyPointerCast(const State &S, const SourceManager &SM,
+                                                       const CallExpr *Call,
+                                                       const ASTContext &Context) {
+  if (!S.coreV2() || !Call || Call->getNumArgs() != 1 || !directFunctionReference(Call))
+    return nullptr;
+  return anyEmptyCast(S, SM, Call->getDirectCallee(), Context, true);
+}
+
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
                                   const CXXRecordDecl *Record) {
   const auto *Specialization =

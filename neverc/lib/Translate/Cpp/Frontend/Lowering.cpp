@@ -32564,6 +32564,12 @@ class FunctionLowering {
       if (approvedUtilityConstant(A.S, A.Sources, Call, A.Context,
                                   UtilityValue))
         return A.constant(UtilityValue, Call->getType(), L);
+      if (approvedUtilityAnyEmptyPointerCast(A.S, A.Sources, Call, A.Context)) {
+        // Admitted any constructors only create an empty object. The SDK
+        // skips its handler in that state, but the pointer still evaluates.
+        snapshot(expression(Call->getArg(0)), L);
+        return A.zero(Call->getType(), L);
+      }
       if (const auto Any = approvedUtilityAnyEmptyCall(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Any->Callee->getBase();
         auto Receiver = Any->Callee->isArrow() ? dereference(expression(Base), L) : lvalue(Base);
