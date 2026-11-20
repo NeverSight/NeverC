@@ -32570,6 +32570,11 @@ class FunctionLowering {
       if (approvedUtilityConstant(A.S, A.Sources, Call, A.Context,
                                   UtilityValue))
         return A.constant(UtilityValue, Call->getType(), L);
+      if (const auto Compare = approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context)) {
+        for (const auto *Operand : Call->arguments())
+          discard(Operand);
+        return *Compare ? one("bool", L) : A.zero(A.Context.BoolTy, L);
+      }
       if (const auto Query = approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Query->Callee->getBase();
         auto Receiver = Query->Callee->isArrow()
@@ -38482,6 +38487,12 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
 
+    if (approvedUtilityMonostateConstruction(A.S, A.Sources, C, A.Context)) {
+      if (C->getNumArgs())
+        discard(C->getArg(0));
+      initializeZero(std::move(Place), T, L);
+      return;
+    }
     if (const auto Construction = approvedUtilityVariantConstruction(A.S, A.Sources, C, A.Context)) {
       if (Construction->Copy) {
         assign(std::move(Place), expression(Construction->Input), L);

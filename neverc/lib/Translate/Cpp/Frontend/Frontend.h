@@ -3398,6 +3398,12 @@ bool pinnedUtilityMonostateType(const State &S, const clang::SourceManager &SM,
 bool approvedUtilityMonostateMetadata(const State &S, const clang::SourceManager &SM,
                                       const clang::CXXRecordDecl *Record,
                                       const clang::ASTContext &Context);
+bool approvedUtilityMonostateConstruction(const State &S,
+    const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+std::optional<bool> approvedUtilityMonostateComparison(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 bool pinnedUtilityVariantType(const State &S, const clang::SourceManager &SM,
                               const clang::CXXRecordDecl *Record);
 bool approvedUtilityVariantMetadata(const State &S,

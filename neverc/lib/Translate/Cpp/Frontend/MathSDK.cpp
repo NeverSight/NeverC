@@ -6814,6 +6814,32 @@ bool approvedUtilityMonostateMetadata(const State &S, const SourceManager &SM,
          Layout.getAlignment() == CharUnits::One();
 }
 
+bool approvedUtilityMonostateConstruction(const State &S,
+    const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  const auto *C = Construction ? Construction->getConstructor() : nullptr;
+  if (!C || !C->isImplicit() || !C->isDefaulted() || !C->isTrivial() ||
+      C->isDeleted() || C->isInvalidDecl() || C->getNumCtorInitializers() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Construction->isInstantiationDependent() ||
+      C->getNumParams() != Construction->getNumArgs() ||
+      !approvedUtilityMonostateMetadata(S, SM, C->getParent(), Context))
+    return false;
+  for (const auto *D : C->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__variant/monostate.h"))
+      return false;
+  const auto Type = Context.getBaseElementType(Construction->getType());
+  if (!Context.hasSameUnqualifiedType(Type, Context.getRecordType(C->getParent())))
+    return false;
+  if (C->isDefaultConstructor())
+    return !Construction->getNumArgs();
+  if (!C->isCopyOrMoveConstructor() || Construction->getNumArgs() != 1)
+    return false;
+  const auto Source = Construction->getArg(0)->getType();
+  return !Source.isVolatileQualified() && Context.hasSameUnqualifiedType(Type, Source);
+}
+
 static bool utilityVariantAlternativeType(const State &S, const SourceManager &SM,
                                           QualType T, const ASTContext &Context) {
   return !T->isIncompleteType() &&
@@ -7093,6 +7119,51 @@ static const Expr *variantReturned(const FunctionDecl *F) {
   }
   const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
   return Return ? Return->getRetValue() : nullptr;
+}
+
+std::optional<bool> approvedUtilityMonostateComparison(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!F || Call->getNumArgs() != 2 || F->getNumParams() != 2 ||
+      !F->isOverloadedOperator() || F->isVariadic() || F->isInvalidDecl() ||
+      F->isDeleted() || !F->isConstexpr() ||
+      F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !Context.hasSameType(F->getReturnType(), Context.BoolTy))
+    return std::nullopt;
+  const auto *Proto = F->getType()->getAs<FunctionProtoType>();
+  if (!Proto || !Proto->isNothrow())
+    return std::nullopt;
+  bool Expected;
+  switch (F->getOverloadedOperator()) {
+  case OO_EqualEqual:
+  case OO_LessEqual:
+  case OO_GreaterEqual:
+    Expected = true;
+    break;
+  case OO_ExclaimEqual:
+  case OO_Less:
+  case OO_Greater:
+    Expected = false;
+    break;
+  default:
+    return std::nullopt;
+  }
+  for (const auto *D : F->redecls())
+    if (!variantDeclaration(S, SM, D, "__variant/monostate.h"))
+      return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto Type = F->getParamDecl(I)->getType();
+    if (!approvedUtilityMonostateMetadata(S, SM, Type->getAsCXXRecordDecl(), Context) ||
+        !Context.hasSameUnqualifiedType(Type, Call->getArg(I)->getType()))
+      return std::nullopt;
+  }
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  const auto *E = Return ? Return->getRetValue() : nullptr;
+  const auto *Value = E ? dyn_cast<CXXBoolLiteralExpr>(E->IgnoreParens()) : nullptr;
+  if (!Value || Value->getValue() != Expected)
+    return std::nullopt;
+  return Expected;
 }
 
 static const DeclRefExpr *variantReference(const Expr *E) {
