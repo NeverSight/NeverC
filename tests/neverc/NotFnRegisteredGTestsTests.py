@@ -43,6 +43,10 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_scalar_registered = cls.registered
+        cls.variant_scalar_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_scalar_original = cls.adapter.restore_original_gtests(cls.variant_scalar_registered,cls.variant_scalar_suffix)
+        cls.registered = cls.adapter.restore_variant_scalar_history(cls.variant_scalar_registered)
         cls.variant_metadata_layout_registered = cls.registered
         cls.variant_metadata_layout_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_metadata_layout_original = cls.adapter.restore_original_gtests(cls.variant_metadata_layout_registered,cls.variant_metadata_layout_suffix)
@@ -1737,6 +1741,35 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.variant_metadata_layout_registered,self.variant_metadata_layout_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.variant_metadata_layout_original+b' ',['TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations'])
+
+    def test_variant_scalar_preserves_all_previous_registry_bytes_and_extracts_twenty_five_tests(self):
+        self.assertEqual(self.variant_scalar_original+self.variant_scalar_suffix,self.variant_scalar_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.variant_scalar_original,self.variant_scalar_suffix),self.variant_scalar_original)
+        self.assertEqual(self.adapter.restore_variant_scalar_history(self.variant_scalar_registered),self.variant_metadata_layout_registered)
+        self.assertEqual(self.adapter.restore_variant_scalar_history(self.variant_scalar_original),self.variant_metadata_layout_original)
+        selected = ['TranslateTest.CoreV2VariantObjectsDefaultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsSecondRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsThirdLvalueRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsCopyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsDefaultPointerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsRefAndSideEffectRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsTemporaryRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfAliasRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfConstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfDuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfCopyAndEvaluateOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsHoldsConstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsCopyChangingAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsMoveAndSelfAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsConstGetByIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsConstGetByTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsClassAlternativeRejected', 'TranslateTest.CoreV2VariantObjectsConstAlternativeRejected', 'TranslateTest.CoreV2VariantObjectsAlteredDiscriminantRejected', 'TranslateTest.CoreV2VariantObjectsUnprovedConversionRejected', 'TranslateTest.CoreV2VariantObjectsUncheckedGetRejected', 'TranslateTest.CoreV2VariantObjectsConstGetInactiveRejected', 'TranslateTest.CoreV2VariantObjectsConstGetMutableAliasRejected', 'TranslateTest.CoreV2VariantObjectsConstGetAlteredHelperRejected', 'TranslateTest.CoreV2VariantObjectsGetIfReplacedAddressBodyRejected']
+        generated,proof = self.extractor.extract(self.variant_scalar_original,selected)
+        self.assertEqual(proof['original_test_names'],8043)
+        self.assertEqual(proof['selected_count'],25)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),8018)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19variantsclr',generated)
+        self.assertIn(b'variant-objects-',generated)
+        self.assertIn(b'std::variant<',generated)
+
+    def test_variant_scalar_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.variant_scalar_registered+b' ',
+                        self.variant_scalar_registered.replace(b'r19variantsclr',b'q.push(11)',1),
+                        self.variant_scalar_registered+self.variant_scalar_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.variant_scalar_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_variant_scalar_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_scalar_registered,self.variant_scalar_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.variant_scalar_original+b' ',['TranslateTest.CoreV2VariantObjectsDefaultRunAtBothOptimizations'])
 
 
 if __name__ == '__main__':
