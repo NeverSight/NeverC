@@ -200,5 +200,6 @@
   "current_python_registry_tests": 116,
   "previous7998_and_raw109_gtest_bytes_unchanged": true,
   "restorer_sha256": "8c2cd05e26a532785d225e7c042e0517335fae384c82cdce0857d865937e2113",
-  "extractor_sha256": "dc88f0f93bcad019f21001d0a16cd9334cb8a644c74693cd4318e47dfaa06f81"
+  "extractor_sha256": "dc88f0f93bcad019f21001d0a16cd9334cb8a644c74693cd4318e47dfaa06f81",
+  "source_proof_sha256": "23aa350cd01a78c4896ba778186d561dfa782828ff76ece40fa1064b55e204ea"
 }
