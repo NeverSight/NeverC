@@ -3416,6 +3416,8 @@ struct UtilityVariantConstruction {
   UtilityVariantRecord Variant;
   bool Copy;
   unsigned Index;
+  const clang::Expr *Input;
+  const clang::Expr *IndexTag;
 };
 std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
     const State &S, const clang::SourceManager &SM,

@@ -15575,6 +15575,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const Expr *, SourceLocation> DirectTemplateCallLocations;
   std::set<const CallExpr *> GeneratedArrayAssignments;
   std::set<const CallExpr *> ApprovedErasedUtilityCalls;
+  std::set<const Stmt *> CheckedVariantIndexTags;
   std::map<const DeclRefExpr *, const ValueDecl *> MemberPointerAdapterSources;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
@@ -25576,6 +25577,8 @@ public:
     return true;
   }
   bool TraverseDeclRefExpr(DeclRefExpr *Reference) {
+    if (CheckedVariantIndexTags.count(Reference))
+      return RecursiveASTVisitor<Allowlist>::TraverseDeclRefExpr(Reference);
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()) ||
         (!isa<VarTemplateSpecializationDecl>(Reference->getDecl()) &&
          !concreteFunctionTemplate(dyn_cast<FunctionDecl>(Reference->getDecl()))))
@@ -25685,6 +25688,8 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()))
       return true;
+    if (CheckedVariantIndexTags.count(Reference))
+      return true; // The lexical template argument is still traversed.
     if (const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl())) {
       const auto *Space = dyn_cast<NamespaceDecl>(Variable->getDeclContext());
       const auto File = A.S.sdkFile(A.Sources, Variable->getLocation());
@@ -29915,6 +29920,29 @@ public:
       return true;
     if (A.S.coreV2() && InitializerLookupWrappers.count(S))
       return true; // Exact source wrappers of an already checked callback clause.
+    if (CheckedVariantIndexTags.count(S))
+      return true;
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(S);
+        Construction && Construction->getNumArgs() && Construction->getConstructor() &&
+        Construction->getConstructor()->isExplicit()) {
+      if (const auto Variant = approvedUtilityVariantConstruction(A.S, A.Sources, Construction, A.Context)) {
+        // Only the constant argument of this selected constructor is erased.
+        // RAV still walks the qualifier and written template arguments.
+        const Expr *Tag = Variant->IndexTag;
+        for (unsigned Depth = 0; Tag && Depth < 16; ++Depth) {
+          CheckedVariantIndexTags.insert(Tag);
+          const auto *Unwrapped = Tag->IgnoreParenImpCasts();
+          if (Unwrapped != Tag) {
+            Tag = Unwrapped;
+          } else if (const auto *Copy = dyn_cast<CXXConstructExpr>(Tag);
+                     Copy && Copy->getNumArgs() == 1) {
+            Tag = Copy->getArg(0);
+          } else {
+            Tag = nullptr;
+          }
+        }
+      }
+    }
     auto L = S->getBeginLoc().isValid() ? S->getBeginLoc()
                                         : ImplicitInitializerOwner;
     if (A.S.coreV2()) {

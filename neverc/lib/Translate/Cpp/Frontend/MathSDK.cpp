@@ -7260,16 +7260,31 @@ std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
     return std::nullopt;
   const auto *C = Construction->getConstructor();
   const auto Variant = approvedUtilityVariantRecord(S, SM, Construction->getType(), Context);
-  const unsigned Arity = Construction->getNumArgs();
-  if (!C || !Variant || C->isDeleted() || C->isVariadic() || Arity > 1 ||
-      C->getNumParams() != Arity || C->getParent()->getCanonicalDecl() != Variant->Record->getCanonicalDecl() ||
+  const unsigned TotalArguments = Construction->getNumArgs();
+  if (!C || !Variant || C->isDeleted() || C->isVariadic() || TotalArguments > 2 ||
+      C->getNumParams() != TotalArguments ||
+      C->getParent()->getCanonicalDecl() != Variant->Record->getCanonicalDecl() ||
       !variantDeclaration(S, SM, C))
     return std::nullopt;
-  if (Arity == 1 && C->isDefaulted() && C->isTrivial() && C->isCopyOrMoveConstructor() &&
+  if (TotalArguments == 1 && C->isDefaulted() && C->isTrivial() && C->isCopyOrMoveConstructor() &&
       Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(), Construction->getType()))
-    return UtilityVariantConstruction{*Variant, true, 0};
-
-  if (!C->isConstexpr() || !C->getPrimaryTemplate() || (Arity == 0 && !C->isDefaultConstructor()) ||
+    return UtilityVariantConstruction{*Variant, true, 0, Construction->getArg(0), nullptr};
+  const Expr *Tag = C->isExplicit() && TotalArguments ? Construction->getArg(0) : nullptr;
+  const auto Requested = variantIndexTag(S, SM, Tag);
+  if (Tag) {
+    const auto *Args = C->getTemplateSpecializationArgs();
+    if (!Requested || !S.owns(SM, Tag->getExprLoc()) ||
+        !Args || !Args->size() || Args->get(0).getKind() != TemplateArgument::Integral ||
+        Args->get(0).getAsIntegral().getLimitedValue(64) != *Requested ||
+        !Context.hasSameUnqualifiedType(Tag->getType(), C->getParamDecl(0)->getType()))
+      return std::nullopt;
+  }
+  const unsigned Offset = Tag ? 1 : 0;
+  const unsigned Arity = TotalArguments - Offset;
+  if (Arity > 1)
+    return std::nullopt;
+  const auto *Input = Arity ? Construction->getArg(Offset) : nullptr;
+  if (!C->isConstexpr() || !C->getPrimaryTemplate() || (!Tag && !Arity && !C->isDefaultConstructor()) ||
       !variantDeclaration(S, SM, C->getPrimaryTemplate()) || !variantEmptyBody(C))
     return std::nullopt;
   const auto *Proto = C->getType()->getAs<FunctionProtoType>();
@@ -7289,12 +7304,12 @@ std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
       !Context.hasSameType(Impl->getType(), Variant->Implementation->getType()))
     return std::nullopt;
   const auto I = variantIndexTag(S, SM, Impl->getArg(0));
-  if (!I || *I >= Variant->Alternatives.size() || (!Arity && *I != 0))
+  if (!I || *I >= Variant->Alternatives.size() ||
+      (Requested ? *Requested != *I : (!Arity && *I != 0)))
     return std::nullopt;
-  if (Arity && (!C->getParamDecl(0)->getType()->isReferenceType() ||
-                !variantForward(S, SM, Impl->getArg(1), C->getParamDecl(0), Context) ||
-                !Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
-                                                Variant->Alternatives[*I]->getType())))
+  if (Input && (!C->getParamDecl(Offset)->getType()->isReferenceType() ||
+                !variantForward(S, SM, Impl->getArg(1), C->getParamDecl(Offset), Context) ||
+                !Context.hasSameUnqualifiedType(Input->getType(), Variant->Alternatives[*I]->getType())))
     return std::nullopt;
   // Inherited constructors introduce no user-written arguments. Confirm each
   // selecting declaration ends in the exact storage base constructor.
@@ -7369,7 +7384,7 @@ std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
                    : !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Initialization->IgnoreParens())) {
     return std::nullopt;
   }
-  return UtilityVariantConstruction{*Variant, false, *I};
+  return UtilityVariantConstruction{*Variant, false, *I, Input, Tag};
 }
 
 static bool variantSelectedIndex(const FunctionDecl *F, unsigned I) {

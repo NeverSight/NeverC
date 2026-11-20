@@ -38484,14 +38484,14 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
 
     if (const auto Construction = approvedUtilityVariantConstruction(A.S, A.Sources, C, A.Context)) {
       if (Construction->Copy) {
-        assign(std::move(Place), expression(C->getArg(0)), L);
+        assign(std::move(Place), expression(Construction->Input), L);
         return;
       }
       const auto &V = Construction->Variant;
       const auto *Field = V.Alternatives[Construction->Index];
       auto Item = fieldStorage(variantStorage(json::Object(Place), V, L), Field, L);
-      if (C->getNumArgs())
-        assign(std::move(Item), cast(expression(C->getArg(0)), type(Field->getType(), L), L), L);
+      if (Construction->Input)
+        assign(std::move(Item), cast(expression(Construction->Input), type(Field->getType(), L), L), L);
       else
         initializeZero(std::move(Item), Field->getType(), L);
       assign(fieldStorage(std::move(Place), V.Index, L),
