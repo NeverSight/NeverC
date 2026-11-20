@@ -488,3 +488,11 @@ Custom allocators or adapter containers, other element types, additional
 other allocator and iterator range overloads, other emplacement argument forms
 require further work. This increment does not establish complete
 STL support.
+
+## R19 `<variant>` type and layout metadata
+
+The verified queries include the variant size constant, alternative type aliases,
+the sentinel value and type-form size and alignment. Verification on six 64-bit
+targets covers 120 source requests. On Linux x86-64, 20 formal tests cover the
+queries and rejected forms. Eleven generated C23 programs match their native
+C++ references at O0 and O2.

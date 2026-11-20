@@ -17826,3 +17826,16 @@ allocator types, other iterator and element types, and other comparison
 policies
 remain outside this checked surface. Full C++17/STL translation remains
 unfinished. NeverC's source language remains C23-only.
+
+## Type and layout queries from `<variant>`
+
+The private C++17 profile admits the pinned `std::variant_size_v`,
+`std::variant_alternative_t` and `std::variant_npos` forms. It checks each
+written template argument before folding its result. Aliases can select a
+nested variant type and preserve const qualification on the alternative.
+
+Type-form `sizeof` and `alignof` fold the authenticated SDK layout for
+variants with supported scalar and pointer alternatives. The layout proof
+checks the pinned storage chain, discriminator and recursively selected union
+fields on the six 64-bit targets. The regressions include duplicate
+alternatives, const references, mixed scalar widths and pointer alternatives.
