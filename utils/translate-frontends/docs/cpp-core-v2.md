@@ -16118,7 +16118,9 @@ or mismatching layout fields are rejected. Source sizes and ABI alignments
 must agree, with supported byte sizes and power-of-two alignment.
 
 Each response record also requires `layout` containing `size_bits`,
-`abi_align_bits` and `field_offsets_bits` in declaration order. The verifier
+`abi_align_bits` and `field_offsets_bits` in declaration order. Internal SDK
+union carriers set `union` to `true` and have one or more zero offsets. The verifier
+checks their size and alignment using the largest admitted members. It also
 reconstructs the natural layout of the currently supported standard-layout records
 from matched carriers, arrays and earlier records. Arithmetic is bounded;
 layout size is at most 25,600,000 bits and field offsets must agree exactly.
@@ -17862,8 +17864,30 @@ The profile also admits `std::any` type identity and type-form size and
 alignment. The layout proof checks the SDK handler signature, aligned buffer,
 and storage union.
 
-For the checked default integer specializations of `map`, `multimap`, `set`,
-`multiset`, `unordered_set`, and `unordered_multiset`, the frontend admits
-type aliases and type-form size and alignment. Existing `unordered_map`
+For the checked default integer specializations of `map`, `set`, and
+`unordered_set`, the frontend admits type aliases and type-form size and
+alignment. Existing `unordered_map`
 cases retain their checked behavior. The proofs follow the selected SDK
 declarations and storage for the six 64-bit target descriptors.
+
+## Checked scalar variant operations
+
+The profile lowers authenticated `std::variant` specializations with admitted
+scalar alternatives. It checks the selected union storage and discriminator,
+default and exact scalar value construction, and trivial same-type copy and
+move operations. The index, type and value-state queries read the discriminator.
+Type and index forms of `get_if` return a pointer to the active alternative or
+a null pointer. `get` requires a const local whose construction proves that the
+requested alternative is active.
+
+## Checked in-place variant and additional STL layouts
+
+The profile admits scalar variant construction with the pinned
+`in_place_index` and `in_place_type` tags. The selected alternative can receive
+one argument of its exact scalar type or be value-initialized. The empty
+`std::monostate` alternative accepts construction without a payload.
+
+The frontend supports type-form size and alignment for `std::monostate`,
+variants containing it, and the checked `std::any` layout. The associative
+layout queries cover the checked default integer specializations of `map`,
+`set`, and `unordered_set`.

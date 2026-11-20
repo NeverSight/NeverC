@@ -507,3 +507,10 @@ The combined bitset, variant and layout suite passes 858 source requests
 across the six 64-bit targets. The 266 formal tests include 122 generated
 C23 programs matched against native C++ at O0 and O2 on Linux x86-64.
 The original 750 requests pass with the same private frontend source.
+
+## R19 integrated layout and in-place variant execution
+
+The combined suite passes 1,116 source requests on six 64-bit targets and
+309 Linux x86-64 formal tests. All 151 generated C23 programs match their
+native C++ counterparts at O0 and O2. The original 750 requests pass against
+the same compiler source.

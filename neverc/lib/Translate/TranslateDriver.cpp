@@ -154,6 +154,8 @@ json::Object layoutJSON(const RecordLayout &L) {
   for (auto Bits : L.FieldOffsetsBits)
     Offsets.push_back(Bits);
   O["field_offsets_bits"] = std::move(Offsets);
+  if (L.IsUnion)
+    O["union"] = true;
   return O;
 }
 bool parseInvocation(int Argc, const char **Argv, Invocation &I,

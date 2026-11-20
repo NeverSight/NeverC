@@ -931,6 +931,12 @@ class FunctionLowering {
                             SourceLocation L) {
     return fieldStorage(discreteParameter(std::move(Place), Info, L), Info.Thresholds, L);
   }
+  Expression variantStorage(Expression Place, const UtilityVariantRecord &V,
+                            SourceLocation L) {
+    return Expression{{"kind", "member"}, {"name", A.name(V.Value)},
+        {"type", A.variantStorageType(V.Record)}, {"args", json::Array{std::move(Place)}},
+        {"loc", A.loc(L)}};
+  }
   Expression unorderedMapMember(Expression Place, const UtilityUnorderedMapRecord &Info,
                                 llvm::StringRef Name, SourceLocation L) {
     QualType FieldType = Name == "nct_unordered_buckets" ? Info.BucketPointerType
@@ -32564,6 +32570,83 @@ class FunctionLowering {
       if (approvedUtilityConstant(A.S, A.Sources, Call, A.Context,
                                   UtilityValue))
         return A.constant(UtilityValue, Call->getType(), L);
+      if (const auto Query = approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context)) {
+        const auto *Base = Query->Callee->getBase();
+        auto Receiver = Query->Callee->isArrow()
+            ? dereference(expression(Base), L) : lvalue(Base);
+        auto Index = snapshot(fieldStorage(std::move(Receiver), Query->Variant.Index, L), L);
+        const auto IndexType = type(Query->Variant.Index->getType(), L);
+        const auto NoIndex = llvm::APInt::getAllOnes(integerBits(IndexType)).getZExtValue();
+        auto Empty = binary("==", Index, quantity(NoIndex, IndexType, L), "bool", L);
+        if (Query->Valueless)
+          return Empty;
+        auto Result = temporary(T, L);
+        const auto Missing = labelName(), Active = labelName(), End = labelName();
+        branch(std::move(Empty), Missing, Active, L);
+        label(Missing, L);
+        assign(Result, quantity(llvm::APInt::getAllOnes(integerBits(T)).getZExtValue(), T, L), L);
+        jump(End, L);
+        label(Active, L);
+        assign(Result, cast(std::move(Index), T, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      }
+      if (const auto Holds = approvedUtilityVariantHolds(A.S, A.Sources, Call, A.Context)) {
+        auto Receiver = lvalue(Call->getArg(0));
+        const auto *Field = Holds->Variant.Index;
+        return binary("==", fieldStorage(std::move(Receiver), Field, L),
+                      quantity(Holds->Index, type(Field->getType(), L), L), "bool", L);
+      }
+      if (const auto Assignment = approvedUtilityVariantAssignment(A.S, A.Sources, Call, A.Context)) {
+        auto Receive = [&] {
+          return Assignment->Arrow
+              ? snapshot(expression(Assignment->Receiver), L)
+              : snapshot(address(lvalue(Assignment->Receiver), Assignment->Receiver->getType(), L), L);
+        };
+        auto Input = [&] {
+          return snapshot(address(lvalue(Assignment->Source), Assignment->Source->getType(), L), L);
+        };
+        Expression Left, Right;
+        if (Assignment->SourceFirst) {
+          Right = Input();
+          Left = Receive();
+        } else {
+          Left = Receive();
+          Right = Input();
+        }
+        auto Place = dereference(std::move(Left), L);
+        assign(Place, dereference(std::move(Right), L), L);
+        return Place;
+      }
+      if (const auto Get = approvedUtilityVariantGet(A.S, A.Sources, Call, A.Context)) {
+        auto Place = variantStorage(lvalue(Call->getArg(0)), Get->Variant, L);
+        return fieldStorage(std::move(Place), Get->Variant.Alternatives[Get->Index], L);
+      }
+      if (const auto GetIf = approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context)) {
+        auto Pointer = snapshot(expression(Call->getArg(0)), L);
+        const auto &V = GetIf->Variant;
+        auto Result = temporary(T, L);
+        const auto HasPointer = labelName(), Active = labelName();
+        const auto Missing = labelName(), End = labelName();
+        branch(cast(Pointer, "bool", L), HasPointer, Missing, L);
+        label(HasPointer, L);
+        auto Place = dereference(std::move(Pointer), L);
+        const auto IndexType = type(V.Index->getType(), L);
+        branch(binary("==", fieldStorage(json::Object(Place), V.Index, L),
+                      quantity(GetIf->Index, IndexType, L), "bool", L),
+               Active, Missing, L);
+        label(Active, L);
+        auto Item = fieldStorage(variantStorage(std::move(Place), V, L),
+                                 V.Alternatives[GetIf->Index], L);
+        assign(Result, address(std::move(Item), Call->getType()->getPointeeType(), L), L);
+        jump(End, L);
+        label(Missing, L);
+        assign(Result, A.zero(Call->getType(), L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      }
       if (auto Info = unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context))
         return unorderedGenericSwapOperation(Call, *Info);
       if (auto Info = unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context))
@@ -38399,6 +38482,22 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
 
+    if (const auto Construction = approvedUtilityVariantConstruction(A.S, A.Sources, C, A.Context)) {
+      if (Construction->Copy) {
+        assign(std::move(Place), expression(Construction->Input), L);
+        return;
+      }
+      const auto &V = Construction->Variant;
+      const auto *Field = V.Alternatives[Construction->Index];
+      auto Item = fieldStorage(variantStorage(json::Object(Place), V, L), Field, L);
+      if (Construction->Input)
+        assign(std::move(Item), cast(expression(Construction->Input), type(Field->getType(), L), L), L);
+      else
+        initializeZero(std::move(Item), Field->getType(), L);
+      assign(fieldStorage(std::move(Place), V.Index, L),
+             quantity(Construction->Index, type(V.Index->getType(), L), L), L);
+      return;
+    }
     if (auto Kind = approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context)) {
       if (*Kind == UtilityBitsetConstruction::Copy) {
         assign(Place, expression(C->getArg(0)), L);
