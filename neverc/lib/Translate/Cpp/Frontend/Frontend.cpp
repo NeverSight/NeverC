@@ -30137,6 +30137,7 @@ public:
               A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
+              approvedUtilityAnyEmptyTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyEmptyCall(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyEmptyPointerCast(A.S, A.Sources, Call, A.Context) ||
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context)
@@ -30808,6 +30809,12 @@ public:
       if (const auto *Any = approvedUtilityAnyEmptyPointerCast(A.S, A.Sources, C, A.Context)) {
         A.type(A.Context.getRecordType(Any), L);
         A.type(C->getType(), L);
+        return true;
+      }
+      if (const auto Any = approvedUtilityAnyEmptyTransfer(A.S, A.Sources, C, A.Context)) {
+        A.type(A.Context.getRecordType(Any->Record), L);
+        if (Any->ReturnsReceiver)
+          A.type(C->getType(), L);
         return true;
       }
       if (const auto Any = approvedUtilityAnyEmptyCall(A.S, A.Sources, C, A.Context)) {

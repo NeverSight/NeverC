@@ -7353,6 +7353,158 @@ static bool anyParameter(const Expr *E, const ParmVarDecl *Parameter) {
   return Ref && Ref->getDecl() == Parameter;
 }
 
+static bool anyEmptySwapBody(const State &S, const SourceManager &SM,
+                             const CXXMethodDecl *Swap, const CXXRecordDecl *Any,
+                             const ASTContext &Context) {
+  const auto *Body = anyBody(S, SM, Swap, 1);
+  const auto *Type = Swap ? Swap->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Body || Body->size() != 2 || !Swap->getIdentifier() || Swap->getName() != "swap" ||
+      !Type || !Type->isNothrow() || Swap->isConst() || !Swap->getReturnType()->isVoidType() ||
+      Swap->getParent()->getCanonicalDecl() != Any->getCanonicalDecl())
+    return false;
+  const auto *Input = Swap->getParamDecl(0);
+  if (!Context.hasSameType(Input->getType(), Context.getLValueReferenceType(Context.getRecordType(Any))))
+    return false;
+  const auto *Handle = *Any->field_begin();
+  auto IsInputHandle = [&](const Expr *E) {
+    const auto *Field = E ? dyn_cast<MemberExpr>(E->IgnoreParenImpCasts()) : nullptr;
+    return Field && !Field->isArrow() && Field->getMemberDecl() == Handle &&
+           anyParameter(Field->getBase(), Input);
+  };
+  auto IsPlainIf = [](const IfStmt *I) {
+    return I && !I->getInit() && !I->getConditionVariable() && !I->isConstexpr();
+  };
+  const auto *Self = dyn_cast<IfStmt>(Body->body_front());
+  const auto *Same = Self ? dyn_cast<BinaryOperator>(Self->getCond()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Exit = Self ? dyn_cast<ReturnStmt>(Self->getThen()) : nullptr;
+  const auto *Address = Same ? dyn_cast<UnaryOperator>(Same->getRHS()->IgnoreParenImpCasts()) : nullptr;
+  if (!IsPlainIf(Self) || Self->getElse() || !Same || Same->getOpcode() != BO_EQ ||
+      !anyThis(Same->getLHS()) || !Address || Address->getOpcode() != UO_AddrOf ||
+      !anyParameter(Address->getSubExpr(), Input) || !Exit || Exit->getRetValue())
+    return false;
+
+  // Every supported constructor starts with a null handler. Both conditions
+  // that could invoke a move handler are false for this carrier.
+  const auto *Both = dyn_cast<IfStmt>(Body->body_back());
+  const auto *And = Both ? dyn_cast<BinaryOperator>(Both->getCond()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Left = Both ? dyn_cast_or_null<IfStmt>(Both->getElse()) : nullptr;
+  const auto *Right = Left ? dyn_cast_or_null<IfStmt>(Left->getElse()) : nullptr;
+  return IsPlainIf(Both) && IsPlainIf(Left) && IsPlainIf(Right) && !Right->getElse() &&
+         And && And->getOpcode() == BO_LAnd && anyThisField(And->getLHS(), Handle) &&
+         IsInputHandle(And->getRHS()) && anyThisField(Left->getCond(), Handle) &&
+         IsInputHandle(Right->getCond());
+}
+
+static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *E,
+                           const ParmVarDecl *Input, QualType Any, const ASTContext &Context) {
+  const auto *Call = E ? dyn_cast<CallExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  const auto *Move = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Move ? Move->getPrimaryTemplate() : nullptr;
+  auto Pinned = [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__utility/move.h");
+  };
+  if (!Move || !Primary || !Move->getIdentifier() || Move->getName() != "move" ||
+      Call->getNumArgs() != 1 || Move->getNumParams() != 1 || Move->isDeleted() ||
+      !Pinned(Primary) || !anyParameter(Call->getArg(0), Input) ||
+      !Context.hasSameType(Move->getReturnType(), Context.getRValueReferenceType(Any)))
+    return false;
+  const auto *Type = Move->getType()->getAs<FunctionProtoType>();
+  if (!Type || !Type->isNothrow() || !Context.hasSameType(Move->getParamDecl(0)->getType(),
+                                                        Context.getLValueReferenceType(Any)))
+    return false;
+  for (const auto *D : Move->redecls())
+    if (!Pinned(D))
+      return false;
+  const auto *Return = anyReturn(dyn_cast_or_null<CompoundStmt>(Move->getBody()));
+  const auto *Cast = Return ? dyn_cast<CXXStaticCastExpr>(Return->IgnoreParens()) : nullptr;
+  return Cast && Cast->getCastKind() == CK_NoOp && Cast->isXValue() &&
+         Context.hasSameType(Cast->getType(), Any) &&
+         anyParameter(Cast->getSubExpr(), Move->getParamDecl(0));
+}
+
+static bool anyEmptyAssignmentBody(const State &S, const SourceManager &SM,
+                                   const CXXMethodDecl *Method, const CXXRecordDecl *Any,
+                                   const ASTContext &Context) {
+  const bool Copy = Method->isCopyAssignmentOperator();
+  const bool Move = Method->isMoveAssignmentOperator();
+  const auto *Body = anyBody(S, SM, Method, 1);
+  const auto *Type = Method->getType()->getAs<FunctionProtoType>();
+  const auto Owner = Context.getRecordType(Any);
+  if ((!Copy && !Move) || !Body || Body->size() != 2 || !Type || Type->isNothrow() != Move ||
+      Method->isConst() || !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Owner)))
+    return false;
+  const auto *Input = Method->getParamDecl(0);
+  const auto Parameter = Copy ? Context.getLValueReferenceType(Owner.withConst())
+                              : Context.getRValueReferenceType(Owner);
+  if (!Context.hasSameType(Input->getType(), Parameter))
+    return false;
+
+  const auto *Statement = dyn_cast<Expr>(Body->body_front());
+  const auto *Invoke = Statement ? dyn_cast<CXXMemberCallExpr>(Statement->IgnoreImplicit()->IgnoreParens()) : nullptr;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Returned = Return && Return->getRetValue()
+      ? dyn_cast<UnaryOperator>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Self = Invoke && Invoke->getNumArgs() == 1
+      ? dyn_cast<UnaryOperator>(Invoke->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+  if (!Self || Self->getOpcode() != UO_Deref || !anyThis(Self->getSubExpr()) ||
+      !Returned || Returned->getOpcode() != UO_Deref || !anyThis(Returned->getSubExpr()) ||
+      !anyEmptySwapBody(S, SM, Invoke->getMethodDecl(), Any, Context))
+    return false;
+  const auto *Receiver = Invoke->getImplicitObjectArgument();
+  const auto *Temporary = Receiver ? Receiver->IgnoreImplicit()->IgnoreParens() : nullptr;
+  if (const auto *Syntax = dyn_cast_or_null<CXXFunctionalCastExpr>(Temporary)) {
+    if (!Context.hasSameType(Syntax->getType(), Owner))
+      return false;
+    Temporary = Syntax->getSubExpr()->IgnoreImplicit()->IgnoreParens();
+  }
+  const auto *Build = dyn_cast_or_null<CXXConstructExpr>(Temporary);
+  if (!Build || Build->getNumArgs() != 1 || !Context.hasSameType(Build->getType(), Owner) ||
+      !anyEmptyCopyOrMove(S, SM, Build->getConstructor(), Any, Context) ||
+      Build->getConstructor()->isMoveConstructor() != Move)
+    return false;
+  return Move ? anyMoveOperand(S, SM, Build->getArg(0), Input, Owner, Context)
+              : anyParameter(Build->getArg(0), Input);
+}
+
+std::optional<UtilityAnyEmptyTransfer> approvedUtilityAnyEmptyTransfer(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  if (!Method || Method->isDeleted() || Method->isInvalidDecl() || Method->getNumParams() != 1)
+    return std::nullopt;
+  const auto *Any = Method->getParent()->getDefinition();
+  if (!approvedUtilityAnyEmptyRecord(S, SM, Any, Context))
+    return std::nullopt;
+  const bool Assignment = Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator();
+  if (Assignment ? !anyEmptyAssignmentBody(S, SM, Method, Any, Context)
+                 : !anyEmptySwapBody(S, SM, Method, Any, Context))
+    return std::nullopt;
+
+  const Expr *Receiver;
+  bool Arrow = false;
+  bool InputFirst = false;
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+    if (!Assignment || Operator->getOperator() != OO_Equal || Operator->getNumArgs() != 2)
+      return std::nullopt;
+    Receiver = Operator->getArg(0);
+    InputFirst = true;
+  } else {
+    const auto *Member = dyn_cast_or_null<MemberExpr>(directMethodReference(Call));
+    if (!Member || Member->getMemberDecl() != Method || Call->getNumArgs() != 1)
+      return std::nullopt;
+    Receiver = Member->getBase();
+    Arrow = Member->isArrow();
+  }
+  const auto Type = Arrow ? Receiver->getType()->getPointeeType() : Receiver->getType();
+  const auto *Input = Call->getArg(Call->getNumArgs() - 1);
+  if (Type.isNull() || Type.isConstQualified() || Type.isVolatileQualified() ||
+      (!Arrow && !Receiver->isGLValue()) || !Input->isGLValue() ||
+      !Context.hasSameUnqualifiedType(Type, Context.getRecordType(Any)) ||
+      !Context.hasSameUnqualifiedType(Input->getType(), Type) || Input->getType().isVolatileQualified())
+    return std::nullopt;
+  return UtilityAnyEmptyTransfer{Any, Receiver, Input, Arrow, InputFirst, Assignment};
+}
+
 static const CXXRecordDecl *anyEmptyCast(const State &S, const SourceManager &SM,
                                        const FunctionDecl *F, const ASTContext &Context,
                                        bool AllowConst) {

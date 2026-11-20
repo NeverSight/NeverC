@@ -3408,6 +3408,18 @@ struct UtilityAnyEmptyCall {
   const clang::CXXRecordDecl *Record;
 };
 
+struct UtilityAnyEmptyTransfer {
+  const clang::CXXRecordDecl *Record;
+  const clang::Expr *Receiver;
+  const clang::Expr *Input;
+  bool Arrow;
+  bool InputFirst;
+  bool ReturnsReceiver;
+};
+std::optional<UtilityAnyEmptyTransfer> approvedUtilityAnyEmptyTransfer(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 bool approvedUtilityAnyEmptyRecord(const State &S, const clang::SourceManager &SM,
                                     const clang::CXXRecordDecl *Record,
                                     const clang::ASTContext &Context);
