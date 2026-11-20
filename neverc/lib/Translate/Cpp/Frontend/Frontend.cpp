@@ -13913,6 +13913,29 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityVectorRecord(S, Sources, D, Context) &&
                  !requireUtilityVector(D, L, Depth + 1)) {
         return {};
+      } else if (pinnedUtilityMonostateType(S, Sources, D)) {
+        if (!approvedUtilityMonostateMetadata(S, Sources, D, Context)) {
+          reject(L, "monostate object layout", "The authenticated empty alternative is required.", "TR0203");
+          return {};
+        }
+        if (RequiredUtilityMonostates.insert(D->getCanonicalDecl()).second)
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
+      } else if (approvedUtilityVariantMetadata(S, Sources, D)) {
+        const auto Variant = approvedUtilityVariantRecord(S, Sources, T, Context);
+        if (!Variant || llvm::any_of(Variant->Alternatives,
+                [](const FieldDecl *F) { return F->getType().isConstQualified(); })) {
+          reject(L, "variant object layout",
+                 "Expected the pinned variant layout with mutable scalar or monostate alternatives.", "TR0203");
+          return {};
+        }
+        if (RequiredUtilityVariants.insert(D->getCanonicalDecl()).second) {
+          for (const auto *Alternative : Variant->Alternatives)
+            if (type(Alternative->getType(), L, false, Depth + 1).empty())
+              return {};
+          if (type(Variant->Index->getType(), L, false, Depth + 1).empty())
+            return {};
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
+        }
       } else if (approvedUtilityOptionalMetadata(S, Sources, D) &&
                  !requireUtilityOptional(D, L, Depth + 1)) {
         return {};
@@ -14428,6 +14451,10 @@ bool Adapter::requireUtilityVector(const CXXRecordDecl *Record,
   return true;
 }
 
+std::string Adapter::variantStorageType(const CXXRecordDecl *Record) {
+  return name(Record) + "_storage";
+}
+
 bool Adapter::requireUtilityOptional(const CXXRecordDecl *Record,
                                      SourceLocation Location, unsigned Depth) {
   if (Depth > 64) {
@@ -14764,6 +14791,10 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     } else if (auto Array = approvedUtilityArrayRecord(S, Sources, R, Context);
                Array && !Array->Size) {
       Args.push_back(zero(Array->ElementType, L));
+    } else if (const auto V = approvedUtilityVariantRecord(S, Sources, T, Context)) {
+      Args.push_back(json::Object{{"kind", "aggregate"}, {"type", variantStorageType(V->Record)},
+          {"args", json::Array{zero(V->Alternatives.front()->getType(), L)}}, {"loc", loc(L)}});
+      Args.push_back(zero(V->Index->getType(), L));
     } else if (auto Optional =
                    approvedUtilityOptionalRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Optional->Value->getType(), L));
@@ -15550,6 +15581,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const Expr *, SourceLocation> DirectTemplateCallLocations;
   std::set<const CallExpr *> GeneratedArrayAssignments;
   std::set<const CallExpr *> ApprovedErasedUtilityCalls;
+  std::set<const Stmt *> CheckedVariantInPlaceTags;
   std::map<const DeclRefExpr *, const ValueDecl *> MemberPointerAdapterSources;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
@@ -18716,6 +18748,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
                                                     A.Context) ||
          approvedUtilityStringViewConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityVariantConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityOptionalConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityWrapIteratorConstruction(A.S, A.Sources, C,
                                                  A.Context) ||
@@ -24209,6 +24242,7 @@ public:
                                                     A.Context) ||
            approvedUtilityTupleConstruction(A.S, A.Sources, Construction,
                                             A.Context) ||
+           approvedUtilityVariantConstruction(A.S, A.Sources, Construction, A.Context) ||
            UtilityOptionalMetadata ||
            approvedUtilityOptionalConstruction(A.S, A.Sources, Construction,
                                                A.Context) ||
@@ -25550,6 +25584,8 @@ public:
     return true;
   }
   bool TraverseDeclRefExpr(DeclRefExpr *Reference) {
+    if (CheckedVariantInPlaceTags.count(Reference))
+      return RecursiveASTVisitor<Allowlist>::TraverseDeclRefExpr(Reference);
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()) ||
         (!isa<VarTemplateSpecializationDecl>(Reference->getDecl()) &&
          !concreteFunctionTemplate(dyn_cast<FunctionDecl>(Reference->getDecl()))))
@@ -25659,6 +25695,8 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()))
       return true;
+    if (CheckedVariantInPlaceTags.count(Reference))
+      return true; // The lexical template argument is still traversed.
     if (const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl())) {
       const auto *Space = dyn_cast<NamespaceDecl>(Variable->getDeclContext());
       const auto File = A.S.sdkFile(A.Sources, Variable->getLocation());
@@ -29889,6 +29927,29 @@ public:
       return true;
     if (A.S.coreV2() && InitializerLookupWrappers.count(S))
       return true; // Exact source wrappers of an already checked callback clause.
+    if (CheckedVariantInPlaceTags.count(S))
+      return true;
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(S);
+        Construction && Construction->getNumArgs() && Construction->getConstructor() &&
+        Construction->getConstructor()->isExplicit()) {
+      if (const auto Variant = approvedUtilityVariantConstruction(A.S, A.Sources, Construction, A.Context)) {
+        // Only the constant argument of this selected constructor is erased.
+        // RAV still walks the qualifier and written template arguments.
+        const Expr *Tag = Variant->InPlaceTag;
+        for (unsigned Depth = 0; Tag && Depth < 16; ++Depth) {
+          CheckedVariantInPlaceTags.insert(Tag);
+          const auto *Unwrapped = Tag->IgnoreParenImpCasts();
+          if (Unwrapped != Tag) {
+            Tag = Unwrapped;
+          } else if (const auto *Copy = dyn_cast<CXXConstructExpr>(Tag);
+                     Copy && Copy->getNumArgs() == 1) {
+            Tag = Copy->getArg(0);
+          } else {
+            Tag = nullptr;
+          }
+        }
+      }
+    }
     auto L = S->getBeginLoc().isValid() ? S->getBeginLoc()
                                         : ImplicitInitializerOwner;
     if (A.S.coreV2()) {
@@ -30120,6 +30181,11 @@ public:
              unorderedMapMerge(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantGet(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantHolds(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
               A.S.UnevaluatedFunctionalCalls.count(Call) ||
               A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
@@ -30538,10 +30604,9 @@ public:
             A.reject(Query->getExprLoc(), "monostate size and alignment",
                      "Expected a type-form query using the authenticated SDK layout.", "TR0203");
         }
-        else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
-                 pinnedUtilityVariantType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
+        else if (pinnedUtilityVariantType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
           if (Query->isArgumentType() &&
-              approvedUtilityVariantLayoutQuery(A.S, A.Sources, Value, A.Context))
+              approvedUtilityVariantRecord(A.S, A.Sources, Value, A.Context))
             A.checkQueryType(Operand, Query->getExprLoc(), true, true);
           else
             A.reject(Query->getExprLoc(), "variant size and alignment",
@@ -30690,6 +30755,7 @@ public:
           A.S.coreV2() && approvedUtilityStringAssignment(
                               A.S, A.Sources, Operator, A.Context)
                               .has_value();
+      const auto VariantAssignment = approvedUtilityVariantAssignment(A.S, A.Sources, C, A.Context);
       const bool UtilityOptionalAssignment =
           A.S.coreV2() &&
           approvedUtilityOptionalAssignment(A.S, A.Sources, Operator, A.Context)
@@ -30729,6 +30795,7 @@ public:
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityStringViewAssignment &&
             !UtilityStringAssignment && !UtilityVectorAssignment &&
+            !VariantAssignment &&
             !UtilityOptionalAssignment && !UtilityWrapIteratorAssignment &&
             !UtilityReverseIteratorAssignment && !UtilityAllocatorAssignment &&
             !UtilityDefaultDelete && !UtilityUniquePtr && !Ordinary &&
@@ -30793,6 +30860,40 @@ public:
           }
           return true;
         }
+      if (const auto Variant = approvedUtilityVariantQuery(A.S, A.Sources, C, A.Context)) {
+        const auto *Receiver = Variant->Callee->getBase();
+        if (Variant->Callee->isArrow()) {
+          if (temporaryArrayBase(Receiver, true))
+            A.reject(L, "variant receiver", "Expected a live variant object.");
+        } else {
+          checkBinding(Receiver, true);
+        }
+        A.type(A.Context.getRecordType(Variant->Variant.Record), L);
+        return true;
+      }
+      if (const auto Holds = approvedUtilityVariantHolds(A.S, A.Sources, C, A.Context)) {
+        checkBinding(C->getArg(0), true);
+        A.type(A.Context.getRecordType(Holds->Variant.Record), L);
+        return true;
+      }
+      if (VariantAssignment) {
+        if (!VariantAssignment->Arrow)
+          checkBinding(VariantAssignment->Receiver, true);
+        checkBinding(VariantAssignment->Source, true);
+        A.type(VariantAssignment->Source->getType(), L);
+        return true;
+      }
+      if (const auto Get = approvedUtilityVariantGet(A.S, A.Sources, C, A.Context)) {
+        checkBinding(C->getArg(0), true);
+        A.type(A.Context.getRecordType(Get->Variant.Record), L);
+        A.type(C->getType(), L);
+        return true;
+      }
+      if (const auto GetIf = approvedUtilityVariantGetIf(A.S, A.Sources, C, A.Context)) {
+        A.type(A.Context.getRecordType(GetIf->Variant.Record), L);
+        A.type(C->getType(), L);
+        return true;
+      }
       if (A.S.coreV2() &&
           (unorderedGenericSwapCall(A.S, A.Sources, C, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, C, A.Context) ||
@@ -31178,6 +31279,7 @@ public:
                                                               A.Context) ||
                    approvedUtilityStringViewConstruction(A.S, A.Sources, C,
                                                          A.Context) ||
+                   approvedUtilityVariantConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityOptionalConstruction(A.S, A.Sources, C,
                                                        A.Context) ||
                    approvedUtilityWrapIteratorConstruction(A.S, A.Sources, C,
@@ -31426,7 +31528,10 @@ static void orderCoreV2Records(Adapter &A) {
         throw Failure{};
       }
     }
-    if (const auto *Base = FunctionalObject || FunctionalReference || NotFn || Bind ||
+    const auto Variant = A.RequiredUtilityVariants.count(R->getCanonicalDecl())
+        ? approvedUtilityVariantRecord(A.S, A.Sources, A.Context.getRecordType(R), A.Context)
+        : std::nullopt;
+    if (const auto *Base = Variant || FunctionalObject || FunctionalReference || NotFn || Bind ||
                                    UtilityReverse || UtilityTuple ||
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
@@ -31449,7 +31554,10 @@ static void orderCoreV2Records(Adapter &A) {
       Heights[I] = Heights[Found->second] + 1;
     }
     std::vector<std::pair<QualType, SourceLocation>> DependencyTypes;
-    if (UtilityTuple) {
+    if (Variant) {
+      for (const auto *Alternative : Variant->Alternatives)
+        DependencyTypes.emplace_back(Alternative->getType(), R->getLocation());
+    } else if (UtilityTuple) {
       for (const auto &Field : UtilityTuple->Elements)
         if (!BindTuple || Field.Field)
           DependencyTypes.emplace_back(Field.getType(), Field.getLocation());
@@ -31662,6 +31770,36 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   }
   json::Array RecordData, GlobalData, FunctionData;
   for (const auto *R : Records) {
+    if (RequiredUtilityVariants.count(R->getCanonicalDecl())) {
+      const auto V = approvedUtilityVariantRecord(S, Sources, Context.getRecordType(R), Context);
+      if (!V)
+        throw Failure{};
+      const auto L = R->getLocation();
+      json::Array Members, MemberOffsets;
+      for (const auto *Alternative : V->Alternatives) {
+        Members.push_back(json::Object{{"name", name(Alternative)},
+            {"type", type(Alternative->getType(), L)}});
+        MemberOffsets.push_back(uint64_t(0));
+      }
+      const auto Storage = variantStorageType(R);
+      const auto UnionType = V->Value->getType();
+      RecordData.push_back(json::Object{{"id", Storage}, {"fields", std::move(Members)},
+          {"loc", loc(L)}, {"layout", json::Object{
+              {"size_bits", Context.getTypeSize(UnionType)},
+              {"abi_align_bits", Context.getTypeAlign(UnionType)},
+              {"field_offsets_bits", std::move(MemberOffsets)}, {"union", true}}}});
+      const auto &Layout = Context.getASTRecordLayout(R);
+      const auto &Inner = Context.getASTRecordLayout(V->Index->getParent());
+      RecordData.push_back(json::Object{{"id", name(R)}, {"loc", loc(L)},
+          {"fields", json::Array{
+              json::Object{{"name", name(V->Value)}, {"type", Storage}},
+              json::Object{{"name", name(V->Index)}, {"type", type(V->Index->getType(), L)}}}},
+          {"layout", json::Object{
+              {"size_bits", uint64_t(Layout.getSize().getQuantity()) * 8},
+              {"abi_align_bits", uint64_t(Layout.getAlignment().getQuantity()) * 8},
+              {"field_offsets_bits", json::Array{uint64_t(0), Inner.getFieldOffset(1)}}}}});
+      continue;
+    }
     json::Array Fields;
     const bool UtilityReverse =
         S.coreV2() &&
