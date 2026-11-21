@@ -17954,3 +17954,13 @@ Member and free swap preserve the checked values across 15 and 16 levels of
 nested tuples. The source collector retains earlier template evidence for
 the selected bind operation when its header is included later in the
 translation unit, within the original source budget.
+
+## Named variant visitors and integer Any emplacement
+
+Checked lvalue visitor objects with source-owned call operators can visit
+one or two lvalue variants of admitted integral alternatives. The selected
+overload sees the original receiver and the converted alternatives.
+
+The selected integer `std::any` in-place constructor and `emplace<int>`
+support value initialization or one exact integer argument. Emplacement
+returns a reference to the newly stored value.

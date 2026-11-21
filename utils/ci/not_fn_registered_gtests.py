@@ -866,6 +866,30 @@ def restore_layout_two_variant_any_tuple_history(source):
     return restored
 
 
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256 = 'deabe4c6550212f7d333e33ed273465783a9844e1e11013128dfea59982657cf'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256 = '91d19f5afd022ffacdcb11a0d764e6bb0e308db2d969cc51cf1cd3156953bba3'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_REGISTERED_SHA256 = '6a2d17db32fb8ea7bfa8f228b1403969b32513e75ccc20158e3413f0026fad27'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_MAINTAINED_SHA256 = 'b41ccc064da285dc98be686407bd95e978596261c5baf6b23b57afb6f9716dd4'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SHA256 = 'abb41738dce4328b7ae6d722da943fdac67229ec64f7275066781737069b3611'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SIZE = 19857124
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SIZE = 12513
+
+
+def restore_layout_variant_any_tuple_visitor_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256, R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -977,6 +1001,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

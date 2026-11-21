@@ -385661,6 +385661,288 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AnyInPlaceValueInitRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-in-place-value-init.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any a(std::in_place_type<int>);
+  const auto *p = std::any_cast<int>(&a);
+  return !a.has_value() || !p || *p != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("any-in-place-value-init.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-in-place-value-init" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyInPlaceEvaluatesArgumentOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-in-place-evaluates-argument-once.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int calls;
+int value() { ++calls; return 27; }
+int main() {
+  std::any a(std::in_place_type<int>, value());
+  const auto *p = std::any_cast<int>(&a);
+  return calls != 1 || !p || *p != 27;
+}
+)r19containers");
+  const auto Output = tmpFile("any-in-place-evaluates-argument-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-in-place-evaluates-argument-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyEmplaceIntegerReplacesAndReturnsReferenceRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-emplace-integer-replaces-and-returns-reference.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any a(12);
+  int original = 21;
+  int& item = a.emplace<int>(original);
+  if (item != 21 || &item != std::any_cast<int>(&a))
+    return 1;
+  item = 32;
+  if (*std::any_cast<int>(&a) != 32)
+    return 2;
+  int& zero = a.emplace<int>();
+  return !a.has_value() || zero != 0 || &zero != std::any_cast<int>(&a);
+}
+)r19containers");
+  const auto Output = tmpFile("any-emplace-integer-replaces-and-returns-reference.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-emplace-integer-replaces-and-returns-reference" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyEmplaceIntegerEvaluatesArrowBeforeArgumentRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-emplace-integer-evaluates-arrow-before-argument.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int receivers, inputs, order;
+std::any* receiver(std::any& a) { ++receivers; return &a; }
+int input() { ++inputs; order = receivers; return 89; }
+int main() {
+  std::any a;
+  int& item = receiver(a)->emplace<int>(input());
+  if (receivers != 1 || inputs != 1 || order != 1 || item != 89)
+    return 1;
+  item = 39;
+  return *std::any_cast<int>(&a) != 39;
+}
+)r19containers");
+  const auto Output = tmpFile("any-emplace-integer-evaluates-arrow-before-argument.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-emplace-integer-evaluates-arrow-before-argument" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyInPlaceOtherPayloadGuardRejected) {
+  const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+bool f() {
+  std::any a(std::in_place_type<double>);
+  return a.has_value();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyEmplaceOtherPayloadGuardRejected) {
+  const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+void f(std::any& a) { a.emplace<long>(3L); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyInPlaceRenamedHandlerInstallationGuardRejected) {
+  const auto Source = tmpFile("any-in-place-renamed-handler-installation-guard.cpp");
+  writeFile(Source, R"r19containers(#define __create changed_handler_installation
+#include <any>
+#undef __create
+bool f() {
+  std::any a(std::in_place_type<int>, 51);
+  return a.has_value();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantOwnedVisitConstBorrowRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-owned-visit-const-borrow.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+struct Visitor {
+  int weight;
+  int operator()(int x) const & { return x * weight; }
+};
+int main() {
+  const Visitor call{7};
+  std::variant<short, int> input(std::in_place_index<0>, short(3));
+  if (std::visit(call, input) != 21)
+    return 1;
+  input.emplace<1>(5);
+  return std::visit(call, input) != 35;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-owned-visit-const-borrow.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-owned-visit-const-borrow" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantOwnedVisitOverloadByActiveAlternativeRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-owned-visit-overload-by-active-alternative.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+struct Visitor {
+  int seen;
+  int operator()(short a, int b) & { ++seen; return a * 100 + b; }
+  int operator()(int a, int b) & { ++seen; return a * 1000 + b; }
+};
+int main() {
+  Visitor call{0};
+  std::variant<short, int> left(std::in_place_index<0>, short(8));
+  std::variant<bool, int> right(std::in_place_index<1>, 23);
+  if (std::visit(call, left, right) != 823 || call.seen != 1)
+    return 1;
+  left.emplace<1>(9);
+  right.emplace<0>(true);
+  return std::visit(call, left, right) != 9001 || call.seen != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-owned-visit-overload-by-active-alternative.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-owned-visit-overload-by-active-alternative" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantOwnedVisitVoidBorrowEvaluatedOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-owned-visit-void-borrow-evaluated-once.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+struct Visitor {
+  int observed;
+  void operator()(int a, int b) & { observed = a * 10 + b; }
+};
+int selections;
+Visitor& choose(Visitor& call) { ++selections; return call; }
+int main() {
+  Visitor call{0};
+  std::variant<short, int> input(std::in_place_index<1>, 3);
+  std::visit(choose(call), input, input);
+  return selections != 1 || call.observed != 33;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-owned-visit-void-borrow-evaluated-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-owned-visit-void-borrow-evaluated-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantOwnedVisitRenamedInvokeRejected) {
+  const auto Source = tmpFile("variant-owned-visit-renamed-invoke.cpp");
+  writeFile(Source, R"r19containers(#define __invoke renamed_invoke
+#include <variant>
+#undef __invoke
+struct Visitor { int operator()(int a, int b) & { return a - b; } };
+int check(Visitor& call, std::variant<short, int>& left, std::variant<short, int>& right) {
+  return std::visit(call, left, right);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantOwnedVisitRenamedDispatchRejected) {
+  const auto Source = tmpFile("variant-owned-visit-renamed-dispatch.cpp");
+  writeFile(Source, R"r19containers(#define __dispatch renamed_dispatch
+#include <variant>
+#undef __dispatch
+struct Visitor { int operator()(int a, int b) & { return a - b; } };
+int check(Visitor& call, std::variant<short, int>& left, std::variant<short, int>& right) {
+  return std::visit(call, left, right);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantOwnedVisitRenamedIndexRejected) {
+  const auto Source = tmpFile("variant-owned-visit-renamed-index.cpp");
+  writeFile(Source, R"r19containers(#define __at renamed_index
+#include <variant>
+#undef __at
+struct Visitor { int operator()(int a, int b) & { return a - b; } };
+int check(Visitor& call, std::variant<short, int>& left, std::variant<short, int>& right) {
+  return std::visit(call, left, right);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.layout_variant_any_tuple_visitor_registered = cls.registered
+        cls.layout_variant_any_tuple_visitor_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_any_tuple_visitor_original = cls.adapter.restore_original_gtests(cls.layout_variant_any_tuple_visitor_registered,
+                                                                        cls.layout_variant_any_tuple_visitor_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_any_tuple_visitor_history(cls.layout_variant_any_tuple_visitor_registered)
         cls.layout_two_variant_any_tuple_registered = cls.registered
         cls.layout_two_variant_any_tuple_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.layout_two_variant_any_tuple_original = cls.adapter.restore_original_gtests(cls.layout_two_variant_any_tuple_registered,
@@ -1996,6 +2001,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_layout_two_variant_any_tuple_history(self.layout_two_variant_any_tuple_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.layout_two_variant_any_tuple_registered, self.layout_two_variant_any_tuple_suffix + b' ')
+
+
+    def test_layout_variant_any_tuple_visitor_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_any_tuple_visitor_original + self.layout_variant_any_tuple_visitor_suffix, self.layout_variant_any_tuple_visitor_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_any_tuple_visitor_history(self.layout_variant_any_tuple_visitor_original),
+                         self.layout_two_variant_any_tuple_original)
+        output, evidence = self.extractor.extract(self.layout_variant_any_tuple_visitor_original, ['TranslateTest.CoreV2AnyInPlaceValueInitRunAtBothOptimizations', 'TranslateTest.CoreV2AnyInPlaceEvaluatesArgumentOnceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmplaceIntegerReplacesAndReturnsReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmplaceIntegerEvaluatesArrowBeforeArgumentRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOwnedVisitConstBorrowRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOwnedVisitOverloadByActiveAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOwnedVisitVoidBorrowEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyInPlaceOtherPayloadGuardRejected', 'TranslateTest.CoreV2AnyEmplaceOtherPayloadGuardRejected', 'TranslateTest.CoreV2AnyInPlaceRenamedHandlerInstallationGuardRejected', 'TranslateTest.CoreV2VariantOwnedVisitRenamedInvokeRejected', 'TranslateTest.CoreV2VariantOwnedVisitRenamedDispatchRejected', 'TranslateTest.CoreV2VariantOwnedVisitRenamedIndexRejected'])
+        self.assertEqual(evidence['original_test_names'], 8206)
+        self.assertEqual(evidence['selected_count'], 13)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-in-place-value-init', output)
+        self.assertIn(b'variant-owned-visit-void-borrow-evaluated-once', output)
+
+    def test_layout_variant_any_tuple_visitor_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_any_tuple_visitor_history(self.layout_variant_any_tuple_visitor_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_any_tuple_visitor_registered, self.layout_variant_any_tuple_visitor_suffix + b' ')
 
 
 if __name__ == '__main__':
