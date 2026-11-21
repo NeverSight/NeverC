@@ -3517,6 +3517,9 @@ struct UtilityAnyIntegerConstruction {
 std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
+std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerMake(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 struct UtilityAnyIntegerEmplacement {
   const clang::CXXRecordDecl *Record;
   const clang::MemberExpr *Callee;
@@ -3527,7 +3530,7 @@ std::optional<UtilityAnyIntegerEmplacement> approvedUtilityAnyIntegerEmplacement
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
-enum class UtilityAnyTransferOperation { Copy, Move, Swap };
+enum class UtilityAnyTransferOperation { Copy, Move, Swap, AssignInteger };
 struct UtilityAnyTransfer {
   const clang::CXXRecordDecl *Record;
   const clang::Expr *Receiver;
@@ -3535,6 +3538,7 @@ struct UtilityAnyTransfer {
   bool Arrow;
   bool InputFirst;
   UtilityAnyTransferOperation Operation;
+  clang::QualType Parameter;
 };
 std::optional<UtilityAnyTransfer> approvedUtilityAnyTransfer(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
@@ -3550,6 +3554,9 @@ std::optional<UtilityAnyCall> approvedUtilityAnyCall(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+const clang::CXXRecordDecl *approvedUtilityAnyActiveValueCast(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 const clang::CXXRecordDecl *approvedUtilityAnyPointerCast(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
