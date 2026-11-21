@@ -22,7 +22,27 @@ int main(int Argc, char **Argv) {
       return 65;
     Record = fs::path(Directory) / std::to_string(::getpid());
     fs::create_directories(Record);
-    fs::copy_file(Argv[3], Record / "request.json");
+    const char *BoundaryReplay = std::getenv("NEVERC_CPP_PROTOCOL_BOUNDARY_REPLAY");
+    if (BoundaryReplay && std::strcmp(BoundaryReplay, "1") == 0) {
+      const auto Status = fs::status(Argv[3]);
+      if (fs::is_regular_file(Status)) {
+        fs::copy_file(Argv[3], Record / "request.json");
+      } else {
+        // The stock protocol suite sends a directory, device, and FIFO.
+        // Do not read special files in the caller. The frontend handles them.
+        const char *Kind = Status.type() == fs::file_type::directory ? "directory"
+                         : Status.type() == fs::file_type::character ? "character"
+                         : Status.type() == fs::file_type::fifo ? "fifo"
+                         : "other";
+        std::ofstream RequestKind(Record / "request-kind.txt");
+        RequestKind << Kind << '\n';
+        RequestKind.close();
+        if (RequestKind.fail())
+          return 66;
+      }
+    } else {
+      fs::copy_file(Argv[3], Record / "request.json");
+    }
     std::ofstream Command(Record / "argv.txt");
     for (int I = 0; I != Argc; ++I)
       Command << Argv[I] << '\n';
