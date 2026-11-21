@@ -32681,6 +32681,14 @@ class Consumer : public ASTConsumer {
   std::vector<FunctionTemplateBodySource> TemplateBodies;
   std::vector<FriendClassTemplateSource> FriendClasses;
   std::size_t DirectiveUnits = 0;
+
+  bool consumedBindHeader() const {
+    // The __tuple and type-trait families alone do not identify a bind
+    // dependency. Keep their supplemental bind evidence only after the
+    // preprocessor has consumed the authenticated implementation header.
+    static const std::pair<std::string, std::string> Header{"libcxx", "__functional/bind.h"};
+    return S.SDKDependencies.count(Header) != 0;
+  }
   std::size_t ArrayFillerUnits = 0;
   std::set<const Expr *> SeparateArrayFillers;
 
@@ -32718,7 +32726,7 @@ class Consumer : public ASTConsumer {
     auto &Sources = Context.getSourceManager();
     const bool NotFnConstraint = retainFunctionalNotFnConstraintRoot(
         S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
-    const bool BindConstraint = retainFunctionalBindConstraintRoot(
+    const bool BindConstraint = consumedBindHeader() && retainFunctionalBindConstraintRoot(
         S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
     if (!S.owns(Sources, Location) && !NotFnConstraint && !BindConstraint &&
         !(Kind == TemplateSourceKind::Function &&
@@ -33050,7 +33058,7 @@ public:
     auto &Sources = Function->getASTContext().getSourceManager();
     const bool NotFn = retainFunctionalNotFnConstraintRoot(S, Sources, TemplateSourceKind::Function,
         Function->getPrimaryTemplate(), Function, nullptr, nullptr, Location);
-    const bool Bind = retainFunctionalBindConstraintRoot(S, Sources, TemplateSourceKind::Function,
+    const bool Bind = consumedBindHeader() && retainFunctionalBindConstraintRoot(S, Sources, TemplateSourceKind::Function,
         Function->getPrimaryTemplate(), Function, nullptr, nullptr, Location);
     if ((!S.owns(Sources, Location) && !NotFn && !Bind &&
          !tupleFactorySelectionLocation(S, Sources, Location, Function) &&
