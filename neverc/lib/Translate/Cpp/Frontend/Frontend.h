@@ -3404,6 +3404,14 @@ bool approvedUtilityMonostateConstruction(const State &S,
 std::optional<bool> approvedUtilityMonostateComparison(const State &S,
     const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UtilityMonostateHash {
+  const clang::Expr *Receiver;
+  const clang::Expr *Value;
+  uint64_t Result;
+};
+std::optional<UtilityMonostateHash> approvedUtilityMonostateHash(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 bool pinnedUtilityVariantType(const State &S, const clang::SourceManager &SM,
                               const clang::CXXRecordDecl *Record);
 bool approvedUtilityVariantMetadata(const State &S,

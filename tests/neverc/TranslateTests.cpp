@@ -386750,6 +386750,87 @@ bool compare(const Value& a, const Value& b) { return a == b; }
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2VariantMonostateHashTemporaryRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-monostate-hash-temporary.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  std::monostate value{};
+  return std::hash<std::monostate>{}(value) != 66740831;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-monostate-hash-temporary.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-monostate-hash-temporary" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantMonostateHashReceiverAndOperandOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-monostate-hash-receiver-and-operand-once.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Hash = std::hash<std::monostate>;
+int receiver_calls, value_calls;
+const Hash& get_hash(const Hash& h) { ++receiver_calls; return h; }
+const std::monostate& get_value(const std::monostate& v) {
+  ++value_calls;
+  return v;
+}
+int main() {
+  const Hash h{};
+  const std::monostate value{};
+  if (get_hash(h)(get_value(value)) != 66740831) return 1;
+  return receiver_calls != 1 || value_calls != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-monostate-hash-receiver-and-operand-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-monostate-hash-receiver-and-operand-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantMonostateHashAlternateSdkSpellingRejected) {
+  const auto Source = tmpFile("variant-monostate-hash-alternate-sdk-spelling.cpp");
+  writeFile(Source, R"r19containers(#define monostate alternate_monostate
+#include <variant>
+#undef monostate
+int main() {
+  std::alternate_monostate value{};
+  return std::hash<std::alternate_monostate>{}(value) != 66740831;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantMonostateHashStandaloneMemberPointerRejected) {
+  const auto Source = tmpFile("variant-monostate-hash-standalone-member-pointer.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  auto op = &std::hash<std::monostate>::operator();
+  return op == nullptr;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

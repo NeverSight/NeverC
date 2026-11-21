@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.layout_variant_monostate_hash_registered = cls.registered
+        cls.layout_variant_monostate_hash_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_monostate_hash_original = cls.adapter.restore_original_gtests(cls.layout_variant_monostate_hash_registered,
+                                                                        cls.layout_variant_monostate_hash_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_monostate_hash_history(cls.layout_variant_monostate_hash_registered)
         cls.layout_variant_monostate_registered = cls.registered
         cls.layout_variant_monostate_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.layout_variant_monostate_original = cls.adapter.restore_original_gtests(cls.layout_variant_monostate_registered,
@@ -2111,6 +2116,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_layout_variant_monostate_history(self.layout_variant_monostate_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.layout_variant_monostate_registered, self.layout_variant_monostate_suffix + b' ')
+
+
+    def test_layout_variant_monostate_hash_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_monostate_hash_original + self.layout_variant_monostate_hash_suffix, self.layout_variant_monostate_hash_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_monostate_hash_history(self.layout_variant_monostate_hash_original),
+                         self.layout_variant_monostate_original)
+        output, evidence = self.extractor.extract(self.layout_variant_monostate_hash_original, ['TranslateTest.CoreV2VariantMonostateHashTemporaryRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateHashReceiverAndOperandOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateHashAlternateSdkSpellingRejected', 'TranslateTest.CoreV2VariantMonostateHashStandaloneMemberPointerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8248)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-monostate-hash-temporary', output)
+        self.assertIn(b'variant-monostate-hash-receiver-and-operand-once', output)
+
+    def test_layout_variant_monostate_hash_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_monostate_hash_history(self.layout_variant_monostate_hash_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_monostate_hash_registered, self.layout_variant_monostate_hash_suffix + b' ')
 
 
 if __name__ == '__main__':

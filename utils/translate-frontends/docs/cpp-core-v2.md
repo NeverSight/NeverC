@@ -18005,3 +18005,11 @@ The six checked `std::variant` comparison operators admit the pinned
 compares equal. Different active indexes retain their order, including
 when two alternatives use the same monostate type. The selected SDK
 comparison and both trivial copies are source-checked.
+
+## Direct monostate hashing
+
+The selected `std::hash<std::monostate>` call operator produces the value
+from the pinned SDK body, `66740831`, in the target size type. The hasher
+and its argument each execute once in source order. The checked call
+accepts a temporary or a named empty hasher and an admitted monostate
+argument.
