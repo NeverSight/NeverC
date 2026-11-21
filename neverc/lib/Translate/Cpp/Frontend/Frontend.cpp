@@ -30908,9 +30908,11 @@ public:
       if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, C, A.Context)) {
         if (!Visit->Callable->getPointeeType()->isFunctionType())
           checkBinding(C->getArg(0), true);
-        checkBinding(C->getArg(1), false);
-        A.type(A.Context.getRecordType(Visit->Variant.Record), L);
-        A.type(Visit->Argument, L);
+        for (unsigned I = 0; I < Visit->Variants.size(); ++I) {
+          checkBinding(C->getArg(I + 1), false);
+          A.type(A.Context.getRecordType(Visit->Variants[I].Record), L);
+          A.type(Visit->Arguments[I], L);
+        }
         A.type(Visit->Result, L, /*AllowVoid=*/true);
         return true;
       }
