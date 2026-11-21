@@ -962,6 +962,30 @@ def restore_layout_variant_ordering_history(source):
     return restored
 
 
+R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256 = 'a3158aff714f9c7210acd778f40955583603c761d9a34cd95890a2cf28b231e4'
+R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256 = '079938a41465897ea07a93d6707738c9173278fee37980e4ee3757da699028eb'
+R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_REGISTERED_SHA256 = 'f4438c626036d992e46581f28d2eb2660ec440254ae2e7e70a3badcc0a478224'
+R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_MAINTAINED_SHA256 = 'd46e00876290437ca25e5bb20bee825ac7fefe03bd6447d02e060695381d35f9'
+R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SHA256 = '6af947ba58429524c02e6522bc0ee513f361e4dcbe4f32c304ef4ddea760d1cb'
+R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SIZE = 19894941
+R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SIZE = 4218
+
+
+def restore_layout_variant_monostate_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256, R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1101,6 +1125,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

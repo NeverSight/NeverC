@@ -386668,6 +386668,88 @@ bool compare(const Value& a, const Value& b) { return a >= b; }
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2VariantMonostateComparisonSameIndexHasNoPayloadOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-monostate-comparison-same-index-has-no-payload-order.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<std::monostate, int>;
+int main() {
+  const Value a, b;
+  if (!(a == b) || a != b || a < b || a > b || !(a <= b) || !(a >= b))
+    return 1;
+  const Value c(std::in_place_index<1>, -9), d(std::in_place_index<1>, 3);
+  if (!(a < c) || !(c > a) || a == c || !(a != c)) return 2;
+  return !(c < d) || !(d >= c) || c == d;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-monostate-comparison-same-index-has-no-payload-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-monostate-comparison-same-index-has-no-payload-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantMonostateComparisonDistinctEmptyAlternativeIndexesRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-monostate-comparison-distinct-empty-alternative-indexes.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<std::monostate, int, std::monostate>;
+int left_reads, right_reads;
+const Value& left(const Value& v) { ++left_reads; return v; }
+const Value& right(const Value& v) { ++right_reads; return v; }
+int main() {
+  const Value a, b(std::in_place_index<2>);
+  if (!std::operator<(left(a), right(b))) return 1;
+  if (std::operator==(left(a), right(b))) return 2;
+  if (!std::operator>=(left(b), right(b))) return 3;
+  return left_reads != 3 || right_reads != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-monostate-comparison-distinct-empty-alternative-indexes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-monostate-comparison-distinct-empty-alternative-indexes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantMonostateComparisonReplacementEmptyClassRejected) {
+  const auto Source = tmpFile("variant-monostate-comparison-replacement-empty-class.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+struct Empty {};
+constexpr bool operator<(Empty, Empty) noexcept { return true; }
+using Value = std::variant<Empty, int>;
+bool compare(const Value& a, const Value& b) { return a < b; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantMonostateComparisonRenamedSdkMonostateRejected) {
+  const auto Source = tmpFile("variant-monostate-comparison-renamed-sdk-monostate.cpp");
+  writeFile(Source, R"r19containers(#define monostate alternate_monostate
+#include <variant>
+#undef monostate
+using Value = std::variant<std::alternate_monostate, int>;
+bool compare(const Value& a, const Value& b) { return a == b; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

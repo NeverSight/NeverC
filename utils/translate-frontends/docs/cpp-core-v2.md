@@ -17997,3 +17997,11 @@ Checked lvalue variants with admitted integral alternatives support
 sort before live variants. Live variants with different active indexes
 compare by index. A shared live index compares the selected integral
 values. Each operand expression is evaluated once.
+
+## Variant monostate comparisons
+
+The six checked `std::variant` comparison operators admit the pinned
+`std::monostate` among their alternatives. A shared active monostate index
+compares equal. Different active indexes retain their order, including
+when two alternatives use the same monostate type. The selected SDK
+comparison and both trivial copies are source-checked.

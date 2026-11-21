@@ -584,3 +584,10 @@ The combined compiler passes 2,088 source requests across six 64-bit targets
 and 452 formal tests on Linux x86-64. All 241 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Variant monostate comparisons
+
+The combined compiler passes 2,112 source requests across six 64-bit targets
+and 456 formal tests on Linux x86-64. All 243 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.
