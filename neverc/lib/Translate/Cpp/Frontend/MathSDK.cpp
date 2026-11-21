@@ -10494,10 +10494,25 @@ static bool variantComparisonLeaf(const State &S, const SourceManager &SM, const
       return false;
   }
   const auto *Value = variantReturned(Policy);
-  const auto *Compare = Value ? dyn_cast<BinaryOperator>(Value->IgnoreParenImpCasts()) : nullptr;
-  return Compare && Compare->getOpcode() == Relation.Operation &&
-         variantForward(S, SM, Compare->getLHS(), Policy->getParamDecl(0), Context) &&
-         variantForward(S, SM, Compare->getRHS(), Policy->getParamDecl(1), Context);
+  if (Element->isIntegerType()) {
+    const auto *Compare = Value ? dyn_cast<BinaryOperator>(Value->IgnoreParenImpCasts()) : nullptr;
+    return Compare && Compare->getOpcode() == Relation.Operation &&
+           variantForward(S, SM, Compare->getLHS(), Policy->getParamDecl(0), Context) &&
+           variantForward(S, SM, Compare->getRHS(), Policy->getParamDecl(1), Context);
+  }
+
+  const auto *Compare = dyn_cast_or_null<CXXOperatorCallExpr>(variantVisitCall(Value));
+  if (!Compare || Compare->getOperator() != Relation.Overload ||
+      !approvedUtilityMonostateComparison(S, SM, Compare, Context).has_value())
+    return false;
+  for (unsigned I = 0; I < 2; ++I) {
+    const auto *Copy = variantConstruct(Compare->getArg(I));
+    if (!approvedUtilityMonostateConstruction(S, SM, Copy, Context) ||
+        !Copy->getConstructor()->isCopyConstructor() ||
+        !variantForward(S, SM, Copy->getArg(0), Policy->getParamDecl(I), Context))
+      return false;
+  }
+  return true;
 }
 
 static bool variantComparisonDiagonal(const State &S, const SourceManager &SM, const FunctionDecl *Base,
@@ -10562,8 +10577,11 @@ std::optional<UtilityVariantComparison> approvedUtilityVariantComparison(const S
   const auto Type = Call->getArg(0)->getType();
   auto V = approvedUtilityVariantRecord(S, SM, Type, Context);
   if (!V || V->Alternatives.empty() || V->Alternatives.size() > 8 ||
-      llvm::any_of(V->Alternatives, [](const FieldDecl *Field) {
-        return !Field->getType()->isIntegerType() || Field->getType().isVolatileQualified();
+      llvm::any_of(V->Alternatives, [&](const FieldDecl *Field) {
+        const auto Alternative = Field->getType();
+        return Alternative.isVolatileQualified() ||
+               (!Alternative->isIntegerType() &&
+                !approvedUtilityMonostateMetadata(S, SM, Alternative->getAsCXXRecordDecl(), Context));
       }))
     return std::nullopt;
   const auto ConstRef = Context.getLValueReferenceType(Type.getUnqualifiedType().withConst());
