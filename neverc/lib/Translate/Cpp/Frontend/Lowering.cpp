@@ -32709,7 +32709,7 @@ class FunctionLowering {
         assign(std::move(Tag), quantity(0, "u64", L), L);
         return {};
       }
-      if (const auto Compare = approvedUtilityVariantEquality(A.S, A.Sources, Call, A.Context)) {
+      if (const auto Compare = approvedUtilityVariantComparison(A.S, A.Sources, Call, A.Context)) {
         const auto &V = Compare->Variant;
         const auto *Left = Call->getArg(0), *Right = Call->getArg(1);
         auto LeftRef = snapshot(address(lvalue(Left), Left->getType(), L), L);
@@ -32718,14 +32718,19 @@ class FunctionLowering {
         auto RHS = dereference(std::move(RightRef), L);
         auto LeftIndex = snapshot(fieldStorage(LHS, V.Index, L), L);
         auto RightIndex = snapshot(fieldStorage(RHS, V.Index, L), L);
+        const auto IndexType = type(V.Index->getType(), L);
+        const auto Mask = llvm::APInt::getAllOnes(integerBits(IndexType)).getLimitedValue();
+        auto Ordinal = [&](const Expression &Index) {
+          // The all-ones valueless discriminator precedes every live alternative.
+          auto Incremented = binary("+", cast(Index, "u64", L), one("u64", L), "u64", L);
+          return binary("&", std::move(Incremented), quantity(Mask, "u64", L), "u64", L);
+        };
+        const auto Opcode = BinaryOperator::getOpcodeStr(Compare->Operation);
         auto Result = temporary("bool", L);
-        assign(Result, Compare->Equal ? A.zero(A.Context.BoolTy, L) : one("bool", L), L);
+        assign(Result, binary(Opcode, Ordinal(LeftIndex), Ordinal(RightIndex), "bool", L), L);
         const auto Dispatch = labelName(), End = labelName();
         branch(binary("==", LeftIndex, RightIndex, "bool", L), Dispatch, End, L);
         label(Dispatch, L);
-        // Two valueless variants compare equal. A live alternative replaces this result.
-        assign(Result, Compare->Equal ? one("bool", L) : A.zero(A.Context.BoolTy, L), L);
-        const auto IndexType = type(V.Index->getType(), L);
         for (unsigned I = 0; I < V.Alternatives.size(); ++I) {
           A.chargeExpansion(1, L);
           const auto Selected = labelName(), Next = labelName();
@@ -32733,7 +32738,7 @@ class FunctionLowering {
           label(Selected, L);
           auto LeftValue = fieldStorage(variantStorage(LHS, V, L), V.Alternatives[I], L);
           auto RightValue = fieldStorage(variantStorage(RHS, V, L), V.Alternatives[I], L);
-          assign(Result, binary(Compare->Equal ? "==" : "!=", std::move(LeftValue),
+          assign(Result, binary(Opcode, std::move(LeftValue),
                                 std::move(RightValue), "bool", L), L);
           jump(End, L);
           label(Next, L);
