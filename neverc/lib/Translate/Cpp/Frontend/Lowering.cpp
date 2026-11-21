@@ -32625,6 +32625,22 @@ class FunctionLowering {
       if (approvedUtilityConstant(A.S, A.Sources, Call, A.Context,
                                   UtilityValue))
         return A.constant(UtilityValue, Call->getType(), L);
+      if (const auto Made = approvedUtilityAnyIntegerMake(A.S, A.Sources, Call, A.Context)) {
+        auto Value = Made->Input
+            ? snapshot(dereference(argument(Made->Input, Made->Parameter), L), L)
+            : quantity(0, "int", L);
+        auto Place = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        Destination.reset();
+        if (Place.getString("type") != type(Call->getType(), L))
+          reject(L, "any factory result", "Call and result destination types differ.");
+        initializeZero(Place, Call->getType(), L);
+        storeAnyInteger(Place, Made->Record, std::move(Value), L);
+        return Place;
+      }
+      if (const auto *Any = approvedUtilityAnyActiveValueCast(A.S, A.Sources, Call, A.Context)) {
+        auto Slot = anyIntegerField(lvalue(Call->getArg(0)), Any, L);
+        return Call->isLValue() ? std::move(Slot) : snapshot(std::move(Slot), L);
+      }
       if (const auto *Any = approvedUtilityAnyPointerCast(A.S, A.Sources, Call, A.Context))
         return anyCheckedPointerCast(Call, Any, L);
       if (const auto Any = approvedUtilityAnyTransfer(A.S, A.Sources, Call, A.Context)) {
@@ -32632,8 +32648,10 @@ class FunctionLowering {
           return Any->Arrow ? snapshot(expression(Any->Receiver), L)
                             : snapshot(address(lvalue(Any->Receiver), Any->Receiver->getType(), L), L);
         };
+        const bool Value = Any->Operation == UtilityAnyTransferOperation::AssignInteger;
         auto Input = [&] {
-          return snapshot(address(lvalue(Any->Input), Any->Input->getType(), L), L);
+          return Value ? snapshot(argument(Any->Input, Any->Parameter), L)
+                       : snapshot(address(lvalue(Any->Input), Any->Input->getType(), L), L);
         };
         Expression Left, Right;
         if (Any->InputFirst) {
@@ -32645,7 +32663,9 @@ class FunctionLowering {
         }
         auto Receiver = dereference(Left, L);
         auto Source = dereference(Right, L);
-        if (Any->Operation == UtilityAnyTransferOperation::Move) {
+        if (Value) {
+          storeAnyInteger(Receiver, Any->Record, snapshot(std::move(Source), L), L);
+        } else if (Any->Operation == UtilityAnyTransferOperation::Move) {
           // The SDK moves through a temporary and then swaps into the original.
           // Self-move of an inline scalar therefore retains the held value.
           const auto Different = labelName(), End = labelName();
