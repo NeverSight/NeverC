@@ -143,7 +143,7 @@
       "kind": "source-body-guard"
     }
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "35fffff4ab894213c9e526df9d263e902c6b98e15bfe427fbf99238bb3555f61",
   "maintained_original_sha256": "3acf37302822da2d40896d87e64d7d00d35a72d2e5f8bb26391630509c70437f",
@@ -155,5 +155,7 @@
   "current_registry_count": 7998,
   "current_python_registry_tests": 120,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "source_proof_sha256": "05dab15f29381b921b57bbbfe6ec65aa0aa3e47942ec051648395ba8bcde9d0d",
+  "native_reference_authentication_sha256": "fa8cab29881003dbbe0ebfa54889abd4c180ad848f9deafb1a59ce5c13aa80fb"
 }
