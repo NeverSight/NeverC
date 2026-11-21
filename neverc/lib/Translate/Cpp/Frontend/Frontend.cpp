@@ -24284,7 +24284,8 @@ public:
            approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                       Construction, A.Context));
       const bool ApprovedUtilityCall = UtilityCall &&
-          (approvedUtilityOperation(A.S, A.Sources, UtilityCall, A.Context) ||
+          (approvedUtilityAnyIntegerMake(A.S, A.Sources, UtilityCall, A.Context) ||
+           approvedUtilityOperation(A.S, A.Sources, UtilityCall, A.Context) ||
            (describeFunctionalNotFnFactorySource(A.S, A.Sources, UtilityCall, A.Context) &&
             functionalNotFnLayout(A.S, A.Sources,
                 UtilityCall->getType()->getAsCXXRecordDecl(), A.Context)) ||
@@ -30229,9 +30230,11 @@ public:
               A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
+              approvedUtilityAnyIntegerMake(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyIntegerEmplacement(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyCall(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityAnyActiveValueCast(A.S, A.Sources, Call, A.Context) ||
               approvedUtilityAnyPointerCast(A.S, A.Sources, Call, A.Context) ||
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
@@ -30995,12 +30998,29 @@ public:
         A.S.Module["memory_lifetimes"] = true;
         return true;
       }
+      if (const auto Made = approvedUtilityAnyIntegerMake(A.S, A.Sources, C, A.Context)) {
+        if (Made->Input)
+          checkBinding(Made->Input, Made->Parameter->isRValueReferenceType());
+        A.type(C->getType(), L);
+        return true;
+      }
+      if (const auto *Any = approvedUtilityAnyActiveValueCast(A.S, A.Sources, C, A.Context)) {
+        checkBinding(C->getArg(0), false);
+        A.type(A.Context.getRecordType(Any), L);
+        A.type(C->getType(), L);
+        return true;
+      }
       if (const auto *Any = approvedUtilityAnyPointerCast(A.S, A.Sources, C, A.Context)) {
         A.type(A.Context.getRecordType(Any), L);
         A.type(C->getType(), L);
         return true;
       }
       if (const auto Any = approvedUtilityAnyTransfer(A.S, A.Sources, C, A.Context)) {
+        if (Any->Operation == UtilityAnyTransferOperation::AssignInteger) {
+          if (!Any->Arrow)
+            checkBinding(Any->Receiver, true);
+          checkBinding(Any->Input, Any->Parameter->isRValueReferenceType());
+        }
         A.type(A.Context.getRecordType(Any->Record), L);
         if (Any->Operation != UtilityAnyTransferOperation::Swap)
           A.type(C->getType(), L);
