@@ -1,0 +1,159 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-value-assignment-switch-and-chained-result",
+      "formal_test_name": "TranslateTest.CoreV2VariantValueAssignmentSwitchAndChainedResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "67a980bd36fed2bfe330a215cef75dd13a89fbe2337471a2e843a1d8465f1f25",
+      "original_case_source_sha256": "67a980bd36fed2bfe330a215cef75dd13a89fbe2337471a2e843a1d8465f1f25",
+      "gtest_body_sha256": "05b0ae787d172d1647c8dc65ad851a7be7b3d005380ee2835a12f54bc2bb7503"
+    },
+    {
+      "name": "variant-value-assignment-same-alternative-reference",
+      "formal_test_name": "TranslateTest.CoreV2VariantValueAssignmentSameAlternativeReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "aeb04b9104dc44902f6c48b6ab86b2252cbccebd180c766dfc6e227a6fb41d64",
+      "original_case_source_sha256": "aeb04b9104dc44902f6c48b6ab86b2252cbccebd180c766dfc6e227a6fb41d64",
+      "gtest_body_sha256": "65a699b531e4775f33bfcdddee5d368488e17c369e0560a354c962231b9b1187"
+    },
+    {
+      "name": "variant-value-assignment-assignment-syntax-binding-order",
+      "formal_test_name": "TranslateTest.CoreV2VariantValueAssignmentAssignmentSyntaxBindingOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "281dea5f0c091e3fd0cf3973f9a7f094a41cfb37becd2c400450a263b2ab073e",
+      "original_case_source_sha256": "281dea5f0c091e3fd0cf3973f9a7f094a41cfb37becd2c400450a263b2ab073e",
+      "gtest_body_sha256": "a244bc4cf847db7e8cdf0fbcb53150539e7f1cc986aefff13d25c07f34fc4dbd"
+    },
+    {
+      "name": "variant-value-assignment-explicit-member-binding-order",
+      "formal_test_name": "TranslateTest.CoreV2VariantValueAssignmentExplicitMemberBindingOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "08d9d648cbdc960d30b2dab2bba26cc9818c932e6e7864b06af1612c8e6934c3",
+      "original_case_source_sha256": "08d9d648cbdc960d30b2dab2bba26cc9818c932e6e7864b06af1612c8e6934c3",
+      "gtest_body_sha256": "5a7b1770563939f366c45c6e6dc510f5d8c8512f245abcc0576a4bdbb71d2979"
+    },
+    {
+      "name": "variant-value-assignment-pointer-and-reset-selection",
+      "formal_test_name": "TranslateTest.CoreV2VariantValueAssignmentPointerAndResetSelectionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "03e31b9c1b027a539950db463a6c64665a462a5ccff36d52ea2bbd0c756317c4",
+      "original_case_source_sha256": "03e31b9c1b027a539950db463a6c64665a462a5ccff36d52ea2bbd0c756317c4",
+      "gtest_body_sha256": "2a0c5616c968b7b5aa545a0dba4daa88f06faa0bcfd400628c406d2b17ec771b"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-value-assignment-volatile-operand",
+      "formal_test_name": "TranslateTest.CoreV2VariantValueAssignmentVolatileOperandRejected",
+      "expected": "reject",
+      "source_sha256": "fddeb02c5e6de75db9e8abe3669ce443386ece19ba1daf4464b169db0a90d43e",
+      "original_case_source_sha256": "fddeb02c5e6de75db9e8abe3669ce443386ece19ba1daf4464b169db0a90d43e",
+      "gtest_body_sha256": "b714a63a87803e64433f7a78788fb9abe70921ff05cd50b541a5c33c4677cdf5"
+    },
+    {
+      "name": "variant-value-assignment-user-defined-conversion",
+      "formal_test_name": "TranslateTest.CoreV2VariantValueAssignmentUserDefinedConversionRejected",
+      "expected": "reject",
+      "source_sha256": "b91b21583cc87315fb4a78710f55686bb58dac83c995734e009e3c8a42fcdceb",
+      "original_case_source_sha256": "b91b21583cc87315fb4a78710f55686bb58dac83c995734e009e3c8a42fcdceb",
+      "gtest_body_sha256": "57b5401715bf9a12a767464ef537b498f57b017501080f1ac442d62102b990de"
+    },
+    {
+      "name": "variant-value-assignment-nontrivial-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantValueAssignmentNontrivialAlternativeRejected",
+      "expected": "reject",
+      "source_sha256": "a236b50dff3690dc72b0261b6e2cd2a12645170dc85435d157e6ac630cbf1d93",
+      "original_case_source_sha256": "a236b50dff3690dc72b0261b6e2cd2a12645170dc85435d157e6ac630cbf1d93",
+      "gtest_body_sha256": "07c796d611decad5e5386c757ba870c1a63b1c1cfe414ff5095e9828a91e78f2"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantValueAssignmentSwitchAndChainedResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantValueAssignmentSameAlternativeReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantValueAssignmentAssignmentSyntaxBindingOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantValueAssignmentExplicitMemberBindingOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantValueAssignmentPointerAndResetSelectionRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantValueAssignmentVolatileOperandRejected",
+    "TranslateTest.CoreV2VariantValueAssignmentUserDefinedConversionRejected",
+    "TranslateTest.CoreV2VariantValueAssignmentNontrivialAlternativeRejected"
+  ],
+  "source_cases": [
+    {
+      "name": "variant-value-assignment-switch-and-chained-result",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, long> value(3), other(77L);\n  (value = 34L) = other;\n  auto* item = std::get_if<long>(&value);\n  return value.index() != 1 || !item || *item != 77L || std::get_if<int>(&value);\n}\n",
+      "expected": "accept",
+      "source_sha256": "67a980bd36fed2bfe330a215cef75dd13a89fbe2337471a2e843a1d8465f1f25",
+      "public_header": "variant",
+      "kind": "variant-runtime-control"
+    },
+    {
+      "name": "variant-value-assignment-same-alternative-reference",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, long> value(25L);\n  long* before = std::get_if<long>(&value);\n  const long value_to_assign = 42L;\n  auto& result = (value = value_to_assign);\n  long* after = std::get_if<long>(&result);\n  if (!before || before != after || *after != 42L || &result != &value)\n    return 1;\n  value = *after;\n  return *before != 42L;\n}\n",
+      "expected": "accept",
+      "source_sha256": "aeb04b9104dc44902f6c48b6ab86b2252cbccebd180c766dfc6e227a6fb41d64",
+      "public_header": "variant",
+      "kind": "variant-runtime-control"
+    },
+    {
+      "name": "variant-value-assignment-assignment-syntax-binding-order",
+      "source": "#include <variant>\nusing Value = std::variant<int, long>;\nint order;\nlong next_value = 3;\nlong& input() { order = order * 10 + 1; return next_value; }\nValue& target(Value& value) { order = order * 10 + 2; next_value = 41; return value; }\nint main() {\n  Value value(17);\n  target(value) = input();\n  auto* item = std::get_if<long>(&value);\n  return order != 12 || !item || *item != 41L;\n}\n",
+      "expected": "accept",
+      "source_sha256": "281dea5f0c091e3fd0cf3973f9a7f094a41cfb37becd2c400450a263b2ab073e",
+      "public_header": "variant",
+      "kind": "variant-runtime-control"
+    },
+    {
+      "name": "variant-value-assignment-explicit-member-binding-order",
+      "source": "#include <variant>\nusing Value = std::variant<int, long>;\nint order;\nValue* target(Value& value) { order = order * 10 + 1; return &value; }\nlong input() { order = order * 10 + 2; return 49L; }\nint main() {\n  Value value(4);\n  auto& result = target(value)->operator=(input());\n  auto* item = std::get_if<long>(&result);\n  return order != 12 || &result != &value || !item || *item != 49L;\n}\n",
+      "expected": "accept",
+      "source_sha256": "08d9d648cbdc960d30b2dab2bba26cc9818c932e6e7864b06af1612c8e6934c3",
+      "public_header": "variant",
+      "kind": "variant-runtime-control"
+    },
+    {
+      "name": "variant-value-assignment-pointer-and-reset-selection",
+      "source": "#include <variant>\nint main() {\n  int memory = 3;\n  std::variant<int, int*> value(12);\n  value = &memory;\n  auto* item = std::get_if<int*>(&value);\n  if (!item || *item != &memory || value.valueless_by_exception())\n    return 1;\n  value = 7;\n  auto* integer = std::get_if<int>(&value);\n  return !integer || *integer != 7 || std::get_if<int*>(&value);\n}\n",
+      "expected": "accept",
+      "source_sha256": "03e31b9c1b027a539950db463a6c64665a462a5ccff36d52ea2bbd0c756317c4",
+      "public_header": "variant",
+      "kind": "variant-runtime-control"
+    },
+    {
+      "name": "variant-value-assignment-volatile-operand",
+      "source": "#include <variant>\nint f() {\n  std::variant<int, long> value;\n  volatile long operand = 17;\n  value = operand;\n  return value.index();\n}\n",
+      "expected": "reject",
+      "source_sha256": "fddeb02c5e6de75db9e8abe3669ce443386ece19ba1daf4464b169db0a90d43e",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-value-assignment-user-defined-conversion",
+      "source": "#include <variant>\nstruct Input { operator int() const { return 17; } };\nint f() {\n  std::variant<int, long> value;\n  value = Input{};\n  return value.index();\n}\n",
+      "expected": "reject",
+      "source_sha256": "b91b21583cc87315fb4a78710f55686bb58dac83c995734e009e3c8a42fcdceb",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-value-assignment-nontrivial-alternative",
+      "source": "#include <variant>\nstruct Payload {\n  int data;\n  Payload(int value) : data(value) {}\n  ~Payload() { data = 0; }\n};\nint f() {\n  std::variant<int, Payload> value;\n  value = Payload(17);\n  return value.index();\n}\n",
+      "expected": "reject",
+      "source_sha256": "a236b50dff3690dc72b0261b6e2cd2a12645170dc85435d157e6ac630cbf1d93",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    }
+  ],
+  "source_proof_gate_pending": true,
+  "full_stl_complete": false,
+  "registered_source_sha256": "35fffff4ab894213c9e526df9d263e902c6b98e15bfe427fbf99238bb3555f61",
+  "maintained_original_sha256": "3acf37302822da2d40896d87e64d7d00d35a72d2e5f8bb26391630509c70437f",
+  "previous_registered_source_sha256": "c259acd21ccf5b48ccfcc945991dd17cb253c2acc690a944338c87265172d4f6",
+  "previous_maintained_original_sha256": "cfae33fe14c3829eccb61c77af3e98262aa14d98e64f9cd2a1ed2b9293d4dfed",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "restorer_sha256": "444b49cba415233fc28cc1db3a564f8e49cfea5707995e50782b5c610b2efc77",
+  "extractor_sha256": "21d22c17f19540e52c77b89ec88f2f3825d786879cc486cfd8a89287f5ece156",
+  "current_registry_count": 7998,
+  "current_python_registry_tests": 120,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10
+}
