@@ -4627,6 +4627,8 @@ class FunctionLowering {
     case FunctionalOperation::ByteHash:
       reject(L, "string hash", "String hash requires its exact direct public call.");
     case FunctionalOperation::Hash:
+      if (Info.ConstantResult)
+        return quantity(*Info.ConstantResult, ResultType, L);
       if (Info.LeftType->isNullPtrType())
         return snapshot(
             A.literal(

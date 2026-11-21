@@ -382,6 +382,7 @@ struct FunctionalOperationInfo {
   clang::QualType RightType;
   clang::QualType OperationType;
   clang::QualType ResultType;
+  std::optional<uint64_t> ConstantResult = std::nullopt;
 };
 std::optional<FunctionalOperationInfo>
 approvedFunctionalOperation(const State &S, const clang::SourceManager &SM,
