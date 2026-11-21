@@ -30895,7 +30895,7 @@ public:
       if (const auto Visit = approvedUtilityVariantZeroVisit(A.S, A.Sources, C, A.Context)) {
         if (!Visit->Parameter->getPointeeType()->isFunctionType())
           checkBinding(C->getArg(0), true);
-        A.type(Visit->Result, L);
+        A.type(Visit->Result, L, /*AllowVoid=*/true);
         return true;
       }
       if (const auto Variant = approvedUtilityVariantQuery(A.S, A.Sources, C, A.Context)) {
