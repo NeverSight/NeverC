@@ -10867,7 +10867,9 @@ static bool utilityTupleReferenceValue(const State &S, const SourceManager &SM,
              S, SM, Referent->getAsCXXRecordDecl(), Context)))
       return true;
   }
-  return supportedFunctionalReferenceValue(S, SM, Context, Type) ||
+  return (Context.getTypeSize(Context.VoidPtrTy) == 64 &&
+          approvedUtilityMonostateMetadata(S, SM, Type->getAsCXXRecordDecl(), Context)) ||
+         supportedFunctionalReferenceValue(S, SM, Context, Type) ||
          approvedUtilityUniquePtrLayout(
              S, SM, Type->getAsCXXRecordDecl(), Context).has_value() ||
          approvedUtilityStringRecord(
