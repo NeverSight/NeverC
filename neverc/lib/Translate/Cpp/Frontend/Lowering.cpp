@@ -32791,6 +32791,19 @@ class FunctionLowering {
               Arguments.push_back(snapshot(cast(Callable, type(Method->getThisType(), L), L), L));
             for (unsigned I = 0; I < Slots.size(); ++I) {
               const auto Param = Method ? Method->getParamDecl(I)->getType() : Visit->Arguments[I];
+              if (recordValue(Param)) {
+                // The checked copy of an empty monostate has no data members
+                // to read. Pass the address of a separate caller-owned object.
+                if (!approvedUtilityMonostateMetadata(A.S, A.Sources,
+                        Param->getAsCXXRecordDecl(), A.Context))
+                  reject(L, "variant visitor parameter",
+                         "Only the checked monostate record copy is supported.");
+                auto Copy = objectTemporary(Param, L);
+                initializeZero(Copy, Param, L);
+                Arguments.push_back(snapshot(
+                    address(std::move(Copy), Param.getUnqualifiedType(), L), L));
+                continue;
+              }
               auto Argument = Param->isLValueReferenceType()
                   ? address(Slots[I], Param->getPointeeType(), L)
                   : cast(Slots[I], type(Param, L), L);
