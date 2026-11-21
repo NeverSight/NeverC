@@ -30202,6 +30202,7 @@ public:
              unorderedMapMerge(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantEmplace(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -30890,6 +30891,12 @@ public:
         }
       if (MonostateComparison) {
         A.type(C->getArg(0)->getType(), L);
+        return true;
+      }
+      if (const auto Visit = approvedUtilityVariantZeroVisit(A.S, A.Sources, C, A.Context)) {
+        if (!Visit->Parameter->getPointeeType()->isFunctionType())
+          checkBinding(C->getArg(0), true);
+        A.type(Visit->Result, L, /*AllowVoid=*/true);
         return true;
       }
       if (const auto Variant = approvedUtilityVariantQuery(A.S, A.Sources, C, A.Context)) {
