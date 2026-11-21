@@ -42,7 +42,7 @@
     "TranslateTest.CoreV2TupleBudgetDeep15ExecutionRunAtBothOptimizations",
     "TranslateTest.CoreV2TupleBudgetDeep16ExecutionRunAtBothOptimizations"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "6a2d17db32fb8ea7bfa8f228b1403969b32513e75ccc20158e3413f0026fad27",
   "maintained_original_sha256": "b41ccc064da285dc98be686407bd95e978596261c5baf6b23b57afb6f9716dd4",
@@ -54,5 +54,10 @@
   "current_registry_count": 8193,
   "current_python_registry_tests": 136,
   "native_reference_selected_executions": 4,
-  "planned_generated_c23_executions": 4
+  "planned_generated_c23_executions": 4,
+  "native_reference_proofs": {
+    "tuple-deep-runtime": "6df3ff5f32a6aefd59d674e4995f1ee301617c2c173aa9cd61844737a6f88398"
+  },
+  "native_reference_authentication_sha256": "1eeb1f4d65a4aa3f7e2610064b72b74219007fc05cee448dc6c4819d0c428202",
+  "source_proof_sha256": "48f530b5ad6248a9ab0b95f05abffba1b803f38fb5ff0cf7ca635681c0ed3a6c"
 }
