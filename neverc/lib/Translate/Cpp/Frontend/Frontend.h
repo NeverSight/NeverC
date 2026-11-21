@@ -1308,6 +1308,7 @@ enum class UtilityOperation {
   BitsetProxySet, BitsetProxyCopyValue, BitsetProxyFlip, BitsetProxySwap,
   ForwardList,
   List,
+  OrderedContainerObserver,
   PriorityQueue,
   Deque,
   ValarrayScalar,
@@ -4500,6 +4501,18 @@ bool pinnedAssociativeContainerType(const State &S, const clang::SourceManager &
 bool approvedAssociativeContainerMetadataRecord(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
+bool approvedOrderedContainerRuntimeRecord(const State &S,
+    const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+bool approvedOrderedContainerDefaultConstruction(const State &S,
+    const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+bool approvedOrderedContainerDestructor(const State &S,
+    const clang::SourceManager &SM, const clang::CXXDestructorDecl *Destructor,
+    const clang::ASTContext &Context);
+const clang::MemberExpr *approvedOrderedContainerObserver(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 clang::QualType approvedOrderedContainerObserverQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
@@ -4705,6 +4718,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityBitsetProxies;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityForwardLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityLists;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityOrderedContainers;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityPriorityQueues;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityDeques;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityValarrays;

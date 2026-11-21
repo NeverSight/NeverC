@@ -123819,6 +123819,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
   if (approvedUtilityForwardListCall(S, SM, Call, Context)) return UtilityOperation::ForwardList;
   if (approvedUtilityListCall(S, SM, Call, Context)) return UtilityOperation::List;
+  if (approvedOrderedContainerObserver(S, SM, Call, Context))
+    return UtilityOperation::OrderedContainerObserver;
   if (approvedUtilityPriorityQueueCall(S, SM, Call, Context)) return UtilityOperation::PriorityQueue;
   if (approvedUtilityDequeCall(S, SM, Call, Context)) return UtilityOperation::Deque;
   if (approvedUtilityValarrayCall(S, SM, Call, Context)) return UtilityOperation::ValarrayScalar;
@@ -136095,6 +136097,300 @@ QualType approvedOrderedContainerObserverQuery(
         !cstddefOrigin(S, SM, D->getLocation(), "libcxx", Header))
       return {};
   return Result;
+}
+
+bool approvedOrderedContainerRuntimeRecord(const State &S,
+    const SourceManager &SM, const CXXRecordDecl *Record, const ASTContext &Context) {
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!S.coreV2() || !Record || !Record->getIdentifier())
+    return false;
+  const auto Header = associativeContainerHeader(Record->getName());
+  return (Header == "map" || Header == "set") &&
+         approvedAssociativeContainerLayoutQuery(S, SM, Context.getRecordType(Record), Context);
+}
+
+namespace {
+
+const FieldDecl *orderedTreeField(const CXXRecordDecl *Owner, llvm::StringRef Name) {
+  Owner = Owner ? Owner->getDefinition() : nullptr;
+  if (Owner)
+    for (const auto *F : Owner->fields())
+      if (F->getIdentifier() && F->getName() == Name)
+        return F;
+  return nullptr;
+}
+
+bool orderedPinnedFunction(const State &S, const SourceManager &SM,
+                           const FunctionDecl *F, llvm::StringRef Header) {
+  if (!F || F->isInvalidDecl() || F->isDeleted() || F->isVariadic())
+    return false;
+  for (const auto *D : F->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx", Header))
+      return false;
+  return true;
+}
+
+const Expr *orderedReturn(const FunctionDecl *Function) {
+  const auto *Body = Function ? dyn_cast_or_null<CompoundStmt>(Function->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  return Return ? Return->getRetValue() : nullptr;
+}
+
+const Expr *orderedExpression(const Expr *E) {
+  return E ? E->IgnoreImplicit()->IgnoreParenImpCasts() : nullptr;
+}
+
+bool orderedReceiver(const CXXMemberCallExpr *Call) {
+  return Call && isa_and_nonnull<CXXThisExpr>(orderedExpression(Call->getImplicitObjectArgument()));
+}
+
+bool orderedParameter(const Expr *E, const ParmVarDecl *Parameter) {
+  const auto *Ref = dyn_cast_or_null<DeclRefExpr>(orderedExpression(E));
+  return Ref && Ref->getDecl() == Parameter;
+}
+
+bool orderedStaticAssertion(const Stmt *Statement) {
+  const auto *Decl = dyn_cast_or_null<DeclStmt>(Statement);
+  return Decl && Decl->isSingleDecl() && isa<StaticAssertDecl>(Decl->getSingleDecl());
+}
+
+const CXXMethodDecl *orderedTreeMethod(const State &S, const SourceManager &SM,
+    const CXXMemberCallExpr *Call, const CXXRecordDecl *Tree, llvm::StringRef Name,
+    unsigned Arguments = 0) {
+  const auto *M = Call ? Call->getMethodDecl() : nullptr;
+  return M && M->getIdentifier() && M->getName() == Name && !M->isStatic() &&
+         !M->isVirtual() && M->getNumParams() == Arguments && Call->getNumArgs() == Arguments &&
+         M->getParent()->getCanonicalDecl() == Tree->getCanonicalDecl() &&
+         orderedPinnedFunction(S, SM, M, "__tree") ? M : nullptr;
+}
+
+bool orderedTrivialPolicy(const State &S, const SourceManager &SM, QualType Type) {
+  const auto *R = Type->getAsCXXRecordDecl();
+  R = R ? R->getDefinition() : nullptr;
+  return R && R->isEmpty() && R->hasTrivialCopyConstructor() && R->hasTrivialDestructor() &&
+         associativeStorageDeclaration(S, SM, R, true);
+}
+
+bool orderedPolicyInit(const State &S, const SourceManager &SM, const Expr *E,
+                       const FunctionDecl *Parent, unsigned Depth = 0) {
+  if (Depth >= 16 || !(E = orderedExpression(E)))
+    return false;
+  if (const auto *Ref = dyn_cast<DeclRefExpr>(E)) {
+    const auto *Param = dyn_cast<ParmVarDecl>(Ref->getDecl());
+    return Parent && Param && Param->getDeclContext() == Parent &&
+           orderedTrivialPolicy(S, SM, Param->getType().getNonReferenceType());
+  }
+  if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(E))
+    return Cast->getCastKind() == CK_ConstructorConversion &&
+           orderedPolicyInit(S, SM, Cast->getSubExpr(), Parent, Depth + 1);
+  const auto *Build = dyn_cast<CXXConstructExpr>(E);
+  const auto *Ctor = Build ? Build->getConstructor() : nullptr;
+  if (!Ctor || !orderedTrivialPolicy(S, SM, Build->getType()) ||
+      !associativeStorageDeclaration(S, SM, Ctor, true) || Build->getNumArgs() > 1 ||
+      !(Ctor->isDefaultConstructor() || Ctor->isCopyConstructor() || Ctor->getNumParams() == 1))
+    return false;
+  for (const auto *Argument : Build->arguments())
+    if (!orderedPolicyInit(S, SM, Argument, Parent, Depth + 1))
+      return false;
+  if (Ctor->isTrivial())
+    return true;
+  // The map adapter's one-argument comparator constructor only builds its
+  // authenticated empty base. The default set comparator is itself empty.
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
+  return Body && Body->body_empty() &&
+         llvm::all_of(Ctor->inits(), [&](const CXXCtorInitializer *Init) {
+           return !Init->isDelegatingInitializer() &&
+                  orderedPolicyInit(S, SM, Init->getInit(), Ctor, Depth + 1);
+         });
+}
+
+bool orderedTreeEndSource(const State &S, const SourceManager &SM,
+                          const CXXMemberCallExpr *End, const CXXRecordDecl *Tree,
+                          const FieldDecl *EndField) {
+  const auto *Method = orderedTreeMethod(S, SM, End, Tree, "__end_node");
+  const auto *Conversion = dyn_cast_or_null<CXXStaticCastExpr>(orderedReturn(Method));
+  const auto *Address = Conversion
+      ? dyn_cast_or_null<CallExpr>(orderedExpression(Conversion->getSubExpr())) : nullptr;
+  const auto *F = Address ? Address->getDirectCallee() : nullptr;
+  if (!F || !F->getIdentifier() || F->getName() != "pointer_to" ||
+      !F->getReturnType()->isPointerType() || F->getNumParams() != 1 ||
+      Address->getNumArgs() != 1 || !orderedPinnedFunction(S, SM, F, "__memory/pointer_traits.h"))
+    return false;
+  const auto *AddressofCall = dyn_cast_or_null<CallExpr>(orderedExpression(orderedReturn(F)));
+  const auto *Addressof = AddressofCall ? AddressofCall->getDirectCallee() : nullptr;
+  if (!Addressof || !Addressof->getIdentifier() || Addressof->getName() != "addressof" ||
+      Addressof->getNumParams() != 1 || AddressofCall->getNumArgs() != 1 ||
+      !orderedParameter(AddressofCall->getArg(0), F->getParamDecl(0)) ||
+      !orderedPinnedFunction(S, SM, Addressof, "__memory/addressof.h"))
+    return false;
+  const auto *BuiltinCall = dyn_cast_or_null<CallExpr>(orderedExpression(orderedReturn(Addressof)));
+  const auto *Intrinsic = BuiltinCall ? BuiltinCall->getDirectCallee() : nullptr;
+  if (!Intrinsic || Intrinsic->getBuiltinID() != Builtin::BI__builtin_addressof ||
+      BuiltinCall->getNumArgs() != 1 ||
+      !orderedParameter(BuiltinCall->getArg(0), Addressof->getParamDecl(0)))
+    return false;
+  const auto *Arg = orderedExpression(Address->getArg(0));
+  if (const auto *Unconst = dyn_cast_or_null<CXXConstCastExpr>(Arg))
+    Arg = orderedExpression(Unconst->getSubExpr());
+  const auto *Member = dyn_cast_or_null<MemberExpr>(Arg);
+  return Member && Member->getMemberDecl() == EndField &&
+         isa_and_nonnull<CXXThisExpr>(orderedExpression(Member->getBase()));
+}
+
+bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
+                            const CXXConstructExpr *Build) {
+  const auto *Ctor = Build ? Build->getConstructor() : nullptr;
+  if (!Ctor || Ctor->getNumParams() != 1 || Build->getNumArgs() != 1 ||
+      !orderedPinnedFunction(S, SM, Ctor, "__tree") ||
+      !orderedPolicyInit(S, SM, Build->getArg(0), nullptr))
+    return false;
+  const auto *Tree = Ctor->getParent();
+  const auto *Size = orderedTreeField(Tree, "__size_");
+  const auto *End = orderedTreeField(Tree, "__end_node_");
+  const auto *Begin = orderedTreeField(Tree, "__begin_node_");
+  const auto *Compare = orderedTreeField(Tree, "__value_comp_");
+  bool ZeroSize = false, NullRoot = false, CheckedCompare = false;
+  for (const auto *Init : Ctor->inits()) {
+    if (!Init->isMemberInitializer())
+      return false;
+    const auto *Field = Init->getMember();
+    const auto *Value = orderedExpression(Init->getInit());
+    if (Field == Size) {
+      const auto *Zero = dyn_cast_or_null<IntegerLiteral>(Value);
+      ZeroSize = Zero && Zero->getValue().isZero();
+    } else if (Field == End) {
+      const auto *Construct = dyn_cast_or_null<CXXConstructExpr>(Value);
+      const auto *EndCtor = Construct ? Construct->getConstructor() : nullptr;
+      const auto *Body = EndCtor ? dyn_cast_or_null<CompoundStmt>(EndCtor->getBody()) : nullptr;
+      const auto *Left = EndCtor ? orderedTreeField(EndCtor->getParent(), "__left_") : nullptr;
+      if (!Left || !Body || !Body->body_empty() || Construct->getNumArgs() ||
+          !orderedPinnedFunction(S, SM, EndCtor, "__tree") || EndCtor->getNumCtorInitializers() != 1)
+        return false;
+      const auto *Root = *EndCtor->init_begin();
+      const auto *InitialValue = orderedExpression(Root->getInit());
+      NullRoot = Root->isMemberInitializer() && Root->getMember() == Left &&
+          InitialValue && isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(InitialValue);
+    } else if (Field == Compare) {
+      CheckedCompare = orderedPolicyInit(S, SM, Value, Ctor);
+    } else if (!orderedPolicyInit(S, SM, Value, Ctor)) {
+      return false;
+    }
+  }
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
+  const auto *Set = Body && Body->size() == 1 ? dyn_cast<BinaryOperator>(Body->body_front()) : nullptr;
+  if (!Set || Set->getOpcode() != BO_Assign || !ZeroSize || !NullRoot || !CheckedCompare)
+    return false;
+  const auto *BeginCall = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Set->getLHS()));
+  const auto *EndCall = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Set->getRHS()));
+  const auto *BeginMethod = orderedTreeMethod(S, SM, BeginCall, Tree, "__begin_node");
+  const auto *Member = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(BeginMethod)));
+  return orderedReceiver(BeginCall) && orderedReceiver(EndCall) && Member &&
+         Member->getMemberDecl() == Begin &&
+         isa_and_nonnull<CXXThisExpr>(orderedExpression(Member->getBase())) &&
+         orderedTreeEndSource(S, SM, EndCall, Tree, End);
+}
+
+} // namespace
+
+bool approvedOrderedContainerDefaultConstruction(const State &S,
+    const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
+  const auto *Owner = Ctor ? Ctor->getParent() : nullptr;
+  if (!approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context) ||
+      !S.owns(SM, Construction->getExprLoc()) || !Ctor->isDefaultConstructor() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Ctor->getNumParams() || Construction->getNumArgs() ||
+      !orderedPinnedFunction(S, SM, Ctor, associativeContainerHeader(Owner->getName())) ||
+      Ctor->getNumCtorInitializers() != 1)
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
+  const auto *Init = *Ctor->init_begin();
+  return Body && Body->body_empty() && Init->isMemberInitializer() &&
+         Init->getMember() == orderedTreeField(Owner, "__tree_") &&
+         orderedEmptyTreeSource(S, SM,
+             dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Init->getInit())));
+}
+
+bool approvedOrderedContainerDestructor(const State &S,
+    const SourceManager &SM, const CXXDestructorDecl *Destructor, const ASTContext &Context) {
+  const auto *Owner = Destructor ? Destructor->getParent() : nullptr;
+  if (!approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context) ||
+      Destructor->isVirtual() ||
+      !orderedPinnedFunction(S, SM, Destructor, associativeContainerHeader(Owner->getName())))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Destructor->getBody());
+  if (!Body || Body->size() != 1 || !orderedStaticAssertion(Body->body_front()))
+    return false;
+  const auto *Storage = orderedTreeField(Owner, "__tree_");
+  const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
+  Tree = Tree ? Tree->getDefinition() : nullptr;
+  const auto *TreeDtor = Tree ? Tree->getDestructor() : nullptr;
+  if (!TreeDtor || TreeDtor->isVirtual() || !orderedPinnedFunction(S, SM, TreeDtor, "__tree"))
+    return false;
+  for (const auto *Field : Tree->fields())
+    if (const auto *Record = Field->getType()->getAsCXXRecordDecl();
+        Record && !Record->hasTrivialDestructor())
+      return false;
+  const auto *TreeBody = dyn_cast_or_null<CompoundStmt>(TreeDtor->getBody());
+  if (!TreeBody || TreeBody->size() != 2 || !orderedStaticAssertion(TreeBody->body_front()))
+    return false;
+  const auto *DestroyCall = dyn_cast<CXXMemberCallExpr>(TreeBody->body_back());
+  const auto *Destroy = orderedTreeMethod(S, SM, DestroyCall, Tree, "destroy", 1);
+  if (!Destroy || !orderedReceiver(DestroyCall))
+    return false;
+  const auto *RootCall = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(DestroyCall->getArg(0)));
+  const auto *Root = orderedTreeMethod(S, SM, RootCall, Tree, "__root");
+  const auto *Conversion = Root
+      ? dyn_cast_or_null<CXXStaticCastExpr>(orderedReturn(Root)) : nullptr;
+  const auto *Left = Conversion
+      ? dyn_cast_or_null<MemberExpr>(orderedExpression(Conversion->getSubExpr())) : nullptr;
+  const auto *End = Left ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Left->getBase())) : nullptr;
+  const auto *EndField = orderedTreeField(Tree, "__end_node_");
+  if (!EndField || !Left || !Left->isArrow() || !orderedReceiver(RootCall) ||
+      !orderedReceiver(End) ||
+      Left->getMemberDecl() != orderedTreeField(EndField->getType()->getAsCXXRecordDecl(), "__left_") ||
+      !orderedTreeEndSource(S, SM, End, Tree, EndField))
+    return false;
+  const auto *RecursiveBody = dyn_cast_or_null<CompoundStmt>(Destroy->getBody());
+  const auto *If = RecursiveBody && RecursiveBody->size() == 1
+      ? dyn_cast<IfStmt>(RecursiveBody->body_front()) : nullptr;
+  const auto *Condition = If ? dyn_cast_or_null<BinaryOperator>(orderedExpression(If->getCond())) : nullptr;
+  return If && !If->getInit() && !If->getConditionVariable() && !If->getElse() &&
+         Condition && Condition->getOpcode() == BO_NE &&
+         orderedParameter(Condition->getLHS(), Destroy->getParamDecl(0)) &&
+         isa_and_nonnull<CXXNullPtrLiteralExpr>(orderedExpression(Condition->getRHS()));
+}
+
+const MemberExpr *approvedOrderedContainerObserver(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  if (approvedOrderedContainerObserverQuery(S, SM, Call, Context).isNull())
+    return nullptr;
+  const auto *Outer = cast<CXXMemberCallExpr>(Call)->getMethodDecl();
+  if (!Outer || Outer->getName() == "max_size")
+    return nullptr;
+  const auto *Owner = Outer->getParent();
+  const auto *Storage = orderedTreeField(Owner, "__tree_");
+  const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *Returned = orderedReturn(Outer);
+  if (Outer->getName() == "empty") {
+    const auto *Equal = dyn_cast_or_null<BinaryOperator>(orderedExpression(Returned));
+    const auto *Zero = Equal ? dyn_cast_or_null<IntegerLiteral>(orderedExpression(Equal->getRHS())) : nullptr;
+    if (!Equal || Equal->getOpcode() != BO_EQ || !Zero || !Zero->getValue().isZero())
+      return nullptr;
+    Returned = Equal->getLHS();
+  }
+  const auto *Inner = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Returned));
+  const auto *Size = Tree ? orderedTreeMethod(S, SM, Inner, Tree, "size") : nullptr;
+  const auto *Base = Size ? dyn_cast_or_null<MemberExpr>(orderedExpression(Inner->getImplicitObjectArgument())) : nullptr;
+  const auto *Field = Size ? dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Size))) : nullptr;
+  if (!Base || Base->getMemberDecl() != Storage ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Base->getBase())) ||
+      !Size->isConst() || !Field || Field->getMemberDecl() != orderedTreeField(Tree, "__size_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase())))
+    return nullptr;
+  return cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
 }
 
 std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
