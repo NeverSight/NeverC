@@ -789,6 +789,9 @@ scalarHashBase(const State &S, const SourceManager &SM,
   return Base;
 }
 
+static QualType monostateHashType(const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Record, const ASTContext &Context);
+
 static bool functionalObjectOrigin(const State &S, const SourceManager &SM,
                                    const NamedDecl *Declaration,
                                    llvm::StringRef Name) {
@@ -805,6 +808,9 @@ static bool functionalObjectOrigin(const State &S, const SourceManager &SM,
   if (const auto *Method = dyn_cast<CXXMethodDecl>(Declaration))
     if (approvedBitsetHashObject(S, SM, Method->getParent(), Method->getASTContext()))
       return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "bitset");
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(Declaration))
+    if (!monostateHashType(S, SM, Method->getParent(), Method->getASTContext()).isNull())
+      return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__variant/monostate.h");
   if (const auto *Method = dyn_cast<CXXMethodDecl>(Declaration))
     if (auto StringHash = approvedStringHashObject(
             S, SM, Method->getParent(), Method->getASTContext()))
@@ -836,6 +842,35 @@ static bool functionalObjectTemplateOrigin(const State &S,
   return Definition && approvedStandardSDKDeclaration(S, SM, Definition) &&
          cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
                        "__functional/hash.h");
+}
+
+static QualType monostateHashType(const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Record, const ASTContext &Context) {
+  const auto *Hash = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Record ? Record->getDefinition() : nullptr);
+  if (!Hash || !Hash->getIdentifier() || Hash->getName() != "hash" ||
+      Hash->getSpecializationKind() != TSK_ExplicitSpecialization ||
+      !Hash->isAggregate() || !Hash->isEmpty() || !Hash->isStandardLayout() ||
+      !Hash->isTriviallyCopyable() || !Hash->hasTrivialDestructor() ||
+      Hash->getNumBases() || !Hash->field_empty() || Hash->isUnion() ||
+      !stringHashRecordSource(S, SM, Hash, "hash", "__variant/monostate.h"))
+    return {};
+  const auto *Primary = Hash->getSpecializedTemplate();
+  if (!Primary || !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary->getCanonicalDecl()) ||
+      !functionalObjectTemplateOrigin(S, SM, Primary, "hash", false) ||
+      !functionalObjectTemplateOrigin(S, SM, Primary->getCanonicalDecl(), "hash", true))
+    return {};
+  const auto &Arguments = Hash->getTemplateArgs();
+  if (Arguments.size() != 1 || Arguments[0].getKind() != TemplateArgument::Type)
+    return {};
+  const auto Value = Arguments[0].getAsType();
+  const auto &Layout = Context.getASTRecordLayout(Hash);
+  if (Value.hasQualifiers() || Layout.getSize() != CharUnits::One() ||
+      Layout.getAlignment() != CharUnits::One() ||
+      !approvedUtilityMonostateMetadata(S, SM, Value->getAsCXXRecordDecl(), Context))
+    return {};
+  return Value;
 }
 
 // Empty carriers need only the pinned trait identity. Clang may leave value's
@@ -1477,6 +1512,8 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
   if (auto StringHash = approvedStringHashObject(S, SM, Record, Context))
     return FunctionalObjectRecord{StringHash->Record};
   if (approvedBitsetHashObject(S, SM, Record, Context))
+    return FunctionalObjectRecord{Record->getDefinition()};
+  if (!monostateHashType(S, SM, Record, Context).isNull())
     return FunctionalObjectRecord{Record->getDefinition()};
   if (functionTraitObjectValue(S, SM, Record, Context))
     return FunctionalObjectRecord{Record->getDefinition()};
@@ -7167,6 +7204,45 @@ std::optional<bool> approvedUtilityMonostateComparison(const State &S,
   if (!Value || Value->getValue() != Expected)
     return std::nullopt;
   return Expected;
+}
+
+std::optional<UtilityMonostateHash> approvedUtilityMonostateHash(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Op = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = Op ? dyn_cast_or_null<CXXMethodDecl>(Op->getDirectCallee()) : nullptr;
+  if (!S.coreV2() || !Method || Op->getOperator() != OO_Call || Op->getNumArgs() != 2 ||
+      !S.owns(SM, Op->getOperatorLoc()) || Method->getNumParams() != 1 ||
+      Method->isStatic() || !Method->isConst() || Method->isVolatile() ||
+      Method->isVariadic() || Method->isDeleted() || Method->isInvalidDecl() ||
+      Method->getRefQualifier() != RQ_None ||
+      Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
+    return std::nullopt;
+  const auto Value = monostateHashType(S, SM, Method->getParent(), Context);
+  const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+  if (Value.isNull() || !Prototype || !Prototype->isNothrow() ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                           Context.getLValueReferenceType(Value.withConst())))
+    return std::nullopt;
+  const auto *Receiver = Op->getArg(0);
+  const auto *Operand = Op->getArg(1);
+  if (Receiver->getType().isVolatileQualified() || Operand->getType().isVolatileQualified() ||
+      !Context.hasSameUnqualifiedType(Receiver->getType(), Context.getRecordType(Method->getParent())) ||
+      !Context.hasSameUnqualifiedType(Operand->getType(), Value))
+    return std::nullopt;
+  const FunctionDecl *Definition = nullptr;
+  if (!Method->hasBody(Definition))
+    return std::nullopt;
+  for (const auto *Decl : Method->redecls())
+    if (!variantDeclaration(S, SM, Decl, "__variant/monostate.h"))
+      return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  const auto *Result = Return ? Return->getRetValue() : nullptr;
+  const auto *Literal = Result ? dyn_cast<IntegerLiteral>(Result->IgnoreParenImpCasts()) : nullptr;
+  if (!Literal || Literal->getValue() != 66740831)
+    return std::nullopt;
+  return UtilityMonostateHash{Receiver, Operand, Literal->getValue().getZExtValue()};
 }
 
 static const DeclRefExpr *variantReference(const Expr *E) {

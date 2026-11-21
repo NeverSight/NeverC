@@ -30220,6 +30220,7 @@ public:
               approvedUtilityVariantIntegralVisit(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityMonostateHash(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantComparison(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantEmplace(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantGet(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -30803,6 +30804,7 @@ public:
                               A.S, A.Sources, Operator, A.Context)
                               .has_value();
       const auto MonostateComparison = approvedUtilityMonostateComparison(A.S, A.Sources, C, A.Context);
+      const auto MonostateHash = approvedUtilityMonostateHash(A.S, A.Sources, C, A.Context);
       const auto VariantComparison = approvedUtilityVariantComparison(A.S, A.Sources, C, A.Context);
       const auto VariantAssignment = approvedUtilityVariantAssignment(A.S, A.Sources, C, A.Context);
       const bool UtilityOptionalAssignment =
@@ -30844,7 +30846,7 @@ public:
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityStringViewAssignment &&
             !UtilityStringAssignment && !UtilityVectorAssignment &&
-            !VariantAssignment && !MonostateComparison && !VariantComparison &&
+            !VariantAssignment && !MonostateComparison && !MonostateHash && !VariantComparison &&
             !UtilityOptionalAssignment && !UtilityWrapIteratorAssignment &&
             !UtilityReverseIteratorAssignment && !UtilityAllocatorAssignment &&
             !UtilityDefaultDelete && !UtilityUniquePtr && !Ordinary &&
@@ -30913,6 +30915,11 @@ public:
         for (const auto *Operand : C->arguments())
           checkBinding(Operand, false);
         A.type(A.Context.getRecordType(VariantComparison->Variant.Record), L);
+        return true;
+      }
+      if (MonostateHash) {
+        A.type(MonostateHash->Receiver->getType(), L);
+        A.type(MonostateHash->Value->getType(), L);
         return true;
       }
       if (MonostateComparison) {

@@ -32750,6 +32750,11 @@ class FunctionLowering {
         label(End, L);
         return Result;
       }
+      if (const auto Hash = approvedUtilityMonostateHash(A.S, A.Sources, Call, A.Context)) {
+        discard(Hash->Receiver);
+        discard(Hash->Value);
+        return quantity(Hash->Result, type(Call->getType(), L), L);
+      }
       if (const auto Compare = approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context)) {
         for (const auto *Operand : Call->arguments())
           discard(Operand);
