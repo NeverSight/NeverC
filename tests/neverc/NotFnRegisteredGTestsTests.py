@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.layout_variant_any_allocator_registered = cls.registered
+        cls.layout_variant_any_allocator_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_any_allocator_original = cls.adapter.restore_original_gtests(cls.layout_variant_any_allocator_registered,
+                                                                        cls.layout_variant_any_allocator_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_any_allocator_history(cls.layout_variant_any_allocator_registered)
         cls.layout_variant_any_tuple_visitor_registered = cls.registered
         cls.layout_variant_any_tuple_visitor_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.layout_variant_any_tuple_visitor_original = cls.adapter.restore_original_gtests(cls.layout_variant_any_tuple_visitor_registered,
@@ -2019,6 +2024,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_layout_variant_any_tuple_visitor_history(self.layout_variant_any_tuple_visitor_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.layout_variant_any_tuple_visitor_registered, self.layout_variant_any_tuple_visitor_suffix + b' ')
+
+
+    def test_layout_variant_any_allocator_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_any_allocator_original + self.layout_variant_any_allocator_suffix, self.layout_variant_any_allocator_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_any_allocator_history(self.layout_variant_any_allocator_original),
+                         self.layout_variant_any_tuple_visitor_original)
+        output, evidence = self.extractor.extract(self.layout_variant_any_allocator_original, ['TranslateTest.CoreV2AnyIntAssignAndReturnReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntAssignReadsReferenceAfterReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntMakeZeroInDestinationRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntMakeAtReturnBoundaryRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntConstValueAndBorrowedReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntConstValueFromInPlaceConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntMakeAndAssignWithCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ScopedAllocatorSameTypeCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ScopedAllocatorSameTypeMoveRunAtBothOptimizations', 'TranslateTest.CoreV2ScopedAllocatorCopyAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2VariantThreeVisitFunctionAndPointerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantThreeVisitConstOverloadedVisitorRunAtBothOptimizations', 'TranslateTest.CoreV2VariantThreeVisitAliasedOperandsAndVoidRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntAssignOtherPayloadGuardRejected', 'TranslateTest.CoreV2AnyIntMakeRenamedInstallationGuardRejected', 'TranslateTest.CoreV2AnyIntCastWithoutActiveStateEvidenceRejected', 'TranslateTest.CoreV2ScopedAllocatorRenamedStorageCopyGuardRejected', 'TranslateTest.CoreV2ScopedAllocatorInnerPackCopyGuardRejected', 'TranslateTest.CoreV2VariantThreeVisitRenamedValuelessGuardRejected', 'TranslateTest.CoreV2VariantThreeVisitTemporaryOperandRejected', 'TranslateTest.CoreV2VariantThreeVisitMatrixCapacityRejected', 'TranslateTest.CoreV2VariantThreeVisitFourOperandsRejected'])
+        self.assertEqual(evidence['original_test_names'], 8228)
+        self.assertEqual(evidence['selected_count'], 22)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-int-make-and-assign-with-copy', output)
+        self.assertIn(b'variant-three-visit-aliased-operands-and-void', output)
+
+    def test_layout_variant_any_allocator_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_any_allocator_history(self.layout_variant_any_allocator_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_any_allocator_registered, self.layout_variant_any_allocator_suffix + b' ')
 
 
 if __name__ == '__main__':

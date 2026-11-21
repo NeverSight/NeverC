@@ -563,3 +563,10 @@ The combined compiler passes 1,878 source requests across six 64-bit targets
 and 418 formal tests on Linux x86-64. All 222 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Integer Any, scoped allocator transfer and three-variant visitation
+
+The combined compiler passes 2,016 source requests across six 64-bit targets
+and 440 formal tests on Linux x86-64. All 235 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

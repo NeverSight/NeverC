@@ -17964,3 +17964,20 @@ overload sees the original receiver and the converted alternatives.
 The selected integer `std::any` in-place constructor and `emplace<int>`
 support value initialization or one exact integer argument. Emplacement
 returns a reference to the newly stored value.
+
+## Integer Any assignment, scoped allocator transfer, and three-variant visitation
+
+The selected `std::any` overload accepts assignment from an exact `int` and
+`std::make_any<int>` accepts either value initialization or one exact integer
+argument. The checked const value and const-reference casts require source
+evidence of a live integer payload.
+
+The pinned stateless `std::scoped_allocator_adaptor<std::allocator<int>>`
+supports its implicit trivial same-type copy and move construction.
+
+Checked `std::visit` accepts three lvalue variants of admitted integral
+alternatives. It authenticates the left fold over their valueless-state
+queries and a dispatch matrix with at most 64 entries. Ordinary functions,
+function pointers and source-owned lvalue visitor operators receive the
+selected by-value alternatives. Operand expressions and the selected call
+each execute once.
