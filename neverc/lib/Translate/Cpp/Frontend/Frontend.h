@@ -3454,6 +3454,7 @@ struct UtilityVariantIntegralVisit {
   clang::QualType Callable;
   std::vector<clang::QualType> Arguments;
   clang::QualType Result;
+  std::vector<const clang::CXXMethodDecl *> Methods;
 };
 std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
@@ -3509,12 +3510,23 @@ struct UtilityAnyCall {
 
 struct UtilityAnyIntegerConstruction {
   const clang::CXXRecordDecl *Record;
+  const clang::Expr *InPlaceTag;
   const clang::Expr *Input;
   clang::QualType Parameter;
 };
 std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
+struct UtilityAnyIntegerEmplacement {
+  const clang::CXXRecordDecl *Record;
+  const clang::MemberExpr *Callee;
+  const clang::Expr *Input;
+  clang::QualType Parameter;
+};
+std::optional<UtilityAnyIntegerEmplacement> approvedUtilityAnyIntegerEmplacement(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 enum class UtilityAnyTransferOperation { Copy, Move, Swap };
 struct UtilityAnyTransfer {
   const clang::CXXRecordDecl *Record;

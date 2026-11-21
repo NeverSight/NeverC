@@ -15600,7 +15600,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const Expr *, SourceLocation> DirectTemplateCallLocations;
   std::set<const CallExpr *> GeneratedArrayAssignments;
   std::set<const CallExpr *> ApprovedErasedUtilityCalls;
-  std::set<const Stmt *> CheckedVariantInPlaceTags;
+  std::set<const Stmt *> CheckedInPlaceTags;
   std::map<const DeclRefExpr *, const ValueDecl *> MemberPointerAdapterSources;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
@@ -18686,7 +18686,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!CheckedConstructions.insert(C).second)
       return;
     if (const auto Integer = approvedUtilityAnyIntegerConstruction(A.S, A.Sources, C, A.Context)) {
-      checkBinding(Integer->Input, Integer->Parameter->isRValueReferenceType());
+      if (Integer->Input)
+        checkBinding(Integer->Input, Integer->Parameter->isRValueReferenceType());
       A.type(C->getType(), L);
       return;
     }
@@ -25616,7 +25617,7 @@ public:
     return true;
   }
   bool TraverseDeclRefExpr(DeclRefExpr *Reference) {
-    if (CheckedVariantInPlaceTags.count(Reference))
+    if (CheckedInPlaceTags.count(Reference))
       return RecursiveASTVisitor<Allowlist>::TraverseDeclRefExpr(Reference);
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()) ||
         (!isa<VarTemplateSpecializationDecl>(Reference->getDecl()) &&
@@ -25727,7 +25728,7 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()))
       return true;
-    if (CheckedVariantInPlaceTags.count(Reference))
+    if (CheckedInPlaceTags.count(Reference))
       return true; // The lexical template argument is still traversed.
     if (const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl())) {
       const auto *Space = dyn_cast<NamespaceDecl>(Variable->getDeclContext());
@@ -29959,26 +29960,27 @@ public:
       return true;
     if (A.S.coreV2() && InitializerLookupWrappers.count(S))
       return true; // Exact source wrappers of an already checked callback clause.
-    if (CheckedVariantInPlaceTags.count(S))
+    if (CheckedInPlaceTags.count(S))
       return true;
     if (const auto *Construction = dyn_cast<CXXConstructExpr>(S);
         Construction && Construction->getNumArgs() && Construction->getConstructor() &&
         Construction->getConstructor()->isExplicit()) {
-      if (const auto Variant = approvedUtilityVariantConstruction(A.S, A.Sources, Construction, A.Context)) {
-        // Only the constant argument of this selected constructor is erased.
-        // RAV still walks the qualifier and written template arguments.
-        const Expr *Tag = Variant->InPlaceTag;
-        for (unsigned Depth = 0; Tag && Depth < 16; ++Depth) {
-          CheckedVariantInPlaceTags.insert(Tag);
-          const auto *Unwrapped = Tag->IgnoreParenImpCasts();
-          if (Unwrapped != Tag) {
-            Tag = Unwrapped;
-          } else if (const auto *Copy = dyn_cast<CXXConstructExpr>(Tag);
-                     Copy && Copy->getNumArgs() == 1) {
-            Tag = Copy->getArg(0);
-          } else {
-            Tag = nullptr;
-          }
+      const Expr *Tag = nullptr;
+      if (const auto Variant = approvedUtilityVariantConstruction(A.S, A.Sources, Construction, A.Context))
+        Tag = Variant->InPlaceTag;
+      else if (const auto Any = approvedUtilityAnyIntegerConstruction(A.S, A.Sources, Construction, A.Context))
+        Tag = Any->InPlaceTag;
+      // RAV still walks the qualifier and written template arguments.
+      for (unsigned Depth = 0; Tag && Depth < 16; ++Depth) {
+        CheckedInPlaceTags.insert(Tag);
+        const auto *Unwrapped = Tag->IgnoreParenImpCasts();
+        if (Unwrapped != Tag) {
+          Tag = Unwrapped;
+        } else if (const auto *Copy = dyn_cast<CXXConstructExpr>(Tag);
+                   Copy && Copy->getNumArgs() == 1) {
+          Tag = Copy->getArg(0);
+        } else {
+          Tag = nullptr;
         }
       }
     }
@@ -30227,6 +30229,7 @@ public:
               A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
+              approvedUtilityAnyIntegerEmplacement(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyCall(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyPointerCast(A.S, A.Sources, Call, A.Context) ||
@@ -30906,13 +30909,24 @@ public:
         return true;
       }
       if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, C, A.Context)) {
-        if (!Visit->Callable->getPointeeType()->isFunctionType())
+        const auto Visitor = Visit->Callable->getPointeeType();
+        if (Visitor->isRecordType()) {
+          checkBinding(C->getArg(0), false);
+          A.type(Visitor, L);
+          for (const auto *Method : Visit->Methods) {
+            A.type(Method->getThisType(), L);
+            for (const auto *Param : Method->parameters())
+              A.type(Param->getType(), L);
+          }
+        } else if (!Visitor->isFunctionType()) {
           checkBinding(C->getArg(0), true);
+        }
         for (unsigned I = 0; I < Visit->Variants.size(); ++I) {
           checkBinding(C->getArg(I + 1), false);
           A.type(A.Context.getRecordType(Visit->Variants[I].Record), L);
-          A.type(Visit->Arguments[I], L);
         }
+        for (const auto Argument : Visit->Arguments)
+          A.type(Argument, L);
         A.type(Visit->Result, L, /*AllowVoid=*/true);
         return true;
       }
@@ -31003,6 +31017,20 @@ public:
         A.type(A.Context.getRecordType(Any->Record), L);
         if (Any->Operation != UtilityAnyTransferOperation::Swap)
           A.type(C->getType(), L);
+        return true;
+      }
+      if (const auto Emplace = approvedUtilityAnyIntegerEmplacement(A.S, A.Sources, C, A.Context)) {
+        const auto *Base = Emplace->Callee->getBase();
+        if (Emplace->Callee->isArrow()) {
+          if (temporaryArrayBase(Base, true))
+            A.reject(L, "any receiver", "Expected a live any object.");
+        } else {
+          checkBinding(Base, true);
+        }
+        if (Emplace->Input)
+          checkBinding(Emplace->Input, Emplace->Parameter->isRValueReferenceType());
+        A.type(A.Context.getRecordType(Emplace->Record), L);
+        A.type(C->getType(), L);
         return true;
       }
       if (const auto Any = approvedUtilityAnyCall(A.S, A.Sources, C, A.Context)) {

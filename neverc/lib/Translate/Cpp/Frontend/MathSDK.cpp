@@ -8085,7 +8085,14 @@ static bool anyCarrierInitialization(const State &S, const SourceManager &SM,
   if (Ctor->getNumCtorInitializers() != 2)
     return false;
   auto Fields = Any->field_begin();
-  if (!anyNull(anyInitializer(Ctor, *Fields++)))
+  const auto *Handle = *Fields++;
+  const auto *Initializer = anyInitializer(Ctor, Handle);
+  const auto *Default = dyn_cast_or_null<CXXDefaultInitExpr>(
+      Initializer ? Initializer->IgnoreParenImpCasts() : nullptr);
+  if (Default && (Default->getField() != Handle || !anyDeclaration(S, SM, Handle) ||
+                  !anyNull(Handle->getInClassInitializer())))
+    return false;
+  if (!anyNull(Default ? Default->getExpr() : Initializer))
     return false;
   const auto *Storage = *Fields;
   const auto *Input = anyInitializer(Ctor, Storage);
@@ -8941,35 +8948,109 @@ static bool anyIntegerDispatch(const State &S, const SourceManager &SM, const CX
          cstddefOrigin(S, SM, Unreachable->getLocation(), "libcxx", "__utility/unreachable.h");
 }
 
+static bool anyIntegerPack(const TemplateArgumentList *Args, unsigned Arity,
+                           const ASTContext &Context) {
+  return Args && Args->size() == 4 && Args->get(0).getKind() == TemplateArgument::Type &&
+         Context.hasSameType(Args->get(0).getAsType(), Context.IntTy) &&
+         Args->get(1).getKind() == TemplateArgument::Pack && Args->get(1).pack_size() == Arity &&
+         Args->get(2).getKind() == TemplateArgument::Type &&
+         Context.hasSameType(Args->get(2).getAsType(), Context.IntTy);
+}
+
+static bool anyIntegerInput(const Expr *Input, QualType Parameter, const ASTContext &Context) {
+  return !Input || (!Parameter.isNull() && Parameter->isReferenceType() &&
+         Context.hasSameUnqualifiedType(Parameter.getNonReferenceType(), Context.IntTy) &&
+         Context.hasSameUnqualifiedType(Input->getType(), Context.IntTy) &&
+         !Input->getType().isVolatileQualified());
+}
+
+static bool anyIntegerInstallThis(const State &S, const SourceManager &SM,
+    const CallExpr *Create, const FunctionDecl *Owner, const CXXRecordDecl *Any,
+    unsigned Offset, const ASTContext &Context) {
+  const unsigned Arity = Owner->getNumParams() - Offset;
+  const auto *Handle = anyIntegerHandlerInstallation(S, SM, Create, Any, Arity, Context);
+  const auto *Object = Handle ? dyn_cast<UnaryOperator>(Create->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+  return Object && Object->getOpcode() == UO_Deref && anyThis(Object->getSubExpr()) &&
+         (!Arity || variantForward(S, SM, Create->getArg(1), Owner->getParamDecl(Offset), Context)) &&
+         anyIntegerDispatch(S, SM, Handle, Any, Context);
+}
+
 std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
-  if (!S.coreV2() || !Construction || Construction->getNumArgs() != 1 ||
-      Construction->isInstantiationDependent() ||
+  if (!S.coreV2() || !Construction || !Construction->getNumArgs() ||
+      Construction->getNumArgs() > 2 || Construction->isInstantiationDependent() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete)
     return std::nullopt;
   const auto *Original = Construction->getConstructor();
-  const auto *F = dyn_cast_or_null<CXXConstructorDecl>(anyPinnedDefinition(S, SM, Original, "any", 1));
+  const unsigned Count = Construction->getNumArgs();
+  const auto *F = dyn_cast_or_null<CXXConstructorDecl>(anyPinnedDefinition(S, SM, Original, "any", Count));
   const auto *Any = F ? F->getParent()->getDefinition() : nullptr;
-  const auto *Input = Construction->getArg(0);
-  const auto *Template = Original ? Original->getTemplateSpecializationArgs() : nullptr;
-  if (!F || !Any || !F->getPrimaryTemplate() || !Template || Template->size() != 3 ||
-      Template->get(1).getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Template->get(1).getAsType(), Context.IntTy) ||
-      !Context.hasSameUnqualifiedType(Input->getType(), Context.IntTy) || Input->getType().isVolatileQualified() ||
+  const auto *Args = Original ? Original->getTemplateSpecializationArgs() : nullptr;
+  if (!F || !Any || !F->getPrimaryTemplate() ||
       !Context.hasSameUnqualifiedType(Construction->getType(), Context.getRecordType(Any)) ||
       !approvedUtilityAnyRecord(S, SM, Any, Context) || !anyCarrierInitialization(S, SM, F, Any))
     return std::nullopt;
-  const auto Param = F->getParamDecl(0)->getType();
+  const unsigned Offset = F->isExplicit() ? 1 : 0;
+  const unsigned Arity = Count - Offset;
+  const auto *Tag = Offset ? Construction->getArg(0) : nullptr;
+  if (Tag) {
+    const auto *Selection = variantInPlaceTag(S, SM, Tag, "in_place_type_t", "in_place_type");
+    if (!S.owns(SM, Tag->getExprLoc()) || !Selection || !anyIntegerPack(Args, Arity, Context) ||
+        !Selection->structurallyEquals(Args->get(0)) ||
+        !Context.hasSameUnqualifiedType(Tag->getType(), F->getParamDecl(0)->getType()))
+      return std::nullopt;
+  } else if (Arity != 1 || !Args || Args->size() != 3 ||
+             Args->get(1).getKind() != TemplateArgument::Type ||
+             !Context.hasSameType(Args->get(1).getAsType(), Context.IntTy)) {
+    return std::nullopt;
+  }
+  const auto *Input = Arity ? Construction->getArg(Offset) : nullptr;
+  const auto Parameter = Arity ? F->getParamDecl(Offset)->getType() : QualType();
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
   const auto *Create = Body && Body->size() == 1 ? anyIntegerStatementCall(Body->body_front()) : nullptr;
-  const auto *Handle = anyIntegerHandlerInstallation(S, SM, Create, Any, 1, Context);
-  const auto *Object = Handle ? dyn_cast<UnaryOperator>(Create->getArg(0)->IgnoreParenImpCasts()) : nullptr;
-  if (!Param->isReferenceType() || !Object || Object->getOpcode() != UO_Deref || !anyThis(Object->getSubExpr()) ||
-      !variantForward(S, SM, Create->getArg(1), F->getParamDecl(0), Context) ||
-      !anyIntegerDispatch(S, SM, Handle, Any, Context))
+  if (!anyIntegerInput(Input, Parameter, Context) ||
+      !anyIntegerInstallThis(S, SM, Create, F, Any, Offset, Context))
     return std::nullopt;
-  return UtilityAnyIntegerConstruction{Any, Input, Param};
+  return UtilityAnyIntegerConstruction{Any, Tag, Input, Parameter};
+}
+
+std::optional<UtilityAnyIntegerEmplacement> approvedUtilityAnyIntegerEmplacement(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Member = MemberCall ? dyn_cast_or_null<MemberExpr>(directMethodReference(Call)) : nullptr;
+  if (!S.coreV2() || !Member || MemberCall->getNumArgs() > 1)
+    return std::nullopt;
+  const unsigned Arity = MemberCall->getNumArgs();
+  const auto *Original = MemberCall->getMethodDecl();
+  const auto *F = dyn_cast_or_null<CXXMethodDecl>(anyPinnedDefinition(S, SM, Original, "emplace", Arity));
+  const auto *Any = F ? F->getParent()->getDefinition() : nullptr;
+  const auto *Base = Member->getBase();
+  const auto Owner = Member->isArrow() ? Base->getType()->getPointeeType() : Base->getType();
+  if (!F || !F->getPrimaryTemplate() || F->isStatic() || F->isConst() || Owner.isNull() ||
+      Owner.isConstQualified() || Owner.isVolatileQualified() ||
+      (!Member->isArrow() && !Base->isGLValue()) || !Any ||
+      Member->getMemberDecl()->getCanonicalDecl() != F->getCanonicalDecl() ||
+      !Context.hasSameUnqualifiedType(Owner, Context.getRecordType(Any)) ||
+      !approvedUtilityAnyRecord(S, SM, Any, Context) ||
+      !anyIntegerPack(Original->getTemplateSpecializationArgs(), Arity, Context) ||
+      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Context.IntTy)))
+    return std::nullopt;
+  const auto *Input = Arity ? Call->getArg(0) : nullptr;
+  const auto Parameter = Arity ? F->getParamDecl(0)->getType() : QualType();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
+  const auto *Reset = Body && Body->size() == 2
+      ? dyn_cast<CXXMemberCallExpr>(Body->body_front()) : nullptr;
+  const auto *Returned = Reset ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+  const auto *Create = Returned
+      ? dyn_cast_or_null<CallExpr>(anySelectedExpression(Returned->getRetValue())) : nullptr;
+  if (!Reset || Reset->getNumArgs() || !anyThis(Reset->getImplicitObjectArgument()) ||
+      !anyResetBody(S, SM, Reset->getMethodDecl(), Any, Context) ||
+      !anyIntegerInput(Input, Parameter, Context) ||
+      !anyIntegerInstallThis(S, SM, Create, F, Any, 0, Context))
+    return std::nullopt;
+  return UtilityAnyIntegerEmplacement{Any, Member, Input, Parameter};
 }
 
 static bool anyActivePointerCastBody(const State &S, const SourceManager &SM,
@@ -9809,7 +9890,8 @@ static const CallExpr *variantVisitInvoke(const State &S, const SourceManager &S
 static bool variantVisitIntegralLeaf(const State &S, const SourceManager &SM, const APValue &Entry,
     const FieldDecl *Capture, llvm::ArrayRef<UtilityVariantRecord> Variants,
     llvm::ArrayRef<unsigned> Indices, llvm::ArrayRef<QualType> Inputs,
-    QualType Result, const ASTContext &Context) {
+    QualType Object, QualType Result, const CXXMethodDecl *&SelectedMethod,
+    const ASTContext &Context) {
   if (!Entry.isLValue() || Entry.isNullPointer() || Entry.isLValueOnePastTheEnd() ||
       !Entry.getLValueOffset().isZero())
     return false;
@@ -9840,14 +9922,37 @@ static bool variantVisitIntegralLeaf(const State &S, const SourceManager &SM, co
     return false;
   const auto *Call = variantVisitCall(variantVisitReturn(Body));
   const auto *Target = variantVisitInvoke(S, SM, Call, Count, Context);
-  if (!Target || isa<CXXOperatorCallExpr>(Target) || !Context.hasSameType(Target->getType(), Result))
+  if (!Target || !Context.hasSameType(Target->getType(), Result))
     return false;
+  const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Target);
+  const auto *Record = Object.isNull() ? nullptr : Object->getAsCXXRecordDecl();
+  if (Record) {
+    const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Operation ? Operation->getDirectCallee() : nullptr);
+    const FunctionDecl *Definition = nullptr;
+    if (!Method || Method->isStatic() || Method->getOverloadedOperator() != OO_Call ||
+        !ordinaryOperator(Method) || !callableMethod(Method) ||
+        Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+        Method->getRefQualifier() == RQ_RValue || Method->isVolatile() ||
+        (Object.isConstQualified() && !Method->isConst()) ||
+        !Context.hasSameType(Method->getReturnType(), Result) ||
+        Method->getNumParams() != Count ||
+        !S.owns(SM, Method->getLocation()) || !Method->hasBody(Definition) ||
+        !S.owns(SM, Definition->getLocation()))
+      return false;
+    SelectedMethod = Method;
+  } else if (Operation) {
+    return false;
+  }
   const auto *Forward = variantVisitCall(Call->getArg(0));
   if (!Forward || Forward->getNumArgs() != 1 || !variantForwardedCapture(S, SM, Forward, Capture, Context))
     return false;
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Field = variantForwardedField(S, SM, Call->getArg(I + 1), Wrapper->getParamDecl(I), Context);
-    if (!Context.hasSameUnqualifiedType(Target->getArg(I)->getType(), Inputs[I]) || !Field ||
+    const auto Parameter = SelectedMethod ? SelectedMethod->getParamDecl(I)->getType() : Inputs[I];
+    if (!Parameter->isIntegerType() ||
+        !Context.hasSameUnqualifiedType(Target->getArg(I + (SelectedMethod ? 1 : 0))->getType(), Parameter) ||
+        !Field ||
         Field->getMemberDecl()->getCanonicalDecl() != Variants[I].Alternatives[Indices[I]]->getCanonicalDecl())
       return false;
   }
@@ -9922,7 +10027,8 @@ static bool variantVisitIndexSelection(const State &S, const SourceManager &SM,
 
 static bool variantVisitIntegralMatrix(const State &S, const SourceManager &SM,
     const FunctionDecl *Base, const FieldDecl *Capture, llvm::ArrayRef<UtilityVariantRecord> Variants,
-    llvm::ArrayRef<QualType> Inputs, QualType Result, const ASTContext &Context) {
+    llvm::ArrayRef<QualType> Inputs, QualType Object, QualType Result,
+    std::vector<const CXXMethodDecl *> &Methods, const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Base->getBody());
   if (!Body || Body->size() != 2)
     return false;
@@ -9953,8 +10059,14 @@ static bool variantVisitIntegralMatrix(const State &S, const SourceManager &SM,
     return false;
   llvm::SmallVector<unsigned, 2> Indices(Count, 0);
   auto CheckEntries = [&](auto &&Self, const APValue &Entry, unsigned Dimension) -> bool {
-    if (Dimension == Count)
-      return variantVisitIntegralLeaf(S, SM, Entry, Capture, Variants, Indices, Inputs, Result, Context);
+    if (Dimension == Count) {
+      const CXXMethodDecl *Method = nullptr;
+      if (!variantVisitIntegralLeaf(S, SM, Entry, Capture, Variants, Indices, Inputs,
+                                    Object, Result, Method, Context))
+        return false;
+      Methods.push_back(Method);
+      return true;
+    }
     if (!Entry.isStruct() || Entry.getStructNumBases() || Entry.getStructNumFields() != 1)
       return false;
     const auto &Entries = Entry.getStructField(0);
@@ -9999,14 +10111,32 @@ std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
   if (!Parameter->isReferenceType())
     return std::nullopt;
   const auto Type = Parameter.getNonReferenceType();
-  if (Type.isVolatileQualified() || (!Type->isFunctionType() && !Type->isFunctionPointerType()))
+  const auto Result = Visit->getReturnType();
+  if (Type.isVolatileQualified() || !(Result->isIntegerType() || Result->isVoidType()))
     return std::nullopt;
-  const auto *Prototype = (Type->isFunctionType() ? Type : Type->getPointeeType())->getAs<FunctionProtoType>();
-  if (!Prototype || Prototype->isVariadic() || Prototype->getNumParams() != Count ||
-      !llvm::all_of(Prototype->param_types(), [](QualType Q) { return Q->isIntegerType(); }) ||
-      !(Prototype->getReturnType()->isIntegerType() || Prototype->getReturnType()->isVoidType()) ||
-      !Context.hasSameType(Prototype->getReturnType(), Visit->getReturnType()))
-    return std::nullopt;
+  const auto *Object = Type->getAsCXXRecordDecl();
+  std::vector<QualType> Inputs;
+  QualType ObjectType;
+  if (Object) {
+    const auto *Definition = Object->getDefinition();
+    const auto *Operand = Call->getArg(0);
+    if (!Definition || !Definition->getIdentifier() || Definition->isUnion() ||
+        Definition->isLambda() || Definition->isLocalClass() || Definition->isDynamicClass() ||
+        Definition->getNumBases() || !S.owns(SM, Definition->getLocation()) ||
+        !Operand->isLValue() || !Parameter->isLValueReferenceType() ||
+        !Context.hasSameType(Type, Operand->getType()))
+      return std::nullopt;
+    ObjectType = Type;
+  } else {
+    if (!Type->isFunctionType() && !Type->isFunctionPointerType())
+      return std::nullopt;
+    const auto *Prototype = (Type->isFunctionType() ? Type : Type->getPointeeType())->getAs<FunctionProtoType>();
+    if (!Prototype || Prototype->isVariadic() || Prototype->getNumParams() != Count ||
+        !llvm::all_of(Prototype->param_types(), [](QualType Q) { return Q->isIntegerType(); }) ||
+        !Context.hasSameType(Prototype->getReturnType(), Result))
+      return std::nullopt;
+    Inputs.assign(Prototype->param_type_begin(), Prototype->param_type_end());
+  }
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Visit->getBody());
   if (!Body || Body->size() != 3)
     return std::nullopt;
@@ -10046,11 +10176,12 @@ std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
         !variantForward(S, SM, AsVariant->getArg(0), VisitAlternative->getParamDecl(Arg), Context))
       return std::nullopt;
   }
-  if (!variantVisitIntegralMatrix(S, SM, Base, Capture, Variants, Prototype->param_types(),
-                                  Prototype->getReturnType(), Context))
+  std::vector<const CXXMethodDecl *> Methods;
+  if (!variantVisitIntegralMatrix(S, SM, Base, Capture, Variants, Inputs, ObjectType, Result,
+                                  Methods, Context))
     return std::nullopt;
-  std::vector<QualType> Inputs(Prototype->param_type_begin(), Prototype->param_type_end());
-  return UtilityVariantIntegralVisit{std::move(Variants), Parameter, std::move(Inputs), Prototype->getReturnType()};
+  return UtilityVariantIntegralVisit{
+      std::move(Variants), Parameter, std::move(Inputs), Result, std::move(Methods)};
 }
 
 std::optional<UtilityVariantZeroVisit> approvedUtilityVariantZeroVisit(
