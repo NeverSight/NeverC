@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.layout_variant_ordering_registered = cls.registered
+        cls.layout_variant_ordering_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_ordering_original = cls.adapter.restore_original_gtests(cls.layout_variant_ordering_registered,
+                                                                        cls.layout_variant_ordering_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_ordering_history(cls.layout_variant_ordering_registered)
         cls.layout_variant_any_allocator_equality_registered = cls.registered
         cls.layout_variant_any_allocator_equality_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.layout_variant_any_allocator_equality_original = cls.adapter.restore_original_gtests(cls.layout_variant_any_allocator_equality_registered,
@@ -2065,6 +2070,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_layout_variant_any_allocator_equality_history(self.layout_variant_any_allocator_equality_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.layout_variant_any_allocator_equality_registered, self.layout_variant_any_allocator_equality_suffix + b' ')
+
+
+    def test_layout_variant_ordering_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_ordering_original + self.layout_variant_ordering_suffix, self.layout_variant_ordering_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_ordering_history(self.layout_variant_ordering_original),
+                         self.layout_variant_any_allocator_equality_original)
+        output, evidence = self.extractor.extract(self.layout_variant_ordering_original, ['TranslateTest.CoreV2VariantOrderingIndexBeforeValueRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOrderingSignedValuesAndDuplicateTypesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOrderingOnceOnlyConstOperandsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOrderingRenamedPolicyRejected', 'TranslateTest.CoreV2VariantOrderingTemporaryOperandRejected', 'TranslateTest.CoreV2VariantOrderingFloatingAlternativeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8240)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-ordering-index-before-value', output)
+        self.assertIn(b'variant-ordering-once-only-const-operands', output)
+
+    def test_layout_variant_ordering_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_ordering_history(self.layout_variant_ordering_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_ordering_registered, self.layout_variant_ordering_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -386547,6 +386547,127 @@ bool equal(const Value& a, const Value& b) { return a == b; }
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2VariantOrderingIndexBeforeValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-ordering-index-before-value.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  using Value = std::variant<int, short>;
+  Value left(std::in_place_index<0>, 1000);
+  Value right(std::in_place_index<1>, short(-9));
+  if (!(left < right) || !(left <= right) || left > right || left >= right)
+    return 1;
+  if (right < left || right <= left || !(right > left) || !(right >= left))
+    return 2;
+  left.emplace<1>(short(-9));
+  return left < right || left > right || !(left <= right) || !(left >= right);
+}
+)r19containers");
+  const auto Output = tmpFile("variant-ordering-index-before-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-ordering-index-before-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantOrderingSignedValuesAndDuplicateTypesRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-ordering-signed-values-and-duplicate-types.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  using Value = std::variant<int, int>;
+  const Value lower_index(std::in_place_index<0>, 1);
+  Value a(std::in_place_index<1>, -6);
+  Value b(std::in_place_index<1>, 1);
+  if (!(lower_index < a) || !(a < b) || !(b > a))
+    return 1;
+  b.emplace<1>(-9);
+  return a <= b || !(a >= b);
+}
+)r19containers");
+  const auto Output = tmpFile("variant-ordering-signed-values-and-duplicate-types.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-ordering-signed-values-and-duplicate-types" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantOrderingOnceOnlyConstOperandsRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-ordering-once-only-const-operands.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<short, int>;
+int left_reads, right_reads;
+const Value& left(const Value& v) { ++left_reads; return v; }
+const Value& right(const Value& v) { ++right_reads; return v; }
+int main() {
+  const Value a(std::in_place_index<0>, short(3));
+  const Value b(std::in_place_index<0>, short(7));
+  if (!std::operator<=(left(a), right(b))) return 1;
+  if (std::operator>(left(a), right(a))) return 2;
+  return left_reads != 2 || right_reads != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-ordering-once-only-const-operands.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-ordering-once-only-const-operands" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantOrderingRenamedPolicyRejected) {
+  const auto Source = tmpFile("variant-ordering-renamed-policy.cpp");
+  writeFile(Source, R"r19containers(#define less altered_variant_less
+#include <variant>
+#undef less
+using Value = std::variant<short, int>;
+bool compare(const Value& a, const Value& b) { return a < b; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantOrderingTemporaryOperandRejected) {
+  const auto Source = tmpFile("variant-ordering-temporary-operand.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<short, int>;
+bool compare(const Value& a) { return a <= Value(3); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantOrderingFloatingAlternativeRejected) {
+  const auto Source = tmpFile("variant-ordering-floating-alternative.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int, double>;
+bool compare(const Value& a, const Value& b) { return a >= b; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

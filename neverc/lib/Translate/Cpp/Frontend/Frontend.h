@@ -3459,11 +3459,11 @@ struct UtilityVariantIntegralVisit {
 std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-struct UtilityVariantEquality {
+struct UtilityVariantComparison {
   UtilityVariantRecord Variant;
-  bool Equal;
+  clang::BinaryOperatorKind Operation;
 };
-std::optional<UtilityVariantEquality> approvedUtilityVariantEquality(
+std::optional<UtilityVariantComparison> approvedUtilityVariantComparison(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UtilityVariantZeroVisit {

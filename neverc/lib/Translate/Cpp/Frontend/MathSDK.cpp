@@ -10361,6 +10361,22 @@ std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
       std::move(Variants), Parameter, std::move(Inputs), Result, std::move(Methods)};
 }
 
+struct VariantComparisonOperator {
+  OverloadedOperatorKind Overload;
+  BinaryOperatorKind Operation;
+  llvm::StringLiteral Name;
+  llvm::StringLiteral Policy;
+};
+
+static constexpr VariantComparisonOperator VariantComparisonOperators[] = {
+    {OO_EqualEqual, BO_EQ, "operator==", "equal_to"},
+    {OO_ExclaimEqual, BO_NE, "operator!=", "not_equal_to"},
+    {OO_Less, BO_LT, "operator<", "less"},
+    {OO_Greater, BO_GT, "operator>", "greater"},
+    {OO_LessEqual, BO_LE, "operator<=", "less_equal"},
+    {OO_GreaterEqual, BO_GE, "operator>=", "greater_equal"},
+};
+
 static bool variantComparisonQuery(const State &S, const SourceManager &SM,
     const Expr *Test, const ParmVarDecl *Operand, const UtilityVariantRecord &V, bool Valueless,
     const ASTContext &Context) {
@@ -10378,6 +10394,50 @@ static bool variantComparisonBranch(const IfStmt *Branch, bool Expected) {
   const auto *Value = Statement ? Statement->getRetValue() : nullptr;
   const auto *Result = Value ? dyn_cast<CXXBoolLiteralExpr>(Value->IgnoreParenImpCasts()) : nullptr;
   return Result && Result->getValue() == Expected;
+}
+
+static bool variantComparisonIndexBranch(const State &S, const SourceManager &SM,
+    const Stmt *Statement, const FunctionDecl *Comparison, const UtilityVariantRecord &V,
+    BinaryOperatorKind Opcode, bool Expected, const ASTContext &Context) {
+  const auto *Branch = dyn_cast<IfStmt>(Statement);
+  if (!variantComparisonBranch(Branch, Expected))
+    return false;
+  const auto *Indices = dyn_cast<BinaryOperator>(Branch->getCond()->IgnoreParenImpCasts());
+  return Indices && Indices->getOpcode() == Opcode &&
+         variantComparisonQuery(S, SM, Indices->getLHS(), Comparison->getParamDecl(0), V, false, Context) &&
+         variantComparisonQuery(S, SM, Indices->getRHS(), Comparison->getParamDecl(1), V, false, Context);
+}
+
+static bool variantComparisonStateBranch(const State &S, const SourceManager &SM,
+    const Stmt *Statement, const ParmVarDecl *Operand, const UtilityVariantRecord &V,
+    bool Expected, const ASTContext &Context) {
+  const auto *Branch = dyn_cast<IfStmt>(Statement);
+  return variantComparisonBranch(Branch, Expected) &&
+         variantComparisonQuery(S, SM, Branch->getCond(), Operand, V, true, Context);
+}
+
+static bool variantComparisonBranches(const State &S, const SourceManager &SM, const FunctionDecl *F,
+    const CompoundStmt *Body, const UtilityVariantRecord &V, BinaryOperatorKind Opcode,
+    const ASTContext &Context) {
+  const bool Equality = Opcode == BO_EQ || Opcode == BO_NE;
+  if (!Body || Body->size() != (Equality ? 4u : 6u))
+    return false;
+  const auto *Using = dyn_cast<DeclStmt>(Body->body_front());
+  if (!Using || !Using->isSingleDecl() || !isa<UsingDecl>(Using->getSingleDecl()) ||
+      !variantDeclaration(S, SM, Using->getSingleDecl()))
+    return false;
+  const auto Branch = std::next(Body->body_begin());
+  if (Equality)
+    return variantComparisonIndexBranch(S, SM, Branch[0], F, V, BO_NE, Opcode == BO_NE, Context) &&
+           variantComparisonStateBranch(S, SM, Branch[1], F->getParamDecl(0),
+                                        V, Opcode == BO_EQ, Context);
+  const bool Ascending = Opcode == BO_LT || Opcode == BO_LE;
+  const bool IncludesEqual = Opcode == BO_LE || Opcode == BO_GE;
+  const unsigned First = Ascending == IncludesEqual ? 0 : 1;
+  return variantComparisonStateBranch(S, SM, Branch[0], F->getParamDecl(First), V, IncludesEqual, Context) &&
+         variantComparisonStateBranch(S, SM, Branch[1], F->getParamDecl(1 - First), V, !IncludesEqual, Context) &&
+         variantComparisonIndexBranch(S, SM, Branch[2], F, V, Ascending ? BO_LT : BO_GT, true, Context) &&
+         variantComparisonIndexBranch(S, SM, Branch[3], F, V, Ascending ? BO_GT : BO_LT, false, Context);
 }
 
 static const CXXRecordDecl *variantEmptyPolicy(const State &S, const SourceManager &SM,
@@ -10398,7 +10458,8 @@ static const CXXRecordDecl *variantEmptyPolicy(const State &S, const SourceManag
 }
 
 static bool variantComparisonLeaf(const State &S, const SourceManager &SM, const CallExpr *Target,
-    const CXXRecordDecl *Visitor, QualType Element, bool Equal, const ASTContext &Context) {
+    const CXXRecordDecl *Visitor, QualType Element, const VariantComparisonOperator &Relation,
+    const ASTContext &Context) {
   const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(Target);
   const auto *Convert = Operation ? variantVisitDefinition(
       S, SM, Operation->getDirectCallee(), "operator()", 2, "__convert_to_bool") : nullptr;
@@ -10413,7 +10474,7 @@ static bool variantComparisonLeaf(const State &S, const SourceManager &SM, const
   const auto *Call = dyn_cast_or_null<CXXOperatorCallExpr>(variantVisitCall(variantVisitReturn(Body)));
   if (!Call || Call->getOperator() != OO_Call || Call->getNumArgs() != 3)
     return false;
-  const auto Name = Equal ? "equal_to" : "not_equal_to";
+  const auto Name = Relation.Policy;
   constexpr llvm::StringLiteral Header = "__functional/operations.h";
   const auto *Comparator = variantEmptyPolicy(S, SM, Call->getArg(0), Name, Header);
   const auto *Specialized = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Comparator);
@@ -10434,13 +10495,14 @@ static bool variantComparisonLeaf(const State &S, const SourceManager &SM, const
   }
   const auto *Value = variantReturned(Policy);
   const auto *Compare = Value ? dyn_cast<BinaryOperator>(Value->IgnoreParenImpCasts()) : nullptr;
-  return Compare && Compare->getOpcode() == (Equal ? BO_EQ : BO_NE) &&
+  return Compare && Compare->getOpcode() == Relation.Operation &&
          variantForward(S, SM, Compare->getLHS(), Policy->getParamDecl(0), Context) &&
          variantForward(S, SM, Compare->getRHS(), Policy->getParamDecl(1), Context);
 }
 
 static bool variantComparisonDiagonal(const State &S, const SourceManager &SM, const FunctionDecl *Base,
-    const FieldDecl *Capture, const CXXRecordDecl *Visitor, const UtilityVariantRecord &V, bool Equal,
+    const FieldDecl *Capture, const CXXRecordDecl *Visitor, const UtilityVariantRecord &V,
+    const VariantComparisonOperator &Relation,
     const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Base->getBody());
   const auto *Matrix = Body && Body->size() == 2 ? variantVisitVariable(Body->body_front()) : nullptr;
@@ -10478,22 +10540,23 @@ static bool variantComparisonDiagonal(const State &S, const SourceManager &SM, c
     const unsigned Indices[] = {I, I};
     const auto *Target = variantVisitDispatchTarget(S, SM, Entries.getArrayInitializedElt(I),
                                                      Capture, Variants, Indices, Context);
-    if (!variantComparisonLeaf(S, SM, Target, Visitor, V.Alternatives[I]->getType(), Equal, Context))
+    if (!variantComparisonLeaf(S, SM, Target, Visitor, V.Alternatives[I]->getType(), Relation, Context))
       return false;
   }
   return true;
 }
 
-std::optional<UtilityVariantEquality> approvedUtilityVariantEquality(const State &S, const SourceManager &SM,
+std::optional<UtilityVariantComparison> approvedUtilityVariantComparison(const State &S, const SourceManager &SM,
     const CallExpr *Call, const ASTContext &Context) {
   const auto *Selected = Call ? Call->getDirectCallee() : nullptr;
   if (!S.coreV2() || !Selected || Call->getNumArgs() != 2 || !directFunctionReference(Call))
     return std::nullopt;
-  const auto Operator = Selected->getOverloadedOperator();
-  if (Operator != OO_EqualEqual && Operator != OO_ExclaimEqual)
+  const auto Relation = llvm::find_if(VariantComparisonOperators, [&](const VariantComparisonOperator &Item) {
+    return Selected->getOverloadedOperator() == Item.Overload;
+  });
+  if (Relation == std::end(VariantComparisonOperators))
     return std::nullopt;
-  const bool Equal = Operator == OO_EqualEqual;
-  const auto *F = variantVisitDefinition(S, SM, Selected, Equal ? "operator==" : "operator!=", 2);
+  const auto *F = variantVisitDefinition(S, SM, Selected, Relation->Name, 2);
   if (!F || !F->getReturnType()->isBooleanType())
     return std::nullopt;
   const auto Type = Call->getArg(0)->getType();
@@ -10510,20 +10573,7 @@ std::optional<UtilityVariantEquality> approvedUtilityVariantEquality(const State
         !Context.hasSameType(F->getParamDecl(I)->getType(), ConstRef))
       return std::nullopt;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
-  if (!Body || Body->size() != 4)
-    return std::nullopt;
-  const auto *Using = dyn_cast<DeclStmt>(Body->body_front());
-  const auto *Differ = dyn_cast<IfStmt>(*std::next(Body->body_begin()));
-  const auto *Valueless = dyn_cast<IfStmt>(*std::next(Body->body_begin(), 2));
-  if (!Using || !Using->isSingleDecl() || !isa<UsingDecl>(Using->getSingleDecl()) ||
-      !variantDeclaration(S, SM, Using->getSingleDecl()) ||
-      !variantComparisonBranch(Differ, !Equal) || !variantComparisonBranch(Valueless, Equal))
-    return std::nullopt;
-  const auto *Indices = dyn_cast<BinaryOperator>(Differ->getCond()->IgnoreParenImpCasts());
-  if (!Indices || Indices->getOpcode() != BO_NE ||
-      !variantComparisonQuery(S, SM, Indices->getLHS(), F->getParamDecl(0), *V, false, Context) ||
-      !variantComparisonQuery(S, SM, Indices->getRHS(), F->getParamDecl(1), *V, false, Context) ||
-      !variantComparisonQuery(S, SM, Valueless->getCond(), F->getParamDecl(0), *V, true, Context))
+  if (!variantComparisonBranches(S, SM, F, Body, *V, Relation->Operation, Context))
     return std::nullopt;
   const auto *Value = variantVisitCall(variantVisitReturn(Body));
   const auto *Visit = Value && Value->getNumArgs() == 4 ? variantVisitDefinition(
@@ -10553,9 +10603,9 @@ std::optional<UtilityVariantEquality> approvedUtilityVariantEquality(const State
         !variantForward(S, SM, Impl->getBase(), Alt->getParamDecl(Arg), Context))
       return std::nullopt;
   }
-  if (!variantComparisonDiagonal(S, SM, Base, Capture, Visitor, *V, Equal, Context))
+  if (!variantComparisonDiagonal(S, SM, Base, Capture, Visitor, *V, *Relation, Context))
     return std::nullopt;
-  return UtilityVariantEquality{std::move(*V), Equal};
+  return UtilityVariantComparison{std::move(*V), Relation->Operation};
 }
 
 std::optional<UtilityVariantZeroVisit> approvedUtilityVariantZeroVisit(

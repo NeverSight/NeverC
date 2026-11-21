@@ -17989,3 +17989,11 @@ Checked `std::variant` objects with admitted integral alternatives support
 including when the variant repeats an alternative type. For a shared live
 index it compares the values in that alternative. Each operand expression
 executes once.
+
+## Integral variant ordering
+
+Checked lvalue variants with admitted integral alternatives support
+`operator<`, `operator<=`, `operator>` and `operator>=`. Valueless variants
+sort before live variants. Live variants with different active indexes
+compare by index. A shared live index compares the selected integral
+values. Each operand expression is evaluated once.
