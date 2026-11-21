@@ -8604,6 +8604,12 @@ static const CXXRecordDecl *anyIntegerHandlerOwner(const State &S, const SourceM
   return Handler;
 }
 
+static std::optional<UtilityAllocatorConstructCall>
+utilityAllocatorConstructCall(const State &S, const SourceManager &SM,
+                              const CallExpr *Call, bool Traits,
+                              const FunctionDecl *AnyHandler,
+                              const ASTContext &Context);
+
 static const CXXMethodDecl *anyIntegerHandlerInstallation(const State &S, const SourceManager &SM,
     const CallExpr *Call, const CXXRecordDecl *Any, unsigned Inputs, const ASTContext &Context) {
   const auto *F = Call && Call->getNumArgs() == Inputs + 1
@@ -8633,7 +8639,7 @@ static const CXXMethodDecl *anyIntegerHandlerInstallation(const State &S, const 
       !anySelectedVariable(Build->getArg(0), Allocate) || !anySelectedVariable(Build->getArg(1), Slot) ||
       !Install || Install->getOpcode() != BO_Assign || !Return)
     return nullptr;
-  const auto BuildProof = approvedUtilityAllocatorConstructCall(S, SM, Build, true, Context);
+  const auto BuildProof = utilityAllocatorConstructCall(S, SM, Build, true, F, Context);
   if (!BuildProof || !Context.hasSameType(BuildProof->ElementType, Context.IntTy))
     return nullptr;
   for (unsigned I = 0; I < Inputs; ++I)
@@ -8875,7 +8881,10 @@ static bool anyIntegerDispatch(const State &S, const SourceManager &SM, const CX
   auto It = Cases->body_begin();
   while (It != Cases->body_end()) {
     const auto *C = dyn_cast<CaseStmt>(*It++);
-    const auto *Ref = C ? anyReference(C->getLHS()) : nullptr;
+    const auto *CaseValue = C ? C->getLHS() : nullptr;
+    if (const auto *Constant = dyn_cast_or_null<ConstantExpr>(CaseValue))
+      CaseValue = Constant->getSubExpr();
+    const auto *Ref = anyReference(CaseValue);
     const auto *Action = Ref ? dyn_cast<EnumConstantDecl>(Ref->getDecl()) : nullptr;
     if (!Action || C->getRHS() || !anyDeclaration(S, SM, Action) ||
         !Context.hasSameType(Action->getType(), Handle->getParamDecl(0)->getType()))
@@ -49407,11 +49416,11 @@ approvedUtilityAllocatorHeapCall(const State &S, const SourceManager &SM,
                                   Allocate && Method->getNumParams() == 3};
 }
 
-std::optional<UtilityAllocatorConstructCall>
-approvedUtilityAllocatorConstructCall(const State &S,
-                                      const SourceManager &SM,
-                                      const CallExpr *Call, bool Traits,
-                                      const ASTContext &Context) {
+static std::optional<UtilityAllocatorConstructCall>
+utilityAllocatorConstructCall(const State &S, const SourceManager &SM,
+                              const CallExpr *Call, bool Traits,
+                              const FunctionDecl *AnyHandler,
+                              const ASTContext &Context) {
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
   if (!Call || !Method || !Call->getType()->isVoidType() ||
@@ -49436,6 +49445,16 @@ approvedUtilityAllocatorConstructCall(const State &S,
   const auto TraitsRecord = approvedUtilityAllocatorTraitsRecord(
       S, SM, Method->getParent(), Context);
   const auto *Primary = Method->getPrimaryTemplate();
+  // The other caller binds this expression to the checked __create body.
+  // The ordinary entry still requires a reference spelled in owned source.
+  const auto *Reference = AnyHandler
+      ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call))
+      : approvedUtilityReference(S, SM, Call, Method);
+  const bool ExactReference = Reference && Reference->getDecl() == Method &&
+      (!AnyHandler ||
+       (anyPinnedDefinition(S, SM, AnyHandler, "__create", AnyHandler->getNumParams()) == AnyHandler &&
+        anyIntegerHandlerOwner(S, SM, AnyHandler, Context) &&
+        cstddefOrigin(S, SM, Reference->getExprLoc(), "libcxx", "any")));
   if (!TraitsRecord || !Primary || !Method->isStatic() ||
       !Method->getIdentifier() || Method->getName() != "construct" ||
       Method->isVariadic() || !Method->isInlined() || !Method->hasBody() ||
@@ -49446,7 +49465,7 @@ approvedUtilityAllocatorConstructCall(const State &S,
                      "__memory/allocator_traits.h") ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__memory/allocator_traits.h") ||
-      !approvedUtilityReference(S, SM, Call, Method) ||
+      !ExactReference ||
       !utilityAllocatorForwardingArguments(Call, Method, 2, Context))
     return std::nullopt;
   const auto AllocatorType =
@@ -49497,6 +49516,14 @@ approvedUtilityAllocatorConstructCall(const State &S,
                              ForwardMethod->getParamDecl(I - 1)->getType()))
       return std::nullopt;
   return Info;
+}
+
+std::optional<UtilityAllocatorConstructCall>
+approvedUtilityAllocatorConstructCall(const State &S,
+                                      const SourceManager &SM,
+                                      const CallExpr *Call, bool Traits,
+                                      const ASTContext &Context) {
+  return utilityAllocatorConstructCall(S, SM, Call, Traits, nullptr, Context);
 }
 
 static bool utilityComparableValue(const State &S, const SourceManager &SM,
