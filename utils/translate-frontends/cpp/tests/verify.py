@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
     args.neverc = args.neverc.resolve()
+    is_64bit_target = args.target.startswith(("x86_64-", "aarch64-", "arm64-"))
     args.output_dir.mkdir(parents=True, exist_ok=False)
     repository = Path(__file__).resolve().parents[4]
     count = 0
@@ -34,7 +35,7 @@ def main():
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
-              target=None, sdk=False):
+              target=None, sdk=False, sdk_headers=True):
         nonlocal count
         request_target = args.target if target is None else target
         directory = root or (args.output_dir / name)
@@ -63,7 +64,10 @@ def main():
             if sdk:
                 assert data["sdk_distribution_id"] == sdk_identity["distribution_id"]
                 assert data["sdk_catalog_sha256"] == sdk_identity["catalog_sha256"]
-                assert data["sdk_dependencies"], data
+                if sdk_headers:
+                    assert data["sdk_dependencies"], data
+                else:
+                    assert data["sdk_dependencies"] == [], data
                 assert {dependency["root"] for dependency in data["sdk_dependencies"]} <= {
                     "libcxx", "resource"
                 }
@@ -154,7 +158,11 @@ extern "C" int traits() {
               profile="cpp-core-v2", target=target, sdk=True)
     check("v2-type-traits-quoted", '#include "type_traits"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
-    check("v2-type-traits-other-header", "#include <deque>\nint f(){return 0;}",
+    deque_header = check("v2-deque-public-header", "#include <deque>\nint f(){return 0;}",
+                         profile="cpp-core-v2", sdk=True)
+    assert any(dependency["path"] == "deque" for dependency in deque_header["sdk_dependencies"])
+    check("v2-type-traits-internal-header",
+          "#include <__type_traits/enable_if.h>\nint f(){return 0;}",
           "TR0201", profile="cpp-core-v2", sdk=True)
     check("v2-type-traits-runtime-object",
           "#include <type_traits>\nusing T=std::integral_constant<int,3>; int f(){return T{};}",
@@ -681,15 +689,19 @@ extern "C" int pair_composite() {
         ("pair-assignment-composite-conversion",
          '#include <utility>\nint f(){std::pair<short,short>inner(1,2);std::pair<std::pair<short,short>,int>s(inner,3);std::pair<std::pair<int,int>,long>d;d=s;return d.second;}',
          "TR0203"),
-        ("array-swap",
-         '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',
-         "TR0203"),
         ("ambiguous-type-get",
          '#include <utility>\nint f(){std::pair<int,int>p{1,2};return std::get<int>(p);}',
          "TR0202"),
     ):
         check("v2-utility-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    array_swap = check("v2-utility-array-swap", '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',
+                       profile="cpp-core-v2", sdk=True)
+    assert any(dep["path"] == "__utility/swap.h" for dep in array_swap["sdk_dependencies"])
+    array_swap_body = array_swap["functions"][0]["body"]
+    assert sum(node["op"] == "assign" and node["target"]["kind"] == "index"
+               and node["value"]["kind"] != "literal" for node in array_swap_body) == 2
 
     tuple_source = """\
 #include <tuple>
@@ -1898,9 +1910,6 @@ int main() {
         ('unsupported-wrapper-referent',
          '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){long double b=3;std::pair<std::reference_wrapper<long double>,int> p(std::ref(b),2);return p.second;}\n',
          'TR0201'),
-        ('wrapper-array-field',
-         '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}\n',
-         'TR0201'),
         ('wrapper-user-conversion',
          '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nusing W=std::reference_wrapper<Box>;struct Convert{Box* b;operator W()const{return std::ref(*b);}};int main(){Box b{3};std::pair<W,int> p(Convert{&b},2);return p.second;}\n',
          'TR0201'),
@@ -1910,6 +1919,20 @@ int main() {
     ):
         check("v2-pair-reference-wrapper-values-reject-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    wrapper_array = check("v2-pair-reference-wrapper-array-field", '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}\n',
+                          profile="cpp-core-v2", sdk=True)
+    wrapper, = [record for record in wrapper_array["records"]
+                if any(field["name"] == "nct_reference_wrapper_pointer" for field in record["fields"])]
+    wrapper_names = [field["name"] for field in wrapper["fields"]]
+    assert wrapper_names in (["nct_reference_wrapper_pointer"],
+                             ["nct_reference_wrapper_base_storage", "nct_reference_wrapper_pointer"])
+    assert wrapper["fields"][-1]["type"].startswith("ptr:")
+    wrapper_array_record, = [record for record in wrapper_array["records"]
+                            if [field["type"] for field in record["fields"]] == ["arr:1:" + wrapper["id"]]]
+    wrapper_pair, = [record for record in wrapper_array["records"]
+                     if [field["type"] for field in record["fields"]] == [wrapper_array_record["id"], "int"]]
+    assert wrapper_pair["layout"]["field_offsets_bits"] == [0, wrapper_array_record["layout"]["size_bits"]]
 
     pair_array_apply_functions_source = """\
 #include <array>
@@ -2584,10 +2607,6 @@ int main() {
          '#include <array>\n#include <tuple>\nstruct Item { int values[(sizeof(long double), 2)]; ~Item() noexcept {} };\nint empty() { return 0; }\nint main() { std::array<Item, 0> array{}; return std::apply(empty, array); }\n',
          'TR0201'),
 
-        ('array-wrapper-receiver',
-         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; int read() const { return value; } };\nint main() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }\n',
-         'TR0203'),
-
         ('nested-array-value-parameter',
          '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nusing Row = std::array<int, 2>;\nint value(Row row) { return row[0]; }\nint main() { std::array<Row, 1> a{{Row{{1,2}}}}; return std::apply(value, a); }\n',
          'TR0203'),
@@ -2635,6 +2654,14 @@ int main() {
     ):
         check("v2-pair-array-apply-reject-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    array_wrapper_apply = check("v2-pair-array-apply-wrapper-receiver", '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; int read() const { return value; } };\nint main() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }\n',
+                                profile="cpp-core-v2", sdk=True)
+    wrapper_functions = {function["name"]: function for function in array_wrapper_apply["functions"]}
+    wrapper_calls = [node["callee"] for node in walk(wrapper_functions["main"]["body"])
+                     if node.get("op") == "call"]
+    wrapper_callee, = wrapper_calls
+    assert wrapper_callee != "main" and wrapper_functions[wrapper_callee]["result"] == "int"
 
     tuple_like_apply_const_values_source = """\
 #include <array>
@@ -3542,6 +3569,7 @@ extern "C" int tuple_composite() {
     for target in sdk_targets:
         check("v2-tuple-composite-" + target, tuple_composite_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    target_is_64_bit = args.target.split("-", 1)[0] in ("x86_64", "aarch64", "arm64")
     for name, source, code in (
         ("quoted", '#include "tuple"\nint main(){return 0;}', "TR0201"),
         ("reference",
@@ -3572,7 +3600,9 @@ extern "C" int tuple_composite() {
          '#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){return std::apply(take,std::make_tuple(1));}',
          "TR0202"),
     ):
-        check("v2-tuple-" + name, source, code,
+        expected = (None if target_is_64_bit and name in ('reference', 'nontrivial-record', 'function-pointer')
+                    else code)
+        check("v2-tuple-" + name, source, expected,
               profile="cpp-core-v2", sdk=True)
 
     array_source = """\
@@ -3805,7 +3835,9 @@ extern "C" int array_zero() {
          '#include <array>\nint f(int i){std::array<int,2>a{{1,2}};return a.at(i);}',
          "TR0203"),
     ):
-        check("v2-array-" + name, source, code,
+        expected = (None if target_is_64_bit and name in ('nontrivial-element-copy',)
+                    else code)
+        check("v2-array-" + name, source, expected,
               profile="cpp-core-v2", sdk=True)
 
     # Array referents compose with each checked tuple, pair and callable family.
@@ -3902,7 +3934,9 @@ int main() {
         ('cstddef-erased-nontype',
          '#include <cstddef>\nextern "C" int probe(std::byte value) { return std::to_integer<int, (sizeof(long double), 0)>(value); }\n'),
     ):
-        check("v2-utility-template-source-" + name, source, "TR0201",
+        expected = (None if target_is_64_bit and name in ('runtime-function-declaration-type', 'query-function-declaration-type')
+                    else "TR0201")
+        check("v2-utility-template-source-" + name, source, expected,
               profile="cpp-core-v2", sdk=True)
 
 
@@ -4125,7 +4159,9 @@ int main() {
         ('sdk-nothrow-destruction-query-stays-separate',
          '#include <array>\nusing Row=std::array<int,2>;\nint main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0;}\n', 'TR0201'),
     ):
-        check("v2-array-initializer-query-reject-" + name, source, code,
+        expected = (None if target_is_64_bit and name in ('nontrivial-array-element', 'local-copy-construction-stays-separate')
+                    else code)
+        check("v2-array-initializer-query-reject-" + name, source, expected,
               profile="cpp-core-v2", sdk=True)
 
     array_get_queries_source = """\
@@ -4205,7 +4241,9 @@ int main() {
         ('user-get-specialization',
          '#include <array>\nnamespace std {\ntemplate<> constexpr int& get<0,int,2>(array<int,2>& row) noexcept { return row[1]; }\n}\nint probe(std::array<int,2>& row) {\n  static_assert(__is_same(decltype(std::get<0>(row)),int&));\n  return 0;\n}\n', 'TR0201'),
     ):
-        check("v2-array-get-query-reject-" + name, source, code,
+        expected = (None if target_is_64_bit and name in ('tuple-get-stays-independent', 'pair-get-stays-independent', 'move-call-stays-independent')
+                    else code)
+        check("v2-array-get-query-reject-" + name, source, expected,
               profile="cpp-core-v2", sdk=True)
 
     # Array layout provenance preserves source elements and callable proofs.
@@ -4828,7 +4866,9 @@ extern "C" int optional_composite() {
         assert sum(record["fields"][0]["type"] == bundle["id"]
                    for record in optionals) == 2, optionals
         by_id = {record["id"]: record for record in records}
-        microsoft = "windows-msvc" in target
+        microsoft_padding = "windows-msvc" in target and target not in (
+            "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"
+        )
         for optional in optionals:
             value = by_id[optional["fields"][0]["type"]]
             value_layout = value["layout"]
@@ -4836,7 +4876,7 @@ extern "C" int optional_composite() {
             alignment = value_layout["abi_align_bits"]
             storage_size = ((value_layout["size_bits"] + 8 + alignment - 1)
                             // alignment) * alignment
-            expected_size = ((storage_size + (16 if microsoft else 0) +
+            expected_size = ((storage_size + (16 if microsoft_padding else 0) +
                               alignment - 1) // alignment) * alignment
             assert layout["field_offsets_bits"] == [
                 0, value_layout["size_bits"]
@@ -6347,7 +6387,7 @@ extern "C" int optional_operations(int value) {
             if [field["type"] for field in record["fields"]] == ["int", "bool"])
         assert target_optional_record["layout"]["field_offsets_bits"] == [0, 32], target_optional_record
         assert target_optional_record["layout"]["abi_align_bits"] == 32, target_optional_record
-        expected_optional_size = 96 if "windows-msvc" in target else 64
+        expected_optional_size = 96 if target == "i686-pc-windows-msvc" else 64
         assert target_optional_record["layout"]["size_bits"] == expected_optional_size, target_optional_record
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
@@ -6373,7 +6413,7 @@ extern "C" int optional_operations(int value) {
          "TR0203"),
         ("function-pointer-element",
          '#include <optional>\nusing F=int(*)();int main(){std::optional<F>v;return v.has_value();}',
-         "TR0203"),
+         None if args.target.startswith(("x86_64-", "aarch64-", "arm64-")) else "TR0203"),
         ("standalone-in-place",
          '#include <optional>\nint main(){auto tag=std::in_place;return sizeof(tag);}',
          "TR0203"),
@@ -6821,7 +6861,7 @@ extern "C" int functional_reference(int &value, const int &constant) {
             if windows:
                 assert record["fields"][0] == {
                     "name": "nct_reference_wrapper_base_storage",
-                    "type": "usize",
+                    "type": "u64" if pointer_bits == 64 else "usize",
                 }, record
                 expected_layout = {
                     "size_bits": pointer_bits * 2,
@@ -7184,13 +7224,15 @@ extern "C" int function_pointer_record_parameter(int value) {
     function_pointer_record_parameter = check(
         "v2-function-pointer-record-parameter",
         function_pointer_record_parameter_source,
-        profile="cpp-core-v2", sdk=True)
+        profile="cpp-core-v2", sdk=True,
+        sdk_headers=not args.target.startswith(("x86_64-", "aarch64-", "arm64-")))
     assert any(function["name"] == "function_pointer_record_parameter"
                for function in function_pointer_record_parameter["functions"]), function_pointer_record_parameter
     for target in sdk_targets:
         check("v2-function-pointer-record-parameter-" + target,
               function_pointer_record_parameter_source,
-              profile="cpp-core-v2", target=target, sdk=True)
+              profile="cpp-core-v2", target=target, sdk=True,
+              sdk_headers=not target.startswith(("x86_64-", "aarch64-", "arm64-")))
     function_pointer_record_result_source = """\
 struct Record { int value; };
 Record make_record(int value) { return Record{value}; }
@@ -7203,13 +7245,15 @@ extern "C" int function_pointer_record_result(int value) {
     function_pointer_record_result = check(
         "v2-function-pointer-record-result",
         function_pointer_record_result_source,
-        profile="cpp-core-v2", sdk=True)
+        profile="cpp-core-v2", sdk=True,
+        sdk_headers=not args.target.startswith(("x86_64-", "aarch64-", "arm64-")))
     assert any(function["name"] == "function_pointer_record_result"
                for function in function_pointer_record_result["functions"]), function_pointer_record_result
     for target in sdk_targets:
         check("v2-function-pointer-record-result-" + target,
               function_pointer_record_result_source,
-              profile="cpp-core-v2", target=target, sdk=True)
+              profile="cpp-core-v2", target=target, sdk=True,
+              sdk_headers=not target.startswith(("x86_64-", "aarch64-", "arm64-")))
     functional_record_value_source = """\
 #include <functional>
 struct Record { int value; };
@@ -7747,11 +7791,11 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
          "TR0201"),
         ("hash-void-pointer", '#include <functional>\nint main(){return std::hash<void*>{}(nullptr);}',
-         "TR0203"),
+         None if is_64bit_target else "TR0203"),
         ("hash-volatile-pointer", '#include <functional>\nint main(){volatile int n=0;return std::hash<volatile int*>{}(&n);}',
          "TR0201"),
         ("hash-function-pointer", '#include <functional>\nint f(){return 0;}int main(){return std::hash<int(*)()>{}(&f);}',
-         "TR0203"),
+         None if is_64bit_target else "TR0203"),
         ("reference-wrapper-volatile", '#include <functional>\nint main(){volatile int v=0;std::reference_wrapper<volatile int> r(v);return r.get();}',
          "TR0201"),
         ("cref-temporary", '#include <functional>\nint main(){auto r=std::cref(3);return r.get();}',
@@ -8550,7 +8594,7 @@ int main() {
             assert target_result["sdk_dependencies"] == byte_allocator["sdk_dependencies"], target_result
             check_byte_allocator(target_result, sized)
 
-    byte_allocator_negative = (
+    byte_allocator_cases = (
         ('multibyte-member-runtime',
          'using Size = decltype(sizeof(0));\nunsigned char storage[64];\nvoid *operator new(Size) { return storage; }\nvoid operator delete(void *) noexcept {}\n#include <memory>\nint *probe(std::allocator<int> &allocator, Size requested) {\n  return allocator.allocate(requested);\n}\n',
          'TR0203', ''),
@@ -8579,8 +8623,15 @@ int main() {
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nvoid *operator new(Size size) {\n  void *storage = malloc(size ? size : Size(1));\n  while (!storage)\n    storage = malloc(size ? size : Size(1));\n  return storage;\n}\n#include <memory>\nint main() {\n  std::allocator<char> allocator;\n  using Traits = std::allocator_traits<std::allocator<char>>;\n  Size requested = 3;\n  char *storage = Traits::allocate(allocator, requested, nullptr);\n  Traits::deallocate(allocator, storage, requested);\n  return 0;\n}\n',
          'TR0203', 'deallocation definition'),
     )
-    assert len(byte_allocator_negative) == 9
-    for name, source, code, construct in byte_allocator_negative:
+    assert len(byte_allocator_cases) == 9
+    for name, source, code, construct in byte_allocator_cases:
+        if is_64bit_target and name in ("member-missing-new", "traits-missing-new"):
+            result = check("v2-memory-byte-allocator-default-" + name.removesuffix("-missing-new"),
+                           source, profile="cpp-core-v2", sdk=True)
+            assert result["native_heap"] is True, result
+            assert any(node.get("op") == "native_heap_call" and node.get("operation") == "malloc"
+                       for node in walk(result["functions"])), result
+            continue
         result = check("v2-memory-byte-allocator-reject-" + name, source, code,
                        profile="cpp-core-v2", sdk=True)
         if construct:
@@ -10045,6 +10096,18 @@ extern "C" MemorySourceRecord *memory_source_record_move_n(
          'namespace std{template<class I,class T>void uninitialized_fill(I,I,const T&);}int main(){int a[1];std::uninitialized_fill(a,a+1,1);}',
          "TR0203"),
     ):
+        if is_64bit_target and name in ("pointer-to-function", "allocator-call",
+                                        "allocator-deallocate-call"):
+            result = check("v2-memory-" + name, source, profile="cpp-core-v2", sdk=True)
+            nodes = list(walk(result["functions"]))
+            if name == "pointer-to-function":
+                assert len([node for node in nodes if node.get("op") == "indirect_call"]) == 1, result
+                assert not any(node.get("op") == "mapped_call" for node in nodes), result
+            else:
+                assert result["native_heap"] is True, result
+                operations = [node["operation"] for node in nodes if node.get("op") == "native_heap_call"]
+                assert operations == (["malloc", "free"] if name == "allocator-call" else ["free"]), result
+            continue
         check("v2-memory-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
@@ -10105,8 +10168,17 @@ extern "C" int numeric_sequential() {
         ("callable-object-accumulate",
          '#include <numeric>\nstruct Add{int operator()(int a,int b)const{return a+b;}};int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,Add{});}'),
     ):
-        check("v2-numeric-sequential-" + name, source, "TR0203",
-              profile="cpp-core-v2", sdk=True)
+        supported = is_64bit_target and name in ("promoted-iota", "callable-object-accumulate")
+        result = check("v2-numeric-sequential-" + name, source, None if supported else "TR0203",
+                       profile="cpp-core-v2", sdk=True)
+        if supported:
+            nodes = list(walk(result["functions"]))
+            assert any(node.get("op") == "branch" for node in nodes), result
+            assert not any(node.get("op") in ("mapped_call", "indirect_call") for node in nodes), result
+            if name == "callable-object-accumulate":
+                source_functions = {function["name"] for function in result["functions"]
+                                    if function["name"] != "main"}
+                assert any(node.get("op") == "call" and node["callee"] in source_functions for node in nodes), result
 
     numeric_cxx17_source = """\
 #include <numeric>
@@ -10187,8 +10259,11 @@ extern "C" int numeric_callbacks() {
         ("promoted-reduce",
          '#include <numeric>\nint main(){short a[2]{1,2};return std::reduce(a,a+2); }'),
     ):
-        check("v2-numeric-cxx17-" + name, source, "TR0203",
-              profile="cpp-core-v2", sdk=True)
+        supported = is_64bit_target and name == "promoted-reduce"
+        result = check("v2-numeric-cxx17-" + name, source, None if supported else "TR0203",
+                       profile="cpp-core-v2", sdk=True)
+        if supported:
+            assert any(node.get("op") == "branch" for node in walk(result["functions"])), result
     check("v2-numeric-gcd-wide",
           '#include <numeric>\nint main(){unsigned __int128 a=12,b=18;return std::gcd(a,b)==6?0:1;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
@@ -11769,8 +11844,17 @@ extern "C" int algorithm_functional_bound_queries(
 }
 """
 
+    def assert_algorithm_functional_dependencies(data):
+        target_is_64bit = data["target"]["pointer_bits"] == 64
+        expected = 447 if target_is_64bit else 435
+        assert len(data["sdk_dependencies"]) == expected, data
+        if target_is_64bit:
+            assert {"algorithm", "functional"} <= {
+                dep["path"] for dep in data["sdk_dependencies"] if dep["root"] == "libcxx"
+            }, data
+
     def assert_functional_bound_queries(data):
-        assert len(data["sdk_dependencies"]) == 435, data
+        assert_algorithm_functional_dependencies(data)
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("call", "mapped_call",
                                           "indirect_call")], data
@@ -12052,7 +12136,7 @@ extern "C" int algorithm_standard_comparator_ordered_ranges(
 """
 
     def assert_standard_comparator_ordered_ranges(data):
-        assert len(data["sdk_dependencies"]) == 435, data
+        assert_algorithm_functional_dependencies(data)
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("call", "mapped_call",
                                           "indirect_call")], data
@@ -12240,7 +12324,7 @@ extern "C" int algorithm_functional_extrema(
 """
 
     def assert_functional_extrema(data):
-        assert len(data["sdk_dependencies"]) == 435, data
+        assert_algorithm_functional_dependencies(data)
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("call", "mapped_call",
                                           "indirect_call")], data
@@ -12339,7 +12423,7 @@ extern "C" int algorithm_functional_heap_sort(int *first, int *last) {
 """
 
     def assert_functional_heap_sort(data):
-        assert len(data["sdk_dependencies"]) == 435, data
+        assert_algorithm_functional_dependencies(data)
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("call", "mapped_call",
                                           "indirect_call")], data
@@ -12435,7 +12519,7 @@ extern "C" int algorithm_functional_partial_ordering(
 """
 
     def assert_functional_partial_ordering(data):
-        assert len(data["sdk_dependencies"]) == 435, data
+        assert_algorithm_functional_dependencies(data)
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("call", "mapped_call",
                                           "indirect_call")], data
@@ -12535,7 +12619,7 @@ extern "C" void algorithm_functional_inplace_merge(
 """
 
     def assert_functional_stable_merge(data):
-        assert len(data["sdk_dependencies"]) == 435, data
+        assert_algorithm_functional_dependencies(data)
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("call", "mapped_call",
                                           "indirect_call")], data
@@ -12565,7 +12649,7 @@ extern "C" int algorithm_functional_sorted_permutation(int *first,
 """
 
     def assert_functional_sorted_permutation(data):
-        assert len(data["sdk_dependencies"]) == 435, data
+        assert_algorithm_functional_dependencies(data)
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("call", "mapped_call",
                                           "indirect_call")], data
