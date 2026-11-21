@@ -253,30 +253,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "associative-multimap-custom-type-or-policy",
-      "expected": "reject",
-      "source": "#include <map>\n#include <type_traits>\nusing Container = std::multimap<int, double>;\nint main() { return sizeof(Container) == 0; }\n",
-      "public_header": "map",
-      "source_sha256": "7f180e3dd903e66f6464b5efab6e7803eff185ae00865bc8c6e9be6c9419964d",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "associative-multimap-renamed-container-storage",
-      "expected": "reject",
-      "source": "#define __tree_ altered_owner_storage\n#include <map>\n#include <type_traits>\n#undef __tree_\nusing Container = std::multimap<int, int>;\nint main() { return sizeof(Container) == 0; }\n",
-      "public_header": "map",
-      "source_sha256": "fdb15c78b3f415049e344d6a8bdfba9c664c03c98df2b53680e9bbc32cd66788",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "associative-multimap-runtime-storage-guard",
-      "expected": "reject",
-      "source": "#include <map>\n#include <type_traits>\nusing Container = std::multimap<int, int>;\nint main() { Container value; return sizeof(value) == 0; }\n",
-      "public_header": "map",
-      "source_sha256": "cc29c406b37b99e7ccf530b521b73f487a384ffdcaba6c4cf3d5d5f9ae791401",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "associative-multiset-identity",
       "expected": "accept",
       "source": "#include <set>\n#include <type_traits>\nusing Container = std::multiset<int>;\nint main() { return !std::is_same_v<Container, std::multiset<int>>; }\n",
@@ -307,30 +283,6 @@
       "public_header": "set",
       "source_sha256": "7cfcd066978b1d90568144cf5e61c8ae421ab53b4dec996ecda3867db98315ec",
       "kind": "cpp17-operation"
-    },
-    {
-      "name": "associative-multiset-custom-type-or-policy",
-      "expected": "reject",
-      "source": "#include <set>\n#include <type_traits>\nusing Container = std::multiset<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n",
-      "public_header": "set",
-      "source_sha256": "e99069093d91f4856a0d16dc85ca3ae7de43ec4b8ce8d2160c63b55db42862c0",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "associative-multiset-renamed-container-storage",
-      "expected": "reject",
-      "source": "#define __tree_ altered_owner_storage\n#include <set>\n#include <type_traits>\n#undef __tree_\nusing Container = std::multiset<int>;\nint main() { return sizeof(Container) == 0; }\n",
-      "public_header": "set",
-      "source_sha256": "29a09dffc4e01da6bfa1106ff5ed42b6e037f94a671ca4a05cbfa45079a162b3",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "associative-multiset-runtime-storage-guard",
-      "expected": "reject",
-      "source": "#include <set>\n#include <type_traits>\nusing Container = std::multiset<int>;\nint main() { Container value; return sizeof(value) == 0; }\n",
-      "public_header": "set",
-      "source_sha256": "fb28d12251d571986a51b1173f05e8d511bade662dd0e93fe1d264fa9eec9e11",
-      "kind": "source-body-guard"
     },
     {
       "name": "associative-unordered_multiset-identity",
@@ -365,6 +317,86 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "deque-adapter-construction-stack-copy-deque",
+      "source": "#include <stack>\n#include <deque>\nint main() {\n  std::deque<int> original{2, 7, 11};\n  std::stack<int> result(original);\n  if (&result.top() == &original.back())\n    return 1;\n  original.back() = 13;\n  if (result.size() != 3 || result.top() != 11 || original.back() != 13)\n    return 2;\n  result.pop();\n  return result.top() != 7 || original.size() != 3;\n}\n",
+      "expected": "accept",
+      "source_sha256": "cf0520472447f0385d270dc9ad4adafa6a399270ffa0c91678a71870358db79b",
+      "public_header": "stack",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "deque-adapter-construction-queue-copy-const-deque",
+      "source": "#include <queue>\n#include <deque>\nint main() {\n  const std::deque<int> original{2, 7, 11};\n  std::queue<int> result(original);\n  if (&result.front() == &original.front() || result.front() != 2)\n    return 1;\n  result.front() = 13;\n  result.pop();\n  return result.front() != 7 || result.back() != 11 || original.front() != 2;\n}\n",
+      "expected": "accept",
+      "source_sha256": "44dc1f30977d5bbab1e3a9440999ec1f0f034d0bae15d96eb15b58ccf98d0f9c",
+      "public_header": "queue",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "deque-adapter-construction-queue-move-deque-reference",
+      "source": "#include <queue>\n#include <deque>\n#include <utility>\nint main() {\n  std::deque<int> original{2, 7, 11};\n  int* first = &original.front();\n  std::queue<int> result(std::move(original));\n  original.push_back(17);\n  *first = 3;\n  return &result.front() != first || result.front() != 3 || result.back() != 11 ||\n         original.size() != 1 || original.back() != 17;\n}\n",
+      "expected": "accept",
+      "source_sha256": "5c1fb6e2a74d762033904b9c380aa12f219d6e9bcd1a1d66fe9b9ffba78b4c92",
+      "public_header": "queue",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "deque-adapter-construction-stack-move-deque-once",
+      "source": "#include <stack>\n#include <deque>\nint calls;\nstd::deque<int> contents() {\n  ++calls;\n  return std::deque<int>{2, 7, 11};\n}\nint main() {\n  std::stack<int> result(contents());\n  if (calls != 1 || result.top() != 11)\n    return 1;\n  result.pop();\n  return result.top() != 7;\n}\n",
+      "expected": "accept",
+      "source_sha256": "0457b60d72d4aea4fcbe39b40e777199a7faa674199d69f7f74186e12ab9fa32",
+      "public_header": "stack",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-multimap-custom-type-or-policy",
+      "expected": "reject",
+      "source": "#include <map>\n#include <type_traits>\nusing Container = std::multimap<int, double>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "map",
+      "source_sha256": "7f180e3dd903e66f6464b5efab6e7803eff185ae00865bc8c6e9be6c9419964d",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-multimap-renamed-container-storage",
+      "expected": "reject",
+      "source": "#define __tree_ altered_owner_storage\n#include <map>\n#include <type_traits>\n#undef __tree_\nusing Container = std::multimap<int, int>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "map",
+      "source_sha256": "fdb15c78b3f415049e344d6a8bdfba9c664c03c98df2b53680e9bbc32cd66788",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-multimap-runtime-storage-guard",
+      "expected": "reject",
+      "source": "#include <map>\n#include <type_traits>\nusing Container = std::multimap<int, int>;\nint main() { Container value; return sizeof(value) == 0; }\n",
+      "public_header": "map",
+      "source_sha256": "cc29c406b37b99e7ccf530b521b73f487a384ffdcaba6c4cf3d5d5f9ae791401",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-multiset-custom-type-or-policy",
+      "expected": "reject",
+      "source": "#include <set>\n#include <type_traits>\nusing Container = std::multiset<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "set",
+      "source_sha256": "e99069093d91f4856a0d16dc85ca3ae7de43ec4b8ce8d2160c63b55db42862c0",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-multiset-renamed-container-storage",
+      "expected": "reject",
+      "source": "#define __tree_ altered_owner_storage\n#include <set>\n#include <type_traits>\n#undef __tree_\nusing Container = std::multiset<int>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "set",
+      "source_sha256": "29a09dffc4e01da6bfa1106ff5ed42b6e037f94a671ca4a05cbfa45079a162b3",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-multiset-runtime-storage-guard",
+      "expected": "reject",
+      "source": "#include <set>\n#include <type_traits>\nusing Container = std::multiset<int>;\nint main() { Container value; return sizeof(value) == 0; }\n",
+      "public_header": "set",
+      "source_sha256": "fb28d12251d571986a51b1173f05e8d511bade662dd0e93fe1d264fa9eec9e11",
+      "kind": "source-body-guard"
+    },
+    {
       "name": "associative-unordered_multiset-custom-type-or-policy",
       "expected": "reject",
       "source": "#include <unordered_set>\n#include <type_traits>\nstruct CustomHash { unsigned long long operator()(int key) const { return static_cast<unsigned int>(key); } };\nusing Container = std::unordered_multiset<int, CustomHash>;\nint main() { return sizeof(Container) == 0; }\n",
@@ -387,38 +419,6 @@
       "public_header": "unordered_set",
       "source_sha256": "d596f6ae5c5f1760909720f055f4dd34e4c4de86039ced858d84e87ec505ac1d",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "deque-adapter-construction-stack-copy-deque",
-      "source": "#include <stack>\n#include <deque>\nint main() {\n  std::deque<int> original{2, 7, 11};\n  std::stack<int> result(original);\n  if (&result.top() == &original.back())\n    return 1;\n  original.back() = 13;\n  if (result.size() != 3 || result.top() != 11 || original.back() != 13)\n    return 2;\n  result.pop();\n  return result.top() != 7 || original.size() != 3;\n}\n",
-      "expected": "accept",
-      "source_sha256": "cf0520472447f0385d270dc9ad4adafa6a399270ffa0c91678a71870358db79b",
-      "public_header": "stack",
-      "kind": "deque-adapter-runtime"
-    },
-    {
-      "name": "deque-adapter-construction-queue-copy-const-deque",
-      "source": "#include <queue>\n#include <deque>\nint main() {\n  const std::deque<int> original{2, 7, 11};\n  std::queue<int> result(original);\n  if (&result.front() == &original.front() || result.front() != 2)\n    return 1;\n  result.front() = 13;\n  result.pop();\n  return result.front() != 7 || result.back() != 11 || original.front() != 2;\n}\n",
-      "expected": "accept",
-      "source_sha256": "44dc1f30977d5bbab1e3a9440999ec1f0f034d0bae15d96eb15b58ccf98d0f9c",
-      "public_header": "queue",
-      "kind": "deque-adapter-runtime"
-    },
-    {
-      "name": "deque-adapter-construction-queue-move-deque-reference",
-      "source": "#include <queue>\n#include <deque>\n#include <utility>\nint main() {\n  std::deque<int> original{2, 7, 11};\n  int* first = &original.front();\n  std::queue<int> result(std::move(original));\n  original.push_back(17);\n  *first = 3;\n  return &result.front() != first || result.front() != 3 || result.back() != 11 ||\n         original.size() != 1 || original.back() != 17;\n}\n",
-      "expected": "accept",
-      "source_sha256": "5c1fb6e2a74d762033904b9c380aa12f219d6e9bcd1a1d66fe9b9ffba78b4c92",
-      "public_header": "queue",
-      "kind": "deque-adapter-runtime"
-    },
-    {
-      "name": "deque-adapter-construction-stack-move-deque-once",
-      "source": "#include <stack>\n#include <deque>\nint calls;\nstd::deque<int> contents() {\n  ++calls;\n  return std::deque<int>{2, 7, 11};\n}\nint main() {\n  std::stack<int> result(contents());\n  if (calls != 1 || result.top() != 11)\n    return 1;\n  result.pop();\n  return result.top() != 7;\n}\n",
-      "expected": "accept",
-      "source_sha256": "0457b60d72d4aea4fcbe39b40e777199a7faa674199d69f7f74186e12ab9fa32",
-      "public_header": "stack",
-      "kind": "deque-adapter-runtime"
     },
     {
       "name": "deque-adapter-construction-vector-backed-stack",
@@ -466,7 +466,7 @@
     "TranslateTest.CoreV2DequeAdapterConstructionVectorBackedStackRejected",
     "TranslateTest.CoreV2DequeAdapterConstructionNonIntDequeRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "d9e5439542354d4ab90c5d134fc6ff826c42b0870d915cc42218f328f931621e",
   "maintained_original_sha256": "2d1d01058bae252d865258eddeecdba869624a3ef3d75fef98d09054936dd508",
@@ -478,5 +478,11 @@
   "current_registry_count": 8158,
   "current_python_registry_tests": 126,
   "native_reference_selected_executions": 32,
-  "planned_generated_c23_executions": 32
+  "planned_generated_c23_executions": 32,
+  "native_reference_proofs": {
+    "associative-multi-layout": "893283b5a2d3e69e7dcca8830caf4d53f32a2cbe3187b48921909db343824420",
+    "deque-adapter-construction": "866eadf85206909219ddf546815ab8e06b8f30c4283d3392c581d42c36873db8"
+  },
+  "native_reference_authentication_sha256": "962f0e705afd76dcd4fbc54eb3181fb6dcbc2e0e5651727bef44e763f4b0b6df",
+  "source_proof_sha256": "03499eddaf23f28ce27b7543afe4b67e6f67d0fe7ad90a6a9cffbc17b6327e61"
 }
