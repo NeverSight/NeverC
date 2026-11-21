@@ -8716,6 +8716,31 @@ std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
   return UtilityVariantEmplace{*V, Member, unsigned(Index), Input};
 }
 
+static bool variantForwardedCapture(const State &S, const SourceManager &SM,
+    const Expr *E, const FieldDecl *Field, const ASTContext &Context) {
+  const auto *Call = E ? dyn_cast<CallExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = F ? F->getPrimaryTemplate() : nullptr;
+  constexpr llvm::StringLiteral Path = "__utility/forward.h";
+  if (!F || !F->getIdentifier() || F->getName() != "forward" ||
+      F->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !variantThisField(Call->getArg(0), Field) ||
+      !Context.hasSameType(F->getReturnType(), Field->getType()) ||
+      !variantDeclaration(S, SM, Primary, Path))
+    return false;
+  for (const auto *D : F->redecls())
+    if (!variantDeclaration(S, SM, D, Path))
+      return false;
+  if (F->getBuiltinID() == Builtin::BIforward)
+    return bitsetBuiltinLibraryCast(S, SM, F, Context);
+  const auto *Definition = F->getDefinition();
+  const auto *Returned = variantReturned(Definition);
+  const auto *Cast = Returned ? dyn_cast<CXXStaticCastExpr>(Returned->IgnoreParens()) : nullptr;
+  return variantDeclaration(S, SM, Definition, Path) && Cast && Cast->getCastKind() == CK_NoOp &&
+         Context.hasSameType(Cast->getTypeAsWritten(), Field->getType()) &&
+         variantParameter(Cast->getSubExpr(), Definition->getParamDecl(0));
+}
+
 static const FunctionDecl *variantVisitDefinition(const State &S,
     const SourceManager &SM, const FunctionDecl *F, llvm::StringRef Name,
     unsigned Arity, llvm::StringRef Owner = {}, llvm::StringRef Path = "variant") {
