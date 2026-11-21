@@ -3467,6 +3467,8 @@ struct UtilityVariantAssignment {
 std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+void traceAnyScalarSelection(const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Selected, const clang::Expr *Site);
 inline constexpr llvm::StringLiteral UtilityAnyTag = "nct_any_tag";
 inline constexpr llvm::StringLiteral UtilityAnyStorage = "nct_any_storage";
 enum class UtilityAnyEmptyOperation { HasValue, Reset };

@@ -8217,7 +8217,7 @@ static bool anyEmptyCopyOrMove(const State &S, const SourceManager &SM,
 }
 
 
-static void traceAnyScalarSelection(const State &S, const SourceManager &SM,
+void traceAnyScalarSelection(const State &S, const SourceManager &SM,
     const FunctionDecl *Selected, const Expr *Site) {
   if (!Selected || !Site || !S.owns(SM, Site->getExprLoc()) ||
       !anyDeclaration(S, SM, Selected))

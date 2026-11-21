@@ -24213,6 +24213,9 @@ public:
       const auto *Construction =
           dyn_cast_or_null<CXXConstructExpr>(Source.Expression);
       const auto *UtilityCall = dyn_cast_or_null<CallExpr>(Source.Expression);
+
+      if (Construction || UtilityCall)
+        traceAnyScalarSelection(A.S, A.Sources, Source.Function, Source.Expression);
       const auto *ConstructionRecord =
           Construction ? Construction->getType()->getAsCXXRecordDecl()
                        : nullptr;
