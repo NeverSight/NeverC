@@ -30203,6 +30203,7 @@ public:
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantIntegralVisit(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantEmplace(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -30891,6 +30892,15 @@ public:
         }
       if (MonostateComparison) {
         A.type(C->getArg(0)->getType(), L);
+        return true;
+      }
+      if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, C, A.Context)) {
+        if (!Visit->Callable->getPointeeType()->isFunctionType())
+          checkBinding(C->getArg(0), true);
+        checkBinding(C->getArg(1), false);
+        A.type(A.Context.getRecordType(Visit->Variant.Record), L);
+        A.type(Visit->Argument, L);
+        A.type(Visit->Result, L, /*AllowVoid=*/true);
         return true;
       }
       if (const auto Visit = approvedUtilityVariantZeroVisit(A.S, A.Sources, C, A.Context)) {
