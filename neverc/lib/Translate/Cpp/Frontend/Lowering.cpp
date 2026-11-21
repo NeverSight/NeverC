@@ -32623,14 +32623,18 @@ class FunctionLowering {
         return *Compare ? one("bool", L) : A.zero(A.Context.BoolTy, L);
       }
       if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, Call, A.Context)) {
-        auto Input = captureUtilityConstructorArgument(Call->getArg(0), Visit->Callable);
+        const auto *Visitor = Call->getArg(0);
+        const bool Object = Visit->Callable->getPointeeType()->isRecordType();
+        auto Input = Object ? snapshot(address(lvalue(Visitor), Visitor->getType(), L), L)
+                            : captureUtilityConstructorArgument(Visitor, Visit->Callable);
         std::vector<Expression> Places;
         for (unsigned I = 0; I < Visit->Variants.size(); ++I) {
           const auto *Operand = Call->getArg(I + 1);
           auto Receiver = snapshot(address(lvalue(Operand), Operand->getType(), L), L);
           Places.push_back(dereference(std::move(Receiver), L));
         }
-        auto Callable = snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Callable, L), L);
+        auto Callable = Object ? std::move(Input)
+                               : snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Callable, L), L);
         std::vector<Expression> Indices, Slots;
         for (unsigned I = 0; I < Visit->Variants.size(); ++I)
           Indices.push_back(snapshot(fieldStorage(Places[I], Visit->Variants[I].Index, L), L));
@@ -32640,14 +32644,29 @@ class FunctionLowering {
         if (HasResult)
           assign(Result, A.zero(Visit->Result, L), L);
         const auto End = labelName();
+        unsigned Entry = 0;
         auto Select = [&](auto &&Self, unsigned Dimension) -> void {
           if (Dimension == Visit->Variants.size()) {
+            const auto *Method = Visit->Methods[Entry++];
             json::Array Arguments;
-            for (unsigned I = 0; I < Slots.size(); ++I)
-              Arguments.push_back(snapshot(cast(Slots[I], type(Visit->Arguments[I], L), L), L));
-            auto Visited = emitIndirectCall(Callable, std::move(Arguments), Visit->Result, L);
-            if (HasResult)
-              assign(Result, std::move(Visited), L);
+            if (Method)
+              Arguments.push_back(snapshot(cast(Callable, type(Method->getThisType(), L), L), L));
+            for (unsigned I = 0; I < Slots.size(); ++I) {
+              const auto Param = Method ? Method->getParamDecl(I)->getType() : Visit->Arguments[I];
+              Arguments.push_back(snapshot(cast(Slots[I], type(Param, L), L), L));
+            }
+            if (Method) {
+              chargeCall(Arguments, L);
+              json::Object Instruction{{"op", "call"}, {"callee", A.name(Method)},
+                  {"args", std::move(Arguments)}, {"loc", A.loc(L)}};
+              if (HasResult)
+                Instruction["target"] = json::Object(Result);
+              Body.push_back(std::move(Instruction));
+            } else {
+              auto Visited = emitIndirectCall(Callable, std::move(Arguments), Visit->Result, L);
+              if (HasResult)
+                assign(Result, std::move(Visited), L);
+            }
             return;
           }
           const auto &V = Visit->Variants[Dimension];

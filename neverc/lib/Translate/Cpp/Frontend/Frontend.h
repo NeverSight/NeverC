@@ -3454,6 +3454,7 @@ struct UtilityVariantIntegralVisit {
   clang::QualType Callable;
   std::vector<clang::QualType> Arguments;
   clang::QualType Result;
+  std::vector<const clang::CXXMethodDecl *> Methods;
 };
 std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,

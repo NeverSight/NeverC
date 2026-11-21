@@ -30895,13 +30895,24 @@ public:
         return true;
       }
       if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, C, A.Context)) {
-        if (!Visit->Callable->getPointeeType()->isFunctionType())
+        const auto Visitor = Visit->Callable->getPointeeType();
+        if (Visitor->isRecordType()) {
+          checkBinding(C->getArg(0), false);
+          A.type(Visitor, L);
+          for (const auto *Method : Visit->Methods) {
+            A.type(Method->getThisType(), L);
+            for (const auto *Param : Method->parameters())
+              A.type(Param->getType(), L);
+          }
+        } else if (!Visitor->isFunctionType()) {
           checkBinding(C->getArg(0), true);
+        }
         for (unsigned I = 0; I < Visit->Variants.size(); ++I) {
           checkBinding(C->getArg(I + 1), false);
           A.type(A.Context.getRecordType(Visit->Variants[I].Record), L);
-          A.type(Visit->Arguments[I], L);
         }
+        for (const auto Argument : Visit->Arguments)
+          A.type(Argument, L);
         A.type(Visit->Result, L, /*AllowVoid=*/true);
         return true;
       }
