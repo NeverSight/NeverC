@@ -1,5 +1,15 @@
 # NeverC Progress
 
+## Current snapshot — 2026-11-21T01:07:56Z
+
+- Reviewed dev: [b9a1ecedc752b63a8328704b14aa78bd32ea3c69](https://github.com/NeverSight/NeverC/commit/b9a1ecedc752b63a8328704b14aa78bd32ea3c69). GitHub reports 1,316 commits ahead of the source in the previous in-tree [October 24 snapshot](https://github.com/NeverSight/NeverC/compare/54737387a0b8374b6bd6649d45835925278fa738...b9a1ecedc752b63a8328704b14aa78bd32ea3c69); the changed-path list reached the connector's 300-entry cap, not a total.
+- Activity since 2026-11-20T01:00:00Z: GitHub search showed 10 open ordinary issues and two open PRs, draft [#29](https://github.com/NeverSight/NeverC/pull/29) and [#30](https://github.com/NeverSight/NeverC/pull/30). Both reported non-mergeable. The interval returned one new PR (#30) and no ordinary issue openings/closures or PR merges. Review priorities below are suggestions, not delivery commitments.
+- Bounded static review: inspected the changed TranslateIR parser and verifier, NCEmitter and manifest schema, plus union and in-place variant fixtures. The verifier requires layout evidence and zero member offsets, recomputes storage size/alignment and checks a single positional initializer against the first member. The emitter's union tag is consistent across declaration, definition and offset assertions in the reviewed paths. Read negative fixture source for malformed offsets, size and initialization, and selected variant lifetime/aliasing cases. No new defect was established, no source repair was made, and no end-to-end compiler, optimizer or ABI claim is made.
+- Existing CI at sampling: no directly linked PR-triggered workflow surfaced for this exact dev SHA. The exact [#29](https://github.com/NeverSight/NeverC/actions/runs/44569460192) and [#30](https://github.com/NeverSight/NeverC/actions/runs/44724296410/job/136413964669) scoped Linux ARM64 component install jobs passed; the #30 [Windows x64](https://github.com/NeverSight/NeverC/actions/runs/44724296410/job/136413964806) build failed before its later checks. A different [full Linux ARM64 run](https://github.com/NeverSight/NeverC/actions/runs/44680677863/job/136103040243) failed during the dependency build and did not reach installation. Full and scoped outcomes are not interchangeable; the hosted failure's root cause is not established.
+- Suggested priorities: (1) reconcile #30 with current dev without relaxing gates and obtain first-failure ARM64 evidence; (2) identify the failing Windows compilation command and distinguish a source/toolchain problem from runner failure before changing code; (3) qualify the latest translator changes with independent O0/O2 ABI comparisons and the unchanged full check-neverc gate when execution is available.
+
+Review method: static inspection and read-only GitHub checks only. No project, build, test, benchmark, repository script or manual CI was run. Earlier records follow unchanged.
+
 ## Current snapshot — 2026-10-24
 
 - Cutoff: **2026-10-24T00:59:37Z**. Reviewed dev: [54737387a0b8374b6bd6649d45835925278fa738](https://github.com/NeverSight/NeverC/commit/54737387a0b8374b6bd6649d45835925278fa738).
@@ -1634,3 +1644,8 @@ Inventoried 156 commits / 60 changed paths and completed the bounded not_fn/sour
 ## Daily record — 2026-10-24
 
 Inventoried 45 incoming commits / 132 net changed paths, excluding prior report maintenance from product progress. Reviewed the bounded bit-cast and native MPX control/transport/output paths and fixture source above. No new compiler/runtime bug or source repair was established. Recorded 9 open ordinary issues / 0 pre-existing open PRs and created one report-only draft PR. Diagnosed the existing exact-head navigation failure as 23 unlinked development-guide references; preserved runtime/hardware qualification limits. Retained all prior progress text and human edits verbatim. No project execution, manual CI, dependency/security change, issue mutation, merge or deployment.
+
+
+## Daily log — 2026-11-21T01:07:56Z
+
+Bounded static check of TranslateIR and variant source changes. No source changes or execution. Distinguished full ARM64 build failure from scoped install passes; proposed only this documentation update via a draft PR.
