@@ -384312,6 +384312,516 @@ int f() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2AssociativeMultimapIdentityRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-multimap-identity.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <type_traits>
+using Container = std::multimap<int, int>;
+int main() { return !std::is_same_v<Container, std::multimap<int, int>>; }
+)r19containers");
+  const auto Output = tmpFile("associative-multimap-identity.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-multimap-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultimapAliasesRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-multimap-aliases.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <type_traits>
+using Container = std::multimap<int, int>;
+int main() { return !std::is_same_v<Container::key_type, int> || !std::is_same_v<Container::value_type, std::pair<const int, int>>; }
+)r19containers");
+  const auto Output = tmpFile("associative-multimap-aliases.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-multimap-aliases" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultimapSizeofRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-multimap-sizeof.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <type_traits>
+using Container = std::multimap<int, int>;
+int main() { return sizeof(Container) != 3 * sizeof(void*); }
+)r19containers");
+  const auto Output = tmpFile("associative-multimap-sizeof.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-multimap-sizeof" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultimapAlignofRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-multimap-alignof.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <type_traits>
+using Container = std::multimap<int, int>;
+int main() { return alignof(const Container&) != alignof(void*); }
+)r19containers");
+  const auto Output = tmpFile("associative-multimap-alignof.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-multimap-alignof" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultimapCustomTypeOrPolicyRejected) {
+  const auto Source = tmpFile("associative-multimap-custom-type-or-policy.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <type_traits>
+using Container = std::multimap<int, double>;
+int main() { return sizeof(Container) == 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultimapRenamedContainerStorageRejected) {
+  const auto Source = tmpFile("associative-multimap-renamed-container-storage.cpp");
+  writeFile(Source, R"r19containers(#define __tree_ altered_owner_storage
+#include <map>
+#include <type_traits>
+#undef __tree_
+using Container = std::multimap<int, int>;
+int main() { return sizeof(Container) == 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultimapRuntimeStorageGuardRejected) {
+  const auto Source = tmpFile("associative-multimap-runtime-storage-guard.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <type_traits>
+using Container = std::multimap<int, int>;
+int main() { Container value; return sizeof(value) == 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultisetIdentityRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-multiset-identity.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <type_traits>
+using Container = std::multiset<int>;
+int main() { return !std::is_same_v<Container, std::multiset<int>>; }
+)r19containers");
+  const auto Output = tmpFile("associative-multiset-identity.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-multiset-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultisetAliasesRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-multiset-aliases.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <type_traits>
+using Container = std::multiset<int>;
+int main() { return !std::is_same_v<Container::key_type, int> || !std::is_same_v<Container::value_type, int>; }
+)r19containers");
+  const auto Output = tmpFile("associative-multiset-aliases.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-multiset-aliases" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultisetSizeofRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-multiset-sizeof.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <type_traits>
+using Container = std::multiset<int>;
+int main() { return sizeof(Container) != 3 * sizeof(void*); }
+)r19containers");
+  const auto Output = tmpFile("associative-multiset-sizeof.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-multiset-sizeof" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultisetAlignofRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-multiset-alignof.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <type_traits>
+using Container = std::multiset<int>;
+int main() { return alignof(const Container&) != alignof(void*); }
+)r19containers");
+  const auto Output = tmpFile("associative-multiset-alignof.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-multiset-alignof" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultisetCustomTypeOrPolicyRejected) {
+  const auto Source = tmpFile("associative-multiset-custom-type-or-policy.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <type_traits>
+using Container = std::multiset<int, std::greater<int>>;
+int main() { return sizeof(Container) == 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultisetRenamedContainerStorageRejected) {
+  const auto Source = tmpFile("associative-multiset-renamed-container-storage.cpp");
+  writeFile(Source, R"r19containers(#define __tree_ altered_owner_storage
+#include <set>
+#include <type_traits>
+#undef __tree_
+using Container = std::multiset<int>;
+int main() { return sizeof(Container) == 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeMultisetRuntimeStorageGuardRejected) {
+  const auto Source = tmpFile("associative-multiset-runtime-storage-guard.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <type_traits>
+using Container = std::multiset<int>;
+int main() { Container value; return sizeof(value) == 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeUnorderedMultisetIdentityRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-unordered_multiset-identity.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <type_traits>
+using Container = std::unordered_multiset<int>;
+int main() { return !std::is_same_v<Container, std::unordered_multiset<int>>; }
+)r19containers");
+  const auto Output = tmpFile("associative-unordered_multiset-identity.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-unordered_multiset-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeUnorderedMultisetAliasesRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-unordered_multiset-aliases.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <type_traits>
+using Container = std::unordered_multiset<int>;
+int main() { return !std::is_same_v<Container::key_type, int> || !std::is_same_v<Container::value_type, int>; }
+)r19containers");
+  const auto Output = tmpFile("associative-unordered_multiset-aliases.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-unordered_multiset-aliases" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeUnorderedMultisetSizeofRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-unordered_multiset-sizeof.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <type_traits>
+using Container = std::unordered_multiset<int>;
+int main() { return sizeof(Container) != 5 * sizeof(void*); }
+)r19containers");
+  const auto Output = tmpFile("associative-unordered_multiset-sizeof.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-unordered_multiset-sizeof" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeUnorderedMultisetAlignofRunAtBothOptimizations) {
+  const auto Source = tmpFile("associative-unordered_multiset-alignof.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <type_traits>
+using Container = std::unordered_multiset<int>;
+int main() { return alignof(const Container&) != alignof(void*); }
+)r19containers");
+  const auto Output = tmpFile("associative-unordered_multiset-alignof.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("associative-unordered_multiset-alignof" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeUnorderedMultisetCustomTypeOrPolicyRejected) {
+  const auto Source = tmpFile("associative-unordered_multiset-custom-type-or-policy.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <type_traits>
+struct CustomHash { unsigned long long operator()(int key) const { return static_cast<unsigned int>(key); } };
+using Container = std::unordered_multiset<int, CustomHash>;
+int main() { return sizeof(Container) == 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeUnorderedMultisetRenamedContainerStorageRejected) {
+  const auto Source = tmpFile("associative-unordered_multiset-renamed-container-storage.cpp");
+  writeFile(Source, R"r19containers(#define __table_ altered_owner_storage
+#include <unordered_set>
+#include <type_traits>
+#undef __table_
+using Container = std::unordered_multiset<int>;
+int main() { return sizeof(Container) == 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AssociativeUnorderedMultisetRuntimeStorageGuardRejected) {
+  const auto Source = tmpFile("associative-unordered_multiset-runtime-storage-guard.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <type_traits>
+using Container = std::unordered_multiset<int>;
+int main() { Container value; return sizeof(value) == 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2DequeAdapterConstructionStackCopyDequeRunAtBothOptimizations) {
+  const auto Source = tmpFile("deque-adapter-construction-stack-copy-deque.cpp");
+  writeFile(Source, R"r19containers(#include <stack>
+#include <deque>
+int main() {
+  std::deque<int> original{2, 7, 11};
+  std::stack<int> result(original);
+  if (&result.top() == &original.back())
+    return 1;
+  original.back() = 13;
+  if (result.size() != 3 || result.top() != 11 || original.back() != 13)
+    return 2;
+  result.pop();
+  return result.top() != 7 || original.size() != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("deque-adapter-construction-stack-copy-deque.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("deque-adapter-construction-stack-copy-deque" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DequeAdapterConstructionQueueCopyConstDequeRunAtBothOptimizations) {
+  const auto Source = tmpFile("deque-adapter-construction-queue-copy-const-deque.cpp");
+  writeFile(Source, R"r19containers(#include <queue>
+#include <deque>
+int main() {
+  const std::deque<int> original{2, 7, 11};
+  std::queue<int> result(original);
+  if (&result.front() == &original.front() || result.front() != 2)
+    return 1;
+  result.front() = 13;
+  result.pop();
+  return result.front() != 7 || result.back() != 11 || original.front() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("deque-adapter-construction-queue-copy-const-deque.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("deque-adapter-construction-queue-copy-const-deque" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DequeAdapterConstructionQueueMoveDequeReferenceRunAtBothOptimizations) {
+  const auto Source = tmpFile("deque-adapter-construction-queue-move-deque-reference.cpp");
+  writeFile(Source, R"r19containers(#include <queue>
+#include <deque>
+#include <utility>
+int main() {
+  std::deque<int> original{2, 7, 11};
+  int* first = &original.front();
+  std::queue<int> result(std::move(original));
+  original.push_back(17);
+  *first = 3;
+  return &result.front() != first || result.front() != 3 || result.back() != 11 ||
+         original.size() != 1 || original.back() != 17;
+}
+)r19containers");
+  const auto Output = tmpFile("deque-adapter-construction-queue-move-deque-reference.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("deque-adapter-construction-queue-move-deque-reference" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DequeAdapterConstructionStackMoveDequeOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("deque-adapter-construction-stack-move-deque-once.cpp");
+  writeFile(Source, R"r19containers(#include <stack>
+#include <deque>
+int calls;
+std::deque<int> contents() {
+  ++calls;
+  return std::deque<int>{2, 7, 11};
+}
+int main() {
+  std::stack<int> result(contents());
+  if (calls != 1 || result.top() != 11)
+    return 1;
+  result.pop();
+  return result.top() != 7;
+}
+)r19containers");
+  const auto Output = tmpFile("deque-adapter-construction-stack-move-deque-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("deque-adapter-construction-stack-move-deque-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DequeAdapterConstructionVectorBackedStackRejected) {
+  const auto Source = tmpFile("deque-adapter-construction-vector-backed-stack.cpp");
+  writeFile(Source, R"r19containers(#include <stack>
+#include <vector>
+int f() {
+  const std::vector<int> input{7};
+  std::stack<int, std::vector<int>> out(input);
+  return out.top();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2DequeAdapterConstructionNonIntDequeRejected) {
+  const auto Source = tmpFile("deque-adapter-construction-non-int-deque.cpp");
+  writeFile(Source, R"r19containers(#include <queue>
+#include <deque>
+int f() {
+  const std::deque<long> input{7L};
+  std::queue<long> out(input);
+  return static_cast<int>(out.front());
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

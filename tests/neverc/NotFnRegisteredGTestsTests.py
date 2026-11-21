@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.layout_adapter_registered = cls.registered
+        cls.layout_adapter_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_adapter_original = cls.adapter.restore_original_gtests(cls.layout_adapter_registered,
+                                                                        cls.layout_adapter_suffix)
+        cls.registered = cls.adapter.restore_layout_adapter_history(cls.layout_adapter_registered)
         cls.layout_variant_operations_registered = cls.registered
         cls.layout_variant_operations_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.layout_variant_operations_original = cls.adapter.restore_original_gtests(
@@ -1851,6 +1856,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.layout_variant_operations_registered,
                                                  self.layout_variant_operations_suffix + b' ')
+
+
+    def test_layout_adapter_retains_published_bodies(self):
+        self.assertEqual(self.layout_adapter_original + self.layout_adapter_suffix, self.layout_adapter_registered)
+        self.assertEqual(self.adapter.restore_layout_adapter_history(self.layout_adapter_original),
+                         self.layout_variant_operations_original)
+        output, evidence = self.extractor.extract(self.layout_adapter_original, ['TranslateTest.CoreV2AssociativeMultimapIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionStackCopyDequeRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionQueueCopyConstDequeRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionQueueMoveDequeReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionStackMoveDequeOnceRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeMultimapRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeMultimapRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeMultisetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeMultisetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeMultisetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeUnorderedMultisetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeUnorderedMultisetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeUnorderedMultisetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2DequeAdapterConstructionVectorBackedStackRejected', 'TranslateTest.CoreV2DequeAdapterConstructionNonIntDequeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8158)
+        self.assertEqual(evidence['selected_count'], 27)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'associative-unordered_multiset-', output)
+        self.assertIn(b'deque-adapter-construction-stack-copy-deque', output)
+
+    def test_layout_adapter_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_adapter_history(self.layout_adapter_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_adapter_registered, self.layout_adapter_suffix + b' ')
 
 
 if __name__ == '__main__':

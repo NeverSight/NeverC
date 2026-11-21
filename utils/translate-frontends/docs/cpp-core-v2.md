@@ -17907,3 +17907,11 @@ comparisons, including evaluation of both operands. The pinned
 `variant::emplace<I>` and `variant::emplace<T>` overloads accept a matching
 scalar argument or value-initialize the selected alternative. Both forms
 return a reference to the live alternative.
+
+## Duplicate-key queries and deque-backed adapter constructors
+
+The pinned default `multimap<int, int>`, `multiset<int>` and
+`unordered_multiset<int>` specializations admit type aliases, type identity,
+and type-form `sizeof` and `alignof` on the six 64-bit targets. The checked
+`stack<int>` and `queue<int>` default adapters also accept their selected
+`deque<int>` copy and move constructors.

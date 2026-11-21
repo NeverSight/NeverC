@@ -521,3 +521,10 @@ The combined compiler passes 1,326 source requests across six 64-bit
 targets and 343 Linux x86-64 formal tests. All 176 generated C23 programs
 match native C++ at O0 and O2. The original 750 requests pass against
 the same compiler source.
+
+## R19 Duplicate-key queries and deque adapter construction
+
+The combined compiler passes 1,548 source requests across six 64-bit targets
+and 370 formal tests on Linux x86-64. All 192 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.
