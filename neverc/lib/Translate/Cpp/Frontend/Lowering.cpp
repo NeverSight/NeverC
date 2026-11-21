@@ -32622,6 +32622,41 @@ class FunctionLowering {
           discard(Operand);
         return *Compare ? one("bool", L) : A.zero(A.Context.BoolTy, L);
       }
+      if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, Call, A.Context)) {
+        auto Input = captureUtilityConstructorArgument(Call->getArg(0), Visit->Callable);
+        const auto *Operand = Call->getArg(1);
+        auto Receiver = snapshot(address(lvalue(Operand), Operand->getType(), L), L);
+        auto Callable = snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Callable, L), L);
+        auto Place = dereference(std::move(Receiver), L);
+        const auto &V = Visit->Variant;
+        auto Index = snapshot(fieldStorage(Place, V.Index, L), L);
+        const auto IndexType = type(V.Index->getType(), L);
+        const auto ArgType = type(Visit->Argument, L);
+        const bool HasResult = !Visit->Result->isVoidType();
+        auto Result = HasResult ? temporary(type(Visit->Result, L), L) : Expression();
+        // The admitted variant construction and mutation paths cannot become
+        // valueless because all alternatives are integral or their aliases.
+        if (HasResult)
+          assign(Result, A.zero(Visit->Result, L), L);
+        const auto End = labelName();
+        for (unsigned I = 0; I < V.Alternatives.size(); ++I) {
+          A.chargeExpansion(1, L);
+          const auto Selected = labelName(), Next = labelName();
+          branch(binary("==", Index, quantity(I, IndexType, L), "bool", L), Selected, Next, L);
+          label(Selected, L);
+          auto Slot = fieldStorage(variantStorage(Place, V, L), V.Alternatives[I], L);
+          json::Array Arguments;
+          Arguments.push_back(snapshot(cast(std::move(Slot), ArgType, L), L));
+          auto Visited = emitIndirectCall(Callable, std::move(Arguments), Visit->Result, L);
+          if (HasResult)
+            assign(Result, std::move(Visited), L);
+          jump(End, L);
+          label(Next, L);
+        }
+        jump(End, L);
+        label(End, L);
+        return Result;
+      }
       if (const auto Visit = approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context)) {
         auto Input = captureUtilityConstructorArgument(Call->getArg(0), Visit->Parameter);
         auto Callable = snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Parameter, L), L);

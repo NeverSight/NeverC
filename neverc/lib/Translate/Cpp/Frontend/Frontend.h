@@ -3437,6 +3437,15 @@ struct UtilityVariantEmplace {
 std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UtilityVariantIntegralVisit {
+  UtilityVariantRecord Variant;
+  clang::QualType Callable;
+  clang::QualType Argument;
+  clang::QualType Result;
+};
+std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 struct UtilityVariantZeroVisit {
   clang::QualType Parameter;
   clang::QualType Result;
