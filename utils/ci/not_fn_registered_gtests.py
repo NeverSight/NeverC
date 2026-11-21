@@ -914,6 +914,30 @@ def restore_layout_variant_any_allocator_history(source):
     return restored
 
 
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256 = '7f86edcd2554ebcbbfd63c7e218c8e3366058bca3ecb5b935c52d040ef1a8e5a'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256 = 'bbdd93fd3a492641167ec5618c88f5dd8fff5115e940b8737487acab8ef4c73e'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_REGISTERED_SHA256 = '561406c89101beb582fd1d4cc65016e90c9ce40fa582d1ca2380e9ce49526a29'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_MAINTAINED_SHA256 = 'bb50602a198d000bfebf68c70354d6deac438fcee8db75a6e2c28e12703fc1d0'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SHA256 = '967b37256a428da51b8f210d856f4a71dcb56f7b1f3f055631b7da48a7c594c5'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SIZE = 19884957
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SIZE = 5855
+
+
+def restore_layout_variant_any_allocator_equality_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256, R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1039,6 +1063,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

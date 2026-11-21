@@ -17981,3 +17981,11 @@ queries and a dispatch matrix with at most 64 entries. Ordinary functions,
 function pointers and source-owned lvalue visitor operators receive the
 selected by-value alternatives. Operand expressions and the selected call
 each execute once.
+
+## Integral variant equality
+
+Checked `std::variant` objects with admitted integral alternatives support
+`operator==` and `operator!=`. The comparison uses the active index first,
+including when the variant repeats an alternative type. For a shared live
+index it compares the values in that alternative. Each operand expression
+executes once.

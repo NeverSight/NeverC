@@ -386427,6 +386427,126 @@ int f(Value& a, Value& b, Value& c, Value& d) { return std::visit(combine, a, b,
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2VariantEqualityMatchingAndDifferentLiveAlternativesRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-equality-matching-and-different-live-alternatives.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  std::variant<short, int> a(std::in_place_index<0>, short(-3));
+  std::variant<short, int> b(std::in_place_index<0>, short(-3));
+  if (!(a == b) || a != b) return 1;
+  b.emplace<0>(short(-4));
+  if (a == b || !(a != b)) return 2;
+  b.emplace<1>(-3);
+  if (a == b || !(a != b)) return 3;
+  a.emplace<1>(-3);
+  return !(a == b) || a != b;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-equality-matching-and-different-live-alternatives.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-equality-matching-and-different-live-alternatives" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantEqualityDuplicateTypesRetainIndexRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-equality-duplicate-types-retain-index.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  std::variant<int, int> a(std::in_place_index<0>, 42);
+  const std::variant<int, int> b(std::in_place_index<1>, 42);
+  if (std::operator==(a, b) || !std::operator!=(a, b)) return 1;
+  a.emplace<1>(42);
+  return !std::operator==(a, b) || std::operator!=(a, b);
+}
+)r19containers");
+  const auto Output = tmpFile("variant-equality-duplicate-types-retain-index.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-equality-duplicate-types-retain-index" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantEqualityAliasedOperandsEvaluateOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-equality-aliased-operands-evaluate-once.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<short, int>;
+int left_calls, right_calls;
+const Value& left(const Value& v) { ++left_calls; return v; }
+const Value& right(const Value& v) { ++right_calls; return v; }
+int main() {
+  const Value v(std::in_place_index<1>, 9);
+  const Value w(std::in_place_index<1>, 8);
+  if (!(left(v) == right(v))) return 1;
+  if (!(left(v) != right(w))) return 2;
+  return left_calls != 2 || right_calls != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-equality-aliased-operands-evaluate-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-equality-aliased-operands-evaluate-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantEqualityRenamedDiagonalVisitorRejected) {
+  const auto Source = tmpFile("variant-equality-renamed-diagonal-visitor.cpp");
+  writeFile(Source, R"r19containers(#define __visit_value_at changed_diagonal_visitor
+#include <variant>
+#undef __visit_value_at
+using Value = std::variant<short, int>;
+bool equal(const Value& a, const Value& b) { return a == b; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantEqualityRenamedConversionPolicyRejected) {
+  const auto Source = tmpFile("variant-equality-renamed-conversion-policy.cpp");
+  writeFile(Source, R"r19containers(#define __convert_to_bool changed_comparison_policy
+#include <variant>
+#undef __convert_to_bool
+using Value = std::variant<short, int>;
+bool different(const Value& a, const Value& b) { return a != b; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantEqualityFloatingAlternativeRejected) {
+  const auto Source = tmpFile("variant-equality-floating-alternative.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int, double>;
+bool equal(const Value& a, const Value& b) { return a == b; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

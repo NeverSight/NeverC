@@ -570,3 +570,10 @@ The combined compiler passes 2,016 source requests across six 64-bit targets
 and 440 formal tests on Linux x86-64. All 235 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Integral variant equality
+
+The combined compiler passes 2,052 source requests across six 64-bit targets
+and 446 formal tests on Linux x86-64. All 238 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.
