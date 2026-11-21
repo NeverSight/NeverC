@@ -31953,11 +31953,13 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
           {"id", Storage}, {"loc", loc(R->getLocation())},
           {"fields", json::Array{
               json::Object{{"name", UtilityAnyWords.str()}, {"type", "arr:3:u64"}},
-              json::Object{{"name", UtilityAnyInteger.str()}, {"type", "int"}}}},
+              json::Object{{"name", UtilityAnyInteger.str()}, {"type", "int"}},
+              json::Object{{"name", UtilityAnyUnsigned.str()},
+                           {"type", type(Context.UnsignedIntTy, R->getLocation())}}}},
           {"layout", json::Object{
               {"size_bits", Context.getTypeSize(StorageType)},
               {"abi_align_bits", Context.getTypeAlign(StorageType)},
-              {"field_offsets_bits", json::Array{uint64_t(0), uint64_t(0)}},
+              {"field_offsets_bits", json::Array{uint64_t(0), uint64_t(0), uint64_t(0)}},
               {"union", true}}}});
       RecordData.push_back(json::Object{
           {"id", name(R)}, {"loc", loc(R->getLocation())},

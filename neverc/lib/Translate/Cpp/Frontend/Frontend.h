@@ -3517,6 +3517,8 @@ inline constexpr llvm::StringLiteral UtilityAnyStorage = "nct_any_storage";
 inline constexpr llvm::StringLiteral UtilityAnyWords = "nct_any_words";
 inline constexpr llvm::StringLiteral UtilityAnyInteger = "nct_any_integer";
 inline constexpr unsigned UtilityAnyIntegerTag = 1;
+inline constexpr llvm::StringLiteral UtilityAnyUnsigned = "nct_any_unsigned";
+inline constexpr unsigned UtilityAnyUnsignedTag = 2;
 enum class UtilityAnyOperation { HasValue, Reset };
 struct UtilityAnyCall {
   UtilityAnyOperation Operation;
@@ -3526,6 +3528,7 @@ struct UtilityAnyCall {
 
 struct UtilityAnyIntegerConstruction {
   const clang::CXXRecordDecl *Record;
+  clang::QualType ValueType;
   const clang::Expr *InPlaceTag;
   const clang::Expr *Input;
   clang::QualType Parameter;
@@ -3538,6 +3541,7 @@ std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerMake(
     const clang::ASTContext &Context);
 struct UtilityAnyIntegerEmplacement {
   const clang::CXXRecordDecl *Record;
+  clang::QualType ValueType;
   const clang::MemberExpr *Callee;
   const clang::Expr *Input;
   clang::QualType Parameter;

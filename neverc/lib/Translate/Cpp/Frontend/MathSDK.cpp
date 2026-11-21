@@ -8634,6 +8634,11 @@ static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *
 static const FunctionDecl *anyPinnedDefinition(const State &S, const SourceManager &SM,
     const FunctionDecl *F, llvm::StringRef Name, unsigned Arity, llvm::StringRef Path);
 
+static bool supportedAnyInlineInteger(QualType Type, const ASTContext &Context) {
+  return !Type.isNull() && (Context.hasSameType(Type, Context.IntTy) ||
+                           Context.hasSameType(Type, Context.UnsignedIntTy));
+}
+
 static bool anyAssignmentBody(const State &S, const SourceManager &SM,
                                    const CXXMethodDecl *Method, const CXXRecordDecl *Any,
                                    bool Value, const ASTContext &Context) {
@@ -8648,13 +8653,16 @@ static bool anyAssignmentBody(const State &S, const SourceManager &SM,
   const auto *Input = Method->getParamDecl(0);
   const auto Parameter = Copy ? Context.getLValueReferenceType(Owner.withConst())
                               : Context.getRValueReferenceType(Owner);
+  QualType Payload;
   if (Value) {
     const auto *Args = Method->getTemplateSpecializationArgs();
     if (!anyPinnedDefinition(S, SM, Method, "operator=", 1, "any") ||
         !Args || Args->size() != 3 || Args->get(1).getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Args->get(1).getAsType(), Context.IntTy) ||
-        !Input->getType()->isReferenceType() ||
-        !Context.hasSameUnqualifiedType(Input->getType().getNonReferenceType(), Context.IntTy))
+        !supportedAnyInlineInteger(Args->get(1).getAsType(), Context))
+      return false;
+    Payload = Args->get(1).getAsType();
+    if (!Input->getType()->isReferenceType() ||
+        !Context.hasSameUnqualifiedType(Input->getType().getNonReferenceType(), Payload))
       return false;
   } else if (!Context.hasSameType(Input->getType(), Parameter)) {
     return false;
@@ -8684,6 +8692,7 @@ static bool anyAssignmentBody(const State &S, const SourceManager &SM,
   if (Value) {
     const auto Construction = approvedUtilityAnyIntegerConstruction(S, SM, Build, Context);
     return Construction && Construction->Record == Any && Construction->Input == Build->getArg(0) &&
+           Context.hasSameType(Construction->ValueType, Payload) &&
            variantForward(S, SM, Construction->Input, Input, Context);
   }
   if (!anyCopyOrMove(S, SM, Build->getConstructor(), Any, Context) ||
@@ -8729,7 +8738,8 @@ std::optional<UtilityAnyTransfer> approvedUtilityAnyTransfer(
       !Context.hasSameUnqualifiedType(Type, Context.getRecordType(Any)))
     return std::nullopt;
   if (Value) {
-    if (!Context.hasSameUnqualifiedType(Input->getType(), Context.IntTy))
+    if (!Context.hasSameUnqualifiedType(Input->getType(),
+                                      Method->getParamDecl(0)->getType().getNonReferenceType()))
       return std::nullopt;
     return UtilityAnyTransfer{Any, Receiver, Input, Arrow, InputFirst,
                               UtilityAnyTransferOperation::AssignInteger, Method->getParamDecl(0)->getType()};
@@ -8806,15 +8816,16 @@ static bool anyInlineBufferAddress(const State &S, const SourceManager &SM, cons
 }
 
 static bool anyInlineIntegerPointer(const State &S, const SourceManager &SM, const Expr *E,
-    const ParmVarDecl *Owner, const CXXRecordDecl *Any, bool Const, const ASTContext &Context) {
+    const ParmVarDecl *Owner, const CXXRecordDecl *Any, QualType Value, bool Const,
+    const ASTContext &Context) {
   const auto *Conversion = dyn_cast_or_null<CXXStaticCastExpr>(E ? E->IgnoreParenImpCasts() : nullptr);
-  const auto Expected = Context.getPointerType(Const ? Context.IntTy.withConst() : Context.IntTy);
+  const auto Expected = Context.getPointerType(Const ? Value.withConst() : Value);
   const auto Buffer = Context.getPointerType(Const ? Context.VoidTy.withConst() : Context.VoidTy);
   return Conversion && Context.hasSameType(Conversion->getType(), Expected) &&
          anyInlineBufferAddress(S, SM, Conversion->getSubExpr(), Owner, Any, Buffer, Context);
 }
 
-static const CXXRecordDecl *anyIntegerHandlerOwner(const State &S, const SourceManager &SM,
+static const ClassTemplateSpecializationDecl *anyIntegerHandlerOwner(const State &S, const SourceManager &SM,
     const FunctionDecl *F, const ASTContext &Context) {
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(F);
   const auto *Handler = Method ? dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent()) : nullptr;
@@ -8822,7 +8833,7 @@ static const CXXRecordDecl *anyIntegerHandlerOwner(const State &S, const SourceM
   if (!Handler || !Method->isStatic() || !Parent || Parent->getName() != "__any_imp" ||
       Handler->getName() != "_SmallHandler" || Handler->getTemplateArgs().size() != 1 ||
       Handler->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Handler->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
+      !supportedAnyInlineInteger(Handler->getTemplateArgs()[0].getAsType(), Context) ||
       !anyDeclaration(S, SM, Handler) || !anyDeclaration(S, SM, Handler->getSpecializedTemplate()))
     return nullptr;
   return Handler;
@@ -8835,15 +8846,17 @@ utilityAllocatorConstructCall(const State &S, const SourceManager &SM,
                               const ASTContext &Context);
 
 static const CXXMethodDecl *anyIntegerHandlerInstallation(const State &S, const SourceManager &SM,
-    const CallExpr *Call, const CXXRecordDecl *Any, unsigned Inputs, const ASTContext &Context) {
+    const CallExpr *Call, const CXXRecordDecl *Any, unsigned Inputs, QualType Value,
+    const ASTContext &Context) {
   const auto *F = Call && Call->getNumArgs() == Inputs + 1
       ? anyPinnedDefinition(S, SM, Call->getDirectCallee(), "__create", Inputs + 1) : nullptr;
   const auto *Handler = anyIntegerHandlerOwner(S, SM, F, Context);
   const auto *Body = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
   const auto AnyType = Context.getRecordType(Any);
-  if (!Handler || !Body || Body->size() != 7 ||
+  if (!Handler || !Context.hasSameType(Handler->getTemplateArgs()[0].getAsType(), Value) ||
+      !Body || Body->size() != 7 ||
       !Context.hasSameType(F->getParamDecl(0)->getType(), Context.getLValueReferenceType(AnyType)) ||
-      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Context.IntTy)))
+      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Value)))
     return nullptr;
   auto Position = Body->body_begin();
   for (unsigned I = 0; I != 2; ++I) {
@@ -8858,13 +8871,13 @@ static const CXXMethodDecl *anyIntegerHandlerInstallation(const State &S, const 
   const auto *Install = dyn_cast_or_null<BinaryOperator>(anySelectedExpression(*Position++));
   const auto *Return = dyn_cast<ReturnStmt>(*Position);
   if (!Allocate || !Slot || !anyDeclaration(S, SM, Allocate) || !anyDeclaration(S, SM, Slot) ||
-      !anyInlineIntegerPointer(S, SM, Slot->getInit(), F->getParamDecl(0), Any, false, Context) ||
+      !anyInlineIntegerPointer(S, SM, Slot->getInit(), F->getParamDecl(0), Any, Value, false, Context) ||
       !Build || Build->getNumArgs() != Inputs + 2 ||
       !anySelectedVariable(Build->getArg(0), Allocate) || !anySelectedVariable(Build->getArg(1), Slot) ||
       !Install || Install->getOpcode() != BO_Assign || !Return)
     return nullptr;
   const auto BuildProof = utilityAllocatorConstructCall(S, SM, Build, true, F, Context);
-  if (!BuildProof || !Context.hasSameType(BuildProof->ElementType, Context.IntTy))
+  if (!BuildProof || !Context.hasSameType(BuildProof->ElementType, Value))
     return nullptr;
   for (unsigned I = 0; I < Inputs; ++I)
     if (!variantForward(S, SM, Build->getArg(I + 2), F->getParamDecl(I + 1), Context))
@@ -8907,7 +8920,8 @@ static const CallExpr *anyIntegerStatementCall(const Stmt *S) {
 }
 
 static bool anyIntegerDestroy(const State &S, const SourceManager &SM,
-    const FunctionDecl *F, const CXXRecordDecl *Any, const ASTContext &Context) {
+    const FunctionDecl *F, const CXXRecordDecl *Any, QualType Payload,
+    const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
   if (!Body || Body->size() != 6 || !F->getReturnType()->isVoidType())
     return false;
@@ -8928,7 +8942,7 @@ static bool anyIntegerDestroy(const State &S, const SourceManager &SM,
   const auto *Clear = dyn_cast_or_null<BinaryOperator>(anySelectedExpression(*Position));
   if (!Allocator || !Value || !Destroy || Destroy->getNumArgs() != 2 ||
       !anyDeclaration(S, SM, Allocator) || !anyDeclaration(S, SM, Value) ||
-      !anyInlineIntegerPointer(S, SM, Value->getInit(), Owner, Any, false, Context) ||
+      !anyInlineIntegerPointer(S, SM, Value->getInit(), Owner, Any, Payload, false, Context) ||
       !anySelectedVariable(Destroy->getArg(0), Allocator) || !anySelectedVariable(Destroy->getArg(1), Value) ||
       !Clear || Clear->getOpcode() != BO_Assign || !anyNull(Clear->getRHS()))
     return false;
@@ -8952,22 +8966,22 @@ static bool anyIntegerDestroy(const State &S, const SourceManager &SM,
   const auto *Pseudo = Invocation
       ? dyn_cast<CXXPseudoDestructorExpr>(Invocation->getCallee()->IgnoreParenImpCasts()) : nullptr;
   return TraitsMethod && TraitsMethod->isStatic() && TraitsRecord &&
-         Context.hasSameType(TraitsRecord->Allocator.ElementType, Context.IntTy) &&
+         Context.hasSameType(TraitsRecord->Allocator.ElementType, Payload) &&
          Forward && Forward->getNumArgs() == 1 && anyParameter(Forward->getArg(0), Traits->getParamDecl(1)) &&
          anyParameter(Forward->getImplicitObjectArgument(), Traits->getParamDecl(0)) &&
          Pseudo && Pseudo->isArrow() && Invocation->getNumArgs() == 0 &&
-         Context.hasSameType(Pseudo->getDestroyedType(), Context.IntTy) &&
+         Context.hasSameType(Pseudo->getDestroyedType(), Payload) &&
          anyParameter(Pseudo->getBase(), Scalar->getParamDecl(0));
 }
 
 static bool anyIntegerTransferLeaf(const State &S, const SourceManager &SM,
     const FunctionDecl *Transfer, const CXXMethodDecl *Handle, const CXXRecordDecl *Any,
-    bool Move, const ASTContext &Context) {
+    bool Move, QualType Payload, const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Transfer->getBody());
   if (!Body || Body->size() != (Move ? 2U : 1U) || !Transfer->getReturnType()->isVoidType())
     return false;
   const auto *Create = anyIntegerStatementCall(Body->body_front());
-  const auto *Install = anyIntegerHandlerInstallation(S, SM, Create, Any, 1, Context);
+  const auto *Install = anyIntegerHandlerInstallation(S, SM, Create, Any, 1, Payload, Context);
   if (!Install || Install->getCanonicalDecl() != Handle->getCanonicalDecl() ||
       !anyParameter(Create->getArg(0), Transfer->getParamDecl(1)))
     return false;
@@ -8979,18 +8993,18 @@ static bool anyIntegerTransferLeaf(const State &S, const SourceManager &SM,
     const auto *DestroyFunction = Destroy && Destroy->getNumArgs() == 1 ? anyPinnedDefinition(S, SM,
         Destroy->getDirectCallee(), "__destroy", 1) : nullptr;
     if (!F || !Use->isXValue() || Use->getNumArgs() != 1 ||
-        !Context.hasSameType(Use->getType(), Context.IntTy) ||
+        !Context.hasSameType(Use->getType(), Payload) ||
         !(anyPinnedDefinition(S, SM, F, "move", 1, "__utility/move.h") ||
           (F->getBuiltinID() == Builtin::BImove && bitsetBuiltinLibraryCast(S, SM, F, Context))) ||
         !DestroyFunction || anyIntegerHandlerOwner(S, SM, DestroyFunction, Context) != Handle->getParent() ||
         !anyParameter(Destroy->getArg(0), Transfer->getParamDecl(0)) ||
-        !anyIntegerDestroy(S, SM, DestroyFunction, Any, Context))
+        !anyIntegerDestroy(S, SM, DestroyFunction, Any, Payload, Context))
       return false;
     Part = Use->getArg(0);
   }
   const auto *Read = dyn_cast_or_null<UnaryOperator>(Part->IgnoreParenImpCasts());
   return Read && Read->getOpcode() == UO_Deref &&
-         anyInlineIntegerPointer(S, SM, Read->getSubExpr(), Transfer->getParamDecl(0), Any, !Move, Context);
+         anyInlineIntegerPointer(S, SM, Read->getSubExpr(), Transfer->getParamDecl(0), Any, Payload, !Move, Context);
 }
 
 static bool anyTypeId(const Expr *E, QualType Value, const ASTContext &Context) {
@@ -9026,7 +9040,7 @@ static bool anyFallbackIdentity(const State &S, const SourceManager &SM,
 }
 
 static bool anyIntegerCompareIdentity(const State &S, const SourceManager &SM,
-    const CallExpr *Call, const ASTContext &Context) {
+    const CallExpr *Call, QualType Payload, const ASTContext &Context) {
   const auto *F = Call && Call->getNumArgs() == 2 ? anyPinnedDefinition(
       S, SM, Call->getDirectCallee(), "__compare_typeid", 2) : nullptr;
   const auto *Body = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
@@ -9047,7 +9061,7 @@ static bool anyIntegerCompareIdentity(const State &S, const SourceManager &SM,
         !And || And->getOpcode() != BO_LAnd || !anyParameter(And->getLHS(), F->getParamDecl(0)) ||
         !Equality || !Equality->isConst() || Equality->getParent()->getName() != "type_info" ||
         !Left || Left->getOpcode() != UO_Deref || !anyParameter(Left->getSubExpr(), F->getParamDecl(0)) ||
-        !anyTypeId(Equal->getArg(1), Context.IntTy, Context) || !True || !True->getValue())
+        !anyTypeId(Equal->getArg(1), Payload, Context) || !True || !True->getValue())
       return false;
   }
   const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
@@ -9058,11 +9072,12 @@ static bool anyIntegerCompareIdentity(const State &S, const SourceManager &SM,
   const auto *Token = Match ? dyn_cast<CallExpr>(Match->getRHS()->IgnoreParenImpCasts()) : nullptr;
   return Either && Either->getOpcode() == BO_LAnd && Missing && Missing->getOpcode() == UO_LNot &&
          anyParameter(Missing->getSubExpr(), F->getParamDecl(0)) && Match && Match->getOpcode() == BO_EQ &&
-         anyParameter(Match->getLHS(), F->getParamDecl(1)) && anyFallbackIdentity(S, SM, Token, Context.IntTy, Context);
+         anyParameter(Match->getLHS(), F->getParamDecl(1)) && anyFallbackIdentity(S, SM, Token, Payload, Context);
 }
 
 static bool anyIntegerGet(const State &S, const SourceManager &SM,
-    const FunctionDecl *F, const CXXRecordDecl *Any, const ASTContext &Context) {
+    const FunctionDecl *F, const CXXRecordDecl *Any, QualType Payload,
+    const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
   if (!Body || Body->size() != 2 || !Context.hasSameType(F->getReturnType(), Context.VoidPtrTy))
     return false;
@@ -9072,13 +9087,13 @@ static bool anyIntegerGet(const State &S, const SourceManager &SM,
   const auto *Empty = dyn_cast<ReturnStmt>(Body->body_back());
   return Branch && !Branch->getInit() && !Branch->getConditionVariable() && !Branch->getElse() &&
          Compare && Compare->getNumArgs() == 2 && anyParameter(Compare->getArg(0), F->getParamDecl(1)) &&
-         anyParameter(Compare->getArg(1), F->getParamDecl(2)) && anyIntegerCompareIdentity(S, SM, Compare, Context) &&
+         anyParameter(Compare->getArg(1), F->getParamDecl(2)) && anyIntegerCompareIdentity(S, SM, Compare, Payload, Context) &&
          Success && anyInlineBufferAddress(S, SM, Success->getRetValue(), F->getParamDecl(0),
                                            Any, Context.VoidPtrTy, Context) &&
          Empty && anyNull(Empty->getRetValue());
 }
 
-static bool anyIntegerTypeInformation(const FunctionDecl *F, const ASTContext &Context) {
+static bool anyIntegerTypeInformation(const FunctionDecl *F, QualType Payload, const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
   const auto *Value = anyReturn(Body);
   if (anyNull(Value))
@@ -9087,11 +9102,11 @@ static bool anyIntegerTypeInformation(const FunctionDecl *F, const ASTContext &C
   const auto *Void = Unqualify ? dyn_cast<CXXStaticCastExpr>(Unqualify->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
   return Unqualify && Context.hasSameType(Unqualify->getType(), Context.VoidPtrTy) && Void &&
          Context.hasSameType(Void->getType(), Context.getPointerType(Context.VoidTy.withConst())) &&
-         anyTypeIdAddress(Void->getSubExpr(), Context.IntTy, Context);
+         anyTypeIdAddress(Void->getSubExpr(), Payload, Context);
 }
 
 static bool anyIntegerDispatch(const State &S, const SourceManager &SM, const CXXMethodDecl *Handle,
-                               const CXXRecordDecl *Any, const ASTContext &Context) {
+                               const CXXRecordDecl *Any, QualType Payload, const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Handle->getBody());
   const auto *Dispatch = Body && Body->size() == 2 ? dyn_cast<SwitchStmt>(Body->body_front()) : nullptr;
   const auto *Cases = Dispatch ? dyn_cast<CompoundStmt>(Dispatch->getBody()) : nullptr;
@@ -9137,23 +9152,23 @@ static bool anyIntegerDispatch(const State &S, const SourceManager &SM, const CX
       return false;
     switch (Index) {
     case 0:
-      if (!anyIntegerDestroy(S, SM, F, Any, Context))
+      if (!anyIntegerDestroy(S, SM, F, Any, Payload, Context))
         return false;
       break;
     case 1:
     case 2:
       if (!anyIntegerObject(Call->getArg(1), Handle->getParamDecl(2), false, Context) ||
-          !anyIntegerTransferLeaf(S, SM, F, Handle, Any, Index == 2, Context))
+          !anyIntegerTransferLeaf(S, SM, F, Handle, Any, Index == 2, Payload, Context))
         return false;
       break;
     case 3:
       if (!anyParameter(Call->getArg(1), Handle->getParamDecl(3)) ||
           !anyParameter(Call->getArg(2), Handle->getParamDecl(4)) ||
-          !anyIntegerGet(S, SM, F, Any, Context))
+          !anyIntegerGet(S, SM, F, Any, Payload, Context))
         return false;
       break;
     default:
-      if (!anyIntegerTypeInformation(F, Context))
+      if (!anyIntegerTypeInformation(F, Payload, Context))
         return false;
       break;
     }
@@ -9166,30 +9181,30 @@ static bool anyIntegerDispatch(const State &S, const SourceManager &SM, const CX
 }
 
 static bool anyIntegerPack(const TemplateArgumentList *Args, unsigned Arity,
-                           const ASTContext &Context) {
+                           QualType Payload, const ASTContext &Context) {
   return Args && Args->size() == 4 && Args->get(0).getKind() == TemplateArgument::Type &&
-         Context.hasSameType(Args->get(0).getAsType(), Context.IntTy) &&
+         Context.hasSameType(Args->get(0).getAsType(), Payload) &&
          Args->get(1).getKind() == TemplateArgument::Pack && Args->get(1).pack_size() == Arity &&
          Args->get(2).getKind() == TemplateArgument::Type &&
-         Context.hasSameType(Args->get(2).getAsType(), Context.IntTy);
+         Context.hasSameType(Args->get(2).getAsType(), Payload);
 }
 
-static bool anyIntegerInput(const Expr *Input, QualType Parameter, const ASTContext &Context) {
+static bool anyIntegerInput(const Expr *Input, QualType Parameter, QualType Payload, const ASTContext &Context) {
   return !Input || (!Parameter.isNull() && Parameter->isReferenceType() &&
-         Context.hasSameUnqualifiedType(Parameter.getNonReferenceType(), Context.IntTy) &&
-         Context.hasSameUnqualifiedType(Input->getType(), Context.IntTy) &&
+         Context.hasSameUnqualifiedType(Parameter.getNonReferenceType(), Payload) &&
+         Context.hasSameUnqualifiedType(Input->getType(), Payload) &&
          !Input->getType().isVolatileQualified());
 }
 
 static bool anyIntegerInstallThis(const State &S, const SourceManager &SM,
     const CallExpr *Create, const FunctionDecl *Owner, const CXXRecordDecl *Any,
-    unsigned Offset, const ASTContext &Context) {
+    unsigned Offset, QualType Payload, const ASTContext &Context) {
   const unsigned Arity = Owner->getNumParams() - Offset;
-  const auto *Handle = anyIntegerHandlerInstallation(S, SM, Create, Any, Arity, Context);
+  const auto *Handle = anyIntegerHandlerInstallation(S, SM, Create, Any, Arity, Payload, Context);
   const auto *Object = Handle ? dyn_cast<UnaryOperator>(Create->getArg(0)->IgnoreParenImpCasts()) : nullptr;
   return Object && Object->getOpcode() == UO_Deref && anyThis(Object->getSubExpr()) &&
          (!Arity || variantForward(S, SM, Create->getArg(1), Owner->getParamDecl(Offset), Context)) &&
-         anyIntegerDispatch(S, SM, Handle, Any, Context);
+         anyIntegerDispatch(S, SM, Handle, Any, Payload, Context);
 }
 
 static std::optional<UtilityAnyIntegerConstruction> anyIntegerConstruction(
@@ -9211,28 +9226,33 @@ static std::optional<UtilityAnyIntegerConstruction> anyIntegerConstruction(
   const unsigned Offset = F->isExplicit() ? 1 : 0;
   const unsigned Arity = Count - Offset;
   const auto *Tag = Offset ? Construction->getArg(0) : nullptr;
+  const unsigned TypeArgument = Tag ? 0 : 1;
+  if (!Args || Args->size() <= TypeArgument ||
+      Args->get(TypeArgument).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Payload = Args->get(TypeArgument).getAsType();
+  if (!supportedAnyInlineInteger(Payload, Context))
+    return std::nullopt;
   if (Tag) {
     const auto *Selection = variantInPlaceTag(S, SM, Tag, "in_place_type_t", "in_place_type");
     const bool TagOrigin = Factory
         ? anyDeclaration(S, SM, Factory) && cstddefOrigin(S, SM, Tag->getExprLoc(), "libcxx", "any")
         : S.owns(SM, Tag->getExprLoc());
-    if (!TagOrigin || !Selection || !anyIntegerPack(Args, Arity, Context) ||
+    if (!TagOrigin || !Selection || !anyIntegerPack(Args, Arity, Payload, Context) ||
         !Selection->structurallyEquals(Args->get(0)) ||
         !Context.hasSameUnqualifiedType(Tag->getType(), F->getParamDecl(0)->getType()))
       return std::nullopt;
-  } else if (Arity != 1 || !Args || Args->size() != 3 ||
-             Args->get(1).getKind() != TemplateArgument::Type ||
-             !Context.hasSameType(Args->get(1).getAsType(), Context.IntTy)) {
+  } else if (Arity != 1 || Args->size() != 3) {
     return std::nullopt;
   }
   const auto *Input = Arity ? Construction->getArg(Offset) : nullptr;
   const auto Parameter = Arity ? F->getParamDecl(Offset)->getType() : QualType();
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
   const auto *Create = Body && Body->size() == 1 ? anyIntegerStatementCall(Body->body_front()) : nullptr;
-  if (!anyIntegerInput(Input, Parameter, Context) ||
-      !anyIntegerInstallThis(S, SM, Create, F, Any, Offset, Context))
+  if (!anyIntegerInput(Input, Parameter, Payload, Context) ||
+      !anyIntegerInstallThis(S, SM, Create, F, Any, Offset, Payload, Context))
     return std::nullopt;
-  return UtilityAnyIntegerConstruction{Any, Tag, Input, Parameter};
+  return UtilityAnyIntegerConstruction{Any, Payload, Tag, Input, Parameter};
 }
 
 std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerConstruction(
@@ -9252,7 +9272,7 @@ std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerMake(
   const auto *Args = Use ? Original->getTemplateSpecializationArgs() : nullptr;
   if (!Use || Use->getDecl() != Original || !S.owns(SM, Use->getExprLoc()) ||
       !Args || Args->size() != 2 || Args->get(0).getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Args->get(0).getAsType(), Context.IntTy) ||
+      !supportedAnyInlineInteger(Args->get(0).getAsType(), Context) ||
       Args->get(1).getKind() != TemplateArgument::Pack || Args->get(1).pack_size() != Arity)
     return std::nullopt;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
@@ -9266,11 +9286,12 @@ std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerMake(
   const auto Proof = anyIntegerConstruction(S, SM, Build, F, Context);
   const auto *Input = Arity ? Call->getArg(0) : nullptr;
   const auto Parameter = Arity ? F->getParamDecl(0)->getType() : QualType();
-  if (!Proof || !anyIntegerInput(Input, Parameter, Context) ||
+  if (!Proof || !Context.hasSameType(Proof->ValueType, Args->get(0).getAsType()) ||
+      !anyIntegerInput(Input, Parameter, Proof->ValueType, Context) ||
       (Arity && (!Context.hasSameType(Parameter, Proof->Parameter) ||
                  !variantForward(S, SM, Proof->Input, F->getParamDecl(0), Context))))
     return std::nullopt;
-  return UtilityAnyIntegerConstruction{Proof->Record, nullptr, Input, Parameter};
+  return UtilityAnyIntegerConstruction{Proof->Record, Proof->ValueType, nullptr, Input, Parameter};
 }
 
 std::optional<UtilityAnyIntegerEmplacement> approvedUtilityAnyIntegerEmplacement(
@@ -9286,14 +9307,16 @@ std::optional<UtilityAnyIntegerEmplacement> approvedUtilityAnyIntegerEmplacement
   const auto *Any = F ? F->getParent()->getDefinition() : nullptr;
   const auto *Base = Member->getBase();
   const auto Owner = Member->isArrow() ? Base->getType()->getPointeeType() : Base->getType();
-  if (!F || !F->getPrimaryTemplate() || F->isStatic() || F->isConst() || Owner.isNull() ||
+  const auto Payload = F ? F->getReturnType().getNonReferenceType() : QualType();
+  if (!F || !supportedAnyInlineInteger(Payload, Context) ||
+      !F->getPrimaryTemplate() || F->isStatic() || F->isConst() || Owner.isNull() ||
       Owner.isConstQualified() || Owner.isVolatileQualified() ||
       (!Member->isArrow() && !Base->isGLValue()) || !Any ||
       Member->getMemberDecl()->getCanonicalDecl() != F->getCanonicalDecl() ||
       !Context.hasSameUnqualifiedType(Owner, Context.getRecordType(Any)) ||
       !approvedUtilityAnyRecord(S, SM, Any, Context) ||
-      !anyIntegerPack(Original->getTemplateSpecializationArgs(), Arity, Context) ||
-      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Context.IntTy)))
+      !anyIntegerPack(Original->getTemplateSpecializationArgs(), Arity, Payload, Context) ||
+      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Payload)))
     return std::nullopt;
   const auto *Input = Arity ? Call->getArg(0) : nullptr;
   const auto Parameter = Arity ? F->getParamDecl(0)->getType() : QualType();
@@ -9305,10 +9328,10 @@ std::optional<UtilityAnyIntegerEmplacement> approvedUtilityAnyIntegerEmplacement
       ? dyn_cast_or_null<CallExpr>(anySelectedExpression(Returned->getRetValue())) : nullptr;
   if (!Reset || Reset->getNumArgs() || !anyThis(Reset->getImplicitObjectArgument()) ||
       !anyResetBody(S, SM, Reset->getMethodDecl(), Any, Context) ||
-      !anyIntegerInput(Input, Parameter, Context) ||
-      !anyIntegerInstallThis(S, SM, Create, F, Any, 0, Context))
+      !anyIntegerInput(Input, Parameter, Payload, Context) ||
+      !anyIntegerInstallThis(S, SM, Create, F, Any, 0, Payload, Context))
     return std::nullopt;
-  return UtilityAnyIntegerEmplacement{Any, Member, Input, Parameter};
+  return UtilityAnyIntegerEmplacement{Any, Payload, Member, Input, Parameter};
 }
 
 static bool anyActivePointerCastBody(const State &S, const SourceManager &SM,
@@ -9452,12 +9475,14 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   if (!Use || Use->getDecl() != Original || !S.owns(SM, Use->getExprLoc()) ||
       !Args || Args->size() != 1 || Args->get(0).getKind() != TemplateArgument::Type)
     return nullptr;
-  const auto Int = Context.IntTy;
-  const auto ConstInt = Int.withConst();
   const auto Result = F->getReturnType();
-  const bool Reference = Context.hasSameType(Result, Context.getLValueReferenceType(ConstInt));
+  const auto Payload = Result.getNonReferenceType().getUnqualifiedType();
+  if (!supportedAnyInlineInteger(Payload, Context))
+    return nullptr;
+  const auto ConstValue = Payload.withConst();
+  const bool Reference = Context.hasSameType(Result, Context.getLValueReferenceType(ConstValue));
   if (!Context.hasSameType(Result, Args->get(0).getAsType()) ||
-      (!Reference && !Context.hasSameType(Result, Int)) ||
+      (!Reference && !Context.hasSameType(Result, Payload)) ||
       Call->isLValue() != Reference || !Context.hasSameType(Call->getType(), Result.getNonReferenceType()))
     return nullptr;
 
@@ -9472,7 +9497,7 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
                            Context.getLValueReferenceType(Context.getRecordType(Any).withConst())))
     return nullptr;
   const auto Initial = approvedUtilityAnyIntegerConstruction(S, SM, variantConstruct(Local->getInit()), Context);
-  if (!Initial || Initial->Record != Any)
+  if (!Initial || Initial->Record != Any || !Context.hasSameType(Initial->ValueType, Payload))
     return nullptr;
 
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
@@ -9486,7 +9511,7 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   const auto *Requirement = AssertStatement && AssertStatement->isSingleDecl()
       ? dyn_cast<StaticAssertDecl>(AssertStatement->getSingleDecl()) : nullptr;
   if (!Alias || Alias->getName() != "_RawValueType" ||
-      !Context.hasSameType(Alias->getUnderlyingType(), Int) || !anyDeclaration(S, SM, Alias) ||
+      !Context.hasSameType(Alias->getUnderlyingType(), Payload) || !anyDeclaration(S, SM, Alias) ||
       !Requirement || Requirement->isFailed() || !anyDeclaration(S, SM, Requirement))
     return nullptr;
   const auto *Pointer = anySelectedLocal(*Position++);
@@ -9495,7 +9520,7 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   const auto *Address = Cast && Cast->getNumArgs() == 1
       ? dyn_cast<UnaryOperator>(Cast->getArg(0)->IgnoreParenImpCasts()) : nullptr;
   if (!Pointer || !anyDeclaration(S, SM, Pointer) ||
-      !Context.hasSameType(Pointer->getType(), Context.getPointerType(ConstInt)) ||
+      !Context.hasSameType(Pointer->getType(), Context.getPointerType(ConstValue)) ||
       !PointerFunction || anyPointerCast(S, SM, PointerFunction, Context, true) != Any ||
       !Address || Address->getOpcode() != UO_AddrOf || !anyParameter(Address->getSubExpr(), F->getParamDecl(0)))
     return nullptr;
