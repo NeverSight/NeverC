@@ -19,6 +19,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/raw_ostream.h"
 #include <deque>
 #include <functional>
 #include <set>
@@ -8215,9 +8216,107 @@ static bool anyEmptyCopyOrMove(const State &S, const SourceManager &SM,
   return true;
 }
 
+
+static void traceAnyScalarSelection(const State &S, const SourceManager &SM,
+    const FunctionDecl *Selected, const Expr *Site) {
+  if (!Selected || !Site || !S.owns(SM, Site->getExprLoc()) ||
+      !anyDeclaration(S, SM, Selected))
+    return;
+  const auto Name = Selected->getNameAsString();
+  const auto *Method = dyn_cast<CXXMethodDecl>(Selected);
+  if (Method) {
+    if (!Method->getParent()->getIdentifier() || Method->getParent()->getName() != "any")
+      return;
+  } else if (Name != "any_cast" && Name != "make_any" && Name != "swap") {
+    return;
+  }
+  static llvm::DenseSet<std::pair<const FunctionDecl *, unsigned>> Seen;
+  if (Seen.size() >= 32 ||
+      !Seen.insert({Selected->getCanonicalDecl(), Site->getExprLoc().getRawEncoding()}).second)
+    return;
+  auto &Out = llvm::errs();
+  llvm::DenseSet<const FunctionDecl *> Functions;
+  llvm::DenseSet<const Stmt *> Statements;
+  unsigned Budget = 512;
+  std::function<void(const FunctionDecl *, unsigned)> Function;
+  std::function<void(const Stmt *, unsigned, unsigned)> Statement;
+  Function = [&](const FunctionDecl *F, unsigned Depth) {
+    if (!F || Depth > 10 || Functions.size() >= 72 || !Budget ||
+        !Functions.insert(F->getCanonicalDecl()).second)
+      return;
+    const auto Origin = S.sdkFile(SM, F->getLocation());
+    if (!Origin || Origin->Root != "libcxx")
+      return;
+    const auto Path = Origin->Path;
+    if (Path != "any" && Path != "typeinfo" && Path != "__utility/forward.h" &&
+        Path != "__utility/move.h" && Path != "__memory/allocator.h" &&
+        Path != "__memory/allocator_traits.h" && Path != "__memory/construct_at.h")
+      return;
+    const auto *Definition = F->getDefinition();
+    const auto *Body = Definition ? Definition->getBody() : nullptr;
+    Out << "NEVERC_ANY_SCALAR_DECL depth=" << Depth << " file=" << Path
+        << " name=" << F->getNameAsString() << " params=" << F->getNumParams()
+        << " body=" << (Body ? Body->getStmtClassName() : "none");
+    if (const auto *M = dyn_cast<CXXMethodDecl>(F))
+      Out << " parent=" << M->getParent()->getNameAsString()
+          << " static=" << M->isStatic() << " const=" << M->isConst();
+    if (const auto *Args = F->getTemplateSpecializationArgs()) {
+      Out << " template=";
+      for (unsigned I = 0; I < Args->size() && I < 6; ++I) {
+        const auto &Arg = Args->get(I);
+        if (Arg.getKind() == TemplateArgument::Pack)
+          Out << 'p' << Arg.pack_size();
+        else
+          Out << 'k' << unsigned(Arg.getKind());
+        Out << ',';
+      }
+    }
+    Out << '\n';
+    if (const auto *Ctor = dyn_cast_or_null<CXXConstructorDecl>(Definition))
+      for (const auto *Init : Ctor->inits()) {
+        const auto *Field = Init->isMemberInitializer() ? Init->getMember() : nullptr;
+        Out << "NEVERC_ANY_SCALAR_INITIALIZER depth=" << Depth
+            << " field=" << (Field ? Field->getNameAsString() : "other") << '\n';
+        Statement(Init->getInit(), Depth, 0);
+      }
+    Statement(Body, Depth, 0);
+  };
+  Statement = [&](const Stmt *Node, unsigned Depth, unsigned ChildDepth) {
+    if (!Node || ChildDepth > 13 || !Budget || !Statements.insert(Node).second)
+      return;
+    --Budget;
+    if (const auto *Call = dyn_cast<CallExpr>(Node)) {
+      const auto *Callee = Call->getDirectCallee();
+      Out << "NEVERC_ANY_SCALAR_CALL depth=" << Depth << " kind=" << Node->getStmtClassName()
+          << " name=" << (Callee ? Callee->getNameAsString() : "indirect")
+          << " args=" << Call->getNumArgs() << '\n';
+      Function(Callee, Depth + 1);
+    } else if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
+      Function(C->getConstructor(), Depth + 1);
+    } else if (const auto *Reference = dyn_cast<DeclRefExpr>(Node)) {
+      const auto *D = Reference->getDecl();
+      Function(dyn_cast<FunctionDecl>(D), Depth + 1);
+      if (const auto *Action = dyn_cast<EnumConstantDecl>(D))
+        if (anyDeclaration(S, SM, Action))
+          Out << "NEVERC_ANY_SCALAR_ACTION " << Action->getName() << '\n';
+    } else if (const auto *Member = dyn_cast<MemberExpr>(Node)) {
+      if (anyDeclaration(S, SM, Member->getMemberDecl()))
+        Out << "NEVERC_ANY_SCALAR_MEMBER " << Member->getMemberNameInfo().getAsString() << '\n';
+    }
+    for (const auto *Child : Node->children())
+      Statement(Child, Depth, ChildDepth + 1);
+  };
+  Out << "NEVERC_ANY_SCALAR_START name=" << Name << '\n';
+  Function(Selected, 0);
+  Out << "NEVERC_ANY_SCALAR_END nodes=" << 512 - Budget
+      << " declarations=" << Functions.size() << '\n';
+}
+
 bool approvedUtilityAnyEmptyConstruction(const State &S, const SourceManager &SM,
                                           const CXXConstructExpr *Construction,
                                           const ASTContext &Context) {
+  if (Construction)
+    traceAnyScalarSelection(S, SM, Construction->getConstructor(), Construction);
   if (!Construction || Construction->isInstantiationDependent() || Construction->getNumArgs() > 1 ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete)
     return false;
@@ -8237,6 +8336,8 @@ bool approvedUtilityAnyEmptyConstruction(const State &S, const SourceManager &SM
 std::optional<UtilityAnyEmptyCall> approvedUtilityAnyEmptyCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
+  if (Call)
+    traceAnyScalarSelection(S, SM, Call->getDirectCallee(), Call);
   const auto *MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Method = MemberCall ? MemberCall->getMethodDecl() : nullptr;
   if (!Method || !Method->getIdentifier() || MemberCall->getNumArgs() ||
@@ -8400,6 +8501,8 @@ static bool anyEmptyAssignmentBody(const State &S, const SourceManager &SM,
 
 std::optional<UtilityAnyEmptyTransfer> approvedUtilityAnyEmptyTransfer(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  if (Call)
+    traceAnyScalarSelection(S, SM, Call->getDirectCallee(), Call);
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
   if (!Method || Method->isDeleted() || Method->isInvalidDecl() || Method->getNumParams() != 1)
     return std::nullopt;
@@ -8527,6 +8630,8 @@ static const CXXRecordDecl *anyEmptyCast(const State &S, const SourceManager &SM
 const CXXRecordDecl *approvedUtilityAnyEmptyPointerCast(const State &S, const SourceManager &SM,
                                                        const CallExpr *Call,
                                                        const ASTContext &Context) {
+  if (Call)
+    traceAnyScalarSelection(S, SM, Call->getDirectCallee(), Call);
   if (!S.coreV2() || !Call || Call->getNumArgs() != 1 || !directFunctionReference(Call))
     return nullptr;
   return anyEmptyCast(S, SM, Call->getDirectCallee(), Context, true);
