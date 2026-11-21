@@ -32736,22 +32736,111 @@ class Consumer : public ASTConsumer {
   std::vector<FriendFunctionTemplateSource> FriendTemplates;
   std::vector<FunctionTemplateBodySource> TemplateBodies;
   std::vector<FriendClassTemplateSource> FriendClasses;
+  static constexpr std::size_t SourceUnitLimit = 200000;
   std::size_t DirectiveUnits = 0;
+  std::size_t DeferredBindUnits = 0;
+  std::vector<std::size_t> DeferredBindUses, DeferredBindCalls;
+  enum class BindSourceStatus { AwaitingHeader, Confirmed, Unused };
+  BindSourceStatus BindSources = BindSourceStatus::AwaitingHeader;
+  enum class BindSourceError { Budget, Incomplete };
+  std::optional<std::pair<BindSourceError, SourceLocation>> DeferredBindError;
   std::size_t ArrayFillerUnits = 0;
   std::set<const Expr *> SeparateArrayFillers;
 
-  bool reserveSourceUnits(SourceManager &Sources, SourceLocation Location,
-                          std::size_t ArgumentCount) {
-    constexpr std::size_t Limit = 200000;
-    if (ArgumentCount >= Limit || 1 + ArgumentCount > Limit - DirectiveUnits) {
-      auto P = Sources.getPresumedLoc(Location);
+  template <class Record>
+  static void discardDeferredRecords(std::vector<Record> &Records,
+                                     std::vector<std::size_t> &Deferred) {
+    if (Deferred.empty())
+      return;
+    auto Next = Deferred.begin();
+    std::size_t Write = 0;
+    for (std::size_t Read = 0; Read < Records.size(); ++Read) {
+      if (Next != Deferred.end() && *Next == Read) {
+        ++Next;
+        continue;
+      }
+      if (Write != Read)
+        Records[Write] = std::move(Records[Read]);
+      ++Write;
+    }
+    Records.erase(Records.begin() + Write, Records.end());
+    Deferred.clear();
+  }
+
+  void discardDeferredBindSource() {
+    discardDeferredRecords(TemplateUses, DeferredBindUses);
+    discardDeferredRecords(SelectedCalls, DeferredBindCalls);
+    DirectiveUnits -= DeferredBindUnits;
+    DeferredBindUnits = 0;
+  }
+
+  void reportSourceError(SourceManager &Sources, SourceLocation Location,
+                         BindSourceError Error) {
+    if (Error == BindSourceError::Incomplete) {
       S.diagnose("TR0201", "template source evidence",
-                 "Template source evidence exceeds the frontend budget.",
-                 "Reduce source directives, defaults and template arguments.",
-                 P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1);
+                 "Successful template source metadata is incomplete.",
+                 "Use a frontend build with matching source-preservation hooks.");
+      return;
+    }
+    auto P = Sources.getPresumedLoc(Location);
+    S.diagnose("TR0201", "template source evidence",
+               "Template source evidence exceeds the frontend budget.",
+               "Reduce source directives, defaults and template arguments.",
+               P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1);
+  }
+
+  bool activateBindSource(SourceManager &Sources) {
+    if (BindSources != BindSourceStatus::AwaitingHeader)
+      return S.Diagnostics.empty();
+    static const std::pair<std::string, std::string> Header{"libcxx", "__functional/bind.h"};
+    if (!S.SDKDependencies.count(Header))
+      return true;
+    // Template instances emitted before this include can be reused by bind.
+    BindSources = BindSourceStatus::Confirmed;
+    DeferredBindUses.clear();
+    DeferredBindCalls.clear();
+    DeferredBindUnits = 0;
+    if (!DeferredBindError)
+      return true;
+    const auto &[Error, Location] = *DeferredBindError;
+    reportSourceError(Sources, Location, Error);
+    return false;
+  }
+
+  void deferBindError(BindSourceError Error, SourceLocation Location) {
+    if (!DeferredBindError)
+      DeferredBindError.emplace(Error, Location);
+    discardDeferredBindSource();
+  }
+
+  bool canCollectBindSource() const {
+    return BindSources == BindSourceStatus::Confirmed ||
+           (BindSources == BindSourceStatus::AwaitingHeader && !DeferredBindError);
+  }
+
+  bool reserveSourceUnits(SourceManager &Sources, SourceLocation Location,
+                          std::size_t ArgumentCount, bool DeferredBind = false) {
+    if (!activateBindSource(Sources))
+      return false;
+    const auto Fits = [&] {
+      return ArgumentCount < SourceUnitLimit &&
+             1 + ArgumentCount <= SourceUnitLimit - DirectiveUnits;
+    };
+    if (!Fits() && BindSources == BindSourceStatus::AwaitingHeader &&
+        (DeferredBind || DeferredBindUnits)) {
+      // Pending SDK metadata can consume only the budget left by required
+      // records. Report a lost bind dependency if its header is later used.
+      deferBindError(BindSourceError::Budget, Location);
+      if (DeferredBind)
+        return false;
+    }
+    if (!Fits()) {
+      reportSourceError(Sources, Location, BindSourceError::Budget);
       return false;
     }
     DirectiveUnits += 1 + ArgumentCount;
+    if (DeferredBind)
+      DeferredBindUnits += 1 + ArgumentCount;
     return true;
   }
 
@@ -32774,33 +32863,35 @@ class Consumer : public ASTConsumer {
     auto &Sources = Context.getSourceManager();
     const bool NotFnConstraint = retainFunctionalNotFnConstraintRoot(
         S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
-    const bool BindConstraint = retainFunctionalBindConstraintRoot(
-        S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
-    if (!S.owns(Sources, Location) && !NotFnConstraint && !BindConstraint &&
-        !(Kind == TemplateSourceKind::Function &&
-          (tupleFactorySelectionLocation(S, Sources, Location,
-              dyn_cast_or_null<FunctionDecl>(Declaration)) ||
-           approvedUtilityPairTraitSelectionLocation(S, Sources, Location,
-              dyn_cast_or_null<FunctionDecl>(Declaration)) ||
-           approvedUtilityPairFactorySelectionLocation(S, Sources, Location,
-              dyn_cast_or_null<FunctionDecl>(Declaration)) ||
-           pairPiecewiseSelectionLocation(S, Sources, Location,
-              dyn_cast_or_null<FunctionDecl>(Declaration)))))
+    if (!activateBindSource(Sources))
       return;
+    const bool BindConstraint = canCollectBindSource() && retainFunctionalBindConstraintRoot(
+        S, Sources, Kind, Template, Declaration, Type, Underlying, Location);
+    const auto *Function = dyn_cast_or_null<FunctionDecl>(Declaration);
+    const bool Independent = S.owns(Sources, Location) || NotFnConstraint ||
+        (Kind == TemplateSourceKind::Function &&
+         (tupleFactorySelectionLocation(S, Sources, Location, Function) ||
+          approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) ||
+          approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function) ||
+          pairPiecewiseSelectionLocation(S, Sources, Location, Function)));
+    if (!Independent && !BindConstraint)
+      return;
+    const bool DeferredBind = !Independent && BindSources == BindSourceStatus::AwaitingHeader;
     // These are successful Clang callbacks, not input protocol records. Bound
     // collection globally without eagerly rejecting an unused generic body.
-    constexpr std::size_t Limit = 200000;
+    constexpr std::size_t Limit = SourceUnitLimit;
     if (Count >= Limit || DefaultCount > 64 || TypeCount > 4096 ||
         (Written && Written->size() >= Limit)) {
-      reserveSourceUnits(Sources, Location, Limit);
+      reserveSourceUnits(Sources, Location, Limit, DeferredBind);
       return;
     }
     if ((Count && (!Canonical || !Sugared)) ||
         (DefaultCount && (!DefaultParameters || !OriginalDefaults || !ConvertedDefaults)) ||
         (TypeCount && (!TypeParameters || !ParameterTypes || !PackIndices))) {
-      S.diagnose("TR0201", "template source evidence",
-                 "Successful template source metadata is incomplete.",
-                 "Use a frontend build with matching source-preservation hooks.");
+      if (DeferredBind)
+        deferBindError(BindSourceError::Incomplete, Location);
+      else
+        reportSourceError(Sources, Location, BindSourceError::Incomplete);
       return;
     }
     const auto *Full = dyn_cast_or_null<VarTemplateSpecializationDecl>(Declaration);
@@ -32829,13 +32920,13 @@ class Consumer : public ASTConsumer {
         if (Argument->getKind() == TemplateArgument::Pack) {
           if (Argument->pack_size() >= Limit || Units >= Limit ||
               Argument->pack_size() >= Limit - Units) {
-            reserveSourceUnits(Sources, Location, Limit);
+            reserveSourceUnits(Sources, Location, Limit, DeferredBind);
             return;
           }
           Units += Argument->pack_size();
         }
     }
-    if (!reserveSourceUnits(Sources, Location, Units))
+    if (!reserveSourceUnits(Sources, Location, Units, DeferredBind))
       return;
     TemplateUseSource Source{
         Kind, Template, Declaration, Type, Underlying,
@@ -32852,6 +32943,8 @@ class Consumer : public ASTConsumer {
     Source.ParameterTypes.reserve(TypeCount);
     for (unsigned I = 0; I < TypeCount; ++I)
       Source.ParameterTypes.push_back({TypeParameters[I], ParameterTypes[I], PackIndices[I]});
+    if (DeferredBind)
+      DeferredBindUses.push_back(TemplateUses.size());
     TemplateUses.push_back(std::move(Source));
   }
 
@@ -33106,15 +33199,23 @@ public:
     auto &Sources = Function->getASTContext().getSourceManager();
     const bool NotFn = retainFunctionalNotFnConstraintRoot(S, Sources, TemplateSourceKind::Function,
         Function->getPrimaryTemplate(), Function, nullptr, nullptr, Location);
-    const bool Bind = retainFunctionalBindConstraintRoot(S, Sources, TemplateSourceKind::Function,
-        Function->getPrimaryTemplate(), Function, nullptr, nullptr, Location);
-    if ((!S.owns(Sources, Location) && !NotFn && !Bind &&
-         !tupleFactorySelectionLocation(S, Sources, Location, Function) &&
-         !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) &&
-         !approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function) &&
-         !pairPiecewiseSelectionLocation(S, Sources, Location, Function)) ||
-        !reserveSourceUnits(Sources, Location, 2))
+    if (!activateBindSource(Sources))
       return;
+    const bool Bind = canCollectBindSource() && retainFunctionalBindConstraintRoot(
+        S, Sources, TemplateSourceKind::Function, Function->getPrimaryTemplate(),
+        Function, nullptr, nullptr, Location);
+    const bool Independent = S.owns(Sources, Location) || NotFn ||
+        tupleFactorySelectionLocation(S, Sources, Location, Function) ||
+        approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) ||
+        approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function) ||
+        pairPiecewiseSelectionLocation(S, Sources, Location, Function);
+    if (!Independent && !Bind)
+      return;
+    const bool DeferredBind = !Independent && BindSources == BindSourceStatus::AwaitingHeader;
+    if (!reserveSourceUnits(Sources, Location, 2, DeferredBind))
+      return;
+    if (DeferredBind)
+      DeferredBindCalls.push_back(SelectedCalls.size());
     // All admitted producer paths capture direct nodes before casts or
     // lifetime wrappers. Preserve invalid records for deterministic rejection.
     SelectedCalls.push_back({Expression, Function, Location, NotFn, Bind});
@@ -33387,6 +33488,16 @@ public:
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
+    if (!activateBindSource(C.getSourceManager()))
+      return;
+    if (BindSources == BindSourceStatus::AwaitingHeader) {
+      discardDeferredBindSource();
+      for (auto &Source : TemplateUses)
+        Source.FunctionalBindConstraint = false;
+      for (auto &Source : SelectedCalls)
+        Source.FunctionalBindConstraint = false;
+      BindSources = BindSourceStatus::Unused;
+    }
     // Layout preparation precedes indexing retained Sema
     // events. Completing a layout can produce further substitutions; all of
     // them must reach the same ordinary source checks as the original parse.
