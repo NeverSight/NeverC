@@ -3428,6 +3428,18 @@ struct UtilityVariantConstruction {
 std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+struct UtilityVariantValueAssignment {
+  UtilityVariantRecord Variant;
+  const clang::Expr *Receiver;
+  const clang::Expr *Input;
+  clang::QualType Parameter;
+  unsigned Index;
+  bool Arrow;
+  bool InputFirst;
+};
+std::optional<UtilityVariantValueAssignment> approvedUtilityVariantValueAssignment(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 struct UtilityVariantEmplace {
   UtilityVariantRecord Variant;
   const clang::MemberExpr *Callee;
@@ -3435,6 +3447,22 @@ struct UtilityVariantEmplace {
   const clang::Expr *Input;
 };
 std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UtilityVariantIntegralVisit {
+  UtilityVariantRecord Variant;
+  clang::QualType Callable;
+  clang::QualType Argument;
+  clang::QualType Result;
+};
+std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UtilityVariantZeroVisit {
+  clang::QualType Parameter;
+  clang::QualType Result;
+};
+std::optional<UtilityVariantZeroVisit> approvedUtilityVariantZeroVisit(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UtilityVariantQuery {

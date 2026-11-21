@@ -43,6 +43,16 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.layout_integral_visit_registered = cls.registered
+        cls.layout_integral_visit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_integral_visit_original = cls.adapter.restore_original_gtests(cls.layout_integral_visit_registered,
+                                                                        cls.layout_integral_visit_suffix)
+        cls.registered = cls.adapter.restore_layout_integral_visit_history(cls.layout_integral_visit_registered)
+        cls.layout_assignment_visit_registered = cls.registered
+        cls.layout_assignment_visit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_assignment_visit_original = cls.adapter.restore_original_gtests(cls.layout_assignment_visit_registered,
+                                                                        cls.layout_assignment_visit_suffix)
+        cls.registered = cls.adapter.restore_layout_assignment_visit_history(cls.layout_assignment_visit_registered)
         cls.layout_adapter_registered = cls.registered
         cls.layout_adapter_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.layout_adapter_original = cls.adapter.restore_original_gtests(cls.layout_adapter_registered,
@@ -1874,6 +1884,42 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_layout_adapter_history(self.layout_adapter_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.layout_adapter_registered, self.layout_adapter_suffix + b' ')
+
+
+    def test_layout_assignment_visit_retains_published_bodies(self):
+        self.assertEqual(self.layout_assignment_visit_original + self.layout_assignment_visit_suffix, self.layout_assignment_visit_registered)
+        self.assertEqual(self.adapter.restore_layout_assignment_visit_history(self.layout_assignment_visit_original),
+                         self.layout_adapter_original)
+        output, evidence = self.extractor.extract(self.layout_assignment_visit_original, ['TranslateTest.CoreV2VariantValueAssignmentSwitchAndChainedResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentSameAlternativeReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentAssignmentSyntaxBindingOrderRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentExplicitMemberBindingOrderRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentPointerAndResetSelectionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitFunctionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitPointerReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitFactoryEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitVoidResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentVolatileOperandRejected', 'TranslateTest.CoreV2VariantValueAssignmentUserDefinedConversionRejected', 'TranslateTest.CoreV2VariantValueAssignmentNontrivialAlternativeRejected', 'TranslateTest.CoreV2VariantZeroVisitRenamedValueWrapperRejected', 'TranslateTest.CoreV2VariantZeroVisitRenamedTableProjectionRejected'])
+        self.assertEqual(evidence['original_test_names'], 8172)
+        self.assertEqual(evidence['selected_count'], 14)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-value-assignment-assignment-syntax-binding-order', output)
+        self.assertIn(b'variant-zero-visit-void-result', output)
+
+    def test_layout_assignment_visit_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_assignment_visit_history(self.layout_assignment_visit_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_assignment_visit_registered, self.layout_assignment_visit_suffix + b' ')
+
+
+    def test_layout_integral_visit_retains_published_bodies(self):
+        self.assertEqual(self.layout_integral_visit_original + self.layout_integral_visit_suffix, self.layout_integral_visit_registered)
+        self.assertEqual(self.adapter.restore_layout_integral_visit_history(self.layout_integral_visit_original),
+                         self.layout_assignment_visit_original)
+        output, evidence = self.extractor.extract(self.layout_integral_visit_original, ['TranslateTest.CoreV2VariantIntegralVisitActiveIndexChangesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitConstAndIntegralConversionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitCallbackAndReceiverEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitVoidResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitRenamedGuardRejected', 'TranslateTest.CoreV2VariantIntegralVisitRenamedBaseSelectionRejected', 'TranslateTest.CoreV2VariantIntegralVisitGenericVisitorRejected'])
+        self.assertEqual(evidence['original_test_names'], 8179)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-integral-visit-active-index-changes', output)
+        self.assertIn(b'variant-integral-visit-void-result', output)
+
+    def test_layout_integral_visit_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_integral_visit_history(self.layout_integral_visit_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_integral_visit_registered, self.layout_integral_visit_suffix + b' ')
 
 
 if __name__ == '__main__':

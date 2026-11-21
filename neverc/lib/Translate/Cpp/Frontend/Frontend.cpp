@@ -30202,6 +30202,8 @@ public:
              unorderedMapMerge(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantIntegralVisit(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantEmplace(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -30209,6 +30211,7 @@ public:
               approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantHolds(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantValueAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
               A.S.UnevaluatedFunctionalCalls.count(Call) ||
               A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
@@ -30891,6 +30894,21 @@ public:
         A.type(C->getArg(0)->getType(), L);
         return true;
       }
+      if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, C, A.Context)) {
+        if (!Visit->Callable->getPointeeType()->isFunctionType())
+          checkBinding(C->getArg(0), true);
+        checkBinding(C->getArg(1), false);
+        A.type(A.Context.getRecordType(Visit->Variant.Record), L);
+        A.type(Visit->Argument, L);
+        A.type(Visit->Result, L, /*AllowVoid=*/true);
+        return true;
+      }
+      if (const auto Visit = approvedUtilityVariantZeroVisit(A.S, A.Sources, C, A.Context)) {
+        if (!Visit->Parameter->getPointeeType()->isFunctionType())
+          checkBinding(C->getArg(0), true);
+        A.type(Visit->Result, L, /*AllowVoid=*/true);
+        return true;
+      }
       if (const auto Variant = approvedUtilityVariantQuery(A.S, A.Sources, C, A.Context)) {
         const auto *Receiver = Variant->Callee->getBase();
         if (Variant->Callee->isArrow()) {
@@ -30905,6 +30923,17 @@ public:
       if (const auto Holds = approvedUtilityVariantHolds(A.S, A.Sources, C, A.Context)) {
         checkBinding(C->getArg(0), true);
         A.type(A.Context.getRecordType(Holds->Variant.Record), L);
+        return true;
+      }
+      if (const auto Value = approvedUtilityVariantValueAssignment(A.S, A.Sources, C, A.Context)) {
+        if (Value->Arrow) {
+          if (temporaryArrayBase(Value->Receiver, true))
+            A.reject(L, "variant receiver", "Expected a live variant object.");
+        } else {
+          checkBinding(Value->Receiver, true);
+        }
+        checkBinding(Value->Input, Value->Parameter->isRValueReferenceType());
+        A.type(A.Context.getRecordType(Value->Variant.Record), L);
         return true;
       }
       if (VariantAssignment) {

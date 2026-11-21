@@ -742,6 +742,54 @@ def restore_layout_adapter_history(source):
     return restored
 
 
+R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256 = 'c0ece43741e31ff8cf62cfcd5e14dcc65196029af1ea9517cd73376f05be7d2a'
+R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256 = 'cb1e66caf89902b5ff655e287f1bc206b3dfee1f5e39c0c2a62c306577373851'
+R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_REGISTERED_SHA256 = 'd9e5439542354d4ab90c5d134fc6ff826c42b0870d915cc42218f328f931621e'
+R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_MAINTAINED_SHA256 = '2d1d01058bae252d865258eddeecdba869624a3ef3d75fef98d09054936dd508'
+R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SHA256 = 'ab6e3a1624ab304fe9399cb343784529b5f5eef9e7591b52bf6b190c7062a0c0'
+R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SIZE = 19819964
+R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SIZE = 13822
+
+
+def restore_layout_assignment_visit_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256, R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256
+             else R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256 = 'fcbc81253fb41e0c9b020802fd03dc380d00ff8ea776fcfeb60ee4df2eb1e280'
+R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256 = '76e71d65563703e0372a79fc12bfa65883aea738411972f16dc3d06ba863072f'
+R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_REGISTERED_SHA256 = 'c0ece43741e31ff8cf62cfcd5e14dcc65196029af1ea9517cd73376f05be7d2a'
+R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_MAINTAINED_SHA256 = 'cb1e66caf89902b5ff655e287f1bc206b3dfee1f5e39c0c2a62c306577373851'
+R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SHA256 = '4bb2809b6b9a90c600dea7ca2c5281496393cd3614b38015158baa19c0e58702'
+R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SIZE = 19826922
+R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SIZE = 6958
+
+
+def restore_layout_integral_visit_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256, R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256
+             else R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -818,6 +866,20 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_LAYOUT_ADAPTER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

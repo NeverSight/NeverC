@@ -1906,9 +1906,6 @@ int main() {
         ('unsupported-wrapper-referent',
          '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){long double b=3;std::pair<std::reference_wrapper<long double>,int> p(std::ref(b),2);return p.second;}\n',
          'TR0201'),
-        ('wrapper-array-field',
-         '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}\n',
-         'TR0201'),
         ('wrapper-user-conversion',
          '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nusing W=std::reference_wrapper<Box>;struct Convert{Box* b;operator W()const{return std::ref(*b);}};int main(){Box b{3};std::pair<W,int> p(Convert{&b},2);return p.second;}\n',
          'TR0201'),
@@ -1918,6 +1915,20 @@ int main() {
     ):
         check("v2-pair-reference-wrapper-values-reject-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    wrapper_array = check("v2-pair-reference-wrapper-array-field", '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}\n',
+                          profile="cpp-core-v2", sdk=True)
+    wrapper, = [record for record in wrapper_array["records"]
+                if any(field["name"] == "nct_reference_wrapper_pointer" for field in record["fields"])]
+    wrapper_names = [field["name"] for field in wrapper["fields"]]
+    assert wrapper_names in (["nct_reference_wrapper_pointer"],
+                             ["nct_reference_wrapper_base_storage", "nct_reference_wrapper_pointer"])
+    assert wrapper["fields"][-1]["type"].startswith("ptr:")
+    wrapper_array_record, = [record for record in wrapper_array["records"]
+                            if [field["type"] for field in record["fields"]] == ["arr:1:" + wrapper["id"]]]
+    wrapper_pair, = [record for record in wrapper_array["records"]
+                     if [field["type"] for field in record["fields"]] == [wrapper_array_record["id"], "int"]]
+    assert wrapper_pair["layout"]["field_offsets_bits"] == [0, wrapper_array_record["layout"]["size_bits"]]
 
     pair_array_apply_functions_source = """\
 #include <array>
@@ -2592,10 +2603,6 @@ int main() {
          '#include <array>\n#include <tuple>\nstruct Item { int values[(sizeof(long double), 2)]; ~Item() noexcept {} };\nint empty() { return 0; }\nint main() { std::array<Item, 0> array{}; return std::apply(empty, array); }\n',
          'TR0201'),
 
-        ('array-wrapper-receiver',
-         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; int read() const { return value; } };\nint main() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }\n',
-         'TR0203'),
-
         ('nested-array-value-parameter',
          '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nusing Row = std::array<int, 2>;\nint value(Row row) { return row[0]; }\nint main() { std::array<Row, 1> a{{Row{{1,2}}}}; return std::apply(value, a); }\n',
          'TR0203'),
@@ -2643,6 +2650,14 @@ int main() {
     ):
         check("v2-pair-array-apply-reject-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    array_wrapper_apply = check("v2-pair-array-apply-wrapper-receiver", '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; int read() const { return value; } };\nint main() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }\n',
+                                profile="cpp-core-v2", sdk=True)
+    wrapper_functions = {function["name"]: function for function in array_wrapper_apply["functions"]}
+    wrapper_calls = [node["callee"] for node in walk(wrapper_functions["main"]["body"])
+                     if node.get("op") == "call"]
+    wrapper_callee, = wrapper_calls
+    assert wrapper_callee != "main" and wrapper_functions[wrapper_callee]["result"] == "int"
 
     tuple_like_apply_const_values_source = """\
 #include <array>

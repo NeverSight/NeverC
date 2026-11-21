@@ -17915,3 +17915,19 @@ The pinned default `multimap<int, int>`, `multiset<int>` and
 and type-form `sizeof` and `alignof` on the six 64-bit targets. The checked
 `stack<int>` and `queue<int>` default adapters also accept their selected
 `deque<int>` copy and move constructors.
+
+## Variant scalar assignment and nullary visitation
+
+The selected scalar assignment overload for checked integral variant
+alternatives preserves both the same-alternative assignment and the change
+to a new alternative. Checked nullary `std::visit` calls accept an ordinary
+function or function pointer and preserve its checked return type, including
+`void`.
+
+## Single-variant integral visitation
+
+The checked `std::visit` overload accepts an ordinary function or function
+pointer and one admitted lvalue variant of integral alternatives. It
+selects the active index, applies the checked by-value integer conversion
+for that alternative, and calls the visitor once. Const variants and void
+visitor results are admitted.

@@ -32622,6 +32622,46 @@ class FunctionLowering {
           discard(Operand);
         return *Compare ? one("bool", L) : A.zero(A.Context.BoolTy, L);
       }
+      if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, Call, A.Context)) {
+        auto Input = captureUtilityConstructorArgument(Call->getArg(0), Visit->Callable);
+        const auto *Operand = Call->getArg(1);
+        auto Receiver = snapshot(address(lvalue(Operand), Operand->getType(), L), L);
+        auto Callable = snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Callable, L), L);
+        auto Place = dereference(std::move(Receiver), L);
+        const auto &V = Visit->Variant;
+        auto Index = snapshot(fieldStorage(Place, V.Index, L), L);
+        const auto IndexType = type(V.Index->getType(), L);
+        const auto ArgType = type(Visit->Argument, L);
+        const bool HasResult = !Visit->Result->isVoidType();
+        auto Result = HasResult ? temporary(type(Visit->Result, L), L) : Expression();
+        // The admitted variant construction and mutation paths cannot become
+        // valueless because all alternatives are integral or their aliases.
+        if (HasResult)
+          assign(Result, A.zero(Visit->Result, L), L);
+        const auto End = labelName();
+        for (unsigned I = 0; I < V.Alternatives.size(); ++I) {
+          A.chargeExpansion(1, L);
+          const auto Selected = labelName(), Next = labelName();
+          branch(binary("==", Index, quantity(I, IndexType, L), "bool", L), Selected, Next, L);
+          label(Selected, L);
+          auto Slot = fieldStorage(variantStorage(Place, V, L), V.Alternatives[I], L);
+          json::Array Arguments;
+          Arguments.push_back(snapshot(cast(std::move(Slot), ArgType, L), L));
+          auto Visited = emitIndirectCall(Callable, std::move(Arguments), Visit->Result, L);
+          if (HasResult)
+            assign(Result, std::move(Visited), L);
+          jump(End, L);
+          label(Next, L);
+        }
+        jump(End, L);
+        label(End, L);
+        return Result;
+      }
+      if (const auto Visit = approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context)) {
+        auto Input = captureUtilityConstructorArgument(Call->getArg(0), Visit->Parameter);
+        auto Callable = snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Parameter, L), L);
+        return emitIndirectCall(std::move(Callable), json::Array{}, Visit->Result, L);
+      }
       if (const auto Query = approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Query->Callee->getBase();
         auto Receiver = Query->Callee->isArrow()
@@ -32669,6 +32709,31 @@ class FunctionLowering {
         }
         auto Place = dereference(std::move(Left), L);
         assign(Place, dereference(std::move(Right), L), L);
+        return Place;
+      }
+      if (const auto Value = approvedUtilityVariantValueAssignment(A.S, A.Sources, Call, A.Context)) {
+        Expression Input;
+        if (Value->InputFirst)
+          Input = argument(Value->Input, Value->Parameter);
+        const auto *Base = Value->Receiver;
+        auto Receiver = Value->Arrow ? snapshot(expression(Base), L)
+            : snapshot(address(lvalue(Base), Base->getType(), L), L);
+        if (!Value->InputFirst)
+          Input = argument(Value->Input, Value->Parameter);
+        const auto &V = Value->Variant;
+        auto Place = dereference(std::move(Receiver), L);
+        auto Index = fieldStorage(Place, V.Index, L);
+        const auto IndexType = type(V.Index->getType(), L);
+        auto Selected = quantity(Value->Index, IndexType, L);
+        auto ChangesAlternative = snapshot(binary("!=", Index, Selected, "bool", L), L);
+        auto Slot = fieldStorage(variantStorage(Place, V, L), V.Alternatives[Value->Index], L);
+        assign(Slot, cast(dereference(std::move(Input), L), type(V.Alternatives[Value->Index]->getType(), L), L), L);
+        const auto Set = labelName(), Done = labelName();
+        branch(std::move(ChangesAlternative), Set, Done, L);
+        label(Set, L);
+        assign(std::move(Index), std::move(Selected), L);
+        jump(Done, L);
+        label(Done, L);
         return Place;
       }
       if (const auto Emplace = approvedUtilityVariantEmplace(A.S, A.Sources, Call, A.Context)) {
