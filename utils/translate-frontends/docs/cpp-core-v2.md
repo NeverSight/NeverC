@@ -17939,3 +17939,11 @@ inline buffer. Copy, move, reset and member or free swap preserve the active
 state and the live payload. The mutable and const pointer forms of
 `std::any_cast<int>` can access that payload. Pointer casts return null for
 empty, null or nonmatching operands.
+
+## Two-variant integral visitation
+
+The checked `std::visit` overload accepts two admitted lvalue variants and
+an ordinary function or function pointer. The pinned dispatch matrix selects
+the two active alternatives and applies the checked by-value conversions.
+Both operands may refer to the same object. The selected visitor is called
+once, including for void results.

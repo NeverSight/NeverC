@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.layout_two_variant_any_registered = cls.registered
+        cls.layout_two_variant_any_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_two_variant_any_original = cls.adapter.restore_original_gtests(cls.layout_two_variant_any_registered,
+                                                                        cls.layout_two_variant_any_suffix)
+        cls.registered = cls.adapter.restore_layout_two_variant_any_history(cls.layout_two_variant_any_registered)
         cls.layout_any_integer_registered = cls.registered
         cls.layout_any_integer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.layout_any_integer_original = cls.adapter.restore_original_gtests(cls.layout_any_integer_registered,
@@ -1950,6 +1955,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_layout_any_integer_history(self.layout_any_integer_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.layout_any_integer_registered, self.layout_any_integer_suffix + b' ')
+
+
+    def test_layout_two_variant_any_retains_published_bodies(self):
+        self.assertEqual(self.layout_two_variant_any_original + self.layout_two_variant_any_suffix, self.layout_two_variant_any_registered)
+        self.assertEqual(self.adapter.restore_layout_two_variant_any_history(self.layout_two_variant_any_original),
+                         self.layout_any_integer_original)
+        output, evidence = self.extractor.extract(self.layout_two_variant_any_original, ['TranslateTest.CoreV2VariantTwoVisitMixedActiveIndicesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTwoVisitConstOperandAndMutationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTwoVisitAliasAndEffectsWithVoidResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTwoVisitRenamedMatrixIndexRejected', 'TranslateTest.CoreV2VariantTwoVisitRenamedMatrixDispatchRejected', 'TranslateTest.CoreV2VariantTwoVisitGenericVisitorRejected'])
+        self.assertEqual(evidence['original_test_names'], 8191)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-two-visit-mixed-active-indices', output)
+        self.assertIn(b'variant-two-visit-const-operand-and-mutation', output)
+
+    def test_layout_two_variant_any_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_two_variant_any_history(self.layout_two_variant_any_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_two_variant_any_registered, self.layout_two_variant_any_suffix + b' ')
 
 
 if __name__ == '__main__':

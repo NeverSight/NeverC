@@ -542,3 +542,10 @@ The combined compiler passes 1,710 source requests across six 64-bit targets
 and 397 formal tests on Linux x86-64. All 210 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Two-variant integral visitation with inline integer any
+
+The combined compiler passes 1,746 source requests across six 64-bit targets
+and 403 formal tests on Linux x86-64. All 213 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

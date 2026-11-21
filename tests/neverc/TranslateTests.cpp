@@ -385430,6 +385430,136 @@ int f() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2VariantTwoVisitMixedActiveIndicesRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-two-visit-mixed-active-indices.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+long combine(int a, long b) { return a * 100 + b; }
+int main() {
+  std::variant<short, int> left(std::in_place_index<0>, short(7));
+  std::variant<long, int, short> right(std::in_place_index<2>, short(15));
+  if (std::visit(combine, left, right) != 715)
+    return 1;
+  left.emplace<1>(25);
+  right.emplace<0>(51L);
+  if (std::visit(combine, left, right) != 2551)
+    return 2;
+  right.emplace<1>(-3);
+  return std::visit(&combine, left, right) != 2497;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-two-visit-mixed-active-indices.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-two-visit-mixed-active-indices" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantTwoVisitConstOperandAndMutationRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-two-visit-const-operand-and-mutation.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int observe(short x, int y) { return x - y; }
+int main() {
+  const std::variant<int, short> a(std::in_place_index<1>, short(3));
+  std::variant<short, int> b(std::in_place_index<1>, 28);
+  if (std::visit(&observe, a, b) != -25)
+    return 1;
+  b.emplace<0>(short(-1));
+  return std::visit(observe, a, b) != 4;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-two-visit-const-operand-and-mutation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-two-visit-const-operand-and-mutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantTwoVisitAliasAndEffectsWithVoidResultRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-two-visit-alias-and-effects-with-void-result.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<short, int>;
+using Visitor = void (*)(int,int);
+int left_calls, right_calls, visitor_calls, invoked, seen;
+void two(int a, int b) { ++invoked; seen = a * 10 + b; }
+Visitor visitor() { ++visitor_calls; return &two; }
+Value& left(Value& v) { ++left_calls; return v; }
+Value& right(Value& v) { ++right_calls; return v; }
+int main() {
+  Value v(std::in_place_index<1>, 4);
+  std::visit(visitor(), left(v), right(v));
+  return seen != 44 || left_calls != 1 || right_calls != 1 || visitor_calls != 1 || invoked != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-two-visit-alias-and-effects-with-void-result.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-two-visit-alias-and-effects-with-void-result" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantTwoVisitRenamedMatrixIndexRejected) {
+  const auto Source = tmpFile("variant-two-visit-renamed-matrix-index.cpp");
+  writeFile(Source, R"r19containers(#define __at changed_matrix_index
+#include <variant>
+#undef __at
+int sub(int a, int b) { return a - b; }
+int f(std::variant<int, short>& left, std::variant<int, short>& right) {
+  return std::visit(sub, left, right);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantTwoVisitRenamedMatrixDispatchRejected) {
+  const auto Source = tmpFile("variant-two-visit-renamed-matrix-dispatch.cpp");
+  writeFile(Source, R"r19containers(#define __dispatch changed_matrix_dispatch
+#include <variant>
+#undef __dispatch
+int sub(int a, int b) { return a - b; }
+int f(std::variant<int, short>& left, std::variant<int, short>& right) {
+  return std::visit(sub, left, right);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantTwoVisitGenericVisitorRejected) {
+  const auto Source = tmpFile("variant-two-visit-generic-visitor.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int f(std::variant<int, short>& left, std::variant<int, short>& right) {
+  return std::visit([](auto a, auto b) -> int { return a - b; }, left, right);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

@@ -32682,35 +32682,47 @@ class FunctionLowering {
       }
       if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, Call, A.Context)) {
         auto Input = captureUtilityConstructorArgument(Call->getArg(0), Visit->Callable);
-        const auto *Operand = Call->getArg(1);
-        auto Receiver = snapshot(address(lvalue(Operand), Operand->getType(), L), L);
+        std::vector<Expression> Places;
+        for (unsigned I = 0; I < Visit->Variants.size(); ++I) {
+          const auto *Operand = Call->getArg(I + 1);
+          auto Receiver = snapshot(address(lvalue(Operand), Operand->getType(), L), L);
+          Places.push_back(dereference(std::move(Receiver), L));
+        }
         auto Callable = snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Callable, L), L);
-        auto Place = dereference(std::move(Receiver), L);
-        const auto &V = Visit->Variant;
-        auto Index = snapshot(fieldStorage(Place, V.Index, L), L);
-        const auto IndexType = type(V.Index->getType(), L);
-        const auto ArgType = type(Visit->Argument, L);
+        std::vector<Expression> Indices, Slots;
+        for (unsigned I = 0; I < Visit->Variants.size(); ++I)
+          Indices.push_back(snapshot(fieldStorage(Places[I], Visit->Variants[I].Index, L), L));
         const bool HasResult = !Visit->Result->isVoidType();
         auto Result = HasResult ? temporary(type(Visit->Result, L), L) : Expression();
-        // The admitted variant construction and mutation paths cannot become
-        // valueless because all alternatives are integral or their aliases.
+        // Checked integral variants cannot become valueless.
         if (HasResult)
           assign(Result, A.zero(Visit->Result, L), L);
         const auto End = labelName();
-        for (unsigned I = 0; I < V.Alternatives.size(); ++I) {
-          A.chargeExpansion(1, L);
-          const auto Selected = labelName(), Next = labelName();
-          branch(binary("==", Index, quantity(I, IndexType, L), "bool", L), Selected, Next, L);
-          label(Selected, L);
-          auto Slot = fieldStorage(variantStorage(Place, V, L), V.Alternatives[I], L);
-          json::Array Arguments;
-          Arguments.push_back(snapshot(cast(std::move(Slot), ArgType, L), L));
-          auto Visited = emitIndirectCall(Callable, std::move(Arguments), Visit->Result, L);
-          if (HasResult)
-            assign(Result, std::move(Visited), L);
-          jump(End, L);
-          label(Next, L);
-        }
+        auto Select = [&](auto &&Self, unsigned Dimension) -> void {
+          if (Dimension == Visit->Variants.size()) {
+            json::Array Arguments;
+            for (unsigned I = 0; I < Slots.size(); ++I)
+              Arguments.push_back(snapshot(cast(Slots[I], type(Visit->Arguments[I], L), L), L));
+            auto Visited = emitIndirectCall(Callable, std::move(Arguments), Visit->Result, L);
+            if (HasResult)
+              assign(Result, std::move(Visited), L);
+            return;
+          }
+          const auto &V = Visit->Variants[Dimension];
+          const auto IndexType = type(V.Index->getType(), L);
+          for (unsigned I = 0; I < V.Alternatives.size(); ++I) {
+            A.chargeExpansion(1, L);
+            const auto Selected = labelName(), Next = labelName();
+            branch(binary("==", Indices[Dimension], quantity(I, IndexType, L), "bool", L), Selected, Next, L);
+            label(Selected, L);
+            Slots.push_back(fieldStorage(variantStorage(Places[Dimension], V, L), V.Alternatives[I], L));
+            Self(Self, Dimension + 1);
+            Slots.pop_back();
+            jump(End, L);
+            label(Next, L);
+          }
+        };
+        Select(Select, 0);
         jump(End, L);
         label(End, L);
         return Result;

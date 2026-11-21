@@ -3450,9 +3450,9 @@ std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UtilityVariantIntegralVisit {
-  UtilityVariantRecord Variant;
+  std::vector<UtilityVariantRecord> Variants;
   clang::QualType Callable;
-  clang::QualType Argument;
+  std::vector<clang::QualType> Arguments;
   clang::QualType Result;
 };
 std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
