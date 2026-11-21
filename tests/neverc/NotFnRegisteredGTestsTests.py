@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.layout_any_integer_registered = cls.registered
+        cls.layout_any_integer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_any_integer_original = cls.adapter.restore_original_gtests(cls.layout_any_integer_registered,
+                                                                        cls.layout_any_integer_suffix)
+        cls.registered = cls.adapter.restore_layout_any_integer_history(cls.layout_any_integer_registered)
         cls.layout_integral_visit_registered = cls.registered
         cls.layout_integral_visit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.layout_integral_visit_original = cls.adapter.restore_original_gtests(cls.layout_integral_visit_registered,
@@ -1920,6 +1925,31 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_layout_integral_visit_history(self.layout_integral_visit_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.layout_integral_visit_registered, self.layout_integral_visit_suffix + b' ')
+
+
+    def test_layout_any_integer_retains_published_bodies(self):
+        self.assertEqual(self.layout_any_integer_original + self.layout_any_integer_suffix, self.layout_any_integer_registered)
+        self.assertEqual(self.adapter.restore_layout_any_integer_history(self.layout_any_integer_original),
+                         self.layout_integral_visit_original)
+        output, evidence = self.extractor.extract(self.layout_any_integer_original, ['TranslateTest.CoreV2AnyIntRuntimeReferenceAndMismatchRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntCopyValueFromLvalueRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntCopyAndMoveConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntTransferSwapAndResetRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntUnsupportedFloatingValueRejected', 'TranslateTest.CoreV2AnyIntRenamedPinnedStorageHandlerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8185)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-int-runtime-reference-and-mismatch', output)
+        self.assertIn(b'any-int-transfer-swap-and-reset', output)
+
+        promoted, _ = self.extractor.extract(self.layout_any_integer_original,
+            ['TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations'])
+        self.assertIn(b'std::any value{7};', promoted)
+        self.assertIn(b'"-O0", "-O2"', promoted)
+        self.assertNotIn(b'CoreV2AnyLayoutRuntimeConstructionRejected',
+                         self.layout_any_integer_original)
+
+    def test_layout_any_integer_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_any_integer_history(self.layout_any_integer_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_any_integer_registered, self.layout_any_integer_suffix + b' ')
 
 
 if __name__ == '__main__':

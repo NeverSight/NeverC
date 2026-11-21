@@ -17931,3 +17931,11 @@ pointer and one admitted lvalue variant of integral alternatives. It
 selects the active index, applies the checked by-value integer conversion
 for that alternative, and calls the visitor once. Const variants and void
 visitor results are admitted.
+
+## Inline integer std::any values
+
+The checked converting constructor stores an exact `int` in the pinned
+inline buffer. Copy, move, reset and member or free swap preserve the active
+state and the live payload. The mutable and const pointer forms of
+`std::any_cast<int>` can access that payload. Pointer casts return null for
+empty, null or nonmatching operands.

@@ -931,6 +931,49 @@ class FunctionLowering {
                             SourceLocation L) {
     return fieldStorage(discreteParameter(std::move(Place), Info, L), Info.Thresholds, L);
   }
+  Expression anyCarrierField(Expression Place, llvm::StringRef Name,
+                             llvm::StringRef Type, SourceLocation L) {
+    return Expression{{"kind", "member"}, {"name", Name.str()}, {"type", Type.str()},
+        {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+  Expression anyCarrierTag(Expression Place, SourceLocation L) {
+    return anyCarrierField(std::move(Place), UtilityAnyTag, "u64", L);
+  }
+  Expression anyIntegerField(Expression Place, const CXXRecordDecl *Record,
+                             SourceLocation L) {
+    auto Storage = anyCarrierField(std::move(Place), UtilityAnyStorage,
+                                   A.anyStorageType(Record), L);
+    return anyCarrierField(std::move(Storage), UtilityAnyInteger, "int", L);
+  }
+  Expression storeAnyInteger(Expression Place, const CXXRecordDecl *Record,
+                             Expression Value, SourceLocation L) {
+    auto Slot = anyIntegerField(Place, Record, L);
+    assign(Slot, std::move(Value), L);
+    assign(anyCarrierTag(std::move(Place), L), quantity(UtilityAnyIntegerTag, "u64", L), L);
+    return Slot;
+  }
+  Expression anyCheckedPointerCast(const CallExpr *Call, const CXXRecordDecl *Record,
+                                   SourceLocation L) {
+    const auto *Input = Call->getArg(0);
+    auto Pointer = snapshot(expression(Input), L);
+    const auto Pointee = Call->getType()->getPointeeType();
+    if (!A.Context.hasSameType(Pointee.getUnqualifiedType(), A.Context.IntTy))
+      return A.zero(Call->getType(), L);
+    auto Result = temporary(type(Call->getType(), L), L);
+    assign(Result, A.zero(Call->getType(), L), L);
+    const auto Check = labelName(), Present = labelName(), End = labelName();
+    branch(binary("!=", Pointer, A.zero(Input->getType(), L), "bool", L), Check, End, L);
+    label(Check, L);
+    auto Place = dereference(std::move(Pointer), L);
+    auto Active = binary("==", anyCarrierTag(Place, L),
+                         quantity(UtilityAnyIntegerTag, "u64", L), "bool", L);
+    branch(std::move(Active), Present, End, L);
+    label(Present, L);
+    assign(Result, address(anyIntegerField(std::move(Place), Record, L), Pointee, L), L);
+    jump(End, L);
+    label(End, L);
+    return Result;
+  }
   Expression variantStorage(Expression Place, const UtilityVariantRecord &V,
                             SourceLocation L) {
     return Expression{{"kind", "member"}, {"name", A.name(V.Value)},
@@ -32582,39 +32625,54 @@ class FunctionLowering {
       if (approvedUtilityConstant(A.S, A.Sources, Call, A.Context,
                                   UtilityValue))
         return A.constant(UtilityValue, Call->getType(), L);
-      if (approvedUtilityAnyEmptyPointerCast(A.S, A.Sources, Call, A.Context)) {
-        // Admitted any constructors only create an empty object. The SDK
-        // skips its handler in that state, but the pointer still evaluates.
-        snapshot(expression(Call->getArg(0)), L);
-        return A.zero(Call->getType(), L);
-      }
-      if (const auto Any = approvedUtilityAnyEmptyTransfer(A.S, A.Sources, Call, A.Context)) {
-        auto Receiver = [&] {
+      if (const auto *Any = approvedUtilityAnyPointerCast(A.S, A.Sources, Call, A.Context))
+        return anyCheckedPointerCast(Call, Any, L);
+      if (const auto Any = approvedUtilityAnyTransfer(A.S, A.Sources, Call, A.Context)) {
+        auto Receive = [&] {
           return Any->Arrow ? snapshot(expression(Any->Receiver), L)
                             : snapshot(address(lvalue(Any->Receiver), Any->Receiver->getType(), L), L);
         };
         auto Input = [&] {
-          snapshot(address(lvalue(Any->Input), Any->Input->getType(), L), L);
+          return snapshot(address(lvalue(Any->Input), Any->Input->getType(), L), L);
         };
-        if (Any->InputFirst)
-          Input();
-        auto Left = Receiver();
-        if (!Any->InputFirst)
-          Input();
-        // No selected handler is reachable; the assignment still returns the receiver.
-        if (Any->ReturnsReceiver)
-          return dereference(std::move(Left), L);
-        return {};
+        Expression Left, Right;
+        if (Any->InputFirst) {
+          Right = Input();
+          Left = Receive();
+        } else {
+          Left = Receive();
+          Right = Input();
+        }
+        auto Receiver = dereference(Left, L);
+        auto Source = dereference(Right, L);
+        if (Any->Operation == UtilityAnyTransferOperation::Move) {
+          // The SDK moves through a temporary and then swaps into the original.
+          // Self-move of an inline scalar therefore retains the held value.
+          const auto Different = labelName(), End = labelName();
+          branch(binary("!=", std::move(Left), std::move(Right), "bool", L), Different, End, L);
+          label(Different, L);
+          assign(Receiver, Source, L);
+          assign(anyCarrierTag(std::move(Source), L), quantity(0, "u64", L), L);
+          jump(End, L);
+          label(End, L);
+        } else if (Any->Operation == UtilityAnyTransferOperation::Copy) {
+          assign(Receiver, Source, L);
+        } else {
+          auto Saved = snapshot(Receiver, L);
+          assign(Receiver, Source, L);
+          assign(std::move(Source), std::move(Saved), L);
+          return {};
+        }
+        return Receiver;
       }
-      if (const auto Any = approvedUtilityAnyEmptyCall(A.S, A.Sources, Call, A.Context)) {
+      if (const auto Any = approvedUtilityAnyCall(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Any->Callee->getBase();
-        auto Receiver = Any->Callee->isArrow() ? dereference(expression(Base), L) : lvalue(Base);
-        auto Tag = Expression{{"kind", "member"}, {"type", "u64"},
-            {"name", UtilityAnyTag.str()}, {"args", json::Array{std::move(Receiver)}},
-            {"loc", A.loc(L)}};
-        if (Any->Operation == UtilityAnyEmptyOperation::HasValue)
+        auto Place = Any->Callee->isArrow()
+            ? dereference(snapshot(expression(Base), L), L) : lvalue(Base);
+        auto Tag = anyCarrierTag(std::move(Place), L);
+        if (Any->Operation == UtilityAnyOperation::HasValue)
           return binary("!=", std::move(Tag), quantity(0, "u64", L), "bool", L);
-        snapshot(std::move(Tag), L);
+        assign(std::move(Tag), quantity(0, "u64", L), L);
         return {};
       }
       if (const auto Compare = approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context)) {
@@ -34552,7 +34610,7 @@ class FunctionLowering {
     const auto *Record = T->getAsCXXRecordDecl();
     if (!Record || !Record->getDefinition())
       reject(L, "destruction", "A complete admitted record is required.");
-    if (approvedUtilityAnyEmptyRecord(A.S, A.Sources, Record, A.Context))
+    if (approvedUtilityAnyRecord(A.S, A.Sources, Record, A.Context))
       return;
     A.requireDestruction(Record, L);
     json::Array Args;
@@ -38609,10 +38667,23 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
 
-    if (approvedUtilityAnyEmptyConstruction(A.S, A.Sources, C, A.Context)) {
-      if (C->getNumArgs())
-        snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
-      initializeZero(std::move(Place), T, L);
+    if (const auto Integer = approvedUtilityAnyIntegerConstruction(A.S, A.Sources, C, A.Context)) {
+      auto Input = argument(Integer->Input, Integer->Parameter);
+      auto Value = snapshot(dereference(std::move(Input), L), L);
+      initializeZero(Place, T, L);
+      storeAnyInteger(std::move(Place), Integer->Record, std::move(Value), L);
+      return;
+    }
+    if (approvedUtilityAnyConstruction(A.S, A.Sources, C, A.Context)) {
+      if (!C->getNumArgs()) {
+        initializeZero(std::move(Place), T, L);
+      } else {
+        const auto *Ctor = C->getConstructor();
+        auto Source = dereference(snapshot(argument(C->getArg(0), Ctor->getParamDecl(0)->getType()), L), L);
+        assign(std::move(Place), Source, L);
+        if (Ctor->isMoveConstructor())
+          assign(anyCarrierTag(std::move(Source), L), quantity(0, "u64", L), L);
+      }
       return;
     }
     if (approvedUtilityMonostateConstruction(A.S, A.Sources, C, A.Context)) {
