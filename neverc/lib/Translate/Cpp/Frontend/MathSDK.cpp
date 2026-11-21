@@ -6814,6 +6814,32 @@ bool approvedUtilityMonostateMetadata(const State &S, const SourceManager &SM,
          Layout.getAlignment() == CharUnits::One();
 }
 
+bool approvedUtilityMonostateConstruction(const State &S,
+    const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  const auto *C = Construction ? Construction->getConstructor() : nullptr;
+  if (!C || !C->isImplicit() || !C->isDefaulted() || !C->isTrivial() ||
+      C->isDeleted() || C->isInvalidDecl() || C->getNumCtorInitializers() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Construction->isInstantiationDependent() ||
+      C->getNumParams() != Construction->getNumArgs() ||
+      !approvedUtilityMonostateMetadata(S, SM, C->getParent(), Context))
+    return false;
+  for (const auto *D : C->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__variant/monostate.h"))
+      return false;
+  const auto Type = Context.getBaseElementType(Construction->getType());
+  if (!Context.hasSameUnqualifiedType(Type, Context.getRecordType(C->getParent())))
+    return false;
+  if (C->isDefaultConstructor())
+    return !Construction->getNumArgs();
+  if (!C->isCopyOrMoveConstructor() || Construction->getNumArgs() != 1)
+    return false;
+  const auto Source = Construction->getArg(0)->getType();
+  return !Source.isVolatileQualified() && Context.hasSameUnqualifiedType(Type, Source);
+}
+
 static bool utilityVariantAlternativeType(const State &S, const SourceManager &SM,
                                           QualType T, const ASTContext &Context) {
   return !T->isIncompleteType() &&
@@ -7095,6 +7121,51 @@ static const Expr *variantReturned(const FunctionDecl *F) {
   return Return ? Return->getRetValue() : nullptr;
 }
 
+std::optional<bool> approvedUtilityMonostateComparison(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!F || Call->getNumArgs() != 2 || F->getNumParams() != 2 ||
+      !F->isOverloadedOperator() || F->isVariadic() || F->isInvalidDecl() ||
+      F->isDeleted() || !F->isConstexpr() ||
+      F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !Context.hasSameType(F->getReturnType(), Context.BoolTy))
+    return std::nullopt;
+  const auto *Proto = F->getType()->getAs<FunctionProtoType>();
+  if (!Proto || !Proto->isNothrow())
+    return std::nullopt;
+  bool Expected;
+  switch (F->getOverloadedOperator()) {
+  case OO_EqualEqual:
+  case OO_LessEqual:
+  case OO_GreaterEqual:
+    Expected = true;
+    break;
+  case OO_ExclaimEqual:
+  case OO_Less:
+  case OO_Greater:
+    Expected = false;
+    break;
+  default:
+    return std::nullopt;
+  }
+  for (const auto *D : F->redecls())
+    if (!variantDeclaration(S, SM, D, "__variant/monostate.h"))
+      return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto Type = F->getParamDecl(I)->getType();
+    if (!approvedUtilityMonostateMetadata(S, SM, Type->getAsCXXRecordDecl(), Context) ||
+        !Context.hasSameUnqualifiedType(Type, Call->getArg(I)->getType()))
+      return std::nullopt;
+  }
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  const auto *E = Return ? Return->getRetValue() : nullptr;
+  const auto *Value = E ? dyn_cast<CXXBoolLiteralExpr>(E->IgnoreParens()) : nullptr;
+  if (!Value || Value->getValue() != Expected)
+    return std::nullopt;
+  return Expected;
+}
+
 static const DeclRefExpr *variantReference(const Expr *E) {
   return E ? dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts()) : nullptr;
 }
@@ -7259,6 +7330,59 @@ static bool variantForward(const State &S, const SourceManager &SM, const Expr *
   return Context.hasSameType(Call->getDirectCallee()->getReturnType(), P->getType());
 }
 
+static bool variantStoredAlternative(const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Data, const UtilityVariantRecord &V, unsigned Index,
+    unsigned Arity, const ASTContext &Context) {
+  // Walk each selected union constructor, including the last alternative
+  // constructor, and verify the actual field and forwarding at every hop.
+  const auto *Alt = V.Alternatives[Index];
+  for (unsigned Remaining = Index; ; --Remaining) {
+    const auto *Selected = Data->getConstructor();
+    if (!Selected || !Selected->getParent()->isUnion() ||
+        !variantDeclaration(S, SM, Selected) || !variantEmptyBody(Selected) ||
+        Selected->getNumCtorInitializers() != 1 || Selected->getNumParams() != Arity + 1)
+      return false;
+    const auto *Init = *Selected->init_begin();
+    const auto *Field = Init->isMemberInitializer() ? Init->getMember() : nullptr;
+    if (!Field || !Init->isWritten() || !variantDeclaration(S, SM, Field) ||
+        Field->getName() != (Remaining ? "__tail" : "__head"))
+      return false;
+    Data = variantConstruct(Init->getInit());
+    if (!Data || Data->getNumArgs() != Arity + 1 ||
+        !Context.hasSameType(Data->getType(), Field->getType()) ||
+        (Arity && !variantForward(S, SM, Data->getArg(1), Selected->getParamDecl(1), Context)))
+      return false;
+    if (!Remaining)
+      break;
+    const auto Next = variantIndexTag(S, SM, Data->getArg(0));
+    if (!Next || *Next != Remaining - 1)
+      return false;
+  }
+  const auto *Item = Data->getConstructor();
+  if (!Item || Item->getParent()->getCanonicalDecl() != Alt->getParent()->getCanonicalDecl() ||
+      !variantDeclaration(S, SM, Item) || !variantEmptyBody(Item) ||
+      Item->getNumCtorInitializers() != 1 || Item->getNumParams() != Arity + 1)
+    return false;
+  const auto *Initialization = variantMemberInit(Item, Alt);
+  if (!Initialization)
+    return false;
+  if (const auto *Empty = Alt->getType()->getAsCXXRecordDecl()) {
+    const auto *Build = variantConstruct(Initialization);
+    const auto *Selected = Build ? Build->getConstructor() : nullptr;
+    if (Arity || !Selected || Build->getNumArgs() || !Build->requiresZeroInitialization() ||
+        !Context.hasSameType(Build->getType(), Alt->getType()) ||
+        Selected->getParent()->getCanonicalDecl() != Empty->getCanonicalDecl() ||
+        !Selected->isDefaultConstructor() || !Selected->isImplicit() || !Selected->isDefaulted() ||
+        !Selected->isTrivial() || Selected->isDeleted() || Selected->getNumCtorInitializers() ||
+        !variantDeclaration(S, SM, Selected, "__variant/monostate.h"))
+      return false;
+  } else if (Arity ? !variantForward(S, SM, Initialization, Item->getParamDecl(1), Context)
+                   : !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Initialization->IgnoreParens())) {
+    return false;
+  }
+  return true;
+}
+
 std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
@@ -7361,53 +7485,8 @@ std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
       (Arity && !variantForward(S, SM, Data->getArg(1), Base->getParamDecl(1), Context)))
     return std::nullopt;
 
-  // Walk each selected union constructor, including the last alternative
-  // constructor, and verify the actual field and forwarding at every hop.
-  const auto *Alt = Variant->Alternatives[*I];
-  for (unsigned Remaining = *I; ; --Remaining) {
-    const auto *Selected = Data->getConstructor();
-    if (!Selected || !Selected->getParent()->isUnion() ||
-        !variantDeclaration(S, SM, Selected) || !variantEmptyBody(Selected) ||
-        Selected->getNumCtorInitializers() != 1 || Selected->getNumParams() != Arity + 1)
-      return std::nullopt;
-    const auto *Init = *Selected->init_begin();
-    const auto *Field = Init->isMemberInitializer() ? Init->getMember() : nullptr;
-    if (!Field || !Init->isWritten() || !variantDeclaration(S, SM, Field) ||
-        Field->getName() != (Remaining ? "__tail" : "__head"))
-      return std::nullopt;
-    Data = variantConstruct(Init->getInit());
-    if (!Data || Data->getNumArgs() != Arity + 1 ||
-        !Context.hasSameType(Data->getType(), Field->getType()) ||
-        (Arity && !variantForward(S, SM, Data->getArg(1), Selected->getParamDecl(1), Context)))
-      return std::nullopt;
-    if (!Remaining)
-      break;
-    const auto Next = variantIndexTag(S, SM, Data->getArg(0));
-    if (!Next || *Next != Remaining - 1)
-      return std::nullopt;
-  }
-  const auto *Item = Data->getConstructor();
-  if (!Item || Item->getParent()->getCanonicalDecl() != Alt->getParent()->getCanonicalDecl() ||
-      !variantDeclaration(S, SM, Item) || !variantEmptyBody(Item) ||
-      Item->getNumCtorInitializers() != 1 || Item->getNumParams() != Arity + 1)
+  if (!variantStoredAlternative(S, SM, Data, *Variant, *I, Arity, Context))
     return std::nullopt;
-  const auto *Initialization = variantMemberInit(Item, Alt);
-  if (!Initialization)
-    return std::nullopt;
-  if (const auto *Empty = Alt->getType()->getAsCXXRecordDecl()) {
-    const auto *Build = variantConstruct(Initialization);
-    const auto *Selected = Build ? Build->getConstructor() : nullptr;
-    if (Arity || !Selected || Build->getNumArgs() || !Build->requiresZeroInitialization() ||
-        !Context.hasSameType(Build->getType(), Alt->getType()) ||
-        Selected->getParent()->getCanonicalDecl() != Empty->getCanonicalDecl() ||
-        !Selected->isDefaultConstructor() || !Selected->isImplicit() || !Selected->isDefaulted() ||
-        !Selected->isTrivial() || Selected->isDeleted() || Selected->getNumCtorInitializers() ||
-        !variantDeclaration(S, SM, Selected, "__variant/monostate.h"))
-      return std::nullopt;
-  } else if (Arity ? !variantForward(S, SM, Initialization, Item->getParamDecl(1), Context)
-                   : !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Initialization->IgnoreParens())) {
-    return std::nullopt;
-  }
   return UtilityVariantConstruction{*Variant, false, *I, Input, Tag};
 }
 
@@ -7457,18 +7536,11 @@ static const MemberExpr *variantForwardedField(const State &S, const SourceManag
       ? Member : nullptr;
 }
 
-static bool variantAlternativeProjection(const State &S, const SourceManager &SM,
-                                          const CallExpr *Call, const UtilityVariantRecord &V,
-                                          unsigned I, const ASTContext &Context) {
-  const auto *Variant = variantAccessFunction(S, SM, Call, "__variant", 1);
-  if (!variantSelectedIndex(Variant, I))
-    return false;
-  const auto *BaseCall = variantReturnCall(Variant);
-  const auto *Base = variantAccessFunction(S, SM, BaseCall, "__base", 1);
+static bool variantBaseAlternativeProjection(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const UtilityVariantRecord &V,
+    unsigned I, const ASTContext &Context) {
+  const auto *Base = variantAccessFunction(S, SM, Call, "__base", 1);
   if (!variantSelectedIndex(Base, I))
-    return false;
-  const auto *Impl = variantForwardedField(S, SM, BaseCall->getArg(0), Variant->getParamDecl(0), Context);
-  if (!Impl || Impl->getMemberDecl()->getCanonicalDecl() != V.Implementation->getCanonicalDecl())
     return false;
   const auto *UnionCall = variantReturnCall(Base);
   if (!UnionCall || UnionCall->getNumArgs() != 2)
@@ -7497,6 +7569,19 @@ static bool variantAlternativeProjection(const State &S, const SourceManager &SM
     if (!Field || Field->getName() != "__tail" || !variantDeclaration(S, SM, Field))
       return false;
   }
+}
+static bool variantAlternativeProjection(const State &S, const SourceManager &SM,
+                                          const CallExpr *Call, const UtilityVariantRecord &V,
+                                          unsigned I, const ASTContext &Context) {
+  const auto *Variant = variantAccessFunction(S, SM, Call, "__variant", 1);
+  if (!variantSelectedIndex(Variant, I))
+    return false;
+  const auto *BaseCall = variantReturnCall(Variant);
+  const auto *Impl = BaseCall && BaseCall->getNumArgs() == 1
+      ? variantForwardedField(S, SM, BaseCall->getArg(0), Variant->getParamDecl(0), Context) : nullptr;
+  if (!Impl || Impl->getMemberDecl()->getCanonicalDecl() != V.Implementation->getCanonicalDecl())
+    return false;
+  return variantBaseAlternativeProjection(S, SM, BaseCall, V, I, Context);
 }
 
 static bool variantHoldsBody(const State &S, const SourceManager &SM, const FunctionDecl *F,
@@ -7540,6 +7625,31 @@ bool bitsetBuiltinLibraryCast(const State &S, const SourceManager &SM,
                               const FunctionDecl *F, const ASTContext &Context);
 } // namespace
 
+static const Expr *variantAddressedValue(const State &S, const SourceManager &SM,
+    const CallExpr *Address, const ASTContext &Context) {
+  const auto *F = Address ? Address->getDirectCallee() : nullptr;
+  if (!F || Address->getNumArgs() != 1 || F->getName() != "addressof" ||
+      !variantDeclaration(S, SM, F, "__memory/addressof.h") ||
+      !variantDeclaration(S, SM, F->getPrimaryTemplate(), "__memory/addressof.h"))
+    return nullptr;
+  const FunctionDecl *Definition = F;
+  if (!Definition->hasBody()) {
+    // Clang can omit the body of an implicitly instantiated library builtin.
+    // Check that exact specialization before examining its pinned template.
+    if (F->getBuiltinID() != Builtin::BIaddressof || !bitsetBuiltinLibraryCast(S, SM, F, Context))
+      return nullptr;
+    Definition = F->getPrimaryTemplate()->getTemplatedDecl();
+  }
+  const auto *BuiltinCall = variantReturnCall(Definition);
+  const auto *Builtin = BuiltinCall ? BuiltinCall->getDirectCallee() : nullptr;
+  if (!Builtin || Builtin->getBuiltinID() != Builtin::BI__builtin_addressof ||
+      Builtin->hasBody() || BuiltinCall->getNumArgs() != 1 ||
+      !cstddefOrigin(S, SM, BuiltinCall->getExprLoc(), "libcxx", "__memory/addressof.h") ||
+      !variantParameter(BuiltinCall->getArg(0), Definition->getParamDecl(0)))
+    return nullptr;
+  return Address->getArg(0);
+}
+
 static bool variantGetIfBody(const State &S, const SourceManager &SM, const FunctionDecl *Public,
                              const UtilityVariantRecord &V, unsigned I, const ASTContext &Context) {
   const auto *Outer = variantReturnCall(Public);
@@ -7564,28 +7674,9 @@ static bool variantGetIfBody(const State &S, const SourceManager &SM, const Func
       !isa<CXXNullPtrLiteralExpr>(If->getFalseExpr()->IgnoreParenImpCasts()))
     return false;
   const auto *Address = dyn_cast<CallExpr>(If->getTrueExpr()->IgnoreParenImpCasts());
-  const auto *F = Address ? Address->getDirectCallee() : nullptr;
-  const auto *Member = Address && Address->getNumArgs() == 1
-      ? dyn_cast<MemberExpr>(Address->getArg(0)->IgnoreParenImpCasts()) : nullptr;
-  if (!F || F->getName() != "addressof" ||
-      !variantDeclaration(S, SM, F, "__memory/addressof.h") ||
-      !variantDeclaration(S, SM, F->getPrimaryTemplate(), "__memory/addressof.h") ||
-      !Member || Member->getMemberDecl()->getCanonicalDecl() != V.Alternatives[I]->getCanonicalDecl())
-    return false;
-  const FunctionDecl *Definition = F;
-  if (!Definition->hasBody()) {
-    // Clang can omit the body of an implicitly instantiated library builtin.
-    // Check that exact specialization before examining its pinned template.
-    if (F->getBuiltinID() != Builtin::BIaddressof || !bitsetBuiltinLibraryCast(S, SM, F, Context))
-      return false;
-    Definition = F->getPrimaryTemplate()->getTemplatedDecl();
-  }
-  const auto *BuiltinCall = variantReturnCall(Definition);
-  const auto *Builtin = BuiltinCall ? BuiltinCall->getDirectCallee() : nullptr;
-  if (!Builtin || Builtin->getBuiltinID() != Builtin::BI__builtin_addressof ||
-      Builtin->hasBody() || BuiltinCall->getNumArgs() != 1 ||
-      !cstddefOrigin(S, SM, BuiltinCall->getExprLoc(), "libcxx", "__memory/addressof.h") ||
-      !variantParameter(BuiltinCall->getArg(0), Definition->getParamDecl(0)))
+  const auto *Access = variantAddressedValue(S, SM, Address, Context);
+  const auto *Member = Access ? dyn_cast<MemberExpr>(Access->IgnoreParenImpCasts()) : nullptr;
+  if (!Member || Member->getMemberDecl()->getCanonicalDecl() != V.Alternatives[I]->getCanonicalDecl())
     return false;
   const auto *Selected = dyn_cast<CallExpr>(Member->getBase()->IgnoreParenImpCasts());
   return Selected && Selected->getNumArgs() == 1 &&
@@ -7945,6 +8036,684 @@ bool approvedUtilityAnyMetadata(const State &S, const SourceManager &SM,
          !UnionLayout.getFieldOffset(1) && AnyLayout.getSize() == Word * 4 &&
          AnyLayout.getAlignment() == Align && !AnyLayout.getFieldOffset(0) &&
          AnyLayout.getFieldOffset(1) == Context.getTypeSize(Context.VoidPtrTy);
+}
+
+static bool anyDeclaration(const State &S, const SourceManager &SM,
+                           const Decl *Declaration) {
+  return approvedStandardSDKDeclaration(S, SM, Declaration) &&
+         cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "any");
+}
+
+static const CompoundStmt *anyBody(const State &S, const SourceManager &SM,
+                                   const CXXMethodDecl *Method, unsigned Parameters) {
+  if (!Method || Method->isDeleted() || Method->isVirtual() || Method->isStatic() ||
+      Method->isVolatile() || Method->isVariadic() || Method->getNumParams() != Parameters)
+    return nullptr;
+  for (const auto *D : Method->redecls())
+    if (!anyDeclaration(S, SM, D))
+      return nullptr;
+  return dyn_cast_or_null<CompoundStmt>(Method->getBody());
+}
+
+static bool anyThis(const Expr *E) {
+  return E && isa<CXXThisExpr>(E->IgnoreParenImpCasts());
+}
+
+static bool anyThisField(const Expr *E, const FieldDecl *Field) {
+  const auto *Member = E ? dyn_cast<MemberExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  return Member && Member->getMemberDecl() == Field && anyThis(Member->getBase());
+}
+
+static bool anyNull(const Expr *E) {
+  return E && isa<CXXNullPtrLiteralExpr>(E->IgnoreParenImpCasts());
+}
+
+static const Expr *anyReturn(const CompoundStmt *Body) {
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  return Return ? Return->getRetValue() : nullptr;
+}
+
+static const Expr *anyInitializer(const CXXConstructorDecl *Ctor, const FieldDecl *Field) {
+  for (const auto *Init : Ctor->inits())
+    if (Init->isMemberInitializer() && Init->getMember() == Field)
+      return Init->getInit();
+  return nullptr;
+}
+
+static bool anyCarrierInitialization(const State &S, const SourceManager &SM,
+                                     const CXXConstructorDecl *Ctor, const CXXRecordDecl *Any) {
+  if (Ctor->getNumCtorInitializers() != 2)
+    return false;
+  auto Fields = Any->field_begin();
+  if (!anyNull(anyInitializer(Ctor, *Fields++)))
+    return false;
+  const auto *Storage = *Fields;
+  const auto *Input = anyInitializer(Ctor, Storage);
+  const auto *Build = Input ? dyn_cast<CXXConstructExpr>(Input->IgnoreParenImpCasts()) : nullptr;
+  const auto *Union = Storage->getType()->getAsCXXRecordDecl()->getDefinition();
+  const auto *Nested = Build ? Build->getConstructor() : nullptr;
+  const auto *NestedBody = anyBody(S, SM, Nested, 0);
+  return Build && !Build->getNumArgs() && NestedBody && NestedBody->body_empty() &&
+         Nested->isDefaultConstructor() &&
+         Nested->getParent()->getCanonicalDecl() == Union->getCanonicalDecl() &&
+         Nested->getNumCtorInitializers() == 1 &&
+         anyNull(anyInitializer(Nested, *Union->field_begin()));
+}
+
+static bool anyDefaultConstructor(const State &S, const SourceManager &SM,
+                                  const CXXConstructorDecl *Ctor,
+                                  const CXXRecordDecl *Any) {
+  const auto *Body = anyBody(S, SM, Ctor, 0);
+  return Body && Body->body_empty() && Ctor->isDefaultConstructor() &&
+         Ctor->isConstexpr() && anyCarrierInitialization(S, SM, Ctor, Any);
+}
+
+static bool anyResetBody(const State &S, const SourceManager &SM,
+                         const CXXMethodDecl *Reset, const CXXRecordDecl *Any,
+                         const ASTContext &Context) {
+  const auto *Body = anyBody(S, SM, Reset, 0);
+  if (!Body || Body->size() != 1 || Reset->getName() != "reset" || Reset->isConst() ||
+      !Reset->getReturnType()->isVoidType() ||
+      Reset->getParent()->getCanonicalDecl() != Any->getCanonicalDecl())
+    return false;
+  const auto *Handle = *Any->field_begin();
+  const auto *If = dyn_cast<IfStmt>(Body->body_front());
+  if (!If || If->getInit() || If->getConditionVariable() || If->getElse() ||
+      !anyThisField(If->getCond(), Handle))
+    return false;
+  const auto *Invoke = dyn_cast<CXXMemberCallExpr>(If->getThen());
+  const auto *Dispatch = Invoke ? Invoke->getMethodDecl() : nullptr;
+  const auto *DispatchBody = anyBody(S, SM, Dispatch, 4);
+  if (!DispatchBody || Invoke->getNumArgs() != 4 || Dispatch->getName() != "__call" ||
+      Dispatch->isConst() || Dispatch->getParent()->getCanonicalDecl() != Any->getCanonicalDecl() ||
+      !anyThis(Invoke->getImplicitObjectArgument()) ||
+      !Context.hasSameType(Dispatch->getReturnType(), Context.VoidPtrTy))
+    return false;
+  const auto *Action = dyn_cast<DeclRefExpr>(Invoke->getArg(0)->IgnoreParenImpCasts());
+  const auto *Destroy = Action ? dyn_cast<EnumConstantDecl>(Action->getDecl()) : nullptr;
+  const auto *Signature = Handle->getType()->getPointeeType()->getAs<FunctionProtoType>();
+  if (!Destroy || Destroy->getName() != "_Destroy" || !anyDeclaration(S, SM, Destroy) ||
+      !Context.hasSameType(Action->getType(), Signature->getParamType(0)))
+    return false;
+  for (unsigned I = 1; I < 4; ++I) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Invoke->getArg(I));
+    if (!Default || Default->getParam() != Dispatch->getParamDecl(I) || !anyNull(Default->getExpr()))
+      return false;
+  }
+  const auto *Result = anyReturn(DispatchBody);
+  const auto *Indirect = Result ? dyn_cast<CallExpr>(Result->IgnoreParenImpCasts()) : nullptr;
+  if (!Indirect || Indirect->getNumArgs() != 5 || Indirect->getDirectCallee() ||
+      !anyThisField(Indirect->getCallee(), Handle) || !anyThis(Indirect->getArg(1)))
+    return false;
+  constexpr unsigned Operand[] = {0, 2, 3, 4};
+  for (unsigned I = 0; I < 4; ++I) {
+    const auto *Ref = dyn_cast<DeclRefExpr>(Indirect->getArg(Operand[I])->IgnoreParenImpCasts());
+    if (!Ref || Ref->getDecl() != Dispatch->getParamDecl(I))
+      return false;
+  }
+  return true;
+}
+
+bool approvedUtilityAnyEmptyRecord(const State &S, const SourceManager &SM,
+                                    const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!approvedUtilityAnyMetadata(S, SM, Record, Context) ||
+      Context.getTypeSize(Context.UnsignedLongLongTy) != 64 ||
+      Context.getTypeAlign(Context.UnsignedLongLongTy) != Context.getTypeAlign(Context.VoidPtrTy) ||
+      Context.getTypeAlign(Context.VoidPtrTy) != 64)
+    return false;
+  const auto *Any = Record->getDefinition();
+  const auto *Dtor = Any->getDestructor();
+  const auto *Body = anyBody(S, SM, Dtor, 0);
+  const auto *Call = Body && Body->size() == 1 ? dyn_cast<CXXMemberCallExpr>(Body->body_front()) : nullptr;
+  // Admitted constructors initialize an empty carrier. Its state never
+  // reaches the SDK's dynamic handler during reset or destruction.
+  return Call && !Call->getNumArgs() && anyThis(Call->getImplicitObjectArgument()) &&
+         anyResetBody(S, SM, Call->getMethodDecl(), Any, Context);
+}
+
+static bool anyParameter(const Expr *E, const ParmVarDecl *Parameter);
+
+static bool anyEmptyCopyOrMove(const State &S, const SourceManager &SM,
+                             const CXXConstructorDecl *Ctor, const CXXRecordDecl *Any,
+                             const ASTContext &Context) {
+  const bool Copy = Ctor->isCopyConstructor();
+  const bool Move = Ctor->isMoveConstructor();
+  const auto *Body = anyBody(S, SM, Ctor, 1);
+  const auto *Proto = Ctor->getType()->getAs<FunctionProtoType>();
+  if ((!Copy && !Move) || !Body || Body->size() != 1 ||
+      !Proto || Proto->isNothrow() != Move || !anyCarrierInitialization(S, SM, Ctor, Any))
+    return false;
+  const auto *Argument = Ctor->getParamDecl(0);
+  const auto Type = Context.getRecordType(Any);
+  const auto Expected = Copy ? Context.getLValueReferenceType(Type.withConst())
+                             : Context.getRValueReferenceType(Type);
+  if (!Context.hasSameType(Argument->getType(), Expected))
+    return false;
+  const auto *Gate = dyn_cast<IfStmt>(Body->body_front());
+  if (!Gate || Gate->getElse() || Gate->getInit() || Gate->getConditionVariable())
+    return false;
+  const auto *Handle = dyn_cast<MemberExpr>(Gate->getCond()->IgnoreParenImpCasts());
+  if (!Handle || Handle->isArrow() || Handle->getMemberDecl() != *Any->field_begin() ||
+      !anyParameter(Handle->getBase(), Argument))
+    return false;
+  const auto *Invoke = dyn_cast<CXXMemberCallExpr>(Gate->getThen());
+  const auto *Dispatch = Invoke ? Invoke->getMethodDecl() : nullptr;
+  if (!Dispatch || Dispatch->getName() != "__call" || Dispatch->isConst() != Copy ||
+      Dispatch->getParent()->getCanonicalDecl() != Any->getCanonicalDecl() ||
+      !anyBody(S, SM, Dispatch, 4) || Invoke->getNumArgs() != 4 ||
+      !anyParameter(Invoke->getImplicitObjectArgument(), Argument) || !anyThis(Invoke->getArg(1)))
+    return false;
+  const auto *ActionRef = dyn_cast<DeclRefExpr>(Invoke->getArg(0)->IgnoreParenImpCasts());
+  const auto *Action = ActionRef ? dyn_cast<EnumConstantDecl>(ActionRef->getDecl()) : nullptr;
+  if (!Action || Action->getName() != (Copy ? "_Copy" : "_Move") || !anyDeclaration(S, SM, Action))
+    return false;
+  for (unsigned I = 2; I < 4; ++I) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Invoke->getArg(I));
+    if (!Default || Default->getParam() != Dispatch->getParamDecl(I) || !anyNull(Default->getExpr()))
+      return false;
+  }
+  return true;
+}
+
+bool approvedUtilityAnyEmptyConstruction(const State &S, const SourceManager &SM,
+                                          const CXXConstructExpr *Construction,
+                                          const ASTContext &Context) {
+  if (!Construction || Construction->isInstantiationDependent() || Construction->getNumArgs() > 1 ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return false;
+  const auto *Record = Context.getBaseElementType(Construction->getType())
+                           ->getAsCXXRecordDecl();
+  const auto *Ctor = Construction->getConstructor();
+  if (!approvedUtilityAnyEmptyRecord(S, SM, Record, Context) || !Ctor ||
+      Ctor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+    return false;
+  const auto *Any = Record->getDefinition();
+  if (!Construction->getNumArgs())
+    return anyDefaultConstructor(S, SM, Ctor, Any);
+  return Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(), Construction->getType()) &&
+         anyEmptyCopyOrMove(S, SM, Ctor, Any, Context);
+}
+
+std::optional<UtilityAnyEmptyCall> approvedUtilityAnyEmptyCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = MemberCall ? MemberCall->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || MemberCall->getNumArgs() ||
+      (Method->getName() != "reset" && Method->getName() != "has_value"))
+    return std::nullopt;
+  const auto *Member = dyn_cast_or_null<MemberExpr>(directMethodReference(Call));
+  const auto *Any = Method->getParent()->getDefinition();
+  if (!Member || !approvedUtilityAnyEmptyRecord(S, SM, Any, Context))
+    return std::nullopt;
+  if (Method->getName() == "reset") {
+    if (anyResetBody(S, SM, Method, Any, Context))
+      return UtilityAnyEmptyCall{UtilityAnyEmptyOperation::Reset, Member, Any};
+    return std::nullopt;
+  }
+  const auto *Returned = anyReturn(anyBody(S, SM, Method, 0));
+  const auto *Comparison = Returned ? dyn_cast<BinaryOperator>(Returned->IgnoreParenImpCasts()) : nullptr;
+  if (Method->isConst() && Context.hasSameType(Method->getReturnType(), Context.BoolTy) &&
+      Comparison && Comparison->getOpcode() == BO_NE &&
+      anyThisField(Comparison->getLHS(), *Any->field_begin()) && anyNull(Comparison->getRHS()))
+    return UtilityAnyEmptyCall{UtilityAnyEmptyOperation::HasValue, Member, Any};
+  return std::nullopt;
+}
+
+static bool anyParameter(const Expr *E, const ParmVarDecl *Parameter) {
+  const auto *Ref = E ? dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  return Ref && Ref->getDecl() == Parameter;
+}
+
+static bool anyEmptySwapBody(const State &S, const SourceManager &SM,
+                             const CXXMethodDecl *Swap, const CXXRecordDecl *Any,
+                             const ASTContext &Context) {
+  const auto *Body = anyBody(S, SM, Swap, 1);
+  const auto *Type = Swap ? Swap->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Definition = Swap ? Swap->getDefinition() : nullptr;
+  if (!Body || !Definition || Body->size() != 2 || !Swap->getIdentifier() || Swap->getName() != "swap" ||
+      !Type || !Type->isNothrow() || Swap->isConst() || !Swap->getReturnType()->isVoidType() ||
+      Swap->getParent()->getCanonicalDecl() != Any->getCanonicalDecl())
+    return false;
+  // The assignment body can select the in-class declaration of swap.
+  const auto *Input = Definition->getParamDecl(0);
+  if (!Context.hasSameType(Input->getType(), Context.getLValueReferenceType(Context.getRecordType(Any))))
+    return false;
+  const auto *Handle = *Any->field_begin();
+  auto IsInputHandle = [&](const Expr *E) {
+    const auto *Field = E ? dyn_cast<MemberExpr>(E->IgnoreParenImpCasts()) : nullptr;
+    return Field && !Field->isArrow() && Field->getMemberDecl() == Handle &&
+           anyParameter(Field->getBase(), Input);
+  };
+  auto IsPlainIf = [](const IfStmt *I) {
+    return I && !I->getInit() && !I->getConditionVariable() && !I->isConstexpr();
+  };
+  const auto *Self = dyn_cast<IfStmt>(Body->body_front());
+  const auto *Same = Self ? dyn_cast<BinaryOperator>(Self->getCond()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Exit = Self ? dyn_cast<ReturnStmt>(Self->getThen()) : nullptr;
+  const auto *Address = Same ? dyn_cast<UnaryOperator>(Same->getRHS()->IgnoreParenImpCasts()) : nullptr;
+  if (!IsPlainIf(Self) || Self->getElse() || !Same || Same->getOpcode() != BO_EQ ||
+      !anyThis(Same->getLHS()) || !Address || Address->getOpcode() != UO_AddrOf ||
+      !anyParameter(Address->getSubExpr(), Input) || !Exit || Exit->getRetValue())
+    return false;
+
+  // Every supported constructor starts with a null handler. Both conditions
+  // that could invoke a move handler are false for this carrier.
+  const auto *Both = dyn_cast<IfStmt>(Body->body_back());
+  const auto *And = Both ? dyn_cast<BinaryOperator>(Both->getCond()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Left = Both ? dyn_cast_or_null<IfStmt>(Both->getElse()) : nullptr;
+  const auto *Right = Left ? dyn_cast_or_null<IfStmt>(Left->getElse()) : nullptr;
+  return IsPlainIf(Both) && IsPlainIf(Left) && IsPlainIf(Right) && !Right->getElse() &&
+         And && And->getOpcode() == BO_LAnd && anyThisField(And->getLHS(), Handle) &&
+         IsInputHandle(And->getRHS()) && anyThisField(Left->getCond(), Handle) &&
+         IsInputHandle(Right->getCond());
+}
+
+static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *E,
+                           const ParmVarDecl *Input, QualType Any, const ASTContext &Context) {
+  const auto *Call = E ? dyn_cast<CallExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  const auto *Move = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Move ? Move->getPrimaryTemplate() : nullptr;
+  auto Pinned = [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", "__utility/move.h");
+  };
+  if (!Move || !Primary || !Move->getIdentifier() || Move->getName() != "move" ||
+      Call->getNumArgs() != 1 || !Call->isXValue() ||
+      Move->getNumParams() != 1 || Move->isDeleted() ||
+      Move->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Pinned(Primary) || !anyParameter(Call->getArg(0), Input) ||
+      !Context.hasSameType(Move->getReturnType(), Context.getRValueReferenceType(Any)))
+    return false;
+  const auto *Type = Move->getType()->getAs<FunctionProtoType>();
+  if (!Type || !Type->isNothrow() || !Context.hasSameType(Move->getParamDecl(0)->getType(),
+                                                        Context.getLValueReferenceType(Any)))
+    return false;
+  for (const auto *D : Move->redecls())
+    if (!Pinned(D))
+      return false;
+  const FunctionDecl *Definition = nullptr;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Move->getBody(Definition));
+  if (!Body)
+    return Move->getBuiltinID() == Builtin::BImove &&
+           bitsetBuiltinLibraryCast(S, SM, Move, Context);
+  if (Body->size() != 2 || !Pinned(Definition))
+    return false;
+  // The SDK spells the destination through a local remove-reference alias.
+  const auto *Declaration = dyn_cast<DeclStmt>(Body->body_front());
+  const auto *Alias = Declaration && Declaration->isSingleDecl()
+      ? dyn_cast<TypeAliasDecl>(Declaration->getSingleDecl()) : nullptr;
+  if (!Alias || Alias->getName() != "_Up" || Alias->getDeclContext() != Definition ||
+      !Pinned(Alias) || !Context.hasSameType(Alias->getUnderlyingType(), Any))
+    return false;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Result = Return ? Return->getRetValue() : nullptr;
+  const auto *Cast = Result ? dyn_cast<CXXStaticCastExpr>(Result->IgnoreParens()) : nullptr;
+  return Cast && Cast->getCastKind() == CK_NoOp && Cast->isXValue() &&
+         Context.hasSameType(Cast->getType(), Any) &&
+         anyParameter(Cast->getSubExpr(), Definition->getParamDecl(0));
+}
+
+static bool anyEmptyAssignmentBody(const State &S, const SourceManager &SM,
+                                   const CXXMethodDecl *Method, const CXXRecordDecl *Any,
+                                   const ASTContext &Context) {
+  const bool Copy = Method->isCopyAssignmentOperator();
+  const bool Move = Method->isMoveAssignmentOperator();
+  const auto *Body = anyBody(S, SM, Method, 1);
+  const auto *Type = Method->getType()->getAs<FunctionProtoType>();
+  const auto Owner = Context.getRecordType(Any);
+  if ((!Copy && !Move) || !Body || Body->size() != 2 || !Type || Type->isNothrow() != Move ||
+      Method->isConst() || !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Owner)))
+    return false;
+  const auto *Input = Method->getParamDecl(0);
+  const auto Parameter = Copy ? Context.getLValueReferenceType(Owner.withConst())
+                              : Context.getRValueReferenceType(Owner);
+  if (!Context.hasSameType(Input->getType(), Parameter))
+    return false;
+
+  const auto *Statement = dyn_cast<Expr>(Body->body_front());
+  const auto *Invoke = Statement ? dyn_cast<CXXMemberCallExpr>(Statement->IgnoreImplicit()->IgnoreParens()) : nullptr;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Returned = Return && Return->getRetValue()
+      ? dyn_cast<UnaryOperator>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Self = Invoke && Invoke->getNumArgs() == 1
+      ? dyn_cast<UnaryOperator>(Invoke->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+  if (!Self || Self->getOpcode() != UO_Deref || !anyThis(Self->getSubExpr()) ||
+      !Returned || Returned->getOpcode() != UO_Deref || !anyThis(Returned->getSubExpr()) ||
+      !anyEmptySwapBody(S, SM, Invoke->getMethodDecl(), Any, Context))
+    return false;
+  const auto *Receiver = Invoke->getImplicitObjectArgument();
+  const auto *Temporary = Receiver ? Receiver->IgnoreImplicit()->IgnoreParens() : nullptr;
+  if (const auto *Syntax = dyn_cast_or_null<CXXFunctionalCastExpr>(Temporary)) {
+    if (!Context.hasSameType(Syntax->getType(), Owner))
+      return false;
+    Temporary = Syntax->getSubExpr()->IgnoreImplicit()->IgnoreParens();
+  }
+  const auto *Build = dyn_cast_or_null<CXXConstructExpr>(Temporary);
+  if (!Build || Build->getNumArgs() != 1 || !Context.hasSameType(Build->getType(), Owner) ||
+      !anyEmptyCopyOrMove(S, SM, Build->getConstructor(), Any, Context) ||
+      Build->getConstructor()->isMoveConstructor() != Move)
+    return false;
+  return Move ? anyMoveOperand(S, SM, Build->getArg(0), Input, Owner, Context)
+              : anyParameter(Build->getArg(0), Input);
+}
+
+std::optional<UtilityAnyEmptyTransfer> approvedUtilityAnyEmptyTransfer(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  if (!Method || Method->isDeleted() || Method->isInvalidDecl() || Method->getNumParams() != 1)
+    return std::nullopt;
+  const auto *Any = Method->getParent()->getDefinition();
+  if (!approvedUtilityAnyEmptyRecord(S, SM, Any, Context))
+    return std::nullopt;
+  const bool Assignment = Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator();
+  if (Assignment ? !anyEmptyAssignmentBody(S, SM, Method, Any, Context)
+                 : !anyEmptySwapBody(S, SM, Method, Any, Context))
+    return std::nullopt;
+
+  const Expr *Receiver;
+  bool Arrow = false;
+  bool InputFirst = false;
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call)) {
+    if (!Assignment || Operator->getOperator() != OO_Equal || Operator->getNumArgs() != 2)
+      return std::nullopt;
+    Receiver = Operator->getArg(0);
+    InputFirst = true;
+  } else {
+    const auto *Member = dyn_cast_or_null<MemberExpr>(directMethodReference(Call));
+    if (!Member || Member->getMemberDecl() != Method || Call->getNumArgs() != 1)
+      return std::nullopt;
+    Receiver = Member->getBase();
+    Arrow = Member->isArrow();
+  }
+  const auto Type = Arrow ? Receiver->getType()->getPointeeType() : Receiver->getType();
+  const auto *Input = Call->getArg(Call->getNumArgs() - 1);
+  if (Type.isNull() || Type.isConstQualified() || Type.isVolatileQualified() ||
+      (!Arrow && !Receiver->isGLValue()) || !Input->isGLValue() ||
+      !Context.hasSameUnqualifiedType(Type, Context.getRecordType(Any)) ||
+      !Context.hasSameUnqualifiedType(Input->getType(), Type) || Input->getType().isVolatileQualified())
+    return std::nullopt;
+  return UtilityAnyEmptyTransfer{Any, Receiver, Input, Arrow, InputFirst, Assignment};
+}
+
+static const CXXRecordDecl *anyEmptyCast(const State &S, const SourceManager &SM,
+                                       const FunctionDecl *F, const ASTContext &Context,
+                                       bool AllowConst) {
+  const auto *Type = F ? F->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Args = F ? F->getTemplateSpecializationArgs() : nullptr;
+  if (!F || !F->getIdentifier() || F->getName() != "any_cast" || F->isDeleted() ||
+      F->isInvalidDecl() || F->isVariadic() || F->getNumParams() != 1 || !Type ||
+      !Type->isNothrow() || !Args || Args->size() != 1 ||
+      Args->get(0).getKind() != TemplateArgument::Type ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return nullptr;
+  const auto *Primary = F->getPrimaryTemplate();
+  if (!Primary)
+    return nullptr;
+  for (const auto *D : Primary->redecls())
+    if (!anyDeclaration(S, SM, D) || !anyDeclaration(S, SM, D->getTemplatedDecl()))
+      return nullptr;
+  for (const auto *D : F->redecls())
+    if (!anyDeclaration(S, SM, D))
+      return nullptr;
+
+  const auto Value = Args->get(0).getAsType();
+  const auto Object = F->getParamDecl(0)->getType()->getPointeeType();
+  if (Object.isNull() || Object.isVolatileQualified() || Object.isRestrictQualified() ||
+      Object.getAddressSpace() != LangAS::Default || !utilityScalar(Context, Value) ||
+      Value.isVolatileQualified() || Value.isRestrictQualified() ||
+      Value.getAddressSpace() != LangAS::Default)
+    return nullptr;
+  const auto *Record = Object->getAsCXXRecordDecl();
+  if (!approvedUtilityAnyEmptyRecord(S, SM, Record, Context))
+    return nullptr;
+  const auto *Any = Record->getDefinition();
+  const bool Const = Object.isConstQualified();
+  if ((Const && !AllowConst) ||
+      !Context.hasSameType(F->getReturnType(),
+                           Context.getPointerType(Const ? Value.withConst() : Value)))
+    return nullptr;
+
+  const FunctionDecl *Definition = nullptr;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody(Definition));
+  if (!Body || !anyDeclaration(S, SM, Definition) || Body->size() > 8)
+    return nullptr;
+  auto Statement = Body->body_begin();
+  for (; Statement != Body->body_end(); ++Statement) {
+    const auto *Decls = dyn_cast<DeclStmt>(*Statement);
+    if (!Decls)
+      break;
+    for (const auto *D : Decls->decls())
+      if (!isa<UsingDecl, StaticAssertDecl, TypedefNameDecl>(D) ||
+          !cstddefOrigin(S, SM, D->getLocation(), "libcxx", "any"))
+        return nullptr;
+  }
+  const auto *Parameter = Definition->getParamDecl(0);
+  if (Const) {
+    if (std::distance(Statement, Body->body_end()) != 1)
+      return nullptr;
+    const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+    const auto *Result = Return ? Return->getRetValue() : nullptr;
+    const auto *Forward = Result ? dyn_cast<CallExpr>(Result->IgnoreParenImpCasts()) : nullptr;
+    const auto *Cast = Forward && Forward->getNumArgs() == 1
+        ? dyn_cast<CXXConstCastExpr>(Forward->getArg(0)->IgnoreParens()) : nullptr;
+    if (!Cast || !anyParameter(Cast->getSubExpr(), Parameter) ||
+        !Context.hasSameType(Cast->getType(), Context.getPointerType(Context.getRecordType(Any))))
+      return nullptr;
+    const auto *Target = Forward->getDirectCallee();
+    const auto *ForwardArgs = Target ? Target->getTemplateSpecializationArgs() : nullptr;
+    if (!ForwardArgs || ForwardArgs->size() != 1 ||
+        !ForwardArgs->get(0).structurallyEquals(Args->get(0)))
+      return nullptr;
+    return anyEmptyCast(S, SM, Target, Context, false) == Any ? Any : nullptr;
+  }
+
+  if (std::distance(Statement, Body->body_end()) != 2)
+    return nullptr;
+  const auto *Guard = dyn_cast<IfStmt>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  if (!Guard || Guard->getInit() || Guard->getConditionVariable() || Guard->getElse() ||
+      !Return || !anyNull(Return->getRetValue()))
+    return nullptr;
+  const auto *Condition = dyn_cast<BinaryOperator>(Guard->getCond()->IgnoreParenImpCasts());
+  if (!Condition || Condition->getOpcode() != BO_LAnd ||
+      !anyParameter(Condition->getLHS(), Parameter))
+    return nullptr;
+  const auto *Handle = dyn_cast<MemberExpr>(Condition->getRHS()->IgnoreParenImpCasts());
+  return Handle && Handle->isArrow() && Handle->getMemberDecl() == *Any->field_begin() &&
+         anyParameter(Handle->getBase(), Parameter) ? Any : nullptr;
+}
+
+const CXXRecordDecl *approvedUtilityAnyEmptyPointerCast(const State &S, const SourceManager &SM,
+                                                       const CallExpr *Call,
+                                                       const ASTContext &Context) {
+  if (!S.coreV2() || !Call || Call->getNumArgs() != 1 || !directFunctionReference(Call))
+    return nullptr;
+  return anyEmptyCast(S, SM, Call->getDirectCallee(), Context, true);
+}
+
+static const CXXMethodDecl *variantEmplaceDefinition(const State &S,
+    const SourceManager &SM, const CXXMethodDecl *Method, llvm::StringRef Name,
+    unsigned Arity) {
+  if (!Method || !Method->getIdentifier() || Method->getName() != Name ||
+      Method->isDeleted() || Method->isInvalidDecl() || Method->isVariadic() ||
+      Method->isStatic() || Method->isConst() || Method->isVolatile() ||
+      Method->getNumParams() != Arity)
+    return nullptr;
+  for (const auto *D : Method->redecls())
+    if (!variantDeclaration(S, SM, D))
+      return nullptr;
+  const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(Method->getDefinition());
+  if (!variantDeclaration(S, SM, Definition) ||
+      (Name != "__destroy" &&
+       (!Method->getPrimaryTemplate() ||
+        Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !variantDeclaration(S, SM, Method->getPrimaryTemplate()))))
+    return nullptr;
+  return Definition;
+}
+
+static bool variantThis(const Expr *E) {
+  return E && isa<CXXThisExpr>(E->IgnoreParenImpCasts());
+}
+
+static bool variantTrivialDestroy(const State &S, const SourceManager &SM,
+    const CXXMemberCallExpr *Call, const UtilityVariantRecord &V,
+    const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() || !variantThis(Call->getImplicitObjectArgument()))
+    return false;
+  const auto *Method = variantEmplaceDefinition(S, SM, Call->getMethodDecl(), "__destroy", 0);
+  const auto *Body = Method ? dyn_cast_or_null<CompoundStmt>(Method->getBody()) : nullptr;
+  const auto *Proto = Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Body || Body->size() != 1 || !Proto || !Proto->isNothrow() ||
+      !Method->getReturnType()->isVoidType() || Method->getParent()->getName() != "__dtor")
+    return false;
+  const auto *Clear = dyn_cast<BinaryOperator>(Body->body_front());
+  return Clear && Clear->getOpcode() == BO_Assign && variantThisField(Clear->getLHS(), V.Index) &&
+         variantIntegerConstant(S, SM, Clear->getRHS(), Context, "__variant_npos",
+                                V.Index->getType());
+}
+
+static bool utilitySwapSDKFunction(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, llvm::StringRef Name, llvm::StringRef Path);
+static bool utilityOptionalSwapNoop(const Expr *Expression);
+static bool utilityOptionalSwapPlacement(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, bool Allocation, const ASTContext &Context);
+
+static bool variantForwardedTag(const State &S, const SourceManager &SM,
+    const Expr *Argument, const ParmVarDecl *Tag, const ASTContext &Context) {
+  if (!Context.hasSameUnqualifiedType(Argument->getType(), Tag->getType().getNonReferenceType()))
+    return false;
+  const auto *Copy = variantConstruct(Argument);
+  if (!Copy)
+    return variantForward(S, SM, Argument, Tag, Context);
+  return Copy->getNumArgs() == 1 && Copy->getConstructor()->isTrivial() &&
+         Copy->getConstructor()->isCopyOrMoveConstructor() &&
+         variantDeclaration(S, SM, Copy->getConstructor(), "__utility/in_place.h") &&
+         variantForward(S, SM, Copy->getArg(0), Tag, Context);
+}
+
+static bool variantEmplaceConstructAt(const State &S, const SourceManager &SM,
+    const CallExpr *Call, const CXXMethodDecl *Inner, const UtilityVariantRecord &V,
+    unsigned Index, unsigned Arity, const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() != Arity + 2 ||
+      variantIndexTag(S, SM, Call->getArg(1)) != Index ||
+      (Arity && !variantForward(S, SM, Call->getArg(2), Inner->getParamDecl(0), Context)))
+    return false;
+  const auto *Address = dyn_cast<CallExpr>(Call->getArg(0)->IgnoreParenImpCasts());
+  const auto Data = V.Value->getType();
+  const auto DataPointer = Context.getPointerType(Data);
+  const auto *Selected = Call->getDirectCallee();
+  if (!variantThisField(variantAddressedValue(S, SM, Address, Context), V.Value) ||
+      !utilitySwapSDKFunction(S, SM, Selected, "__construct_at", "__memory/construct_at.h"))
+    return false;
+  const auto *Build = Selected->getDefinition();
+  if (!Build || Build->getNumParams() != Arity + 2 ||
+      !Context.hasSameType(Build->getParamDecl(0)->getType(), DataPointer) ||
+      !Context.hasSameType(Build->getReturnType(), DataPointer) ||
+      !Context.hasSameType(Build->getParamDecl(1)->getType().getNonReferenceType(),
+                           Call->getArg(1)->getType()) ||
+      (Arity && !Context.hasSameType(Build->getParamDecl(2)->getType(),
+                                    Inner->getParamDecl(0)->getType())))
+    return false;
+  const auto *Returned = variantReturned(Build);
+  const auto *Comma = Returned ? dyn_cast<BinaryOperator>(Returned->IgnoreParens()) : nullptr;
+  const auto *New = Comma ? dyn_cast<CXXNewExpr>(Comma->getRHS()->IgnoreParens()) : nullptr;
+  if (!Comma || Comma->getOpcode() != BO_Comma || !utilityOptionalSwapNoop(Comma->getLHS()) ||
+      !New || !New->isGlobalNew() || New->isArray() || New->getNumPlacementArgs() != 1 ||
+      !Context.hasSameType(New->getAllocatedType(), Data) ||
+      !utilityOptionalSwapPlacement(S, SM, New->getOperatorNew(), true, Context) ||
+      (New->getOperatorDelete() &&
+       !utilityOptionalSwapPlacement(S, SM, New->getOperatorDelete(), false, Context)))
+    return false;
+  const auto *Placement = dyn_cast<CXXStaticCastExpr>(New->getPlacementArg(0));
+  const auto *Storage = variantConstruct(New->getInitializer());
+  return Placement && (Placement->getCastKind() == CK_NoOp || Placement->getCastKind() == CK_BitCast) &&
+         Context.hasSameType(Placement->getType(), Context.VoidPtrTy) &&
+         variantParameter(Placement->getSubExpr(), Build->getParamDecl(0)) &&
+         Storage && Storage->getNumArgs() == Arity + 1 &&
+         variantForwardedTag(S, SM, Storage->getArg(0), Build->getParamDecl(1), Context) &&
+         (!Arity || variantForward(S, SM, Storage->getArg(1), Build->getParamDecl(2), Context)) &&
+         variantStoredAlternative(S, SM, Storage, V, Index, Arity, Context);
+}
+
+static bool variantEmplaceBody(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Outer, const UtilityVariantRecord &V, unsigned Index,
+    unsigned Arity, const ASTContext &Context) {
+  const auto *Returned = variantReturned(Outer);
+  const auto *Call = Returned ? dyn_cast<CXXMemberCallExpr>(Returned->IgnoreParenImpCasts()) : nullptr;
+  if (!Call || Call->getNumArgs() != Arity ||
+      !variantThisField(Call->getImplicitObjectArgument(), V.Implementation) ||
+      (Arity && !variantForward(S, SM, Call->getArg(0), Outer->getParamDecl(0), Context)))
+    return false;
+  const auto *Inner = variantEmplaceDefinition(S, SM, Call->getMethodDecl(), "__emplace", Arity);
+  if (!Inner || Inner->getParent()->getName() != "__assignment" ||
+      !variantSelectedIndex(Inner, Index) ||
+      !Context.hasSameType(Inner->getReturnType(), Outer->getReturnType()))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Inner->getBody());
+  if (!Body || Body->size() != 4)
+    return false;
+  auto Part = Body->body_begin();
+  const auto *Destroy = dyn_cast<CXXMemberCallExpr>(*Part++);
+  const auto *Build = dyn_cast<CallExpr>(*Part++);
+  const auto *Set = dyn_cast<BinaryOperator>(*Part++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Part);
+  Expr::EvalResult Constant;
+  if (!variantTrivialDestroy(S, SM, Destroy, V, Context) ||
+      !variantEmplaceConstructAt(S, SM, Build, Inner, V, Index, Arity, Context) ||
+      !Set || Set->getOpcode() != BO_Assign || !variantThisField(Set->getLHS(), V.Index) ||
+      !Set->getRHS()->EvaluateAsInt(Constant, Context) ||
+      Constant.Val.getInt().getLimitedValue(64) != Index)
+    return false;
+  const auto *Result = Return ? dyn_cast_or_null<MemberExpr>(Return->getRetValue()) : nullptr;
+  const auto *Access = Result ? dyn_cast<CallExpr>(Result->getBase()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Object = Access && Access->getNumArgs() == 1
+      ? dyn_cast<UnaryOperator>(Access->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+  return Result && Result->getMemberDecl()->getCanonicalDecl() ==
+                       V.Alternatives[Index]->getCanonicalDecl() &&
+         Object && Object->getOpcode() == UO_Deref && variantThis(Object->getSubExpr()) &&
+         variantBaseAlternativeProjection(S, SM, Access, V, Index, Context);
+}
+
+std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Member = MemberCall ? dyn_cast_or_null<MemberExpr>(directMethodReference(MemberCall)) : nullptr;
+  if (!Member || MemberCall->getNumArgs() > 1)
+    return std::nullopt;
+  const unsigned Arity = MemberCall->getNumArgs();
+  const auto *Method = variantEmplaceDefinition(S, SM, MemberCall->getMethodDecl(), "emplace", Arity);
+  if (!Method || Member->getMemberDecl()->getCanonicalDecl() != Method->getCanonicalDecl())
+    return std::nullopt;
+  const auto *Base = Member->getBase();
+  const auto Owner = Member->isArrow() ? Base->getType()->getPointeeType() : Base->getType();
+  const auto V = approvedUtilityVariantRecord(S, SM, Owner, Context);
+  const auto *Args = Method->getTemplateSpecializationArgs();
+  if (!V || Owner.isConstQualified() || (!Member->isArrow() && !Base->isGLValue()) ||
+      Method->getParent()->getCanonicalDecl() != V->Record->getCanonicalDecl() ||
+      !Args || (Args->size() != 4 && Args->size() != 5) ||
+      Args->get(1).getKind() != TemplateArgument::Pack || Args->get(1).pack_size() != Arity)
+    return std::nullopt;
+  const bool ByType = Args->get(0).getKind() == TemplateArgument::Type;
+  if (ByType ? Args->size() != 4 : Args->size() != 5)
+    return std::nullopt;
+  const auto &Selection = Args->get(ByType ? 2 : 0);
+  if (Selection.getKind() != TemplateArgument::Integral)
+    return std::nullopt;
+  const auto Index = Selection.getAsIntegral().getLimitedValue(64);
+  if (Index >= V->Alternatives.size())
+    return std::nullopt;
+  const auto Selected = V->Alternatives[Index]->getType();
+  const auto *Input = Arity ? Call->getArg(0) : nullptr;
+  if ((ByType && !Context.hasSameType(Selected, Args->get(0).getAsType())) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Selected)) ||
+      (Input && (Selected->isRecordType() || Input->getType().isVolatileQualified() ||
+                 !Context.hasSameUnqualifiedType(Selected, Input->getType()))) ||
+      !variantEmplaceBody(S, SM, Method, *V, unsigned(Index), Arity, Context))
+    return std::nullopt;
+  return UtilityVariantEmplace{*V, Member, unsigned(Index), Input};
 }
 
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,

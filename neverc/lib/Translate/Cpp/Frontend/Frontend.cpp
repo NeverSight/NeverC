@@ -13913,6 +13913,14 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityVectorRecord(S, Sources, D, Context) &&
                  !requireUtilityVector(D, L, Depth + 1)) {
         return {};
+      } else if (pinnedUtilityAnyType(S, Sources, D)) {
+        if (!approvedUtilityAnyEmptyRecord(S, Sources, D, Context)) {
+          reject(L, "any object layout",
+                 "The pinned empty any layout and cleanup source are required.", "TR0203");
+          return {};
+        }
+        if (RequiredUtilityEmptyAnys.insert(D->getCanonicalDecl()).second)
+          Records.push_back(const_cast<CXXRecordDecl *>(D));
       } else if (pinnedUtilityMonostateType(S, Sources, D)) {
         if (!approvedUtilityMonostateMetadata(S, Sources, D, Context)) {
           reject(L, "monostate object layout", "The authenticated empty alternative is required.", "TR0203");
@@ -14791,6 +14799,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     } else if (auto Array = approvedUtilityArrayRecord(S, Sources, R, Context);
                Array && !Array->Size) {
       Args.push_back(zero(Array->ElementType, L));
+    } else if (RequiredUtilityEmptyAnys.count(R->getCanonicalDecl())) {
+      const auto Word = Context.UnsignedLongLongTy;
+      const auto Storage = Context.getConstantArrayType(
+          Word, llvm::APInt(64, 3), nullptr, ArraySizeModifier::Normal, 0);
+      Args.push_back(zero(Word, L));
+      Args.push_back(zero(Storage, L));
     } else if (const auto V = approvedUtilityVariantRecord(S, Sources, T, Context)) {
       Args.push_back(json::Object{{"kind", "aggregate"}, {"type", variantStorageType(V->Record)},
           {"args", json::Array{zero(V->Alternatives.front()->getType(), L)}}, {"loc", loc(L)}});
@@ -18666,6 +18680,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   void checkConstruction(const CXXConstructExpr *C, SourceLocation L) {
     if (!CheckedConstructions.insert(C).second)
       return;
+    if (approvedUtilityAnyEmptyConstruction(A.S, A.Sources, C, A.Context)) {
+      if (C->getNumArgs())
+        checkBinding(C->getArg(0), true);
+      A.type(C->getType(), L);
+      return;
+    }
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() && Constructor && Constructor->isCopyOrMoveConstructor() &&
         (describeFunctionalNotFnOwnedStorage(A.S, A.Sources, Constructor->getParent(), A.Context) ||
@@ -18748,6 +18768,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
                                                     A.Context) ||
          approvedUtilityStringViewConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityMonostateConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityVariantConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityOptionalConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityWrapIteratorConstruction(A.S, A.Sources, C,
@@ -30182,6 +30203,8 @@ public:
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantEmplace(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantGet(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantHolds(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -30190,6 +30213,9 @@ public:
               A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
+              approvedUtilityAnyEmptyTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityAnyEmptyCall(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityAnyEmptyPointerCast(A.S, A.Sources, Call, A.Context) ||
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
               approvedFunctionalReferenceAssignment(
@@ -30755,6 +30781,7 @@ public:
           A.S.coreV2() && approvedUtilityStringAssignment(
                               A.S, A.Sources, Operator, A.Context)
                               .has_value();
+      const auto MonostateComparison = approvedUtilityMonostateComparison(A.S, A.Sources, C, A.Context);
       const auto VariantAssignment = approvedUtilityVariantAssignment(A.S, A.Sources, C, A.Context);
       const bool UtilityOptionalAssignment =
           A.S.coreV2() &&
@@ -30795,7 +30822,7 @@ public:
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityStringViewAssignment &&
             !UtilityStringAssignment && !UtilityVectorAssignment &&
-            !VariantAssignment &&
+            !VariantAssignment && !MonostateComparison &&
             !UtilityOptionalAssignment && !UtilityWrapIteratorAssignment &&
             !UtilityReverseIteratorAssignment && !UtilityAllocatorAssignment &&
             !UtilityDefaultDelete && !UtilityUniquePtr && !Ordinary &&
@@ -30860,6 +30887,10 @@ public:
           }
           return true;
         }
+      if (MonostateComparison) {
+        A.type(C->getArg(0)->getType(), L);
+        return true;
+      }
       if (const auto Variant = approvedUtilityVariantQuery(A.S, A.Sources, C, A.Context)) {
         const auto *Receiver = Variant->Callee->getBase();
         if (Variant->Callee->isArrow()) {
@@ -30881,6 +30912,20 @@ public:
           checkBinding(VariantAssignment->Receiver, true);
         checkBinding(VariantAssignment->Source, true);
         A.type(VariantAssignment->Source->getType(), L);
+        return true;
+      }
+      if (const auto Emplace = approvedUtilityVariantEmplace(A.S, A.Sources, C, A.Context)) {
+        const auto *Receiver = Emplace->Callee->getBase();
+        if (Emplace->Callee->isArrow()) {
+          if (temporaryArrayBase(Receiver, true))
+            A.reject(L, "variant receiver", "Expected a live variant object.");
+        } else {
+          checkBinding(Receiver, true);
+        }
+        if (Emplace->Input)
+          checkBinding(Emplace->Input, true);
+        A.type(A.Context.getRecordType(Emplace->Variant.Record), L);
+        A.type(C->getType(), L);
         return true;
       }
       if (const auto Get = approvedUtilityVariantGet(A.S, A.Sources, C, A.Context)) {
@@ -30905,6 +30950,21 @@ public:
            unorderedNodeTransfer(A.S, A.Sources, C, A.Context))) {
         A.type(C->getType(), L, true);
         A.S.Module["memory_lifetimes"] = true;
+        return true;
+      }
+      if (const auto *Any = approvedUtilityAnyEmptyPointerCast(A.S, A.Sources, C, A.Context)) {
+        A.type(A.Context.getRecordType(Any), L);
+        A.type(C->getType(), L);
+        return true;
+      }
+      if (const auto Any = approvedUtilityAnyEmptyTransfer(A.S, A.Sources, C, A.Context)) {
+        A.type(A.Context.getRecordType(Any->Record), L);
+        if (Any->ReturnsReceiver)
+          A.type(C->getType(), L);
+        return true;
+      }
+      if (const auto Any = approvedUtilityAnyEmptyCall(A.S, A.Sources, C, A.Context)) {
+        A.type(A.Context.getRecordType(Any->Record), L);
         return true;
       }
       APValue UtilityValue;
@@ -31279,6 +31339,8 @@ public:
                                                               A.Context) ||
                    approvedUtilityStringViewConstruction(A.S, A.Sources, C,
                                                          A.Context) ||
+                   approvedUtilityAnyEmptyConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedUtilityMonostateConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityVariantConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityOptionalConstruction(A.S, A.Sources, C,
                                                        A.Context) ||
@@ -31554,7 +31616,9 @@ static void orderCoreV2Records(Adapter &A) {
       Heights[I] = Heights[Found->second] + 1;
     }
     std::vector<std::pair<QualType, SourceLocation>> DependencyTypes;
-    if (Variant) {
+    if (A.RequiredUtilityEmptyAnys.count(R->getCanonicalDecl())) {
+      // The C23 carrier uses an integer tag and inline scalar storage.
+    } else if (Variant) {
       for (const auto *Alternative : Variant->Alternatives)
         DependencyTypes.emplace_back(Alternative->getType(), R->getLocation());
     } else if (UtilityTuple) {
@@ -31770,6 +31834,17 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   }
   json::Array RecordData, GlobalData, FunctionData;
   for (const auto *R : Records) {
+    if (RequiredUtilityEmptyAnys.count(R->getCanonicalDecl())) {
+      const auto &Layout = Context.getASTRecordLayout(R);
+      RecordData.push_back(json::Object{
+          {"id", name(R)}, {"loc", loc(R->getLocation())},
+          {"fields", json::Array{json::Object{{"name", UtilityAnyTag.str()}, {"type", "u64"}},
+                                 json::Object{{"name", UtilityAnyStorage.str()}, {"type", "arr:3:u64"}}}},
+          {"layout", json::Object{{"size_bits", uint64_t(Layout.getSize().getQuantity()) * 8},
+                                  {"abi_align_bits", uint64_t(Layout.getAlignment().getQuantity()) * 8},
+                                  {"field_offsets_bits", json::Array{uint64_t(0), Layout.getFieldOffset(1)}}}}});
+      continue;
+    }
     if (RequiredUtilityVariants.count(R->getCanonicalDecl())) {
       const auto V = approvedUtilityVariantRecord(S, Sources, Context.getRecordType(R), Context);
       if (!V)

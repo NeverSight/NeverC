@@ -3398,6 +3398,12 @@ bool pinnedUtilityMonostateType(const State &S, const clang::SourceManager &SM,
 bool approvedUtilityMonostateMetadata(const State &S, const clang::SourceManager &SM,
                                       const clang::CXXRecordDecl *Record,
                                       const clang::ASTContext &Context);
+bool approvedUtilityMonostateConstruction(const State &S,
+    const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+std::optional<bool> approvedUtilityMonostateComparison(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 bool pinnedUtilityVariantType(const State &S, const clang::SourceManager &SM,
                               const clang::CXXRecordDecl *Record);
 bool approvedUtilityVariantMetadata(const State &S,
@@ -3422,6 +3428,15 @@ struct UtilityVariantConstruction {
 std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+struct UtilityVariantEmplace {
+  UtilityVariantRecord Variant;
+  const clang::MemberExpr *Callee;
+  unsigned Index;
+  const clang::Expr *Input;
+};
+std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 struct UtilityVariantQuery {
   UtilityVariantRecord Variant;
   const clang::MemberExpr *Callee;
@@ -3452,6 +3467,41 @@ struct UtilityVariantAssignment {
 std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+inline constexpr llvm::StringLiteral UtilityAnyTag = "nct_any_tag";
+inline constexpr llvm::StringLiteral UtilityAnyStorage = "nct_any_storage";
+enum class UtilityAnyEmptyOperation { HasValue, Reset };
+struct UtilityAnyEmptyCall {
+  UtilityAnyEmptyOperation Operation;
+  const clang::MemberExpr *Callee;
+  const clang::CXXRecordDecl *Record;
+};
+
+struct UtilityAnyEmptyTransfer {
+  const clang::CXXRecordDecl *Record;
+  const clang::Expr *Receiver;
+  const clang::Expr *Input;
+  bool Arrow;
+  bool InputFirst;
+  bool ReturnsReceiver;
+};
+std::optional<UtilityAnyEmptyTransfer> approvedUtilityAnyEmptyTransfer(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+bool approvedUtilityAnyEmptyRecord(const State &S, const clang::SourceManager &SM,
+                                    const clang::CXXRecordDecl *Record,
+                                    const clang::ASTContext &Context);
+bool approvedUtilityAnyEmptyConstruction(const State &S, const clang::SourceManager &SM,
+                                          const clang::CXXConstructExpr *Construction,
+                                          const clang::ASTContext &Context);
+std::optional<UtilityAnyEmptyCall> approvedUtilityAnyEmptyCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+const clang::CXXRecordDecl *approvedUtilityAnyEmptyPointerCast(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 bool pinnedUtilityAnyType(const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record);
 bool approvedUtilityAnyMetadata(const State &S,
@@ -4590,6 +4640,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredScalarRealDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
   std::set<const clang::CXXRecordDecl *> RequiredVectorDistributionRecords;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityEmptyAnys;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityMonostates;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVariants;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;

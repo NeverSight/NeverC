@@ -17891,3 +17891,19 @@ The frontend supports type-form size and alignment for `std::monostate`,
 variants containing it, and the checked `std::any` layout. The associative
 layout queries cover the checked default integer specializations of `map`,
 `set`, and `unordered_set`.
+
+## Checked empty std::any objects
+
+The pinned C++17 profile supports empty `std::any` objects and arrays.
+Default, copy and move construction, assignment, `has_value`, `reset`,
+and the checked swaps preserve empty state and operand evaluation. The
+checked pointer overloads of `std::any_cast` return null for an empty
+object or a null input.
+
+## Checked monostate comparisons and variant emplacement
+
+The profile supports default construction of `std::monostate` and its six
+comparisons, including evaluation of both operands. The pinned
+`variant::emplace<I>` and `variant::emplace<T>` overloads accept a matching
+scalar argument or value-initialize the selected alternative. Both forms
+return a reference to the live alternative.

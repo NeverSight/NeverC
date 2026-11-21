@@ -514,3 +514,10 @@ The combined suite passes 1,116 source requests on six 64-bit targets and
 309 Linux x86-64 formal tests. All 151 generated C23 programs match their
 native C++ counterparts at O0 and O2. The original 750 requests pass against
 the same compiler source.
+
+## R19 combined variant and empty any operations
+
+The combined compiler passes 1,326 source requests across six 64-bit
+targets and 343 Linux x86-64 formal tests. All 176 generated C23 programs
+match native C++ at O0 and O2. The original 750 requests pass against
+the same compiler source.
