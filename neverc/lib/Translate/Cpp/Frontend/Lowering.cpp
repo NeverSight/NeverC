@@ -32709,6 +32709,39 @@ class FunctionLowering {
         assign(std::move(Tag), quantity(0, "u64", L), L);
         return {};
       }
+      if (const auto Compare = approvedUtilityVariantEquality(A.S, A.Sources, Call, A.Context)) {
+        const auto &V = Compare->Variant;
+        const auto *Left = Call->getArg(0), *Right = Call->getArg(1);
+        auto LeftRef = snapshot(address(lvalue(Left), Left->getType(), L), L);
+        auto RightRef = snapshot(address(lvalue(Right), Right->getType(), L), L);
+        auto LHS = dereference(std::move(LeftRef), L);
+        auto RHS = dereference(std::move(RightRef), L);
+        auto LeftIndex = snapshot(fieldStorage(LHS, V.Index, L), L);
+        auto RightIndex = snapshot(fieldStorage(RHS, V.Index, L), L);
+        auto Result = temporary("bool", L);
+        assign(Result, Compare->Equal ? A.zero(A.Context.BoolTy, L) : one("bool", L), L);
+        const auto Dispatch = labelName(), End = labelName();
+        branch(binary("==", LeftIndex, RightIndex, "bool", L), Dispatch, End, L);
+        label(Dispatch, L);
+        // Two valueless variants compare equal. A live alternative replaces this result.
+        assign(Result, Compare->Equal ? one("bool", L) : A.zero(A.Context.BoolTy, L), L);
+        const auto IndexType = type(V.Index->getType(), L);
+        for (unsigned I = 0; I < V.Alternatives.size(); ++I) {
+          A.chargeExpansion(1, L);
+          const auto Selected = labelName(), Next = labelName();
+          branch(binary("==", LeftIndex, quantity(I, IndexType, L), "bool", L), Selected, Next, L);
+          label(Selected, L);
+          auto LeftValue = fieldStorage(variantStorage(LHS, V, L), V.Alternatives[I], L);
+          auto RightValue = fieldStorage(variantStorage(RHS, V, L), V.Alternatives[I], L);
+          assign(Result, binary(Compare->Equal ? "==" : "!=", std::move(LeftValue),
+                                std::move(RightValue), "bool", L), L);
+          jump(End, L);
+          label(Next, L);
+        }
+        jump(End, L);
+        label(End, L);
+        return Result;
+      }
       if (const auto Compare = approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context)) {
         for (const auto *Operand : Call->arguments())
           discard(Operand);

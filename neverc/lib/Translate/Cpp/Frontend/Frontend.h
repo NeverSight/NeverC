@@ -3459,6 +3459,13 @@ struct UtilityVariantIntegralVisit {
 std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UtilityVariantEquality {
+  UtilityVariantRecord Variant;
+  bool Equal;
+};
+std::optional<UtilityVariantEquality> approvedUtilityVariantEquality(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 struct UtilityVariantZeroVisit {
   clang::QualType Parameter;
   clang::QualType Result;
