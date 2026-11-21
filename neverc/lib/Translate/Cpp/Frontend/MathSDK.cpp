@@ -5,6 +5,7 @@
 #include "clang/AST/DeclFriend.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/ParentMapContext.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/Builtins.h"
@@ -7800,6 +7801,94 @@ static bool variantGetHasActiveAlternative(const State &S,
          Init->Variant.Record->getCanonicalDecl() == V.Record->getCanonicalDecl();
 }
 
+// A matching holds_alternative call or index test establishes the tag in the
+// true branch. The projection must start the next evaluation, before user
+// expressions or another statement could change the active member.
+static bool variantGetHasGuard(const State &S, const SourceManager &SM,
+    const CallExpr *Call, const UtilityVariantRecord &V, unsigned I,
+    ASTContext &Context) {
+  const auto *Object = variantReference(Call->getArg(0));
+  if (!Object || !isa<VarDecl>(Object->getDecl()) ||
+      !S.owns(SM, Call->getExprLoc()))
+    return false;
+
+  auto SameObject = [&](const Expr *E) {
+    const auto *Subject = variantReference(E);
+    return Subject && Subject->getDecl() == Object->getDecl();
+  };
+  auto SameRecord = [&](const UtilityVariantRecord &Other) {
+    return Other.Record->getCanonicalDecl() == V.Record->getCanonicalDecl();
+  };
+  auto SelectsAlternative = [&](const Expr *Condition) {
+    const auto *Test = Condition ? Condition->IgnoreParenImpCasts() : nullptr;
+    if (const auto *Holds = dyn_cast_or_null<CallExpr>(Test)) {
+      if (Holds->getNumArgs() != 1 || !SameObject(Holds->getArg(0)))
+        return false;
+      const auto Check = approvedUtilityVariantHolds(S, SM, Holds, Context);
+      return Check && Check->Index == I && SameRecord(Check->Variant);
+    }
+    const auto *Equal = dyn_cast_or_null<BinaryOperator>(Test);
+    if (!Equal || Equal->getOpcode() != BO_EQ)
+      return false;
+    const auto *Index = dyn_cast<CXXMemberCallExpr>(Equal->getLHS()->IgnoreParenImpCasts());
+    const auto *Value = dyn_cast<IntegerLiteral>(Equal->getRHS()->IgnoreParenImpCasts());
+    if (!Index || !SameObject(Index->getImplicitObjectArgument()) || !Value ||
+        Value->getValue().getLimitedValue(V.Alternatives.size()) != I)
+      return false;
+    const auto Check = approvedUtilityVariantQuery(S, SM, Index, Context);
+    return Check && !Check->Valueless && SameRecord(Check->Variant);
+  };
+
+  // Clang computes its parent map lazily. Each outward step must have a
+  // unique parent and a transparent evaluation order.
+  auto ParentOf = [&](const auto &Child) -> std::optional<DynTypedNode> {
+    const auto Found = Context.getParents(Child);
+    return Found.size() == 1 ? std::optional<DynTypedNode>(Found[0]) : std::nullopt;
+  };
+  const Stmt *Use = Call;
+  auto Parent = ParentOf(*Use);
+  for (unsigned Depth = 0; Parent; ++Depth) {
+    if (Depth >= 64)
+      return false;
+    const auto *Wrapper = Parent->get<Expr>();
+    if (!Wrapper || !isa<ParenExpr, ImplicitCastExpr>(Wrapper))
+      break;
+    Use = Wrapper;
+    Parent = ParentOf(*Use);
+  }
+  if (!Parent)
+    return false;
+
+  if (const auto *Both = Parent->get<BinaryOperator>())
+    return Both->getOpcode() == BO_LAnd && Both->getRHS() == Use &&
+           SelectsAlternative(Both->getLHS());
+  if (const auto *Binding = Parent->get<VarDecl>()) {
+    if (!Binding->hasLocalStorage() || Binding->getInit() != Use)
+      return false;
+    Parent = ParentOf(*Binding);
+    const auto *Declaration = Parent ? Parent->get<DeclStmt>() : nullptr;
+    if (!Declaration || !Declaration->isSingleDecl() ||
+        Declaration->getSingleDecl() != Binding)
+      return false;
+    Use = Declaration;
+    Parent = ParentOf(*Use);
+  } else if (const auto *Return = Parent->get<ReturnStmt>()) {
+    if (Return->getRetValue() != Use)
+      return false;
+    Use = Return;
+    Parent = ParentOf(*Use);
+  }
+  if (const auto *Body = Parent ? Parent->get<CompoundStmt>() : nullptr) {
+    if (Body->body_empty() || Body->body_front() != Use)
+      return false;
+    Use = Body;
+    Parent = ParentOf(*Use);
+  }
+  const auto *If = Parent ? Parent->get<IfStmt>() : nullptr;
+  return If && !If->isConstexpr() && !If->getConditionVariable() &&
+         If->getThen() == Use && SelectsAlternative(If->getCond());
+}
+
 static bool variantGetBody(const State &S, const SourceManager &SM,
     const FunctionDecl *Indexed, const UtilityVariantRecord &V,
     unsigned I, const ASTContext &Context) {
@@ -7850,7 +7939,7 @@ static bool variantGetBody(const State &S, const SourceManager &SM,
 
 std::optional<UtilityVariantAlternative> approvedUtilityVariantGet(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context) {
+    ASTContext &Context) {
   const auto *F = Call ? Call->getDirectCallee() : nullptr;
   if (!variantFunction(S, SM, F, 1, false) || F->getName() != "get" ||
       !variantDeclaration(S, SM, F->getPrimaryTemplate()) ||
@@ -7858,7 +7947,7 @@ std::optional<UtilityVariantAlternative> approvedUtilityVariantGet(
     return std::nullopt;
   const auto *Argument = Call->getArg(0);
   const auto Owner = Argument->getType();
-  if (!Argument->isLValue() || !Owner.isConstQualified() ||
+  if (!Argument->isLValue() ||
       !Context.hasSameType(F->getParamDecl(0)->getType(), Context.getLValueReferenceType(Owner)))
     return std::nullopt;
   const auto V = approvedUtilityVariantRecord(S, SM, Owner, Context);
@@ -7895,9 +7984,12 @@ std::optional<UtilityVariantAlternative> approvedUtilityVariantGet(
       return std::nullopt;
   }
   if (!Index || !variantSelectedIndex(Indexed, *Index) ||
-      !variantGetHasActiveAlternative(S, SM, Argument, *V, *Index, Context))
+      !(variantGetHasActiveAlternative(S, SM, Argument, *V, *Index, Context) ||
+        variantGetHasGuard(S, SM, Call, *V, *Index, Context)))
     return std::nullopt;
-  const auto Element = V->Alternatives[*Index]->getType().withConst();
+  auto Element = V->Alternatives[*Index]->getType();
+  if (Owner.isConstQualified())
+    Element = Element.withConst();
   if (!Context.hasSameType(Call->getType(), Element) ||
       !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Element)) ||
       !variantGetBody(S, SM, Indexed, *V, *Index, Context))
