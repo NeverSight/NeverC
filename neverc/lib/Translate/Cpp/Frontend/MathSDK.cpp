@@ -8117,12 +8117,32 @@ static bool variantAssignmentReplacement(const State &S, const SourceManager &SM
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Replacement);
   if (!Body || Body->size() != 2)
     return false;
-  const auto *Decls = dyn_cast<DeclStmt>(Body->body_front());
-  const auto *Local = Decls && Decls->isSingleDecl() ? dyn_cast<VarDecl>(Decls->getSingleDecl()) : nullptr;
-  const auto *R = Local ? Local->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *Declarations = dyn_cast<DeclStmt>(Body->body_front());
+  if (!Declarations)
+    return false;
+  // A defining declaration of the local anonymous record can share the
+  // declaration group containing its only object.
+  const CXXRecordDecl *DeclaredRecord = nullptr;
+  const VarDecl *Local = nullptr;
+  for (const auto *Declaration : Declarations->decls()) {
+    if (!variantDeclaration(S, SM, Declaration) || Local)
+      return false;
+    if (const auto *Record = dyn_cast<CXXRecordDecl>(Declaration)) {
+      if (DeclaredRecord || Record->getIdentifier())
+        return false;
+      DeclaredRecord = Record;
+    } else {
+      Local = dyn_cast<VarDecl>(Declaration);
+      if (!Local)
+        return false;
+    }
+  }
+  const auto *Type = Local ? Local->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *R = Type ? Type->getDefinition() : nullptr;
   const auto *Init = Local && Local->getInit()
       ? dyn_cast<InitListExpr>(Local->getInit()->IgnoreParenImpCasts()) : nullptr;
-  if (!R || !R->isCompleteDefinition() || R->getNumBases() ||
+  if (!R || (DeclaredRecord && DeclaredRecord->getCanonicalDecl() != R->getCanonicalDecl()) ||
+      !R->isCompleteDefinition() || R->getNumBases() ||
       !R->isAggregate() || !R->hasTrivialDestructor() || !R->isLocalClass() ||
       !variantDeclaration(S, SM, R) || !variantDeclaration(S, SM, Local) ||
       !Init || Init->getNumInits() != 2)
