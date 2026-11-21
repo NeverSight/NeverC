@@ -3457,14 +3457,14 @@ struct UtilityVariantEmplace {
 std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-struct UtilityVariantIntegralVisit {
+struct UtilityVariantVisit {
   std::vector<UtilityVariantRecord> Variants;
   clang::QualType Callable;
   std::vector<clang::QualType> Arguments;
   clang::QualType Result;
   std::vector<const clang::CXXMethodDecl *> Methods;
 };
-std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
+std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UtilityVariantComparison {
@@ -4498,6 +4498,9 @@ bool pinnedAssociativeContainerType(const State &S, const clang::SourceManager &
     const clang::CXXRecordDecl *Record);
 bool approvedAssociativeContainerMetadataRecord(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+clang::QualType approvedOrderedContainerObserverQuery(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 bool approvedAssociativeContainerLayoutQuery(
     const State &S, const clang::SourceManager &SM, clang::QualType Type,

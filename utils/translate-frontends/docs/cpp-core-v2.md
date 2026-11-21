@@ -18013,3 +18013,22 @@ from the pinned SDK body, `66740831`, in the target size type. The hasher
 and its argument each execute once in source order. The checked call
 accepts a temporary or a named empty hasher and an admitted monostate
 argument.
+
+## Checked variant visitor arguments
+
+An admitted ordinary function, function pointer, or named visitor can
+take exact lvalue references to selected scalar or monostate alternatives.
+Mutable references access the active object. Read-only operands preserve
+their const qualification. Selected scalar and monostate values can also
+be passed by value. The original checked integral conversions still apply.
+The pinned SDK dispatch table selects each visitor overload. The visitor
+and each variant operand are evaluated once.
+
+## Default ordered-container observer signatures
+
+The pinned integer `map`, `multimap`, `set` and `multiset` types admit
+`decltype` and `noexcept` queries for `size()`, `empty()` and
+`max_size()`. The checked member signatures retain the target size type or
+`bool` and their nonthrowing specification. These queries use unevaluated
+lvalue receivers. Runtime construction and container operations still
+require separate support.

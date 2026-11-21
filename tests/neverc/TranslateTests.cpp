@@ -386831,6 +386831,353 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2VariantVisitAlternativesFunctionReferenceAliasRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-alternatives-function-reference-alias.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using State = std::variant<int, int>;
+int* seen;
+int bump(int& value) { seen = &value; return ++value; }
+int main() {
+  State state(std::in_place_index<1>, 40);
+  int* active = std::get_if<1>(&state);
+  if (!active || std::visit(bump, state) != 41 || seen != active || *active != 41) return 1;
+  auto callback = &bump;
+  return std::visit(callback, state) != 42 || state.index() != 1 ||
+         *active != 42 || seen != active;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-alternatives-function-reference-alias.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-alternatives-function-reference-alias" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitAlternativesMixedConstAndMutableBindingsRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-alternatives-mixed-const-and-mutable-bindings.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Empty = std::monostate;
+using State = std::variant<Empty, int, Empty>;
+using Count = std::variant<int, int>;
+struct Visit {
+  const Empty* expected;
+  int calls;
+  int operator()(const Empty& empty, int& count) & {
+    ++calls;
+    return count += &empty == expected ? 2 : 200;
+  }
+  int operator()(const int& value, int& count) & {
+    ++calls;
+    return count += value;
+  }
+};
+int visitor_calls, state_calls, count_calls;
+Visit& visitor(Visit& v) { ++visitor_calls; return v; }
+const State& borrow(const State& v) { ++state_calls; return v; }
+Count& borrow_count(Count& v) { ++count_calls; return v; }
+int main() {
+  const State left(std::in_place_index<2>);
+  const State right(std::in_place_index<1>, 5);
+  Count count(std::in_place_index<1>, 30);
+  Visit use{&std::get<2>(left), 0};
+  if (std::visit(visitor(use), borrow(left), borrow_count(count)) != 32 ||
+      std::visit(use, right, count) != 37) return 1;
+  const int* stored = std::get_if<1>(&count);
+  return !stored || *stored != 37 || use.calls != 2 || visitor_calls != 1 ||
+         state_calls != 1 || count_calls != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-alternatives-mixed-const-and-mutable-bindings.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-alternatives-mixed-const-and-mutable-bindings" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitAlternativesMonostateValueCopyRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-alternatives-monostate-value-copy.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Empty = std::monostate;
+using State = std::variant<Empty, Empty>;
+int calls;
+int use(Empty lhs, const Empty& rhs) {
+  ++calls;
+  return &lhs != &rhs ? 41 : 0;
+}
+int main() {
+  const State source(std::in_place_index<1>);
+  auto callback = &use;
+  return std::visit(callback, source, source) != 41 || calls != 1 ||
+         source.index() != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-alternatives-monostate-value-copy.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-alternatives-monostate-value-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitAlternativesExactPointerAndFloatingAlternativesRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-alternatives-exact-pointer-and-floating-alternatives.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+struct Visit {
+  int operator()(int* value) const & { return *value; }
+  int operator()(const double& value) const & { return value == 1.5 ? 23 : 99; }
+};
+int main() {
+  int x = 19;
+  const Visit use{};
+  const std::variant<int*, double> p(std::in_place_index<0>, &x);
+  const std::variant<int*, double> d(std::in_place_index<1>, 1.5);
+  return std::visit(use, p) != 19 || std::visit(use, d) != 23;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-alternatives-exact-pointer-and-floating-alternatives.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-alternatives-exact-pointer-and-floating-alternatives" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitAlternativesRenamedExhaustiveCheckRejected) {
+  const auto Source = tmpFile("variant-visit-alternatives-renamed-exhaustive-check.cpp");
+  writeFile(Source, R"r19containers(#define __std_visit_exhaustive_visitor_check changed_exhaustive_check
+#include <variant>
+#undef __std_visit_exhaustive_visitor_check
+using State = std::variant<std::monostate, std::monostate>;
+int read(const std::monostate&) { return 1; }
+int f(const State& state) { return std::visit(read, state); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitAlternativesReferenceToConvertedTemporaryRejected) {
+  const auto Source = tmpFile("variant-visit-alternatives-reference-to-converted-temporary.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int read(const double& value) { return value != 0; }
+int f(std::variant<int>& state) { return std::visit(read, state); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitAlternativesVolatileReferenceRejected) {
+  const auto Source = tmpFile("variant-visit-alternatives-volatile-reference.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int read(const volatile int& value) { return value; }
+int f(std::variant<int>& state) { return std::visit(read, state); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitAlternativesReferenceResultRejected) {
+  const auto Source = tmpFile("variant-visit-alternatives-reference-result.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int& forward(int& value) { return value; }
+int& f(std::variant<int>& state) { return std::visit(forward, state); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedObserverQueryMapObserverSignaturesRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-observer-query-map-observer-signatures.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <type_traits>
+#include <utility>
+using Container = std::map<int, int>;
+int main() {
+  using Size = decltype(std::declval<const Container&>().size());
+  using Empty = decltype(std::declval<Container&>().empty());
+  using Max = decltype(std::declval<const Container&>().max_size());
+  return !std::is_same_v<Size, Container::size_type> ||
+         !std::is_same_v<Max, Container::size_type> ||
+         !std::is_same_v<Empty, bool> ||
+         !noexcept(std::declval<const Container&>().size()) ||
+         !noexcept(std::declval<Container&>().empty()) ||
+         !noexcept(std::declval<const Container&>().max_size());
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-observer-query-map-observer-signatures.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-observer-query-map-observer-signatures" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedObserverQuerySetObserverSignaturesRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-observer-query-set-observer-signatures.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <type_traits>
+#include <utility>
+using Container = std::set<int>;
+int main() {
+  using Size = decltype(std::declval<const Container&>().size());
+  using Empty = decltype(std::declval<Container&>().empty());
+  using Max = decltype(std::declval<const Container&>().max_size());
+  return !std::is_same_v<Size, Container::size_type> ||
+         !std::is_same_v<Max, Container::size_type> ||
+         !std::is_same_v<Empty, bool> ||
+         !noexcept(std::declval<const Container&>().size()) ||
+         !noexcept(std::declval<Container&>().empty()) ||
+         !noexcept(std::declval<const Container&>().max_size());
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-observer-query-set-observer-signatures.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-observer-query-set-observer-signatures" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedObserverQueryMultimapObserverSignaturesRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-observer-query-multimap-observer-signatures.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <type_traits>
+#include <utility>
+using Container = std::multimap<int, int>;
+int main() {
+  using Size = decltype(std::declval<const Container&>().size());
+  using Empty = decltype(std::declval<Container&>().empty());
+  using Max = decltype(std::declval<const Container&>().max_size());
+  return !std::is_same_v<Size, Container::size_type> ||
+         !std::is_same_v<Max, Container::size_type> ||
+         !std::is_same_v<Empty, bool> ||
+         !noexcept(std::declval<const Container&>().size()) ||
+         !noexcept(std::declval<Container&>().empty()) ||
+         !noexcept(std::declval<const Container&>().max_size());
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-observer-query-multimap-observer-signatures.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-observer-query-multimap-observer-signatures" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedObserverQueryMultisetObserverSignaturesRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-observer-query-multiset-observer-signatures.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <type_traits>
+#include <utility>
+using Container = std::multiset<int>;
+int main() {
+  using Size = decltype(std::declval<const Container&>().size());
+  using Empty = decltype(std::declval<Container&>().empty());
+  using Max = decltype(std::declval<const Container&>().max_size());
+  return !std::is_same_v<Size, Container::size_type> ||
+         !std::is_same_v<Max, Container::size_type> ||
+         !std::is_same_v<Empty, bool> ||
+         !noexcept(std::declval<const Container&>().size()) ||
+         !noexcept(std::declval<Container&>().empty()) ||
+         !noexcept(std::declval<const Container&>().max_size());
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-observer-query-multiset-observer-signatures.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-observer-query-multiset-observer-signatures" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedObserverQueryOverriddenKeyTypeRejected) {
+  const auto Source = tmpFile("ordered-observer-query-overridden-key-type.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <utility>
+using Other = std::map<long, int>;
+int main() { return !noexcept(std::declval<const Other&>().size()); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedObserverQueryRenamedSdkMemberRejected) {
+  const auto Source = tmpFile("ordered-observer-query-renamed-sdk-member.cpp");
+  writeFile(Source, R"r19containers(#define size changed_set_size
+#include <set>
+#undef size
+#include <utility>
+using Set = std::multiset<int>;
+int main() { return !noexcept(std::declval<const Set&>().changed_set_size()); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected) {
+  const auto Source = tmpFile("ordered-observer-query-observer-does-not-admit-storage.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() { std::map<int, int> values; return values.empty() ? 0 : 1; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

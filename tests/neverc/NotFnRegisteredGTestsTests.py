@@ -43,6 +43,16 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_observer_query_registered = cls.registered
+        cls.ordered_observer_query_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_observer_query_original = cls.adapter.restore_original_gtests(cls.ordered_observer_query_registered,
+                                                                        cls.ordered_observer_query_suffix)
+        cls.registered = cls.adapter.restore_ordered_observer_query_history(cls.ordered_observer_query_registered)
+        cls.layout_variant_visit_alternatives_registered = cls.registered
+        cls.layout_variant_visit_alternatives_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_visit_alternatives_original = cls.adapter.restore_original_gtests(cls.layout_variant_visit_alternatives_registered,
+                                                                        cls.layout_variant_visit_alternatives_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_visit_alternatives_history(cls.layout_variant_visit_alternatives_registered)
         cls.layout_variant_monostate_hash_registered = cls.registered
         cls.layout_variant_monostate_hash_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.layout_variant_monostate_hash_original = cls.adapter.restore_original_gtests(cls.layout_variant_monostate_hash_registered,
@@ -2134,6 +2144,42 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_layout_variant_monostate_hash_history(self.layout_variant_monostate_hash_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.layout_variant_monostate_hash_registered, self.layout_variant_monostate_hash_suffix + b' ')
+
+
+    def test_layout_variant_visit_alternatives_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_visit_alternatives_original + self.layout_variant_visit_alternatives_suffix, self.layout_variant_visit_alternatives_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_visit_alternatives_history(self.layout_variant_visit_alternatives_original),
+                         self.layout_variant_monostate_hash_original)
+        output, evidence = self.extractor.extract(self.layout_variant_visit_alternatives_original, ['TranslateTest.CoreV2VariantVisitAlternativesFunctionReferenceAliasRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitAlternativesMixedConstAndMutableBindingsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitAlternativesMonostateValueCopyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitAlternativesExactPointerAndFloatingAlternativesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitAlternativesRenamedExhaustiveCheckRejected', 'TranslateTest.CoreV2VariantVisitAlternativesReferenceToConvertedTemporaryRejected', 'TranslateTest.CoreV2VariantVisitAlternativesVolatileReferenceRejected', 'TranslateTest.CoreV2VariantVisitAlternativesReferenceResultRejected'])
+        self.assertEqual(evidence['original_test_names'], 8256)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-visit-alternatives-function-reference-alias', output)
+        self.assertIn(b'variant-visit-alternatives-mixed-const-and-mutable-bindings', output)
+
+    def test_layout_variant_visit_alternatives_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_visit_alternatives_history(self.layout_variant_visit_alternatives_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_visit_alternatives_registered, self.layout_variant_visit_alternatives_suffix + b' ')
+
+
+    def test_ordered_observer_query_retains_published_bodies(self):
+        self.assertEqual(self.ordered_observer_query_original + self.ordered_observer_query_suffix, self.ordered_observer_query_registered)
+        self.assertEqual(self.adapter.restore_ordered_observer_query_history(self.ordered_observer_query_original),
+                         self.layout_variant_visit_alternatives_original)
+        output, evidence = self.extractor.extract(self.ordered_observer_query_original, ['TranslateTest.CoreV2OrderedObserverQueryMapObserverSignaturesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedObserverQuerySetObserverSignaturesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedObserverQueryMultimapObserverSignaturesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedObserverQueryMultisetObserverSignaturesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedObserverQueryOverriddenKeyTypeRejected', 'TranslateTest.CoreV2OrderedObserverQueryRenamedSdkMemberRejected', 'TranslateTest.CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected'])
+        self.assertEqual(evidence['original_test_names'], 8263)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-observer-query-map-observer-signatures', output)
+        self.assertIn(b'ordered-observer-query-multiset-observer-signatures', output)
+
+    def test_ordered_observer_query_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_observer_query_history(self.ordered_observer_query_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_observer_query_registered, self.ordered_observer_query_suffix + b' ')
 
 
 if __name__ == '__main__':
