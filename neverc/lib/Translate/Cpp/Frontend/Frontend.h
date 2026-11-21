@@ -3488,36 +3488,48 @@ std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
     const clang::ASTContext &Context);
 inline constexpr llvm::StringLiteral UtilityAnyTag = "nct_any_tag";
 inline constexpr llvm::StringLiteral UtilityAnyStorage = "nct_any_storage";
-enum class UtilityAnyEmptyOperation { HasValue, Reset };
-struct UtilityAnyEmptyCall {
-  UtilityAnyEmptyOperation Operation;
+inline constexpr llvm::StringLiteral UtilityAnyWords = "nct_any_words";
+inline constexpr llvm::StringLiteral UtilityAnyInteger = "nct_any_integer";
+inline constexpr unsigned UtilityAnyIntegerTag = 1;
+enum class UtilityAnyOperation { HasValue, Reset };
+struct UtilityAnyCall {
+  UtilityAnyOperation Operation;
   const clang::MemberExpr *Callee;
   const clang::CXXRecordDecl *Record;
 };
 
-struct UtilityAnyEmptyTransfer {
+struct UtilityAnyIntegerConstruction {
+  const clang::CXXRecordDecl *Record;
+  const clang::Expr *Input;
+  clang::QualType Parameter;
+};
+std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+enum class UtilityAnyTransferOperation { Copy, Move, Swap };
+struct UtilityAnyTransfer {
   const clang::CXXRecordDecl *Record;
   const clang::Expr *Receiver;
   const clang::Expr *Input;
   bool Arrow;
   bool InputFirst;
-  bool ReturnsReceiver;
+  UtilityAnyTransferOperation Operation;
 };
-std::optional<UtilityAnyEmptyTransfer> approvedUtilityAnyEmptyTransfer(
+std::optional<UtilityAnyTransfer> approvedUtilityAnyTransfer(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
-bool approvedUtilityAnyEmptyRecord(const State &S, const clang::SourceManager &SM,
+bool approvedUtilityAnyRecord(const State &S, const clang::SourceManager &SM,
                                     const clang::CXXRecordDecl *Record,
                                     const clang::ASTContext &Context);
-bool approvedUtilityAnyEmptyConstruction(const State &S, const clang::SourceManager &SM,
+bool approvedUtilityAnyConstruction(const State &S, const clang::SourceManager &SM,
                                           const clang::CXXConstructExpr *Construction,
                                           const clang::ASTContext &Context);
-std::optional<UtilityAnyEmptyCall> approvedUtilityAnyEmptyCall(
+std::optional<UtilityAnyCall> approvedUtilityAnyCall(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
-const clang::CXXRecordDecl *approvedUtilityAnyEmptyPointerCast(
+const clang::CXXRecordDecl *approvedUtilityAnyPointerCast(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
@@ -4659,7 +4671,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredScalarRealDistributionRecords;
   std::set<const clang::CXXRecordDecl *> RequiredBernoulliRecords;
   std::set<const clang::CXXRecordDecl *> RequiredVectorDistributionRecords;
-  std::set<const clang::CXXRecordDecl *> RequiredUtilityEmptyAnys;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityAnys;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityMonostates;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVariants;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
@@ -4769,6 +4781,7 @@ public:
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
                             unsigned Depth = 0);
+  std::string anyStorageType(const clang::CXXRecordDecl *Record);
   std::string variantStorageType(const clang::CXXRecordDecl *Record);
   bool requireUtilityOptional(const clang::CXXRecordDecl *Record,
                               clang::SourceLocation Location,
