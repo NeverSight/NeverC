@@ -34,7 +34,7 @@ def main():
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
-              target=None, sdk=False):
+              target=None, sdk=False, sdk_headers=True):
         nonlocal count
         request_target = args.target if target is None else target
         directory = root or (args.output_dir / name)
@@ -63,7 +63,10 @@ def main():
             if sdk:
                 assert data["sdk_distribution_id"] == sdk_identity["distribution_id"]
                 assert data["sdk_catalog_sha256"] == sdk_identity["catalog_sha256"]
-                assert data["sdk_dependencies"], data
+                if sdk_headers:
+                    assert data["sdk_dependencies"], data
+                else:
+                    assert data["sdk_dependencies"] == [], data
                 assert {dependency["root"] for dependency in data["sdk_dependencies"]} <= {
                     "libcxx", "resource"
                 }
@@ -7220,13 +7223,15 @@ extern "C" int function_pointer_record_parameter(int value) {
     function_pointer_record_parameter = check(
         "v2-function-pointer-record-parameter",
         function_pointer_record_parameter_source,
-        profile="cpp-core-v2", sdk=True)
+        profile="cpp-core-v2", sdk=True,
+        sdk_headers=not args.target.startswith(("x86_64-", "aarch64-", "arm64-")))
     assert any(function["name"] == "function_pointer_record_parameter"
                for function in function_pointer_record_parameter["functions"]), function_pointer_record_parameter
     for target in sdk_targets:
         check("v2-function-pointer-record-parameter-" + target,
               function_pointer_record_parameter_source,
-              profile="cpp-core-v2", target=target, sdk=True)
+              profile="cpp-core-v2", target=target, sdk=True,
+              sdk_headers=not target.startswith(("x86_64-", "aarch64-", "arm64-")))
     function_pointer_record_result_source = """\
 struct Record { int value; };
 Record make_record(int value) { return Record{value}; }
@@ -7239,13 +7244,15 @@ extern "C" int function_pointer_record_result(int value) {
     function_pointer_record_result = check(
         "v2-function-pointer-record-result",
         function_pointer_record_result_source,
-        profile="cpp-core-v2", sdk=True)
+        profile="cpp-core-v2", sdk=True,
+        sdk_headers=not args.target.startswith(("x86_64-", "aarch64-", "arm64-")))
     assert any(function["name"] == "function_pointer_record_result"
                for function in function_pointer_record_result["functions"]), function_pointer_record_result
     for target in sdk_targets:
         check("v2-function-pointer-record-result-" + target,
               function_pointer_record_result_source,
-              profile="cpp-core-v2", target=target, sdk=True)
+              profile="cpp-core-v2", target=target, sdk=True,
+              sdk_headers=not target.startswith(("x86_64-", "aarch64-", "arm64-")))
     functional_record_value_source = """\
 #include <functional>
 struct Record { int value; };
