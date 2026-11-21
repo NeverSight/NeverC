@@ -4685,9 +4685,12 @@ approvedUtilityAllocatorConstruction(const State &S, const SourceManager &SM,
       Construction->isInstantiationDependent() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete)
     return std::nullopt;
-  if (scopedIntAllocatorRecord(S, SM, Construction->getType()->getAsCXXRecordDecl(), Context) &&
-      !scopedAllocatorDefaultConstructor(S, SM, Construction->getConstructor())) return std::nullopt;
   const auto *Constructor = Construction->getConstructor();
+  if (scopedIntAllocatorRecord(S, SM, Construction->getType()->getAsCXXRecordDecl(), Context) &&
+      !scopedAllocatorDefaultConstructor(S, SM, Constructor) &&
+      (!Constructor || !Constructor->isImplicit() || !Constructor->isTrivial() ||
+       !Constructor->isCopyOrMoveConstructor()))
+    return std::nullopt;
   const auto Allocator = approvedUtilityAllocatorRecord(
       S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
   const auto *Prototype =
