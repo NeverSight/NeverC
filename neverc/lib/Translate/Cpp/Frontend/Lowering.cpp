@@ -32760,7 +32760,7 @@ class FunctionLowering {
           discard(Operand);
         return *Compare ? one("bool", L) : A.zero(A.Context.BoolTy, L);
       }
-      if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, Call, A.Context)) {
+      if (const auto Visit = approvedUtilityVariantVisit(A.S, A.Sources, Call, A.Context)) {
         const auto *Visitor = Call->getArg(0);
         const bool Object = Visit->Callable->getPointeeType()->isRecordType();
         auto Input = Object ? snapshot(address(lvalue(Visitor), Visitor->getType(), L), L)
@@ -32778,7 +32778,7 @@ class FunctionLowering {
           Indices.push_back(snapshot(fieldStorage(Places[I], Visit->Variants[I].Index, L), L));
         const bool HasResult = !Visit->Result->isVoidType();
         auto Result = HasResult ? temporary(type(Visit->Result, L), L) : Expression();
-        // Checked integral variants cannot become valueless.
+        // Variants with these trivial alternatives cannot become valueless.
         if (HasResult)
           assign(Result, A.zero(Visit->Result, L), L);
         const auto End = labelName();
@@ -32791,7 +32791,10 @@ class FunctionLowering {
               Arguments.push_back(snapshot(cast(Callable, type(Method->getThisType(), L), L), L));
             for (unsigned I = 0; I < Slots.size(); ++I) {
               const auto Param = Method ? Method->getParamDecl(I)->getType() : Visit->Arguments[I];
-              Arguments.push_back(snapshot(cast(Slots[I], type(Param, L), L), L));
+              auto Argument = Param->isLValueReferenceType()
+                  ? address(Slots[I], Param->getPointeeType(), L)
+                  : cast(Slots[I], type(Param, L), L);
+              Arguments.push_back(snapshot(std::move(Argument), L));
             }
             if (Method) {
               chargeCall(Arguments, L);

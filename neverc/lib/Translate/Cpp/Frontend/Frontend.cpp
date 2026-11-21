@@ -30217,7 +30217,7 @@ public:
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context).has_value() ||
-              approvedUtilityVariantIntegralVisit(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantVisit(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityMonostateComparison(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityMonostateHash(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -30926,7 +30926,7 @@ public:
         A.type(C->getArg(0)->getType(), L);
         return true;
       }
-      if (const auto Visit = approvedUtilityVariantIntegralVisit(A.S, A.Sources, C, A.Context)) {
+      if (const auto Visit = approvedUtilityVariantVisit(A.S, A.Sources, C, A.Context)) {
         const auto Visitor = Visit->Callable->getPointeeType();
         if (Visitor->isRecordType()) {
           checkBinding(C->getArg(0), false);
