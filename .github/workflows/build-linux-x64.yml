@@ -78,6 +78,7 @@ jobs:
         -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
         -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
         -DNEVERC_STRIP_BINARY=OFF \
+        -DNEVERC_NATIVE_ARCH=OFF \
         -DNEVERC_ENABLE_LTO=OFF \
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
         -C neverc/neverc/cmake/caches/NeverC.cmake \
