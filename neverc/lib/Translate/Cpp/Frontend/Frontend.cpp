@@ -30209,6 +30209,7 @@ public:
               approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantHolds(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantValueAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
               A.S.UnevaluatedFunctionalCalls.count(Call) ||
               A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
@@ -30905,6 +30906,17 @@ public:
       if (const auto Holds = approvedUtilityVariantHolds(A.S, A.Sources, C, A.Context)) {
         checkBinding(C->getArg(0), true);
         A.type(A.Context.getRecordType(Holds->Variant.Record), L);
+        return true;
+      }
+      if (const auto Value = approvedUtilityVariantValueAssignment(A.S, A.Sources, C, A.Context)) {
+        if (Value->Arrow) {
+          if (temporaryArrayBase(Value->Receiver, true))
+            A.reject(L, "variant receiver", "Expected a live variant object.");
+        } else {
+          checkBinding(Value->Receiver, true);
+        }
+        checkBinding(Value->Input, Value->Parameter->isRValueReferenceType());
+        A.type(A.Context.getRecordType(Value->Variant.Record), L);
         return true;
       }
       if (VariantAssignment) {

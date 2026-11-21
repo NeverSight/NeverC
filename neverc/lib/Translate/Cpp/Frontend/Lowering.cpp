@@ -32671,6 +32671,31 @@ class FunctionLowering {
         assign(Place, dereference(std::move(Right), L), L);
         return Place;
       }
+      if (const auto Value = approvedUtilityVariantValueAssignment(A.S, A.Sources, Call, A.Context)) {
+        Expression Input;
+        if (Value->InputFirst)
+          Input = argument(Value->Input, Value->Parameter);
+        const auto *Base = Value->Receiver;
+        auto Receiver = Value->Arrow ? snapshot(expression(Base), L)
+            : snapshot(address(lvalue(Base), Base->getType(), L), L);
+        if (!Value->InputFirst)
+          Input = argument(Value->Input, Value->Parameter);
+        const auto &V = Value->Variant;
+        auto Place = dereference(std::move(Receiver), L);
+        auto Index = fieldStorage(Place, V.Index, L);
+        const auto IndexType = type(V.Index->getType(), L);
+        auto Selected = quantity(Value->Index, IndexType, L);
+        auto ChangesAlternative = snapshot(binary("!=", Index, Selected, "bool", L), L);
+        auto Slot = fieldStorage(variantStorage(Place, V, L), V.Alternatives[Value->Index], L);
+        assign(Slot, cast(dereference(std::move(Input), L), type(V.Alternatives[Value->Index]->getType(), L), L), L);
+        const auto Set = labelName(), Done = labelName();
+        branch(std::move(ChangesAlternative), Set, Done, L);
+        label(Set, L);
+        assign(std::move(Index), std::move(Selected), L);
+        jump(Done, L);
+        label(Done, L);
+        return Place;
+      }
       if (const auto Emplace = approvedUtilityVariantEmplace(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Emplace->Callee->getBase();
         auto Receiver = Emplace->Callee->isArrow()
