@@ -32665,6 +32665,20 @@ class FunctionLowering {
         }
         return Receiver;
       }
+      if (const auto Emplace = approvedUtilityAnyIntegerEmplacement(A.S, A.Sources, Call, A.Context)) {
+        const auto *Base = Emplace->Callee->getBase();
+        auto Receiver = Emplace->Callee->isArrow()
+            ? snapshot(expression(Base), L)
+            : snapshot(address(lvalue(Base), Base->getType(), L), L);
+        auto Place = dereference(std::move(Receiver), L);
+        Expression Input;
+        if (Emplace->Input)
+          Input = argument(Emplace->Input, Emplace->Parameter);
+        assign(anyCarrierTag(Place, L), quantity(0, "u64", L), L);
+        auto Value = Emplace->Input ? snapshot(dereference(std::move(Input), L), L)
+                                    : quantity(0, "int", L);
+        return storeAnyInteger(std::move(Place), Emplace->Record, std::move(Value), L);
+      }
       if (const auto Any = approvedUtilityAnyCall(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Any->Callee->getBase();
         auto Place = Any->Callee->isArrow()
@@ -38668,8 +38682,9 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
     if (const auto Integer = approvedUtilityAnyIntegerConstruction(A.S, A.Sources, C, A.Context)) {
-      auto Input = argument(Integer->Input, Integer->Parameter);
-      auto Value = snapshot(dereference(std::move(Input), L), L);
+      auto Value = Integer->Input
+          ? snapshot(dereference(argument(Integer->Input, Integer->Parameter), L), L)
+          : quantity(0, "int", L);
       initializeZero(Place, T, L);
       storeAnyInteger(std::move(Place), Integer->Record, std::move(Value), L);
       return;

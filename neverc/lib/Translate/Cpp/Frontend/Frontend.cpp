@@ -18686,7 +18686,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!CheckedConstructions.insert(C).second)
       return;
     if (const auto Integer = approvedUtilityAnyIntegerConstruction(A.S, A.Sources, C, A.Context)) {
-      checkBinding(Integer->Input, Integer->Parameter->isRValueReferenceType());
+      if (Integer->Input)
+        checkBinding(Integer->Input, Integer->Parameter->isRValueReferenceType());
       A.type(C->getType(), L);
       return;
     }
@@ -30227,6 +30228,7 @@ public:
               A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
+              approvedUtilityAnyIntegerEmplacement(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyCall(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityAnyPointerCast(A.S, A.Sources, Call, A.Context) ||
@@ -31001,6 +31003,20 @@ public:
         A.type(A.Context.getRecordType(Any->Record), L);
         if (Any->Operation != UtilityAnyTransferOperation::Swap)
           A.type(C->getType(), L);
+        return true;
+      }
+      if (const auto Emplace = approvedUtilityAnyIntegerEmplacement(A.S, A.Sources, C, A.Context)) {
+        const auto *Base = Emplace->Callee->getBase();
+        if (Emplace->Callee->isArrow()) {
+          if (temporaryArrayBase(Base, true))
+            A.reject(L, "any receiver", "Expected a live any object.");
+        } else {
+          checkBinding(Base, true);
+        }
+        if (Emplace->Input)
+          checkBinding(Emplace->Input, Emplace->Parameter->isRValueReferenceType());
+        A.type(A.Context.getRecordType(Emplace->Record), L);
+        A.type(C->getType(), L);
         return true;
       }
       if (const auto Any = approvedUtilityAnyCall(A.S, A.Sources, C, A.Context)) {
