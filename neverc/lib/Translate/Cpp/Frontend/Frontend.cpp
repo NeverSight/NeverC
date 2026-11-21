@@ -32681,13 +32681,31 @@ class Consumer : public ASTConsumer {
   std::vector<FunctionTemplateBodySource> TemplateBodies;
   std::vector<FriendClassTemplateSource> FriendClasses;
   std::size_t DirectiveUnits = 0;
+  std::map<std::pair<std::string, std::string>,
+           std::pair<std::size_t, std::size_t>> BudgetTrace;
+  bool BudgetTraceReported = false;
   std::size_t ArrayFillerUnits = 0;
   std::set<const Expr *> SeparateArrayFillers;
 
   bool reserveSourceUnits(SourceManager &Sources, SourceLocation Location,
-                          std::size_t ArgumentCount) {
+                          std::size_t ArgumentCount, llvm::StringRef Kind = "other") {
     constexpr std::size_t Limit = 200000;
+    const auto Origin = S.sdkFile(Sources, Location);
+    const auto Label = Origin && Origin->Root == "libcxx"
+        ? llvm::StringRef(Origin->Path).str() : std::string("owned");
+    auto &Entry = BudgetTrace[{Kind.str(), Label}];
+    ++Entry.first;
     if (ArgumentCount >= Limit || 1 + ArgumentCount > Limit - DirectiveUnits) {
+      if (!BudgetTraceReported) {
+        BudgetTraceReported = true;
+        llvm::errs() << "NEVERC_SOURCE_BUDGET total=" << DirectiveUnits
+                     << " blocked=" << Kind << " file=" << Label
+                     << " units=" << ArgumentCount << '\n';
+        for (const auto &[Key, Count] : BudgetTrace)
+          llvm::errs() << "NEVERC_SOURCE_BUDGET_CATEGORY kind=" << Key.first
+                       << " file=" << Key.second << " events=" << Count.first
+                       << " units=" << Count.second << '\n';
+      }
       auto P = Sources.getPresumedLoc(Location);
       S.diagnose("TR0201", "template source evidence",
                  "Template source evidence exceeds the frontend budget.",
@@ -32696,6 +32714,7 @@ class Consumer : public ASTConsumer {
       return false;
     }
     DirectiveUnits += 1 + ArgumentCount;
+    Entry.second += 1 + ArgumentCount;
     return true;
   }
 
@@ -32779,7 +32798,7 @@ class Consumer : public ASTConsumer {
           Units += Argument->pack_size();
         }
     }
-    if (!reserveSourceUnits(Sources, Location, Units))
+    if (!reserveSourceUnits(Sources, Location, Units, "template-use"))
       return;
     TemplateUseSource Source{
         Kind, Template, Declaration, Type, Underlying,
@@ -32886,7 +32905,7 @@ public:
         (!Owned && !TupleSignatureMember && !PairSignatureMember && !PairArrayDefaultMember &&
          !PairOptionalMember && !NotFnSignatureMember && !BindSignatureMember) ||
         SpecialMembers.count(Method->getCanonicalDecl()) ||
-        !reserveSourceUnits(Context.getSourceManager(), Method->getLocation(), 0))
+        !reserveSourceUnits(Context.getSourceManager(), Method->getLocation(), 0, "special-member"))
       return false;
     SpecialMembers.emplace(Method->getCanonicalDecl(),
                            SpecialMemberSource{Method, {}, false});
@@ -32907,7 +32926,7 @@ public:
       return;
     }
     if (reserveSourceUnits(Owner->getASTContext().getSourceManager(),
-                           Owner->getLocation(), 0))
+                           Owner->getLocation(), 0, "subobject-selection"))
       Found->second.Selections.push_back({Base, Field, Method, ConstructorDestruction});
   }
   void HandleNeverCSpecialMemberComplete(const CXXMethodDecl *Owner) override {
@@ -32950,7 +32969,7 @@ public:
                  P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1);
       return false;
     }
-    return reserveSourceUnits(Context.getSourceManager(), Location, Count + 1);
+    return reserveSourceUnits(Context.getSourceManager(), Location, Count + 1, "operation-trait");
   }
   void HandleNeverCOperationTraitSource(
       const TypeTraitExpr *Query, Expr *Root, Expr *const *Operands,
@@ -33057,7 +33076,7 @@ public:
          !approvedUtilityPairTraitSelectionLocation(S, Sources, Location, Function) &&
          !approvedUtilityPairFactorySelectionLocation(S, Sources, Location, Function) &&
          !pairPiecewiseSelectionLocation(S, Sources, Location, Function)) ||
-        !reserveSourceUnits(Sources, Location, 2))
+        !reserveSourceUnits(Sources, Location, 2, "selected-call"))
       return;
     // All admitted producer paths capture direct nodes before casts or
     // lifetime wrappers. Preserve invalid records for deterministic rejection.
