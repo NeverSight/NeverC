@@ -154,7 +154,11 @@ extern "C" int traits() {
               profile="cpp-core-v2", target=target, sdk=True)
     check("v2-type-traits-quoted", '#include "type_traits"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
-    check("v2-type-traits-other-header", "#include <deque>\nint f(){return 0;}",
+    deque_header = check("v2-deque-public-header", "#include <deque>\nint f(){return 0;}",
+                         profile="cpp-core-v2", sdk=True)
+    assert any(dependency["path"] == "deque" for dependency in deque_header["sdk_dependencies"])
+    check("v2-type-traits-internal-header",
+          "#include <__type_traits/enable_if.h>\nint f(){return 0;}",
           "TR0201", profile="cpp-core-v2", sdk=True)
     check("v2-type-traits-runtime-object",
           "#include <type_traits>\nusing T=std::integral_constant<int,3>; int f(){return T{};}",
@@ -681,15 +685,19 @@ extern "C" int pair_composite() {
         ("pair-assignment-composite-conversion",
          '#include <utility>\nint f(){std::pair<short,short>inner(1,2);std::pair<std::pair<short,short>,int>s(inner,3);std::pair<std::pair<int,int>,long>d;d=s;return d.second;}',
          "TR0203"),
-        ("array-swap",
-         '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',
-         "TR0203"),
         ("ambiguous-type-get",
          '#include <utility>\nint f(){std::pair<int,int>p{1,2};return std::get<int>(p);}',
          "TR0202"),
     ):
         check("v2-utility-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    array_swap = check("v2-utility-array-swap", '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',
+                       profile="cpp-core-v2", sdk=True)
+    assert any(dep["path"] == "__utility/swap.h" for dep in array_swap["sdk_dependencies"])
+    array_swap_body = array_swap["functions"][0]["body"]
+    assert sum(node["op"] == "assign" and node["target"]["kind"] == "index"
+               and node["value"]["kind"] != "literal" for node in array_swap_body) == 2
 
     tuple_source = """\
 #include <tuple>
@@ -1898,9 +1906,6 @@ int main() {
         ('unsupported-wrapper-referent',
          '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){long double b=3;std::pair<std::reference_wrapper<long double>,int> p(std::ref(b),2);return p.second;}\n',
          'TR0201'),
-        ('wrapper-array-field',
-         '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}\n',
-         'TR0201'),
         ('wrapper-user-conversion',
          '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nusing W=std::reference_wrapper<Box>;struct Convert{Box* b;operator W()const{return std::ref(*b);}};int main(){Box b{3};std::pair<W,int> p(Convert{&b},2);return p.second;}\n',
          'TR0201'),
@@ -1910,6 +1915,17 @@ int main() {
     ):
         check("v2-pair-reference-wrapper-values-reject-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    wrapper_array = check("v2-pair-reference-wrapper-array-field", '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}\n',
+                          profile="cpp-core-v2", sdk=True)
+    wrapper, = [record for record in wrapper_array["records"]
+                if [field["name"] for field in record["fields"]] == ["nct_reference_wrapper_pointer"]]
+    assert wrapper["fields"][0]["type"].startswith("ptr:")
+    wrapper_array_record, = [record for record in wrapper_array["records"]
+                            if [field["type"] for field in record["fields"]] == ["arr:1:" + wrapper["id"]]]
+    wrapper_pair, = [record for record in wrapper_array["records"]
+                     if [field["type"] for field in record["fields"]] == [wrapper_array_record["id"], "int"]]
+    assert wrapper_pair["layout"]["field_offsets_bits"] == [0, wrapper_array["target"]["pointer_bits"]]
 
     pair_array_apply_functions_source = """\
 #include <array>
