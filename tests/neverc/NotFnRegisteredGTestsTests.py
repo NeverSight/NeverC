@@ -43,6 +43,50 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.layout_two_variant_any_registered = cls.registered
+        cls.layout_two_variant_any_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_two_variant_any_original = cls.adapter.restore_original_gtests(cls.layout_two_variant_any_registered,
+                                                                        cls.layout_two_variant_any_suffix)
+        cls.registered = cls.adapter.restore_layout_two_variant_any_history(cls.layout_two_variant_any_registered)
+        cls.layout_any_integer_registered = cls.registered
+        cls.layout_any_integer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_any_integer_original = cls.adapter.restore_original_gtests(cls.layout_any_integer_registered,
+                                                                        cls.layout_any_integer_suffix)
+        cls.registered = cls.adapter.restore_layout_any_integer_history(cls.layout_any_integer_registered)
+        cls.layout_integral_visit_registered = cls.registered
+        cls.layout_integral_visit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_integral_visit_original = cls.adapter.restore_original_gtests(cls.layout_integral_visit_registered,
+                                                                        cls.layout_integral_visit_suffix)
+        cls.registered = cls.adapter.restore_layout_integral_visit_history(cls.layout_integral_visit_registered)
+        cls.layout_assignment_visit_registered = cls.registered
+        cls.layout_assignment_visit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_assignment_visit_original = cls.adapter.restore_original_gtests(cls.layout_assignment_visit_registered,
+                                                                        cls.layout_assignment_visit_suffix)
+        cls.registered = cls.adapter.restore_layout_assignment_visit_history(cls.layout_assignment_visit_registered)
+        cls.layout_adapter_registered = cls.registered
+        cls.layout_adapter_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_adapter_original = cls.adapter.restore_original_gtests(cls.layout_adapter_registered,
+                                                                        cls.layout_adapter_suffix)
+        cls.registered = cls.adapter.restore_layout_adapter_history(cls.layout_adapter_registered)
+        cls.layout_variant_operations_registered = cls.registered
+        cls.layout_variant_operations_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_operations_original = cls.adapter.restore_original_gtests(
+            cls.layout_variant_operations_registered, cls.layout_variant_operations_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_operations_history(cls.layout_variant_operations_registered)
+        cls.layout_in_place_any_registered = cls.registered
+        cls.layout_in_place_any_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_in_place_any_original = cls.adapter.restore_original_gtests(
+            cls.layout_in_place_any_registered, cls.layout_in_place_any_suffix)
+        cls.registered = cls.adapter.restore_layout_in_place_any_history(cls.layout_in_place_any_registered)
+        cls.layout_in_place_registered = cls.registered
+        cls.layout_in_place_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_in_place_original = cls.adapter.restore_original_gtests(
+            cls.layout_in_place_registered, cls.layout_in_place_suffix)
+        cls.registered = cls.adapter.restore_layout_in_place_history(cls.layout_in_place_registered)
+        cls.variant_scalar_registered = cls.registered
+        cls.variant_scalar_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_scalar_original = cls.adapter.restore_original_gtests(cls.variant_scalar_registered,cls.variant_scalar_suffix)
+        cls.registered = cls.adapter.restore_variant_scalar_history(cls.variant_scalar_registered)
         cls.variant_metadata_layout_registered = cls.registered
         cls.variant_metadata_layout_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_metadata_layout_original = cls.adapter.restore_original_gtests(cls.variant_metadata_layout_registered,cls.variant_metadata_layout_suffix)
@@ -1737,6 +1781,198 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.variant_metadata_layout_registered,self.variant_metadata_layout_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.variant_metadata_layout_original+b' ',['TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations'])
+
+    def test_variant_scalar_preserves_all_previous_registry_bytes_and_extracts_twenty_five_tests(self):
+        self.assertEqual(self.variant_scalar_original+self.variant_scalar_suffix,self.variant_scalar_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.variant_scalar_original,self.variant_scalar_suffix),self.variant_scalar_original)
+        self.assertEqual(self.adapter.restore_variant_scalar_history(self.variant_scalar_registered),self.variant_metadata_layout_registered)
+        self.assertEqual(self.adapter.restore_variant_scalar_history(self.variant_scalar_original),self.variant_metadata_layout_original)
+        selected = ['TranslateTest.CoreV2VariantObjectsDefaultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsSecondRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsThirdLvalueRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsCopyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsDefaultPointerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsRefAndSideEffectRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsTemporaryRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfAliasRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfConstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfDuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfCopyAndEvaluateOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsHoldsConstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsCopyChangingAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsMoveAndSelfAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsConstGetByIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsConstGetByTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsClassAlternativeRejected', 'TranslateTest.CoreV2VariantObjectsConstAlternativeRejected', 'TranslateTest.CoreV2VariantObjectsAlteredDiscriminantRejected', 'TranslateTest.CoreV2VariantObjectsUnprovedConversionRejected', 'TranslateTest.CoreV2VariantObjectsUncheckedGetRejected', 'TranslateTest.CoreV2VariantObjectsConstGetInactiveRejected', 'TranslateTest.CoreV2VariantObjectsConstGetMutableAliasRejected', 'TranslateTest.CoreV2VariantObjectsConstGetAlteredHelperRejected', 'TranslateTest.CoreV2VariantObjectsGetIfReplacedAddressBodyRejected']
+        generated,proof = self.extractor.extract(self.variant_scalar_original,selected)
+        self.assertEqual(proof['original_test_names'],8043)
+        self.assertEqual(proof['selected_count'],25)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),8018)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19variantsclr',generated)
+        self.assertIn(b'variant-objects-',generated)
+        self.assertIn(b'std::variant<',generated)
+
+    def test_variant_scalar_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.variant_scalar_registered+b' ',
+                        self.variant_scalar_registered.replace(b'r19variantsclr',b'q.push(11)',1),
+                        self.variant_scalar_registered+self.variant_scalar_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.variant_scalar_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_variant_scalar_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_scalar_registered,self.variant_scalar_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.variant_scalar_original+b' ',['TranslateTest.CoreV2VariantObjectsDefaultRunAtBothOptimizations'])
+
+
+    def test_layout_in_place_preserves_earlier_fixtures_and_extracts_added_cases(self):
+        self.assertEqual(self.layout_in_place_original + self.layout_in_place_suffix,
+                         self.layout_in_place_registered)
+        self.assertEqual(self.adapter.restore_layout_in_place_history(self.layout_in_place_original),
+                         self.variant_scalar_original)
+        generated, proof = self.extractor.extract(self.layout_in_place_original, ['TranslateTest.CoreV2VariantMonostateIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateStandaloneLayoutRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateVariantLayoutRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateMonostateOnlyVariantRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueActiveEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueConstAddressRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueCopyAndAssignRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueDuplicateEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionRepeatedTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionZeroInitializedRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionArgumentEffectRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionEmptyNonfirstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionValueAndEffectRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionValueInitializePointerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionEmptyAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionZeroIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateSourceRedeclarationRejected', 'TranslateTest.CoreV2VariantMonostateVolatileLayoutRejected', 'TranslateTest.CoreV2AnyLayoutVolatileTypeRejected', 'TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected', 'TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected', 'TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected', 'TranslateTest.CoreV2AssociativeMapCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeMapRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeMapRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeSetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeSetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeSetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeUnorderedSetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeUnorderedSetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeUnorderedSetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeUnorderedMapNonDefaultKeyRejected', 'TranslateTest.CoreV2VariantMonostateValueForeignEmptyRejected', 'TranslateTest.CoreV2VariantMonostateValueRuntimeRedeclarationRejected', 'TranslateTest.CoreV2VariantIndexConstructionWrittenTagObjectRejected', 'TranslateTest.CoreV2VariantIndexConstructionEscapingTagRejected', 'TranslateTest.CoreV2VariantTypeConstructionWrittenTagObjectRejected', 'TranslateTest.CoreV2VariantTypeConstructionEffectfulTagRejected'])
+        self.assertEqual(proof['original_test_names'], 8097)
+        self.assertEqual(proof['selected_count'], 54)
+        self.assertTrue(proof['all_non_test_source_retained'])
+        for name in (b'variant-monostate-', b'variant-index-construction-', b'any-layout-', b'associative-'):
+            self.assertIn(name, generated)
+
+    def test_layout_in_place_rejects_altered_fixture_source_and_suffix(self):
+        for altered in (self.layout_in_place_registered + b' ', self.layout_in_place_registered[:-1]):
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_original_gtests(altered, self.layout_in_place_suffix)
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_layout_in_place_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_in_place_registered,
+                                                 self.layout_in_place_suffix + b' ')
+
+
+    def test_layout_in_place_any_retains_previous_case_bodies(self):
+        self.assertEqual(self.layout_in_place_any_original + self.layout_in_place_any_suffix,
+                         self.layout_in_place_any_registered)
+        self.assertEqual(self.adapter.restore_layout_in_place_any_history(self.layout_in_place_any_original),
+                         self.layout_in_place_original)
+        generated, proof = self.extractor.extract(self.layout_in_place_any_original, ['TranslateTest.CoreV2AnyEmptyDefaultLocalRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyReceiverEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyTemporaryRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyMemberLifetimeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyArrayLifetimeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyUnprovedCopyRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastMutableRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastConstRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastNullAndEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastPointerTypeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyCopyMoveRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyCopyCopyEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentCopyIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentOperatorNotationOrderRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentExplicitAssignmentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentMoveAndSelfRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentSwapSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAlteredObserverRejected', 'TranslateTest.CoreV2AnyEmptyAlteredResetRejected', 'TranslateTest.CoreV2AnyEmptyPointerCastValueFormRejected', 'TranslateTest.CoreV2AnyEmptyPointerCastUserRedeclarationRejected', 'TranslateTest.CoreV2AnyEmptyAssignmentRenamedSwapRejected'])
+        self.assertEqual(proof['original_test_names'], 8119)
+        self.assertEqual(proof['selected_count'], 22)
+        self.assertTrue(proof['all_non_test_source_retained'])
+        for name in (b'any-empty-assignment-', b'any-empty-array-', b'any-empty-pointer-cast-'):
+            self.assertIn(name, generated)
+
+    def test_layout_in_place_any_rejects_edited_source_and_suffix(self):
+        for changed in (self.layout_in_place_any_registered + b' ', self.layout_in_place_any_registered[:-1]):
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_original_gtests(changed, self.layout_in_place_any_suffix)
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_layout_in_place_any_history(changed)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_in_place_any_registered,
+                                                 self.layout_in_place_any_suffix + b' ')
+
+
+    def test_layout_variant_operations_retains_prior_source(self):
+        self.assertEqual(self.layout_variant_operations_original + self.layout_variant_operations_suffix,
+                         self.layout_variant_operations_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_operations_history(self.layout_variant_operations_original),
+                         self.layout_in_place_any_original)
+        generated, proof = self.extractor.extract(self.layout_variant_operations_original, ['TranslateTest.CoreV2MonostateComparisonAllSixRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateComparisonOperandEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateComparisonExplicitFunctionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplaceIndexAndReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplaceTypeAndRepeatedValueRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplacePointerZeroRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplaceEmptyAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplaceReceiverBeforeInputRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateComparisonSdkAddressRejected', 'TranslateTest.CoreV2VariantEmplaceWideningOperandRejected', 'TranslateTest.CoreV2VariantEmplaceVolatileOperandRejected', 'TranslateTest.CoreV2VariantEmplaceSourceOwnedRecordRejected'])
+        self.assertEqual(proof['original_test_names'], 8131)
+        self.assertEqual(proof['selected_count'], 12)
+        self.assertTrue(proof['all_non_test_source_retained'])
+        self.assertIn(b'monostate', generated)
+        self.assertIn(b'.emplace<', generated)
+
+    def test_layout_variant_operations_rejects_edited_source_and_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_operations_history(self.layout_variant_operations_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_operations_registered,
+                                                 self.layout_variant_operations_suffix + b' ')
+
+
+    def test_layout_adapter_retains_published_bodies(self):
+        self.assertEqual(self.layout_adapter_original + self.layout_adapter_suffix, self.layout_adapter_registered)
+        self.assertEqual(self.adapter.restore_layout_adapter_history(self.layout_adapter_original),
+                         self.layout_variant_operations_original)
+        output, evidence = self.extractor.extract(self.layout_adapter_original, ['TranslateTest.CoreV2AssociativeMultimapIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionStackCopyDequeRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionQueueCopyConstDequeRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionQueueMoveDequeReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionStackMoveDequeOnceRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeMultimapRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeMultimapRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeMultisetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeMultisetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeMultisetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeUnorderedMultisetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeUnorderedMultisetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeUnorderedMultisetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2DequeAdapterConstructionVectorBackedStackRejected', 'TranslateTest.CoreV2DequeAdapterConstructionNonIntDequeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8158)
+        self.assertEqual(evidence['selected_count'], 27)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'associative-unordered_multiset-', output)
+        self.assertIn(b'deque-adapter-construction-stack-copy-deque', output)
+
+    def test_layout_adapter_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_adapter_history(self.layout_adapter_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_adapter_registered, self.layout_adapter_suffix + b' ')
+
+
+    def test_layout_assignment_visit_retains_published_bodies(self):
+        self.assertEqual(self.layout_assignment_visit_original + self.layout_assignment_visit_suffix, self.layout_assignment_visit_registered)
+        self.assertEqual(self.adapter.restore_layout_assignment_visit_history(self.layout_assignment_visit_original),
+                         self.layout_adapter_original)
+        output, evidence = self.extractor.extract(self.layout_assignment_visit_original, ['TranslateTest.CoreV2VariantValueAssignmentSwitchAndChainedResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentSameAlternativeReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentAssignmentSyntaxBindingOrderRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentExplicitMemberBindingOrderRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentPointerAndResetSelectionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitFunctionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitPointerReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitFactoryEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitVoidResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentVolatileOperandRejected', 'TranslateTest.CoreV2VariantValueAssignmentUserDefinedConversionRejected', 'TranslateTest.CoreV2VariantValueAssignmentNontrivialAlternativeRejected', 'TranslateTest.CoreV2VariantZeroVisitRenamedValueWrapperRejected', 'TranslateTest.CoreV2VariantZeroVisitRenamedTableProjectionRejected'])
+        self.assertEqual(evidence['original_test_names'], 8172)
+        self.assertEqual(evidence['selected_count'], 14)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-value-assignment-assignment-syntax-binding-order', output)
+        self.assertIn(b'variant-zero-visit-void-result', output)
+
+    def test_layout_assignment_visit_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_assignment_visit_history(self.layout_assignment_visit_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_assignment_visit_registered, self.layout_assignment_visit_suffix + b' ')
+
+
+    def test_layout_integral_visit_retains_published_bodies(self):
+        self.assertEqual(self.layout_integral_visit_original + self.layout_integral_visit_suffix, self.layout_integral_visit_registered)
+        self.assertEqual(self.adapter.restore_layout_integral_visit_history(self.layout_integral_visit_original),
+                         self.layout_assignment_visit_original)
+        output, evidence = self.extractor.extract(self.layout_integral_visit_original, ['TranslateTest.CoreV2VariantIntegralVisitActiveIndexChangesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitConstAndIntegralConversionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitCallbackAndReceiverEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitVoidResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitRenamedGuardRejected', 'TranslateTest.CoreV2VariantIntegralVisitRenamedBaseSelectionRejected', 'TranslateTest.CoreV2VariantIntegralVisitGenericVisitorRejected'])
+        self.assertEqual(evidence['original_test_names'], 8179)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-integral-visit-active-index-changes', output)
+        self.assertIn(b'variant-integral-visit-void-result', output)
+
+    def test_layout_integral_visit_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_integral_visit_history(self.layout_integral_visit_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_integral_visit_registered, self.layout_integral_visit_suffix + b' ')
+
+
+    def test_layout_any_integer_retains_published_bodies(self):
+        self.assertEqual(self.layout_any_integer_original + self.layout_any_integer_suffix, self.layout_any_integer_registered)
+        self.assertEqual(self.adapter.restore_layout_any_integer_history(self.layout_any_integer_original),
+                         self.layout_integral_visit_original)
+        output, evidence = self.extractor.extract(self.layout_any_integer_original, ['TranslateTest.CoreV2AnyIntRuntimeReferenceAndMismatchRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntCopyValueFromLvalueRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntCopyAndMoveConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntTransferSwapAndResetRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntUnsupportedFloatingValueRejected', 'TranslateTest.CoreV2AnyIntRenamedPinnedStorageHandlerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8185)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-int-runtime-reference-and-mismatch', output)
+        self.assertIn(b'any-int-transfer-swap-and-reset', output)
+
+        promoted, _ = self.extractor.extract(self.layout_any_integer_original,
+            ['TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations'])
+        self.assertIn(b'std::any value{7};', promoted)
+        self.assertIn(b'"-O0", "-O2"', promoted)
+        self.assertNotIn(b'CoreV2AnyLayoutRuntimeConstructionRejected',
+                         self.layout_any_integer_original)
+
+    def test_layout_any_integer_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_any_integer_history(self.layout_any_integer_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_any_integer_registered, self.layout_any_integer_suffix + b' ')
+
+
+    def test_layout_two_variant_any_retains_published_bodies(self):
+        self.assertEqual(self.layout_two_variant_any_original + self.layout_two_variant_any_suffix, self.layout_two_variant_any_registered)
+        self.assertEqual(self.adapter.restore_layout_two_variant_any_history(self.layout_two_variant_any_original),
+                         self.layout_any_integer_original)
+        output, evidence = self.extractor.extract(self.layout_two_variant_any_original, ['TranslateTest.CoreV2VariantTwoVisitMixedActiveIndicesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTwoVisitConstOperandAndMutationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTwoVisitAliasAndEffectsWithVoidResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTwoVisitRenamedMatrixIndexRejected', 'TranslateTest.CoreV2VariantTwoVisitRenamedMatrixDispatchRejected', 'TranslateTest.CoreV2VariantTwoVisitGenericVisitorRejected'])
+        self.assertEqual(evidence['original_test_names'], 8191)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-two-visit-mixed-active-indices', output)
+        self.assertIn(b'variant-two-visit-const-operand-and-mutation', output)
+
+    def test_layout_two_variant_any_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_two_variant_any_history(self.layout_two_variant_any_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_two_variant_any_registered, self.layout_two_variant_any_suffix + b' ')
 
 
 if __name__ == '__main__':
