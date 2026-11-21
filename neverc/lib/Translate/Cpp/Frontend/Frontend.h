@@ -4499,6 +4499,9 @@ bool pinnedAssociativeContainerType(const State &S, const clang::SourceManager &
 bool approvedAssociativeContainerMetadataRecord(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
+clang::QualType approvedOrderedContainerObserverQuery(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 bool approvedAssociativeContainerLayoutQuery(
     const State &S, const clang::SourceManager &SM, clang::QualType Type,
     const clang::ASTContext &Context);

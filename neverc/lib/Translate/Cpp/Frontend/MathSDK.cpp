@@ -135939,6 +135939,45 @@ bool approvedAssociativeContainerLayoutQuery(
          Context.getTypeSize(Type) == 5 * P;
 }
 
+QualType approvedOrderedContainerObserverQuery(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = MemberCall ? MemberCall->getMethodDecl() : nullptr;
+  const auto *Member = Method ? dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  if (!S.coreV2() || !Method || !Member || Member->isArrow() ||
+      !S.owns(SM, Member->getMemberLoc()) || Call->getNumArgs() ||
+      !Method->getIdentifier() || Method->isStatic() || !Method->isConst() ||
+      Method->isVolatile() || Method->isVirtual() || Method->isVariadic() ||
+      Method->isDeleted() || Method->isInvalidDecl() ||
+      Method->getNumParams() || Method->getPrimaryTemplate() ||
+      Method->getRefQualifier() != RQ_None)
+    return {};
+  const auto Name = Method->getName();
+  if (Name != "size" && Name != "empty" && Name != "max_size")
+    return {};
+  const auto *Owner = Method->getParent();
+  if (!Owner->getIdentifier())
+    return {};
+  const auto Header = associativeContainerHeader(Owner->getName());
+  const auto *Receiver = Member->getBase();
+  if ((Header != "map" && Header != "set") || !Receiver->isLValue() ||
+      !Context.hasSameUnqualifiedType(Receiver->getType(), Context.getRecordType(Owner)) ||
+      !approvedAssociativeContainerLayoutQuery(S, SM, Receiver->getType(), Context))
+    return {};
+  const auto Result = Name == "empty" ? Context.BoolTy : Context.getSizeType();
+  const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+  if (!Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() || !Context.hasSameType(Method->getReturnType(), Result) ||
+      !Context.hasSameType(Call->getType(), Result) || !Call->isPRValue())
+    return {};
+  for (const auto *D : Method->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx", Header))
+      return {};
+  return Result;
+}
+
 std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context,

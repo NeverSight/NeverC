@@ -19036,6 +19036,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (const auto Result = functionalQuerySource(A, Call);
             !Result.isNull())
           A.S.UnevaluatedFunctionalCalls.emplace(Call, Result);
+        else if (const auto Result = approvedOrderedContainerObserverQuery(
+                     A.S, A.Sources, Call, A.Context);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityTupleCatQueryResultSource(Call);
                  !Result.isNull()) {
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
