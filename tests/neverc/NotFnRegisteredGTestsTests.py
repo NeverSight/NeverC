@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.layout_two_variant_any_tuple_registered = cls.registered
+        cls.layout_two_variant_any_tuple_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_two_variant_any_tuple_original = cls.adapter.restore_original_gtests(cls.layout_two_variant_any_tuple_registered,
+                                                                        cls.layout_two_variant_any_tuple_suffix)
+        cls.registered = cls.adapter.restore_layout_two_variant_any_tuple_history(cls.layout_two_variant_any_tuple_registered)
         cls.layout_two_variant_any_registered = cls.registered
         cls.layout_two_variant_any_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.layout_two_variant_any_original = cls.adapter.restore_original_gtests(cls.layout_two_variant_any_registered,
@@ -1973,6 +1978,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_layout_two_variant_any_history(self.layout_two_variant_any_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.layout_two_variant_any_registered, self.layout_two_variant_any_suffix + b' ')
+
+
+    def test_layout_two_variant_any_tuple_retains_published_bodies(self):
+        self.assertEqual(self.layout_two_variant_any_tuple_original + self.layout_two_variant_any_tuple_suffix, self.layout_two_variant_any_tuple_registered)
+        self.assertEqual(self.adapter.restore_layout_two_variant_any_tuple_history(self.layout_two_variant_any_tuple_original),
+                         self.layout_two_variant_any_original)
+        output, evidence = self.extractor.extract(self.layout_two_variant_any_tuple_original, ['TranslateTest.CoreV2TupleBudgetDeep15ExecutionRunAtBothOptimizations', 'TranslateTest.CoreV2TupleBudgetDeep16ExecutionRunAtBothOptimizations'])
+        self.assertEqual(evidence['original_test_names'], 8193)
+        self.assertEqual(evidence['selected_count'], 2)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'tuple-budget-deep-15-execution', output)
+        self.assertIn(b'tuple-budget-deep-16-execution', output)
+
+    def test_layout_two_variant_any_tuple_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_two_variant_any_tuple_history(self.layout_two_variant_any_tuple_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_two_variant_any_tuple_registered, self.layout_two_variant_any_tuple_suffix + b' ')
 
 
 if __name__ == '__main__':

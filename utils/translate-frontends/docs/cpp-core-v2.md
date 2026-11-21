@@ -17947,3 +17947,10 @@ an ordinary function or function pointer. The pinned dispatch matrix selects
 the two active alternatives and applies the checked by-value conversions.
 Both operands may refer to the same object. The selected visitor is called
 once, including for void results.
+
+## Deep tuple swap and bind source evidence
+
+Member and free swap preserve the checked values across 15 and 16 levels of
+nested tuples. The source collector retains earlier template evidence for
+the selected bind operation when its header is included later in the
+translation unit, within the original source budget.

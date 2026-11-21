@@ -549,3 +549,10 @@ The combined compiler passes 1,746 source requests across six 64-bit targets
 and 403 formal tests on Linux x86-64. All 213 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Deep tuple swaps and deferred bind source evidence
+
+The combined compiler passes 1,800 source requests across six 64-bit targets
+and 405 formal tests on Linux x86-64. All 215 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

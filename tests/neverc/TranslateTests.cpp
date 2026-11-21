@@ -385560,6 +385560,107 @@ int f(std::variant<int, short>& left, std::variant<int, short>& right) {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2TupleBudgetDeep15ExecutionRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-budget-deep-15-execution.cpp");
+  writeFile(Source, R"r19containers(#include <array>
+#include <tuple>
+#include <utility>
+using T0 = int;
+using T1 = std::tuple<T0>;
+using T2 = std::tuple<T1>;
+using T3 = std::tuple<T2>;
+using T4 = std::tuple<T3>;
+using T5 = std::tuple<T4>;
+using T6 = std::tuple<T5>;
+using T7 = std::tuple<T6>;
+using T8 = std::tuple<T7>;
+using T9 = std::tuple<T8>;
+using T10 = std::tuple<T9>;
+using T11 = std::tuple<T10>;
+using T12 = std::tuple<T11>;
+using T13 = std::tuple<T12>;
+using T14 = std::tuple<T13>;
+using T15 = std::tuple<T14>;
+using Carrier = std::tuple<T1, T15>;
+int main() {
+  Carrier left{}, right{};
+  std::get<0>(std::get<0>(left)) = 7;
+  std::get<0>(std::get<0>(right)) = 19;
+  std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(left)))))))))))))))) = -23;
+  std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(right)))))))))))))))) = 31;
+  left.swap(right);
+  if (std::get<0>(std::get<0>(left)) != 19 ||
+      std::get<0>(std::get<0>(right)) != 7)
+    return 1;
+  if (std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(left)))))))))))))))) != 31 || std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(right)))))))))))))))) != -23)
+    return 2;
+  return 0;
+}
+)r19containers");
+  const auto Output = tmpFile("tuple-budget-deep-15-execution.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-budget-deep-15-execution" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleBudgetDeep16ExecutionRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-budget-deep-16-execution.cpp");
+  writeFile(Source, R"r19containers(#include <array>
+#include <tuple>
+#include <utility>
+using T0 = int;
+using T1 = std::tuple<T0>;
+using T2 = std::tuple<T1>;
+using T3 = std::tuple<T2>;
+using T4 = std::tuple<T3>;
+using T5 = std::tuple<T4>;
+using T6 = std::tuple<T5>;
+using T7 = std::tuple<T6>;
+using T8 = std::tuple<T7>;
+using T9 = std::tuple<T8>;
+using T10 = std::tuple<T9>;
+using T11 = std::tuple<T10>;
+using T12 = std::tuple<T11>;
+using T13 = std::tuple<T12>;
+using T14 = std::tuple<T13>;
+using T15 = std::tuple<T14>;
+using T16 = std::tuple<T15>;
+using Carrier = std::tuple<T1, T16>;
+int main() {
+  Carrier left{}, right{};
+  std::get<0>(std::get<0>(left)) = 7;
+  std::get<0>(std::get<0>(right)) = 19;
+  std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(left))))))))))))))))) = -23;
+  std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(right))))))))))))))))) = 31;
+  std::swap(left, right);
+  if (std::get<0>(std::get<0>(left)) != 19 ||
+      std::get<0>(std::get<0>(right)) != 7)
+    return 1;
+  if (std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(left))))))))))))))))) != 31 || std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(right))))))))))))))))) != -23)
+    return 2;
+  return 0;
+}
+)r19containers");
+  const auto Output = tmpFile("tuple-budget-deep-16-execution.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-budget-deep-16-execution" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");
