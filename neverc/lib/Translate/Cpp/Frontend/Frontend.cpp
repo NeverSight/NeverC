@@ -32685,9 +32685,13 @@ class Consumer : public ASTConsumer {
   std::set<const Expr *> SeparateArrayFillers;
 
   bool reserveSourceUnits(SourceManager &Sources, SourceLocation Location,
-                          std::size_t ArgumentCount) {
+                          std::size_t ArgumentCount, bool Speculative = false) {
     constexpr std::size_t Limit = 200000;
     if (ArgumentCount >= Limit || 1 + ArgumentCount > Limit - DirectiveUnits) {
+      // A later consumer must find this exact event to prove an operation.
+      // An unused SDK overload probe can be discarded without a diagnostic.
+      if (Speculative)
+        return false;
       auto P = Sources.getPresumedLoc(Location);
       S.diagnose("TR0201", "template source evidence",
                  "Template source evidence exceeds the frontend budget.",
@@ -32927,7 +32931,8 @@ public:
       ASTContext &Context, unsigned Count, const SourceLocation &Location) override {
     if (!S.coreV2() || !S.Diagnostics.empty())
       return false;
-    if (!S.owns(Context.getSourceManager(), Location)) {
+    const bool Owned = S.owns(Context.getSourceManager(), Location);
+    if (!Owned) {
       const auto Origin = S.sdkFile(Context.getSourceManager(), Location);
       // Immutable SDK traits retain the actual swap operands and zero-argument
       // constructor event needed by selected pair default signatures. Retention
@@ -32950,7 +32955,7 @@ public:
                  P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1);
       return false;
     }
-    return reserveSourceUnits(Context.getSourceManager(), Location, Count + 1);
+    return reserveSourceUnits(Context.getSourceManager(), Location, Count + 1, !Owned);
   }
   void HandleNeverCOperationTraitSource(
       const TypeTraitExpr *Query, Expr *Root, Expr *const *Operands,
