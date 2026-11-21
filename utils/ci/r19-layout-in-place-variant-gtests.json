@@ -933,7 +933,7 @@
     "variant-monostate-variant-layout",
     "variant-monostate-volatile-layout"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "8746852cd5a814adfd86f59ec98a95dffb6c493af46f699f40a1822674f12c29",
   "maintained_original_sha256": "71ea495d9ecd713746a7e5fca2acf69633b5b264ff17437bc0252078575cc947",
@@ -945,5 +945,13 @@
   "current_registry_count": 8097,
   "current_python_registry_tests": 120,
   "native_reference_selected_executions": 64,
-  "planned_generated_c23_executions": 64
+  "planned_generated_c23_executions": 64,
+  "native_reference_proofs": {
+    "any-layout": "d89e6931c9771241a94eaf5f31750e55821fa0ad1d094572d74c24deb800234a",
+    "associative-metadata": "c2b4b1e86ecb64c73bdaec0c5c07756cbad3a260c465a48f1a9676bcdbc13572",
+    "monostate-layout": "bf435677f94f07928028e6b92e80db3e9b2a9e6b6d6d34849af06d12675501d6",
+    "variant-in-place-runtime": "bd90cf05c8c2a12d4d00b5759d5195f30114f5f455e69bb3142e391e6e176475"
+  },
+  "native_reference_authentication_sha256": "7252dc627daa9c512c414f006584a89ad165af708373991926d444d7e11d3bcf",
+  "source_proof_sha256": "d65eb2e135afbcaa8c7f2e5500c3aac9d8e42fd48da0f88ce244939ea74f1dac"
 }
