@@ -52990,6 +52990,58 @@ std::optional<UtilityDequeConstruction> dequeExplicitAllocatorConstructorSignatu
   return UtilityDequeConstruction::PointerRangeAllocator;
 }
 
+std::optional<UtilityDequeConstruction> dequeAdapterContainerConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructorDecl *C,
+    const ASTContext &Context) {
+  if (!C || !C->isExplicit() || C->getPrimaryTemplate() || C->getAccess() != AS_public ||
+      C->getNumParams() != 1 || C->getParamDecl(0)->hasDefaultArg())
+    return std::nullopt;
+  const auto Adapter = dequeAdapterRecord(S, SM, C->getParent(), Context);
+  if (!Adapter || !dequeFunctionDeclarations(S, SM, C))
+    return std::nullopt;
+  const auto *Storage = *Adapter->Record->field_begin();
+  const auto Container = Storage->getType();
+  const auto Parameter = C->getParamDecl(0)->getType();
+  const bool Copy = Context.hasSameType(Parameter, Context.getLValueReferenceType(Container.withConst()));
+  if (!Copy && !Context.hasSameType(Parameter, Context.getRValueReferenceType(Container)))
+    return std::nullopt;
+  const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(C->getDefinition());
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  if (!Body || !Body->body_empty() || Definition->getNumCtorInitializers() != 1 ||
+      Definition->isDelegatingConstructor())
+    return std::nullopt;
+  const auto *Init = *Definition->init_begin();
+  const auto *Build = Init->isMemberInitializer() && Init->isWritten() &&
+      Init->getMember()->getCanonicalDecl() == Storage->getCanonicalDecl()
+      ? dyn_cast<CXXConstructExpr>(Init->getInit()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Constructor = Build ? Build->getConstructor() : nullptr;
+  if (!Constructor || Build->getNumArgs() != 1 ||
+      !Context.hasSameType(Build->getType(), Container) || Constructor->getNumParams() != 1 ||
+      !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Parameter) ||
+      !(Copy ? Constructor->isCopyConstructor() : Constructor->isMoveConstructor()) ||
+      !dequeFunctionDeclarations(S, SM, Constructor))
+    return std::nullopt;
+  const auto *Argument = Build->getArg(0)->IgnoreParenImpCasts();
+  if (!Copy) {
+    const auto *Move = dyn_cast<CallExpr>(Argument);
+    const auto *F = Move ? Move->getDirectCallee() : nullptr;
+    const auto *Primary = F ? F->getPrimaryTemplate() : nullptr;
+    if (!F || !F->getIdentifier() || F->getName() != "move" ||
+        F->getNumParams() != 1 || Move->getNumArgs() != 1 || !Move->isXValue() ||
+        !Context.hasSameType(F->getReturnType(), Parameter) ||
+        !dequePinned(S, SM, Primary, "__utility/move.h"))
+      return std::nullopt;
+    for (const auto *D : F->redecls())
+      if (!dequePinned(S, SM, D, "__utility/move.h"))
+        return std::nullopt;
+    Argument = Move->getArg(0)->IgnoreParenImpCasts();
+  }
+  const auto *Reference = dyn_cast<DeclRefExpr>(Argument);
+  if (!Reference || Reference->getDecl() != Definition->getParamDecl(0))
+    return std::nullopt;
+  return Copy ? UtilityDequeConstruction::Copy : UtilityDequeConstruction::Move;
+}
+
 std::optional<UtilityDequeConstruction> dequeConstructorSignature(const State &S, const SourceManager &SM,
     const CXXConstructorDecl *C, const ASTContext &Context) {
   if (!C || !dequeFunctionDeclarations(S, SM, C)) return std::nullopt;
@@ -52997,6 +53049,8 @@ std::optional<UtilityDequeConstruction> dequeConstructorSignature(const State &S
     if (const auto Allocator = dequeExplicitAllocatorConstructorSignature(S, SM, C, Context)) return Allocator;
     if (dequePointerRangeTemplate(S, SM, C, Context)) return UtilityDequeConstruction::PointerRange;
     if (C->getPrimaryTemplate()) return std::nullopt;
+    if (const auto Adapter = dequeAdapterContainerConstruction(S, SM, C, Context))
+      return Adapter;
     if (C->getNumParams() == 1 && !C->getParamDecl(0)->hasDefaultArg()) {
       const auto Record = Context.getRecordType(C->getParent());
       const auto Parameter = C->getParamDecl(0)->getType();
@@ -56121,7 +56175,9 @@ bool dequeSourceGraph(const State &S, const SourceManager &SM,
       ? dequeExplicitAllocatorConstructorSignature(S, SM, RootConstructor, Context) : std::nullopt;
   const bool DequeValueCopy = !PriorityRoot && RootMethod &&
       approvedUtilityDequeRecord(S, SM, RootMethod->getParent(), Context) &&
-      ((RootConstructor && RootConstructor->isCopyConstructor()) || RootMethod->isCopyAssignmentOperator() ||
+      ((RootConstructor && (RootConstructor->isCopyConstructor() ||
+        dequeAdapterContainerConstruction(S, SM, RootConstructor, Context) ==
+            UtilityDequeConstruction::Copy)) || RootMethod->isCopyAssignmentOperator() ||
        // The allocator move constructor's generic unequal-allocator branch
        // uses the same pinned integer transfer graph. Retain its complete
        // existing closed proofs and shared node/depth budgets.
@@ -133505,6 +133561,16 @@ bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
          Context.hasSameType(Pair->getTemplateArgs()[1].getAsType(), Context.IntTy);
 }
 
+static llvm::StringRef associativeContainerHeader(llvm::StringRef Name) {
+  if (Name == "multimap")
+    return "map";
+  if (Name == "multiset")
+    return "set";
+  if (Name == "unordered_multiset")
+    return "unordered_set";
+  return Name;
+}
+
 static llvm::StringRef associativeContainerForwardHeader(llvm::StringRef Name) {
   if (Name == "map" || Name == "set")
     return "__tree";
@@ -133519,15 +133585,15 @@ bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
   const auto *Primary = Spec ? Spec->getSpecializedTemplate() : nullptr;
   if (!S.coreV2() || !Primary || !Primary->getIdentifier())
     return false;
-  const auto Name = Primary->getName();
-  const auto Forward = associativeContainerForwardHeader(Name);
+  const auto Header = associativeContainerHeader(Primary->getName());
+  const auto Forward = associativeContainerForwardHeader(Header);
   if (Forward.empty())
     return false;
   // Route every SDK specialization to its query gate, including those with
   // an unsupported argument or a source-owned redeclaration.
   return llvm::any_of(Primary->redecls(), [&](const Decl *D) {
     return approvedStandardSDKDeclaration(S, SM, D) &&
-           (cstddefOrigin(S, SM, D->getLocation(), "libcxx", Name) ||
+           (cstddefOrigin(S, SM, D->getLocation(), "libcxx", Header) ||
             cstddefOrigin(S, SM, D->getLocation(), "libcxx", Forward));
   });
 }
@@ -133538,12 +133604,13 @@ bool approvedAssociativeContainerMetadataRecord(
   if (!S.coreV2() || !Record || !Record->getIdentifier())
     return false;
   const auto Name = Record->getName();
-  if (Name != "map" && Name != "set" && Name != "unordered_set")
+  const auto Header = associativeContainerHeader(Name);
+  if (Header != "map" && Header != "set" && Header != "unordered_set")
     return false;
-  const bool Map = Name == "map";
-  const bool HashTable = Name == "unordered_set";
+  const bool Map = Header == "map";
+  const bool HashTable = Header == "unordered_set";
   const auto *Container = associativeTypeIdentity(
-      S, SM, Record, Name, Name, associativeContainerForwardHeader(Name),
+      S, SM, Record, Name, Header, associativeContainerForwardHeader(Header),
       Map || HashTable ? 4 : 3);
   if (!Container || (Container->getSpecializationKind() != TSK_ImplicitInstantiation &&
                      Container->getSpecializationKind() != TSK_Undeclared))
@@ -133664,14 +133731,14 @@ bool approvedAssociativeContainerLayoutQuery(
       Record->getNumBases() || Record->getNumVBases() || Record->isDynamicClass() ||
       Record->field_empty() || std::next(Record->field_begin()) != Record->field_end())
     return false;
-  const auto Name = Record->getName();
-  const bool Ordered = Name != "unordered_set";
+  const auto Header = associativeContainerHeader(Record->getName());
+  const bool Ordered = Header != "unordered_set";
   if (!approvedAssociativeStorageGraph(S, SM, Type, Context, Ordered))
     return false;
   const auto *Storage = *Record->field_begin();
   if (!Storage->getIdentifier() || Storage->getName() != (Ordered ? "__tree_" : "__table_") ||
       Storage->isBitField() || Storage->isMutable() || Storage->hasInClassInitializer() ||
-      !cstddefOrigin(S, SM, Storage->getLocation(), "libcxx", Name))
+      !cstddefOrigin(S, SM, Storage->getLocation(), "libcxx", Header))
     return false;
   const auto StorageName = Ordered ? "__tree" : "__hash_table";
   const auto *Impl = associativeTypeIdentity(S, SM, Storage->getType()->getAsCXXRecordDecl(),
@@ -133688,7 +133755,7 @@ bool approvedAssociativeContainerLayoutQuery(
 
   const auto &Public = cast<ClassTemplateSpecializationDecl>(Record)->getTemplateArgs();
   const auto &Private = Impl->getTemplateArgs();
-  if (Name == "map") {
+  if (Header == "map") {
     const auto Value = Private.get(0).getAsType();
     const auto *Pair = associativeTypeIdentity(S, SM, Value->getAsCXXRecordDecl(),
         "__value_type", "map", "__tree", 2);
