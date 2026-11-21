@@ -32622,6 +32622,11 @@ class FunctionLowering {
           discard(Operand);
         return *Compare ? one("bool", L) : A.zero(A.Context.BoolTy, L);
       }
+      if (const auto Visit = approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context)) {
+        auto Input = captureUtilityConstructorArgument(Call->getArg(0), Visit->Parameter);
+        auto Callable = snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Parameter, L), L);
+        return emitIndirectCall(std::move(Callable), json::Array{}, Visit->Result, L);
+      }
       if (const auto Query = approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Query->Callee->getBase();
         auto Receiver = Query->Callee->isArrow()

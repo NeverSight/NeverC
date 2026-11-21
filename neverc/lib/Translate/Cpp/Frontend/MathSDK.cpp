@@ -8716,6 +8716,226 @@ std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
   return UtilityVariantEmplace{*V, Member, unsigned(Index), Input};
 }
 
+static const FunctionDecl *variantVisitDefinition(const State &S,
+    const SourceManager &SM, const FunctionDecl *F, llvm::StringRef Name,
+    unsigned Arity, llvm::StringRef Owner = {}, llvm::StringRef Path = "variant") {
+  if (!F || F->getNameAsString() != Name || F->isInvalidDecl() || F->isDeleted() ||
+      F->isVariadic() || !F->isConstexpr() || F->getNumParams() != Arity ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return nullptr;
+  const auto *Primary = F->getPrimaryTemplate();
+  const auto *Definition = F->getDefinition();
+  if (!variantDeclaration(S, SM, Primary, Path) ||
+      !variantDeclaration(S, SM, Definition, Path))
+    return nullptr;
+  for (const auto *D : Primary->redecls())
+    if (!variantDeclaration(S, SM, D, Path) ||
+        !variantDeclaration(S, SM, D->getTemplatedDecl(), Path))
+      return nullptr;
+  for (const auto *D : F->redecls())
+    if (!variantDeclaration(S, SM, D, Path))
+      return nullptr;
+  const auto *Method = dyn_cast<CXXMethodDecl>(Definition);
+  if (Owner.empty())
+    return Method ? nullptr : Definition;
+  return Method && Method->getParent()->getName() == Owner &&
+                 Method->isStatic() == (Name != "operator()") &&
+                 variantDeclaration(S, SM, Method->getParent(), Path)
+             ? Definition : nullptr;
+}
+
+static const CallExpr *variantVisitCall(const Expr *E) {
+  return dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(E));
+}
+
+static const Expr *variantVisitReturn(const CompoundStmt *Body) {
+  const auto *Return = Body && !Body->body_empty()
+      ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+  return Return ? Return->getRetValue() : nullptr;
+}
+
+static const VarDecl *variantVisitVariable(const Stmt *S) {
+  const auto *Declaration = dyn_cast_or_null<DeclStmt>(S);
+  return Declaration && Declaration->isSingleDecl()
+      ? dyn_cast<VarDecl>(Declaration->getSingleDecl()) : nullptr;
+}
+
+static bool variantVisitZeroGuard(const State &S, const SourceManager &SM,
+    const CallExpr *Call, const ASTContext &Context) {
+  const auto *F = Call && !Call->getNumArgs() ? variantVisitDefinition(
+      S, SM, Call->getDirectCallee(), "__throw_if_valueless", 0) : nullptr;
+  const auto *Body = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
+  if (!Body || Body->size() != 2 || !F->getReturnType()->isVoidType())
+    return false;
+  const auto *Value = variantVisitVariable(Body->body_front());
+  const auto *Branch = dyn_cast<IfStmt>(Body->body_back());
+  const auto *Condition = Branch ? variantReference(Branch->getCond()) : nullptr;
+  bool Result = true;
+  return Value && variantDeclaration(S, SM, Value) && Value->hasInit() &&
+         Value->getType().isConstQualified() && Value->getType()->isBooleanType() &&
+         Value->getInit()->EvaluateAsBooleanCondition(Result, Context) && !Result &&
+         !Value->getInit()->HasSideEffects(Context, true) && Condition &&
+         Condition->getDecl() == Value && !Branch->getInit() &&
+         !Branch->getConditionVariable() && !Branch->getElse();
+}
+
+static bool variantVisitCast(const Expr *E, const ParmVarDecl *Parameter,
+                             const ASTContext &Context) {
+  const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(
+      E ? E->IgnoreParenImpCasts() : nullptr);
+  return Cast && Cast->getCastKind() == CK_NoOp &&
+         Context.hasSameType(Cast->getTypeAsWritten(), Parameter->getType()) &&
+         variantParameter(Cast->getSubExpr(), Parameter);
+}
+
+static const CallExpr *variantVisitInvoke(const State &S, const SourceManager &SM,
+    const CallExpr *Call, const ASTContext &Context) {
+  const auto *Invoke = Call && Call->getNumArgs() == 1 ? variantVisitDefinition(S, SM,
+      Call->getDirectCallee(), "__invoke", 1, {}, "__type_traits/invoke.h") : nullptr;
+  const auto *Target = Invoke ? variantVisitCall(variantReturned(Invoke)) : nullptr;
+  if (!Target)
+    return nullptr;
+  const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Target);
+  if (Operator && Operator->getOperator() != OO_Call)
+    return nullptr;
+  if (Target->getNumArgs() != unsigned(Operator != nullptr))
+    return nullptr;
+  const auto *Object = Operator ? Operator->getArg(0) : Target->getCallee();
+  return variantVisitCast(Object, Invoke->getParamDecl(0), Context) ? Target : nullptr;
+}
+
+static bool variantVisitZeroMatrix(const State &S, const SourceManager &SM,
+    const FunctionDecl *Base, const FieldDecl *Capture, const ASTContext &Context) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Base->getBody());
+  if (!Body || Body->size() != 2)
+    return false;
+  const auto *Matrix = variantVisitVariable(Body->body_front());
+  const auto *Indirect = variantVisitCall(variantVisitReturn(Body));
+  const auto *At = Indirect ? variantVisitCall(Indirect->getCallee()) : nullptr;
+  const auto *Get = At && At->getNumArgs() == 1 ? variantVisitDefinition(
+      S, SM, At->getDirectCallee(), "__at", 1, "__base") : nullptr;
+  const auto *Table = At && At->getNumArgs() == 1 ? variantReference(At->getArg(0)) : nullptr;
+  if (!Matrix || !Matrix->isConstexpr() || !Matrix->getType()->isFunctionPointerType() ||
+      !variantDeclaration(S, SM, Matrix) || !Matrix->hasInit() ||
+      !Indirect || Indirect->getDirectCallee() || Indirect->getNumArgs() != 1 ||
+      !variantForward(S, SM, Indirect->getArg(0), Base->getParamDecl(0), Context) ||
+      !Get || !Table || Table->getDecl() != Matrix ||
+      !variantParameter(variantReturned(Get), Get->getParamDecl(0)))
+    return false;
+  // Constant evaluation reads the selected table entry. The dispatch function
+  // and its call operands still require their own selected source proof.
+  Expr::EvalResult Entry;
+  if (!Matrix->getInit()->EvaluateAsRValue(Entry, Context) || !Entry.Val.isLValue() ||
+      Entry.Val.isNullPointer() || Entry.Val.isLValueOnePastTheEnd() ||
+      !Entry.Val.getLValueOffset().isZero())
+    return false;
+  const auto *Selected = dyn_cast_or_null<FunctionDecl>(
+      Entry.Val.getLValueBase().dyn_cast<const ValueDecl *>());
+  const auto *Dispatch = variantVisitDefinition(S, SM, Selected, "__dispatch", 1, "__dispatcher");
+  const auto *Call = Dispatch ? variantVisitCall(variantReturned(Dispatch)) : nullptr;
+  const auto *Apply = Call ? dyn_cast_or_null<CXXOperatorCallExpr>(
+      variantVisitInvoke(S, SM, Call, Context)) : nullptr;
+  const auto *Wrapper = Apply ? variantVisitDefinition(S, SM, Apply->getDirectCallee(),
+      "operator()", 0, "__value_visitor") : nullptr;
+  if (!Wrapper || Apply->getNumArgs() != 1 || Call->getNumArgs() != 1 ||
+      !variantVisitCast(Call->getArg(0), Dispatch->getParamDecl(0), Context) ||
+      cast<CXXMethodDecl>(Wrapper)->getParent()->getCanonicalDecl() !=
+          cast<CXXRecordDecl>(Capture->getParent())->getCanonicalDecl())
+    return false;
+  const auto *VisitorBody = dyn_cast_or_null<CompoundStmt>(Wrapper->getBody());
+  if (!VisitorBody || VisitorBody->size() != 2)
+    return false;
+  const auto *Exhaustive = dyn_cast<CallExpr>(VisitorBody->body_front());
+  const auto *Check = Exhaustive && !Exhaustive->getNumArgs() ? variantVisitDefinition(
+      S, SM, Exhaustive->getDirectCallee(), "__std_visit_exhaustive_visitor_check", 0,
+      "__variant") : nullptr;
+  const auto *CheckBody = Check ? dyn_cast_or_null<CompoundStmt>(Check->getBody()) : nullptr;
+  const auto *Assertion = CheckBody && CheckBody->size() == 1
+      ? dyn_cast<DeclStmt>(CheckBody->body_front()) : nullptr;
+  const auto *Invoke = variantVisitCall(variantVisitReturn(VisitorBody));
+  const auto *Target = variantVisitInvoke(S, SM, Invoke, Context);
+  if (!Assertion || !Assertion->isSingleDecl() || !isa<StaticAssertDecl>(Assertion->getSingleDecl()) ||
+      !Target || isa<CXXOperatorCallExpr>(Target))
+    return false;
+  const auto *Forward = variantVisitCall(Invoke->getArg(0));
+  return Forward && Forward->getNumArgs() == 1 &&
+         variantForwardedCapture(S, SM, Forward, Capture, Context);
+}
+
+std::optional<UtilityVariantZeroVisit> approvedUtilityVariantZeroVisit(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  if (!S.coreV2() || !Call || Call->getNumArgs() != 1 || !directFunctionReference(Call))
+    return std::nullopt;
+  const auto *Visit = variantVisitDefinition(S, SM, Call->getDirectCallee(), "visit", 1);
+  const auto *Namespace = Visit ? dyn_cast<NamespaceDecl>(Visit->getDeclContext()) : nullptr;
+  while (Namespace && Namespace->isInline() && !Namespace->isStdNamespace())
+    Namespace = dyn_cast<NamespaceDecl>(Namespace->getParent());
+  if (!Namespace || !Namespace->isStdNamespace())
+    return std::nullopt;
+  const auto Parameter = Visit->getParamDecl(0)->getType();
+  if (!Parameter->isReferenceType())
+    return std::nullopt;
+  const auto Callable = Parameter.getNonReferenceType();
+  if (Callable.isVolatileQualified() ||
+      (!Callable->isFunctionType() && !Callable->isFunctionPointerType()))
+    return std::nullopt;
+  const auto *Prototype = (Callable->isFunctionType() ? Callable : Callable->getPointeeType())
+      ->getAs<FunctionProtoType>();
+  if (!Prototype || Prototype->isVariadic() || Prototype->getNumParams() ||
+      (!Prototype->getReturnType()->isVoidType() && !Prototype->getReturnType()->isScalarType()) ||
+      !Context.hasSameType(Prototype->getReturnType(), Visit->getReturnType()))
+    return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Visit->getBody());
+  if (!Body || Body->size() < 2 || Body->size() > 3)
+    return std::nullopt;
+  auto Position = Body->body_begin();
+  if (Body->size() == 3) {
+    const auto *Alias = dyn_cast<DeclStmt>(*Position++);
+    if (!Alias || !Alias->isSingleDecl() || !isa<UsingDecl>(Alias->getSingleDecl()) ||
+        !variantDeclaration(S, SM, Alias->getSingleDecl()))
+      return std::nullopt;
+  }
+  if (!variantVisitZeroGuard(S, SM, dyn_cast<CallExpr>(*Position), Context))
+    return std::nullopt;
+  const auto *Value = variantVisitCall(variantVisitReturn(Body));
+  const auto *VisitValue = Value && Value->getNumArgs() == 1 ? variantVisitDefinition(
+      S, SM, Value->getDirectCallee(), "__visit_value", 1, "__variant") : nullptr;
+  if (!VisitValue || !variantForward(S, SM, Value->getArg(0), Visit->getParamDecl(0), Context))
+    return std::nullopt;
+  const auto *Alternative = variantVisitCall(variantReturned(VisitValue));
+  const auto *VisitAlternative = Alternative && Alternative->getNumArgs() == 1
+      ? variantVisitDefinition(S, SM, Alternative->getDirectCallee(), "__visit_alt", 1, "__variant") : nullptr;
+  const auto *Create = VisitAlternative ? variantVisitCall(Alternative->getArg(0)) : nullptr;
+  const auto *Make = Create && Create->getNumArgs() == 1 ? variantVisitDefinition(S, SM,
+      Create->getDirectCallee(), "__make_value_visitor", 1, "__variant") : nullptr;
+  if (!Make || !variantForward(S, SM, Create->getArg(0), VisitValue->getParamDecl(0), Context))
+    return std::nullopt;
+  const auto *R = Make->getReturnType()->getAsCXXRecordDecl();
+  const auto *Record = R ? R->getDefinition() : nullptr;
+  if (!Record || Record->getName() != "__value_visitor" || !Record->isAggregate() ||
+      !Record->hasTrivialDestructor() || Record->getNumBases() ||
+      std::distance(Record->field_begin(), Record->field_end()) != 1 ||
+      !variantDeclaration(S, SM, Record))
+    return std::nullopt;
+  const auto *Field = *Record->field_begin();
+  const Expr *Initial = functionalInvokeStrippedExpression(variantReturned(Make));
+  if (const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(Initial))
+    Initial = Cast->getSubExpr()->IgnoreParenImpCasts();
+  const auto *List = dyn_cast_or_null<InitListExpr>(Initial);
+  if (!List || List->getNumInits() != 1 ||
+      !variantDeclaration(S, SM, Field) || Field->getName() != "__visitor" ||
+      !Context.hasSameType(Field->getType(), Make->getParamDecl(0)->getType()) ||
+      !variantForward(S, SM, List->getInit(0), Make->getParamDecl(0), Context))
+    return std::nullopt;
+  const auto *BaseCall = variantVisitCall(variantReturned(VisitAlternative));
+  const auto *Base = BaseCall && BaseCall->getNumArgs() == 1
+      ? variantVisitDefinition(S, SM, BaseCall->getDirectCallee(), "__visit_alt", 1, "__base") : nullptr;
+  if (!Base || !variantForward(S, SM, BaseCall->getArg(0), VisitAlternative->getParamDecl(0), Context) ||
+      !variantVisitZeroMatrix(S, SM, Base, Field, Context))
+    return std::nullopt;
+  return UtilityVariantZeroVisit{Parameter, Prototype->getReturnType()};
+}
+
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
                                   const CXXRecordDecl *Record) {
   const auto *Specialization =
