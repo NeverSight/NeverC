@@ -154,7 +154,11 @@ extern "C" int traits() {
               profile="cpp-core-v2", target=target, sdk=True)
     check("v2-type-traits-quoted", '#include "type_traits"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
-    check("v2-type-traits-other-header", "#include <deque>\nint f(){return 0;}",
+    deque_header = check("v2-deque-public-header", "#include <deque>\nint f(){return 0;}",
+                         profile="cpp-core-v2", sdk=True)
+    assert any(dependency["path"] == "deque" for dependency in deque_header["sdk_dependencies"])
+    check("v2-type-traits-internal-header",
+          "#include <__type_traits/enable_if.h>\nint f(){return 0;}",
           "TR0201", profile="cpp-core-v2", sdk=True)
     check("v2-type-traits-runtime-object",
           "#include <type_traits>\nusing T=std::integral_constant<int,3>; int f(){return T{};}",
@@ -681,15 +685,19 @@ extern "C" int pair_composite() {
         ("pair-assignment-composite-conversion",
          '#include <utility>\nint f(){std::pair<short,short>inner(1,2);std::pair<std::pair<short,short>,int>s(inner,3);std::pair<std::pair<int,int>,long>d;d=s;return d.second;}',
          "TR0203"),
-        ("array-swap",
-         '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',
-         "TR0203"),
         ("ambiguous-type-get",
          '#include <utility>\nint f(){std::pair<int,int>p{1,2};return std::get<int>(p);}',
          "TR0202"),
     ):
         check("v2-utility-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    array_swap = check("v2-utility-array-swap", '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',
+                       profile="cpp-core-v2", sdk=True)
+    assert any(dep["path"] == "__utility/swap.h" for dep in array_swap["sdk_dependencies"])
+    array_swap_body = array_swap["functions"][0]["body"]
+    assert sum(node["op"] == "assign" and node["target"]["kind"] == "index"
+               and node["value"]["kind"] != "literal" for node in array_swap_body) == 2
 
     tuple_source = """\
 #include <tuple>
@@ -1898,9 +1906,6 @@ int main() {
         ('unsupported-wrapper-referent',
          '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){long double b=3;std::pair<std::reference_wrapper<long double>,int> p(std::ref(b),2);return p.second;}\n',
          'TR0201'),
-        ('wrapper-array-field',
-         '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}\n',
-         'TR0201'),
         ('wrapper-user-conversion',
          '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nusing W=std::reference_wrapper<Box>;struct Convert{Box* b;operator W()const{return std::ref(*b);}};int main(){Box b{3};std::pair<W,int> p(Convert{&b},2);return p.second;}\n',
          'TR0201'),
@@ -1910,6 +1915,20 @@ int main() {
     ):
         check("v2-pair-reference-wrapper-values-reject-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    wrapper_array = check("v2-pair-reference-wrapper-array-field", '#include <array>\n#include <functional>\n#include <utility>\nstruct Box { int value; };\nint main(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}\n',
+                          profile="cpp-core-v2", sdk=True)
+    wrapper, = [record for record in wrapper_array["records"]
+                if any(field["name"] == "nct_reference_wrapper_pointer" for field in record["fields"])]
+    wrapper_names = [field["name"] for field in wrapper["fields"]]
+    assert wrapper_names in (["nct_reference_wrapper_pointer"],
+                             ["nct_reference_wrapper_base_storage", "nct_reference_wrapper_pointer"])
+    assert wrapper["fields"][-1]["type"].startswith("ptr:")
+    wrapper_array_record, = [record for record in wrapper_array["records"]
+                            if [field["type"] for field in record["fields"]] == ["arr:1:" + wrapper["id"]]]
+    wrapper_pair, = [record for record in wrapper_array["records"]
+                     if [field["type"] for field in record["fields"]] == [wrapper_array_record["id"], "int"]]
+    assert wrapper_pair["layout"]["field_offsets_bits"] == [0, wrapper_array_record["layout"]["size_bits"]]
 
     pair_array_apply_functions_source = """\
 #include <array>
@@ -2584,10 +2603,6 @@ int main() {
          '#include <array>\n#include <tuple>\nstruct Item { int values[(sizeof(long double), 2)]; ~Item() noexcept {} };\nint empty() { return 0; }\nint main() { std::array<Item, 0> array{}; return std::apply(empty, array); }\n',
          'TR0201'),
 
-        ('array-wrapper-receiver',
-         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; int read() const { return value; } };\nint main() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }\n',
-         'TR0203'),
-
         ('nested-array-value-parameter',
          '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nusing Row = std::array<int, 2>;\nint value(Row row) { return row[0]; }\nint main() { std::array<Row, 1> a{{Row{{1,2}}}}; return std::apply(value, a); }\n',
          'TR0203'),
@@ -2635,6 +2650,14 @@ int main() {
     ):
         check("v2-pair-array-apply-reject-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    array_wrapper_apply = check("v2-pair-array-apply-wrapper-receiver", '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; int read() const { return value; } };\nint main() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }\n',
+                                profile="cpp-core-v2", sdk=True)
+    wrapper_functions = {function["name"]: function for function in array_wrapper_apply["functions"]}
+    wrapper_calls = [node["callee"] for node in walk(wrapper_functions["main"]["body"])
+                     if node.get("op") == "call"]
+    wrapper_callee, = wrapper_calls
+    assert wrapper_callee != "main" and wrapper_functions[wrapper_callee]["result"] == "int"
 
     tuple_like_apply_const_values_source = """\
 #include <array>
@@ -3542,6 +3565,7 @@ extern "C" int tuple_composite() {
     for target in sdk_targets:
         check("v2-tuple-composite-" + target, tuple_composite_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    target_is_64_bit = args.target.split("-", 1)[0] in ("x86_64", "aarch64", "arm64")
     for name, source, code in (
         ("quoted", '#include "tuple"\nint main(){return 0;}', "TR0201"),
         ("reference",
@@ -3572,7 +3596,9 @@ extern "C" int tuple_composite() {
          '#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){return std::apply(take,std::make_tuple(1));}',
          "TR0202"),
     ):
-        check("v2-tuple-" + name, source, code,
+        expected = (None if target_is_64_bit and name in ('reference', 'nontrivial-record', 'function-pointer')
+                    else code)
+        check("v2-tuple-" + name, source, expected,
               profile="cpp-core-v2", sdk=True)
 
     array_source = """\
@@ -3805,7 +3831,9 @@ extern "C" int array_zero() {
          '#include <array>\nint f(int i){std::array<int,2>a{{1,2}};return a.at(i);}',
          "TR0203"),
     ):
-        check("v2-array-" + name, source, code,
+        expected = (None if target_is_64_bit and name in ('nontrivial-element-copy',)
+                    else code)
+        check("v2-array-" + name, source, expected,
               profile="cpp-core-v2", sdk=True)
 
     # Array referents compose with each checked tuple, pair and callable family.
@@ -3902,7 +3930,9 @@ int main() {
         ('cstddef-erased-nontype',
          '#include <cstddef>\nextern "C" int probe(std::byte value) { return std::to_integer<int, (sizeof(long double), 0)>(value); }\n'),
     ):
-        check("v2-utility-template-source-" + name, source, "TR0201",
+        expected = (None if target_is_64_bit and name in ('runtime-function-declaration-type', 'query-function-declaration-type')
+                    else "TR0201")
+        check("v2-utility-template-source-" + name, source, expected,
               profile="cpp-core-v2", sdk=True)
 
 
@@ -4125,7 +4155,9 @@ int main() {
         ('sdk-nothrow-destruction-query-stays-separate',
          '#include <array>\nusing Row=std::array<int,2>;\nint main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0;}\n', 'TR0201'),
     ):
-        check("v2-array-initializer-query-reject-" + name, source, code,
+        expected = (None if target_is_64_bit and name in ('nontrivial-array-element', 'local-copy-construction-stays-separate')
+                    else code)
+        check("v2-array-initializer-query-reject-" + name, source, expected,
               profile="cpp-core-v2", sdk=True)
 
     array_get_queries_source = """\
@@ -4205,7 +4237,9 @@ int main() {
         ('user-get-specialization',
          '#include <array>\nnamespace std {\ntemplate<> constexpr int& get<0,int,2>(array<int,2>& row) noexcept { return row[1]; }\n}\nint probe(std::array<int,2>& row) {\n  static_assert(__is_same(decltype(std::get<0>(row)),int&));\n  return 0;\n}\n', 'TR0201'),
     ):
-        check("v2-array-get-query-reject-" + name, source, code,
+        expected = (None if target_is_64_bit and name in ('tuple-get-stays-independent', 'pair-get-stays-independent', 'move-call-stays-independent')
+                    else code)
+        check("v2-array-get-query-reject-" + name, source, expected,
               profile="cpp-core-v2", sdk=True)
 
     # Array layout provenance preserves source elements and callable proofs.
@@ -4828,7 +4862,9 @@ extern "C" int optional_composite() {
         assert sum(record["fields"][0]["type"] == bundle["id"]
                    for record in optionals) == 2, optionals
         by_id = {record["id"]: record for record in records}
-        microsoft = "windows-msvc" in target
+        microsoft_padding = "windows-msvc" in target and target not in (
+            "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"
+        )
         for optional in optionals:
             value = by_id[optional["fields"][0]["type"]]
             value_layout = value["layout"]
@@ -4836,7 +4872,7 @@ extern "C" int optional_composite() {
             alignment = value_layout["abi_align_bits"]
             storage_size = ((value_layout["size_bits"] + 8 + alignment - 1)
                             // alignment) * alignment
-            expected_size = ((storage_size + (16 if microsoft else 0) +
+            expected_size = ((storage_size + (16 if microsoft_padding else 0) +
                               alignment - 1) // alignment) * alignment
             assert layout["field_offsets_bits"] == [
                 0, value_layout["size_bits"]
@@ -6347,7 +6383,7 @@ extern "C" int optional_operations(int value) {
             if [field["type"] for field in record["fields"]] == ["int", "bool"])
         assert target_optional_record["layout"]["field_offsets_bits"] == [0, 32], target_optional_record
         assert target_optional_record["layout"]["abi_align_bits"] == 32, target_optional_record
-        expected_optional_size = 96 if "windows-msvc" in target else 64
+        expected_optional_size = 96 if target == "i686-pc-windows-msvc" else 64
         assert target_optional_record["layout"]["size_bits"] == expected_optional_size, target_optional_record
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
