@@ -9815,17 +9815,18 @@ static bool variantVisitIntegralGuard(const State &S, const SourceManager &SM,
       !Test || Test->getDecl() != Value ||
       Branch->getInit() || Branch->getConditionVariable() || Branch->getElse())
     return false;
-  const auto *Init = Value->getInit()->IgnoreParenImpCasts();
-  if (Count == 1) {
-    if (!variantVisitValuelessTest(S, SM, Init, F->getParamDecl(0), Variants[0], Context))
-      return false;
-  } else {
-    const auto *Either = dyn_cast<BinaryOperator>(Init);
+  // The pinned SDK forms a unary left fold over the valueless queries.
+  const Expr *Init = Value->getInit();
+  for (unsigned I = Count; I > 1; --I) {
+    const auto *Either = dyn_cast<BinaryOperator>(Init->IgnoreParenImpCasts());
     if (!Either || Either->getOpcode() != BO_LOr ||
-        !variantVisitValuelessTest(S, SM, Either->getLHS(), F->getParamDecl(0), Variants[0], Context) ||
-        !variantVisitValuelessTest(S, SM, Either->getRHS(), F->getParamDecl(1), Variants[1], Context))
+        !variantVisitValuelessTest(S, SM, Either->getRHS(), F->getParamDecl(I - 1),
+                                   Variants[I - 1], Context))
       return false;
+    Init = Either->getLHS();
   }
+  if (!variantVisitValuelessTest(S, SM, Init, F->getParamDecl(0), Variants[0], Context))
+    return false;
   const auto *Failure = dyn_cast<CompoundStmt>(Branch->getThen());
   const auto *Throw = Failure && Failure->size() == 1 ? dyn_cast<CallExpr>(Failure->body_front()) : nullptr;
   const auto *Never = Throw ? Throw->getDirectCallee() : nullptr;
@@ -10085,7 +10086,7 @@ static bool variantVisitIntegralMatrix(const State &S, const SourceManager &SM,
 
 std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
-  if (!S.coreV2() || !Call || Call->getNumArgs() < 2 || Call->getNumArgs() > 3 ||
+  if (!S.coreV2() || !Call || Call->getNumArgs() < 2 || Call->getNumArgs() > 4 ||
       !directFunctionReference(Call))
     return std::nullopt;
   const unsigned Count = Call->getNumArgs() - 1;
@@ -10093,6 +10094,8 @@ std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
   if (!Visit)
     return std::nullopt;
   std::vector<UtilityVariantRecord> Variants;
+  constexpr unsigned MaxMatrixEntries = 64;
+  std::size_t MatrixEntries = 1;
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Operand = Call->getArg(I + 1);
     if (!Operand->isLValue() || Operand->getType().isVolatileQualified() ||
@@ -10101,10 +10104,12 @@ std::optional<UtilityVariantIntegralVisit> approvedUtilityVariantIntegralVisit(
       return std::nullopt;
     auto V = approvedUtilityVariantRecord(S, SM, Operand->getType(), Context);
     if (!V || V->Alternatives.empty() || V->Alternatives.size() > 8 ||
+        V->Alternatives.size() > MaxMatrixEntries / MatrixEntries ||
         llvm::any_of(V->Alternatives, [](const FieldDecl *F) {
           return !F->getType()->isIntegerType() || F->getType().isVolatileQualified();
         }))
       return std::nullopt;
+    MatrixEntries *= V->Alternatives.size();
     Variants.push_back(std::move(*V));
   }
   const auto Parameter = Visit->getParamDecl(0)->getType();
