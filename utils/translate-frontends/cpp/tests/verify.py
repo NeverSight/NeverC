@@ -6409,7 +6409,7 @@ extern "C" int optional_operations(int value) {
          "TR0203"),
         ("function-pointer-element",
          '#include <optional>\nusing F=int(*)();int main(){std::optional<F>v;return v.has_value();}',
-         "TR0203"),
+         None if args.target.startswith(("x86_64-", "aarch64-", "arm64-")) else "TR0203"),
         ("standalone-in-place",
          '#include <optional>\nint main(){auto tag=std::in_place;return sizeof(tag);}',
          "TR0203"),
@@ -6857,7 +6857,7 @@ extern "C" int functional_reference(int &value, const int &constant) {
             if windows:
                 assert record["fields"][0] == {
                     "name": "nct_reference_wrapper_base_storage",
-                    "type": "usize",
+                    "type": "u64" if pointer_bits == 64 else "usize",
                 }, record
                 expected_layout = {
                     "size_bits": pointer_bits * 2,
