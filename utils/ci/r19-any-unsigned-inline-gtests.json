@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2AnyUnsignedInlineRenamedUnsignedHandlerRejected",
     "TranslateTest.CoreV2AnyUnsignedInlineUnsignedLongIsNotUnsignedIntRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "769b880fef30544e4680b9908080551b995f36369ba080d1e5fa14a733b0502c",
   "maintained_original_sha256": "f19e1177591283d289bfd01e07fb890c63cb715e9c631b27490566f78912a0cc",
@@ -155,5 +155,10 @@
   "current_registry_count": 8286,
   "current_python_registry_tests": 158,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "any-unsigned-inline": "d183d51ba4f675770fcde9a1f24355715e9b559f2f065455e7b240356c6a3367"
+  },
+  "native_reference_authentication_sha256": "dfffd5f8ca17581c2560ab6dc2bbbe1aaf3caa483cfc6063bf9082b06d8b44aa",
+  "source_proof_sha256": "65f3c5f1b0d356d03b7b8a927957831c9d36ed994f81c979bf28bfd2202f4c82"
 }

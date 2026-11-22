@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2VariantGuardedGetChangedAfterGuardRejected",
     "TranslateTest.CoreV2VariantGuardedGetFalsePathRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "065f3f97fb865e13adcd83f37c7fa7bf47223329894a5fce7da802cbe9f00dc7",
   "maintained_original_sha256": "428d544caff0c79322d8d0a239a9680dc0c01a016e357f8506aebf19a683b702",
@@ -155,5 +155,10 @@
   "current_registry_count": 8278,
   "current_python_registry_tests": 156,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "variant-guarded-get": "4fa92518aae9e483cf1788860a8239cd4ab6c79227e4ff663496454c569f7514"
+  },
+  "native_reference_authentication_sha256": "1b7a53858b36ae08c4d9466d047443b81a34cf2c5d9524b595bd393a20a6a284",
+  "source_proof_sha256": "65f3c5f1b0d356d03b7b8a927957831c9d36ed994f81c979bf28bfd2202f4c82"
 }
