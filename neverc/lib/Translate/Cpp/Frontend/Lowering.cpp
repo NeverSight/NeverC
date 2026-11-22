@@ -29303,12 +29303,12 @@ class FunctionLowering {
         Operation == UtilityOperation::BitsetAssign)
       return utilityBitsetOperation(Call, Operation);
     if (Operation == UtilityOperation::UnorderedMapGetAllocator ||
-        Operation == UtilityOperation::UnorderedMapPolicy) {
+        Operation == UtilityOperation::UnorderedPolicy) {
       const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
       const bool Valid = Operation == UtilityOperation::UnorderedMapGetAllocator
           ? bool(approvedUtilityUnorderedMapAllocatorQuery(A.S, A.Sources, Call, A.Context))
-          : bool(approvedUtilityUnorderedMapPolicyQuery(A.S, A.Sources, Call, A.Context));
-      if (!Member || !Valid) reject(L, "unordered map observer", "The authenticated stateless result is unavailable.");
+          : bool(approvedUtilityUnorderedPolicyQuery(A.S, A.Sources, Call, A.Context));
+      if (!Member || !Valid) reject(L, "unordered container observer", "The authenticated stateless result is unavailable.");
       const auto *Object = Member->getImplicitObjectArgument();
       if (Object->getType()->isPointerType()) expression(Object);
       else lvalue(Object);
