@@ -18102,3 +18102,10 @@ Value and in-place construction, emplacement, assignment, copying, moving,
 and reset follow the selected float storage lifetime. A matching pointer
 any_cast addresses the float field. An immutable local initializer can also
 prove a matching value or const-reference cast.
+
+## Unordered set load factor
+
+The checked default integer unordered set and multiset support the const
+load_factor() observer on the admitted empty owner. The lowering evaluates
+the receiver once and observes the pinned bucket and size accessors. A zero
+bucket count returns positive float zero without evaluating a division.
