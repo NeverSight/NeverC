@@ -944,12 +944,15 @@ class FunctionLowering {
       return UtilityAnyIntegerTag;
     if (A.Context.hasSameUnqualifiedType(Payload, A.Context.UnsignedIntTy))
       return UtilityAnyUnsignedTag;
-    reject(L, "any payload", "The checked signed or unsigned int payload is required.");
+    if (A.Context.hasSameUnqualifiedType(Payload, A.Context.BoolTy))
+      return UtilityAnyBooleanTag;
+    reject(L, "any payload", "The checked int, unsigned int or bool payload is required.");
   }
   Expression anyIntegerField(Expression Place, const CXXRecordDecl *Record,
                              QualType Payload, SourceLocation L) {
-    const auto Field = anyIntegerTag(Payload, L) == UtilityAnyIntegerTag
-        ? UtilityAnyInteger : UtilityAnyUnsigned;
+    const auto Tag = anyIntegerTag(Payload, L);
+    const auto Field = Tag == UtilityAnyIntegerTag ? UtilityAnyInteger
+        : Tag == UtilityAnyUnsignedTag ? UtilityAnyUnsigned : UtilityAnyBoolean;
     auto Storage = anyCarrierField(std::move(Place), UtilityAnyStorage,
                                    A.anyStorageType(Record), L);
     return anyCarrierField(std::move(Storage), Field, type(Payload.getUnqualifiedType(), L), L);
@@ -967,7 +970,8 @@ class FunctionLowering {
     auto Pointer = snapshot(expression(Input), L);
     const auto Pointee = Call->getType()->getPointeeType();
     if (!A.Context.hasSameUnqualifiedType(Pointee, A.Context.IntTy) &&
-        !A.Context.hasSameUnqualifiedType(Pointee, A.Context.UnsignedIntTy))
+        !A.Context.hasSameUnqualifiedType(Pointee, A.Context.UnsignedIntTy) &&
+        !A.Context.hasSameUnqualifiedType(Pointee, A.Context.BoolTy))
       return A.zero(Call->getType(), L);
     auto Result = temporary(type(Call->getType(), L), L);
     assign(Result, A.zero(Call->getType(), L), L);
