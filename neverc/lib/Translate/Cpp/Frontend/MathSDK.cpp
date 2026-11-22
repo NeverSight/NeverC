@@ -8690,6 +8690,21 @@ std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
   if (Context.hasSameType(Type, Context.UnsignedLongLongTy) &&
       Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64)
     return UtilityAnyScalar{7, UtilityAnyUnsignedLongLong};
+  if (Context.hasSameType(Type, Context.CharTy) &&
+      Context.getTypeSize(Type) == 8 && Context.getTypeAlign(Type) == 8)
+    return UtilityAnyScalar{8, UtilityAnyChar};
+  if (Context.hasSameType(Type, Context.SignedCharTy) &&
+      Context.getTypeSize(Type) == 8 && Context.getTypeAlign(Type) == 8)
+    return UtilityAnyScalar{9, UtilityAnySignedChar};
+  if (Context.hasSameType(Type, Context.UnsignedCharTy) &&
+      Context.getTypeSize(Type) == 8 && Context.getTypeAlign(Type) == 8)
+    return UtilityAnyScalar{10, UtilityAnyUnsignedChar};
+  if (Context.hasSameType(Type, Context.ShortTy) &&
+      Context.getTypeSize(Type) == 16 && Context.getTypeAlign(Type) == 16)
+    return UtilityAnyScalar{11, UtilityAnyShort};
+  if (Context.hasSameType(Type, Context.UnsignedShortTy) &&
+      Context.getTypeSize(Type) == 16 && Context.getTypeAlign(Type) == 16)
+    return UtilityAnyScalar{12, UtilityAnyUnsignedShort};
   return std::nullopt;
 }
 
