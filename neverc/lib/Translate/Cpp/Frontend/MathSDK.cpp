@@ -8667,12 +8667,30 @@ static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *
 static const FunctionDecl *anyPinnedDefinition(const State &S, const SourceManager &SM,
     const FunctionDecl *F, llvm::StringRef Name, unsigned Arity, llvm::StringRef Path);
 
-static bool supportedAnyInlineScalar(QualType Type, const ASTContext &Context) {
-  return !Type.isNull() && (Context.hasSameType(Type, Context.IntTy) ||
-                           Context.hasSameType(Type, Context.UnsignedIntTy) ||
-                           Context.hasSameType(Type, Context.BoolTy) ||
-                           (Context.hasSameType(Type, Context.FloatTy) &&
-                            Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32));
+std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
+    const ASTContext &Context) {
+  if (Type.isNull())
+    return std::nullopt;
+  if (Context.hasSameType(Type, Context.IntTy))
+    return UtilityAnyScalar{UtilityAnyIntegerTag, UtilityAnyInteger};
+  if (Context.hasSameType(Type, Context.UnsignedIntTy))
+    return UtilityAnyScalar{UtilityAnyUnsignedTag, UtilityAnyUnsigned};
+  if (Context.hasSameType(Type, Context.BoolTy))
+    return UtilityAnyScalar{UtilityAnyBooleanTag, UtilityAnyBoolean};
+  if (Context.hasSameType(Type, Context.FloatTy) &&
+      Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32)
+    return UtilityAnyScalar{UtilityAnyFloatTag, UtilityAnyFloat};
+
+  if (Context.hasSameType(Type, Context.DoubleTy) &&
+      Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64)
+    return UtilityAnyScalar{5, UtilityAnyDouble};
+  if (Context.hasSameType(Type, Context.LongLongTy) &&
+      Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64)
+    return UtilityAnyScalar{6, UtilityAnyLongLong};
+  if (Context.hasSameType(Type, Context.UnsignedLongLongTy) &&
+      Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64)
+    return UtilityAnyScalar{7, UtilityAnyUnsignedLongLong};
+  return std::nullopt;
 }
 
 static bool anyAssignmentBody(const State &S, const SourceManager &SM,
@@ -8694,7 +8712,7 @@ static bool anyAssignmentBody(const State &S, const SourceManager &SM,
     const auto *Args = Method->getTemplateSpecializationArgs();
     if (!anyPinnedDefinition(S, SM, Method, "operator=", 1, "any") ||
         !Args || Args->size() != 3 || Args->get(1).getKind() != TemplateArgument::Type ||
-        !supportedAnyInlineScalar(Args->get(1).getAsType(), Context))
+        !utilityAnyInlineScalar(Args->get(1).getAsType(), Context))
       return false;
     Payload = Args->get(1).getAsType();
     if (!Input->getType()->isReferenceType() ||
@@ -8869,7 +8887,7 @@ static const ClassTemplateSpecializationDecl *anyIntegerHandlerOwner(const State
   if (!Handler || !Method->isStatic() || !Parent || Parent->getName() != "__any_imp" ||
       Handler->getName() != "_SmallHandler" || Handler->getTemplateArgs().size() != 1 ||
       Handler->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
-      !supportedAnyInlineScalar(Handler->getTemplateArgs()[0].getAsType(), Context) ||
+      !utilityAnyInlineScalar(Handler->getTemplateArgs()[0].getAsType(), Context) ||
       !anyDeclaration(S, SM, Handler) || !anyDeclaration(S, SM, Handler->getSpecializedTemplate()))
     return nullptr;
   return Handler;
@@ -9267,7 +9285,7 @@ static std::optional<UtilityAnyIntegerConstruction> anyIntegerConstruction(
       Args->get(TypeArgument).getKind() != TemplateArgument::Type)
     return std::nullopt;
   const auto Payload = Args->get(TypeArgument).getAsType();
-  if (!supportedAnyInlineScalar(Payload, Context))
+  if (!utilityAnyInlineScalar(Payload, Context))
     return std::nullopt;
   if (Tag) {
     const auto *Selection = variantInPlaceTag(S, SM, Tag, "in_place_type_t", "in_place_type");
@@ -9308,7 +9326,7 @@ std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerMake(
   const auto *Args = Use ? Original->getTemplateSpecializationArgs() : nullptr;
   if (!Use || Use->getDecl() != Original || !S.owns(SM, Use->getExprLoc()) ||
       !Args || Args->size() != 2 || Args->get(0).getKind() != TemplateArgument::Type ||
-      !supportedAnyInlineScalar(Args->get(0).getAsType(), Context) ||
+      !utilityAnyInlineScalar(Args->get(0).getAsType(), Context) ||
       Args->get(1).getKind() != TemplateArgument::Pack || Args->get(1).pack_size() != Arity)
     return std::nullopt;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
@@ -9344,7 +9362,7 @@ std::optional<UtilityAnyIntegerEmplacement> approvedUtilityAnyIntegerEmplacement
   const auto *Base = Member->getBase();
   const auto Owner = Member->isArrow() ? Base->getType()->getPointeeType() : Base->getType();
   const auto Payload = F ? F->getReturnType().getNonReferenceType() : QualType();
-  if (!F || !supportedAnyInlineScalar(Payload, Context) ||
+  if (!F || !utilityAnyInlineScalar(Payload, Context) ||
       !F->getPrimaryTemplate() || F->isStatic() || F->isConst() || Owner.isNull() ||
       Owner.isConstQualified() || Owner.isVolatileQualified() ||
       (!Member->isArrow() && !Base->isGLValue()) || !Any ||
@@ -9513,7 +9531,7 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
     return nullptr;
   const auto Result = F->getReturnType();
   const auto Payload = Result.getNonReferenceType().getUnqualifiedType();
-  if (!supportedAnyInlineScalar(Payload, Context))
+  if (!utilityAnyInlineScalar(Payload, Context))
     return nullptr;
   const auto ConstValue = Payload.withConst();
   const bool Reference = Context.hasSameType(Result, Context.getLValueReferenceType(ConstValue));

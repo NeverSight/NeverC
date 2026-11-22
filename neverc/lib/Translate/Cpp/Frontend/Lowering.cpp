@@ -939,33 +939,14 @@ class FunctionLowering {
   Expression anyCarrierTag(Expression Place, SourceLocation L) {
     return anyCarrierField(std::move(Place), UtilityAnyTag, "u64", L);
   }
-  struct AnyScalar {
-    unsigned Tag;
-    llvm::StringLiteral Field;
-  };
-
-  std::optional<AnyScalar> anyScalar(QualType Payload) {
-    const auto &Context = A.Context;
-    if (Context.hasSameUnqualifiedType(Payload, Context.IntTy))
-      return AnyScalar{UtilityAnyIntegerTag, UtilityAnyInteger};
-    if (Context.hasSameUnqualifiedType(Payload, Context.UnsignedIntTy))
-      return AnyScalar{UtilityAnyUnsignedTag, UtilityAnyUnsigned};
-    if (Context.hasSameUnqualifiedType(Payload, Context.BoolTy))
-      return AnyScalar{UtilityAnyBooleanTag, UtilityAnyBoolean};
-    if (Context.hasSameUnqualifiedType(Payload, Context.FloatTy) &&
-        Context.getTypeSize(Payload) == 32 && Context.getTypeAlign(Payload) == 32)
-      return AnyScalar{UtilityAnyFloatTag, UtilityAnyFloat};
-    return std::nullopt;
-  }
-
-  AnyScalar checkedAnyScalar(QualType Payload, SourceLocation L) {
-    if (auto Scalar = anyScalar(Payload))
+  UtilityAnyScalar checkedAnyScalar(QualType Payload, SourceLocation L) {
+    if (auto Scalar = utilityAnyInlineScalar(Payload.getUnqualifiedType(), A.Context))
       return *Scalar;
-    reject(L, "any payload", "A checked int, unsigned int, bool or float payload is required.");
+    reject(L, "any payload", "A checked inline scalar payload is required.");
   }
 
   Expression anyScalarField(Expression Place, const CXXRecordDecl *Record,
-                            QualType Payload, AnyScalar Scalar, SourceLocation L) {
+                            QualType Payload, UtilityAnyScalar Scalar, SourceLocation L) {
     auto Storage = anyCarrierField(std::move(Place), UtilityAnyStorage,
                                    A.anyStorageType(Record), L);
     return anyCarrierField(std::move(Storage), Scalar.Field, type(Payload.getUnqualifiedType(), L), L);
@@ -984,7 +965,7 @@ class FunctionLowering {
     const auto *Input = Call->getArg(0);
     auto Pointer = snapshot(expression(Input), L);
     const auto Pointee = Call->getType()->getPointeeType();
-    const auto Scalar = anyScalar(Pointee);
+    const auto Scalar = utilityAnyInlineScalar(Pointee.getUnqualifiedType(), A.Context);
     if (!Scalar)
       return A.zero(Call->getType(), L);
     auto Result = temporary(type(Call->getType(), L), L);

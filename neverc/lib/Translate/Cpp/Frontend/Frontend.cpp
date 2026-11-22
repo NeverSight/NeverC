@@ -32021,12 +32021,18 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
               json::Object{{"name", UtilityAnyUnsigned.str()},
                            {"type", type(Context.UnsignedIntTy, R->getLocation())}},
               json::Object{{"name", UtilityAnyBoolean.str()}, {"type", "bool"}},
-              json::Object{{"name", UtilityAnyFloat.str()}, {"type", "float"}}}},
+              json::Object{{"name", UtilityAnyFloat.str()}, {"type", "float"}},
+              json::Object{{"name", UtilityAnyDouble.str()}, {"type", type(Context.DoubleTy, R->getLocation())}},
+              json::Object{{"name", UtilityAnyLongLong.str()},
+                           {"type", type(Context.LongLongTy, R->getLocation())}},
+              json::Object{{"name", UtilityAnyUnsignedLongLong.str()},
+                           {"type", type(Context.UnsignedLongLongTy, R->getLocation())}}}},
           {"layout", json::Object{
               {"size_bits", Context.getTypeSize(StorageType)},
               {"abi_align_bits", Context.getTypeAlign(StorageType)},
               {"field_offsets_bits", json::Array{
-                  uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0)}},
+                  uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0),
+                  uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0)}},
               {"union", true}}}});
       RecordData.push_back(json::Object{
           {"id", name(R)}, {"loc", loc(R->getLocation())},
