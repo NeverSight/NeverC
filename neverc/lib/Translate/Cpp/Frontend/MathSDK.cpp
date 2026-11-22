@@ -123879,6 +123879,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (approvedUtilityListCall(S, SM, Call, Context)) return UtilityOperation::List;
   if (approvedOrderedContainerObserver(S, SM, Call, Context))
     return UtilityOperation::OrderedContainerObserver;
+  if (approvedEmptyHashSetObserver(S, SM, Call, Context))
+    return UtilityOperation::EmptyHashSetObserver;
   if (approvedUtilityPriorityQueueCall(S, SM, Call, Context)) return UtilityOperation::PriorityQueue;
   if (approvedUtilityDequeCall(S, SM, Call, Context)) return UtilityOperation::Deque;
   if (approvedUtilityValarrayCall(S, SM, Call, Context)) return UtilityOperation::ValarrayScalar;
@@ -136487,6 +136489,301 @@ const MemberExpr *approvedOrderedContainerObserver(const State &S,
       !isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase())))
     return nullptr;
   return cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+}
+
+bool approvedEmptyHashSetRecord(const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Record, const ASTContext &Context) {
+  Record = Record ? Record->getDefinition() : nullptr;
+  return Record && Record->getIdentifier() && associativeContainerHeader(Record->getName()) == "unordered_set" &&
+         approvedAssociativeContainerLayoutQuery(S, SM, Context.getRecordType(Record), Context);
+}
+
+namespace {
+
+const CXXConstructorDecl *emptyHashDefaultConstructor(const State &S, const SourceManager &SM,
+    const Expr *E, llvm::StringRef Header) {
+  const auto *Build = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(E));
+  const auto *Ctor = Build && !Build->getNumArgs() ? Build->getConstructor() : nullptr;
+  Ctor = Ctor ? dyn_cast_or_null<CXXConstructorDecl>(Ctor->getDefinition()) : nullptr;
+  if (!Ctor || !Ctor->isDefaultConstructor() || Ctor->getNumParams() ||
+      !orderedPinnedFunction(S, SM, Ctor, Header))
+    return nullptr;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
+  return Body && Body->body_empty() ? Ctor : nullptr;
+}
+
+bool emptyHashNullStorage(const Expr *E) {
+  E = orderedExpression(E);
+  return E && (isa<CXXNullPtrLiteralExpr>(E) ||
+               (E->getType()->isPointerType() && isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(E)));
+}
+
+bool emptyHashBucketStorage(const State &S, const SourceManager &SM, const Expr *E) {
+  const auto *Ctor = emptyHashDefaultConstructor(S, SM, E, "__memory/unique_ptr.h");
+  if (!Ctor || Ctor->getParent()->getName() != "unique_ptr")
+    return false;
+  const auto *Pointer = orderedTreeField(Ctor->getParent(), "__ptr_");
+  const auto *Deleter = orderedTreeField(Ctor->getParent(), "__deleter_");
+  bool Null = false, Zero = false;
+  for (const auto *Init : Ctor->inits()) {
+    if (!Init->isMemberInitializer()) return false;
+    if (Init->getMember() == Pointer) {
+      Null = emptyHashNullStorage(Init->getInit());
+    } else if (Init->getMember() == Deleter) {
+      const auto *Counter = emptyHashDefaultConstructor(S, SM, Init->getInit(), "__hash_table");
+      if (!Counter || Counter->getParent()->getName() != "__bucket_list_deallocator")
+        return false;
+      const auto *Size = orderedTreeField(Counter->getParent(), "__size_");
+      for (const auto *Part : Counter->inits()) {
+        if (!Part->isMemberInitializer()) return false;
+        if (Part->getMember() == Size) {
+          const auto *Value = dyn_cast_or_null<IntegerLiteral>(orderedExpression(Part->getInit()));
+          Zero = Value && Value->getValue().isZero();
+        } else if (!orderedPolicyInit(S, SM, Part->getInit(), Counter)) {
+          return false;
+        }
+      }
+    } else if (!orderedPolicyInit(S, SM, Init->getInit(), Ctor)) {
+      return false;
+    }
+  }
+  return Null && Zero;
+}
+
+bool emptyHashTableSource(const State &S, const SourceManager &SM, const Expr *E) {
+  const auto *Ctor = emptyHashDefaultConstructor(S, SM, E, "__hash_table");
+  if (!Ctor || Ctor->getParent()->getName() != "__hash_table")
+    return false;
+  const auto *Table = Ctor->getParent();
+  const auto *Buckets = orderedTreeField(Table, "__bucket_list_");
+  const auto *First = orderedTreeField(Table, "__first_node_");
+  const auto *Size = orderedTreeField(Table, "__size_");
+  const auto *Load = orderedTreeField(Table, "__max_load_factor_");
+  bool Empty = false, NoFirst = false, NoBuckets = false, UnitLoad = false;
+  for (const auto *Init : Ctor->inits()) {
+    if (!Init->isMemberInitializer()) return false;
+    const auto *Field = Init->getMember();
+    if (Field == Buckets) {
+      NoBuckets = emptyHashBucketStorage(S, SM, Init->getInit());
+    } else if (Field == First) {
+      const auto *Node = emptyHashDefaultConstructor(S, SM, Init->getInit(), "__hash_table");
+      if (!Node || Node->getParent()->getName() != "__hash_node_base" ||
+          Node->getNumCtorInitializers() != 1)
+        return false;
+      const auto *Next = *Node->init_begin();
+      NoFirst = Next->isMemberInitializer() &&
+                Next->getMember() == orderedTreeField(Node->getParent(), "__next_") &&
+                emptyHashNullStorage(Next->getInit());
+    } else if (Field == Size) {
+      const auto *Value = dyn_cast_or_null<IntegerLiteral>(orderedExpression(Init->getInit()));
+      Empty = Value && Value->getValue().isZero();
+    } else if (Field == Load) {
+      const auto *Value = dyn_cast_or_null<FloatingLiteral>(orderedExpression(Init->getInit()));
+      UnitLoad = Value && Value->getValue().isExactlyValue(1.0);
+    } else if (!orderedPolicyInit(S, SM, Init->getInit(), Ctor)) {
+      return false;
+    }
+  }
+  return Empty && NoFirst && NoBuckets && UnitLoad;
+}
+
+const CXXMethodDecl *hashTableMethod(const State &S, const SourceManager &SM,
+    const CXXMemberCallExpr *Call, const CXXRecordDecl *Table, llvm::StringRef Name, unsigned Params = 0) {
+  const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+  return Method && Method->getIdentifier() && Method->getName() == Name && !Method->isStatic() &&
+         !Method->isVirtual() && Method->getNumParams() == Params && Call->getNumArgs() == Params &&
+         Method->getParent()->getCanonicalDecl() == Table->getCanonicalDecl() &&
+         orderedPinnedFunction(S, SM, Method, "__hash_table") ? Method : nullptr;
+}
+
+bool emptyHashNullBucketsDestroy(const State &S, const SourceManager &SM, const CXXRecordDecl *Storage) {
+  Storage = Storage ? Storage->getDefinition() : nullptr;
+  const auto *Destructor = Storage ? Storage->getDestructor() : nullptr;
+  const auto *Body = Destructor ? dyn_cast_or_null<CompoundStmt>(Destructor->getBody()) : nullptr;
+  if (!Body || Body->size() != 1 || Destructor->isVirtual() ||
+      !orderedPinnedFunction(S, SM, Destructor, "__memory/unique_ptr.h"))
+    return false;
+  for (const auto *Field : Storage->fields())
+    if (const auto *Record = Field->getType()->getAsCXXRecordDecl();
+        Record && !Record->hasTrivialDestructor())
+      return false;
+  const auto *Reset = dyn_cast<CXXMemberCallExpr>(Body->body_front());
+  const auto *Method = Reset ? Reset->getMethodDecl() : nullptr;
+  if (!Method || Method->getName() != "reset" || !orderedReceiver(Reset) || Method->isVirtual() ||
+      Method->getParent()->getCanonicalDecl() != Storage->getCanonicalDecl() ||
+      !orderedPinnedFunction(S, SM, Method, "__memory/unique_ptr.h") ||
+      Method->getNumParams() != 1 || Reset->getNumArgs() != 1)
+    return false;
+  const auto *Default = dyn_cast<CXXDefaultArgExpr>(Reset->getArg(0));
+  if (!Default || !isa_and_nonnull<CXXNullPtrLiteralExpr>(orderedExpression(Default->getExpr())))
+    return false;
+  const auto *Block = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  if (!Block || Block->size() != 4) return false;
+  const auto *Decl = dyn_cast<DeclStmt>(Block->body_front());
+  const auto *Temporary = Decl && Decl->isSingleDecl() ? dyn_cast<VarDecl>(Decl->getSingleDecl()) : nullptr;
+  const auto *Read = Temporary ? dyn_cast_or_null<MemberExpr>(orderedExpression(Temporary->getInit())) : nullptr;
+  const auto *Pointer = orderedTreeField(Storage, "__ptr_");
+  const auto *Write = dyn_cast<BinaryOperator>(Block->body_begin()[1]);
+  const auto *Slot = Write ? dyn_cast_or_null<MemberExpr>(orderedExpression(Write->getLHS())) : nullptr;
+  const auto *ResetChecker = dyn_cast<CXXOperatorCallExpr>(Block->body_begin()[2]);
+  const auto *CheckerField = ResetChecker && ResetChecker->getOperator() == OO_Equal &&
+      ResetChecker->getNumArgs() == 2
+      ? dyn_cast_or_null<MemberExpr>(orderedExpression(ResetChecker->getArg(0))) : nullptr;
+  const auto *CheckerMethod = ResetChecker ? dyn_cast_or_null<CXXMethodDecl>(ResetChecker->getDirectCallee()) : nullptr;
+  const auto *Guard = dyn_cast<IfStmt>(Block->body_back());
+  const auto *Test = Guard ? dyn_cast_or_null<DeclRefExpr>(orderedExpression(Guard->getCond())) : nullptr;
+  return Pointer && Read && Read->getMemberDecl() == Pointer && Slot && Slot->getMemberDecl() == Pointer &&
+         isa_and_nonnull<CXXThisExpr>(orderedExpression(Read->getBase())) &&
+         isa_and_nonnull<CXXThisExpr>(orderedExpression(Slot->getBase())) &&
+         Write->getOpcode() == BO_Assign && emptyHashNullStorage(Write->getRHS()) &&
+         CheckerField && CheckerField->getMemberDecl() == orderedTreeField(Storage, "__checker_") &&
+         isa_and_nonnull<CXXThisExpr>(orderedExpression(CheckerField->getBase())) &&
+         CheckerMethod && CheckerMethod->isImplicit() && CheckerMethod->isTrivial() &&
+         associativeStorageDeclaration(S, SM, CheckerMethod, false) &&
+         orderedPolicyInit(S, SM, ResetChecker->getArg(1), nullptr) &&
+         Test && Test->getDecl() == Temporary && !Guard->getInit() && !Guard->getConditionVariable() &&
+         !Guard->getElse();
+}
+
+} // namespace
+
+bool approvedEmptyHashSetConstruction(const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const ASTContext &Context) {
+  const auto *Ctor = emptyHashDefaultConstructor(S, SM, Construction, "unordered_set");
+  if (!Ctor || !S.owns(SM, Construction->getExprLoc()) ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      !approvedEmptyHashSetRecord(S, SM, Ctor->getParent(), Context) || Ctor->getNumCtorInitializers() != 1)
+    return false;
+  const auto *Init = *Ctor->init_begin();
+  return Init->isMemberInitializer() && Init->getMember() == orderedTreeField(Ctor->getParent(), "__table_") &&
+         emptyHashTableSource(S, SM, Init->getInit());
+}
+
+bool approvedEmptyHashSetDestructor(const State &S, const SourceManager &SM,
+    const CXXDestructorDecl *Destructor, const ASTContext &Context) {
+  const auto *Owner = Destructor ? Destructor->getParent() : nullptr;
+  if (!approvedEmptyHashSetRecord(S, SM, Owner, Context) || Destructor->isVirtual() ||
+      !orderedPinnedFunction(S, SM, Destructor, "unordered_set"))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Destructor->getBody());
+  if (!Body || Body->size() != 1 || !orderedStaticAssertion(Body->body_front()))
+    return false;
+  const auto *Field = orderedTreeField(Owner, "__table_");
+  const auto *Table = Field ? Field->getType()->getAsCXXRecordDecl() : nullptr;
+  Table = Table ? Table->getDefinition() : nullptr;
+  const auto *Drop = Table ? Table->getDestructor() : nullptr;
+  const auto *DropBody = Drop ? dyn_cast_or_null<CompoundStmt>(Drop->getBody()) : nullptr;
+  if (!DropBody || DropBody->size() != 1 || Drop->isVirtual() ||
+      !orderedPinnedFunction(S, SM, Drop, "__hash_table"))
+    return false;
+  const auto *Free = dyn_cast<CXXMemberCallExpr>(DropBody->body_front());
+  const auto *Method = hashTableMethod(S, SM, Free, Table, "__deallocate_node", 1);
+  const auto *Next = Method ? dyn_cast_or_null<MemberExpr>(orderedExpression(Free->getArg(0))) : nullptr;
+  const auto *First = Next ? dyn_cast_or_null<MemberExpr>(orderedExpression(Next->getBase())) : nullptr;
+  const auto *Head = orderedTreeField(Table, "__first_node_");
+  if (!Head || !First || First->getMemberDecl() != Head ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(First->getBase())) || !orderedReceiver(Free) ||
+      Next->getMemberDecl() != orderedTreeField(Head->getType()->getAsCXXRecordDecl(), "__next_"))
+    return false;
+  const auto *Chain = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  if (!Chain || Chain->size() != 2) return false;
+  const auto *Read = dyn_cast<DeclStmt>(Chain->body_front());
+  const auto *Allocator = Read && Read->isSingleDecl() ? dyn_cast<VarDecl>(Read->getSingleDecl()) : nullptr;
+  const auto *Accessor = Allocator ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Allocator->getInit())) : nullptr;
+  const auto *Access = hashTableMethod(S, SM, Accessor, Table, "__node_alloc");
+  const auto *Member = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Access)));
+  const auto *Loop = dyn_cast<WhileStmt>(Chain->body_back());
+  const auto *Test = Loop ? dyn_cast_or_null<BinaryOperator>(orderedExpression(Loop->getCond())) : nullptr;
+  if (!Access || !orderedReceiver(Accessor) || !Member ||
+      Member->getMemberDecl() != orderedTreeField(Table, "__node_alloc_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Member->getBase())) ||
+      !Test || Test->getOpcode() != BO_NE || Loop->getConditionVariable() ||
+      !orderedParameter(Test->getLHS(), Method->getParamDecl(0)) ||
+      !isa_and_nonnull<CXXNullPtrLiteralExpr>(orderedExpression(Test->getRHS())))
+    return false;
+  const auto *Buckets = orderedTreeField(Table, "__bucket_list_");
+  for (const auto *F : Table->fields())
+    if (const auto *R = F->getType()->getAsCXXRecordDecl();
+        F != Buckets && R && !R->hasTrivialDestructor())
+      return false;
+  return Buckets && emptyHashNullBucketsDestroy(S, SM, Buckets->getType()->getAsCXXRecordDecl());
+}
+
+static bool emptyHashBucketCountSource(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Observe, const CXXRecordDecl *Table, const ASTContext &Context) {
+  const auto *Size = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(orderedReturn(Observe)));
+  const auto *ReadSize = Size ? Size->getMethodDecl() : nullptr;
+  if (!ReadSize || ReadSize->getName() != "size" || !ReadSize->isConst() || ReadSize->isVirtual() ||
+      Size->getNumArgs() || ReadSize->getNumParams() ||
+      !Context.hasSameType(ReadSize->getReturnType(), Context.getSizeType()) ||
+      !orderedPinnedFunction(S, SM, ReadSize, "__hash_table"))
+    return false;
+  const auto *Get = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Size->getImplicitObjectArgument()));
+  const auto *Read = Get ? Get->getMethodDecl() : nullptr;
+  const auto *Buckets = orderedTreeField(Table, "__bucket_list_");
+  const auto *Storage = Buckets ? Buckets->getType()->getAsCXXRecordDecl() : nullptr;
+  if (!Read || !Storage || Read->getName() != "get_deleter" || !Read->isConst() || Read->isVirtual() ||
+      Read->getParent()->getCanonicalDecl() != Storage->getCanonicalDecl() ||
+      Get->getNumArgs() || Read->getNumParams() ||
+      !orderedPinnedFunction(S, SM, Read, "__memory/unique_ptr.h"))
+    return false;
+  const auto *BucketReceiver = dyn_cast_or_null<MemberExpr>(orderedExpression(Get->getImplicitObjectArgument()));
+  const auto *Deleter = orderedTreeField(Storage, "__deleter_");
+  const auto *Returned = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Read)));
+  const auto *Count = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(ReadSize)));
+  const auto *Owner = Deleter ? Deleter->getType()->getAsCXXRecordDecl() : nullptr;
+  return BucketReceiver && BucketReceiver->getMemberDecl() == Buckets &&
+         isa_and_nonnull<CXXThisExpr>(orderedExpression(BucketReceiver->getBase())) &&
+         Owner && Owner->getCanonicalDecl() == ReadSize->getParent()->getCanonicalDecl() &&
+         Context.hasSameType(Read->getReturnType(), Context.getLValueReferenceType(Deleter->getType().withConst())) &&
+         Returned && Returned->getMemberDecl() == Deleter &&
+         isa_and_nonnull<CXXThisExpr>(orderedExpression(Returned->getBase())) &&
+         Count && Count->getMemberDecl() == orderedTreeField(Owner, "__size_") &&
+         isa_and_nonnull<CXXThisExpr>(orderedExpression(Count->getBase()));
+}
+
+const MemberExpr *approvedEmptyHashSetObserver(const State &S, const SourceManager &SM,
+    const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Outer = Access ? Access->getMethodDecl() : nullptr;
+  const auto *Member = Outer ? dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  if (!Member || Member->isArrow() || !S.owns(SM, Member->getMemberLoc()) ||
+      !Outer->getIdentifier() || !Outer->isConst() || Outer->isVolatile() ||
+      Outer->isStatic() || Outer->isVirtual() || Outer->getNumParams() || Call->getNumArgs() ||
+      !Member->getBase()->isLValue() ||
+      !approvedEmptyHashSetRecord(S, SM, Outer->getParent(), Context) ||
+      !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Outer->getParent())) ||
+      !orderedPinnedFunction(S, SM, Outer, "unordered_set"))
+    return nullptr;
+  const auto Name = Outer->getName();
+  if (Name != "empty" && Name != "size" && Name != "bucket_count" && Name != "max_load_factor")
+    return nullptr;
+  const auto Result = Name == "empty" ? Context.BoolTy
+      : Name == "max_load_factor" ? Context.FloatTy : Context.getSizeType();
+  if (!Context.hasSameType(Call->getType(), Result) ||
+      !Context.hasSameType(Outer->getReturnType(), Result) || !Call->isPRValue())
+    return nullptr;
+  const auto *Storage = orderedTreeField(Outer->getParent(), "__table_");
+  const auto *Table = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *Ret = orderedReturn(Outer);
+  if (Name == "empty") {
+    const auto *Compare = dyn_cast_or_null<BinaryOperator>(orderedExpression(Ret));
+    const auto *Zero = Compare ? dyn_cast_or_null<IntegerLiteral>(orderedExpression(Compare->getRHS())) : nullptr;
+    if (!Compare || Compare->getOpcode() != BO_EQ || !Zero || !Zero->getValue().isZero()) return nullptr;
+    Ret = Compare->getLHS();
+  }
+  const auto *Inner = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Ret));
+  const auto *Observe = Table ? hashTableMethod(S, SM, Inner, Table, Name == "empty" ? "size" : Name) : nullptr;
+  const auto *Receiver = Observe ? dyn_cast_or_null<MemberExpr>(orderedExpression(Inner->getImplicitObjectArgument())) : nullptr;
+  if (!Receiver || Receiver->getMemberDecl() != Storage ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())) || !Observe->isConst())
+    return nullptr;
+  if (Name == "bucket_count")
+    return emptyHashBucketCountSource(S, SM, Observe, Table, Context) ? Member : nullptr;
+  const auto *Value = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Observe)));
+  return Value &&
+         Value->getMemberDecl() == orderedTreeField(Table, Name == "max_load_factor" ? "__max_load_factor_" : "__size_") &&
+         isa_and_nonnull<CXXThisExpr>(orderedExpression(Value->getBase())) ? Member : nullptr;
 }
 
 std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
