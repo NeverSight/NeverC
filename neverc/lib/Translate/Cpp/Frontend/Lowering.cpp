@@ -26824,6 +26824,21 @@ class FunctionLowering {
   }
 
 
+  Expression orderedContainerMember(Expression Place, llvm::StringRef Name,
+                                    SourceLocation L) {
+    const auto MemberType = Name == "nct_ordered_size" ? A.Context.getSizeType() : A.Context.VoidPtrTy;
+    return Expression{{"kind", "member"}, {"type", type(MemberType, L)},
+                      {"name", Name.str()}, {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+
+  void initializeOrderedContainer(Expression Place, SourceLocation L) {
+    auto Root = orderedContainerMember(Place, "nct_ordered_root", L);
+    initializeZero(Root, A.Context.VoidPtrTy, L);
+    initializeZero(orderedContainerMember(Place, "nct_ordered_size", L), A.Context.getSizeType(), L);
+    auto End = cast(address(std::move(Root), A.Context.VoidPtrTy, L), "ptr:void", L);
+    assign(orderedContainerMember(std::move(Place), "nct_ordered_begin", L), std::move(End), L);
+  }
+
   Expression listMember(Expression Place, llvm::StringRef Name, SourceLocation L) {
     return Expression{{"kind", "member"},
         {"type", Name == "nct_list_size" ? type(A.Context.getSizeType(), L) : "ptr:void"},
@@ -29149,6 +29164,15 @@ class FunctionLowering {
         return std::move(*Destination);
       }
       return Result;
+    }
+    if (Operation == UtilityOperation::OrderedContainerObserver) {
+      const auto *Member = approvedOrderedContainerObserver(A.S, A.Sources, Call, A.Context);
+      if (!Member)
+        reject(L, "ordered container observer", "The exact selected SDK observer body is required.");
+      auto Count = orderedContainerMember(lvalue(Member->getBase()), "nct_ordered_size", L);
+      if (Member->getMemberDecl()->getName() == "size")
+        return Count;
+      return binary("==", std::move(Count), A.zero(A.Context.getSizeType(), L), "bool", L);
     }
     if (Operation == UtilityOperation::PriorityQueue) return utilityPriorityQueueOperation(Call);
     if (Operation == UtilityOperation::Deque) {
@@ -38931,6 +38955,10 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
 
+    if (approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context)) {
+      initializeOrderedContainer(std::move(Place), L);
+      return;
+    }
     if (const auto Kind = approvedUtilityListConstruction(A.S, A.Sources, C, A.Context)) {
       std::vector<Expression> Operands;
       for (unsigned I = 0; I != C->getNumArgs(); ++I)
@@ -40627,6 +40655,12 @@ public:
         approvedUtilityForwardListDestructor(A.S, A.Sources, D, A.Context);
     const bool ListDestructor =
         approvedUtilityListDestructor(A.S, A.Sources, D, A.Context);
+    const bool OrderedContainerDestructor =
+        approvedOrderedContainerDestructor(A.S, A.Sources, D, A.Context);
+    if (approvedOrderedContainerRuntimeRecord(A.S, A.Sources, DestroyedRecord, A.Context) &&
+        !OrderedContainerDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "ordered container destructor",
+             "The authenticated empty-tree destruction chain is required.");
     const bool PriorityQueueDestructor =
         approvedUtilityPriorityQueueDestructor(A.S, A.Sources, D, A.Context);
     const bool DequeDestructor =
@@ -40677,7 +40711,7 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered map destructor",
              "The authenticated SDK storage destructor chain is required.");
     if (D && NotFnDestructor == A.VerifiedNotFnDestructions.end() &&
-        !ForwardListDestructor && !ListDestructor && !PriorityQueueDestructor && !DequeDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
+        !ForwardListDestructor && !ListDestructor && !OrderedContainerDestructor && !PriorityQueueDestructor && !DequeDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
         !UnorderedMapDestructor && !UnorderedNodeDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
@@ -40823,6 +40857,9 @@ public:
         releaseUnorderedMap(dereference(*ThisPointer, L), *Map, true, L);
       } else if (auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyForwardListStorage(dereference(*ThisPointer, L), Owner->Node, L);
+      } else if (approvedOrderedContainerRuntimeRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
+        // These owners only admit authenticated empty construction and read-only
+        // operations. The checked SDK destroy routine has no effect on a null root.
       } else if (auto Owner = approvedUtilityListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyListStorage(dereference(*ThisPointer, L), Owner->Node, L);
       } else if (auto Owner = approvedUtilityPriorityQueueRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {

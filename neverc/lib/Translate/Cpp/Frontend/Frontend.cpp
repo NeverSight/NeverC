@@ -10693,6 +10693,16 @@ static bool utilityForwardListDestructionSource(Adapter &A, const CXXRecordDecl 
 }
 
 
+static bool utilityOrderedContainerDestructionSource(
+    Adapter &A, const CXXRecordDecl *Record) {
+  if (!approvedOrderedContainerRuntimeRecord(A.S, A.Sources, Record, A.Context))
+    return false;
+  const auto *Destructor = Record->getDefinition()->getDestructor();
+  A.chargeExpansion(1, Record->getLocation());
+  return Destructor && Destructor->getAccess() == AS_public &&
+         approvedOrderedContainerDestructor(A.S, A.Sources, Destructor, A.Context);
+}
+
 static bool utilityListDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Info = approvedUtilityListRecord(A.S, A.Sources, Record, A.Context);
   if (!Info) return false;
@@ -11837,6 +11847,7 @@ public:
     if (utilityUnorderedNodeDestructionSource(A, Record)) return true;
     if (utilityUnorderedMapDestructionSource(A, Record)) return true;
     if (utilityForwardListDestructionSource(A, Record)) return true;
+    if (utilityOrderedContainerDestructionSource(A, Record)) return true;
     if (utilityListDestructionSource(A, Record)) return true;
     if ((utilityPriorityQueueDestructionSource(A, Record) || utilityDequeDestructionSource(A, Record))) return true;
     if (utilityValarrayDestructionSource(A, Record)) return true;
@@ -13896,6 +13907,10 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
                   approvedUtilityForwardListIteratorRecord(S, Sources, D, Context)) &&
                  !requireUtilityForwardList(D, L, Depth + 1)) {
         return {};
+      } else if (RequiredUtilityOrderedContainers.count(D->getCanonicalDecl()) ||
+                 approvedOrderedContainerRuntimeRecord(S, Sources, D, Context)) {
+        if (RequiredUtilityOrderedContainers.insert(D->getCanonicalDecl()).second)
+          Records.push_back(const_cast<CXXRecordDecl *>(D->getDefinition()));
       } else if ((approvedUtilityListRecord(S, Sources, D, Context) ||
                   approvedUtilityListIteratorRecord(S, Sources, D, Context)) &&
                  !requireUtilityList(D, L, Depth + 1)) {
@@ -14763,6 +14778,10 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     } else if (approvedUtilityForwardListRecord(S, Sources, R, Context) ||
                approvedUtilityForwardListIteratorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.VoidPtrTy, L));
+    } else if (RequiredUtilityOrderedContainers.count(R->getCanonicalDecl())) {
+      Args.push_back(zero(Context.VoidPtrTy, L));
+      Args.push_back(zero(Context.VoidPtrTy, L));
+      Args.push_back(zero(Context.getSizeType(), L));
     } else if (approvedUtilityListRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.VoidPtrTy, L));
       Args.push_back(zero(Context.VoidPtrTy, L));
@@ -18763,6 +18782,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
          (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
          approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
@@ -21232,6 +21252,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
              utilityUnorderedNodeDestructionSource(A, Destructor->getParent()) ||
              utilityUnorderedMapDestructionSource(A, Destructor->getParent()) ||
              utilityForwardListDestructionSource(A, Destructor->getParent()) ||
+             utilityOrderedContainerDestructionSource(A, Destructor->getParent()) ||
              utilityListDestructionSource(A, Destructor->getParent()) ||
              (utilityPriorityQueueDestructionSource(A, Destructor->getParent()) || utilityDequeDestructionSource(A, Destructor->getParent())) ||
              utilityValarrayDestructionSource(A, Destructor->getParent()) ||
@@ -21464,6 +21485,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
                 .has_value() ||
             approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
+            approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context).has_value()) ||
             approvedUtilityValarrayConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
@@ -24262,6 +24284,7 @@ public:
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -31427,6 +31450,7 @@ public:
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
                    (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
                    approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
@@ -31459,7 +31483,12 @@ public:
                    approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
                                                               A.Context))
           checkConstruction(C, L);
-        else
+        else if (approvedOrderedContainerRuntimeRecord(
+                     A.S, A.Sources, C->getConstructor()->getParent(), A.Context)) {
+          llvm::StringRef Failure;
+          approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context, &Failure);
+          A.reject(L, "ordered container construction", Failure, "TR0203");
+        } else
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
@@ -31661,6 +31690,8 @@ static void orderCoreV2Records(Adapter &A) {
     const auto UtilityDeque = approvedUtilityDequeRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityPriorityQueue = approvedUtilityPriorityQueueRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityDequeIterator = approvedUtilityDequeIteratorRecord(A.S, A.Sources, R, A.Context);
+    const bool UtilityOrderedContainer =
+        A.RequiredUtilityOrderedContainers.count(R->getCanonicalDecl());
     const auto UtilityList = approvedUtilityListRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityListIterator = approvedUtilityListIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityForwardList = approvedUtilityForwardListRecord(A.S, A.Sources, R, A.Context);
@@ -31707,7 +31738,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityReverse || UtilityTuple ||
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
-                                   UtilityString ||
+                                   UtilityString || UtilityOrderedContainer ||
                                    UtilityForwardList || UtilityForwardIterator || UtilityList || UtilityListIterator || UtilityPriorityQueue || UtilityDeque || UtilityDequeIterator || UtilityValarray || UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
                                    UnorderedNode || UnorderedResult ||
                                    UtilityDefaultDelete || UtilityAllocator
@@ -31758,6 +31789,9 @@ static void orderCoreV2Records(Adapter &A) {
     } else if (UnorderedResult) {
       for (const auto *Field : {UnorderedResult->Position, UnorderedResult->Inserted, UnorderedResult->Handle})
         DependencyTypes.emplace_back(Field->getType(), Field->getLocation());
+    } else if (UtilityOrderedContainer) {
+      DependencyTypes.emplace_back(A.Context.VoidPtrTy, R->getLocation());
+      DependencyTypes.emplace_back(A.Context.getSizeType(), R->getLocation());
     } else if (UtilityUnorderedIterator) {
       DependencyTypes.emplace_back(UtilityUnorderedIterator->Owner.NodePointerType, R->getLocation());
     } else if (UtilityUnorderedMap) {
@@ -32037,6 +32071,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     const auto UtilityDeque = approvedUtilityDequeRecord(S, Sources, R, Context);
     const auto UtilityPriorityQueue = approvedUtilityPriorityQueueRecord(S, Sources, R, Context);
     const auto UtilityDequeIterator = approvedUtilityDequeIteratorRecord(S, Sources, R, Context);
+    const bool UtilityOrderedContainer =
+        RequiredUtilityOrderedContainers.count(R->getCanonicalDecl());
     const auto UtilityList = approvedUtilityListRecord(S, Sources, R, Context);
     const auto UtilityListIterator = approvedUtilityListIteratorRecord(S, Sources, R, Context);
     const auto UtilityForwardList = approvedUtilityForwardListRecord(S, Sources, R, Context);
@@ -32086,7 +32122,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                !FunctionalReference && !UtilityReverse &&
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
-                               !UtilityUniquePtr && !UtilityString &&
+                               !UtilityUniquePtr && !UtilityString && !UtilityOrderedContainer &&
                                !UtilityForwardList && !UtilityForwardIterator && !UtilityList && !UtilityListIterator && !UtilityPriorityQueue && !UtilityDeque && !UtilityDequeIterator && !UtilityValarray && !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
                                !UnorderedNode && !UnorderedResult &&
                                !UtilityDefaultDelete &&
@@ -32132,6 +32168,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       Fields.push_back(json::Object{{"name", UtilityForwardIterator ? "nct_forward_iterator" : "nct_forward_next"},
           {"type", type(Context.VoidPtrTy, R->getLocation())}});
 
+    } else if (UtilityOrderedContainer) {
+      for (const char *Name : {"nct_ordered_begin", "nct_ordered_root"})
+        Fields.push_back(json::Object{{"name", Name}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
+      Fields.push_back(json::Object{{"name", "nct_ordered_size"}, {"type", type(Context.getSizeType(), R->getLocation())}});
     } else if (UtilityList) {
       for (const char *Name : {"nct_list_prev", "nct_list_next"})
         Fields.push_back(json::Object{{"name", Name}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
@@ -32269,7 +32309,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       } else if (UtilityForwardList || UtilityForwardIterator) {
         Offsets.push_back(uint64_t(0));
 
-      } else if (UtilityList) {
+      } else if (UtilityList || UtilityOrderedContainer) {
         Offsets.push_back(uint64_t(0)); Offsets.push_back(uint64_t(64)); Offsets.push_back(uint64_t(128));
       } else if (UtilityListIterator) {
         Offsets.push_back(uint64_t(0));
