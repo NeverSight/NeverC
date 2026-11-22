@@ -1313,6 +1313,8 @@ enum class UtilityOperation {
   EmptyHashSetSetMaxLoadFactor,
   EmptyHashSetResizeBuckets,
   EmptyHashSetBucketObserver,
+  UnorderedSetCount,
+  UnorderedSetClear,
   PriorityQueue,
   Deque,
   ValarrayScalar,
@@ -4416,19 +4418,33 @@ bool approvedUtilityConstant(const State &S, const clang::SourceManager &SM,
                              clang::APValue &Value);
 bool approvedCstddefNull(const State &S, const clang::SourceManager &SM,
                         const clang::Expr *Expression);
-struct UtilityUnorderedMapRecord {
+struct UtilityUnorderedTableRecord {
   const clang::CXXRecordDecl *Record;
   clang::QualType BucketPointerType, NodePointerType, NodeType;
   uint64_t NodeBytes, ValueOffsetBytes;
+  bool HasMappedValue = true;
 };
-std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
+std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedMapRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context,
     const std::function<bool(clang::QualType)> &Complete = {});
+std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetStorage(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+struct UtilityUnorderedSetListConstruction {
+  UtilityUnorderedTableRecord Table;
+  UtilityInitializerListRecord List;
+};
+std::optional<UtilityUnorderedSetListConstruction> approvedUtilityUnorderedSetListConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 struct UtilityUnorderedMapIteratorRecord {
   const clang::CXXRecordDecl *Record, *Underlying;
   const clang::FieldDecl *Storage, *Node;
-  UtilityUnorderedMapRecord Owner;
+  UtilityUnorderedTableRecord Owner;
   clang::QualType ValueType;
   bool Const;
   bool Local = false;
@@ -4440,7 +4456,7 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIter
     const std::function<bool(clang::QualType)> &Complete = {});
 enum class UnorderedMapInsertionKind { Pair, KeyValue, KeyOnly, Default, Piecewise };
 struct UtilityUnorderedMapInsertion {
-  UtilityUnorderedMapRecord Map;
+  UtilityUnorderedTableRecord Map;
   UtilityUnorderedMapIteratorRecord Iterator;
   std::optional<UtilityPairRecord> ResultPair, ArgumentPair;
   UnorderedMapInsertionKind Kind;
@@ -4452,7 +4468,7 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UtilityUnorderedMapEqualRange {
-  UtilityUnorderedMapRecord Map;
+  UtilityUnorderedTableRecord Map;
   UtilityPairRecord Pair;
   UtilityUnorderedMapIteratorRecord Iterator;
 };
@@ -4461,7 +4477,7 @@ std::optional<UtilityUnorderedMapEqualRange> approvedUtilityUnorderedMapEqualRan
     const clang::ASTContext &Context);
 enum class UnorderedMapRangeKind { Pointer, Iterator, InitializerList };
 struct UtilityUnorderedMapRangeInsertion {
-  UtilityUnorderedMapRecord Map;
+  UtilityUnorderedTableRecord Map;
   UtilityPairRecord Pair;
   std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
   std::optional<UtilityInitializerListRecord> List;
@@ -5023,7 +5039,7 @@ public:
 };
 struct UtilityUnorderedNodeRecord {
   const clang::CXXRecordDecl *Record, *Specifics;
-  UtilityUnorderedMapRecord Map;
+  UtilityUnorderedTableRecord Map;
   clang::QualType AllocatorType;
   const clang::FieldDecl *Pointer, *Allocator;
   uint64_t AllocatorValueOffset, EngagedOffset;
@@ -5060,7 +5076,7 @@ std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
     const std::function<bool(clang::QualType)> &Complete = {});
 enum class UnorderedNodeTransferKind { ExtractKey,ExtractIterator,Insert,HintInsert };
 struct UnorderedNodeTransfer {
-  UtilityUnorderedMapRecord Map;
+  UtilityUnorderedTableRecord Map;
   UtilityUnorderedNodeRecord Node;
   std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
   std::optional<UnorderedNodeInsertResult> Result;
@@ -5073,7 +5089,7 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
 
 bool unorderedNodeBaseCast(const State &S, const clang::SourceManager &SM,
     const clang::CastExpr *Cast, const clang::ASTContext &Context);
-std::optional<UtilityUnorderedMapRecord> unorderedMapMerge(
+std::optional<UtilityUnorderedTableRecord> unorderedMapMerge(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UnorderedMapListAssignment {
@@ -5098,7 +5114,7 @@ std::optional<UnorderedResultCall> unorderedResultCall(
     const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UnorderedMapNonmemberCall {
-  UtilityUnorderedMapRecord Map;
+  UtilityUnorderedTableRecord Map;
   bool Swap, NotEqual;
 };
 std::optional<UnorderedMapNonmemberCall> unorderedMapNonmemberCall(
@@ -5113,7 +5129,7 @@ std::optional<UnorderedIteratorTraversalCall> unorderedIteratorTraversalCall(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UnorderedGenericSwapCall {
-  std::optional<UtilityUnorderedMapRecord> Map;
+  std::optional<UtilityUnorderedTableRecord> Map;
   std::optional<UtilityUnorderedNodeRecord> Node;
   std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
 };

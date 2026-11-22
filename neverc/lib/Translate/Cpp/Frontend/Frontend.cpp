@@ -14794,7 +14794,7 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
                approvedUtilityForwardListIteratorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.VoidPtrTy, L));
     } else if (RequiredUtilityEmptyHashSets.count(R->getCanonicalDecl())) {
-      for (auto FieldType : {QualType(Context.VoidPtrTy), QualType(Context.getSizeType()), QualType(Context.VoidPtrTy),
+      for (auto FieldType : {Context.getPointerType(Context.VoidPtrTy), QualType(Context.getSizeType()), QualType(Context.VoidPtrTy),
                              QualType(Context.getSizeType()), QualType(Context.FloatTy)})
         Args.push_back(zero(FieldType, L));
     } else if (RequiredUtilityOrderedContainers.count(R->getCanonicalDecl())) {
@@ -18802,6 +18802,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
          approvedEmptyHashSetConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
          (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
@@ -21507,6 +21508,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedEmptyHashSetConstruction(A.S, A.Sources, Construction, A.Context) ||
+            approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context).has_value()) ||
@@ -24307,6 +24309,7 @@ public:
            approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedEmptyHashSetConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -31474,6 +31477,7 @@ public:
                    approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedEmptyHashSetConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
                    (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
@@ -32212,7 +32216,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     } else if (UtilityEmptyHashSet) {
       const auto L = R->getLocation();
       for (const auto &[Name, FieldType] :
-           {std::pair{"nct_unordered_buckets", QualType(Context.VoidPtrTy)},
+           {std::pair{"nct_unordered_buckets", Context.getPointerType(Context.VoidPtrTy)},
             std::pair{"nct_unordered_bucket_count", QualType(Context.getSizeType())},
             std::pair{"nct_unordered_first", QualType(Context.VoidPtrTy)},
             std::pair{"nct_unordered_size", QualType(Context.getSizeType())},
