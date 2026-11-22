@@ -29336,6 +29336,23 @@ class FunctionLowering {
       }
       return Result;
     }
+    if (Operation == UtilityOperation::UnorderedSetInsertValue) {
+      const auto Info = approvedUtilityUnorderedSetInsertion(A.S, A.Sources, Call, A.Context);
+      if (!Info)
+        reject(L, "unordered set insertion", "The exact integer value and iterator layout are required.");
+      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Method = Member->getMethodDecl();
+      const auto *Receiver = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts())->getBase();
+      auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
+      auto Key = dereference(snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L), L);
+      auto Result = unorderedInsertNode(std::move(Place), Info->Table, std::move(Key), std::nullopt, false, L);
+      if (!Info->ResultPair)
+        return unorderedMakeIterator(std::move(Result.Node), Info->Iterator, std::move(Destination), L);
+      auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      unorderedMakeIterator(std::move(Result.Node), Info->Iterator, fieldStorage(Output, Info->ResultPair->First, L), L);
+      assign(fieldStorage(Output, Info->ResultPair->Second, L), std::move(Result.Inserted), L);
+      return Output;
+    }
     if (Operation == UtilityOperation::UnorderedSetBegin ||
         Operation == UtilityOperation::UnorderedSetEnd || Operation == UtilityOperation::UnorderedSetFind) {
       const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);

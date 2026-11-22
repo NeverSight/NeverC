@@ -124026,6 +124026,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::UnorderedMapEqualRange;
   if (approvedUtilityUnorderedMapInsertion(S, SM, Call, Context))
     return UtilityOperation::UnorderedMapInsertValue;
+  if (approvedUtilityUnorderedSetInsertion(S, SM, Call, Context))
+    return UtilityOperation::UnorderedSetInsertValue;
   if (auto Endpoint = approvedUnorderedSetEndpoint(S, SM, Call, Context))
     return Endpoint;
   if (auto Iterator = approvedUtilityUnorderedMapIteratorOperation(S, SM, Call, Context))
@@ -137681,6 +137683,46 @@ static std::optional<UtilityOperation> approvedUnorderedSetEndpoint(
     return std::nullopt;
   return Begin ? UtilityOperation::UnorderedSetBegin :
       End ? UtilityOperation::UnorderedSetEnd : UtilityOperation::UnorderedSetFind;
+}
+
+std::optional<UtilityUnorderedSetInsertion> approvedUtilityUnorderedSetInsertion(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "insert" ||
+      Method->isConst() || Method->isVolatile() || Method->isStatic() || Method->isVirtual() ||
+      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Call->isPRValue() || !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return std::nullopt;
+  const auto Param = Method->getParamDecl(0)->getType();
+  if ((!Context.hasSameType(Param, Context.getLValueReferenceType(Context.IntTy.withConst())) &&
+       !Context.hasSameType(Param, Context.getRValueReferenceType(Context.IntTy))) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy))
+    return std::nullopt;
+  const auto *Owner = Method->getParent();
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  if (!Table || !Member || Member->isArrow() || !Member->getBase()->isLValue() ||
+      Member->getBase()->getType().isVolatileQualified() || !S.owns(SM, Member->getMemberLoc()) ||
+      !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
+      !orderedPinnedFunction(S, SM, Method, "unordered_set"))
+    return std::nullopt;
+  auto IteratorType = Call->getType();
+  std::optional<UtilityPairRecord> Pair;
+  if (Owner->getName() == "unordered_set") {
+    Pair = approvedUtilityPairRecord(S, SM, IteratorType->getAsCXXRecordDecl(), Context);
+    if (!Pair || !Pair->Record->hasTrivialDestructor() ||
+        !Context.hasSameType(Pair->Second->getType(), Context.BoolTy))
+      return std::nullopt;
+    IteratorType = Pair->First->getType();
+  }
+  const auto Iterator = approvedUtilityUnorderedSetIteratorRecord(
+      S, SM, IteratorType->getAsCXXRecordDecl(), Context, {});
+  if (!Iterator || !Context.hasSameType(IteratorType, Context.getRecordType(Iterator->Record)) ||
+      !Context.hasSameType(Iterator->Owner.NodeType, Table->NodeType) ||
+      !approvedHashSetBucketSource(S, SM, Method, Owner, Context))
+    return std::nullopt;
+  return UtilityUnorderedSetInsertion{*Table, *Iterator, Pair};
 }
 
 static bool unorderedMapPublicMethod(const State &S, const SourceManager &SM,

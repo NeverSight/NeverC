@@ -1320,6 +1320,7 @@ enum class UtilityOperation {
   UnorderedSetBegin,
   UnorderedSetEnd,
   UnorderedSetFind,
+  UnorderedSetInsertValue,
   PriorityQueue,
   Deque,
   ValarrayScalar,
@@ -4473,6 +4474,14 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedIterato
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context,
     const std::function<bool(clang::QualType)> &Complete = {});
+struct UtilityUnorderedSetInsertion {
+  UtilityUnorderedTableRecord Table;
+  UtilityUnorderedMapIteratorRecord Iterator;
+  std::optional<UtilityPairRecord> ResultPair;
+};
+std::optional<UtilityUnorderedSetInsertion> approvedUtilityUnorderedSetInsertion(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 enum class UnorderedMapInsertionKind { Pair, KeyValue, KeyOnly, Default, Piecewise };
 struct UtilityUnorderedMapInsertion {
   UtilityUnorderedTableRecord Map;
