@@ -389499,6 +389499,163 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2OrderedComparatorSetKeyAndValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-comparator-set-key-and-value.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+int main() {
+  const std::set<int> values;
+  auto keys = values.key_comp();
+  auto elements = values.value_comp();
+  return !keys(-7, 3) || keys(3, -7) || !elements(0, 1) || elements(1, 1);
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-comparator-set-key-and-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-comparator-set-key-and-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedComparatorMultisetConstValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-comparator-multiset-const-value.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+int main() {
+  std::multiset<int> values;
+  const auto& view = values;
+  const auto cmp = view.value_comp();
+  return !cmp(-1, 1) || cmp(4, 4);
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-comparator-multiset-const-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-comparator-multiset-const-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedComparatorMapKeyWrapperRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-comparator-map-key-wrapper.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+using Map = std::map<int, int>;
+const Map& observe(const Map& values, int& calls) {
+  ++calls;
+  return values;
+}
+int main() {
+  const Map values;
+  int calls = 0;
+  auto cmp = observe(values, calls).key_comp();
+  return calls != 1 || !cmp(-8, 2) || cmp(2, 2);
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-comparator-map-key-wrapper.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-comparator-map-key-wrapper" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedComparatorMultimapKeyWrapperRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-comparator-multimap-key-wrapper.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  const std::multimap<int, int> values;
+  auto cmp = values.key_comp();
+  return !cmp(42, 100) || cmp(100, 42);
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-comparator-multimap-key-wrapper.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-comparator-multimap-key-wrapper" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedComparatorCustomComparatorRejected) {
+  const auto Source = tmpFile("ordered-comparator-custom-comparator.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+struct Greater { bool operator()(int a, int b) const { return a > b; } };
+int main() {
+  std::set<int, Greater> values;
+  auto cmp = values.key_comp();
+  return !cmp(2, 1);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedComparatorMapValueComparatorRejected) {
+  const auto Source = tmpFile("ordered-comparator-map-value-comparator.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::map<int, int> values;
+  auto cmp = values.value_comp();
+  return !cmp({1, 4}, {2, 3});
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedComparatorNonDefaultKeyRejected) {
+  const auto Source = tmpFile("ordered-comparator-non-default-key.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+int main() {
+  std::multiset<long> values;
+  return !values.value_comp()(0L, 1L);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedComparatorArrowReceiverRejected) {
+  const auto Source = tmpFile("ordered-comparator-arrow-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::multimap<int, int> values;
+  const auto* pointer = &values;
+  auto cmp = pointer->key_comp();
+  return !cmp(1, 2);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

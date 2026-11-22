@@ -1404,6 +1404,30 @@ def restore_any_wide_inline_history(source):
     return restored
 
 
+R19_ORDERED_COMPARATOR_REGISTERED_SHA256 = '53b48c911238bafe9c44bfce86ffe29f1eb8ea856f5c3efcb6f2ecf3eb3674a6'
+R19_ORDERED_COMPARATOR_MAINTAINED_SHA256 = 'e181edb71c0c639a568de03643a59c6f0b7d0a14c386cf59b7b59c82c80504e9'
+R19_ORDERED_COMPARATOR_PREVIOUS_REGISTERED_SHA256 = '4607f566f60f7230b06677c26a599e1b6c77cd087d7f9e840ad243d584495f13'
+R19_ORDERED_COMPARATOR_PREVIOUS_MAINTAINED_SHA256 = '92d39572e7134da39264c7046fee2ab75315632ce43552ac1d04cf7473a88896'
+R19_ORDERED_COMPARATOR_ADDITIONS_SHA256 = 'b6da59ba68d60123ecf7251d0ff0e694abee2b2919d81bb49dc50b2e8a42a596'
+R19_ORDERED_COMPARATOR_MAINTAINED_SIZE = 20026002
+R19_ORDERED_COMPARATOR_ADDITIONS_SIZE = 6754
+
+
+def restore_ordered_comparator_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_COMPARATOR_REGISTERED_SHA256, R19_ORDERED_COMPARATOR_MAINTAINED_SHA256}
+    stop = R19_ORDERED_COMPARATOR_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_COMPARATOR_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_COMPARATOR_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_COMPARATOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_COMPARATOR_REGISTERED_SHA256
+             else R19_ORDERED_COMPARATOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1669,6 +1693,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ANY_WIDE_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_COMPARATOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_COMPARATOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_COMPARATOR_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

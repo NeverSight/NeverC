@@ -18136,3 +18136,10 @@ The inline std::any carrier preserves exact double, long long and unsigned
 long long values on the existing 64-bit targets. The checked construction,
 copy, move, swap, reset and access paths use distinct payload tags. The
 default in-place double value initializes to zero.
+
+## Default ordered comparators
+
+The admitted integer set, multiset, map and multimap expose the checked
+key_comp() observer. Set and multiset also expose value_comp(). The selected
+calls copy the default stateless std::less<int> comparator and evaluate the
+source receiver once.

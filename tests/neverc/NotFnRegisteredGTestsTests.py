@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_comparator_registered = cls.registered
+        cls.ordered_comparator_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_comparator_original = cls.adapter.restore_original_gtests(cls.ordered_comparator_registered,
+                                                                        cls.ordered_comparator_suffix)
+        cls.registered = cls.adapter.restore_ordered_comparator_history(cls.ordered_comparator_registered)
         cls.any_wide_inline_registered = cls.registered
         cls.any_wide_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.any_wide_inline_original = cls.adapter.restore_original_gtests(cls.any_wide_inline_registered,
@@ -2509,6 +2514,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_any_wide_inline_history(self.any_wide_inline_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.any_wide_inline_registered, self.any_wide_inline_suffix + b' ')
+
+
+    def test_ordered_comparator_retains_published_bodies(self):
+        self.assertEqual(self.ordered_comparator_original + self.ordered_comparator_suffix, self.ordered_comparator_registered)
+        self.assertEqual(self.adapter.restore_ordered_comparator_history(self.ordered_comparator_original),
+                         self.any_wide_inline_original)
+        output, evidence = self.extractor.extract(self.ordered_comparator_original, ['TranslateTest.CoreV2OrderedComparatorSetKeyAndValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedComparatorMultisetConstValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedComparatorMapKeyWrapperRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedComparatorMultimapKeyWrapperRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedComparatorCustomComparatorRejected', 'TranslateTest.CoreV2OrderedComparatorMapValueComparatorRejected', 'TranslateTest.CoreV2OrderedComparatorNonDefaultKeyRejected', 'TranslateTest.CoreV2OrderedComparatorArrowReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8384)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-comparator-set-key-and-value', output)
+        self.assertIn(b'ordered-comparator-map-key-wrapper', output)
+
+    def test_ordered_comparator_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_comparator_history(self.ordered_comparator_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_comparator_registered, self.ordered_comparator_suffix + b' ')
 
 
 if __name__ == '__main__':

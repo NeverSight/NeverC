@@ -123937,8 +123937,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
-  if (approvedUtilityUnorderedPolicyQuery(S, SM, Call, Context))
-    return UtilityOperation::UnorderedPolicy;
+  if (approvedUtilityAssociativePolicyQuery(S, SM, Call, Context))
+    return UtilityOperation::AssociativePolicy;
   if (approvedUtilityUnorderedMapAllocatorQuery(S, SM, Call, Context))
     return UtilityOperation::UnorderedMapGetAllocator;
   if (auto Assignment = approvedUtilityUnorderedMapAssignment(S, SM, Call, Context))
@@ -138160,6 +138160,104 @@ bool approvedUtilityUnorderedMapDefaultArgument(
       !Construction->getNumArgs() && Context.hasSameType(Construction->getType(), Expected);
 }
 
+static const CXXConstructExpr *associativePolicyCopy(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
+    QualType Type, const ASTContext &Context) {
+  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(orderedReturn(Method)));
+  const auto Construction = functionalObjectConstruction(S, SM, Copy, Type, Context);
+  if (Construction != FunctionalObjectConstruction::CopyOrMove ||
+      !Copy->getConstructor()->isCopyConstructor() ||
+      !Context.hasSameType(Copy->getConstructor()->getParamDecl(0)->getType(),
+                           Context.getLValueReferenceType(Type.withConst())))
+    return nullptr;
+  return Copy;
+}
+
+static const CXXRecordDecl *orderedMapComparatorWrapper(
+    const State &S, const SourceManager &SM, const CXXMemberCallExpr *Read,
+    QualType Type, const ASTContext &Context) {
+  const auto *Method = Read ? Read->getMethodDecl() : nullptr;
+  const auto *Record = Method ? Method->getParent()->getDefinition() : nullptr;
+  if (!Record || !Record->getIdentifier() || Record->getName() != "__map_value_compare" ||
+      !Record->isEmpty() || !Record->field_empty() || Record->getNumBases() != 1 ||
+      Record->bases_begin()->isVirtual() ||
+      !Context.hasSameType(Record->bases_begin()->getType(), Type) ||
+      !Method->getIdentifier() || Method->getName() != "key_comp" ||
+      Method->isStatic() || !Method->isConst() || Method->isVirtual() ||
+      Method->getNumParams() || Read->getNumArgs() ||
+      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type.withConst())) ||
+      !orderedPinnedFunction(S, SM, Method, "map"))
+    return nullptr;
+
+  const auto *Value = orderedReturn(Method);
+  const auto *Base = Value ? dyn_cast<ImplicitCastExpr>(Value->IgnoreParens()) : nullptr;
+  const auto *Self = Base ? dyn_cast_or_null<UnaryOperator>(orderedExpression(Base->getSubExpr())) : nullptr;
+  if (!Base || (Base->getCastKind() != CK_DerivedToBase && Base->getCastKind() != CK_UncheckedDerivedToBase) ||
+      !Context.hasSameType(Base->getType(), Type.withConst()) || !Self || Self->getOpcode() != UO_Deref ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Self->getSubExpr())))
+    return nullptr;
+  return Record;
+}
+
+static std::optional<FunctionalObjectRecord> approvedOrderedComparatorCopy(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  const auto Name = Method && Method->getIdentifier() ? Method->getName() : llvm::StringRef();
+  if (Name != "key_comp" && Name != "value_comp")
+    return std::nullopt;
+  const auto *Owner = Method->getParent();
+  if (!approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context))
+    return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  const bool Map = Header == "map";
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  if ((Map && Name != "key_comp") || !Member || Member->isArrow() ||
+      !Member->getBase()->isLValue() || Member->getBase()->getType().isVolatileQualified() ||
+      !S.owns(SM, Member->getMemberLoc()) || !Method->isConst() || Method->isVolatile() ||
+      Method->isVirtual() || Method->isStatic() || Method->getNumParams() || Call->getNumArgs() ||
+      !Call->isPRValue() ||
+      !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
+      !orderedPinnedFunction(S, SM, Method, Header))
+    return std::nullopt;
+
+  const auto Type = Call->getType();
+  const auto Expected = cast<ClassTemplateSpecializationDecl>(Owner)->getTemplateArgs()
+      .get(Map ? 2 : 1).getAsType();
+  const auto Policy = approvedFunctionalObjectRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+  if (!Policy || !Context.hasSameType(Type, Expected) ||
+      !Context.hasSameType(Type, Method->getReturnType()))
+    return std::nullopt;
+  const auto *Copy = associativePolicyCopy(S, SM, Method, Type, Context);
+  const auto *Read = Copy ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Copy->getArg(0))) : nullptr;
+  QualType StoredType = Type;
+  if (Map) {
+    const auto *Wrapper = orderedMapComparatorWrapper(S, SM, Read, Type, Context);
+    if (!Wrapper)
+      return std::nullopt;
+    StoredType = Context.getRecordType(Wrapper);
+    Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Read->getImplicitObjectArgument()));
+  }
+
+  const auto *Storage = orderedTreeField(Owner, "__tree_");
+  const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *Selected = Tree ? orderedTreeMethod(S, SM, Read, Tree, "value_comp") : nullptr;
+  const auto *Receiver = Selected
+      ? dyn_cast_or_null<MemberExpr>(orderedExpression(Read->getImplicitObjectArgument())) : nullptr;
+  const auto *Comparator = Tree ? orderedTreeField(Tree, "__value_comp_") : nullptr;
+  const auto *Value = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Selected)));
+  if (!Receiver || Receiver->getMemberDecl() != Storage ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())) ||
+      !Selected->isConst() ||
+      !Context.hasSameType(Selected->getReturnType(), Context.getLValueReferenceType(StoredType.withConst())) ||
+      !Comparator || !Context.hasSameType(Comparator->getType(), StoredType) ||
+      !Value || Value->getMemberDecl() != Comparator ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Value->getBase())))
+    return std::nullopt;
+  return Policy;
+}
+
 static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
@@ -138187,12 +138285,8 @@ static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
       !Context.hasSameType(Type, Method->getReturnType()))
     return std::nullopt;
 
-  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(orderedReturn(Method)));
-  const auto Construction = functionalObjectConstruction(S, SM, Copy, Type, Context);
-  if (Construction != FunctionalObjectConstruction::CopyOrMove ||
-      !Copy->getConstructor()->isCopyConstructor() ||
-      !Context.hasSameType(Copy->getConstructor()->getParamDecl(0)->getType(),
-                           Context.getLValueReferenceType(Type.withConst())))
+  const auto *Copy = associativePolicyCopy(S, SM, Method, Type, Context);
+  if (!Copy)
     return std::nullopt;
 
   const auto *Storage = orderedTreeField(Owner, "__table_");
@@ -138215,9 +138309,11 @@ static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
   return Policy;
 }
 
-std::optional<FunctionalObjectRecord> approvedUtilityUnorderedPolicyQuery(
+std::optional<FunctionalObjectRecord> approvedUtilityAssociativePolicyQuery(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
+  if (auto Ordered = approvedOrderedComparatorCopy(S, SM, Call, Context))
+    return Ordered;
   if (auto Set = approvedEmptyHashSetPolicyQuery(S, SM, Call, Context))
     return Set;
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
