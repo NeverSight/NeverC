@@ -103,17 +103,18 @@
       "source_sha256": "04233e3af574732b54ef813d95d62a3920bce343d2d904f68cc700a353da0195",
       "original_case_source_sha256": "04233e3af574732b54ef813d95d62a3920bce343d2d904f68cc700a353da0195",
       "gtest_body_sha256": "de05149ee2329270d316610098745636d2d93b99dec9643fde98a4d9de154be1"
+    },
+    {
+      "name": "any-int-assign-other-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyAssignLongAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "47bc8b203cea87ed05adb1c4fb738d0a662fc980458d2bef326b1c6b40c08cf3",
+      "original_case_source_sha256": "47bc8b203cea87ed05adb1c4fb738d0a662fc980458d2bef326b1c6b40c08cf3",
+      "gtest_body_sha256": "b13f14ea490590ab79048517b747cab73d879d1e50b7eb6a9c68735b49edb02f",
+      "source_only": true
     }
   ],
   "negative_cases": [
-    {
-      "name": "any-int-assign-other-payload-guard",
-      "formal_test_name": "TranslateTest.CoreV2AnyIntAssignOtherPayloadGuardRejected",
-      "expected": "reject",
-      "source_sha256": "47bc8b203cea87ed05adb1c4fb738d0a662fc980458d2bef326b1c6b40c08cf3",
-      "original_case_source_sha256": "47bc8b203cea87ed05adb1c4fb738d0a662fc980458d2bef326b1c6b40c08cf3",
-      "gtest_body_sha256": "b8296bbb1bf2e845b0ba896baba6a673a06d4a40b5499db5a4038e0f0cc0423f"
-    },
     {
       "name": "any-int-make-renamed-installation-guard",
       "formal_test_name": "TranslateTest.CoreV2AnyIntMakeRenamedInstallationGuardRejected",
@@ -286,10 +287,10 @@
     },
     {
       "name": "any-int-assign-other-payload-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <any>\nvoid f(std::any& a, long n) { a = n; }\n",
       "public_header": "any",
-      "kind": "source-body-guard",
+      "kind": "cpp17-operation",
       "source_sha256": "47bc8b203cea87ed05adb1c4fb738d0a662fc980458d2bef326b1c6b40c08cf3"
     },
     {
@@ -371,7 +372,7 @@
     "TranslateTest.CoreV2VariantThreeVisitFunctionAndPointerRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantThreeVisitConstOverloadedVisitorRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantThreeVisitAliasedOperandsAndVoidRunAtBothOptimizations",
-    "TranslateTest.CoreV2AnyIntAssignOtherPayloadGuardRejected",
+    "TranslateTest.CoreV2AnyAssignLongAcceptsFunctionBody",
     "TranslateTest.CoreV2AnyIntMakeRenamedInstallationGuardRejected",
     "TranslateTest.CoreV2AnyIntCastWithoutActiveStateEvidenceRejected",
     "TranslateTest.CoreV2ScopedAllocatorRenamedStorageCopyGuardRejected",
@@ -400,5 +401,5 @@
     "three-variant-visit": "cba2d9fe01d703b8356cdc0f0050500243cc6029bc27b87eeda3b636823d8f69"
   },
   "native_reference_authentication_sha256": "133196c0f84bf0621378163efef0ec281c8bac24cc52e9a78f4b401a38f10299",
-  "source_proof_sha256": "b09df63e9979a3cb5a7da0ef36df092fffeeaadfc697087209604d8fbe08e6ab"
+  "source_proof_sha256": "6d452f539f91f94ba34c5f9fc4216a83b4b09ffff30d3dccaf12b4b669a64974"
 }

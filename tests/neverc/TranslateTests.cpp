@@ -385774,15 +385774,13 @@ bool f() {
   ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2AnyEmplaceOtherPayloadGuardRejected) {
+TEST_F(TranslateTest, CoreV2AnyEmplaceLongAcceptsFunctionBody) {
   const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");
   writeFile(Source, R"r19containers(#include <any>
 void f(std::any& a) { a.emplace<long>(3L); }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2AnyInPlaceRenamedHandlerInstallationGuardRejected) {
@@ -386115,15 +386113,13 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AnyIntAssignOtherPayloadGuardRejected) {
+TEST_F(TranslateTest, CoreV2AnyAssignLongAcceptsFunctionBody) {
   const auto Source = tmpFile("any-int-assign-other-payload-guard.cpp");
   writeFile(Source, R"r19containers(#include <any>
 void f(std::any& a, long n) { a = n; }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2AnyIntMakeRenamedInstallationGuardRejected) {
@@ -387680,7 +387676,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2AnyUnsignedInlineUnsignedLongIsNotUnsignedIntRejected) {
+TEST_F(TranslateTest, CoreV2AnyUnsignedLongMakeRetainsValueAtBothOptimizations) {
   const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");
   writeFile(Source, R"r19containers(#include <any>
 int main() {
@@ -387688,10 +387684,17 @@ int main() {
   return value.has_value();
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2VariantGetEarlyReturnReturnsOnDifferentTypeRunAtBothOptimizations) {
@@ -390293,6 +390296,172 @@ TEST_F(TranslateTest, CoreV2AnyNarrowInlineNarrowTagMismatchValueCastRejected) {
   const auto Source = tmpFile("any-narrow-inline-narrow-tag-mismatch-value-cast.cpp");
   writeFile(Source, R"r19containers(#include <any>
 int main() { std::any value = static_cast<unsigned char>(7); return std::any_cast<char>(value); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyLongInlineDistinctNativeLongTagsRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-long-inline-distinct-native-long-tags.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  const long input = sizeof(long) == 8 ? static_cast<long>(-4000000007LL) : -2000000007L;
+  std::any value = input;
+  const auto* number = std::any_cast<long>(&value);
+  if (!number || *number != input || std::any_cast<int>(&value) ||
+      std::any_cast<long long>(&value) || std::any_cast<unsigned long>(&value)) return 1;
+  const unsigned long bits = static_cast<unsigned long>(0xaedcb987f6543210ULL);
+  value = bits;
+  auto* word = std::any_cast<unsigned long>(&value);
+  return !word || *word != bits || std::any_cast<unsigned int>(&value) ||
+      std::any_cast<unsigned long long>(&value);
+}
+)r19containers");
+  const auto Output = tmpFile("any-long-inline-distinct-native-long-tags.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-long-inline-distinct-native-long-tags" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyLongInlineMakeAndCopyNativeLongRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-long-inline-make-and-copy-native-long.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  using Word = unsigned long;
+  constexpr Word input = static_cast<Word>(0x90000000f0000007ULL);
+  std::any original = std::make_any<Word>(input);
+  std::any copy(original);
+  original.reset();
+  const std::any direct(input);
+  if (original.has_value() || std::any_cast<Word>(direct) != input) return 1;
+  const auto* saved = std::any_cast<Word>(&copy);
+  return !saved || *saved != input;
+}
+)r19containers");
+  const auto Output = tmpFile("any-long-inline-make-and-copy-native-long.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-long-inline-make-and-copy-native-long" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyLongInlineLongEmplaceAndMoveRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-long-inline-long-emplace-and-move.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+#include <utility>
+int main() {
+  std::any value;
+  auto& n = value.emplace<long>();
+  n = -19L;
+  std::any receiver;
+  receiver = std::move(value);
+  const auto* moved = std::any_cast<long>(&receiver);
+  return value.has_value() || !moved || *moved != -19L;
+}
+)r19containers");
+  const auto Output = tmpFile("any-long-inline-long-emplace-and-move.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-long-inline-long-emplace-and-move" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyLongInlineSwapNativeLongAndSignedWideRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-long-inline-swap-native-long-and-signed-wide.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any left = 15L;
+  std::any right = -19LL;
+  left.swap(right);
+  auto* native = std::any_cast<long>(&right);
+  auto* wide = std::any_cast<long long>(&left);
+  return !native || *native != 15L || !wide || *wide != -19LL ||
+      std::any_cast<long>(&left) || std::any_cast<long long>(&right);
+}
+)r19containers");
+  const auto Output = tmpFile("any-long-inline-swap-native-long-and-signed-wide.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-long-inline-swap-native-long-and-signed-wide" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyLongInlineSignedLongTagMismatchRejected) {
+  const auto Source = tmpFile("any-long-inline-signed-long-tag-mismatch.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value = 3L;
+  return std::any_cast<long long>(value) != 3LL;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyLongInlineUnsignedLongTagMismatchRejected) {
+  const auto Source = tmpFile("any-long-inline-unsigned-long-tag-mismatch.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value = 7UL;
+  return std::any_cast<unsigned int>(value) != 7U;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyLongInlineMutableLongReferenceCastRejected) {
+  const auto Source = tmpFile("any-long-inline-mutable-long-reference-cast.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value = 7L;
+  return std::any_cast<long&>(value) != 7L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyLongInlineVolatileNativeLongAccessRejected) {
+  const auto Source = tmpFile("any-long-inline-volatile-native-long-access.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value = 7UL;
+  return !std::any_cast<volatile unsigned long>(&value);
+}
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
   ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;

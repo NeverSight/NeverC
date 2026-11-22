@@ -8705,6 +8705,14 @@ std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
   if (Context.hasSameType(Type, Context.UnsignedShortTy) &&
       Context.getTypeSize(Type) == 16 && Context.getTypeAlign(Type) == 16)
     return UtilityAnyScalar{12, UtilityAnyUnsignedShort};
+  const bool SignedLong = Context.hasSameType(Type, Context.LongTy);
+  const bool UnsignedLong = Context.hasSameType(Type, Context.UnsignedLongTy);
+  if ((SignedLong || UnsignedLong) && Context.getTypeSize(Context.VoidPtrTy) == 64) {
+    const auto Bits = Context.getTypeSize(Type);
+    if ((Bits == 32 || Bits == 64) && Context.getTypeAlign(Type) == Bits)
+      return SignedLong ? UtilityAnyScalar{13, UtilityAnyLong}
+                        : UtilityAnyScalar{14, UtilityAnyUnsignedLong};
+  }
   return std::nullopt;
 }
 

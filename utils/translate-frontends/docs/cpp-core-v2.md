@@ -18174,3 +18174,11 @@ The checked inline any representation stores char, signed char, unsigned char,
 short and unsigned short using their own tags and target types. The supported
 scalar constructors, assignment, emplacement, move, swap, reset and casts
 preserve payload width, signedness and type identity.
+
+## Inline long any payloads
+
+The checked inline any representation stores signed and unsigned long with
+their own tags and target widths on LP64 and LLP64. Construction, assignment,
+emplacement, type checks and the admitted casts preserve signedness and type
+identity. The original unsigned-long program retains its exit status at both
+optimization levels.

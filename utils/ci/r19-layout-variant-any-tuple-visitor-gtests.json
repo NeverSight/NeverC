@@ -64,17 +64,18 @@
       "original_case_source_sha256": "07758950c63a906f0c0c2baa32c8cb5447133f329b80545bce742f1b543c21e5",
       "gtest_body_sha256": "d5990f8d6ac9158e40725e0e9794d5e949ddf2d0770b1fb02239d3e747409525",
       "source_only": true
+    },
+    {
+      "name": "any-emplace-other-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmplaceLongAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "a4603165b552041b4480b85c007fb027daed03f2e778ecc60b00debd40b9ea47",
+      "original_case_source_sha256": "a4603165b552041b4480b85c007fb027daed03f2e778ecc60b00debd40b9ea47",
+      "gtest_body_sha256": "432b71b519dbc24860808feb35710664e9b317d494f1eef364cea5ee42e2e1ba",
+      "source_only": true
     }
   ],
   "negative_cases": [
-    {
-      "name": "any-emplace-other-payload-guard",
-      "formal_test_name": "TranslateTest.CoreV2AnyEmplaceOtherPayloadGuardRejected",
-      "expected": "reject",
-      "source_sha256": "a4603165b552041b4480b85c007fb027daed03f2e778ecc60b00debd40b9ea47",
-      "original_case_source_sha256": "a4603165b552041b4480b85c007fb027daed03f2e778ecc60b00debd40b9ea47",
-      "gtest_body_sha256": "3b3ec26d90f69f2cc64d3a23711a659a076b70ed0fe541af0d63fe52517bdae3"
-    },
     {
       "name": "any-in-place-renamed-handler-installation-guard",
       "formal_test_name": "TranslateTest.CoreV2AnyInPlaceRenamedHandlerInstallationGuardRejected",
@@ -175,11 +176,11 @@
     },
     {
       "name": "any-emplace-other-payload-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n",
       "source_sha256": "a4603165b552041b4480b85c007fb027daed03f2e778ecc60b00debd40b9ea47",
       "public_header": "any",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-in-place-renamed-handler-installation-guard",
@@ -223,7 +224,7 @@
     "TranslateTest.CoreV2VariantOwnedVisitOverloadByActiveAlternativeRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantOwnedVisitVoidBorrowEvaluatedOnceRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyInPlaceDefaultDoubleAcceptsFunctionBody",
-    "TranslateTest.CoreV2AnyEmplaceOtherPayloadGuardRejected",
+    "TranslateTest.CoreV2AnyEmplaceLongAcceptsFunctionBody",
     "TranslateTest.CoreV2AnyInPlaceRenamedHandlerInstallationGuardRejected",
     "TranslateTest.CoreV2VariantOwnedVisitRenamedInvokeRejected",
     "TranslateTest.CoreV2VariantOwnedVisitRenamedDispatchRejected",
@@ -247,5 +248,5 @@
     "named-variant-visitor": "1a713942339b83425f91551689666ba5bca925776c2376e4f0430ee3da059c29"
   },
   "native_reference_authentication_sha256": "d11ee7a140d27204c569b076b43821ebe3deff92876cb3dc6a2ede1d2dcc0fae",
-  "source_proof_sha256": "b09df63e9979a3cb5a7da0ef36df092fffeeaadfc697087209604d8fbe08e6ab"
+  "source_proof_sha256": "6d452f539f91f94ba34c5f9fc4216a83b4b09ffff30d3dccaf12b4b669a64974"
 }

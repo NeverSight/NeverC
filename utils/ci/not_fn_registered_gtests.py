@@ -1526,6 +1526,36 @@ def restore_any_narrow_inline_history(source):
     return restored
 
 
+R19_ANY_LONG_INLINE_REGISTERED_SHA256 = '53e99dffe80159aa038982885bbfee7f1754826e1bdee52379334e31896f7e8b'
+R19_ANY_LONG_INLINE_MAINTAINED_SHA256 = 'af6ac408f8952c76df507ba8cd681bc37e8caac5a6d4929a123187b498967475'
+R19_ANY_LONG_INLINE_PREVIOUS_REGISTERED_SHA256 = 'ef55f1aa18a14070806d8cde459ca4e9427c524342219dba308bf6426224817d'
+R19_ANY_LONG_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'd54d1ec315de5daf79db5c01d8e1dbd53a914fd11baf2c5b4388ee32201de29f'
+R19_ANY_LONG_INLINE_ADDITIONS_SHA256 = '310b7fbda9aa36467d8cf73495c2ea0283679083ad8978fe9e0f68d0c52b83a4'
+R19_ANY_LONG_INLINE_MAINTAINED_SIZE = 20065545
+R19_ANY_LONG_INLINE_ADDITIONS_SIZE = 7575
+
+
+def restore_any_long_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_LONG_INLINE_REGISTERED_SHA256, R19_ANY_LONG_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_LONG_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_LONG_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_LONG_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyUnsignedLongMakeRetainsValueAtBothOptimizations) {\n  const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n)r19containers");\n  const auto Output = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyUnsignedLongMakeRetainsValueAtBothOptimizations) {\n  const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n)r19containers");\n  const auto Output = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyUnsignedInlineUnsignedLongIsNotUnsignedIntRejected) {\n  const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyAssignLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-assign-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a, long n) { a = n; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyAssignLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-assign-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a, long n) { a = n; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2AnyIntAssignOtherPayloadGuardRejected) {\n  const auto Source = tmpFile("any-int-assign-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a, long n) { a = n; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyEmplaceLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyEmplaceLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2AnyEmplaceOtherPayloadGuardRejected) {\n  const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ANY_LONG_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_LONG_INLINE_REGISTERED_SHA256
+             else R19_ANY_LONG_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1826,6 +1856,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ANY_NARROW_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_LONG_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_LONG_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_LONG_INLINE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

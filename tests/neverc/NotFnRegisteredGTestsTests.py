@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.any_long_inline_registered = cls.registered
+        cls.any_long_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_long_inline_original = cls.adapter.restore_original_gtests(cls.any_long_inline_registered,
+                                                                        cls.any_long_inline_suffix)
+        cls.registered = cls.adapter.restore_any_long_inline_history(cls.any_long_inline_registered)
         cls.any_narrow_inline_registered = cls.registered
         cls.any_narrow_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.any_narrow_inline_original = cls.adapter.restore_original_gtests(cls.any_narrow_inline_registered,
@@ -2624,6 +2629,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_any_narrow_inline_history(self.any_narrow_inline_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.any_narrow_inline_registered, self.any_narrow_inline_suffix + b' ')
+
+
+    def test_any_long_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_long_inline_original + self.any_long_inline_suffix, self.any_long_inline_registered)
+        self.assertEqual(self.adapter.restore_any_long_inline_history(self.any_long_inline_original),
+                         self.any_narrow_inline_original)
+        output, evidence = self.extractor.extract(self.any_long_inline_original, ['TranslateTest.CoreV2AnyLongInlineDistinctNativeLongTagsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLongInlineMakeAndCopyNativeLongRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLongInlineLongEmplaceAndMoveRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLongInlineSwapNativeLongAndSignedWideRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLongInlineSignedLongTagMismatchRejected', 'TranslateTest.CoreV2AnyLongInlineUnsignedLongTagMismatchRejected', 'TranslateTest.CoreV2AnyLongInlineMutableLongReferenceCastRejected', 'TranslateTest.CoreV2AnyLongInlineVolatileNativeLongAccessRejected'])
+        self.assertEqual(evidence['original_test_names'], 8424)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-long-inline-distinct-native-long-tags', output)
+        self.assertIn(b'any-long-inline-long-emplace-and-move', output)
+
+    def test_any_long_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_long_inline_history(self.any_long_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_long_inline_registered, self.any_long_inline_suffix + b' ')
 
 
 if __name__ == '__main__':
