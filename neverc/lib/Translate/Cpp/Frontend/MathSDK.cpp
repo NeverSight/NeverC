@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -135997,7 +135998,22 @@ static bool associativeStorageDeclaration(const State &S, const SourceManager &S
 static bool approvedAssociativeStorageGraph(const State &S, const SourceManager &SM,
                                             QualType Type, const ASTContext &Context,
                                             bool Ordered) {
-  auto Pinned = [&](const Decl *D) { return associativeStorageDeclaration(S, SM, D, Ordered); };
+  auto Fail = [&](QualType T, unsigned Line) {
+    if (!Ordered)
+      llvm::errs() << "SET_STORAGE graph branch " << Line
+                   << " type=" << T.getAsString() << "\n";
+    return false;
+  };
+  auto Pinned = [&](const Decl *D) {
+    const bool Valid = associativeStorageDeclaration(S, SM, D, Ordered);
+    if (!Valid && !Ordered) {
+      const auto *Named = dyn_cast<NamedDecl>(D);
+      llvm::errs() << "SET_STORAGE graph declaration " << D->getDeclKindName() << " "
+                   << (Named ? Named->getQualifiedNameAsString() : "") << " "
+                   << D->getLocation().printToString(SM) << "\n";
+    }
+    return Valid;
+  };
   // Authenticate the concrete storage graph, including selected internal
   // specializations. A source specialization must not borrow the owner's
   // header identity even when its physical layout happens to match.
@@ -136005,7 +136021,7 @@ static bool approvedAssociativeStorageGraph(const State &S, const SourceManager 
   unsigned Nodes = 0;
   auto CheckType = [&](auto &&Self, QualType Type, unsigned Depth) -> bool {
     if (Type.isNull() || Depth > 64 || ++Nodes > 4096 || Type->isDependentType())
-      return false;
+      return Fail(Type, __LINE__);
     if (Type->isPointerType() || Type->isReferenceType())
       return Self(Self, Type->getPointeeType(), Depth + 1);
     if (const auto *Array = Context.getAsArrayType(Type))
@@ -136013,30 +136029,30 @@ static bool approvedAssociativeStorageGraph(const State &S, const SourceManager 
     const auto *R = Type->getAsCXXRecordDecl();
     if (!R) return Type->isBuiltinType() || Type->isEnumeralType();
     if (!Seen.insert(R->getCanonicalDecl()).second) return true;
-    for (const auto *D : R->redecls()) if (!Pinned(D)) return false;
+    for (const auto *D : R->redecls()) if (!Pinned(D)) return Fail(Type, __LINE__);
     if (const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
       const auto *Primary = Specialization->getSpecializedTemplate();
       for (const auto *D : Primary->redecls())
-        if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return false;
+        if (!Pinned(D) || !Pinned(D->getTemplatedDecl())) return Fail(Type, __LINE__);
       if (const auto *Partial = Specialization->getSpecializedTemplateOrPartial()
                                    .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
-        if (!Pinned(Partial)) return false;
+        if (!Pinned(Partial)) return Fail(Type, __LINE__);
       for (const auto &Argument : Specialization->getTemplateArgs().asArray()) {
         if (Argument.getKind() == TemplateArgument::Type) {
-          if (!Self(Self, Argument.getAsType(), Depth + 1)) return false;
+          if (!Self(Self, Argument.getAsType(), Depth + 1)) return Fail(Type, __LINE__);
         } else if (Argument.getKind() != TemplateArgument::Integral)
-          return false;
+          return Fail(Type, __LINE__);
       }
     }
     const auto *Definition = R->getDefinition();
     if (!Definition) return true;
     if (!Pinned(Definition) || Definition->isInvalidDecl() ||
         Definition->isDynamicClass() || Definition->isDependentContext())
-      return false;
+      return Fail(Type, __LINE__);
     for (const auto &Base : Definition->bases())
-      if (!Self(Self, Base.getType(), Depth + 1)) return false;
+      if (!Self(Self, Base.getType(), Depth + 1)) return Fail(Type, __LINE__);
     for (const auto *Field : Definition->fields())
-      if (!Pinned(Field) || !Self(Self, Field->getType(), Depth + 1)) return false;
+      if (!Pinned(Field) || !Self(Self, Field->getType(), Depth + 1)) return Fail(Type, __LINE__);
     return true;
   };
   return CheckType(CheckType, Type, 0);
@@ -136045,37 +136061,41 @@ static bool approvedAssociativeStorageGraph(const State &S, const SourceManager 
 bool approvedAssociativeContainerLayoutQuery(
     const State &S, const SourceManager &SM, QualType Type,
     const ASTContext &Context) {
+  const auto Fail = [&](unsigned Line) {
+    llvm::errs() << "SET_STORAGE owner layout branch " << Line << " type=" << Type.getAsString() << "\n";
+    return false;
+  };
   if (Type.isNull() || Type.isVolatileQualified() || Type.isRestrictQualified() ||
       Type.getAddressSpace() != LangAS::Default || Context.getTypeSize(Context.VoidPtrTy) != 64 ||
       Context.getTypeSize(Context.CharTy) != 8)
-    return false;
+    return Fail(__LINE__);
   const auto *Input = Type->getAsCXXRecordDecl();
   const auto *Record = Input ? Input->getDefinition() : nullptr;
   if (!approvedAssociativeContainerMetadataRecord(S, SM, Record, Context) ||
       Record->getNumBases() || Record->getNumVBases() || Record->isDynamicClass() ||
       Record->field_empty() || std::next(Record->field_begin()) != Record->field_end())
-    return false;
+    return Fail(__LINE__);
   const auto Header = associativeContainerHeader(Record->getName());
   const bool Ordered = Header != "unordered_set";
   if (!approvedAssociativeStorageGraph(S, SM, Type, Context, Ordered))
-    return false;
+    return Fail(__LINE__);
   const auto *Storage = *Record->field_begin();
   if (!Storage->getIdentifier() || Storage->getName() != (Ordered ? "__tree_" : "__table_") ||
       Storage->isBitField() || Storage->isMutable() || Storage->hasInClassInitializer() ||
       !cstddefOrigin(S, SM, Storage->getLocation(), "libcxx", Header))
-    return false;
+    return Fail(__LINE__);
   const auto StorageName = Ordered ? "__tree" : "__hash_table";
   const auto *Impl = associativeTypeIdentity(S, SM, Storage->getType()->getAsCXXRecordDecl(),
       StorageName, StorageName, "", Ordered ? 3 : 4);
   const auto *Table = Impl ? Impl->getDefinition() : nullptr;
   if (!Table || Table->getNumBases() || Table->isDynamicClass())
-    return false;
+    return Fail(__LINE__);
   const auto &Layout = Context.getASTRecordLayout(Record);
   const auto &StorageLayout = Context.getASTRecordLayout(Table);
   if (Layout.getFieldOffset(0) || Layout.getSize() != StorageLayout.getSize() ||
       Layout.getAlignment() != StorageLayout.getAlignment() ||
       Context.getTypeAlign(Type) != Context.getTypeAlign(Context.VoidPtrTy))
-    return false;
+    return Fail(__LINE__);
 
   const auto &Public = cast<ClassTemplateSpecializationDecl>(Record)->getTemplateArgs();
   const auto &Private = Impl->getTemplateArgs();
@@ -136090,7 +136110,7 @@ bool approvedAssociativeContainerLayoutQuery(
     if (!Pair || !Rebound || !Pattern || Pattern->getName() != "__map_value_compare" ||
         !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx", "map") ||
         Compare->getSpecializationKind() != TSK_ImplicitInstantiation)
-      return false;
+      return Fail(__LINE__);
     const auto &Args = Compare->getTemplateArgs();
     if (Args.size() != 4 || Args.get(0).getKind() != TemplateArgument::Type ||
         Args.get(1).getKind() != TemplateArgument::Type || Args.get(2).getKind() != TemplateArgument::Type ||
@@ -136101,11 +136121,11 @@ bool approvedAssociativeContainerLayoutQuery(
         !Context.hasSameType(Args.get(0).getAsType(), Context.IntTy) ||
         !Context.hasSameType(Args.get(1).getAsType(), Value) ||
         !Context.hasSameType(Args.get(2).getAsType(), Public.get(2).getAsType()))
-      return false;
+      return Fail(__LINE__);
   } else {
     for (unsigned I = 0; I < Private.size(); ++I)
       if (!Context.hasSameType(Private.get(I).getAsType(), Public.get(I).getAsType()))
-        return false;
+        return Fail(__LINE__);
   }
 
   auto Field = [&](const CXXRecordDecl *R, llvm::StringRef Name) -> const FieldDecl * {
@@ -136131,7 +136151,7 @@ bool approvedAssociativeContainerLayoutQuery(
   const uint64_t P = Context.getTypeSize(Context.VoidPtrTy);
   const auto *Size = Field(Table, "__size_");
   if (!Size || !Context.hasSameType(Size->getType(), Context.getSizeType()))
-    return false;
+    return Fail(__LINE__);
   if (Ordered) {
     const auto *Begin = Field(Table, "__begin_node_");
     const auto *End = Field(Table, "__end_node_");
@@ -137165,21 +137185,26 @@ static std::optional<UtilityUnorderedTableRecord> approvedUnorderedStorage(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context, bool Mapped,
     const std::function<bool(QualType)> &Complete) {
+  const auto Fail = [&](unsigned Line) -> std::optional<UtilityUnorderedTableRecord> {
+    if (!Mapped)
+      llvm::errs() << "SET_STORAGE table branch " << Line << "\n";
+    return std::nullopt;
+  };
   auto Admitted = [&](const CXXRecordDecl *Candidate) {
     return Mapped ? approvedUnorderedMapMetadataRecord(S, SM, Candidate, Context)
                   : approvedEmptyHashSetRecord(S, SM, Candidate, Context);
   };
   if (!Record || !Admitted(Record))
-    return std::nullopt;
+    return Fail(__LINE__);
   if (!Record->getDefinition() && Complete &&
-      !Complete(Context.getRecordType(Record))) return std::nullopt;
+      !Complete(Context.getRecordType(Record))) return Fail(__LINE__);
   const auto *Map = Record->getDefinition();
   if (!Map || !Admitted(Map) ||
       Map->isInvalidDecl() || Map->isDynamicClass() || Map->getNumBases())
-    return std::nullopt;
+    return Fail(__LINE__);
   auto Pinned = [&](const Decl *D) { return associativeStorageDeclaration(S, SM, D, false); };
   if (!approvedAssociativeStorageGraph(S, SM, Context.getRecordType(Map), Context, false))
-    return std::nullopt;
+    return Fail(__LINE__);
   auto Field = [&](const CXXRecordDecl *R, llvm::StringRef Name) -> const FieldDecl * {
     R = R ? R->getDefinition() : nullptr;
     if (!R) return nullptr;
@@ -137228,27 +137253,30 @@ static std::optional<UtilityUnorderedTableRecord> approvedUnorderedStorage(
       !Context.hasSameType(BucketCount->getType(), Context.getSizeType()) ||
       !Context.hasSameType(Size->getType(), Context.getSizeType()) ||
       !Context.hasSameType(LoadFactor->getType(), Context.FloatTy))
-    return std::nullopt;
+    return Fail(__LINE__);
   const auto *Base = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
       Next->getType()->getPointeeType()->getAsCXXRecordDecl());
   if (!Base || Base->getTemplateArgs().size() != 1 ||
       Base->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
-      !Base->getTemplateArgs().get(0).getAsType()->isPointerType()) return std::nullopt;
+      !Base->getTemplateArgs().get(0).getAsType()->isPointerType()) return Fail(__LINE__);
   const auto NodeType = Base->getTemplateArgs().get(0).getAsType()->getPointeeType();
   const auto *Node = NodeType->getAsCXXRecordDecl();
   if (Node && !Node->getDefinition() && Complete) {
-    if (!Complete(NodeType)) return std::nullopt;
+    if (!Complete(NodeType)) return Fail(__LINE__);
     // Completion can select a previously unmaterialized specialization.
     if (!approvedAssociativeStorageGraph(S, SM, Context.getRecordType(Map), Context, false))
-      return std::nullopt;
+      return Fail(__LINE__);
   }
+  if (!Mapped)
+    llvm::errs() << "SET_STORAGE candidate node " << NodeType.getAsString()
+                 << " declaration=" << bool(Node) << " complete=" << (Node && Node->getDefinition()) << "\n";
   Node = Node ? Node->getDefinition() : nullptr;
   const auto *Hash = Field(Node, "__hash_");
   const FieldDecl *Payload = nullptr;
   if (Node)
     for (const auto *F : Node->fields())
       if (F->isAnonymousStructOrUnion()) {
-        if (Payload) return std::nullopt;
+        if (Payload) return Fail(__LINE__);
         Payload = F;
       }
   const auto *PayloadRecord = Child(Payload);
@@ -137262,8 +137290,16 @@ static std::optional<UtilityUnorderedTableRecord> approvedUnorderedStorage(
       (Mapped ? Context.getTypeSize(Value->getType()) != 2 * Context.getTypeSize(Context.IntTy)
               : !Context.hasSameType(Value->getType(), Context.IntTy)) ||
       Context.getTypeSize(NodeType) != 2 * P + 2 * Context.getTypeSize(Context.IntTy) ||
-      Context.getTypeAlign(NodeType) != Context.getTypeAlign(Context.VoidPtrTy))
-    return std::nullopt;
+      Context.getTypeAlign(NodeType) != Context.getTypeAlign(Context.VoidPtrTy)) {
+    if (!Mapped)
+      llvm::errs() << "SET_STORAGE node fields record=" << bool(Node)
+                   << " bases=" << (Node ? Node->getNumBases() : 0)
+                   << " hash=" << bool(Hash) << " payload=" << bool(Payload) << " value=" << bool(Value)
+                   << " hash_offset=" << Offset(Node, Hash)
+                   << " payload_offset=" << Offset(Node, Payload) << " value_offset=" << Offset(PayloadRecord, Value)
+                   << "\n";
+    return Fail(__LINE__);
+  }
   return UtilityUnorderedTableRecord{Map, Context.getPointerType(Context.VoidPtrTy),
       Context.VoidPtrTy, NodeType, uint64_t(Context.getTypeSizeInChars(NodeType).getQuantity()),
       uint64_t(Offset(Node, Payload) / Context.getCharWidth()), Mapped};
@@ -137353,22 +137389,56 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
       !Context.hasSameType(Method->getReturnType(), Result) || !Context.hasSameType(Call->getType(), Result) ||
       !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
       !approvedUtilityUnorderedSetStorage(S, SM, Owner, Context) ||
-      !orderedPinnedFunction(S, SM, Method, "unordered_set"))
+      !orderedPinnedFunction(S, SM, Method, "unordered_set")) {
+    if (Erase || Insert)
+      llvm::errs() << "SET_MODIFIER public declaration " << Name
+                   << " return=" << Method->getReturnType().getAsString()
+                   << " class=" << Method->getParent()->getQualifiedNameAsString()
+                   << " location=" << Method->getLocation().printToString(SM)
+                   << " member=" << bool(Member) << " arrow=" << (Member && Member->isArrow())
+                   << " lvalue=" << (Member && Member->getBase()->isLValue())
+                   << " owned=" << (Member && S.owns(SM, Member->getMemberLoc()))
+                   << " const=" << Method->isConst() << " static=" << Method->isStatic()
+                   << " volatile=" << Method->isVolatile() << " virtual=" << Method->isVirtual()
+                   << " template=" << bool(Method->getPrimaryTemplate())
+                   << " method_arity=" << Method->getNumParams() << " call_arity=" << Call->getNumArgs()
+                   << " method_result=" << Context.hasSameType(Method->getReturnType(), Result)
+                   << " call_result=" << Context.hasSameType(Call->getType(), Result)
+                   << " base_type=" << (Member && Context.hasSameUnqualifiedType(
+                          Member->getBase()->getType(), Context.getRecordType(Owner)))
+                   << " storage=" << bool(approvedUtilityUnorderedSetStorage(S, SM, Owner, Context))
+                   << " pinned=" << orderedPinnedFunction(S, SM, Method, "unordered_set") << "\n";
+
+    if (Erase || Insert) {
+      const bool Source = approvedHashSetBucketSource(S, SM, Method, Owner, Context);
+      llvm::errs() << "SET_MODIFIER body alone " << Name << " authenticated=" << Source << "\n";
+    }
     return std::nullopt;
+  }
   if (KeyOperation && (!Context.hasSameType(Method->getParamDecl(0)->getType(),
                                     Context.getLValueReferenceType(Context.IntTy.withConst())) ||
-                !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy)))
+                !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy))) {
+    if (Erase)
+      llvm::errs() << "SET_MODIFIER erase key parameter " << Method->getParamDecl(0)->getType().getAsString() << "\n";
     return std::nullopt;
+  }
   if (Insert) {
     const auto Parameter = Method->getParamDecl(0)->getType();
     const auto List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
     if (Parameter->isReferenceType() || Parameter.hasQualifiers() || !List ||
         !Context.hasSameType(List->ElementType, Context.IntTy) ||
-        !Context.hasSameType(Call->getArg(0)->getType(), Parameter))
+        !Context.hasSameType(Call->getArg(0)->getType(), Parameter)) {
+      llvm::errs() << "SET_MODIFIER list signature parameter=" << Parameter.getAsString()
+                   << " argument=" << Call->getArg(0)->getType().getAsString()
+                   << " list=" << bool(List) << "\n";
       return std::nullopt;
+    }
   }
-  if (!approvedHashSetBucketSource(S, SM, Method, Owner, Context))
+  if (!approvedHashSetBucketSource(S, SM, Method, Owner, Context)) {
+    if (Erase || Insert)
+      llvm::errs() << "SET_MODIFIER dependencies " << Name << "\n";
     return std::nullopt;
+  }
   if (Count) return UtilityOperation::UnorderedSetCount;
   if (Erase) return UtilityOperation::UnorderedSetEraseKey;
   return Insert ? UtilityOperation::UnorderedSetInsertList : UtilityOperation::UnorderedSetClear;
