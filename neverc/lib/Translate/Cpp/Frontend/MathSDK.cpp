@@ -136910,9 +136910,15 @@ static bool emptyHashLoadFactorSource(const State &S, const SourceManager &SM,
       !Context.hasSameType(Divide->getRHS()->getType(), Context.FloatTy))
     return false;
 
-  const auto *Numerator = dyn_cast_or_null<CStyleCastExpr>(orderedExpression(Divide->getLHS()));
-  const auto *SizeCall = Numerator && Numerator->getCastKind() == CK_IntegralToFloating
-      ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Numerator->getSubExpr())) : nullptr;
+  const auto *Numerator = dyn_cast<CStyleCastExpr>(Divide->getLHS()->IgnoreParens());
+  const auto *ConvertSize = Numerator && Numerator->getCastKind() == CK_NoOp
+      ? dyn_cast<ImplicitCastExpr>(Numerator->getSubExpr()->IgnoreParens()) : nullptr;
+  const auto *ConvertCount = dyn_cast<ImplicitCastExpr>(Divide->getRHS()->IgnoreParens());
+  if (!ConvertSize || ConvertSize->getCastKind() != CK_IntegralToFloating ||
+      !Context.hasSameType(ConvertSize->getType(), Context.FloatTy) ||
+      !ConvertCount || ConvertCount->getCastKind() != CK_IntegralToFloating)
+    return false;
+  const auto *SizeCall = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(ConvertSize->getSubExpr()));
   const auto *Size = hashTableMethod(S, SM, SizeCall, Table, "size");
   const auto *Field = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Size)));
   return Size && Size->isConst() && orderedReceiver(SizeCall) && Field &&
