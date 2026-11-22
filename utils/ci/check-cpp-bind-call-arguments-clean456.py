@@ -1,5 +1,6 @@
 """Rebuild five bridge units against an authenticated unchanged private ABI."""
-from pathlib import Path
+from collections import Counter
+from pathlib import Path, PurePosixPath
 import argparse
 import gzip
 import hashlib
@@ -11,6 +12,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import time
 import traceback
 import urllib.error
@@ -97,6 +99,49 @@ def members(path):
     return result
 
 
+
+EXPECTED_SCOPED_STOCK_COVERAGE = {'cases': 742, 'processes': 19617, 'distinct_output_files': 11806, 'coverage_sha256': 'd469c473f60f6fcfcc42f98c198a52a9cd8e63474718eca0cc9e1092f0fec579'}
+
+def stock_output_key(output, root):
+    path = PurePosixPath(output)
+    root = PurePosixPath(root)
+    assert path.is_absolute() and ".." not in path.parts and path != root
+    if path.is_relative_to(root):
+        return path.relative_to(root).as_posix()
+    # The stock verifier also runs the relocated-project cases in TemporaryDirectory.
+    assert path.parts[:2] == ("/", "tmp") and len(path.parts) == 5
+    relocated = re.fullmatch(r"(neverc-[^/]+)-[a-z0-9_]{8}", path.parts[2])
+    assert relocated
+    return "tmp:" + relocated[1] + "/" + "/".join(path.parts[3:])
+
+
+def stock_coverage_digest(coverage):
+    counts = sorted(coverage.items(), key=lambda item: (
+        item[0][0], item[0][1], item[0][2], item[0][3] is None, item[0][3] or ""))
+    return hashlib.sha256(json.dumps(counts, separators=(",", ":")).encode()).hexdigest()
+
+
+def stock_coverage(summary, process_count, output_paths, coverage):
+    assert sum(coverage.values()) == process_count
+    return dict(cases=summary["cases"], processes=process_count,
+                distinct_output_files=len(output_paths), coverage_sha256=stock_coverage_digest(coverage))
+
+
+def retained_stock_target(contents, returncode):
+    # This exact boundary request is a root array with no target. Preserve
+    # its rejection and file digests without recursing through its contents.
+    if len(contents) == 200_001 and contents == b"[" * 100_000 + b"0" + b"]" * 100_000:
+        assert returncode == 1
+        return None
+    try:
+        request = json.loads(contents)
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if isinstance(request, dict) and isinstance(request.get("target"), str):
+        return request["target"]
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--repo', type=Path, required=True)
@@ -170,17 +215,13 @@ def main():
         assert plan['fixture_group'] == 'bind-call-arguments-clean456' and plan['preparation_only'] is False
         assert plan['execution_binding_required'] is True and plan['source_trace_included'] is False
         assert plan['private_bind_admission_implemented'] is True and plan['bind_lowering_implemented'] is True
-        assert plan['required_requests'] == 750 and len(plan['cases']) == 125
+        assert plan['required_requests'] == 30 and len(plan['cases']) == 5
         assert plan['target_abis'] == ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'x86_64-apple-darwin', 'arm64-apple-darwin', 'x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc'] and len(set(plan['target_abis'])) == 6
         assert re.fullmatch('[0-9a-f]{40}', plan['source_repair_commit'])
         assert plan['clean_source_basis'] == plan['source_repair_commit']
-        if plan.get('source_syntax_validation_pending', False):
-            assert plan['post_merge_validation'] is True
-            assert plan['actual_same_source_six_report_sha256'] is None
-            assert plan['actual_same_source_six_proof_sha256'] is None
-        else:
-            for field in ['actual_same_source_six_report_sha256', 'actual_same_source_six_proof_sha256']:
-                assert re.fullmatch('[0-9a-f]{64}', plan[field])
+        assert plan['new_sdk_observation_only'] is True
+        assert plan['requires_fresh_source_compilation'] is True
+        assert plan['old_sdk_syntax_or_execution_proofs_reused'] is False
         report['plan'] = plan
         report['revision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
         report['source_sha256'] = {name: sha(root / name) for name in plan['candidate_source_paths']}
@@ -188,17 +229,21 @@ def main():
         assert len(inputs) == 19
         current = {name: sha(root / PREFIX / name) for name in inputs}
         changed = sorted(name for name in current if current[name] != inputs[name])
-        assert changed == plan['allowed_bridge_source_changes'] == ['Frontend.cpp', 'Frontend.h', 'Lowering.cpp', 'MathSDK.cpp']
+        assert changed == plan['allowed_bridge_source_changes'] == ['CoffWeakAliases.py', 'Frontend.cpp', 'Frontend.h', 'Lowering.cpp', 'MathSDK.cpp', 'MsvcRuntimeSymbols.py', 'SetupGuidSymbols.py']
         assert current == plan['current_private_input_sha256']
         report['exact_private_input_sha256'] = current
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
-        assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
+        assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == 'b4a7b597150882cd93285481cc060d2eab6949b5c8d50b7ce234579cc814bd77'
         catalog = json.loads((sdk / 'catalog.json').read_text())
         records = catalog['headers'] + catalog['metadata']
-        assert len(records) == 665
+        assert len(records) == 687
         for row in records:
             assert sha(sdk / row['root'] / row['path']) == row['sha256']
-        report['sdk_files_verified'] = 665
+        report['sdk_files_verified'] = 687
+        sdk_inputs = {p.relative_to(sdk).as_posix(): sha(p)
+                      for p in sdk.rglob('*') if p.is_file()}
+        assert sdk_inputs == plan['sdk_input_sha256'] and len(sdk_inputs) == 695
+        report['exact_sdk_input_sha256'] = sdk_inputs
         producer_run = api('actions/runs/' + str(plan['producer_run_id']))
         producer_job = api('actions/jobs/' + str(plan['producer_actual_job']))
         assert producer_run['head_sha'] == producer_job['head_sha'] == plan['producer_commit']
@@ -259,7 +304,22 @@ def main():
         header = (root / PREFIX / 'BuildID.h.in').read_bytes().replace(
             b'@NEVERC_CPP_BUILD_ID@', build_id.removeprefix('cpp-frontend-1-').encode())
         (include / 'BuildID.h').write_bytes(header)
-        shutil.copyfile(generated / 'BuiltinCppSdkData.h', include / 'BuiltinCppSdkData.h')
+        # Preserve the authenticated old producer header as seed evidence.
+        # The new SDK must be embedded before any bridge source is compiled.
+        run(['python3', '-I', '-B', sdk / 'embed.py',
+             '--catalog', sdk / 'catalog.json', '--root', sdk,
+             '--output', include / 'BuiltinCppSdkData.h'], 'prepare/current-sdk-embedding', 180)
+        embedding = include / 'BuiltinCppSdkData.h'
+        assert embedding.is_file()
+        assert sha(embedding) != sha(generated / 'BuiltinCppSdkData.h')
+        assert ('CatalogSHA256[] = "' + plan['sdk_catalog_sha256'] + '"') in embedding.read_text()
+        report['current_sdk_embedding'] = {
+            'catalog_sha256': sha(sdk / 'catalog.json'), 'generator_sha256': sha(sdk / 'embed.py'),
+            'previous_producer_header_sha256': sha(generated / 'BuiltinCppSdkData.h'),
+            'new_header_sha256': sha(embedding), 'distribution_id': catalog['distribution_id'],
+            'generated_in_actions': True}
+        save()
+        assert sha(include / 'BuiltinCppSdkData.h') == plan['expected_embedding_sha256']
         report['new_build_id'] = build_id
         report['new_build_id_header_sha256'] = sha(include / 'BuildID.h')
         report['original_bridge_compile_commands'] = prior['actual_private_bridge_compile_commands']
@@ -375,9 +435,128 @@ def main():
                 save()
         report['invocation_inventory'] = [{'path': str(path.relative_to(out)), 'sha256': sha(path), 'bytes': path.stat().st_size}
             for path in sorted((out / 'invocations').rglob('*')) if path.is_file()]
-        assert len(report['requests']) == 750 and len(report['invocation_inventory']) == 3750
+        assert len(report['requests']) == 30 and len(report['invocation_inventory']) == 150
+        assert len(report['commands']) == plan['required_command_count'] == 48
         passed = all(row['expectation_satisfied'] for row in report['requests'])
-        report.update(completed=True, evidence_authenticated=True, passed=passed, not_fn_private_support_complete=False, scope='original125_case_six64bit_regression750',
+        focus_passed = passed
+        core_script = root / "utils/translate-frontends/cpp/tests/verify.py"
+        assert sha(core_script) == plan['core_protocol_sha256']
+        stock_script = core_script
+        core_script = root / plan['core_protocol_64_script']
+        assert sha(core_script) == plan['core_protocol_64_sha256']
+        legacy_targets = set(plan['unselected_legacy_targets'])
+        assert plan['core_protocol_timeout_seconds'] == 3600
+        core_invocations = build / 'full-core-protocol-invocations'
+        core_invocations.mkdir()
+        previous_invocations = environment['NEVERC_CPP_PROTOCOL_EXECUTION_DIR']
+        assert 'NEVERC_CPP_PROTOCOL_BOUNDARY_REPLAY' not in environment
+        environment['NEVERC_CPP_PROTOCOL_EXECUTION_DIR'] = str(core_invocations)
+        environment['NEVERC_CPP_PROTOCOL_BOUNDARY_REPLAY'] = '1'
+        try:
+            core, core_log = run([sys.executable, '-I', '-B', core_script, '--neverc', executable,
+                '--target', plan['core_protocol_target'], '--output-dir', build / 'full-core-protocol'],
+                'execute/full-core-protocol', 3600, allowed_failure=True)
+        finally:
+            environment.pop('NEVERC_CPP_PROTOCOL_BOUNDARY_REPLAY')
+            environment['NEVERC_CPP_PROTOCOL_EXECUTION_DIR'] = previous_invocations
+        assert len(report['commands']) == 49
+        processes = list(core_invocations.iterdir())
+        page_size, max_pages = 5000, 8
+        count = len(processes)
+        assert count <= page_size * max_pages
+        invocations, pages = [], []
+        request_kinds, output_paths = set(), set()
+        coverage = Counter()
+        core_manifest = out / 'execute/full-core-protocol-invocations.json'
+
+        def save_invocations():
+            assert 0 < len(invocations) <= page_size and len(pages) < max_pages
+            page = core_manifest.with_name(f'full-core-protocol-invocations-{len(pages):02d}.json')
+            with page.open('x') as stream:
+                json.dump(invocations, stream, separators=(',', ':'))
+                stream.write('\n')
+            assert page.stat().st_size <= 8 * 1024**2
+            pages.append(dict(name=page.name, sha256=sha(page), count=len(invocations)))
+            invocations.clear()
+        for process in sorted(processes, key=lambda path: int(path.name)):
+            assert process.is_dir() and not process.is_symlink() and process.name.isdecimal()
+            required = {'argv.txt','environment-before.tsv','response.json','returncode.txt'}
+            files = {path.name for path in process.iterdir()}
+            request, = files - required
+            assert files == required | {request} and request in {'request.json','request-kind.txt'}
+            standard = process / request
+            assert standard.is_file() and not standard.is_symlink()
+            assert standard.stat().st_size <= 1024*1024 + 1
+            kind = 'regular' if request == 'request.json' else standard.read_text().strip()
+            assert kind in {'regular','directory','character','fifo'}
+            code = int((process / 'returncode.txt').read_text())
+            target = retained_stock_target(standard.read_bytes(), code) if kind == 'regular' else None
+            assert target not in legacy_targets
+            assert code in (0, 1)
+            command = (process / 'argv.txt').read_text().splitlines()
+            assert len(command) == 6 and command[:3] == [str(executable),'__neverc_cpp_frontend','--request']
+            assert command[4] == '--output'
+            response = process / 'response.json'
+            assert response.is_file() and not response.is_symlink()
+            assert response.stat().st_size <= 32*1024*1024
+            assert len((process / 'environment-before.tsv').read_text().splitlines()) == 5
+            request_kinds.add(kind)
+            output_paths.add(command[5])
+            if core == 0:
+                logical_output = stock_output_key(command[5], build / 'full-core-protocol')
+                coverage[(logical_output, kind, code, target)] += 1
+            invocations.append(dict(pid=int(process.name),request_kind=kind,returncode=code,
+                request_path=command[3],output_path=command[5],request_sha256=sha(standard),response_sha256=sha(response),target=target))
+            if len(invocations) == page_size:
+                save_invocations()
+        if invocations:
+            save_invocations()
+        assert sum(page['count'] for page in pages) == count
+        with core_manifest.open('x') as stream:
+            json.dump(dict(version=1, count=count, pages=pages), stream, separators=(',', ':'))
+            stream.write('\n')
+        assert core_manifest.stat().st_size <= 8*1024*1024
+        summary = json.loads(core_log.read_text()) if core == 0 else None
+        if summary is not None:
+            assert summary['status'] == 'passed' and type(summary['cases']) is int and summary['cases'] > 0
+            assert summary['target'] == plan['core_protocol_target']
+            assert count > summary['cases'] > 0
+            assert request_kinds == {'regular','directory','character','fifo'}
+            coverage_proof = stock_coverage(summary, count, output_paths, coverage)
+            assert coverage_proof == EXPECTED_SCOPED_STOCK_COVERAGE
+            report['scoped_stock_output_coverage'] = coverage_proof
+        report['full_core_protocol'] = dict(returncode=core, summary=summary,
+            process_count=count, invocation_manifest_sha256=sha(core_manifest),
+            script_sha256=sha(stock_script), selected_script_sha256=sha(core_script), sdk_targets=plan['core_protocol_64_targets'], log_sha256=sha(core_log), focused_header_checks_passed=focus_passed)
+        if core != 0:
+            collector = root / plan['stale_expectations_collector']
+            assert sha(collector) == plan['stale_expectations_collector_sha256']
+            collected = out / 'execute/full-core-stale-expectations.json'
+            replay_pid = build / 'stale-protocol-invocations'
+            replay_pid.mkdir()
+            assert environment['NEVERC_CPP_PROTOCOL_EXECUTION_DIR'] == previous_invocations
+            environment['NEVERC_CPP_PROTOCOL_BOUNDARY_REPLAY'] = '1'
+            environment['NEVERC_CPP_PROTOCOL_EXECUTION_DIR'] = str(replay_pid)
+            try:
+                diagnostic_code, diagnostic_log = run([sys.executable, '-I', '-B', collector,
+                    '--verify', core_script, '--verify-sha256', plan['core_protocol_64_sha256'],
+                    '--diagnostics', collected, '--neverc', executable,
+                    '--target', plan['core_protocol_target'], '--output-dir', build / 'stale-core-protocol'],
+                    'execute/full-core-stale-expectations', 3000, allowed_failure=True)
+            finally:
+                environment.pop('NEVERC_CPP_PROTOCOL_BOUNDARY_REPLAY')
+                environment['NEVERC_CPP_PROTOCOL_EXECUTION_DIR'] = previous_invocations
+            assert len(report['commands']) == 50
+            if collected.is_file():
+                assert collected.stat().st_size <= 1024**2
+                diagnostic = json.loads(collected.read_text())
+                assert diagnostic['diagnostic_only'] and diagnostic['unchanged_stock_suite_required']
+                assert diagnostic['source_sha256'] == plan['core_protocol_64_sha256']
+                report['stale_negative_diagnostics'] = dict(log_sha256=sha(diagnostic_log),
+                    collected_sha256=sha(collected), observed_expected_reject_but_accepted=len(diagnostic['unexpected_accepts']),
+                    separate_from_stock_suite=True, returncode=diagnostic_code)
+        passed = focus_passed and core == 0
+        report.update(completed=True, evidence_authenticated=True, passed=passed, not_fn_private_support_complete=False, scope='r19_stl_core_protocol_header', diagnostic_only=True, support_evidence=False,
                       focused_request_contract_passed=passed,
                       failure=None if passed else 'Actual request expectations failed; retain every original response for diagnosis.')
         save()
