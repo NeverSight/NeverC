@@ -710,13 +710,17 @@ public:
           E->getCallee()->IgnoreParenImpCasts());
       const auto File = S.sdkFile(SM, E->getExprLoc());
       if (SDKGenerator && Destructor && File && File->Root == "libcxx" &&
-          File->Path == "__memory/allocator.h" && !E->getNumArgs() &&
+          !E->getNumArgs() &&
           E->getType()->isVoidType() && Destructor->isArrow() &&
           Destructor->getBase()->getType()->isPointerType() &&
-          ((Destructor->getDestroyedType()->isUnsignedIntegerType() &&
-            Context.getTypeSize(Destructor->getDestroyedType()) == 32) ||
-           Context.hasSameType(Destructor->getDestroyedType(), Context.DoubleTy) ||
-           Context.hasSameType(Destructor->getDestroyedType(), Context.FloatTy)) &&
+          ((File->Path == "__memory/allocator.h" &&
+            ((Destructor->getDestroyedType()->isUnsignedIntegerType() &&
+              Context.getTypeSize(Destructor->getDestroyedType()) == 32) ||
+             Context.hasSameType(Destructor->getDestroyedType(), Context.DoubleTy) ||
+             Context.hasSameType(Destructor->getDestroyedType(), Context.FloatTy))) ||
+           (File->Path == "__memory/construct_at.h" && Generator->getIdentifier() &&
+            Generator->getName() == "unordered_set" &&
+            Context.hasSameType(Destructor->getDestroyedType(), Context.IntTy))) &&
           Context.hasSameUnqualifiedType(Destructor->getDestroyedType(),
               Destructor->getBase()->getType()->getPointeeType()))
         return true;
