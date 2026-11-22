@@ -104,12 +104,19 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       return false;
     }
   }
+  bool isUnorderedTableOwner() const {
+    if (!SDKGenerator || !Generator->getIdentifier())
+      return false;
+    const auto Name = Generator->getName();
+    return Name == "unordered_map" || Name == "unordered_set" || Name == "unordered_multiset";
+  }
+
   bool engineIntrinsic(const FunctionDecl *F, SourceLocation Location) const {
     if (!F || !F->isImplicit())
       return false;
     if (F->getBuiltinID() == Builtin::BI__builtin_ceilf) {
       const auto Site = S.sdkFile(SM, Location);
-      if (!SDKGenerator || Generator->getName() != "unordered_map" || !Site ||
+      if (!isUnorderedTableOwner() || !Site ||
           Site->Root != "libcxx" || Site->Path != "__math/rounding_functions.h" ||
           F->isVariadic() || F->getNumParams() != 1 ||
           !Context.hasSameType(F->getReturnType(), Context.FloatTy) ||
@@ -584,8 +591,7 @@ public:
       const auto *Definition = R->getDefinition();
       // pointer_traits keeps an intentionally incomplete tag in an unselected
       // conditional type. It is a proof dependency, never runtime storage.
-      if (!Definition && SDKGenerator && Generator->getName() == "unordered_map" &&
-          R->getName() == "__nat") {
+      if (!Definition && isUnorderedTableOwner() && R->getName() == "__nat") {
         const auto *Parent = dyn_cast<CXXRecordDecl>(R->getDeclContext());
         const auto File = S.sdkFile(SM, R->getLocation());
         if (Parent && Parent->getName() == "pointer_traits" && File &&
@@ -2625,6 +2631,14 @@ approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
       Object, Result, Distance, Selection.MinimumValue, Selection.MaximumValue,
       Index};
 }
+bool approvedHashSetBucketSource(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const CXXRecordDecl *Owner, const ASTContext &Context) {
+  if (!Function || !approvedEmptyHashSetRecord(S, SM, Owner, Context))
+    return false;
+  RandomSelection Selection(S, SM, Context, Owner, Context.getSizeType(), Context.DoubleTy);
+  return Selection.retain(Function);
+}
+
 bool approvedUnorderedMapMethodSource(const State &S, const SourceManager &SM,
     const FunctionDecl *Function, const CXXRecordDecl *Record,
     const ASTContext &Context) {
