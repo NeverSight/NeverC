@@ -29336,6 +29336,27 @@ class FunctionLowering {
       }
       return Result;
     }
+    if (Operation == UtilityOperation::UnorderedSetBegin ||
+        Operation == UtilityOperation::UnorderedSetEnd || Operation == UtilityOperation::UnorderedSetFind) {
+      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Method = Member->getMethodDecl();
+      const auto Table = approvedUtilityUnorderedSetStorage(A.S, A.Sources, Method->getParent(), A.Context);
+      const auto Iterator = approvedUtilityUnorderedIteratorRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Table || !Iterator || Iterator->Owner.HasMappedValue)
+        reject(L, "unordered set iterator", "The authenticated integer iterator layout is required.");
+      const auto *Receiver = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts())->getBase();
+      auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
+      auto Node = A.zero(Table->NodePointerType, L);
+      if (Operation == UtilityOperation::UnorderedSetBegin)
+        Node = unorderedTableMember(Place, *Table, "nct_unordered_first", L);
+      else if (Operation == UtilityOperation::UnorderedSetFind) {
+        auto Key = dereference(snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L), L);
+        auto Hash = snapshot(cast(Key, type(A.Context.getSizeType(), L), L), L);
+        Node = unorderedFindNode(Place, *Table, std::move(Key), std::move(Hash), L);
+      }
+      return unorderedMakeIterator(std::move(Node), *Iterator, std::move(Destination), L);
+    }
     if (Operation == UtilityOperation::UnorderedSetCount ||
         Operation == UtilityOperation::UnorderedSetClear || Operation == UtilityOperation::UnorderedSetEraseKey ||
         Operation == UtilityOperation::UnorderedSetInsertList) {
@@ -29776,7 +29797,7 @@ class FunctionLowering {
       const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
       const auto *Record = Method ? Method->getParent()
           : F->getParamDecl(0)->getType().getNonReferenceType()->getAsCXXRecordDecl();
-      const auto Info = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources, Record, A.Context);
+      const auto Info = approvedUtilityUnorderedIteratorRecord(A.S, A.Sources, Record, A.Context);
       if (!Info) reject(L, "unordered map iterator", "The authenticated layout is unavailable.");
       if (!Method) {
         auto Left = snapshot(argument(Call->getArg(0), F->getParamDecl(0)->getType()), L);
@@ -39022,7 +39043,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
     if (auto Kind = approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context)) {
-      const auto Info = approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources,
+      const auto Info = approvedUtilityUnorderedIteratorRecord(A.S, A.Sources,
           A.Context.getBaseElementType(T)->getAsCXXRecordDecl(), A.Context);
       if (!Info) reject(L, "unordered map iterator", "The authenticated layout is unavailable.");
       if (*Kind == UtilityUnorderedMapIteratorConstruction::Default) {
