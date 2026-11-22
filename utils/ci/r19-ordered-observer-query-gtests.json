@@ -126,7 +126,7 @@
     "TranslateTest.CoreV2OrderedObserverQueryRenamedSdkMemberRejected",
     "TranslateTest.CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "f4e563671fa504ae4b0530dc0fa5cd213df7ad32c8965cc6b0d7119c555a4854",
   "maintained_original_sha256": "1a39c3d2d7c96ed5470131a21ef92d8b098fe9d56ecb012ed91cd0ecc9d540d7",
@@ -138,5 +138,10 @@
   "current_registry_count": 8263,
   "current_python_registry_tests": 152,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "ordered-observer-query": "46d766cb1e09680daaa9c96d0477ce2dbd1467fb5704b34e7bba07da7162c905"
+  },
+  "native_reference_authentication_sha256": "91a79377f1791728f7101e34f7638a23eecc4b506858f4158e23144b580f5c66",
+  "source_proof_sha256": "5f627fa6147d6cf64b94eb093ba0373dcdb78015ab00d8315aefbe13aef6b449"
 }
