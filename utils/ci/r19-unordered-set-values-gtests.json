@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetValuesMultipleKeyOwnerRejected",
     "TranslateTest.CoreV2UnorderedSetValuesArrowCountRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "e9da8191611d0215f09b996e8c05fcf447898711abc672233f3b3225586bb3e1",
   "maintained_original_sha256": "484fbd59e4e3d7eac40f457d31331f446f1e9e29d217bc4d262945e25b091f7a",
@@ -155,5 +155,10 @@
   "current_registry_count": 8400,
   "current_python_registry_tests": 186,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-values": "1aae38d9f0394a601faeff763eda4f6ff1fe1abfb979788624b68805c26fe64f"
+  },
+  "native_reference_authentication_sha256": "9b931701d308dccd4eb0d11f162b60ac494c0fc624c2c3f9595739c22acdcb2b",
+  "source_proof_sha256": "709ef6d55a95bae91dad1deb61f363a54d0d714510c45f19fa254afded17a8c3"
 }
