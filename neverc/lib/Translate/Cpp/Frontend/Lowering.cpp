@@ -1365,6 +1365,29 @@ class FunctionLowering {
     return Fresh;
   }
 
+  static bool unorderedMultiSet(const UtilityUnorderedTableRecord &Info) {
+    return !Info.HasMappedValue && Info.Record->getName() == "unordered_multiset";
+  }
+
+  Expression unorderedEquivalentGroupTail(Expression First, const UtilityUnorderedTableRecord &Info,
+                                          SourceLocation L) {
+    auto Tail = snapshot(First, L);
+    auto Next = snapshot(unorderedNodeNext(Tail, Info, L), L);
+    auto Key = snapshot(unorderedNodeKey(std::move(First), Info, L), L);
+    const auto Check = labelName(), Compare = labelName(), Advance = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(cast(Next, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    branch(binary("==", unorderedNodeKey(Next, Info, L), Key, "bool", L), Advance, Done, L);
+    label(Advance, L);
+    assign(Tail, Next, L);
+    assign(Next, unorderedNodeNext(Tail, Info, L), L);
+    jump(Check, L);
+    label(Done, L);
+    return Tail;
+  }
+
   void unorderedDoRehash(Expression Place, const UtilityUnorderedTableRecord &Info,
                           Expression Requested, SourceLocation L) {
     const auto NodePointer = type(Info.NodePointerType, L);
@@ -1401,8 +1424,9 @@ class FunctionLowering {
     assign(LastHash, Hash, L);
     jump(Step, L);
     label(Relink, L);
-    assign(unorderedNodeNext(Previous, Info, L), unorderedNodeNext(Node, Info, L), L);
-    assign(unorderedNodeNext(Node, Info, L), unorderedNodeNext(Head, Info, L), L);
+    auto Tail = unorderedMultiSet(Info) ? unorderedEquivalentGroupTail(Node, Info, L) : Node;
+    assign(unorderedNodeNext(Previous, Info, L), unorderedNodeNext(Tail, Info, L), L);
+    assign(unorderedNodeNext(Tail, Info, L), unorderedNodeNext(Head, Info, L), L);
     assign(unorderedNodeNext(Head, Info, L), Node, L);
     jump(Step, L);
     label(Step, L);
@@ -1531,6 +1555,36 @@ class FunctionLowering {
     label(Done, L);
   }
 
+  Expression unorderedMultiInsertionPredecessor(Expression BeforeBucket,
+      const UtilityUnorderedTableRecord &Info, Expression Node,
+      Expression Bucket, Expression BucketCount, SourceLocation L) {
+    auto Previous = snapshot(BeforeBucket, L);
+    auto Next = snapshot(unorderedNodeNext(Previous, Info, L), L);
+    auto Key = snapshot(unorderedNodeKey(std::move(Node), Info, L), L);
+    auto Found = snapshot(boolean(false, L), L);
+    const auto Check = labelName(), CheckBucket = labelName(), Compare = labelName();
+    const auto Match = labelName(), Distinct = labelName(), Advance = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(cast(Next, "bool", L), CheckBucket, Done, L);
+    label(CheckBucket, L);
+    const auto NextBucket = unorderedConstrainHash(unorderedNodeHash(Next, L), BucketCount, L);
+    branch(binary("==", NextBucket, Bucket, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    branch(binary("==", unorderedNodeKey(Next, Info, L), Key, "bool", L), Match, Distinct, L);
+    label(Match, L);
+    assign(Found, boolean(true, L), L);
+    jump(Advance, L);
+    label(Distinct, L);
+    branch(Found, Done, Advance, L);
+    label(Advance, L);
+    assign(Previous, Next, L);
+    assign(Next, unorderedNodeNext(Previous, Info, L), L);
+    jump(Check, L);
+    label(Done, L);
+    return Previous;
+  }
+
   struct UnorderedMergeTransfer { Expression Source, Cursor; };
   struct UnorderedInsertion { Expression Node, Inserted; };
   UnorderedInsertion unorderedInsertNode(Expression Place,
@@ -1542,10 +1596,13 @@ class FunctionLowering {
     // before pair construction, so reread the referent when constructing the key.
     const auto Size = type(A.Context.getSizeType(), L);
     const auto NodePointer = type(Info.NodePointerType, L);
-    auto Hash = snapshot(cast(Key, Size, L), L);
+    const bool Multi = unorderedMultiSet(Info);
+    auto Hash = snapshot(Multi ? quantity(0, Size, L) : cast(Key, Size, L), L);
     if (PreparedNode && !MergeTransfer) assign(unorderedNodeHash(*PreparedNode, L), Hash, L);
-    auto OldCount = snapshot(unorderedTableMember(Place, Info, "nct_unordered_bucket_count", L), L);
-    auto Result = snapshot(unorderedFindNode(Place, Info, Key, Hash, L), L);
+    auto OldCount = snapshot(Multi ? quantity(0, Size, L) :
+        unorderedTableMember(Place, Info, "nct_unordered_bucket_count", L), L);
+    auto Result = snapshot(Multi ? A.zero(Info.NodePointerType, L) :
+        unorderedFindNode(Place, Info, Key, Hash, L), L);
     auto InsertedValue = snapshot(boolean(false, L), L);
     auto InitialValue = [&] { return Mapped ? Expression(*Mapped) : A.zero(A.Context.IntTy, L); };
     const auto Existing = labelName();
@@ -1557,12 +1614,18 @@ class FunctionLowering {
     label(Allocate, L);
     auto Node = PreparedNode ? *PreparedNode : snapshot(cast(unorderedHeapAllocate(Info.NodeType,
         quantity(Info.NodeBytes, Size, L), L), NodePointer, L), L);
-    if (!MergeTransfer) assign(unorderedNodeHash(Node, L), Hash, L);
+    if (!Multi && !MergeTransfer) assign(unorderedNodeHash(Node, L), Hash, L);
     if (!PreparedNode) {
       assign(unorderedNodeKey(Node, Info, L), Key, L);
       if (Info.HasMappedValue)
         assign(unorderedNodeValue(Node, Info, L), InitialValue(), L);
       assign(unorderedNodeNext(Node, Info, L), A.zero(Info.NodePointerType, L), L);
+    }
+    if (Multi) {
+      // The selected multiset operation constructs its node before hashing the stored key.
+      assign(Hash, cast(unorderedNodeKey(Node, Info, L), Size, L), L);
+      assign(unorderedNodeHash(Node, L), Hash, L);
+      assign(OldCount, unorderedTableMember(Place, Info, "nct_unordered_bucket_count", L), L);
     }
     auto NewSize = snapshot(binary("+", unorderedTableMember(Place, Info, "nct_unordered_size", L), one(Size, L), Size, L), L);
     jump(Capacity, L);
@@ -1611,9 +1674,20 @@ class FunctionLowering {
     assign(index(Buckets, unorderedConstrainHash(unorderedNodeHash(Next, L), Count, L), NodePointer, L), Node, L);
     jump(Increment, L);
     label(OccupiedBucket, L);
+    if (Multi)
+      assign(Previous, unorderedMultiInsertionPredecessor(Previous, Info, Node, BucketIndex, Count, L), L);
     assign(unorderedNodeNext(Node, Info, L), unorderedNodeNext(Previous, Info, L), L);
     assign(unorderedNodeNext(Previous, Info, L), Node, L);
-    jump(Increment, L);
+    if (Multi) {
+      const auto CheckSuccessor = labelName();
+      assign(Next, unorderedNodeNext(Node, Info, L), L);
+      branch(cast(Next, "bool", L), CheckSuccessor, Increment, L);
+      label(CheckSuccessor, L);
+      auto SuccessorBucket = unorderedConstrainHash(unorderedNodeHash(Next, L), Count, L);
+      branch(binary("==", SuccessorBucket, BucketIndex, "bool", L), Increment, NextBucket, L);
+    } else {
+      jump(Increment, L);
+    }
     label(Increment, L);
     assign(unorderedTableMember(Place, Info, "nct_unordered_size", L),
         binary("+", unorderedTableMember(Place, Info, "nct_unordered_size", L), one(Size, L), Size, L), L);
@@ -29281,7 +29355,23 @@ class FunctionLowering {
       auto Key = std::move(Operand);
       const auto Size = type(A.Context.getSizeType(), L);
       auto Hash = snapshot(cast(Key, Size, L), L);
-      return cast(cast(unorderedFindNode(Place, *Table, Key, Hash, L), "bool", L), Size, L);
+      auto First = unorderedFindNode(Place, *Table, Key, Hash, L);
+      if (!unorderedMultiSet(*Table))
+        return cast(cast(std::move(First), "bool", L), Size, L);
+      auto Node = snapshot(std::move(First), L);
+      auto Result = snapshot(quantity(0, Size, L), L);
+      const auto Check = labelName(), Match = labelName(), Increment = labelName(), Done = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(cast(Node, "bool", L), Match, Done, L);
+      label(Match, L);
+      branch(binary("==", unorderedNodeKey(Node, *Table, L), Key, "bool", L), Increment, Done, L);
+      label(Increment, L);
+      assign(Result, binary("+", Result, one(Size, L), Size, L), L);
+      assign(Node, unorderedNodeNext(Node, *Table, L), L);
+      jump(Check, L);
+      label(Done, L);
+      return Result;
     }
     if (Operation == UtilityOperation::EmptyHashSetResizeBuckets ||
         Operation == UtilityOperation::EmptyHashSetBucketObserver) {
