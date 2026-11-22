@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedBucketStoragePointerReceiverRejected",
     "TranslateTest.CoreV2UnorderedBucketStorageNonemptyOwnerRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "5d4e1f88637adc033ff73d27435f3bf5030c1be26f50b17a2e6b3b1047d615a8",
   "maintained_original_sha256": "7d57c282e737021daad1b73c5869c5a3658f65dbded610460e5e703148810ffc",
@@ -155,5 +155,10 @@
   "current_registry_count": 8392,
   "current_python_registry_tests": 184,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-bucket-storage": "2eba369d4578e9e03c506e68fc1b71004f3614f6d7fbf879a0fdcf3b8acaef76"
+  },
+  "native_reference_authentication_sha256": "74e0a19e86b351efe94b2d85f992ad189f1d0bbb355a00ceb52939c808481b72",
+  "source_proof_sha256": "64daec3335111b5cc0eb261f6f47f800a2771fdb0cbf61d810f6d5c08ad48d5b"
 }
