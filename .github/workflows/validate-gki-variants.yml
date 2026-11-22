@@ -44,7 +44,7 @@ jobs:
           test "$REPOSITORY_ID" = 1240844551
           gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" > /tmp/compiler-run.json
           jq -e --arg sha "$SOURCE_SHA" --argjson repo "$REPOSITORY_ID" '
-            .head_sha == $sha and .event == "push" and
+            .head_sha == $sha and (.event == "push" or .event == "workflow_dispatch") and
             .path == ".github/workflows/build-linux-x64.yml" and
             .repository.id == $repo and .head_repository.id == $repo
           ' /tmp/compiler-run.json

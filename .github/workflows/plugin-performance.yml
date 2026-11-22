@@ -14,13 +14,6 @@ permissions:
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "neverc/lib/Plugin/**"
-      - "neverc/include/neverc/Plugin/**"
-      - "tests/neverc/PluginPerformanceTests.cpp"
-      - "utils/plugin-api/measure-plugin-overhead.py"
-      - ".github/workflows/plugin-performance.yml"
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).

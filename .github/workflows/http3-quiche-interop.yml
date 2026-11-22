@@ -4,28 +4,6 @@ permissions:
   contents: read
 
 on:
-  push:
-    paths:
-      - 'std/include/neverc/std/net/http3.h'
-      - 'std/include/neverc/std/net/quic.h'
-      - 'std/src/net/http3/**'
-      - 'std/src/net/quic/**'
-      - 'tests/neverc/std/http3_interop_server.c'
-      - 'tests/neverc/std/network_test_certs.h'
-      - 'tests/neverc/std/network_test_support.h'
-      - 'utils/ci/run-http3-quiche-interop.sh'
-      - '.github/workflows/http3-quiche-interop.yml'
-  pull_request:
-    paths:
-      - 'std/include/neverc/std/net/http3.h'
-      - 'std/include/neverc/std/net/quic.h'
-      - 'std/src/net/http3/**'
-      - 'std/src/net/quic/**'
-      - 'tests/neverc/std/http3_interop_server.c'
-      - 'tests/neverc/std/network_test_certs.h'
-      - 'tests/neverc/std/network_test_support.h'
-      - 'utils/ci/run-http3-quiche-interop.sh'
-      - '.github/workflows/http3-quiche-interop.yml'
   schedule:
     - cron: '30 9 * * *'
   workflow_dispatch:

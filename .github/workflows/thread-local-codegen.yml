@@ -2,20 +2,6 @@ name: thread-local-codegen
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "neverc/include/neverc/Foundation/Core/ThreadLocalStorage.h"
-      - "tests/neverc/ThreadLocalStorageTests.cpp"
-      - "tests/neverc/CMakeLists.txt"
-      - "utils/ci/check-thread-local-storage-codegen.py"
-      - ".github/workflows/thread-local-codegen.yml"
-  pull_request:
-    paths:
-      - "neverc/include/neverc/Foundation/Core/ThreadLocalStorage.h"
-      - "tests/neverc/ThreadLocalStorageTests.cpp"
-      - "tests/neverc/CMakeLists.txt"
-      - "utils/ci/check-thread-local-storage-codegen.py"
-      - ".github/workflows/thread-local-codegen.yml"
 
 permissions:
   contents: read

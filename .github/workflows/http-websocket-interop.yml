@@ -4,26 +4,6 @@ permissions:
   contents: read
 
 on:
-  push:
-    paths:
-      - 'std/include/neverc/std/net/http.h'
-      - 'std/include/neverc/std/net/websocket.h'
-      - 'std/src/net/http/**'
-      - 'std/src/net/websocket/**'
-      - 'tests/neverc/std/network_interop_server.c'
-      - 'tests/neverc/interop/**'
-      - 'utils/ci/run-http-websocket-interop.sh'
-      - '.github/workflows/http-websocket-interop.yml'
-  pull_request:
-    paths:
-      - 'std/include/neverc/std/net/http.h'
-      - 'std/include/neverc/std/net/websocket.h'
-      - 'std/src/net/http/**'
-      - 'std/src/net/websocket/**'
-      - 'tests/neverc/std/network_interop_server.c'
-      - 'tests/neverc/interop/**'
-      - 'utils/ci/run-http-websocket-interop.sh'
-      - '.github/workflows/http-websocket-interop.yml'
   schedule:
     - cron: '30 8 * * *'
   workflow_dispatch:

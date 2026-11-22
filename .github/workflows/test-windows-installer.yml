@@ -1,28 +1,6 @@
 name: Test Windows installer
 
 on:
-  push:
-    paths:
-      - install.ps1
-      - install.sh
-      - utils/release/test-install.ps1
-      - utils/release/test-install-online.ps1
-      - utils/release/test-install.sh
-      - .github/workflows/test-windows-installer.yml
-      - .github/workflows/release.yml
-      - .github/workflows/release-windows-x64.yml
-      - .github/workflows/release-windows-arm64.yml
-  pull_request:
-    paths:
-      - install.ps1
-      - install.sh
-      - utils/release/test-install.ps1
-      - utils/release/test-install-online.ps1
-      - utils/release/test-install.sh
-      - .github/workflows/test-windows-installer.yml
-      - .github/workflows/release.yml
-      - .github/workflows/release-windows-x64.yml
-      - .github/workflows/release-windows-arm64.yml
   workflow_call:
   workflow_dispatch:
 

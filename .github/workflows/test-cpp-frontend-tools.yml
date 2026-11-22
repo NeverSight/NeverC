@@ -1,38 +1,7 @@
 name: cpp-frontend-tools
 
 on:
-  push:
-    paths:
-      - 'neverc/lib/Translate/Cpp/Frontend/**'
-      - 'neverc/cmake/modules/BuiltinCppFrontend.cmake'
-      - 'tests/neverc/HostCoffSymbolsTests.py'
-      - 'tests/neverc/CppFrontendToolchainTests.py'
-      - '.github/workflows/test-cpp-frontend-tools.yml'
-      - 'utils/ci/check-cpp-current216-elf-combined-808.py'
-      - 'tests/neverc/FrontendReplayProtocolTests.py'
-      - 'utils/ci/not_fn_registered_gtests.py'
-      - 'utils/ci/check-private-frontend-runtime.py'
-      - 'utils/ci/cpp-private-runtime-plan.json'
-      - 'tests/neverc/NotFnRegisteredGTestsTests.py'
-      - 'utils/ci/extract_cpp_gtests.py'
-      - 'utils/ci/not-fn-pointer-four-formal-additions.cpp'
-      - 'tests/neverc/TranslateTests.cpp'
-  pull_request:
-    paths:
-      - 'neverc/lib/Translate/Cpp/Frontend/**'
-      - 'neverc/cmake/modules/BuiltinCppFrontend.cmake'
-      - 'tests/neverc/HostCoffSymbolsTests.py'
-      - 'tests/neverc/CppFrontendToolchainTests.py'
-      - '.github/workflows/test-cpp-frontend-tools.yml'
-      - 'utils/ci/check-cpp-current216-elf-combined-808.py'
-      - 'tests/neverc/FrontendReplayProtocolTests.py'
-      - 'utils/ci/not_fn_registered_gtests.py'
-      - 'utils/ci/check-private-frontend-runtime.py'
-      - 'utils/ci/cpp-private-runtime-plan.json'
-      - 'tests/neverc/NotFnRegisteredGTestsTests.py'
-      - 'utils/ci/extract_cpp_gtests.py'
-      - 'utils/ci/not-fn-pointer-four-formal-additions.cpp'
-      - 'tests/neverc/TranslateTests.cpp'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -43,9 +12,6 @@ concurrency:
 
 jobs:
   archive-audit:
-    if: >-
-      github.event_name == 'push' ||
-      github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       # Leave runner slots for the main builds in the shared organization pool.
       max-parallel: 2
@@ -76,9 +42,6 @@ jobs:
           python -I -B neverc/lib/Translate/Cpp/Frontend/CollectCrtStorageEvidenceTests.py
           python -I -B neverc/lib/Translate/Cpp/Frontend/BuiltinCppFrontendCMakeTests.py
   registered-formal-source:
-    if: >-
-      github.event_name == 'push' ||
-      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-22.04
     timeout-minutes: 40
     steps:

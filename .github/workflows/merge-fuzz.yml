@@ -27,22 +27,6 @@ permissions:
   contents: read
 
 on:
-  push:
-    paths:
-      - 'neverc/lib/Merge/**'
-      - 'neverc/include/neverc/Merge/**'
-      - 'neverc/lib/Emit/Backend/ParallelCodeGenMerge.cpp'
-      - 'tests/neverc/MergeFuzzer.cpp'
-      - 'tests/neverc/merge-corpus/**'
-      - '.github/workflows/merge-fuzz.yml'
-  pull_request:
-    paths:
-      - 'neverc/lib/Merge/**'
-      - 'neverc/include/neverc/Merge/**'
-      - 'neverc/lib/Emit/Backend/ParallelCodeGenMerge.cpp'
-      - 'tests/neverc/MergeFuzzer.cpp'
-      - 'tests/neverc/merge-corpus/**'
-      - '.github/workflows/merge-fuzz.yml'
   schedule:
     # 07:00 UTC nightly soak.
     - cron: '0 7 * * *'

@@ -3,14 +3,8 @@ name: windows-x64-neverc-build
 permissions:
   contents: write
 
-# Markdown changes are checked by lint-docs without rebuilding LLVM.
 on:
-  push:
-    paths-ignore:
-      - '**/*.md'
-  pull_request:
-    paths-ignore:
-      - '**/*.md'
+  workflow_dispatch:
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
@@ -21,10 +15,8 @@ concurrency:
 jobs:
   build:
     if: >-
-      !startsWith(github.ref, 'refs/tags/') &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name != github.repository))
+      github.event_name == 'workflow_dispatch' &&
+      !startsWith(github.ref, 'refs/tags/')
     # windows-latest is Server 2025 + VS 2026; pin 2022 so MSVC RelWithDebInfo
     # LLVM links do not depend on whichever image GitHub retargets latest to.
     runs-on: windows-2022

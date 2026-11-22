@@ -70,21 +70,30 @@ jobs:
           [[ "$INPUT_RUN_ID" =~ ^[1-9][0-9]*$ ]] || die "compiler_run_id must be numeric"
           [[ "$CURRENT_SHA" =~ ^[0-9a-f]{40}$ ]] || die "github.sha is not a full commit SHA"
 
-          if [ "$EVENT_NAME" = "push" ]; then
-            [ "$CURRENT_REF_TYPE" != "tag" ] || die "automatic tag validation is forbidden"
-            [ "$INPUT_RUN_ID" = "$CURRENT_RUN_ID" ] || die "automatic call must use its own run ID"
-            [ "$INPUT_SOURCE_SHA" = "$CURRENT_SHA" ] || die "automatic source SHA differs from github.sha"
-            source_sha=$INPUT_SOURCE_SHA
-          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            [ -z "$INPUT_SOURCE_SHA" ] || die "manual dispatch must not inject source_sha"
-            source_sha=$CURRENT_SHA
-          else
-            die "unsupported invocation event: $EVENT_NAME"
+          case "$EVENT_NAME" in
+            push|workflow_dispatch) ;;
+            *) die "unsupported invocation event: $EVENT_NAME" ;;
+          esac
+          [ "$CURRENT_REF_TYPE" != "tag" ] || die "tag validation is forbidden"
+          if [ -n "$INPUT_SOURCE_SHA" ]; then
+            # Only a reusable caller can pass source_sha; it must use its own artifact.
+            [ "$INPUT_RUN_ID" = "$CURRENT_RUN_ID" ] || die "reusable call must use its own run ID"
+            [ "$INPUT_SOURCE_SHA" = "$CURRENT_SHA" ] || die "caller source SHA differs from github.sha"
+          elif [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            die "reusable push call must provide source_sha"
           fi
+          source_sha=$CURRENT_SHA
 
           run_json=$(gh api "repos/$REPOSITORY/actions/runs/$INPUT_RUN_ID")
           [ "$(jq -r .id <<<"$run_json")" = "$INPUT_RUN_ID" ] || die "run ID response mismatch"
-          [ "$(jq -r .event <<<"$run_json")" = "push" ] || die "compiler run was not a push"
+          run_event=$(jq -r .event <<<"$run_json")
+          case "$run_event" in
+            push|workflow_dispatch) ;;
+            *) die "unexpected compiler run event: $run_event" ;;
+          esac
+          if [ -n "$INPUT_SOURCE_SHA" ]; then
+            [ "$run_event" = "$EVENT_NAME" ] || die "compiler run event differs from caller"
+          fi
           [ "$(jq -r .path <<<"$run_json")" = ".github/workflows/build-linux-x64.yml" ] || die "wrong compiler workflow path"
           [ "$(jq -r .head_sha <<<"$run_json")" = "$source_sha" ] || die "compiler run SHA does not match source SHA"
           [ "$(jq -r .repository.id <<<"$run_json")" = "$REPOSITORY_ID" ] || die "compiler run repository ID mismatch"

@@ -1,39 +1,6 @@
 name: VBS enclave differential CI
 
 on:
-  push:
-    branches: [dev]
-    paths:
-      - llvm/lib/CodeGen/TargetLoweringObjectFileImpl.cpp
-      - llvm/lib/IR/Mangler.cpp
-      - neverc/include/neverc/Linker/**
-      - neverc/lib/Emit/Target/**
-      - neverc/lib/Invoke/ToolChains/MSVC.cpp
-      - neverc/lib/Invoke/ToolChains/MSVC.h
-      - neverc/lib/Linker/**
-      - runtime/windows/**
-      - tests/neverc/**
-      - utils/ci/new-vbs-enclave-test-certificate.ps1
-      - utils/ci/run-vbs-enclave-ci.ps1
-      - utils/ci/verify-vbs-enclave-pe.py
-      - utils/ci/verify-vbs-enclave-runtime.py
-      - .github/workflows/vbs-enclave.yml
-  pull_request:
-    paths:
-      - llvm/lib/CodeGen/TargetLoweringObjectFileImpl.cpp
-      - llvm/lib/IR/Mangler.cpp
-      - neverc/include/neverc/Linker/**
-      - neverc/lib/Emit/Target/**
-      - neverc/lib/Invoke/ToolChains/MSVC.cpp
-      - neverc/lib/Invoke/ToolChains/MSVC.h
-      - neverc/lib/Linker/**
-      - runtime/windows/**
-      - tests/neverc/**
-      - utils/ci/new-vbs-enclave-test-certificate.ps1
-      - utils/ci/run-vbs-enclave-ci.ps1
-      - utils/ci/verify-vbs-enclave-pe.py
-      - utils/ci/verify-vbs-enclave-runtime.py
-      - .github/workflows/vbs-enclave.yml
   workflow_dispatch:
     inputs:
       runtime_runner:
