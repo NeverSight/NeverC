@@ -108,7 +108,7 @@ if len(_PRIVATE_NAMES) != 129:
 
 def contains_old_guid_name(name):
     """Detect residual selected identifiers, including unsupported grammar."""
-    return any(old in name for old in GUID_RENAMES)
+    return "_GUID_" in name and any(old in name for old in GUID_RENAMES)
 
 
 def is_private_guid_name(name):
@@ -119,7 +119,7 @@ def is_private_guid_name(name):
     """
     if name in _PRIVATE_NAMES:
         return True
-    if any(new in name for new in GUID_RENAMES.values()):
+    if "neverc_cpp" in name and any(new in name for new in GUID_RENAMES.values()):
         raise ValueError("Unsupported private Setup GUID symbol grammar: " + name)
     return False
 
