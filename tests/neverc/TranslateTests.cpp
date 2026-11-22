@@ -388333,6 +388333,161 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2EmptyHashSetSetSizeRunAtBothOptimizations) {
+  const auto Source = tmpFile("empty-hash-set-set-size.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values;
+  return !values.empty() || values.size() != 0 || values.bucket_count() != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("empty-hash-set-set-size.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("empty-hash-set-set-size" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyHashSetConstMultisetRunAtBothOptimizations) {
+  const auto Source = tmpFile("empty-hash-set-const-multiset.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_multiset<int> values;
+  return !values.empty() || values.size() != 0 || values.bucket_count() != 0 || values.max_load_factor() != 1.0f;
+}
+)r19containers");
+  const auto Output = tmpFile("empty-hash-set-const-multiset.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("empty-hash-set-const-multiset" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyHashSetReceiverOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("empty-hash-set-receiver-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+const std::unordered_set<int>& read(int& calls, const std::unordered_set<int>& values) {
+  ++calls;
+  return values;
+}
+int main() {
+  std::unordered_set<int> values;
+  int calls = 0;
+  auto limit = read(calls, values).max_load_factor();
+  return calls != 1 || limit != 1.0f;
+}
+)r19containers");
+  const auto Output = tmpFile("empty-hash-set-receiver-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("empty-hash-set-receiver-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyHashSetScopedMultisetRunAtBothOptimizations) {
+  const auto Source = tmpFile("empty-hash-set-scoped-multiset.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+bool probe(bool nested) {
+  std::unordered_multiset<int> outer;
+  if (nested) {
+    const std::unordered_multiset<int> inner;
+    return inner.empty() && outer.size() == 0;
+  }
+  return outer.empty();
+}
+int main() { return !probe(false) || !probe(true); }
+)r19containers");
+  const auto Output = tmpFile("empty-hash-set-scoped-multiset.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("empty-hash-set-scoped-multiset" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyHashSetCustomHashRejected) {
+  const auto Source = tmpFile("empty-hash-set-custom-hash.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct CustomHash { unsigned long long operator()(int value) const { return value; } };
+int main() {
+  std::unordered_set<int, CustomHash> values;
+  return values.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2EmptyHashSetInsertRejected) {
+  const auto Source = tmpFile("empty-hash-set-insert.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values;
+  values.insert(1);
+  return values.size() != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2EmptyHashSetCopyRejected) {
+  const auto Source = tmpFile("empty-hash-set-copy.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_multiset<int> source;
+  std::unordered_multiset<int> copy(source);
+  return copy.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRejected) {
+  const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values;
+  values.max_load_factor(2.0f);
+  return values.max_load_factor() != 2.0f;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

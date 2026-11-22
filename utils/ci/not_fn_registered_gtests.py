@@ -1230,6 +1230,30 @@ def restore_any_bool_inline_history(source):
     return restored
 
 
+R19_EMPTY_HASH_SET_REGISTERED_SHA256 = '5a11ec42863f8163b0bbc9ccd2394433bff0c33ae95e5d66534a82c224916271'
+R19_EMPTY_HASH_SET_MAINTAINED_SHA256 = '4ea24098e82989877d78a96781e0fcd959889139da7c31491c27a2eceb946f60'
+R19_EMPTY_HASH_SET_PREVIOUS_REGISTERED_SHA256 = '4d1378b02f329e006c80ba4071c984fe15eb83298fc0d4658a244e7413b23acf'
+R19_EMPTY_HASH_SET_PREVIOUS_MAINTAINED_SHA256 = 'bdf19d17388b4157ca9e10e6b4454c833104e8a331a09b0924694c19718d994e'
+R19_EMPTY_HASH_SET_ADDITIONS_SHA256 = 'e9b2eb4bf538e2b99d4bcab6ed4891d5832cefc7a5b279968bf8ee2e25f714f4'
+R19_EMPTY_HASH_SET_MAINTAINED_SIZE = 19973147
+R19_EMPTY_HASH_SET_ADDITIONS_SIZE = 6721
+
+
+def restore_empty_hash_set_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_EMPTY_HASH_SET_REGISTERED_SHA256, R19_EMPTY_HASH_SET_MAINTAINED_SHA256}
+    stop = R19_EMPTY_HASH_SET_MAINTAINED_SIZE
+    start = stop - R19_EMPTY_HASH_SET_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_EMPTY_HASH_SET_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_EMPTY_HASH_SET_PREVIOUS_REGISTERED_SHA256 if digest == R19_EMPTY_HASH_SET_REGISTERED_SHA256
+             else R19_EMPTY_HASH_SET_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1446,6 +1470,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ANY_BOOL_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_EMPTY_HASH_SET_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_EMPTY_HASH_SET_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_EMPTY_HASH_SET_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

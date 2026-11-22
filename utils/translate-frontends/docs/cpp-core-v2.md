@@ -18086,3 +18086,11 @@ The checked inline any operations preserve bool as a distinct active type.
 Construction, assignment, and emplacement set the active type. Copying and
 moving carry it to the destination, and reset clears it. A matching pointer
 any_cast addresses the bool field. Empty or mismatched pointer casts return null.
+
+## Default empty unordered sets
+
+Default integer unordered_set and unordered_multiset support empty local
+construction and scoped destruction. Their checked empty, size, bucket_count,
+and max_load_factor observers evaluate the receiver once. The generated C23
+state holds a null first node and bucket pointer, zero counts, and a load
+factor of one.

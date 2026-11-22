@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.empty_hash_set_registered = cls.registered
+        cls.empty_hash_set_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.empty_hash_set_original = cls.adapter.restore_original_gtests(cls.empty_hash_set_registered,
+                                                                        cls.empty_hash_set_suffix)
+        cls.registered = cls.adapter.restore_empty_hash_set_history(cls.empty_hash_set_registered)
         cls.any_bool_inline_registered = cls.registered
         cls.any_bool_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.any_bool_inline_original = cls.adapter.restore_original_gtests(cls.any_bool_inline_registered,
@@ -2348,6 +2353,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_any_bool_inline_history(self.any_bool_inline_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.any_bool_inline_registered, self.any_bool_inline_suffix + b' ')
+
+
+    def test_empty_hash_set_retains_published_bodies(self):
+        self.assertEqual(self.empty_hash_set_original + self.empty_hash_set_suffix, self.empty_hash_set_registered)
+        self.assertEqual(self.adapter.restore_empty_hash_set_history(self.empty_hash_set_original),
+                         self.any_bool_inline_original)
+        output, evidence = self.extractor.extract(self.empty_hash_set_original, ['TranslateTest.CoreV2EmptyHashSetSetSizeRunAtBothOptimizations', 'TranslateTest.CoreV2EmptyHashSetConstMultisetRunAtBothOptimizations', 'TranslateTest.CoreV2EmptyHashSetReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2EmptyHashSetScopedMultisetRunAtBothOptimizations', 'TranslateTest.CoreV2EmptyHashSetCustomHashRejected', 'TranslateTest.CoreV2EmptyHashSetInsertRejected', 'TranslateTest.CoreV2EmptyHashSetCopyRejected', 'TranslateTest.CoreV2EmptyHashSetLoadFactorSetterRejected'])
+        self.assertEqual(evidence['original_test_names'], 8326)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'empty-hash-set-set-size', output)
+        self.assertIn(b'empty-hash-set-receiver-once', output)
+
+    def test_empty_hash_set_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_empty_hash_set_history(self.empty_hash_set_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.empty_hash_set_registered, self.empty_hash_set_suffix + b' ')
 
 
 if __name__ == '__main__':
