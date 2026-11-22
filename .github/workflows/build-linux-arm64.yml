@@ -89,9 +89,48 @@ jobs:
         neverc/llvm
         time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
 
+    - name: Capture Linux ARM64 install dependency baseline
+      continue-on-error: true
+      timeout-minutes: 1
+      run: |
+        python3 neverc/.github/scripts/linux-arm64-install-diagnostics.py \
+          build "$RUNNER_TEMP/Linux-arm64-install-baseline.txt"
+
+    - name: Preserve Linux ARM64 install dependency baseline
+      continue-on-error: true
+      timeout-minutes: 3
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-arm64-install-baseline-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/Linux-arm64-install-baseline.txt
+        if-no-files-found: error
+        retention-days: 3
+        compression-level: 0
+
     - name: Build Linux ARM64 install dependencies
+      id: arm64_install_dependencies
       # The generated Ninja install target normally builds all before installing.
       run: cmake --build build --config "$BUILD_TYPE" --target all
+
+    - name: Capture Linux ARM64 install dependency failure
+      if: ${{ failure() && steps.arm64_install_dependencies.outcome == 'failure' }}
+      continue-on-error: true
+      timeout-minutes: 1
+      run: |
+        python3 neverc/.github/scripts/linux-arm64-install-diagnostics.py \
+          build "$RUNNER_TEMP/Linux-arm64-install-failure.txt"
+
+    - name: Preserve Linux ARM64 install dependency failure
+      if: ${{ failure() && steps.arm64_install_dependencies.outcome == 'failure' }}
+      continue-on-error: true
+      timeout-minutes: 3
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-arm64-install-failure-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/Linux-arm64-install-failure.txt
+        if-no-files-found: error
+        retention-days: 3
+        compression-level: 0
 
     - name: Install neverc
       working-directory: build
