@@ -136065,10 +136065,13 @@ bool approvedAssociativeContainerLayoutQuery(
       !cstddefOrigin(S, SM, Storage->getLocation(), "libcxx", Header))
     return false;
   const auto StorageName = Ordered ? "__tree" : "__hash_table";
+  // Resolving unordered set overloads can instantiate the pinned node handle,
+  // which redeclares __hash_table as a friend. Keep the definition in __hash_table.
   const auto *Impl = associativeTypeIdentity(S, SM, Storage->getType()->getAsCXXRecordDecl(),
-      StorageName, StorageName, "", Ordered ? 3 : 4);
+      StorageName, StorageName, Ordered ? "" : "__node_handle", Ordered ? 3 : 4);
   const auto *Table = Impl ? Impl->getDefinition() : nullptr;
-  if (!Table || Table->getNumBases() || Table->isDynamicClass())
+  if (!Table || Table->getNumBases() || Table->isDynamicClass() ||
+      !cstddefOrigin(S, SM, Table->getLocation(), "libcxx", StorageName))
     return false;
   const auto &Layout = Context.getASTRecordLayout(Record);
   const auto &StorageLayout = Context.getASTRecordLayout(Table);
