@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_empty_capacity_registered = cls.registered
+        cls.unordered_empty_capacity_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_empty_capacity_original = cls.adapter.restore_original_gtests(cls.unordered_empty_capacity_registered,
+                                                                        cls.unordered_empty_capacity_suffix)
+        cls.registered = cls.adapter.restore_unordered_empty_capacity_history(cls.unordered_empty_capacity_registered)
         cls.unordered_empty_load_factor_registered = cls.registered
         cls.unordered_empty_load_factor_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_empty_load_factor_original = cls.adapter.restore_original_gtests(cls.unordered_empty_load_factor_registered,
@@ -2417,6 +2422,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_empty_load_factor_history(self.unordered_empty_load_factor_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_empty_load_factor_registered, self.unordered_empty_load_factor_suffix + b' ')
+
+
+    def test_unordered_empty_capacity_retains_published_bodies(self):
+        self.assertEqual(self.unordered_empty_capacity_original + self.unordered_empty_capacity_suffix, self.unordered_empty_capacity_registered)
+        self.assertEqual(self.adapter.restore_unordered_empty_capacity_history(self.unordered_empty_capacity_original),
+                         self.unordered_empty_load_factor_original)
+        output, evidence = self.extractor.extract(self.unordered_empty_capacity_original, ['TranslateTest.CoreV2UnorderedEmptyCapacitySetMaxSizeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyCapacityMultisetMaxBucketsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyCapacitySingleReceiverEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyCapacityNestedMultisetRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyCapacityCustomHashRejected', 'TranslateTest.CoreV2UnorderedEmptyCapacityNonIntKeyRejected', 'TranslateTest.CoreV2UnorderedEmptyCapacityArrowReceiverRejected', 'TranslateTest.CoreV2UnorderedEmptyCapacityNonemptyOwnerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8350)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-empty-capacity-set-max-size', output)
+        self.assertIn(b'unordered-empty-capacity-single-receiver-evaluation', output)
+
+    def test_unordered_empty_capacity_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_empty_capacity_history(self.unordered_empty_capacity_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_empty_capacity_registered, self.unordered_empty_capacity_suffix + b' ')
 
 
 if __name__ == '__main__':

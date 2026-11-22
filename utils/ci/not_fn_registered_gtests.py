@@ -1302,6 +1302,30 @@ def restore_unordered_empty_load_factor_history(source):
     return restored
 
 
+R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256 = '98711dd3c7fd92123632d787bbdddbb3df8ba8df23761125b202ed7e00895b96'
+R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256 = '97626e342214f6eef8bd21ec028281d4bc2319f8749140a006b1e99559bf70d6'
+R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_REGISTERED_SHA256 = 'e51e579798e32927a56469df5fc72fa5e15a7309fdc3a1aa4c1dafbb227aa931'
+R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_MAINTAINED_SHA256 = 'b981812e100743864d81cd802d9b0d314b60e59b2362aff71f6a635b11e0cee5'
+R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SHA256 = '4cbc0afbfab57e80bc5e3707156418dcd63f336ec689b9edc9ce2c007a6d2c55'
+R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SIZE = 19994747
+R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SIZE = 7212
+
+
+def restore_unordered_empty_capacity_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256, R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256
+             else R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1539,6 +1563,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

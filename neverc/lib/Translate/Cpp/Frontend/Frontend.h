@@ -4517,8 +4517,13 @@ bool approvedEmptyHashSetConstruction(const State &S, const clang::SourceManager
 bool approvedEmptyHashSetDestructor(const State &S, const clang::SourceManager &SM,
     const clang::CXXDestructorDecl *Destructor, const clang::ASTContext &Context,
     llvm::StringRef *Failure = nullptr);
-const clang::MemberExpr *approvedEmptyHashSetObserver(const State &S, const clang::SourceManager &SM,
-    const clang::CallExpr *Call, const clang::ASTContext &Context);
+struct UtilityContainerObserver {
+  const clang::MemberExpr *Member;
+  std::optional<uint64_t> Maximum;
+};
+std::optional<UtilityContainerObserver> approvedEmptyHashSetObserver(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 bool approvedOrderedContainerRuntimeRecord(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
@@ -4528,11 +4533,7 @@ bool approvedOrderedContainerDefaultConstruction(const State &S,
 bool approvedOrderedContainerDestructor(const State &S,
     const clang::SourceManager &SM, const clang::CXXDestructorDecl *Destructor,
     const clang::ASTContext &Context);
-struct UtilityOrderedContainerObserver {
-  const clang::MemberExpr *Member;
-  std::optional<uint64_t> Maximum;
-};
-std::optional<UtilityOrderedContainerObserver> approvedOrderedContainerObserver(
+std::optional<UtilityContainerObserver> approvedOrderedContainerObserver(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 clang::QualType approvedOrderedContainerObserverQuery(

@@ -388804,6 +388804,165 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacitySetMaxSizeRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-empty-capacity-set-max-size.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  using Set = std::unordered_set<int>;
+  const Set values;
+  Set::size_type maximum = values.max_size();
+  return maximum != Set::size_type(-1) / 24 || !values.empty();
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-empty-capacity-set-max-size.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-empty-capacity-set-max-size" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacityMultisetMaxBucketsRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-empty-capacity-multiset-max-buckets.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  using Set = std::unordered_multiset<int>;
+  Set values;
+  Set::size_type maximum = values.max_bucket_count();
+  return maximum != Set::size_type(-1) / 24 || values.bucket_count() != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-empty-capacity-multiset-max-buckets.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-empty-capacity-multiset-max-buckets" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacitySingleReceiverEvaluationRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-empty-capacity-single-receiver-evaluation.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_set<int>;
+const Set& observe(int& calls, const Set& values) {
+  ++calls;
+  return values;
+}
+int main() {
+  const Set values;
+  int calls = 0;
+  Set::size_type maximum = observe(calls, values).max_bucket_count();
+  return calls != 1 || maximum != values.max_size();
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-empty-capacity-single-receiver-evaluation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-empty-capacity-single-receiver-evaluation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacityNestedMultisetRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-empty-capacity-nested-multiset.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_multiset<int>;
+Set::size_type maximum(bool nested) {
+  const Set outer;
+  if (nested) {
+    const Set inner;
+    return inner.max_size() - outer.max_bucket_count();
+  }
+  return outer.max_size();
+}
+int main() { return maximum(true) != 0 || maximum(false) != Set::size_type(-1) / 24; }
+)r19containers");
+  const auto Output = tmpFile("unordered-empty-capacity-nested-multiset.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-empty-capacity-nested-multiset" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacityCustomHashRejected) {
+  const auto Source = tmpFile("unordered-empty-capacity-custom-hash.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long long operator()(int value) const { return value; } };
+int main() {
+  const std::unordered_set<int, Hash> values;
+  return values.max_size() == 0;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacityNonIntKeyRejected) {
+  const auto Source = tmpFile("unordered-empty-capacity-non-int-key.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_multiset<long> values;
+  return values.max_bucket_count() == 0;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacityArrowReceiverRejected) {
+  const auto Source = tmpFile("unordered-empty-capacity-arrow-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_set<int> values;
+  const auto* pointer = &values;
+  return pointer->max_bucket_count() == 0;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacityNonemptyOwnerRejected) {
+  const auto Source = tmpFile("unordered-empty-capacity-nonempty-owner.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_multiset<int> values{3, 3};
+  return values.max_size() == 0;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

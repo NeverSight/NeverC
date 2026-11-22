@@ -18109,3 +18109,10 @@ The checked default integer unordered set and multiset support the const
 load_factor() observer on the admitted empty owner. The lowering evaluates
 the receiver once and observes the pinned bucket and size accessors. A zero
 bucket count returns positive float zero without evaluating a division.
+
+## Unordered set capacity
+
+The admitted default integer unordered set and multiset support max_size()
+and max_bucket_count(). The lowering evaluates the receiver once. The bound
+uses the target layout of the pinned hash node and the selected allocator
+and difference-type limits.
