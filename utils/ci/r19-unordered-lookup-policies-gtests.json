@@ -101,6 +101,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-lookup-policies-nonempty-owner",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{1, 1};\n  return !values.key_eq()(1, 1);\n}\n",
+      "source_sha256": "7247fefb53a2938a965e43cc9ca992a1b8ed9daffb62f975f8a9d0de9b80c466",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-lookup-policies-custom-hash",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -123,14 +131,6 @@
       "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return !pointer->key_eq()(2, 2);\n}\n",
       "source_sha256": "346a7dd7998c07b0dbd7f4c618c3041545e70fcd9e414ac0a62d1666c4bb9a95",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-lookup-policies-nonempty-owner",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{1, 1};\n  return !values.key_eq()(1, 1);\n}\n",
-      "source_sha256": "7247fefb53a2938a965e43cc9ca992a1b8ed9daffb62f975f8a9d0de9b80c466",
-      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedLookupPoliciesCustomEqualityRejected",
     "TranslateTest.CoreV2UnorderedLookupPoliciesArrowReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "e543cb1c290298ca024848985498bb44c08cfa2e81e4738ba83e05d7b89c65e2",
   "maintained_original_sha256": "b4a0dd37f0dde5f034dd8c52c3474b2bd571f0766befa55fbe257312e8ccb2a5",
@@ -155,5 +155,11 @@
   "current_registry_count": 8358,
   "current_python_registry_tests": 176,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-lookup-policies": "72d94900c87c51c4cebded2adffe7f46e035795eed96e7a77ac1867efd8f88ce",
+    "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a"
+  },
+  "native_reference_authentication_sha256": "c3778e2551ece65794641441eac5e4dec84f953f12316fc65a2f75a7ed5bc3aa",
+  "source_proof_sha256": "0c0fce84092d0bf2a8651b2e08718c986be049b796715d19863afe48ebd2d0c7"
 }
