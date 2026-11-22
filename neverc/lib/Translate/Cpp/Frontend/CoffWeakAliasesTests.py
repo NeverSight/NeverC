@@ -453,6 +453,19 @@ class CoffWeakAliasesTests(unittest.TestCase):
                     self.parse(member(symbol(name), weak(target=name)), definitions=(name,)),
                     {"private_alias"})
 
+    def test_exact_numeric_grammar_is_preserved(self):
+        source = member(symbol("private_body"), weak())
+        for good, bad in (
+            ("Value: 0", "Value: ０"),
+            ("Value: 0", "Value: -0"),
+            ("Section: .text (1)", "Section: .text (+1)"),
+            ("BaseType: Null (0x0)", "BaseType: Null (0X0)"),
+            ("StorageClass: External (0x2)", "StorageClass: External (0x2) extra"),
+            ("AuxSymbolCount: 0", "AuxSymbolCount: 0 "),
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.parse(source.replace(good, bad, 1), {"private_body"})
+
     def test_crlf_symbol_inventory_preserves_alias_resolution(self):
         text = member(symbol("private_body"), weak()).replace("\n", "\r\n")
         self.assertEqual(self.parse(text), {"private_alias"})
