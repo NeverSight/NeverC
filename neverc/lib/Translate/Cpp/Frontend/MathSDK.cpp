@@ -123917,6 +123917,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::EmptyHashSetSetMaxLoadFactor;
   if (auto Bucket = approvedEmptyHashSetBucketOperation(S, SM, Call, Context))
     return *Bucket;
+  if (auto Set = approvedUtilityUnorderedSetValueOperation(S, SM, Call, Context))
+    return *Set;
   if (approvedUtilityPriorityQueueCall(S, SM, Call, Context)) return UtilityOperation::PriorityQueue;
   if (approvedUtilityDequeCall(S, SM, Call, Context)) return UtilityOperation::Deque;
   if (approvedUtilityValarrayCall(S, SM, Call, Context)) return UtilityOperation::ValarrayScalar;
@@ -136872,6 +136874,9 @@ bool approvedEmptyHashSetDestructor(const State &S, const SourceManager &SM,
   Storage = Storage ? Storage->getDefinition() : nullptr;
   if (!Storage || !approvedHashSetBucketSource(S, SM, Storage->getDestructor(), Owner, Context))
     return Fail("The selected bucket deallocation path must retain its pinned SDK definitions.");
+  if (Owner->getName() == "unordered_set" &&
+      !approvedHashSetBucketSource(S, SM, Drop, Owner, Context))
+    return Fail("The selected integer node deallocation paths must retain their pinned SDK definitions.");
   return emptyHashNullBucketsDestroy(S, SM, Buckets->getType()->getAsCXXRecordDecl(), BucketFailure) ||
          Fail(BucketFailure);
 }
@@ -137156,16 +137161,20 @@ std::optional<UtilityContainerObserver> approvedEmptyHashSetObserver(const State
   return UtilityContainerObserver{Member, std::nullopt};
 }
 
-std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
+static std::optional<UtilityUnorderedTableRecord> approvedUnorderedStorage(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
-    const ASTContext &Context,
+    const ASTContext &Context, bool Mapped,
     const std::function<bool(QualType)> &Complete) {
-  if (!Record || !approvedUnorderedMapMetadataRecord(S, SM, Record, Context))
+  auto Admitted = [&](const CXXRecordDecl *Candidate) {
+    return Mapped ? approvedUnorderedMapMetadataRecord(S, SM, Candidate, Context)
+                  : approvedEmptyHashSetRecord(S, SM, Candidate, Context);
+  };
+  if (!Record || !Admitted(Record))
     return std::nullopt;
   if (!Record->getDefinition() && Complete &&
       !Complete(Context.getRecordType(Record))) return std::nullopt;
   const auto *Map = Record->getDefinition();
-  if (!Map || !approvedUnorderedMapMetadataRecord(S, SM, Map, Context) ||
+  if (!Map || !Admitted(Map) ||
       Map->isInvalidDecl() || Map->isDynamicClass() || Map->getNumBases())
     return std::nullopt;
   auto Pinned = [&](const Decl *D) { return associativeStorageDeclaration(S, SM, D, false); };
@@ -137250,13 +137259,106 @@ std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
       Offset(Node, Hash) != P || !Payload || Offset(Node, Payload) != 2 * P ||
       Offset(PayloadRecord, Value) ||
       !Context.hasSameType(Hash->getType(), Context.getSizeType()) ||
-      Context.getTypeSize(Value->getType()) != 2 * Context.getTypeSize(Context.IntTy) ||
+      (Mapped ? Context.getTypeSize(Value->getType()) != 2 * Context.getTypeSize(Context.IntTy)
+              : !Context.hasSameType(Value->getType(), Context.IntTy)) ||
       Context.getTypeSize(NodeType) != 2 * P + 2 * Context.getTypeSize(Context.IntTy) ||
       Context.getTypeAlign(NodeType) != Context.getTypeAlign(Context.VoidPtrTy))
     return std::nullopt;
-  return UtilityUnorderedMapRecord{Map, Context.getPointerType(Context.VoidPtrTy),
+  return UtilityUnorderedTableRecord{Map, Context.getPointerType(Context.VoidPtrTy),
       Context.VoidPtrTy, NodeType, uint64_t(Context.getTypeSizeInChars(NodeType).getQuantity()),
-      uint64_t(Offset(Node, Payload) / Context.getCharWidth())};
+      uint64_t(Offset(Node, Payload) / Context.getCharWidth()), Mapped};
+}
+
+std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedMapRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context, const std::function<bool(QualType)> &Complete) {
+  return approvedUnorderedStorage(S, SM, Record, Context, true, Complete);
+}
+
+std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetStorage(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  if (!Record || !Record->getIdentifier() || Record->getName() != "unordered_set")
+    return std::nullopt;
+  return approvedUnorderedStorage(S, SM, Record, Context, false, {});
+}
+
+std::optional<UtilityUnorderedSetListConstruction> approvedUtilityUnorderedSetListConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  const auto *Selected = Construction ? Construction->getConstructor() : nullptr;
+  const auto *Ctor = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition()) : nullptr;
+  const auto *Owner = Ctor ? Ctor->getParent() : nullptr;
+  if (!Ctor || !S.owns(SM, Construction->getExprLoc()) ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Construction->getNumArgs() != 1 || Ctor->getNumParams() != 1 || Ctor->getNumCtorInitializers() != 1 ||
+      !orderedPinnedFunction(S, SM, Ctor, "unordered_set"))
+    return std::nullopt;
+  const auto Carrier = Ctor->getParamDecl(0)->getType();
+  if (!Context.hasSameType(Construction->getArg(0)->getType(), Carrier))
+    return std::nullopt;
+  const auto List = approvedUtilityInitializerListRecord(S, SM, Carrier->getAsCXXRecordDecl(), Context);
+  if (!List || !Context.hasSameType(List->ElementType, Context.IntTy))
+    return std::nullopt;
+  const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  const auto *Init = *Ctor->init_begin();
+  if (!Table || !Init->isMemberInitializer() ||
+      Init->getMember() != orderedTreeField(Owner, "__table_") ||
+      !emptyHashTableSource(S, SM, Init->getInit()))
+    return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
+  const auto *Range = Body && Body->size() == 1 ? dyn_cast_or_null<CXXMemberCallExpr>(
+      orderedExpression(dyn_cast<Expr>(Body->body_front()))) : nullptr;
+  const auto *Insert = Range ? Range->getMethodDecl() : nullptr;
+  if (!Insert || !Insert->getIdentifier() || Insert->getName() != "insert" ||
+      Insert->getParent()->getCanonicalDecl() != Owner->getCanonicalDecl() ||
+      !Insert->getPrimaryTemplate() || Insert->getNumParams() != 2 || Range->getNumArgs() != 2 ||
+      !Insert->getReturnType()->isVoidType() || !orderedReceiver(Range) ||
+      !orderedPinnedFunction(S, SM, Insert, "unordered_set"))
+    return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Endpoint = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Range->getArg(I)));
+    const auto *Method = Endpoint ? Endpoint->getMethodDecl() : nullptr;
+    if (!Method || !Method->getIdentifier() || Method->getName() != (I ? "end" : "begin") ||
+        Method->getParent()->getCanonicalDecl() != List->Record->getCanonicalDecl() ||
+        Endpoint->getNumArgs() || !Method->isConst() ||
+        !orderedParameter(Endpoint->getImplicitObjectArgument(), Ctor->getParamDecl(0)) ||
+        !Context.hasSameType(Insert->getParamDecl(I)->getType(), List->Begin->getType()))
+      return std::nullopt;
+  }
+  if (!approvedHashSetBucketSource(S, SM, Ctor, Owner, Context))
+    return std::nullopt;
+  return UtilityUnorderedSetListConstruction{*Table, *List};
+}
+
+std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  const auto Name = Method && Method->getIdentifier() ? Method->getName() : llvm::StringRef();
+  const bool Count = Name == "count";
+  if (!Count && Name != "clear")
+    return std::nullopt;
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto *Owner = Method->getParent();
+  const auto Arity = Count ? 1u : 0u;
+  const auto Result = Count ? Context.getSizeType() : Context.VoidTy;
+  if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
+      Member->getBase()->getType().isVolatileQualified() || !S.owns(SM, Member->getMemberLoc()) ||
+      Method->isConst() != Count || Method->isStatic() || Method->isVolatile() || Method->isVirtual() ||
+      Method->getNumParams() != Arity || Call->getNumArgs() != Arity ||
+      !Context.hasSameType(Method->getReturnType(), Result) || !Context.hasSameType(Call->getType(), Result) ||
+      !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
+      !approvedUtilityUnorderedSetStorage(S, SM, Owner, Context) ||
+      !orderedPinnedFunction(S, SM, Method, "unordered_set"))
+    return std::nullopt;
+  if (Count && (!Context.hasSameType(Method->getParamDecl(0)->getType(),
+                                    Context.getLValueReferenceType(Context.IntTy.withConst())) ||
+                !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy)))
+    return std::nullopt;
+  if (!approvedHashSetBucketSource(S, SM, Method, Owner, Context))
+    return std::nullopt;
+  return Count ? UtilityOperation::UnorderedSetCount : UtilityOperation::UnorderedSetClear;
 }
 
 static bool unorderedMapIteratorPinned(const State &S, const SourceManager &SM, const Decl *D) {
@@ -137313,7 +137415,7 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIter
   if (!Pointer->isPointerType() || Pointer.hasQualifiers() ||
       Pointer->getPointeeType().hasQualifiers()) return std::nullopt;
   const auto NodeType = Pointer->getPointeeType();
-  std::optional<UtilityUnorderedMapRecord> Owner;
+  std::optional<UtilityUnorderedTableRecord> Owner;
   const auto Name = DeclarationName(&Context.Idents.get("unordered_map"));
   for (const auto *D : Outer->getDeclContext()->lookup(Name)) {
     const auto *Template = dyn_cast<ClassTemplateDecl>(D);
@@ -137400,7 +137502,7 @@ static bool unorderedMapPublicMethod(const State &S, const SourceManager &SM,
 }
 
 static std::optional<UtilityUnorderedMapRangeInsertion> unorderedMapRangeParameter(
-    const State &S, const SourceManager &SM, const UtilityUnorderedMapRecord &Map,
+    const State &S, const SourceManager &SM, const UtilityUnorderedTableRecord &Map,
     QualType Parameter, bool IsList, const ASTContext &Context) {
   if (Parameter.hasQualifiers() || Parameter->isReferenceType()) return std::nullopt;
   std::optional<UtilityInitializerListRecord> List;
@@ -138455,7 +138557,7 @@ std::optional<UtilityUnorderedNodeRecord> unorderedNodeRecord(
       Specifics->getTemplateArgs().size()!=2 ||
       !Context.hasSameType(Specifics->getTemplateArgs()[0].getAsType(),Node) ||
       !Context.hasSameType(Specifics->getTemplateArgs()[1].getAsType(),Context.getRecordType(R))) return std::nullopt;
-  std::optional<UtilityUnorderedMapRecord> Map;
+  std::optional<UtilityUnorderedTableRecord> Map;
   const auto Name=DeclarationName(&Context.Idents.get("unordered_map"));
   for (const auto *D:R->getDeclContext()->lookup(Name)) {
     const auto *T=dyn_cast<ClassTemplateDecl>(D);if(!T)continue;
@@ -138702,7 +138804,7 @@ bool unorderedNodeBaseCast(const State &S, const SourceManager &SM,
       *Cast->path_begin() == Info->Record->bases_begin();
 }
 
-std::optional<UtilityUnorderedMapRecord> unorderedMapMerge(
+std::optional<UtilityUnorderedTableRecord> unorderedMapMerge(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);

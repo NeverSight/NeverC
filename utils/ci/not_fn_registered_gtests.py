@@ -1454,6 +1454,30 @@ def restore_unordered_bucket_storage_history(source):
     return restored
 
 
+R19_UNORDERED_SET_VALUES_REGISTERED_SHA256 = 'e9da8191611d0215f09b996e8c05fcf447898711abc672233f3b3225586bb3e1'
+R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256 = '484fbd59e4e3d7eac40f457d31331f446f1e9e29d217bc4d262945e25b091f7a'
+R19_UNORDERED_SET_VALUES_PREVIOUS_REGISTERED_SHA256 = '5d4e1f88637adc033ff73d27435f3bf5030c1be26f50b17a2e6b3b1047d615a8'
+R19_UNORDERED_SET_VALUES_PREVIOUS_MAINTAINED_SHA256 = '7d57c282e737021daad1b73c5869c5a3658f65dbded610460e5e703148810ffc'
+R19_UNORDERED_SET_VALUES_ADDITIONS_SHA256 = '444877a2d5a8628c9c877a9207e0eb83e28b682065c958dfd6120857202fd270'
+R19_UNORDERED_SET_VALUES_MAINTAINED_SIZE = 20041878
+R19_UNORDERED_SET_VALUES_ADDITIONS_SIZE = 7308
+
+
+def restore_unordered_set_values_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_VALUES_REGISTERED_SHA256, R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_VALUES_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_VALUES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_VALUES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_VALUES_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_VALUES_REGISTERED_SHA256
+             else R19_UNORDERED_SET_VALUES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1733,6 +1757,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_VALUES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

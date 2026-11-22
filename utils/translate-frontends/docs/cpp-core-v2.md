@@ -18151,3 +18151,11 @@ reserve(), rehash(), bucket() and bucket_size() while their node graph is
 empty. Lowering preserves the pinned bucket count, allocation and release
 order, and the member receiver and argument evaluation order. Bucket queries
 use valid indices and nonzero bucket counts as required by the selected SDK.
+
+## Integer unordered-set values
+
+The checked default unordered_set<int> accepts initialization from an
+initializer_list<int>. Duplicate keys share one element. The selected
+count() and clear() calls use the checked node storage. Reserve and rehash
+preserve elements and update bucket membership. Clear releases all nodes
+and retains the allocated bucket capacity.
