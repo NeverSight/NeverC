@@ -18143,3 +18143,11 @@ The admitted integer set, multiset, map and multimap expose the checked
 key_comp() observer. Set and multiset also expose value_comp(). The selected
 calls copy the default stateless std::less<int> comparator and evaluate the
 source receiver once.
+
+## Unordered bucket storage
+
+The checked default integer unordered set and multiset owners support
+reserve(), rehash(), bucket() and bucket_size() while their node graph is
+empty. Lowering preserves the pinned bucket count, allocation and release
+order, and the member receiver and argument evaluation order. Bucket queries
+use valid indices and nonzero bucket counts as required by the selected SDK.

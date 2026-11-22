@@ -31,6 +31,14 @@
       "source_sha256": "6290ae7fdabee8be22e4212b7d9b1f2ce8a9e2d268dc21ec7e73768d338a557d",
       "original_case_source_sha256": "6290ae7fdabee8be22e4212b7d9b1f2ce8a9e2d268dc21ec7e73768d338a557d",
       "gtest_body_sha256": "507464eb47ad43062e1f2d00a7cd60bf896e0365ff9ed449c96e1e84e68d5297"
+    },
+    {
+      "name": "unordered-empty-load-factor-rehash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyLoadFactorRehashRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f",
+      "original_case_source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f",
+      "gtest_body_sha256": "0a08c2084aa0fdf84678a63be12694097d8efe31c97cd8c0a53cb6aaf4e406b6"
     }
   ],
   "negative_cases": [
@@ -49,14 +57,6 @@
       "source_sha256": "77a5fe5d75f7d10ee19cf28315b79297661fecbea14058f8028f136c3ef5544b",
       "original_case_source_sha256": "77a5fe5d75f7d10ee19cf28315b79297661fecbea14058f8028f136c3ef5544b",
       "gtest_body_sha256": "ba2247e8eca6652eec4cd24ca21b424a06d64aeade124f4fab485a222b33d25f"
-    },
-    {
-      "name": "unordered-empty-load-factor-rehash",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyLoadFactorRehashRejected",
-      "expected": "reject",
-      "source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f",
-      "original_case_source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f",
-      "gtest_body_sha256": "a35d5a7e91e1f4f162d8c525e6cc394b860f1292d87c00a9a9f0df6c08dee5fe"
     },
     {
       "name": "unordered-empty-load-factor-pointer-receiver",
@@ -101,6 +101,14 @@
       "source_sha256": "6290ae7fdabee8be22e4212b7d9b1f2ce8a9e2d268dc21ec7e73768d338a557d"
     },
     {
+      "name": "unordered-empty-load-factor-rehash",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n",
+      "source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f"
+    },
+    {
       "name": "unordered-empty-load-factor-custom-hash",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -117,14 +125,6 @@
       "source_sha256": "77a5fe5d75f7d10ee19cf28315b79297661fecbea14058f8028f136c3ef5544b"
     },
     {
-      "name": "unordered-empty-load-factor-rehash",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "kind": "source-body-guard",
-      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n",
-      "source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f"
-    },
-    {
       "name": "unordered-empty-load-factor-pointer-receiver",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -138,9 +138,9 @@
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorEmptyMultisetRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorSingleReceiverEvaluationRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorNestedScopeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedEmptyLoadFactorRehashRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorCustomHashRejected",
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorDifferentKeyRejected",
-    "TranslateTest.CoreV2UnorderedEmptyLoadFactorRehashRejected",
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorPointerReceiverRejected"
   ],
   "source_proof_gate_pending": false,
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8342,
   "current_python_registry_tests": 172,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
+    "unordered-bucket-storage": "2eba369d4578e9e03c506e68fc1b71004f3614f6d7fbf879a0fdcf3b8acaef76",
     "unordered-empty-load-factor": "f69568b5562b19312bee40cfd8fb3134b5bf56aae1ab760b9c696fbae531892e"
   },
-  "native_reference_authentication_sha256": "7c0a43dea28f4bd4adfd4ca0082ad9ded7323754c5aee53d647cd854eb87a6b7",
-  "source_proof_sha256": "9c3e48441077d18cd439c59974377008c347bfac29debcf7e444cacbcff797d5"
+  "native_reference_authentication_sha256": "b999e488ab8cbf1c2cd5e2daaae20f1306088dc6484040481826be3166a40304",
+  "source_proof_sha256": "64daec3335111b5cc0eb261f6f47f800a2771fdb0cbf61d810f6d5c08ad48d5b"
 }

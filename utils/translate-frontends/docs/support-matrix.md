@@ -689,3 +689,10 @@ The combined compiler passes 2,952 source requests across six 64-bit targets
 and 596 formal tests on Linux x86-64. All 317 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Unordered bucket storage
+
+The combined compiler passes 3,000 source requests across six 64-bit targets
+and 604 formal tests on Linux x86-64. All 322 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

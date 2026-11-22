@@ -388777,7 +388777,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorRehashRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorRehashRunAtBothOptimizations) {
   const auto Source = tmpFile("unordered-empty-load-factor-rehash.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() {
@@ -388786,10 +388786,17 @@ int main() {
   return value.load_factor() != 0.0f;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-empty-load-factor-rehash.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-empty-load-factor-rehash" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorPointerReceiverRejected) {
@@ -389649,6 +389656,183 @@ int main() {
   auto cmp = pointer->key_comp();
   return !cmp(1, 2);
 }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedBucketStorageUniqueRehashRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-bucket-storage-unique-rehash.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values;
+  values.rehash(7);
+  if (values.bucket_count() != 7 || values.load_factor() != 0.0f) return 1;
+    if (values.bucket(10) != 3 || values.bucket_size(3) != 0) return 2;
+  values.rehash(1);
+    if (values.bucket_count() != 2 || !values.empty()) return 3;
+  values.rehash(0);
+  return values.bucket_count() != 0 || values.size() != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-bucket-storage-unique-rehash.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-bucket-storage-unique-rehash" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedBucketStorageMultiReserveLimitRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-bucket-storage-multi-reserve-limit.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values;
+  values.max_load_factor(0.5f);
+  values.reserve(5);
+  if (values.bucket_count() != 11 || values.load_factor() != 0.0f) return 1;
+  values.max_load_factor(2.0f);
+  values.reserve(5);
+    const auto& view = values;
+    return view.bucket_count() != 3 || !view.empty() || view.bucket(13) != 1 || view.bucket_size(1) != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-bucket-storage-multi-reserve-limit.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-bucket-storage-multi-reserve-limit" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedBucketStorageResizeArgumentsOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-bucket-storage-resize-arguments-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_set<int>;
+using Size = decltype(sizeof(0));
+int trace;
+Set& owner(Set& value) { trace = trace * 10 + 1; return value; }
+Size count() { trace = trace * 10 + 2; return 4; }
+int main() {
+  Set values;
+  owner(values).reserve(count());
+  return trace != 12 || values.bucket_count() != 4;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-bucket-storage-resize-arguments-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-bucket-storage-resize-arguments-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedBucketStorageBucketAllocationAndReleaseRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-bucket-storage-bucket-allocation-and-release.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <unordered_set>
+int armed, allocations, releases;
+Size first_bytes, second_bytes;
+void* operator new(Size bytes) {
+  if (armed) {
+    ++allocations;
+    if (allocations == 1) first_bytes = bytes;
+    else second_bytes = bytes;
+  }
+  return malloc(bytes);
+}
+void operator delete(void* pointer) noexcept {
+  if (armed && pointer) ++releases;
+  free(pointer);
+}
+void operator delete(void* pointer, Size) noexcept {
+  if (armed && pointer) ++releases;
+  free(pointer);
+}
+int main() {
+  {
+    std::unordered_multiset<int> values;
+    armed = 1;
+    values.rehash(4);
+    values.rehash(7);
+    values.rehash(7);
+    if (allocations != 2 || releases != 1 ||
+        first_bytes != 4 * sizeof(void*) || second_bytes != 7 * sizeof(void*)) return 1;
+  }
+  armed = 0;
+  return releases != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-bucket-storage-bucket-allocation-and-release.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-bucket-storage-bucket-allocation-and-release" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedBucketStorageCustomHasherRejected) {
+  const auto Source = tmpFile("unordered-bucket-storage-custom-hasher.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { using Size = decltype(sizeof(0)); Size operator()(int value) const { return Size(value); } };
+int main() { std::unordered_set<int, Hash> values; values.rehash(4); return values.size(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedBucketStorageDifferentKeyRejected) {
+  const auto Source = tmpFile("unordered-bucket-storage-different-key.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_multiset<long> values; values.reserve(4); return values.size(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedBucketStoragePointerReceiverRejected) {
+  const auto Source = tmpFile("unordered-bucket-storage-pointer-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<int> values; auto* ptr = &values; ptr->reserve(4); return values.size(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedBucketStorageNonemptyOwnerRejected) {
+  const auto Source = tmpFile("unordered-bucket-storage-nonempty-owner.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_multiset<int> values{1, 3}; values.rehash(4); return values.size(); }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
   ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
