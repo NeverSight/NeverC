@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedLoadLimitArrowReceiverRejected",
     "TranslateTest.CoreV2UnorderedLoadLimitNonemptyOwnerRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "e2ba79603249f8a30c053f06becbce4d9b6a09d95fd9980551acf3759916984b",
   "maintained_original_sha256": "fae0fb9ccf2cc94269c627dfff161db7092c3ae45dbf081309e168a8158fd5da",
@@ -155,5 +155,10 @@
   "current_registry_count": 8366,
   "current_python_registry_tests": 178,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-load-limit": "cf08b856927fb069603fc071cb47b80a911713f33e0efcb864a91376445426b0"
+  },
+  "native_reference_authentication_sha256": "e190c870c6af439b41ab5cf71b9159bb636b1cdd385cfc0efaa0a2eaf51170d2",
+  "source_proof_sha256": "4346eb270eda523ebc82a23507ee7d9512b8fa3d7a86ffb86170a80f57f174e5"
 }
