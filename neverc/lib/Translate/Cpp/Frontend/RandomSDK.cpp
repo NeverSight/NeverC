@@ -108,8 +108,12 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     if (!F || !F->isImplicit())
       return false;
     if (F->getBuiltinID() == Builtin::BI__builtin_ceilf) {
+      if (!SDKGenerator)
+        return false;
+      const auto Owner = Generator->getName();
       const auto Site = S.sdkFile(SM, Location);
-      if (!SDKGenerator || Generator->getName() != "unordered_map" || !Site ||
+      if ((Owner != "unordered_map" && Owner != "unordered_set" &&
+           Owner != "unordered_multiset") || !Site ||
           Site->Root != "libcxx" || Site->Path != "__math/rounding_functions.h" ||
           F->isVariadic() || F->getNumParams() != 1 ||
           !Context.hasSameType(F->getReturnType(), Context.FloatTy) ||
@@ -2625,6 +2629,14 @@ approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
       Object, Result, Distance, Selection.MinimumValue, Selection.MaximumValue,
       Index};
 }
+bool approvedHashSetBucketSource(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const CXXRecordDecl *Owner, const ASTContext &Context) {
+  if (!Function || !approvedEmptyHashSetRecord(S, SM, Owner, Context))
+    return false;
+  RandomSelection Selection(S, SM, Context, Owner, Context.getSizeType(), Context.DoubleTy);
+  return Selection.retain(Function);
+}
+
 bool approvedUnorderedMapMethodSource(const State &S, const SourceManager &SM,
     const FunctionDecl *Function, const CXXRecordDecl *Record,
     const ASTContext &Context) {

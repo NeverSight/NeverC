@@ -1002,13 +1002,18 @@ class FunctionLowering {
            quantity(Index, type(V.Index->getType(), L), L), L);
     return Item;
   }
+  Expression hashTableMember(Expression Place, llvm::StringRef Name,
+                                QualType FieldType, SourceLocation L) {
+    return Expression{{"kind", "member"}, {"type", type(FieldType, L)}, {"name", Name.str()},
+                      {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+
   Expression unorderedMapMember(Expression Place, const UtilityUnorderedMapRecord &Info,
                                 llvm::StringRef Name, SourceLocation L) {
     QualType FieldType = Name == "nct_unordered_buckets" ? Info.BucketPointerType
         : Name == "nct_unordered_first" ? Info.NodePointerType
         : Name == "nct_unordered_max_load" ? A.Context.FloatTy : A.Context.getSizeType();
-    return Expression{{"kind", "member"}, {"type", type(FieldType, L)},
-        {"name", Name.str()}, {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+    return hashTableMember(std::move(Place), Name, FieldType, L);
   }
   void initializeUnorderedMap(Expression Place, const UtilityUnorderedMapRecord &Info,
                                SourceLocation L) {
@@ -1316,43 +1321,60 @@ class FunctionLowering {
     Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Function)},
                                {"args", std::move(Args)}, {"loc", A.loc(L)}});
   }
-  void unorderedDoRehash(Expression Place, const UtilityUnorderedMapRecord &Info,
-                          Expression Requested, SourceLocation L) {
+  void resetHashBucketArray(Expression Slot, Expression OldCount, Expression Fresh,
+                            QualType SlotType, QualType NodePointer, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
-    const auto NodePointer = type(Info.NodePointerType, L);
-    const auto BucketPointer = type(Info.BucketPointerType, L);
-    auto Count = snapshot(std::move(Requested), L);
-    auto Fresh = snapshot(A.zero(Info.BucketPointerType, L), L);
-    const auto Allocate = labelName(), ReleaseCheck = labelName(), Release = labelName();
-    const auto Install = labelName(), ZeroCheck = labelName(), Zero = labelName(), Nodes = labelName();
-    const auto First = labelName(), Iterate = labelName(), Current = labelName(), Same = labelName();
-    const auto Different = labelName(), NewBucket = labelName(), Relink = labelName(), Step = labelName(), Done = labelName();
-    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Allocate, ReleaseCheck, L);
-    label(Allocate, L);
-    assign(Fresh, cast(unorderedHeapAllocate(Info.NodePointerType,
-        binary("*", Count, quantity(A.Context.getTypeSizeInChars(Info.NodePointerType).getQuantity(), Size, L), Size, L), L), BucketPointer, L), L);
-    jump(ReleaseCheck, L);
-    label(ReleaseCheck, L);
-    auto Old = snapshot(unorderedMapMember(Place, Info, "nct_unordered_buckets", L), L);
-    // unique_ptr::reset installs its new pointer before invoking the old deleter.
-    assign(unorderedMapMember(Place, Info, "nct_unordered_buckets", L), Fresh, L);
-    branch(cast(Old, "bool", L), Release, Install, L);
+    auto Old = snapshot(Slot, L);
+    // The old deleter sees the old count after the new pointer is installed.
+    assign(std::move(Slot), cast(std::move(Fresh), type(SlotType, L), L), L);
+    const auto Release = labelName(), Done = labelName();
+    branch(cast(Old, "bool", L), Release, Done, L);
     label(Release, L);
-    unorderedHeapRelease(Old, Info.NodePointerType,
-        binary("*", unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L),
-               quantity(A.Context.getTypeSizeInChars(Info.NodePointerType).getQuantity(), Size, L), Size, L), L);
+    unorderedHeapRelease(Old, NodePointer,
+        binary("*", std::move(OldCount),
+               quantity(A.Context.getTypeSizeInChars(NodePointer).getQuantity(), Size, L), Size, L), L);
+    jump(Done, L);
+    label(Done, L);
+  }
+
+  Expression resizeHashBucketArray(Expression Slot, Expression CountSlot, QualType SlotType,
+                                    QualType NodePointer, Expression Count, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Pointer = A.Context.getPointerType(NodePointer);
+    auto Fresh = snapshot(A.zero(Pointer, L), L);
+    const auto Allocate = labelName(), Install = labelName();
+    const auto ZeroCheck = labelName(), Zero = labelName(), Done = labelName();
+    branch(binary("!=", Count, quantity(0, Size, L), "bool", L), Allocate, Install, L);
+    label(Allocate, L);
+    auto Bytes = binary("*", Count,
+        quantity(A.Context.getTypeSizeInChars(NodePointer).getQuantity(), Size, L), Size, L);
+    assign(Fresh, cast(unorderedHeapAllocate(NodePointer, std::move(Bytes), L), type(Pointer, L), L), L);
     jump(Install, L);
     label(Install, L);
-    assign(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), Count, L);
+    resetHashBucketArray(std::move(Slot), CountSlot, Fresh, SlotType, NodePointer, L);
+    assign(std::move(CountSlot), Count, L);
     auto I = snapshot(quantity(0, Size, L), L);
     jump(ZeroCheck, L);
     label(ZeroCheck, L);
-    branch(binary("<", I, Count, "bool", L), Zero, Nodes, L);
+    branch(binary("<", I, Count, "bool", L), Zero, Done, L);
     label(Zero, L);
-    assign(index(Fresh, I, NodePointer, L), A.zero(Info.NodePointerType, L), L);
+    assign(index(Fresh, I, type(NodePointer, L), L), A.zero(NodePointer, L), L);
     assign(I, binary("+", I, one(Size, L), Size, L), L);
     jump(ZeroCheck, L);
-    label(Nodes, L);
+    label(Done, L);
+    return Fresh;
+  }
+
+  void unorderedDoRehash(Expression Place, const UtilityUnorderedMapRecord &Info,
+                          Expression Requested, SourceLocation L) {
+    const auto NodePointer = type(Info.NodePointerType, L);
+    auto Count = snapshot(std::move(Requested), L);
+    auto BucketSlot = unorderedMapMember(Place, Info, "nct_unordered_buckets", L);
+    auto CountSlot = unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L);
+    auto Fresh = resizeHashBucketArray(std::move(BucketSlot), std::move(CountSlot),
+        Info.BucketPointerType, Info.NodePointerType, Count, L);
+    const auto First = labelName(), Iterate = labelName(), Current = labelName(), Same = labelName();
+    const auto Different = labelName(), NewBucket = labelName(), Relink = labelName(), Step = labelName(), Done = labelName();
     auto Previous = snapshot(unorderedSentinel(Place, Info, L), L);
     auto Node = snapshot(unorderedMapMember(Place, Info, "nct_unordered_first", L), L);
     branch(cast(Node, "bool", L), First, Done, L);
@@ -1388,8 +1410,8 @@ class FunctionLowering {
     jump(Iterate, L);
     label(Done, L);
   }
-  void unorderedRehash(Expression Place, const UtilityUnorderedMapRecord &Info,
-                        Expression Requested, SourceLocation L) {
+  void rehashTable(Expression Place, const UtilityUnorderedMapRecord *Map,
+                   Expression Requested, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     auto Count = snapshot(std::move(Requested), L);
     const auto One = labelName(), PrimeCheck = labelName(), Prime = labelName();
@@ -1407,14 +1429,14 @@ class FunctionLowering {
     assign(Count, unorderedNextPrime(Count, L), L);
     jump(Compare, L);
     label(Compare, L);
-    auto OldCount = snapshot(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), L);
+    auto OldCount = snapshot(hashTableMember(Place, "nct_unordered_bucket_count", A.Context.getSizeType(), L), L);
     branch(binary(">", Count, OldCount, "bool", L), Rehash, ShrinkCheck, L);
     label(ShrinkCheck, L);
     branch(binary("<", Count, OldCount, "bool", L), Shrink, Done, L);
     label(Shrink, L);
     auto Minimum = snapshot(unorderedCeilCount(
-        unorderedMapMember(Place, Info, "nct_unordered_size", L),
-        unorderedMapMember(Place, Info, "nct_unordered_max_load", L), L), L);
+        hashTableMember(Place, "nct_unordered_size", A.Context.getSizeType(), L),
+        hashTableMember(Place, "nct_unordered_max_load", A.Context.FloatTy, L), L), L);
     branch(unorderedHashPower2(OldCount, L), Power, MinimumPrime, L);
     label(Power, L);
     assign(Minimum, unorderedNextPower2(Minimum, L), L);
@@ -1430,9 +1452,21 @@ class FunctionLowering {
     label(Recheck, L);
     branch(binary("<", Count, OldCount, "bool", L), Rehash, Done, L);
     label(Rehash, L);
-    unorderedDoRehash(Place, Info, Count, L);
+    if (Map) {
+      unorderedDoRehash(Place, *Map, Count, L);
+    } else {
+      const auto Pointer = A.Context.VoidPtrTy;
+      auto Slot = hashTableMember(Place, "nct_unordered_buckets", Pointer, L);
+      auto StoredCount = hashTableMember(Place, "nct_unordered_bucket_count", A.Context.getSizeType(), L);
+      resizeHashBucketArray(std::move(Slot), std::move(StoredCount), Pointer, Pointer, Count, L);
+    }
     jump(Done, L);
     label(Done, L);
+  }
+
+  void unorderedRehash(Expression Place, const UtilityUnorderedMapRecord &Map,
+                        Expression Requested, SourceLocation L) {
+    rehashTable(std::move(Place), &Map, std::move(Requested), L);
   }
 
   Expression unorderedFindNode(Expression Place, const UtilityUnorderedMapRecord &Info,
@@ -26840,16 +26874,10 @@ class FunctionLowering {
 
   Expression emptyHashSetLoadFactor(Expression Place, SourceLocation L) {
     const auto Type = A.Context.getSizeType();
-    auto Size = emptyHashSetMember(Place, "nct_unordered_size", Type, L);
-    auto Buckets = emptyHashSetMember(std::move(Place), "nct_unordered_bucket_count", Type, L);
+    auto Size = hashTableMember(Place, "nct_unordered_size", Type, L);
+    auto Buckets = hashTableMember(std::move(Place), "nct_unordered_bucket_count", Type, L);
     return hashTableLoadFactor(std::move(Size), std::move(Buckets), L);
   }
-  Expression emptyHashSetMember(Expression Place, llvm::StringRef Name,
-                                QualType FieldType, SourceLocation L) {
-    return Expression{{"kind", "member"}, {"type", type(FieldType, L)}, {"name", Name.str()},
-                      {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
-  }
-
   void initializeEmptyHashSet(Expression Place, SourceLocation L) {
     const auto &Context = A.Context;
     for (const auto &[Name, FieldType] :
@@ -26857,8 +26885,8 @@ class FunctionLowering {
           std::pair{"nct_unordered_bucket_count", QualType(Context.getSizeType())},
           std::pair{"nct_unordered_first", QualType(Context.VoidPtrTy)},
           std::pair{"nct_unordered_size", QualType(Context.getSizeType())}})
-      initializeZero(emptyHashSetMember(Place, Name, FieldType, L), FieldType, L);
-    assign(emptyHashSetMember(std::move(Place), "nct_unordered_max_load", Context.FloatTy, L),
+      initializeZero(hashTableMember(Place, Name, FieldType, L), FieldType, L);
+    assign(hashTableMember(std::move(Place), "nct_unordered_max_load", Context.FloatTy, L),
            one("float", L), L);
   }
 
@@ -29203,6 +29231,30 @@ class FunctionLowering {
       }
       return Result;
     }
+    if (Operation == UtilityOperation::EmptyHashSetResizeBuckets ||
+        Operation == UtilityOperation::EmptyHashSetBucketObserver) {
+      const auto *Member = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+      if (!Member || approvedEmptyHashSetBucketOperation(A.S, A.Sources, Call, A.Context) != Operation)
+        reject(L, "unordered set bucket storage", "The exact selected SDK bucket operation is required.");
+      const auto *Method = clang::cast<CXXMethodDecl>(Member->getMemberDecl());
+      const auto *Receiver = Member->getBase();
+      auto Pointer = snapshot(address(lvalue(Receiver), Receiver->getType(), L), L);
+      auto Count = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+      auto Place = dereference(std::move(Pointer), L);
+      if (Operation == UtilityOperation::EmptyHashSetBucketObserver) {
+        const auto Size = A.Context.getSizeType();
+        // All allocated buckets are empty until a node insertion operation is admitted.
+        if (Method->getName() == "bucket_size")
+          return A.zero(Size, L);
+        auto Hash = snapshot(cast(dereference(std::move(Count), L), type(Size, L), L), L);
+        auto Buckets = hashTableMember(std::move(Place), "nct_unordered_bucket_count", Size, L);
+        return unorderedConstrainHash(std::move(Hash), std::move(Buckets), L);
+      }
+      if (Method->getName() == "reserve")
+        Count = unorderedCeilCount(Count, hashTableMember(Place, "nct_unordered_max_load", A.Context.FloatTy, L), L);
+      rehashTable(std::move(Place), nullptr, std::move(Count), L);
+      return {};
+    }
     if (Operation == UtilityOperation::EmptyHashSetSetMaxLoadFactor) {
       const auto *Member = approvedEmptyHashSetSetMaxLoadFactor(A.S, A.Sources, Call, A.Context);
       if (!Member)
@@ -29213,7 +29265,7 @@ class FunctionLowering {
       auto Value = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
       auto Place = dereference(std::move(Pointer), L);
       auto Current = emptyHashSetLoadFactor(Place, L);
-      auto Slot = emptyHashSetMember(std::move(Place), "nct_unordered_max_load", A.Context.FloatTy, L);
+      auto Slot = hashTableMember(std::move(Place), "nct_unordered_max_load", A.Context.FloatTy, L);
       storeHashLoadLimit(std::move(Slot), std::move(Value), std::move(Current), L);
       return {};
     }
@@ -29227,7 +29279,7 @@ class FunctionLowering {
       if (Info->Maximum)
         return quantity(*Info->Maximum, type(Call->getType(), L), L);
       if (Name == "max_load_factor")
-        return emptyHashSetMember(std::move(Receiver), "nct_unordered_max_load", A.Context.FloatTy, L);
+        return hashTableMember(std::move(Receiver), "nct_unordered_max_load", A.Context.FloatTy, L);
       const auto Type = A.Context.getSizeType();
       if (Name == "load_factor") {
         auto Pointer = snapshot(address(std::move(Receiver), Member->getBase()->getType(), L), L);
@@ -29235,8 +29287,8 @@ class FunctionLowering {
         return emptyHashSetLoadFactor(std::move(Place), L);
       }
       if (Name == "bucket_count")
-        return emptyHashSetMember(std::move(Receiver), "nct_unordered_bucket_count", Type, L);
-      auto Count = emptyHashSetMember(std::move(Receiver), "nct_unordered_size", Type, L);
+        return hashTableMember(std::move(Receiver), "nct_unordered_bucket_count", Type, L);
+      auto Count = hashTableMember(std::move(Receiver), "nct_unordered_size", Type, L);
       if (Name == "size")
         return Count;
       return binary("==", std::move(Count), A.zero(Type, L), "bool", L);
@@ -40947,7 +40999,12 @@ public:
         llvm::StringRef Failure;
         if (!approvedEmptyHashSetDestructor(A.S, A.Sources, DestroyedRecord->getDestructor(), A.Context, &Failure))
           reject(L, "unordered set destructor", Failure);
-        // The checked empty table and bucket destruction paths have no effects.
+        // No admitted set operation installs nodes. The bucket array may be allocated.
+        auto Place = dereference(*ThisPointer, L);
+        const auto Pointer = A.Context.VoidPtrTy;
+        auto Slot = hashTableMember(Place, "nct_unordered_buckets", Pointer, L);
+        auto Count = hashTableMember(std::move(Place), "nct_unordered_bucket_count", A.Context.getSizeType(), L);
+        resetHashBucketArray(std::move(Slot), std::move(Count), A.zero(Pointer, L), Pointer, Pointer, L);
       } else if (approvedOrderedContainerRuntimeRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         // These owners only admit authenticated empty construction and read-only
         // operations. The checked SDK destroy routine has no effect on a null root.
