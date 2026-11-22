@@ -7819,16 +7819,9 @@ static bool variantGetHasGuard(const State &S, const SourceManager &SM,
   auto SameRecord = [&](const UtilityVariantRecord &Other) {
     return Other.Record->getCanonicalDecl() == V.Record->getCanonicalDecl();
   };
-  auto SelectsAlternative = [&](const Expr *Condition) {
-    const auto *Test = Condition ? Condition->IgnoreParenImpCasts() : nullptr;
-    if (const auto *Holds = dyn_cast_or_null<CallExpr>(Test)) {
-      if (Holds->getNumArgs() != 1 || !SameObject(Holds->getArg(0)))
-        return false;
-      const auto Check = approvedUtilityVariantHolds(S, SM, Holds, Context);
-      return Check && Check->Index == I && SameRecord(Check->Variant);
-    }
+  auto TestsIndex = [&](const Expr *Test, BinaryOperatorKind Opcode) {
     const auto *Equal = dyn_cast_or_null<BinaryOperator>(Test);
-    if (!Equal || Equal->getOpcode() != BO_EQ)
+    if (!Equal || Equal->getOpcode() != Opcode)
       return false;
     const auto *Index = dyn_cast<CXXMemberCallExpr>(Equal->getLHS()->IgnoreParenImpCasts());
     const auto *Value = dyn_cast<IntegerLiteral>(Equal->getRHS()->IgnoreParenImpCasts());
@@ -7837,6 +7830,32 @@ static bool variantGetHasGuard(const State &S, const SourceManager &SM,
       return false;
     const auto Check = approvedUtilityVariantQuery(S, SM, Index, Context);
     return Check && !Check->Valueless && SameRecord(Check->Variant);
+  };
+  auto SelectsAlternative = [&](const Expr *Condition) {
+    const auto *Test = Condition ? Condition->IgnoreParenImpCasts() : nullptr;
+    if (const auto *Holds = dyn_cast_or_null<CallExpr>(Test)) {
+      if (Holds->getNumArgs() != 1 || !SameObject(Holds->getArg(0)))
+        return false;
+      const auto Check = approvedUtilityVariantHolds(S, SM, Holds, Context);
+      return Check && Check->Index == I && SameRecord(Check->Variant);
+    }
+    return TestsIndex(Test, BO_EQ);
+  };
+  auto DeniesAlternative = [&](const Expr *Condition) {
+    const auto *Test = Condition ? Condition->IgnoreParenImpCasts() : nullptr;
+    if (const auto *Not = dyn_cast_or_null<UnaryOperator>(Test))
+      return Not->getOpcode() == UO_LNot && SelectsAlternative(Not->getSubExpr());
+    return TestsIndex(Test, BO_NE);
+  };
+  auto ReturnsUnlessSelected = [&](const Stmt *Previous) {
+    const auto *Exit = dyn_cast_or_null<IfStmt>(Previous);
+    if (!Exit || Exit->isConstexpr() || Exit->getInit() ||
+        Exit->getConditionVariable() || Exit->getElse())
+      return false;
+    const auto *Then = Exit->getThen();
+    if (const auto *Block = dyn_cast<CompoundStmt>(Then))
+      Then = Block->size() == 1 ? Block->body_front() : nullptr;
+    return isa_and_nonnull<ReturnStmt>(Then) && DeniesAlternative(Exit->getCond());
   };
 
   // Clang computes its parent map lazily. Each outward step must have a
@@ -7879,14 +7898,28 @@ static bool variantGetHasGuard(const State &S, const SourceManager &SM,
     Parent = ParentOf(*Use);
   }
   if (const auto *Body = Parent ? Parent->get<CompoundStmt>() : nullptr) {
-    if (Body->body_empty() || Body->body_front() != Use)
+    if (Body->body_empty())
       return false;
+    if (Body->body_front() != Use) {
+      // A contiguous if/return pair prevents entry between the guard and the
+      // next evaluation. Do not scan across labels or unrelated statements.
+      const Stmt *Previous = nullptr;
+      const auto Limit = std::min<unsigned>(Body->size(), 64);
+      for (unsigned N = 0; N != Limit; ++N) {
+        const auto *Sibling = Body->body_begin()[N];
+        if (Sibling == Use)
+          return ReturnsUnlessSelected(Previous);
+        Previous = Sibling;
+      }
+      return false;
+    }
     Use = Body;
     Parent = ParentOf(*Use);
   }
   const auto *If = Parent ? Parent->get<IfStmt>() : nullptr;
   return If && !If->isConstexpr() && !If->getConditionVariable() &&
-         If->getThen() == Use && SelectsAlternative(If->getCond());
+         ((If->getThen() == Use && SelectsAlternative(If->getCond())) ||
+          (If->getElse() == Use && DeniesAlternative(If->getCond())));
 }
 
 static bool variantGetBody(const State &S, const SourceManager &SM,
