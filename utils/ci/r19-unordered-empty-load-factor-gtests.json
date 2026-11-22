@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorRehashRejected",
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorPointerReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "e51e579798e32927a56469df5fc72fa5e15a7309fdc3a1aa4c1dafbb227aa931",
   "maintained_original_sha256": "b981812e100743864d81cd802d9b0d314b60e59b2362aff71f6a635b11e0cee5",
@@ -155,5 +155,10 @@
   "current_registry_count": 8342,
   "current_python_registry_tests": 172,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-empty-load-factor": "f69568b5562b19312bee40cfd8fb3134b5bf56aae1ab760b9c696fbae531892e"
+  },
+  "native_reference_authentication_sha256": "7c0a43dea28f4bd4adfd4ca0082ad9ded7323754c5aee53d647cd854eb87a6b7",
+  "source_proof_sha256": "556190f7217104f7587fa41643121976990e8fcf87b6c57f1affc44ec52c1f78"
 }

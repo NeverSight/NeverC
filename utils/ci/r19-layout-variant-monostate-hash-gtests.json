@@ -75,7 +75,7 @@
     "TranslateTest.CoreV2VariantMonostateHashAlternateSdkSpellingRejected",
     "TranslateTest.CoreV2VariantMonostateHashStandaloneMemberPointerRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "531796afa63bd5b199baacccad91f1fb86b4a0c16a7e182437a6d779b75b5dbc",
   "maintained_original_sha256": "044375f31196b86b6225261c611c6f8100a8ec7ab0219709cfffe35e44d6daed",
@@ -87,5 +87,10 @@
   "current_registry_count": 8248,
   "current_python_registry_tests": 148,
   "native_reference_selected_executions": 4,
-  "planned_generated_c23_executions": 4
+  "planned_generated_c23_executions": 4,
+  "native_reference_proofs": {
+    "variant-monostate-hash": "8782255c22bbad79844c799d52a1bf3f134f2574c7cd8b9805ac0bc62dda3138"
+  },
+  "native_reference_authentication_sha256": "854a4222fcd0fe9c71d46047718f0f85a58cfe8bf3a0890e5e1ca311e7f124a2",
+  "source_proof_sha256": "556190f7217104f7587fa41643121976990e8fcf87b6c57f1affc44ec52c1f78"
 }

@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedLookupPoliciesArrowReceiverRejected",
     "TranslateTest.CoreV2UnorderedLookupPoliciesNonemptyOwnerRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "e543cb1c290298ca024848985498bb44c08cfa2e81e4738ba83e05d7b89c65e2",
   "maintained_original_sha256": "b4a0dd37f0dde5f034dd8c52c3474b2bd571f0766befa55fbe257312e8ccb2a5",
@@ -155,5 +155,10 @@
   "current_registry_count": 8358,
   "current_python_registry_tests": 176,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-lookup-policies": "72d94900c87c51c4cebded2adffe7f46e035795eed96e7a77ac1867efd8f88ce"
+  },
+  "native_reference_authentication_sha256": "89e8a63f1392da09f9e8fad8fc794dba4882f4ca2af9db3dfac6d9a8baa7df88",
+  "source_proof_sha256": "556190f7217104f7587fa41643121976990e8fcf87b6c57f1affc44ec52c1f78"
 }
