@@ -1310,6 +1310,7 @@ enum class UtilityOperation {
   List,
   OrderedContainerObserver,
   EmptyHashSetObserver,
+  EmptyHashSetSetMaxLoadFactor,
   PriorityQueue,
   Deque,
   ValarrayScalar,
@@ -4521,6 +4522,9 @@ struct UtilityContainerObserver {
   const clang::MemberExpr *Member;
   std::optional<uint64_t> Maximum;
 };
+const clang::MemberExpr *approvedEmptyHashSetSetMaxLoadFactor(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 std::optional<UtilityContainerObserver> approvedEmptyHashSetObserver(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
