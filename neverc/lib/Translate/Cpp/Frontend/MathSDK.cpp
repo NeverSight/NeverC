@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -137353,22 +137354,51 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
       !Context.hasSameType(Method->getReturnType(), Result) || !Context.hasSameType(Call->getType(), Result) ||
       !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
       !approvedUtilityUnorderedSetStorage(S, SM, Owner, Context) ||
-      !orderedPinnedFunction(S, SM, Method, "unordered_set"))
+      !orderedPinnedFunction(S, SM, Method, "unordered_set")) {
+    if (Erase || Insert)
+      llvm::errs() << "SET_MODIFIER public declaration " << Name
+                   << " return=" << Method->getReturnType().getAsString()
+                   << " class=" << Method->getParent()->getQualifiedNameAsString()
+                   << " location=" << Method->getLocation().printToString(SM)
+                   << " member=" << bool(Member) << " arrow=" << (Member && Member->isArrow())
+                   << " lvalue=" << (Member && Member->getBase()->isLValue())
+                   << " owned=" << (Member && S.owns(SM, Member->getMemberLoc()))
+                   << " const=" << Method->isConst() << " static=" << Method->isStatic()
+                   << " volatile=" << Method->isVolatile() << " virtual=" << Method->isVirtual()
+                   << " template=" << bool(Method->getPrimaryTemplate())
+                   << " method_arity=" << Method->getNumParams() << " call_arity=" << Call->getNumArgs()
+                   << " method_result=" << Context.hasSameType(Method->getReturnType(), Result)
+                   << " call_result=" << Context.hasSameType(Call->getType(), Result)
+                   << " base_type=" << (Member && Context.hasSameUnqualifiedType(
+                          Member->getBase()->getType(), Context.getRecordType(Owner)))
+                   << " storage=" << bool(approvedUtilityUnorderedSetStorage(S, SM, Owner, Context))
+                   << " pinned=" << orderedPinnedFunction(S, SM, Method, "unordered_set") << "\n";
     return std::nullopt;
+  }
   if (KeyOperation && (!Context.hasSameType(Method->getParamDecl(0)->getType(),
                                     Context.getLValueReferenceType(Context.IntTy.withConst())) ||
-                !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy)))
+                !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy))) {
+    if (Erase)
+      llvm::errs() << "SET_MODIFIER erase key parameter " << Method->getParamDecl(0)->getType().getAsString() << "\n";
     return std::nullopt;
+  }
   if (Insert) {
     const auto Parameter = Method->getParamDecl(0)->getType();
     const auto List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
     if (Parameter->isReferenceType() || Parameter.hasQualifiers() || !List ||
         !Context.hasSameType(List->ElementType, Context.IntTy) ||
-        !Context.hasSameType(Call->getArg(0)->getType(), Parameter))
+        !Context.hasSameType(Call->getArg(0)->getType(), Parameter)) {
+      llvm::errs() << "SET_MODIFIER list signature parameter=" << Parameter.getAsString()
+                   << " argument=" << Call->getArg(0)->getType().getAsString()
+                   << " list=" << bool(List) << "\n";
       return std::nullopt;
+    }
   }
-  if (!approvedHashSetBucketSource(S, SM, Method, Owner, Context))
+  if (!approvedHashSetBucketSource(S, SM, Method, Owner, Context)) {
+    if (Erase || Insert)
+      llvm::errs() << "SET_MODIFIER dependencies " << Name << "\n";
     return std::nullopt;
+  }
   if (Count) return UtilityOperation::UnorderedSetCount;
   if (Erase) return UtilityOperation::UnorderedSetEraseKey;
   return Insert ? UtilityOperation::UnorderedSetInsertList : UtilityOperation::UnorderedSetClear;
