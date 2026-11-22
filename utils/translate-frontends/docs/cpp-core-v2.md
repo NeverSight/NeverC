@@ -18129,3 +18129,10 @@ The admitted default integer unordered set and multiset support the
 max_load_factor(float) setter with a positive requested limit. The
 translation evaluates the receiver and argument once, in member-call order,
 and retains the selected table's clamp against its current load.
+
+## Wide inline any payloads
+
+The inline std::any carrier preserves exact double, long long and unsigned
+long long values on the existing 64-bit targets. The checked construction,
+copy, move, swap, reset and access paths use distinct payload tags. The
+default in-place double value initializes to zero.

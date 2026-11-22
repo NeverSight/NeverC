@@ -3526,6 +3526,16 @@ inline constexpr llvm::StringLiteral UtilityAnyBoolean = "nct_any_boolean";
 inline constexpr unsigned UtilityAnyBooleanTag = 3;
 inline constexpr llvm::StringLiteral UtilityAnyFloat = "nct_any_float";
 inline constexpr unsigned UtilityAnyFloatTag = 4;
+inline constexpr llvm::StringLiteral UtilityAnyDouble = "nct_any_double";
+inline constexpr llvm::StringLiteral UtilityAnyLongLong = "nct_any_long_long";
+inline constexpr llvm::StringLiteral UtilityAnyUnsignedLongLong = "nct_any_unsigned_long_long";
+
+struct UtilityAnyScalar {
+  unsigned Tag;
+  llvm::StringLiteral Field;
+};
+std::optional<UtilityAnyScalar> utilityAnyInlineScalar(clang::QualType Type,
+    const clang::ASTContext &Context);
 enum class UtilityAnyOperation { HasValue, Reset };
 struct UtilityAnyCall {
   UtilityAnyOperation Operation;

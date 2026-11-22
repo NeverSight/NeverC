@@ -385400,7 +385400,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AnyIntUnsupportedFloatingValueRejected) {
+TEST_F(TranslateTest, CoreV2AnyDoubleConstructionAcceptsFunctionBody) {
   const auto Source = tmpFile("any-int-unsupported-floating-value.cpp");
   writeFile(Source, R"r19containers(#include <any>
 int f() {
@@ -385409,9 +385409,7 @@ int f() {
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2AnyIntRenamedPinnedStorageHandlerRejected) {
@@ -385764,7 +385762,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AnyInPlaceOtherPayloadGuardRejected) {
+TEST_F(TranslateTest, CoreV2AnyInPlaceDefaultDoubleAcceptsFunctionBody) {
   const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");
   writeFile(Source, R"r19containers(#include <any>
 bool f() {
@@ -385773,9 +385771,7 @@ bool f() {
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2AnyEmplaceOtherPayloadGuardRejected) {
@@ -389279,6 +389275,222 @@ int main() {
   std::unordered_multiset<int> values{3, 3};
   values.max_load_factor(3.0f);
   return values.max_load_factor() != 3.0f;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyWideInlineDoublePointerPrecisionRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-wide-inline-double-pointer-precision.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value{1.0000000000000002};
+  const std::any* view = &value;
+  const double* exact = std::any_cast<double>(view);
+  if (!exact || *exact != 1.0000000000000002 || std::any_cast<float>(view)) return 1;
+  double* writable = std::any_cast<double>(&value);
+  if (!writable || writable != exact) return 2;
+  *writable = -2.25;
+  return *exact != -2.25 || std::any_cast<long long>(view) != nullptr;
+}
+)r19containers");
+  const auto Output = tmpFile("any-wide-inline-double-pointer-precision.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-wide-inline-double-pointer-precision" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyWideInlineDoubleInPlaceDefaultRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-wide-inline-double-in-place-default.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  const std::any zero(std::in_place_type<double>);
+  const double& borrowed = std::any_cast<const double&>(zero);
+  return !zero.has_value() || borrowed != 0.0 || std::any_cast<double>(zero) != 0.0;
+}
+)r19containers");
+  const auto Output = tmpFile("any-wide-inline-double-in-place-default.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-wide-inline-double-in-place-default" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyWideInlineWideSignedValueMoveRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-wide-inline-wide-signed-value-move.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  const std::any value{(-9223372036854775807LL - 1)};
+  auto copied = value;
+  auto moved = static_cast<std::any&&>(copied);
+  auto* slot = std::any_cast<long long>(&moved);
+  return copied.has_value() || !slot || *slot != (-9223372036854775807LL - 1) ||
+      std::any_cast<long long>(value) != *slot || std::any_cast<unsigned long long>(&moved);
+}
+)r19containers");
+  const auto Output = tmpFile("any-wide-inline-wide-signed-value-move.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-wide-inline-wide-signed-value-move" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyWideInlineWideUnsignedEmplaceRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-wide-inline-wide-unsigned-emplace.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  auto value = std::make_any<unsigned long long>(0xfe123456789abcdeULL);
+  const auto* first = std::any_cast<unsigned long long>(&value);
+  if (!first || *first != 0xfe123456789abcdeULL || std::any_cast<long long>(&value)) return 1;
+  auto& second = value.emplace<unsigned long long>(0x8000000000000000ULL);
+  if (second != 0x8000000000000000ULL || std::any_cast<unsigned long long>(&value) != &second) return 2;
+  value.reset();
+  return value.has_value() || std::any_cast<unsigned long long>(&value);
+}
+)r19containers");
+  const auto Output = tmpFile("any-wide-inline-wide-unsigned-emplace.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-wide-inline-wide-unsigned-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyWideInlineWideTagsAndSwapRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-wide-inline-wide-tags-and-swap.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any a{7LL}, b{7ULL};
+  a.swap(b);
+  const auto* u = std::any_cast<unsigned long long>(&a);
+  const auto* s = std::any_cast<long long>(&b);
+  if (!u || !s || *u != 7ULL || *s != 7LL || std::any_cast<long long>(&a)) return 1;
+  b = 7.0;
+  auto* d = std::any_cast<double>(&b);
+  if (!d || *d != 7.0 || std::any_cast<long long>(&b)) return 2;
+  a = 7u;
+  return !std::any_cast<unsigned int>(&a) || std::any_cast<unsigned long long>(&a);
+}
+)r19containers");
+  const auto Output = tmpFile("any-wide-inline-wide-tags-and-swap.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-wide-inline-wide-tags-and-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyWideInlineWideInputOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-wide-inline-wide-input-once.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int steps;
+unsigned long long input() {
+  ++steps;
+  return 0x0000000100000001ULL;
+}
+int main() {
+  std::any value{input()};
+  auto* saved = std::any_cast<unsigned long long>(&value);
+  if (steps != 1 || !saved || *saved != 0x0000000100000001ULL) return 1;
+  value = input();
+  return steps != 2 || !std::any_cast<unsigned long long>(&value);
+}
+)r19containers");
+  const auto Output = tmpFile("any-wide-inline-wide-input-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-wide-inline-wide-input-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyWideInlineMutableWideReferenceRejected) {
+  const auto Source = tmpFile("any-wide-inline-mutable-wide-reference.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+long long edit() {
+  std::any value{5LL};
+  return ++std::any_cast<long long&>(value);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyWideInlineUnknownWideValueRejected) {
+  const auto Source = tmpFile("any-wide-inline-unknown-wide-value.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+unsigned long long read(const std::any& value) {
+  return std::any_cast<unsigned long long>(value);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyWideInlineMismatchedWideValueRejected) {
+  const auto Source = tmpFile("any-wide-inline-mismatched-wide-value.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+double read() {
+  const std::any value{1.0f};
+  return std::any_cast<double>(value);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyWideInlineRecordConversionRejected) {
+  const auto Source = tmpFile("any-wide-inline-record-conversion.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+struct Convertible {
+  operator double() const noexcept { return 1.25; }
+};
+int main() {
+  auto value = std::make_any<double>(Convertible{});
+  return !value.has_value();
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

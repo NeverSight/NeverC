@@ -1376,6 +1376,34 @@ def restore_unordered_load_limit_history(source):
     return restored
 
 
+R19_ANY_WIDE_INLINE_REGISTERED_SHA256 = '4607f566f60f7230b06677c26a599e1b6c77cd087d7f9e840ad243d584495f13'
+R19_ANY_WIDE_INLINE_MAINTAINED_SHA256 = '92d39572e7134da39264c7046fee2ab75315632ce43552ac1d04cf7473a88896'
+R19_ANY_WIDE_INLINE_PREVIOUS_REGISTERED_SHA256 = 'e2ba79603249f8a30c053f06becbce4d9b6a09d95fd9980551acf3759916984b'
+R19_ANY_WIDE_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'fae0fb9ccf2cc94269c627dfff161db7092c3ae45dbf081309e168a8158fd5da'
+R19_ANY_WIDE_INLINE_ADDITIONS_SHA256 = '14dc9f69750cee57d516c6014a3e0a9eddf84c7058db8c81ee893ac0149c1a45'
+R19_ANY_WIDE_INLINE_MAINTAINED_SIZE = 20019248
+R19_ANY_WIDE_INLINE_ADDITIONS_SIZE = 10027
+
+
+def restore_any_wide_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_WIDE_INLINE_REGISTERED_SHA256, R19_ANY_WIDE_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_WIDE_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_WIDE_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_WIDE_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyDoubleConstructionAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-unsupported-floating-value.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint f() {\n  std::any value(1.0);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyDoubleConstructionAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-unsupported-floating-value.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint f() {\n  std::any value(1.0);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n', b'TEST_F(TranslateTest, CoreV2AnyIntUnsupportedFloatingValueRejected) {\n  const auto Source = tmpFile("any-int-unsupported-floating-value.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint f() {\n  std::any value(1.0);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyInPlaceDefaultDoubleAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyInPlaceDefaultDoubleAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n', b'TEST_F(TranslateTest, CoreV2AnyInPlaceOtherPayloadGuardRejected) {\n  const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    prior = (R19_ANY_WIDE_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_WIDE_INLINE_REGISTERED_SHA256
+             else R19_ANY_WIDE_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1634,6 +1662,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_WIDE_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_WIDE_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_WIDE_INLINE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

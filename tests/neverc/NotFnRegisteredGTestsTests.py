@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.any_wide_inline_registered = cls.registered
+        cls.any_wide_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_wide_inline_original = cls.adapter.restore_original_gtests(cls.any_wide_inline_registered,
+                                                                        cls.any_wide_inline_suffix)
+        cls.registered = cls.adapter.restore_any_wide_inline_history(cls.any_wide_inline_registered)
         cls.unordered_load_limit_registered = cls.registered
         cls.unordered_load_limit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_load_limit_original = cls.adapter.restore_original_gtests(cls.unordered_load_limit_registered,
@@ -2486,6 +2491,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_load_limit_history(self.unordered_load_limit_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_load_limit_registered, self.unordered_load_limit_suffix + b' ')
+
+
+    def test_any_wide_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_wide_inline_original + self.any_wide_inline_suffix, self.any_wide_inline_registered)
+        self.assertEqual(self.adapter.restore_any_wide_inline_history(self.any_wide_inline_original),
+                         self.unordered_load_limit_original)
+        output, evidence = self.extractor.extract(self.any_wide_inline_original, ['TranslateTest.CoreV2AnyWideInlineDoublePointerPrecisionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineDoubleInPlaceDefaultRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineWideSignedValueMoveRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineWideUnsignedEmplaceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineWideTagsAndSwapRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineWideInputOnceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineMutableWideReferenceRejected', 'TranslateTest.CoreV2AnyWideInlineUnknownWideValueRejected', 'TranslateTest.CoreV2AnyWideInlineMismatchedWideValueRejected', 'TranslateTest.CoreV2AnyWideInlineRecordConversionRejected'])
+        self.assertEqual(evidence['original_test_names'], 8376)
+        self.assertEqual(evidence['selected_count'], 10)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-wide-inline-double-pointer-precision', output)
+        self.assertIn(b'any-wide-inline-wide-input-once', output)
+
+    def test_any_wide_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_wide_inline_history(self.any_wide_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_wide_inline_registered, self.any_wide_inline_suffix + b' ')
 
 
 if __name__ == '__main__':
