@@ -9533,6 +9533,39 @@ const CXXRecordDecl *approvedUtilityAnyPointerCast(const State &S, const SourceM
   return anyPointerCast(S, SM, Call->getDirectCallee(), Context, true);
 }
 
+static bool anySingleUseLocal(const State &S, const SourceManager &SM,
+                              const VarDecl *Local, const DeclRefExpr *Use) {
+  const auto *Owner = dyn_cast<FunctionDecl>(Local->getDeclContext());
+  const auto *Body = Owner ? Owner->getBody() : nullptr;
+  const auto AfterInitializer = SM.getExpansionLoc(Local->getEndLoc());
+  const auto AtUse = SM.getExpansionLoc(Use->getExprLoc());
+  if (!Body || !S.owns(SM, Owner->getLocation()) || AfterInitializer.isInvalid() || AtUse.isInvalid() ||
+      !SM.isBeforeInTranslationUnit(AfterInitializer, AtUse))
+    return false;
+  const auto *Identity = Local->getCanonicalDecl();
+  unsigned Nodes = 0;
+  bool Found = false;
+  // The only reference is consumed by the authenticated value cast, so
+  // no assignment or borrowed access can change the active payload.
+  const auto Scan = [&](auto &&Self, const Stmt *Statement, unsigned Depth) -> bool {
+    if (!Statement) return true;
+    if (Depth >= 64 || ++Nodes > 200000) return false;
+    if (const auto *Read = dyn_cast<DeclRefExpr>(Statement);
+        Read && Read->getDecl()->getCanonicalDecl() == Identity) {
+      if (Read != Use || Found) return false;
+      Found = true;
+    }
+    if (const auto *Lambda = dyn_cast<LambdaExpr>(Statement))
+      for (const auto &Capture : Lambda->captures())
+        if (Capture.capturesVariable() && Capture.getCapturedVar()->getCanonicalDecl() == Identity)
+          return false;
+    for (const auto *Child : Statement->children())
+      if (!Self(Self, Child, Depth + 1)) return false;
+    return true;
+  };
+  return Scan(Scan, Body, 0) && Found;
+}
+
 const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   if (!S.coreV2() || !Call || Call->getNumArgs() != 1)
@@ -9560,10 +9593,13 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   const auto *Any = Local ? Local->getType()->getAsCXXRecordDecl() : nullptr;
   Any = Any ? Any->getDefinition() : nullptr;
   if (!Any || !Local->hasLocalStorage() || Local->getType()->isReferenceType() ||
-      !Local->getType().isConstQualified() || Local->getType().isVolatileQualified() ||
-      !S.owns(SM, Local->getLocation()) ||
+      Local->getType().isVolatileQualified() || !S.owns(SM, Local->getLocation()))
+    return nullptr;
+  const bool Const = Local->getType().isConstQualified();
+  const auto Owner = Context.getRecordType(Any);
+  if ((!Const && (Reference || !anySingleUseLocal(S, SM, Local, Receiver))) ||
       !Context.hasSameType(F->getParamDecl(0)->getType(),
-                           Context.getLValueReferenceType(Context.getRecordType(Any).withConst())))
+                           Context.getLValueReferenceType(Const ? Owner.withConst() : Owner)))
     return nullptr;
   const auto Initial = approvedUtilityAnyIntegerConstruction(S, SM, variantConstruct(Local->getInit()), Context);
   if (!Initial || Initial->Record != Any || !Context.hasSameType(Initial->ValueType, Payload))
@@ -9589,7 +9625,7 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   const auto *Address = Cast && Cast->getNumArgs() == 1
       ? dyn_cast<UnaryOperator>(Cast->getArg(0)->IgnoreParenImpCasts()) : nullptr;
   if (!Pointer || !anyDeclaration(S, SM, Pointer) ||
-      !Context.hasSameType(Pointer->getType(), Context.getPointerType(ConstValue)) ||
+      !Context.hasSameType(Pointer->getType(), Context.getPointerType(Const ? ConstValue : Payload)) ||
       !PointerFunction || anyPointerCast(S, SM, PointerFunction, Context, true) != Any ||
       !Address || Address->getOpcode() != UO_AddrOf || !anyParameter(Address->getSubExpr(), F->getParamDecl(0)))
     return nullptr;
