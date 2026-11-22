@@ -1,0 +1,159 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-values-braces-duplicates-and-count",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetValuesBracesDuplicatesAndCountRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "06c84442f68238150cbed64c37642f2c9934723dcf056a6ae6fd460758ca4b8c",
+      "original_case_source_sha256": "06c84442f68238150cbed64c37642f2c9934723dcf056a6ae6fd460758ca4b8c",
+      "gtest_body_sha256": "087f67f9308a038f2d53ae8609646bce7c644a9ff7d73db42bcfbac07a7345f9"
+    },
+    {
+      "name": "unordered-set-values-list-input-order",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetValuesListInputOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3c8f0b91684b677385b724594251f5a91a3a74f174b11ccc4151f2ef89e2994e",
+      "original_case_source_sha256": "3c8f0b91684b677385b724594251f5a91a3a74f174b11ccc4151f2ef89e2994e",
+      "gtest_body_sha256": "fe78133d753367c525448b392360a34cba78ae9f350424b0974d28f934ae2f8a"
+    },
+    {
+      "name": "unordered-set-values-nonempty-rehash-and-buckets",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetValuesNonemptyRehashAndBucketsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7b205aaf78e87c9e875d4a1405f2738b106f579c1f4b3a30435252a8421053f5",
+      "original_case_source_sha256": "7b205aaf78e87c9e875d4a1405f2738b106f579c1f4b3a30435252a8421053f5",
+      "gtest_body_sha256": "6d3ef0c90dc81066417a331b1d64137a02554844d9f408885e831dd9b1727de3"
+    },
+    {
+      "name": "unordered-set-values-clear-retains-bucket-capacity",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetValuesClearRetainsBucketCapacityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bb99afa7abcd3b734b9526e8daf5d836c1c19a36fc561e1054d2c2aabdf72ac7",
+      "original_case_source_sha256": "bb99afa7abcd3b734b9526e8daf5d836c1c19a36fc561e1054d2c2aabdf72ac7",
+      "gtest_body_sha256": "96730c905e820b0c67e9b320c80f72de7adda21f9af16afd0097c12908244cdb"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-values-different-key-list",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetValuesDifferentKeyListRejected",
+      "expected": "reject",
+      "source_sha256": "692dd661bb970eaa20b9a96c3fb075bf16b44538e2b6c2b119a346911f90da40",
+      "original_case_source_sha256": "692dd661bb970eaa20b9a96c3fb075bf16b44538e2b6c2b119a346911f90da40",
+      "gtest_body_sha256": "6ac7a06883415d4766062e65f87670e8bb432ef5b3b3c9a842dbacc86b16f701"
+    },
+    {
+      "name": "unordered-set-values-custom-key-equality",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetValuesCustomKeyEqualityRejected",
+      "expected": "reject",
+      "source_sha256": "d59913c7b09718b326d6ce900ef6f9d65f975c1021fe9031f1486be5f969f3e1",
+      "original_case_source_sha256": "d59913c7b09718b326d6ce900ef6f9d65f975c1021fe9031f1486be5f969f3e1",
+      "gtest_body_sha256": "e0991a94ab0b4d4ced005d1e0ade03d9779340cf5c4dd9845da91710f9bf4de5"
+    },
+    {
+      "name": "unordered-set-values-multiple-key-owner",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetValuesMultipleKeyOwnerRejected",
+      "expected": "reject",
+      "source_sha256": "b264c3b8507421fd24a90ba9d509779e44f4e3ebffe074ccaa2f7a0ddf8d2107",
+      "original_case_source_sha256": "b264c3b8507421fd24a90ba9d509779e44f4e3ebffe074ccaa2f7a0ddf8d2107",
+      "gtest_body_sha256": "1f8c0547f71b121c1a05a2b960a4706dbe4dfd32d05656931c3044f0160da643"
+    },
+    {
+      "name": "unordered-set-values-arrow-count",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetValuesArrowCountRejected",
+      "expected": "reject",
+      "source_sha256": "7118feb71b629659076ae77ee3142eba8feb879b969d1f770f5eeb057a368ef6",
+      "original_case_source_sha256": "7118feb71b629659076ae77ee3142eba8feb879b969d1f770f5eeb057a368ef6",
+      "gtest_body_sha256": "a913d83214c6ce5be4fb7f6b719e134936b07f7706355ac0fbfa3f49b64f599d"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-values-braces-duplicates-and-count",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{3, 1, 3, -2};\n  return values.size() != 3 || values.count(3) != 1 || values.count(-2) != 1 ||\n      values.count(8) != 0 || values.empty();\n}\n",
+      "source_sha256": "06c84442f68238150cbed64c37642f2c9934723dcf056a6ae6fd460758ca4b8c",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-values-list-input-order",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint trace;\nint mark(int n) { trace = 10 * trace + n; return -n; }\nint main() {\n  std::initializer_list<int> list{mark(2), mark(7), mark(1)};\n  const std::unordered_set<int> values(list);\n  return trace != 271 || values.count(-7) != 1 || values.count(-1) != 1 || values.size() != 3;\n}\n",
+      "source_sha256": "3c8f0b91684b677385b724594251f5a91a3a74f174b11ccc4151f2ef89e2994e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-values-nonempty-rehash-and-buckets",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{2, 10, 3, 11, 2};\n  values.rehash(8);\n  const auto b = values.bucket(10);\n  if (values.bucket_count() != 8 || values.bucket_size(b) != 2 || values.load_factor() != 0.5f) return 1;\n  values.reserve(30);\n  return values.bucket_count() < 30 || values.count(3) != 1 || values.count(11) != 1;\n}\n",
+      "source_sha256": "7b205aaf78e87c9e875d4a1405f2738b106f579c1f4b3a30435252a8421053f5",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-values-clear-retains-bucket-capacity",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{1, 4, 7, -3};\n  const auto buckets = values.bucket_count();\n  values.clear();\n  if (values.bucket_count() != buckets || values.load_factor() != 0.0f) return 1;\n  values.clear();\n  return !values.empty() || values.size() != 0 || values.count(4) != 0;\n}\n",
+      "source_sha256": "bb99afa7abcd3b734b9526e8daf5d836c1c19a36fc561e1054d2c2aabdf72ac7",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-values-different-key-list",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<long> values{1, 2}; return values.size() != 2; }\n",
+      "source_sha256": "692dd661bb970eaa20b9a96c3fb075bf16b44538e2b6c2b119a346911f90da40",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-values-custom-key-equality",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Eq { bool operator()(int a, int b) const { return a == b; } };\nint main() {\n  std::unordered_set<int, std::hash<int>, Eq> values{1, 2};\n  return values.count(1) != 1;\n}\n",
+      "source_sha256": "d59913c7b09718b326d6ce900ef6f9d65f975c1021fe9031f1486be5f969f3e1",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-values-multiple-key-owner",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; return values.size() != 2; }\n",
+      "source_sha256": "b264c3b8507421fd24a90ba9d509779e44f4e3ebffe074ccaa2f7a0ddf8d2107",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-values-arrow-count",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values{3};\n  auto* owner = &values;\n  return owner->count(3) != 1;\n}\n",
+      "source_sha256": "7118feb71b629659076ae77ee3142eba8feb879b969d1f770f5eeb057a368ef6",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetValuesBracesDuplicatesAndCountRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetValuesListInputOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetValuesNonemptyRehashAndBucketsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetValuesClearRetainsBucketCapacityRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetValuesDifferentKeyListRejected",
+    "TranslateTest.CoreV2UnorderedSetValuesCustomKeyEqualityRejected",
+    "TranslateTest.CoreV2UnorderedSetValuesMultipleKeyOwnerRejected",
+    "TranslateTest.CoreV2UnorderedSetValuesArrowCountRejected"
+  ],
+  "source_proof_gate_pending": true,
+  "full_stl_complete": false,
+  "registered_source_sha256": "e9da8191611d0215f09b996e8c05fcf447898711abc672233f3b3225586bb3e1",
+  "maintained_original_sha256": "484fbd59e4e3d7eac40f457d31331f446f1e9e29d217bc4d262945e25b091f7a",
+  "previous_registered_source_sha256": "5d4e1f88637adc033ff73d27435f3bf5030c1be26f50b17a2e6b3b1047d615a8",
+  "previous_maintained_original_sha256": "7d57c282e737021daad1b73c5869c5a3658f65dbded610460e5e703148810ffc",
+  "restorer_sha256": "8860b2a57d31190380556d162cb728900c66ab3bfdc8096cfe3a59a2fe97a880",
+  "extractor_sha256": "9acf34d1ad2ebeb97fbbb1019e32744381a9d07849abf233e46076d9b99eeea8",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8400,
+  "current_python_registry_tests": 186,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8
+}
