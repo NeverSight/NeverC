@@ -53,10 +53,6 @@ Checks, without a build:
     reachable from the index above it, and only a reader who arrived any other
     way is stranded. The pages translating the repository README are exempt --
     they translate the top of the tree, which has nothing above it.
-11. Everything the checks read also starts them. The workflow's path filter
-    decides whether any of this runs, so a file the filter does not name is
-    one whose rename or removal breaks a page with nothing left to report it.
-    Every check above is only as good as the filter that reaches it.
 """
 
 from __future__ import annotations
@@ -101,50 +97,6 @@ STANDALONE += [
 PLUGIN_INC = "neverc/include/neverc/Plugin"
 SCHEMA_INC = f"{PLUGIN_INC}/Schema"
 EXAMPLES = "pluginsdk/examples"
-# the workflow that runs these checks. GitHub reads its path filter before
-# anything here does, so the filter cannot be discovered at run time and is
-# held to the tree instead.
-WORKFLOW = ROOT / ".github/workflows/lint-docs.yml"
-# files no page links to, but that a check reads anyway. The filter has to
-# name them too: editing one changes what the checks conclude, and a commit
-# that touches nothing else would never start them.
-COMPANIONS = [
-    Path(__file__).resolve(),
-    Path(__file__).resolve().parent / "check-docs-facts.py",
-    DEBT,
-    Path(__file__).resolve().parent / "docs_layout.py",
-    Path(__file__).resolve().parent / "tests/test_docs_layout.py",
-    ROOT / SCHEMA_INC / "PhaseSchema.json",
-    ROOT / "neverc/include/neverc/Build/BuildConstants.h",
-    ROOT / "neverc/include/neverc/Foundation/AndroidKernelReleasePaths.h",
-    ROOT / "neverc/include/neverc/Linker/Core/Driver/Dispatcher.h",
-    ROOT / "neverc/include/neverc/Foundation/AndroidKernelModuleSymbolPolicy.h",
-    ROOT / "neverc/lib/Build/Core/AndroidKernelBuildCommands.cpp",
-    ROOT / "neverc/lib/Build/Core/RecursiveMakeEnvironment.cpp",
-    ROOT / "neverc/lib/Foundation/Core/AndroidKernelBuildState.cpp",
-    ROOT / "neverc/lib/Foundation/Core/AndroidKernelModuleReleaseNames.cpp",
-    ROOT / "neverc/lib/Foundation/Core/AndroidKernelReleasePaths.cpp",
-    ROOT / "neverc/lib/Foundation/Core/AndroidKernelReleasePublisher.cpp",
-    ROOT / "neverc/lib/Foundation/Core/AndroidKernelReleaseSymbolMap.cpp",
-    ROOT / "neverc/lib/Foundation/Core/OutputBundleTransaction.cpp",
-    ROOT / "neverc/lib/Foundation/Core/OutputPlatform.cpp",
-    ROOT / "neverc/lib/Invoke/Core/Driver.cpp",
-    ROOT / "neverc/lib/Invoke/ToolChains/CommonArgs.cpp",
-    ROOT / "neverc/lib/Invoke/ToolChains/NeverC.cpp",
-    ROOT / "neverc/lib/Plugin/AndroidKernelReleaseWriterPolicy.h",
-    ROOT / "neverc/lib/Plugin/Link/AndroidKernelReleaseBoundary.h",
-    ROOT / "neverc/lib/Plugin/Link/AndroidKernelReleaseIdentitySeal.cpp",
-    ROOT / "neverc/lib/Plugin/Link/AndroidKernelReleasePipeline.cpp",
-    ROOT / "neverc/lib/Plugin/Link/BuiltinObjectMergeAdapter.cpp",
-    ROOT / "neverc/lib/Plugin/Link/LinkExecutionHooksBridge.cpp",
-    ROOT / "neverc/lib/Plugin/Core/PluginPhaseExecutor.cpp",
-    ROOT / "neverc/lib/Plugin/Object/ObjectPhaseHooks.cpp",
-    ROOT / "neverc/lib/Plugin/Object/ObjectWriterProvider.cpp",
-    ROOT / "examples/android-kernel-common.mk",
-    *sorted((ROOT / "examples").glob("android-kernel-*/Makefile")),
-    WORKFLOW,
-]
-
 LOCALES = ["", "zh-CN", "zh-TW", "ja", "ko", "fr", "de", "es", "it", "ru", "ar"]
 # a right-to-left page wraps its whole body, so the language bar is not line 1
 RTL_LOCALES = {"ar"}
@@ -853,115 +805,6 @@ def check_parent_index(pages: list[Path], report: Report) -> None:
                 report.fail(index, f"links {href} rather than its {locale or 'en'} page")
 
 
-def workflow_filters() -> list[list[str]]:
-    """Every ``paths:`` list the workflow declares, in order.
-
-    Scanned line by line rather than parsed: these checks run on a bare
-    Python, and one list of globs does not earn a YAML dependency."""
-    blocks: list[list[str]] = []
-    current: list[str] | None = None
-    depth = 0
-    for line in WORKFLOW.read_text(encoding="utf-8").split("\n"):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        here = len(line) - len(line.lstrip())
-        if stripped == "paths:":
-            current = []
-            blocks.append(current)
-            depth = here
-            continue
-        if current is None:
-            continue
-        if here > depth and stripped.startswith("- "):
-            current.append(stripped[2:].strip().strip("'\""))
-        else:
-            current = None
-    return blocks
-
-
-def trigger_matches(pattern: str, path: str) -> bool:
-    """GitHub's path filter glob: ``**`` crosses directory separators and
-    ``*`` stops at one."""
-    regex = []
-    index = 0
-    while index < len(pattern):
-        if pattern.startswith("**", index):
-            regex.append(".*")
-            index += 2
-        elif pattern[index] == "*":
-            regex.append("[^/]*")
-            index += 1
-        elif pattern[index] == "?":
-            regex.append("[^/]")
-            index += 1
-        else:
-            regex.append(re.escape(pattern[index]))
-            index += 1
-    return re.fullmatch("".join(regex), path) is not None
-
-
-def linked_files(pages: list[Path]) -> set[str]:
-    """Every repository file the pages point at, by inline link or by
-    reference definition. Either kind stops resolving when its target is
-    renamed, so both have to be reachable by the filter."""
-    found: set[str] = set()
-    for page in pages:
-        # read the same way check_links does: a code block is free to hold
-        # bracket-and-paren shapes that are not links at all
-        for href in page_hrefs(page.read_text(encoding="utf-8")):
-            file_part = href.partition("#")[0]
-            if not file_part or file_part.startswith(
-                ("http://", "https://", "mailto:")
-            ):
-                continue
-            try:
-                found.add((page.parent / file_part).resolve()
-                          .relative_to(ROOT).as_posix())
-            except ValueError:
-                # a jump out of the repository has nothing to trigger on
-                continue
-    return found
-
-
-def check_workflow_triggers(pages: list[Path], report: Report) -> None:
-    """Everything that can break these checks also starts them.
-
-    Every check above runs only if the workflow's path filter matched the
-    commit, so a file the filter leaves out is one whose rename or removal
-    breaks a page with nothing left to report it: the commit touches nothing
-    the filter names, the workflow never starts, and the dangling link waits
-    for whoever next edits docs/ to be blamed for it. The filter is read by
-    GitHub before any of this runs and so cannot be derived here; holding it
-    to the tree is what keeps the two from drifting apart."""
-    blocks = workflow_filters()
-    if not blocks:
-        report.fail(WORKFLOW, "declares no paths: filter to hold to the tree")
-        return
-    for block in blocks[1:]:
-        if block != blocks[0]:
-            report.fail(
-                WORKFLOW,
-                "its push and pull_request filters differ, so one event "
-                "skips what the other checks",
-            )
-            return
-    watched = {page.relative_to(ROOT).as_posix() for page in pages}
-    watched |= linked_files(pages)
-    watched |= {path.relative_to(ROOT).as_posix() for path in COMPANIONS}
-    for path in sorted(watched):
-        if not any(trigger_matches(f, path) for f in blocks[0]):
-            report.fail(WORKFLOW, f"no paths: entry covers {path}")
-    # an entry that matches nothing is one the tree has moved out from under,
-    # and the next reader has no way to tell it from one still doing its job
-    for pattern in blocks[0]:
-        if not any(trigger_matches(pattern, path) for path in watched):
-            report.fail(
-                WORKFLOW,
-                f"paths: entry {pattern} covers nothing these checks read",
-            )
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1005,7 +848,6 @@ def main() -> int:
     check_index_parity(pages, indexes, report, debt)
     check_jump_parity(pages, report, debt)
     check_parent_index(pages, report)
-    check_workflow_triggers(pages + standalone, report)
 
     if report.failures:
         print("check-docs-links: documentation navigation problems:", file=sys.stderr)

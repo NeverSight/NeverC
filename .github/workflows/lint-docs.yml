@@ -3,16 +3,8 @@
 # check-docs-links covers docs/ and examples/ in every locale, plus the
 # English-only pages a reader still follows links out of; check-docs-facts
 # pins the plugin API guides to the phase schema and public headers, and pins
-# the release guides to the Android release implementation and examples.  The
-# paths below have to list everything the checkers read, or a page can be
-# broken by a commit that never triggers this workflow -- so check-docs-links
-# holds the list to the tree, and a file that grows a link without appearing
-# here is reported rather than left to be discovered.  Both are
-# registered as CTest cases (DocsNavigation, PluginDocsFacts) under the
-# "plugin-meta" label, but no workflow reaches them: plugin-conformance runs
-# `ctest -R PluginConformance`, and plugin-sanitizers excludes the label with
-# `-LE plugin-meta`.  They need no build at all, so they run here on their own
-# instead of riding along with a multi-hour compiler build.
+# the release guides to the Android release implementation and examples. Run both checkers on the cloud test host without building NeverC.
+# This workflow is retained for explicit manual runs.
 name: lint-docs
 
 on:
