@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetModifiersMultiKeyEraseRejected",
     "TranslateTest.CoreV2UnorderedSetModifiersPointerReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "8fca807d05848ed6283028b3d950abab65aef92ca1275e35c6a8a62d0e59dbff",
   "maintained_original_sha256": "cd98c424f8e06373e80d1dc167574d4a61c2e2a23934bdd4e8987316cc6bf647",
@@ -155,5 +155,10 @@
   "current_registry_count": 8408,
   "current_python_registry_tests": 188,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-modifiers": "b89c96549b850abe840ee118aa25f35ccb2fc963833469caebf4a1e34d10cf63"
+  },
+  "native_reference_authentication_sha256": "1f2fff8190bb5e061a0dc1155973d33404750628da01bebf60010b67e68de3dd",
+  "source_proof_sha256": "b09df63e9979a3cb5a7da0ef36df092fffeeaadfc697087209604d8fbe08e6ab"
 }

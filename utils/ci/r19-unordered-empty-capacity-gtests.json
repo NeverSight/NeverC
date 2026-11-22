@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedEmptyCapacityArrowReceiverRejected",
     "TranslateTest.CoreV2UnorderedEmptyCapacityNonemptyOwnerRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "98711dd3c7fd92123632d787bbdddbb3df8ba8df23761125b202ed7e00895b96",
   "maintained_original_sha256": "97626e342214f6eef8bd21ec028281d4bc2319f8749140a006b1e99559bf70d6",
@@ -155,5 +155,10 @@
   "current_registry_count": 8350,
   "current_python_registry_tests": 174,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-empty-capacity": "0446aea757fd87d3b273bff57e5facec4230938419deb59350d2ac5199a83ba8"
+  },
+  "native_reference_authentication_sha256": "a68ee1c0f7dc8ade8cf9553df13e7e3e6c3b03cb0aacd1ce6747fc35d3d1de80",
+  "source_proof_sha256": "b09df63e9979a3cb5a7da0ef36df092fffeeaadfc697087209604d8fbe08e6ab"
 }
