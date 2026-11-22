@@ -612,3 +612,10 @@ The combined compiler passes 2,268 source requests across six 64-bit targets
 and 482 formal tests on Linux x86-64. All 257 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Default empty ordered containers
+
+The combined compiler passes 2,460 source requests across six 64-bit targets
+and 514 formal tests on Linux x86-64. All 274 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

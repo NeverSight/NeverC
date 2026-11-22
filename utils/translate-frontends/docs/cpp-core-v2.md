@@ -18039,3 +18039,36 @@ The selected `std::hash<std::monostate>` operation can be called by checked
 `std::invoke`, `std::apply` with a tuple of references, or an admitted
 `std::reference_wrapper`. The adapter preserves the pinned hash value and
 evaluates the forwarded arguments once.
+
+## Guarded variant element access
+
+The pinned variant admits type- and index-selected `std::get` of an lvalue
+variant when an immediately preceding `std::holds_alternative` or exact
+`index()` comparison proves the alternative on the same declaration.
+The call can be in the first evaluation of the true branch or in the
+direct right operand of built-in `&&`. The projection preserves mutable
+and const reference identity.
+
+## Unsigned int any payloads
+
+The checked inline `std::any` operations admit `unsigned int` alongside
+`int`. Construction, assignment, emplacement, copying and moving preserve
+the exact active type. The pointer form of `any_cast` returns the selected
+payload address or a null pointer for an empty or mismatched object.
+The value and const-reference forms use the exact immutable local initializer
+to establish the active type.
+
+## Variant access after an early return
+
+The next evaluation can project the active variant alternative after a
+matching guard returns on a different type or index. An explicit
+`else` branch can also project the matching alternative. The proof
+requires the same variant declaration and exact alternative on the
+surviving path.
+
+## Default empty ordered containers
+
+Default integer `map`, `multimap`, `set`, and `multiset` support an empty
+local owner, scoped destruction, and the `size()` and `empty()` observers.
+The generated C23 state holds the embedded end sentinel, a null tree root,
+and a zero size. The observer evaluates its receiver once.

@@ -939,17 +939,26 @@ class FunctionLowering {
   Expression anyCarrierTag(Expression Place, SourceLocation L) {
     return anyCarrierField(std::move(Place), UtilityAnyTag, "u64", L);
   }
+  unsigned anyIntegerTag(QualType Payload, SourceLocation L) {
+    if (A.Context.hasSameUnqualifiedType(Payload, A.Context.IntTy))
+      return UtilityAnyIntegerTag;
+    if (A.Context.hasSameUnqualifiedType(Payload, A.Context.UnsignedIntTy))
+      return UtilityAnyUnsignedTag;
+    reject(L, "any payload", "The checked signed or unsigned int payload is required.");
+  }
   Expression anyIntegerField(Expression Place, const CXXRecordDecl *Record,
-                             SourceLocation L) {
+                             QualType Payload, SourceLocation L) {
+    const auto Field = anyIntegerTag(Payload, L) == UtilityAnyIntegerTag
+        ? UtilityAnyInteger : UtilityAnyUnsigned;
     auto Storage = anyCarrierField(std::move(Place), UtilityAnyStorage,
                                    A.anyStorageType(Record), L);
-    return anyCarrierField(std::move(Storage), UtilityAnyInteger, "int", L);
+    return anyCarrierField(std::move(Storage), Field, type(Payload.getUnqualifiedType(), L), L);
   }
   Expression storeAnyInteger(Expression Place, const CXXRecordDecl *Record,
-                             Expression Value, SourceLocation L) {
-    auto Slot = anyIntegerField(Place, Record, L);
+                             QualType Payload, Expression Value, SourceLocation L) {
+    auto Slot = anyIntegerField(Place, Record, Payload, L);
     assign(Slot, std::move(Value), L);
-    assign(anyCarrierTag(std::move(Place), L), quantity(UtilityAnyIntegerTag, "u64", L), L);
+    assign(anyCarrierTag(std::move(Place), L), quantity(anyIntegerTag(Payload, L), "u64", L), L);
     return Slot;
   }
   Expression anyCheckedPointerCast(const CallExpr *Call, const CXXRecordDecl *Record,
@@ -957,7 +966,8 @@ class FunctionLowering {
     const auto *Input = Call->getArg(0);
     auto Pointer = snapshot(expression(Input), L);
     const auto Pointee = Call->getType()->getPointeeType();
-    if (!A.Context.hasSameType(Pointee.getUnqualifiedType(), A.Context.IntTy))
+    if (!A.Context.hasSameUnqualifiedType(Pointee, A.Context.IntTy) &&
+        !A.Context.hasSameUnqualifiedType(Pointee, A.Context.UnsignedIntTy))
       return A.zero(Call->getType(), L);
     auto Result = temporary(type(Call->getType(), L), L);
     assign(Result, A.zero(Call->getType(), L), L);
@@ -966,10 +976,10 @@ class FunctionLowering {
     label(Check, L);
     auto Place = dereference(std::move(Pointer), L);
     auto Active = binary("==", anyCarrierTag(Place, L),
-                         quantity(UtilityAnyIntegerTag, "u64", L), "bool", L);
+                         quantity(anyIntegerTag(Pointee, L), "u64", L), "bool", L);
     branch(std::move(Active), Present, End, L);
     label(Present, L);
-    assign(Result, address(anyIntegerField(std::move(Place), Record, L), Pointee, L), L);
+    assign(Result, address(anyIntegerField(std::move(Place), Record, Pointee, L), Pointee, L), L);
     jump(End, L);
     label(End, L);
     return Result;
@@ -26814,6 +26824,21 @@ class FunctionLowering {
   }
 
 
+  Expression orderedContainerMember(Expression Place, llvm::StringRef Name,
+                                    SourceLocation L) {
+    const auto MemberType = Name == "nct_ordered_size" ? A.Context.getSizeType() : A.Context.VoidPtrTy;
+    return Expression{{"kind", "member"}, {"type", type(MemberType, L)},
+                      {"name", Name.str()}, {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+
+  void initializeOrderedContainer(Expression Place, SourceLocation L) {
+    auto Root = orderedContainerMember(Place, "nct_ordered_root", L);
+    initializeZero(Root, A.Context.VoidPtrTy, L);
+    initializeZero(orderedContainerMember(Place, "nct_ordered_size", L), A.Context.getSizeType(), L);
+    auto End = cast(address(std::move(Root), A.Context.VoidPtrTy, L), "ptr:void", L);
+    assign(orderedContainerMember(std::move(Place), "nct_ordered_begin", L), std::move(End), L);
+  }
+
   Expression listMember(Expression Place, llvm::StringRef Name, SourceLocation L) {
     return Expression{{"kind", "member"},
         {"type", Name == "nct_list_size" ? type(A.Context.getSizeType(), L) : "ptr:void"},
@@ -29139,6 +29164,15 @@ class FunctionLowering {
         return std::move(*Destination);
       }
       return Result;
+    }
+    if (Operation == UtilityOperation::OrderedContainerObserver) {
+      const auto *Member = approvedOrderedContainerObserver(A.S, A.Sources, Call, A.Context);
+      if (!Member)
+        reject(L, "ordered container observer", "The exact selected SDK observer body is required.");
+      auto Count = orderedContainerMember(lvalue(Member->getBase()), "nct_ordered_size", L);
+      if (Member->getMemberDecl()->getName() == "size")
+        return Count;
+      return binary("==", std::move(Count), A.zero(A.Context.getSizeType(), L), "bool", L);
     }
     if (Operation == UtilityOperation::PriorityQueue) return utilityPriorityQueueOperation(Call);
     if (Operation == UtilityOperation::Deque) {
@@ -32630,17 +32664,17 @@ class FunctionLowering {
       if (const auto Made = approvedUtilityAnyIntegerMake(A.S, A.Sources, Call, A.Context)) {
         auto Value = Made->Input
             ? snapshot(dereference(argument(Made->Input, Made->Parameter), L), L)
-            : quantity(0, "int", L);
+            : A.zero(Made->ValueType, L);
         auto Place = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
         Destination.reset();
         if (Place.getString("type") != type(Call->getType(), L))
           reject(L, "any factory result", "Call and result destination types differ.");
         initializeZero(Place, Call->getType(), L);
-        storeAnyInteger(Place, Made->Record, std::move(Value), L);
+        storeAnyInteger(Place, Made->Record, Made->ValueType, std::move(Value), L);
         return Place;
       }
       if (const auto *Any = approvedUtilityAnyActiveValueCast(A.S, A.Sources, Call, A.Context)) {
-        auto Slot = anyIntegerField(lvalue(Call->getArg(0)), Any, L);
+        auto Slot = anyIntegerField(lvalue(Call->getArg(0)), Any, Call->getType(), L);
         return Call->isLValue() ? std::move(Slot) : snapshot(std::move(Slot), L);
       }
       if (const auto *Any = approvedUtilityAnyPointerCast(A.S, A.Sources, Call, A.Context))
@@ -32666,7 +32700,8 @@ class FunctionLowering {
         auto Receiver = dereference(Left, L);
         auto Source = dereference(Right, L);
         if (Value) {
-          storeAnyInteger(Receiver, Any->Record, snapshot(std::move(Source), L), L);
+          storeAnyInteger(Receiver, Any->Record, Any->Parameter.getNonReferenceType(),
+                          snapshot(std::move(Source), L), L);
         } else if (Any->Operation == UtilityAnyTransferOperation::Move) {
           // The SDK moves through a temporary and then swaps into the original.
           // Self-move of an inline scalar therefore retains the held value.
@@ -32698,8 +32733,8 @@ class FunctionLowering {
           Input = argument(Emplace->Input, Emplace->Parameter);
         assign(anyCarrierTag(Place, L), quantity(0, "u64", L), L);
         auto Value = Emplace->Input ? snapshot(dereference(std::move(Input), L), L)
-                                    : quantity(0, "int", L);
-        return storeAnyInteger(std::move(Place), Emplace->Record, std::move(Value), L);
+                                    : A.zero(Emplace->ValueType, L);
+        return storeAnyInteger(std::move(Place), Emplace->Record, Emplace->ValueType, std::move(Value), L);
       }
       if (const auto Any = approvedUtilityAnyCall(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Any->Callee->getBase();
@@ -38799,9 +38834,9 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     if (const auto Integer = approvedUtilityAnyIntegerConstruction(A.S, A.Sources, C, A.Context)) {
       auto Value = Integer->Input
           ? snapshot(dereference(argument(Integer->Input, Integer->Parameter), L), L)
-          : quantity(0, "int", L);
+          : A.zero(Integer->ValueType, L);
       initializeZero(Place, T, L);
-      storeAnyInteger(std::move(Place), Integer->Record, std::move(Value), L);
+      storeAnyInteger(std::move(Place), Integer->Record, Integer->ValueType, std::move(Value), L);
       return;
     }
     if (approvedUtilityAnyConstruction(A.S, A.Sources, C, A.Context)) {
@@ -38920,6 +38955,10 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
 
+    if (approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context)) {
+      initializeOrderedContainer(std::move(Place), L);
+      return;
+    }
     if (const auto Kind = approvedUtilityListConstruction(A.S, A.Sources, C, A.Context)) {
       std::vector<Expression> Operands;
       for (unsigned I = 0; I != C->getNumArgs(); ++I)
@@ -40616,6 +40655,12 @@ public:
         approvedUtilityForwardListDestructor(A.S, A.Sources, D, A.Context);
     const bool ListDestructor =
         approvedUtilityListDestructor(A.S, A.Sources, D, A.Context);
+    const bool OrderedContainerDestructor =
+        approvedOrderedContainerDestructor(A.S, A.Sources, D, A.Context);
+    if (approvedOrderedContainerRuntimeRecord(A.S, A.Sources, DestroyedRecord, A.Context) &&
+        !OrderedContainerDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "ordered container destructor",
+             "The authenticated empty-tree destruction chain is required.");
     const bool PriorityQueueDestructor =
         approvedUtilityPriorityQueueDestructor(A.S, A.Sources, D, A.Context);
     const bool DequeDestructor =
@@ -40666,7 +40711,7 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered map destructor",
              "The authenticated SDK storage destructor chain is required.");
     if (D && NotFnDestructor == A.VerifiedNotFnDestructions.end() &&
-        !ForwardListDestructor && !ListDestructor && !PriorityQueueDestructor && !DequeDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
+        !ForwardListDestructor && !ListDestructor && !OrderedContainerDestructor && !PriorityQueueDestructor && !DequeDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
         !UnorderedMapDestructor && !UnorderedNodeDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
@@ -40812,6 +40857,9 @@ public:
         releaseUnorderedMap(dereference(*ThisPointer, L), *Map, true, L);
       } else if (auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyForwardListStorage(dereference(*ThisPointer, L), Owner->Node, L);
+      } else if (approvedOrderedContainerRuntimeRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
+        // These owners only admit authenticated empty construction and read-only
+        // operations. The checked SDK destroy routine has no effect on a null root.
       } else if (auto Owner = approvedUtilityListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyListStorage(dereference(*ThisPointer, L), Owner->Node, L);
       } else if (auto Owner = approvedUtilityPriorityQueueRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {

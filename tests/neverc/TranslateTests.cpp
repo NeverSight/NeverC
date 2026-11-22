@@ -387167,15 +387167,22 @@ int main() { return !noexcept(std::declval<const Set&>().changed_set_size()); }
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected) {
+TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerOriginalMapRunsAtBothOptimizations) {
   const auto Source = tmpFile("ordered-observer-query-observer-does-not-admit-storage.cpp");
   writeFile(Source, R"r19containers(#include <map>
 int main() { std::map<int, int> values; return values.empty() ? 0 : 1; }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("ordered-observer-query-observer-does-not-admit-storage.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-observer-query-observer-does-not-admit-storage" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2MonostateAdapterHashDirectInvokeRunAtBothOptimizations) {
@@ -387335,6 +387342,686 @@ int main() {
   const M m{};
   auto pointer = &H::operator();
   return std::invoke(pointer, h, m) != 66740831;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantGuardedGetMutableReferenceRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-guarded-get-mutable-reference.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, int>;
+int increment(V& state) {
+  if (state.index() == 1) {
+    int& item = (std::get<1>(state));
+    item += 3;
+    return &item == std::get_if<1>(&state) ? item : -2;
+  }
+  return -1;
+}
+int main() {
+  V active(std::in_place_index<1>, 4);
+  V inactive(std::in_place_index<0>, 2);
+  return increment(active) != 7 || increment(inactive) != -1 ||
+         *std::get_if<1>(&active) != 7 || *std::get_if<0>(&inactive) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-guarded-get-mutable-reference.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-guarded-get-mutable-reference" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantGuardedGetConstReferenceRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-guarded-get-const-reference.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, double>;
+int read(const V& state) {
+  if (std::holds_alternative<double>(state))
+    return std::get<double>(state);
+  return -1;
+}
+int main() {
+  const V active{42.5};
+  const V inactive{7};
+  return read(active) != 42 || read(inactive) != -1;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-guarded-get-const-reference.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-guarded-get-const-reference" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantGuardedGetShortCircuitRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-guarded-get-short-circuit.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, double>;
+bool read(V& state) {
+  return std::holds_alternative<int>(state) && std::get<int>(state);
+}
+int main() {
+  V zero{0};
+  V nonzero{6};
+  V inactive{4.5};
+  return read(zero) || !read(nonzero) || read(inactive);
+}
+)r19containers");
+  const auto Output = tmpFile("variant-guarded-get-short-circuit.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-guarded-get-short-circuit" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantGuardedGetRecheckAfterEmplaceRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-guarded-get-recheck-after-emplace.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<std::monostate, long>;
+int main() {
+  V state;
+  if (std::holds_alternative<std::monostate>(state)) {
+    auto& empty = std::get<std::monostate>(state);
+    if (&empty != std::get_if<0>(&state)) return 1;
+  }
+  state.emplace<1>(2L);
+  if (std::holds_alternative<long>(state)) {
+    long& item = std::get<1>(state);
+    item *= 7;
+    return item != 14 || std::get_if<0>(&state) != nullptr;
+  }
+  return 2;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-guarded-get-recheck-after-emplace.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-guarded-get-recheck-after-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantGuardedGetGuardForOtherObjectRejected) {
+  const auto Source = tmpFile("variant-guarded-get-guard-for-other-object.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, double>;
+int read(V& a, V& b) {
+  if (std::holds_alternative<int>(a)) return std::get<int>(b);
+  return 0;
+}
+int main() { V a{1}; V b{2.5}; return read(a, b); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantGuardedGetGuardForOtherAlternativeRejected) {
+  const auto Source = tmpFile("variant-guarded-get-guard-for-other-alternative.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, double>;
+int read(V& state) {
+  if (std::holds_alternative<double>(state)) return std::get<0>(state);
+  return 0;
+}
+int main() { V state{2.5}; return read(state); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantGuardedGetChangedAfterGuardRejected) {
+  const auto Source = tmpFile("variant-guarded-get-changed-after-guard.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, double>;
+int read(V& state) {
+  if (std::holds_alternative<int>(state)) {
+    state.emplace<1>(2.5);
+    return std::get<0>(state);
+  }
+  return 0;
+}
+int main() { V state{1}; return read(state); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantGuardedGetFalsePathRejected) {
+  const auto Source = tmpFile("variant-guarded-get-false-path.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, double>;
+bool read(V& state) {
+  return std::holds_alternative<int>(state) || std::get<int>(state);
+}
+int main() { V state{2.5}; return read(state); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyUnsignedInlineConstructorAndTypedPointerRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-unsigned-inline-constructor-and-typed-pointer.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value(~0u);
+  if (std::any_cast<int>(&value) != nullptr) return 1;
+  auto* payload = std::any_cast<unsigned>(&value);
+  if (!payload || *payload != ~0u) return 2;
+  *payload = 23u;
+  const std::any& view = value;
+  auto* read = std::any_cast<unsigned>(&view);
+  return !read || read != payload || *read != 23u;
+}
+)r19containers");
+  const auto Output = tmpFile("any-unsigned-inline-constructor-and-typed-pointer.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-unsigned-inline-constructor-and-typed-pointer" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyUnsignedInlineInPlaceAndConstValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-unsigned-inline-in-place-and-const-value.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  const std::any value(std::in_place_type<unsigned>, 271u);
+  auto const& payload = std::any_cast<const unsigned&>(value);
+  if (&payload != std::any_cast<unsigned>(&value)) return 1;
+  const std::any zero(std::in_place_type<unsigned>);
+  return payload != 271u || std::any_cast<unsigned>(zero) != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("any-unsigned-inline-in-place-and-const-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-unsigned-inline-in-place-and-const-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyUnsignedInlineFactoryCopyMoveAndResetRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-unsigned-inline-factory-copy-move-and-reset.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+#include <utility>
+int main() {
+  auto first = std::make_any<unsigned>(37u);
+  std::any copy(first);
+  std::any moved(std::move(first));
+  if (first.has_value() || !copy.has_value() || !moved.has_value()) return 1;
+  auto* a = std::any_cast<unsigned>(&copy);
+  auto* b = std::any_cast<unsigned>(&moved);
+  if (!a || !b || a == b || *a != 37u || *b != 37u) return 2;
+  copy.reset();
+  return std::any_cast<unsigned>(&copy) != nullptr || *b != 37u;
+}
+)r19containers");
+  const auto Output = tmpFile("any-unsigned-inline-factory-copy-move-and-reset.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-unsigned-inline-factory-copy-move-and-reset" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyUnsignedInlineChangeIntegerKindRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-unsigned-inline-change-integer-kind.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value(-4);
+  value = 14u;
+  auto* active = std::any_cast<unsigned>(&value);
+  if (!active || *active != 14u || std::any_cast<int>(&value)) return 1;
+  int& integer = value.emplace<int>(6);
+  if (&integer != std::any_cast<int>(&value) || std::any_cast<unsigned>(&value)) return 2;
+  unsigned& natural = value.emplace<unsigned>();
+  return &natural != std::any_cast<unsigned>(&value) || natural != 0u;
+}
+)r19containers");
+  const auto Output = tmpFile("any-unsigned-inline-change-integer-kind.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-unsigned-inline-change-integer-kind" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyUnsignedInlineUnprovedSignedValueCastRejected) {
+  const auto Source = tmpFile("any-unsigned-inline-unproved-signed-value-cast.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  const std::any value(5u);
+  return std::any_cast<int>(value);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyUnsignedInlineUnprovedUnsignedValueCastRejected) {
+  const auto Source = tmpFile("any-unsigned-inline-unproved-unsigned-value-cast.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+unsigned read_value(const std::any& value) { return std::any_cast<unsigned>(value); }
+int main() { return 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyUnsignedInlineRenamedUnsignedHandlerRejected) {
+  const auto Source = tmpFile("any-unsigned-inline-renamed-unsigned-handler.cpp");
+  writeFile(Source, R"r19containers(#define __create changed_unsigned_handler
+#include <any>
+#undef __create
+int main() {
+  std::any value(17u);
+  return value.has_value();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyUnsignedInlineUnsignedLongIsNotUnsignedIntRejected) {
+  const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  auto value = std::make_any<unsigned long>(17ul);
+  return value.has_value();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantGetEarlyReturnReturnsOnDifferentTypeRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-get-early-return-returns-on-different-type.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, double>;
+int read(const V& state) {
+  if (!std::holds_alternative<int>(state)) return -1;
+  return std::get<int>(state);
+}
+int main() {
+  const V normal{18};
+  const V different{3.5};
+  return read(normal) != 18 || read(different) != -1;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-get-early-return-returns-on-different-type.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-get-early-return-returns-on-different-type" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantGetEarlyReturnReturnsOnDifferentIndexRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-get-early-return-returns-on-different-index.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, int>;
+int update(V& state) {
+  if (state.index() != 1) { return -1; }
+  int& value = std::get<1>(state);
+  return ++value;
+}
+int main() {
+  V wrong(std::in_place_index<0>, 4);
+  V right(std::in_place_index<1>, 7);
+  return update(wrong) != -1 || update(right) != 8 || *std::get_if<1>(&right) != 8;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-get-early-return-returns-on-different-index.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-get-early-return-returns-on-different-index" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantGetEarlyReturnCheckedElseBranchRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-get-early-return-checked-else-branch.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<std::monostate, long>;
+long read(V& state) {
+  if (state.index() != 1) return -1;
+  else {
+    auto& hold = std::get<1>(state);
+    hold += 3;
+    return hold;
+  }
+}
+int main() {
+  V inactive;
+  V active{6L};
+  return read(inactive) != -1 || read(active) != 9L;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-get-early-return-checked-else-branch.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-get-early-return-checked-else-branch" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantGetEarlyReturnScopeLocalAfterReturnRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-get-early-return-scope-local-after-return.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  std::variant<std::monostate, int> state;
+  if (!std::holds_alternative<std::monostate>(state)) return 1;
+  auto& token = std::get<std::monostate>(state);
+  return &token != std::get_if<0>(&state);
+}
+)r19containers");
+  const auto Output = tmpFile("variant-get-early-return-scope-local-after-return.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-get-early-return-scope-local-after-return" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantGetEarlyReturnFailingBranchFallsThroughRejected) {
+  const auto Source = tmpFile("variant-get-early-return-failing-branch-falls-through.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int read(std::variant<int, double>& state) {
+  if (state.index() != 0) { int elsewhere = 3; }
+  return std::get<0>(state);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantGetEarlyReturnDestroyedIfInitializerRejected) {
+  const auto Source = tmpFile("variant-get-early-return-destroyed-if-initializer.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, double>;
+struct Change {
+  V& state;
+  ~Change() { state.emplace<1>(3.5); }
+};
+int read(V& state) {
+  if (Change change{state}; state.index() != 0) return -1;
+  return std::get<0>(state);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantGetEarlyReturnInterveningMutationRejected) {
+  const auto Source = tmpFile("variant-get-early-return-intervening-mutation.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int read(std::variant<int, double>& state) {
+  if (state.index() != 0) return -1;
+  state.emplace<1>(7.5);
+  return std::get<0>(state);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantGetEarlyReturnReturnGuardOnOtherObjectRejected) {
+  const auto Source = tmpFile("variant-get-early-return-return-guard-on-other-object.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using V = std::variant<int, double>;
+int read(V& left, V& right) {
+  if (!std::holds_alternative<int>(left)) return -1;
+  return std::get<int>(right);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerMapObserversRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-empty-owner-map-observers.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::map<int, int> values;
+  return !values.empty() || values.size() != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-empty-owner-map-observers.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-empty-owner-map-observers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerConstMultimapRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-empty-owner-const-multimap.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+unsigned long long empty_size(const std::multimap<int, int>& values) {
+  return values.empty() ? values.size() : 1;
+}
+int main() {
+  const std::multimap<int, int> values;
+  return empty_size(values) != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-empty-owner-const-multimap.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-empty-owner-const-multimap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerSetReceiverOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-empty-owner-set-receiver-once.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+const std::set<int>& selected(int& calls, const std::set<int>& values) {
+  ++calls;
+  return values;
+}
+int main() {
+  std::set<int> values;
+  int calls = 0;
+  bool empty = selected(calls, values).empty();
+  auto count = selected(calls, values).size();
+  return !empty || count || calls != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-empty-owner-set-receiver-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-empty-owner-set-receiver-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerMultisetScopedOwnersRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-empty-owner-multiset-scoped-owners.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+bool empty_at_exit(int flag) {
+  std::multiset<int> outer;
+  if (flag) {
+    const std::multiset<int> inner;
+    return inner.empty() && outer.size() == 0;
+  }
+  return outer.empty();
+}
+int main() {
+  return !empty_at_exit(0) || !empty_at_exit(1);
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-empty-owner-multiset-scoped-owners.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-empty-owner-multiset-scoped-owners" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerCustomComparatorRejected) {
+  const auto Source = tmpFile("ordered-empty-owner-custom-comparator.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+struct Reverse { bool operator()(int lhs, int rhs) const { return lhs > rhs; } };
+int main() {
+  std::set<int, Reverse> values;
+  return values.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerDifferentKeyRejected) {
+  const auto Source = tmpFile("ordered-empty-owner-different-key.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::map<long long, int> values;
+  return values.size() != 0;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerSetInsertRejected) {
+  const auto Source = tmpFile("ordered-empty-owner-set-insert.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+int main() {
+  std::set<int> values;
+  values.insert(9);
+  return values.size() != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerMapCopyRejected) {
+  const auto Source = tmpFile("ordered-empty-owner-map-copy.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::map<int, int> values;
+  std::map<int, int> copy(values);
+  return !copy.empty();
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

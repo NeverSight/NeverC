@@ -5,6 +5,7 @@
 #include "clang/AST/DeclFriend.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/ParentMapContext.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/Builtins.h"
@@ -7800,6 +7801,127 @@ static bool variantGetHasActiveAlternative(const State &S,
          Init->Variant.Record->getCanonicalDecl() == V.Record->getCanonicalDecl();
 }
 
+// A matching holds_alternative call or index test establishes the tag in the
+// true branch. The projection must start the next evaluation, before user
+// expressions or another statement could change the active member.
+static bool variantGetHasGuard(const State &S, const SourceManager &SM,
+    const CallExpr *Call, const UtilityVariantRecord &V, unsigned I,
+    ASTContext &Context) {
+  const auto *Object = variantReference(Call->getArg(0));
+  if (!Object || !isa<VarDecl>(Object->getDecl()) ||
+      !S.owns(SM, Call->getExprLoc()))
+    return false;
+
+  auto SameObject = [&](const Expr *E) {
+    const auto *Subject = variantReference(E);
+    return Subject && Subject->getDecl() == Object->getDecl();
+  };
+  auto SameRecord = [&](const UtilityVariantRecord &Other) {
+    return Other.Record->getCanonicalDecl() == V.Record->getCanonicalDecl();
+  };
+  auto TestsIndex = [&](const Expr *Test, BinaryOperatorKind Opcode) {
+    const auto *Equal = dyn_cast_or_null<BinaryOperator>(Test);
+    if (!Equal || Equal->getOpcode() != Opcode)
+      return false;
+    const auto *Index = dyn_cast<CXXMemberCallExpr>(Equal->getLHS()->IgnoreParenImpCasts());
+    const auto *Value = dyn_cast<IntegerLiteral>(Equal->getRHS()->IgnoreParenImpCasts());
+    if (!Index || !SameObject(Index->getImplicitObjectArgument()) || !Value ||
+        Value->getValue().getLimitedValue(V.Alternatives.size()) != I)
+      return false;
+    const auto Check = approvedUtilityVariantQuery(S, SM, Index, Context);
+    return Check && !Check->Valueless && SameRecord(Check->Variant);
+  };
+  auto SelectsAlternative = [&](const Expr *Condition) {
+    const auto *Test = Condition ? Condition->IgnoreParenImpCasts() : nullptr;
+    if (const auto *Holds = dyn_cast_or_null<CallExpr>(Test)) {
+      if (Holds->getNumArgs() != 1 || !SameObject(Holds->getArg(0)))
+        return false;
+      const auto Check = approvedUtilityVariantHolds(S, SM, Holds, Context);
+      return Check && Check->Index == I && SameRecord(Check->Variant);
+    }
+    return TestsIndex(Test, BO_EQ);
+  };
+  auto DeniesAlternative = [&](const Expr *Condition) {
+    const auto *Test = Condition ? Condition->IgnoreParenImpCasts() : nullptr;
+    if (const auto *Not = dyn_cast_or_null<UnaryOperator>(Test))
+      return Not->getOpcode() == UO_LNot && SelectsAlternative(Not->getSubExpr());
+    return TestsIndex(Test, BO_NE);
+  };
+  auto ReturnsUnlessSelected = [&](const Stmt *Previous) {
+    const auto *Exit = dyn_cast_or_null<IfStmt>(Previous);
+    if (!Exit || Exit->isConstexpr() || Exit->getInit() ||
+        Exit->getConditionVariable() || Exit->getElse())
+      return false;
+    const auto *Then = Exit->getThen();
+    if (const auto *Block = dyn_cast<CompoundStmt>(Then))
+      Then = Block->size() == 1 ? Block->body_front() : nullptr;
+    return isa_and_nonnull<ReturnStmt>(Then) && DeniesAlternative(Exit->getCond());
+  };
+
+  // Clang computes its parent map lazily. Each outward step must have a
+  // unique parent and a transparent evaluation order.
+  auto ParentOf = [&](const auto &Child) -> std::optional<DynTypedNode> {
+    const auto Found = Context.getParents(Child);
+    return Found.size() == 1 ? std::optional<DynTypedNode>(Found[0]) : std::nullopt;
+  };
+  const Stmt *Use = Call;
+  auto Parent = ParentOf(*Use);
+  for (unsigned Depth = 0; Parent; ++Depth) {
+    if (Depth >= 64)
+      return false;
+    const auto *Wrapper = Parent->get<Expr>();
+    if (!Wrapper || !isa<ParenExpr, ImplicitCastExpr>(Wrapper))
+      break;
+    Use = Wrapper;
+    Parent = ParentOf(*Use);
+  }
+  if (!Parent)
+    return false;
+
+  if (const auto *Both = Parent->get<BinaryOperator>())
+    return Both->getOpcode() == BO_LAnd && Both->getRHS() == Use &&
+           SelectsAlternative(Both->getLHS());
+  if (const auto *Binding = Parent->get<VarDecl>()) {
+    if (!Binding->hasLocalStorage() || Binding->getInit() != Use)
+      return false;
+    Parent = ParentOf(*Binding);
+    const auto *Declaration = Parent ? Parent->get<DeclStmt>() : nullptr;
+    if (!Declaration || !Declaration->isSingleDecl() ||
+        Declaration->getSingleDecl() != Binding)
+      return false;
+    Use = Declaration;
+    Parent = ParentOf(*Use);
+  } else if (const auto *Return = Parent->get<ReturnStmt>()) {
+    if (Return->getRetValue() != Use)
+      return false;
+    Use = Return;
+    Parent = ParentOf(*Use);
+  }
+  if (const auto *Body = Parent ? Parent->get<CompoundStmt>() : nullptr) {
+    if (Body->body_empty())
+      return false;
+    if (Body->body_front() != Use) {
+      // A contiguous if/return pair prevents entry between the guard and the
+      // next evaluation. Do not scan across labels or unrelated statements.
+      const Stmt *Previous = nullptr;
+      const auto Limit = std::min<unsigned>(Body->size(), 64);
+      for (unsigned N = 0; N != Limit; ++N) {
+        const auto *Sibling = Body->body_begin()[N];
+        if (Sibling == Use)
+          return ReturnsUnlessSelected(Previous);
+        Previous = Sibling;
+      }
+      return false;
+    }
+    Use = Body;
+    Parent = ParentOf(*Use);
+  }
+  const auto *If = Parent ? Parent->get<IfStmt>() : nullptr;
+  return If && !If->isConstexpr() && !If->getConditionVariable() &&
+         ((If->getThen() == Use && SelectsAlternative(If->getCond())) ||
+          (If->getElse() == Use && DeniesAlternative(If->getCond())));
+}
+
 static bool variantGetBody(const State &S, const SourceManager &SM,
     const FunctionDecl *Indexed, const UtilityVariantRecord &V,
     unsigned I, const ASTContext &Context) {
@@ -7850,7 +7972,7 @@ static bool variantGetBody(const State &S, const SourceManager &SM,
 
 std::optional<UtilityVariantAlternative> approvedUtilityVariantGet(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context) {
+    ASTContext &Context) {
   const auto *F = Call ? Call->getDirectCallee() : nullptr;
   if (!variantFunction(S, SM, F, 1, false) || F->getName() != "get" ||
       !variantDeclaration(S, SM, F->getPrimaryTemplate()) ||
@@ -7858,7 +7980,7 @@ std::optional<UtilityVariantAlternative> approvedUtilityVariantGet(
     return std::nullopt;
   const auto *Argument = Call->getArg(0);
   const auto Owner = Argument->getType();
-  if (!Argument->isLValue() || !Owner.isConstQualified() ||
+  if (!Argument->isLValue() ||
       !Context.hasSameType(F->getParamDecl(0)->getType(), Context.getLValueReferenceType(Owner)))
     return std::nullopt;
   const auto V = approvedUtilityVariantRecord(S, SM, Owner, Context);
@@ -7895,9 +8017,12 @@ std::optional<UtilityVariantAlternative> approvedUtilityVariantGet(
       return std::nullopt;
   }
   if (!Index || !variantSelectedIndex(Indexed, *Index) ||
-      !variantGetHasActiveAlternative(S, SM, Argument, *V, *Index, Context))
+      !(variantGetHasActiveAlternative(S, SM, Argument, *V, *Index, Context) ||
+        variantGetHasGuard(S, SM, Call, *V, *Index, Context)))
     return std::nullopt;
-  const auto Element = V->Alternatives[*Index]->getType().withConst();
+  auto Element = V->Alternatives[*Index]->getType();
+  if (Owner.isConstQualified())
+    Element = Element.withConst();
   if (!Context.hasSameType(Call->getType(), Element) ||
       !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Element)) ||
       !variantGetBody(S, SM, Indexed, *V, *Index, Context))
@@ -8542,6 +8667,11 @@ static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *
 static const FunctionDecl *anyPinnedDefinition(const State &S, const SourceManager &SM,
     const FunctionDecl *F, llvm::StringRef Name, unsigned Arity, llvm::StringRef Path);
 
+static bool supportedAnyInlineInteger(QualType Type, const ASTContext &Context) {
+  return !Type.isNull() && (Context.hasSameType(Type, Context.IntTy) ||
+                           Context.hasSameType(Type, Context.UnsignedIntTy));
+}
+
 static bool anyAssignmentBody(const State &S, const SourceManager &SM,
                                    const CXXMethodDecl *Method, const CXXRecordDecl *Any,
                                    bool Value, const ASTContext &Context) {
@@ -8556,13 +8686,16 @@ static bool anyAssignmentBody(const State &S, const SourceManager &SM,
   const auto *Input = Method->getParamDecl(0);
   const auto Parameter = Copy ? Context.getLValueReferenceType(Owner.withConst())
                               : Context.getRValueReferenceType(Owner);
+  QualType Payload;
   if (Value) {
     const auto *Args = Method->getTemplateSpecializationArgs();
     if (!anyPinnedDefinition(S, SM, Method, "operator=", 1, "any") ||
         !Args || Args->size() != 3 || Args->get(1).getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Args->get(1).getAsType(), Context.IntTy) ||
-        !Input->getType()->isReferenceType() ||
-        !Context.hasSameUnqualifiedType(Input->getType().getNonReferenceType(), Context.IntTy))
+        !supportedAnyInlineInteger(Args->get(1).getAsType(), Context))
+      return false;
+    Payload = Args->get(1).getAsType();
+    if (!Input->getType()->isReferenceType() ||
+        !Context.hasSameUnqualifiedType(Input->getType().getNonReferenceType(), Payload))
       return false;
   } else if (!Context.hasSameType(Input->getType(), Parameter)) {
     return false;
@@ -8592,6 +8725,7 @@ static bool anyAssignmentBody(const State &S, const SourceManager &SM,
   if (Value) {
     const auto Construction = approvedUtilityAnyIntegerConstruction(S, SM, Build, Context);
     return Construction && Construction->Record == Any && Construction->Input == Build->getArg(0) &&
+           Context.hasSameType(Construction->ValueType, Payload) &&
            variantForward(S, SM, Construction->Input, Input, Context);
   }
   if (!anyCopyOrMove(S, SM, Build->getConstructor(), Any, Context) ||
@@ -8637,7 +8771,8 @@ std::optional<UtilityAnyTransfer> approvedUtilityAnyTransfer(
       !Context.hasSameUnqualifiedType(Type, Context.getRecordType(Any)))
     return std::nullopt;
   if (Value) {
-    if (!Context.hasSameUnqualifiedType(Input->getType(), Context.IntTy))
+    if (!Context.hasSameUnqualifiedType(Input->getType(),
+                                      Method->getParamDecl(0)->getType().getNonReferenceType()))
       return std::nullopt;
     return UtilityAnyTransfer{Any, Receiver, Input, Arrow, InputFirst,
                               UtilityAnyTransferOperation::AssignInteger, Method->getParamDecl(0)->getType()};
@@ -8714,15 +8849,16 @@ static bool anyInlineBufferAddress(const State &S, const SourceManager &SM, cons
 }
 
 static bool anyInlineIntegerPointer(const State &S, const SourceManager &SM, const Expr *E,
-    const ParmVarDecl *Owner, const CXXRecordDecl *Any, bool Const, const ASTContext &Context) {
+    const ParmVarDecl *Owner, const CXXRecordDecl *Any, QualType Value, bool Const,
+    const ASTContext &Context) {
   const auto *Conversion = dyn_cast_or_null<CXXStaticCastExpr>(E ? E->IgnoreParenImpCasts() : nullptr);
-  const auto Expected = Context.getPointerType(Const ? Context.IntTy.withConst() : Context.IntTy);
+  const auto Expected = Context.getPointerType(Const ? Value.withConst() : Value);
   const auto Buffer = Context.getPointerType(Const ? Context.VoidTy.withConst() : Context.VoidTy);
   return Conversion && Context.hasSameType(Conversion->getType(), Expected) &&
          anyInlineBufferAddress(S, SM, Conversion->getSubExpr(), Owner, Any, Buffer, Context);
 }
 
-static const CXXRecordDecl *anyIntegerHandlerOwner(const State &S, const SourceManager &SM,
+static const ClassTemplateSpecializationDecl *anyIntegerHandlerOwner(const State &S, const SourceManager &SM,
     const FunctionDecl *F, const ASTContext &Context) {
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(F);
   const auto *Handler = Method ? dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent()) : nullptr;
@@ -8730,7 +8866,7 @@ static const CXXRecordDecl *anyIntegerHandlerOwner(const State &S, const SourceM
   if (!Handler || !Method->isStatic() || !Parent || Parent->getName() != "__any_imp" ||
       Handler->getName() != "_SmallHandler" || Handler->getTemplateArgs().size() != 1 ||
       Handler->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Handler->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
+      !supportedAnyInlineInteger(Handler->getTemplateArgs()[0].getAsType(), Context) ||
       !anyDeclaration(S, SM, Handler) || !anyDeclaration(S, SM, Handler->getSpecializedTemplate()))
     return nullptr;
   return Handler;
@@ -8743,15 +8879,17 @@ utilityAllocatorConstructCall(const State &S, const SourceManager &SM,
                               const ASTContext &Context);
 
 static const CXXMethodDecl *anyIntegerHandlerInstallation(const State &S, const SourceManager &SM,
-    const CallExpr *Call, const CXXRecordDecl *Any, unsigned Inputs, const ASTContext &Context) {
+    const CallExpr *Call, const CXXRecordDecl *Any, unsigned Inputs, QualType Value,
+    const ASTContext &Context) {
   const auto *F = Call && Call->getNumArgs() == Inputs + 1
       ? anyPinnedDefinition(S, SM, Call->getDirectCallee(), "__create", Inputs + 1) : nullptr;
   const auto *Handler = anyIntegerHandlerOwner(S, SM, F, Context);
   const auto *Body = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
   const auto AnyType = Context.getRecordType(Any);
-  if (!Handler || !Body || Body->size() != 7 ||
+  if (!Handler || !Context.hasSameType(Handler->getTemplateArgs()[0].getAsType(), Value) ||
+      !Body || Body->size() != 7 ||
       !Context.hasSameType(F->getParamDecl(0)->getType(), Context.getLValueReferenceType(AnyType)) ||
-      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Context.IntTy)))
+      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Value)))
     return nullptr;
   auto Position = Body->body_begin();
   for (unsigned I = 0; I != 2; ++I) {
@@ -8766,13 +8904,13 @@ static const CXXMethodDecl *anyIntegerHandlerInstallation(const State &S, const 
   const auto *Install = dyn_cast_or_null<BinaryOperator>(anySelectedExpression(*Position++));
   const auto *Return = dyn_cast<ReturnStmt>(*Position);
   if (!Allocate || !Slot || !anyDeclaration(S, SM, Allocate) || !anyDeclaration(S, SM, Slot) ||
-      !anyInlineIntegerPointer(S, SM, Slot->getInit(), F->getParamDecl(0), Any, false, Context) ||
+      !anyInlineIntegerPointer(S, SM, Slot->getInit(), F->getParamDecl(0), Any, Value, false, Context) ||
       !Build || Build->getNumArgs() != Inputs + 2 ||
       !anySelectedVariable(Build->getArg(0), Allocate) || !anySelectedVariable(Build->getArg(1), Slot) ||
       !Install || Install->getOpcode() != BO_Assign || !Return)
     return nullptr;
   const auto BuildProof = utilityAllocatorConstructCall(S, SM, Build, true, F, Context);
-  if (!BuildProof || !Context.hasSameType(BuildProof->ElementType, Context.IntTy))
+  if (!BuildProof || !Context.hasSameType(BuildProof->ElementType, Value))
     return nullptr;
   for (unsigned I = 0; I < Inputs; ++I)
     if (!variantForward(S, SM, Build->getArg(I + 2), F->getParamDecl(I + 1), Context))
@@ -8815,7 +8953,8 @@ static const CallExpr *anyIntegerStatementCall(const Stmt *S) {
 }
 
 static bool anyIntegerDestroy(const State &S, const SourceManager &SM,
-    const FunctionDecl *F, const CXXRecordDecl *Any, const ASTContext &Context) {
+    const FunctionDecl *F, const CXXRecordDecl *Any, QualType Payload,
+    const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
   if (!Body || Body->size() != 6 || !F->getReturnType()->isVoidType())
     return false;
@@ -8836,7 +8975,7 @@ static bool anyIntegerDestroy(const State &S, const SourceManager &SM,
   const auto *Clear = dyn_cast_or_null<BinaryOperator>(anySelectedExpression(*Position));
   if (!Allocator || !Value || !Destroy || Destroy->getNumArgs() != 2 ||
       !anyDeclaration(S, SM, Allocator) || !anyDeclaration(S, SM, Value) ||
-      !anyInlineIntegerPointer(S, SM, Value->getInit(), Owner, Any, false, Context) ||
+      !anyInlineIntegerPointer(S, SM, Value->getInit(), Owner, Any, Payload, false, Context) ||
       !anySelectedVariable(Destroy->getArg(0), Allocator) || !anySelectedVariable(Destroy->getArg(1), Value) ||
       !Clear || Clear->getOpcode() != BO_Assign || !anyNull(Clear->getRHS()))
     return false;
@@ -8860,22 +8999,22 @@ static bool anyIntegerDestroy(const State &S, const SourceManager &SM,
   const auto *Pseudo = Invocation
       ? dyn_cast<CXXPseudoDestructorExpr>(Invocation->getCallee()->IgnoreParenImpCasts()) : nullptr;
   return TraitsMethod && TraitsMethod->isStatic() && TraitsRecord &&
-         Context.hasSameType(TraitsRecord->Allocator.ElementType, Context.IntTy) &&
+         Context.hasSameType(TraitsRecord->Allocator.ElementType, Payload) &&
          Forward && Forward->getNumArgs() == 1 && anyParameter(Forward->getArg(0), Traits->getParamDecl(1)) &&
          anyParameter(Forward->getImplicitObjectArgument(), Traits->getParamDecl(0)) &&
          Pseudo && Pseudo->isArrow() && Invocation->getNumArgs() == 0 &&
-         Context.hasSameType(Pseudo->getDestroyedType(), Context.IntTy) &&
+         Context.hasSameType(Pseudo->getDestroyedType(), Payload) &&
          anyParameter(Pseudo->getBase(), Scalar->getParamDecl(0));
 }
 
 static bool anyIntegerTransferLeaf(const State &S, const SourceManager &SM,
     const FunctionDecl *Transfer, const CXXMethodDecl *Handle, const CXXRecordDecl *Any,
-    bool Move, const ASTContext &Context) {
+    bool Move, QualType Payload, const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Transfer->getBody());
   if (!Body || Body->size() != (Move ? 2U : 1U) || !Transfer->getReturnType()->isVoidType())
     return false;
   const auto *Create = anyIntegerStatementCall(Body->body_front());
-  const auto *Install = anyIntegerHandlerInstallation(S, SM, Create, Any, 1, Context);
+  const auto *Install = anyIntegerHandlerInstallation(S, SM, Create, Any, 1, Payload, Context);
   if (!Install || Install->getCanonicalDecl() != Handle->getCanonicalDecl() ||
       !anyParameter(Create->getArg(0), Transfer->getParamDecl(1)))
     return false;
@@ -8887,18 +9026,18 @@ static bool anyIntegerTransferLeaf(const State &S, const SourceManager &SM,
     const auto *DestroyFunction = Destroy && Destroy->getNumArgs() == 1 ? anyPinnedDefinition(S, SM,
         Destroy->getDirectCallee(), "__destroy", 1) : nullptr;
     if (!F || !Use->isXValue() || Use->getNumArgs() != 1 ||
-        !Context.hasSameType(Use->getType(), Context.IntTy) ||
+        !Context.hasSameType(Use->getType(), Payload) ||
         !(anyPinnedDefinition(S, SM, F, "move", 1, "__utility/move.h") ||
           (F->getBuiltinID() == Builtin::BImove && bitsetBuiltinLibraryCast(S, SM, F, Context))) ||
         !DestroyFunction || anyIntegerHandlerOwner(S, SM, DestroyFunction, Context) != Handle->getParent() ||
         !anyParameter(Destroy->getArg(0), Transfer->getParamDecl(0)) ||
-        !anyIntegerDestroy(S, SM, DestroyFunction, Any, Context))
+        !anyIntegerDestroy(S, SM, DestroyFunction, Any, Payload, Context))
       return false;
     Part = Use->getArg(0);
   }
   const auto *Read = dyn_cast_or_null<UnaryOperator>(Part->IgnoreParenImpCasts());
   return Read && Read->getOpcode() == UO_Deref &&
-         anyInlineIntegerPointer(S, SM, Read->getSubExpr(), Transfer->getParamDecl(0), Any, !Move, Context);
+         anyInlineIntegerPointer(S, SM, Read->getSubExpr(), Transfer->getParamDecl(0), Any, Payload, !Move, Context);
 }
 
 static bool anyTypeId(const Expr *E, QualType Value, const ASTContext &Context) {
@@ -8934,7 +9073,7 @@ static bool anyFallbackIdentity(const State &S, const SourceManager &SM,
 }
 
 static bool anyIntegerCompareIdentity(const State &S, const SourceManager &SM,
-    const CallExpr *Call, const ASTContext &Context) {
+    const CallExpr *Call, QualType Payload, const ASTContext &Context) {
   const auto *F = Call && Call->getNumArgs() == 2 ? anyPinnedDefinition(
       S, SM, Call->getDirectCallee(), "__compare_typeid", 2) : nullptr;
   const auto *Body = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
@@ -8955,7 +9094,7 @@ static bool anyIntegerCompareIdentity(const State &S, const SourceManager &SM,
         !And || And->getOpcode() != BO_LAnd || !anyParameter(And->getLHS(), F->getParamDecl(0)) ||
         !Equality || !Equality->isConst() || Equality->getParent()->getName() != "type_info" ||
         !Left || Left->getOpcode() != UO_Deref || !anyParameter(Left->getSubExpr(), F->getParamDecl(0)) ||
-        !anyTypeId(Equal->getArg(1), Context.IntTy, Context) || !True || !True->getValue())
+        !anyTypeId(Equal->getArg(1), Payload, Context) || !True || !True->getValue())
       return false;
   }
   const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
@@ -8966,11 +9105,12 @@ static bool anyIntegerCompareIdentity(const State &S, const SourceManager &SM,
   const auto *Token = Match ? dyn_cast<CallExpr>(Match->getRHS()->IgnoreParenImpCasts()) : nullptr;
   return Either && Either->getOpcode() == BO_LAnd && Missing && Missing->getOpcode() == UO_LNot &&
          anyParameter(Missing->getSubExpr(), F->getParamDecl(0)) && Match && Match->getOpcode() == BO_EQ &&
-         anyParameter(Match->getLHS(), F->getParamDecl(1)) && anyFallbackIdentity(S, SM, Token, Context.IntTy, Context);
+         anyParameter(Match->getLHS(), F->getParamDecl(1)) && anyFallbackIdentity(S, SM, Token, Payload, Context);
 }
 
 static bool anyIntegerGet(const State &S, const SourceManager &SM,
-    const FunctionDecl *F, const CXXRecordDecl *Any, const ASTContext &Context) {
+    const FunctionDecl *F, const CXXRecordDecl *Any, QualType Payload,
+    const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
   if (!Body || Body->size() != 2 || !Context.hasSameType(F->getReturnType(), Context.VoidPtrTy))
     return false;
@@ -8980,13 +9120,13 @@ static bool anyIntegerGet(const State &S, const SourceManager &SM,
   const auto *Empty = dyn_cast<ReturnStmt>(Body->body_back());
   return Branch && !Branch->getInit() && !Branch->getConditionVariable() && !Branch->getElse() &&
          Compare && Compare->getNumArgs() == 2 && anyParameter(Compare->getArg(0), F->getParamDecl(1)) &&
-         anyParameter(Compare->getArg(1), F->getParamDecl(2)) && anyIntegerCompareIdentity(S, SM, Compare, Context) &&
+         anyParameter(Compare->getArg(1), F->getParamDecl(2)) && anyIntegerCompareIdentity(S, SM, Compare, Payload, Context) &&
          Success && anyInlineBufferAddress(S, SM, Success->getRetValue(), F->getParamDecl(0),
                                            Any, Context.VoidPtrTy, Context) &&
          Empty && anyNull(Empty->getRetValue());
 }
 
-static bool anyIntegerTypeInformation(const FunctionDecl *F, const ASTContext &Context) {
+static bool anyIntegerTypeInformation(const FunctionDecl *F, QualType Payload, const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
   const auto *Value = anyReturn(Body);
   if (anyNull(Value))
@@ -8995,11 +9135,11 @@ static bool anyIntegerTypeInformation(const FunctionDecl *F, const ASTContext &C
   const auto *Void = Unqualify ? dyn_cast<CXXStaticCastExpr>(Unqualify->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
   return Unqualify && Context.hasSameType(Unqualify->getType(), Context.VoidPtrTy) && Void &&
          Context.hasSameType(Void->getType(), Context.getPointerType(Context.VoidTy.withConst())) &&
-         anyTypeIdAddress(Void->getSubExpr(), Context.IntTy, Context);
+         anyTypeIdAddress(Void->getSubExpr(), Payload, Context);
 }
 
 static bool anyIntegerDispatch(const State &S, const SourceManager &SM, const CXXMethodDecl *Handle,
-                               const CXXRecordDecl *Any, const ASTContext &Context) {
+                               const CXXRecordDecl *Any, QualType Payload, const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Handle->getBody());
   const auto *Dispatch = Body && Body->size() == 2 ? dyn_cast<SwitchStmt>(Body->body_front()) : nullptr;
   const auto *Cases = Dispatch ? dyn_cast<CompoundStmt>(Dispatch->getBody()) : nullptr;
@@ -9045,23 +9185,23 @@ static bool anyIntegerDispatch(const State &S, const SourceManager &SM, const CX
       return false;
     switch (Index) {
     case 0:
-      if (!anyIntegerDestroy(S, SM, F, Any, Context))
+      if (!anyIntegerDestroy(S, SM, F, Any, Payload, Context))
         return false;
       break;
     case 1:
     case 2:
       if (!anyIntegerObject(Call->getArg(1), Handle->getParamDecl(2), false, Context) ||
-          !anyIntegerTransferLeaf(S, SM, F, Handle, Any, Index == 2, Context))
+          !anyIntegerTransferLeaf(S, SM, F, Handle, Any, Index == 2, Payload, Context))
         return false;
       break;
     case 3:
       if (!anyParameter(Call->getArg(1), Handle->getParamDecl(3)) ||
           !anyParameter(Call->getArg(2), Handle->getParamDecl(4)) ||
-          !anyIntegerGet(S, SM, F, Any, Context))
+          !anyIntegerGet(S, SM, F, Any, Payload, Context))
         return false;
       break;
     default:
-      if (!anyIntegerTypeInformation(F, Context))
+      if (!anyIntegerTypeInformation(F, Payload, Context))
         return false;
       break;
     }
@@ -9074,30 +9214,30 @@ static bool anyIntegerDispatch(const State &S, const SourceManager &SM, const CX
 }
 
 static bool anyIntegerPack(const TemplateArgumentList *Args, unsigned Arity,
-                           const ASTContext &Context) {
+                           QualType Payload, const ASTContext &Context) {
   return Args && Args->size() == 4 && Args->get(0).getKind() == TemplateArgument::Type &&
-         Context.hasSameType(Args->get(0).getAsType(), Context.IntTy) &&
+         Context.hasSameType(Args->get(0).getAsType(), Payload) &&
          Args->get(1).getKind() == TemplateArgument::Pack && Args->get(1).pack_size() == Arity &&
          Args->get(2).getKind() == TemplateArgument::Type &&
-         Context.hasSameType(Args->get(2).getAsType(), Context.IntTy);
+         Context.hasSameType(Args->get(2).getAsType(), Payload);
 }
 
-static bool anyIntegerInput(const Expr *Input, QualType Parameter, const ASTContext &Context) {
+static bool anyIntegerInput(const Expr *Input, QualType Parameter, QualType Payload, const ASTContext &Context) {
   return !Input || (!Parameter.isNull() && Parameter->isReferenceType() &&
-         Context.hasSameUnqualifiedType(Parameter.getNonReferenceType(), Context.IntTy) &&
-         Context.hasSameUnqualifiedType(Input->getType(), Context.IntTy) &&
+         Context.hasSameUnqualifiedType(Parameter.getNonReferenceType(), Payload) &&
+         Context.hasSameUnqualifiedType(Input->getType(), Payload) &&
          !Input->getType().isVolatileQualified());
 }
 
 static bool anyIntegerInstallThis(const State &S, const SourceManager &SM,
     const CallExpr *Create, const FunctionDecl *Owner, const CXXRecordDecl *Any,
-    unsigned Offset, const ASTContext &Context) {
+    unsigned Offset, QualType Payload, const ASTContext &Context) {
   const unsigned Arity = Owner->getNumParams() - Offset;
-  const auto *Handle = anyIntegerHandlerInstallation(S, SM, Create, Any, Arity, Context);
+  const auto *Handle = anyIntegerHandlerInstallation(S, SM, Create, Any, Arity, Payload, Context);
   const auto *Object = Handle ? dyn_cast<UnaryOperator>(Create->getArg(0)->IgnoreParenImpCasts()) : nullptr;
   return Object && Object->getOpcode() == UO_Deref && anyThis(Object->getSubExpr()) &&
          (!Arity || variantForward(S, SM, Create->getArg(1), Owner->getParamDecl(Offset), Context)) &&
-         anyIntegerDispatch(S, SM, Handle, Any, Context);
+         anyIntegerDispatch(S, SM, Handle, Any, Payload, Context);
 }
 
 static std::optional<UtilityAnyIntegerConstruction> anyIntegerConstruction(
@@ -9119,28 +9259,33 @@ static std::optional<UtilityAnyIntegerConstruction> anyIntegerConstruction(
   const unsigned Offset = F->isExplicit() ? 1 : 0;
   const unsigned Arity = Count - Offset;
   const auto *Tag = Offset ? Construction->getArg(0) : nullptr;
+  const unsigned TypeArgument = Tag ? 0 : 1;
+  if (!Args || Args->size() <= TypeArgument ||
+      Args->get(TypeArgument).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Payload = Args->get(TypeArgument).getAsType();
+  if (!supportedAnyInlineInteger(Payload, Context))
+    return std::nullopt;
   if (Tag) {
     const auto *Selection = variantInPlaceTag(S, SM, Tag, "in_place_type_t", "in_place_type");
     const bool TagOrigin = Factory
         ? anyDeclaration(S, SM, Factory) && cstddefOrigin(S, SM, Tag->getExprLoc(), "libcxx", "any")
         : S.owns(SM, Tag->getExprLoc());
-    if (!TagOrigin || !Selection || !anyIntegerPack(Args, Arity, Context) ||
+    if (!TagOrigin || !Selection || !anyIntegerPack(Args, Arity, Payload, Context) ||
         !Selection->structurallyEquals(Args->get(0)) ||
         !Context.hasSameUnqualifiedType(Tag->getType(), F->getParamDecl(0)->getType()))
       return std::nullopt;
-  } else if (Arity != 1 || !Args || Args->size() != 3 ||
-             Args->get(1).getKind() != TemplateArgument::Type ||
-             !Context.hasSameType(Args->get(1).getAsType(), Context.IntTy)) {
+  } else if (Arity != 1 || Args->size() != 3) {
     return std::nullopt;
   }
   const auto *Input = Arity ? Construction->getArg(Offset) : nullptr;
   const auto Parameter = Arity ? F->getParamDecl(Offset)->getType() : QualType();
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
   const auto *Create = Body && Body->size() == 1 ? anyIntegerStatementCall(Body->body_front()) : nullptr;
-  if (!anyIntegerInput(Input, Parameter, Context) ||
-      !anyIntegerInstallThis(S, SM, Create, F, Any, Offset, Context))
+  if (!anyIntegerInput(Input, Parameter, Payload, Context) ||
+      !anyIntegerInstallThis(S, SM, Create, F, Any, Offset, Payload, Context))
     return std::nullopt;
-  return UtilityAnyIntegerConstruction{Any, Tag, Input, Parameter};
+  return UtilityAnyIntegerConstruction{Any, Payload, Tag, Input, Parameter};
 }
 
 std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerConstruction(
@@ -9160,7 +9305,7 @@ std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerMake(
   const auto *Args = Use ? Original->getTemplateSpecializationArgs() : nullptr;
   if (!Use || Use->getDecl() != Original || !S.owns(SM, Use->getExprLoc()) ||
       !Args || Args->size() != 2 || Args->get(0).getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Args->get(0).getAsType(), Context.IntTy) ||
+      !supportedAnyInlineInteger(Args->get(0).getAsType(), Context) ||
       Args->get(1).getKind() != TemplateArgument::Pack || Args->get(1).pack_size() != Arity)
     return std::nullopt;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
@@ -9174,11 +9319,12 @@ std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerMake(
   const auto Proof = anyIntegerConstruction(S, SM, Build, F, Context);
   const auto *Input = Arity ? Call->getArg(0) : nullptr;
   const auto Parameter = Arity ? F->getParamDecl(0)->getType() : QualType();
-  if (!Proof || !anyIntegerInput(Input, Parameter, Context) ||
+  if (!Proof || !Context.hasSameType(Proof->ValueType, Args->get(0).getAsType()) ||
+      !anyIntegerInput(Input, Parameter, Proof->ValueType, Context) ||
       (Arity && (!Context.hasSameType(Parameter, Proof->Parameter) ||
                  !variantForward(S, SM, Proof->Input, F->getParamDecl(0), Context))))
     return std::nullopt;
-  return UtilityAnyIntegerConstruction{Proof->Record, nullptr, Input, Parameter};
+  return UtilityAnyIntegerConstruction{Proof->Record, Proof->ValueType, nullptr, Input, Parameter};
 }
 
 std::optional<UtilityAnyIntegerEmplacement> approvedUtilityAnyIntegerEmplacement(
@@ -9194,14 +9340,16 @@ std::optional<UtilityAnyIntegerEmplacement> approvedUtilityAnyIntegerEmplacement
   const auto *Any = F ? F->getParent()->getDefinition() : nullptr;
   const auto *Base = Member->getBase();
   const auto Owner = Member->isArrow() ? Base->getType()->getPointeeType() : Base->getType();
-  if (!F || !F->getPrimaryTemplate() || F->isStatic() || F->isConst() || Owner.isNull() ||
+  const auto Payload = F ? F->getReturnType().getNonReferenceType() : QualType();
+  if (!F || !supportedAnyInlineInteger(Payload, Context) ||
+      !F->getPrimaryTemplate() || F->isStatic() || F->isConst() || Owner.isNull() ||
       Owner.isConstQualified() || Owner.isVolatileQualified() ||
       (!Member->isArrow() && !Base->isGLValue()) || !Any ||
       Member->getMemberDecl()->getCanonicalDecl() != F->getCanonicalDecl() ||
       !Context.hasSameUnqualifiedType(Owner, Context.getRecordType(Any)) ||
       !approvedUtilityAnyRecord(S, SM, Any, Context) ||
-      !anyIntegerPack(Original->getTemplateSpecializationArgs(), Arity, Context) ||
-      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Context.IntTy)))
+      !anyIntegerPack(Original->getTemplateSpecializationArgs(), Arity, Payload, Context) ||
+      !Context.hasSameType(F->getReturnType(), Context.getLValueReferenceType(Payload)))
     return std::nullopt;
   const auto *Input = Arity ? Call->getArg(0) : nullptr;
   const auto Parameter = Arity ? F->getParamDecl(0)->getType() : QualType();
@@ -9213,10 +9361,10 @@ std::optional<UtilityAnyIntegerEmplacement> approvedUtilityAnyIntegerEmplacement
       ? dyn_cast_or_null<CallExpr>(anySelectedExpression(Returned->getRetValue())) : nullptr;
   if (!Reset || Reset->getNumArgs() || !anyThis(Reset->getImplicitObjectArgument()) ||
       !anyResetBody(S, SM, Reset->getMethodDecl(), Any, Context) ||
-      !anyIntegerInput(Input, Parameter, Context) ||
-      !anyIntegerInstallThis(S, SM, Create, F, Any, 0, Context))
+      !anyIntegerInput(Input, Parameter, Payload, Context) ||
+      !anyIntegerInstallThis(S, SM, Create, F, Any, 0, Payload, Context))
     return std::nullopt;
-  return UtilityAnyIntegerEmplacement{Any, Member, Input, Parameter};
+  return UtilityAnyIntegerEmplacement{Any, Payload, Member, Input, Parameter};
 }
 
 static bool anyActivePointerCastBody(const State &S, const SourceManager &SM,
@@ -9360,12 +9508,14 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   if (!Use || Use->getDecl() != Original || !S.owns(SM, Use->getExprLoc()) ||
       !Args || Args->size() != 1 || Args->get(0).getKind() != TemplateArgument::Type)
     return nullptr;
-  const auto Int = Context.IntTy;
-  const auto ConstInt = Int.withConst();
   const auto Result = F->getReturnType();
-  const bool Reference = Context.hasSameType(Result, Context.getLValueReferenceType(ConstInt));
+  const auto Payload = Result.getNonReferenceType().getUnqualifiedType();
+  if (!supportedAnyInlineInteger(Payload, Context))
+    return nullptr;
+  const auto ConstValue = Payload.withConst();
+  const bool Reference = Context.hasSameType(Result, Context.getLValueReferenceType(ConstValue));
   if (!Context.hasSameType(Result, Args->get(0).getAsType()) ||
-      (!Reference && !Context.hasSameType(Result, Int)) ||
+      (!Reference && !Context.hasSameType(Result, Payload)) ||
       Call->isLValue() != Reference || !Context.hasSameType(Call->getType(), Result.getNonReferenceType()))
     return nullptr;
 
@@ -9380,7 +9530,7 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
                            Context.getLValueReferenceType(Context.getRecordType(Any).withConst())))
     return nullptr;
   const auto Initial = approvedUtilityAnyIntegerConstruction(S, SM, variantConstruct(Local->getInit()), Context);
-  if (!Initial || Initial->Record != Any)
+  if (!Initial || Initial->Record != Any || !Context.hasSameType(Initial->ValueType, Payload))
     return nullptr;
 
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
@@ -9394,7 +9544,7 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   const auto *Requirement = AssertStatement && AssertStatement->isSingleDecl()
       ? dyn_cast<StaticAssertDecl>(AssertStatement->getSingleDecl()) : nullptr;
   if (!Alias || Alias->getName() != "_RawValueType" ||
-      !Context.hasSameType(Alias->getUnderlyingType(), Int) || !anyDeclaration(S, SM, Alias) ||
+      !Context.hasSameType(Alias->getUnderlyingType(), Payload) || !anyDeclaration(S, SM, Alias) ||
       !Requirement || Requirement->isFailed() || !anyDeclaration(S, SM, Requirement))
     return nullptr;
   const auto *Pointer = anySelectedLocal(*Position++);
@@ -9403,7 +9553,7 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   const auto *Address = Cast && Cast->getNumArgs() == 1
       ? dyn_cast<UnaryOperator>(Cast->getArg(0)->IgnoreParenImpCasts()) : nullptr;
   if (!Pointer || !anyDeclaration(S, SM, Pointer) ||
-      !Context.hasSameType(Pointer->getType(), Context.getPointerType(ConstInt)) ||
+      !Context.hasSameType(Pointer->getType(), Context.getPointerType(ConstValue)) ||
       !PointerFunction || anyPointerCast(S, SM, PointerFunction, Context, true) != Any ||
       !Address || Address->getOpcode() != UO_AddrOf || !anyParameter(Address->getSubExpr(), F->getParamDecl(0)))
     return nullptr;
@@ -123727,6 +123877,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
   if (approvedUtilityForwardListCall(S, SM, Call, Context)) return UtilityOperation::ForwardList;
   if (approvedUtilityListCall(S, SM, Call, Context)) return UtilityOperation::List;
+  if (approvedOrderedContainerObserver(S, SM, Call, Context))
+    return UtilityOperation::OrderedContainerObserver;
   if (approvedUtilityPriorityQueueCall(S, SM, Call, Context)) return UtilityOperation::PriorityQueue;
   if (approvedUtilityDequeCall(S, SM, Call, Context)) return UtilityOperation::Deque;
   if (approvedUtilityValarrayCall(S, SM, Call, Context)) return UtilityOperation::ValarrayScalar;
@@ -136003,6 +136155,338 @@ QualType approvedOrderedContainerObserverQuery(
         !cstddefOrigin(S, SM, D->getLocation(), "libcxx", Header))
       return {};
   return Result;
+}
+
+bool approvedOrderedContainerRuntimeRecord(const State &S,
+    const SourceManager &SM, const CXXRecordDecl *Record, const ASTContext &Context) {
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!S.coreV2() || !Record || !Record->getIdentifier())
+    return false;
+  const auto Header = associativeContainerHeader(Record->getName());
+  return (Header == "map" || Header == "set") &&
+         approvedAssociativeContainerLayoutQuery(S, SM, Context.getRecordType(Record), Context);
+}
+
+namespace {
+
+const FieldDecl *orderedTreeField(const CXXRecordDecl *Owner, llvm::StringRef Name) {
+  Owner = Owner ? Owner->getDefinition() : nullptr;
+  if (Owner)
+    for (const auto *F : Owner->fields())
+      if (F->getIdentifier() && F->getName() == Name)
+        return F;
+  return nullptr;
+}
+
+bool orderedPinnedFunction(const State &S, const SourceManager &SM,
+                           const FunctionDecl *F, llvm::StringRef Header) {
+  if (!F || F->isInvalidDecl() || F->isDeleted() || F->isVariadic())
+    return false;
+  for (const auto *D : F->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx", Header))
+      return false;
+  return true;
+}
+
+const Expr *orderedReturn(const FunctionDecl *Function) {
+  const auto *Body = Function ? dyn_cast_or_null<CompoundStmt>(Function->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  return Return ? Return->getRetValue() : nullptr;
+}
+
+const Expr *orderedExpression(const Expr *E) {
+  return E ? E->IgnoreImplicit()->IgnoreParenImpCasts() : nullptr;
+}
+
+bool orderedReceiver(const CXXMemberCallExpr *Call) {
+  return Call && isa_and_nonnull<CXXThisExpr>(orderedExpression(Call->getImplicitObjectArgument()));
+}
+
+bool orderedParameter(const Expr *E, const ParmVarDecl *Parameter) {
+  const auto *Ref = dyn_cast_or_null<DeclRefExpr>(orderedExpression(E));
+  return Ref && Ref->getDecl() == Parameter;
+}
+
+bool orderedStaticAssertion(const Stmt *Statement) {
+  const auto *Decl = dyn_cast_or_null<DeclStmt>(Statement);
+  return Decl && Decl->isSingleDecl() && isa<StaticAssertDecl>(Decl->getSingleDecl());
+}
+
+const CXXMethodDecl *orderedTreeMethod(const State &S, const SourceManager &SM,
+    const CXXMemberCallExpr *Call, const CXXRecordDecl *Tree, llvm::StringRef Name,
+    unsigned Arguments = 0) {
+  const auto *M = Call ? Call->getMethodDecl() : nullptr;
+  return M && M->getIdentifier() && M->getName() == Name && !M->isStatic() &&
+         !M->isVirtual() && M->getNumParams() == Arguments && Call->getNumArgs() == Arguments &&
+         M->getParent()->getCanonicalDecl() == Tree->getCanonicalDecl() &&
+         orderedPinnedFunction(S, SM, M, "__tree") ? M : nullptr;
+}
+
+bool orderedTrivialPolicy(const State &S, const SourceManager &SM, QualType Type) {
+  const auto *R = Type->getAsCXXRecordDecl();
+  R = R ? R->getDefinition() : nullptr;
+  return R && R->isEmpty() && R->hasTrivialCopyConstructor() && R->hasTrivialDestructor() &&
+         associativeStorageDeclaration(S, SM, R, true);
+}
+
+bool orderedPolicyInit(const State &S, const SourceManager &SM, const Expr *E,
+                       const FunctionDecl *Parent, unsigned Depth = 0) {
+  if (Depth >= 16 || !(E = orderedExpression(E)))
+    return false;
+  if (const auto *Ref = dyn_cast<DeclRefExpr>(E)) {
+    const auto *Param = dyn_cast<ParmVarDecl>(Ref->getDecl());
+    return Parent && Param && Param->getDeclContext() == Parent &&
+           orderedTrivialPolicy(S, SM, Param->getType().getNonReferenceType());
+  }
+  if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(E))
+    return Cast->getCastKind() == CK_ConstructorConversion &&
+           orderedPolicyInit(S, SM, Cast->getSubExpr(), Parent, Depth + 1);
+  const auto *Build = dyn_cast<CXXConstructExpr>(E);
+  const auto *Ctor = Build ? Build->getConstructor() : nullptr;
+  if (!Ctor || !orderedTrivialPolicy(S, SM, Build->getType()) ||
+      !associativeStorageDeclaration(S, SM, Ctor, true) || Build->getNumArgs() > 1 ||
+      !(Ctor->isDefaultConstructor() || Ctor->isCopyConstructor() || Ctor->getNumParams() == 1))
+    return false;
+  for (const auto *Argument : Build->arguments())
+    if (!orderedPolicyInit(S, SM, Argument, Parent, Depth + 1))
+      return false;
+  if (Ctor->isTrivial())
+    return true;
+  // The map adapter's one-argument comparator constructor only builds its
+  // authenticated empty base. The default set comparator is itself empty.
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
+  return Body && Body->body_empty() &&
+         llvm::all_of(Ctor->inits(), [&](const CXXCtorInitializer *Init) {
+           return !Init->isDelegatingInitializer() &&
+                  orderedPolicyInit(S, SM, Init->getInit(), Ctor, Depth + 1);
+         });
+}
+
+bool orderedTreeEndSource(const State &S, const SourceManager &SM,
+                          const CXXMemberCallExpr *End, const CXXRecordDecl *Tree,
+                          const FieldDecl *EndField, const ASTContext &Context,
+                          llvm::StringRef *Failure = nullptr) {
+  auto Fail = [&](llvm::StringRef Why) {
+    if (Failure) *Failure = Why;
+    return false;
+  };
+  const auto *Method = orderedTreeMethod(S, SM, End, Tree, "__end_node");
+  const auto *Conversion = dyn_cast_or_null<CXXStaticCastExpr>(
+      orderedExpression(orderedReturn(Method)));
+  if (!Conversion || !EndField || !Conversion->getType()->isPointerType())
+    return Fail("The pinned tree end method must convert the embedded sentinel pointer.");
+  const auto *Address = Conversion
+      ? dyn_cast_or_null<CallExpr>(orderedExpression(Conversion->getSubExpr())) : nullptr;
+  const auto *F = Address ? dyn_cast_or_null<CXXMethodDecl>(Address->getDirectCallee()) : nullptr;
+  const auto EndType = EndField->getType();
+  if (!F || !F->isStatic() || !F->getIdentifier() || F->getName() != "pointer_to" ||
+      F->getNumParams() != 1 || Address->getNumArgs() != 1 ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), Context.getLValueReferenceType(EndType)) ||
+      !Context.hasSameType(F->getReturnType(), Context.getPointerType(EndType)) ||
+      !orderedPinnedFunction(S, SM, F, "__memory/pointer_traits.h"))
+    return Fail("The sentinel address requires the pinned raw pointer_traits specialization.");
+  const auto *AddressofCall = dyn_cast_or_null<CallExpr>(orderedExpression(orderedReturn(F)));
+  // Clang can resolve std::addressof as a builtin without instantiating its
+  // body. Reuse the checked specialization and pinned template body proof.
+  if (!orderedParameter(variantAddressedValue(S, SM, AddressofCall, Context), F->getParamDecl(0)))
+    return Fail("The selected pointer_traits must address its exact sentinel parameter.");
+
+  if (Conversion->getCastKind() == CK_BaseToDerived) {
+    const auto *Derived = Conversion->getType()->getPointeeType()->getAsCXXRecordDecl();
+    const auto *Base = EndType->getAsCXXRecordDecl();
+    Derived = Derived ? Derived->getDefinition() : nullptr;
+    Base = Base ? Base->getDefinition() : nullptr;
+    if (!Derived || !Base || Conversion->path_size() != 1 ||
+        (*Conversion->path_begin())->isVirtual() ||
+        !Context.hasSameType((*Conversion->path_begin())->getType(), EndType) ||
+        !Context.getASTRecordLayout(Derived).getBaseClassOffset(Base).isZero())
+      return Fail("The sentinel conversion must retain the original address.");
+  } else if (Conversion->getCastKind() != CK_NoOp) {
+    return Fail("The sentinel conversion must retain the original address.");
+  }
+  const auto *Arg = orderedExpression(Address->getArg(0));
+  if (const auto *Unconst = dyn_cast_or_null<CXXConstCastExpr>(Arg))
+    Arg = orderedExpression(Unconst->getSubExpr());
+  const auto *Member = dyn_cast_or_null<MemberExpr>(Arg);
+  if (!Member || Member->getMemberDecl() != EndField ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Member->getBase())))
+    return Fail("The sentinel must address the current tree's embedded end field.");
+  return true;
+}
+
+bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
+                            const CXXConstructExpr *Build, const ASTContext &Context,
+                            llvm::StringRef *Failure) {
+  auto Fail = [&](llvm::StringRef Why) {
+    if (Failure) *Failure = Why;
+    return false;
+  };
+  const auto *Selected = Build ? Build->getConstructor() : nullptr;
+  // The selected declaration appears inside __tree. Its member initializers
+  // belong to the out-of-line instantiation rather than that declaration.
+  const auto *Ctor = dyn_cast_or_null<CXXConstructorDecl>(
+      Selected ? Selected->getDefinition() : nullptr);
+  if (!Ctor || Ctor->getNumParams() != 1 || Build->getNumArgs() != 1 ||
+      !orderedPinnedFunction(S, SM, Ctor, "__tree"))
+    return Fail("The selected pinned tree constructor definition is required.");
+  if (!orderedPolicyInit(S, SM, Build->getArg(0), nullptr))
+    return Fail("The tree comparator requires the pinned empty initialization.");
+  const auto *Tree = Ctor->getParent();
+  const auto *Size = orderedTreeField(Tree, "__size_");
+  const auto *End = orderedTreeField(Tree, "__end_node_");
+  const auto *Begin = orderedTreeField(Tree, "__begin_node_");
+  const auto *Compare = orderedTreeField(Tree, "__value_comp_");
+  bool ZeroSize = false, NullRoot = false, CheckedCompare = false;
+  for (const auto *Init : Ctor->inits()) {
+    if (!Init->isMemberInitializer())
+      return Fail("Expected a tree member initializer.");
+    const auto *Field = Init->getMember();
+    const auto *Value = orderedExpression(Init->getInit());
+    if (Field == Size) {
+      const auto *Zero = dyn_cast_or_null<IntegerLiteral>(Value);
+      ZeroSize = Zero && Zero->getValue().isZero();
+    } else if (Field == End) {
+      const auto *Construct = dyn_cast_or_null<CXXConstructExpr>(Value);
+      const auto *EndCtor = Construct ? Construct->getConstructor() : nullptr;
+      const auto *Body = EndCtor ? dyn_cast_or_null<CompoundStmt>(EndCtor->getBody()) : nullptr;
+      const auto *Left = EndCtor ? orderedTreeField(EndCtor->getParent(), "__left_") : nullptr;
+      if (!Left || !Body || !Body->body_empty() || Construct->getNumArgs() ||
+          !orderedPinnedFunction(S, SM, EndCtor, "__tree") || EndCtor->getNumCtorInitializers() != 1)
+        return Fail("The embedded tree sentinel requires its exact empty initializer.");
+      const auto *Root = *EndCtor->init_begin();
+      const auto *InitialValue = orderedExpression(Root->getInit());
+      NullRoot = Root->isMemberInitializer() && Root->getMember() == Left &&
+          InitialValue && isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(InitialValue);
+    } else if (Field == Compare) {
+      CheckedCompare = orderedPolicyInit(S, SM, Value, Ctor);
+    } else if (!orderedPolicyInit(S, SM, Value, Ctor)) {
+      return Fail("The tree policy fields require pinned empty initializers.");
+    }
+  }
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
+  const auto *Set = Body && Body->size() == 1 ? dyn_cast<BinaryOperator>(Body->body_front()) : nullptr;
+  if (!ZeroSize || !NullRoot || !CheckedCompare)
+    return Fail("Expected a zero size, null root and an empty selected comparator.");
+  if (!Set || Set->getOpcode() != BO_Assign)
+    return Fail("The tree constructor must assign its end sentinel to the begin pointer.");
+  const auto *BeginCall = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Set->getLHS()));
+  const auto *EndCall = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Set->getRHS()));
+  const auto *BeginMethod = orderedTreeMethod(S, SM, BeginCall, Tree, "__begin_node");
+  const auto *Member = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(BeginMethod)));
+  if (!orderedReceiver(BeginCall) || !orderedReceiver(EndCall) || !Member ||
+      Member->getMemberDecl() != Begin ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Member->getBase())))
+    return Fail("The begin initializer must assign the receiver's end sentinel to its begin field.");
+  return orderedTreeEndSource(S, SM, EndCall, Tree, End, Context, Failure);
+}
+
+} // namespace
+
+bool approvedOrderedContainerDefaultConstruction(const State &S,
+    const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context, llvm::StringRef *Failure) {
+  if (Failure) *Failure = "An authenticated complete default constructor is required.";
+  const auto *Selected = Construction ? Construction->getConstructor() : nullptr;
+  const auto *Ctor = dyn_cast_or_null<CXXConstructorDecl>(
+      Selected ? Selected->getDefinition() : nullptr);
+  const auto *Owner = Ctor ? Ctor->getParent() : nullptr;
+  if (!approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context) ||
+      !S.owns(SM, Construction->getExprLoc()) || !Ctor->isDefaultConstructor() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Ctor->getNumParams() || Construction->getNumArgs() ||
+      !orderedPinnedFunction(S, SM, Ctor, associativeContainerHeader(Owner->getName())) ||
+      Ctor->getNumCtorInitializers() != 1)
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
+  const auto *Init = *Ctor->init_begin();
+  if (!Body || !Body->body_empty() || !Init->isMemberInitializer() ||
+      Init->getMember() != orderedTreeField(Owner, "__tree_")) {
+    if (Failure) *Failure = "Expected a single pinned tree initializer and an empty owner constructor body.";
+    return false;
+  }
+  return orderedEmptyTreeSource(S, SM,
+      dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Init->getInit())), Context, Failure);
+}
+
+bool approvedOrderedContainerDestructor(const State &S,
+    const SourceManager &SM, const CXXDestructorDecl *Destructor, const ASTContext &Context) {
+  const auto *Owner = Destructor ? Destructor->getParent() : nullptr;
+  if (!approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context) ||
+      Destructor->isVirtual() ||
+      !orderedPinnedFunction(S, SM, Destructor, associativeContainerHeader(Owner->getName())))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Destructor->getBody());
+  if (!Body || Body->size() != 1 || !orderedStaticAssertion(Body->body_front()))
+    return false;
+  const auto *Storage = orderedTreeField(Owner, "__tree_");
+  const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
+  Tree = Tree ? Tree->getDefinition() : nullptr;
+  const auto *TreeDtor = Tree ? Tree->getDestructor() : nullptr;
+  if (!TreeDtor || TreeDtor->isVirtual() || !orderedPinnedFunction(S, SM, TreeDtor, "__tree"))
+    return false;
+  for (const auto *Field : Tree->fields())
+    if (const auto *Record = Field->getType()->getAsCXXRecordDecl();
+        Record && !Record->hasTrivialDestructor())
+      return false;
+  const auto *TreeBody = dyn_cast_or_null<CompoundStmt>(TreeDtor->getBody());
+  if (!TreeBody || TreeBody->size() != 2 || !orderedStaticAssertion(TreeBody->body_front()))
+    return false;
+  const auto *DestroyCall = dyn_cast<CXXMemberCallExpr>(TreeBody->body_back());
+  const auto *Destroy = orderedTreeMethod(S, SM, DestroyCall, Tree, "destroy", 1);
+  if (!Destroy || !orderedReceiver(DestroyCall))
+    return false;
+  const auto *RootCall = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(DestroyCall->getArg(0)));
+  const auto *Root = orderedTreeMethod(S, SM, RootCall, Tree, "__root");
+  const auto *Conversion = Root
+      ? dyn_cast_or_null<CXXStaticCastExpr>(orderedReturn(Root)) : nullptr;
+  const auto *Left = Conversion
+      ? dyn_cast_or_null<MemberExpr>(orderedExpression(Conversion->getSubExpr())) : nullptr;
+  const auto *End = Left ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Left->getBase())) : nullptr;
+  const auto *EndField = orderedTreeField(Tree, "__end_node_");
+  if (!EndField || !Left || !Left->isArrow() || !orderedReceiver(RootCall) ||
+      !orderedReceiver(End) ||
+      Left->getMemberDecl() != orderedTreeField(EndField->getType()->getAsCXXRecordDecl(), "__left_") ||
+      !orderedTreeEndSource(S, SM, End, Tree, EndField, Context))
+    return false;
+  const auto *RecursiveBody = dyn_cast_or_null<CompoundStmt>(Destroy->getBody());
+  const auto *If = RecursiveBody && RecursiveBody->size() == 1
+      ? dyn_cast<IfStmt>(RecursiveBody->body_front()) : nullptr;
+  const auto *Condition = If ? dyn_cast_or_null<BinaryOperator>(orderedExpression(If->getCond())) : nullptr;
+  return If && !If->getInit() && !If->getConditionVariable() && !If->getElse() &&
+         Condition && Condition->getOpcode() == BO_NE &&
+         orderedParameter(Condition->getLHS(), Destroy->getParamDecl(0)) &&
+         isa_and_nonnull<CXXNullPtrLiteralExpr>(orderedExpression(Condition->getRHS()));
+}
+
+const MemberExpr *approvedOrderedContainerObserver(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  if (approvedOrderedContainerObserverQuery(S, SM, Call, Context).isNull())
+    return nullptr;
+  const auto *Outer = cast<CXXMemberCallExpr>(Call)->getMethodDecl();
+  if (!Outer || Outer->getName() == "max_size")
+    return nullptr;
+  const auto *Owner = Outer->getParent();
+  const auto *Storage = orderedTreeField(Owner, "__tree_");
+  const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *Returned = orderedReturn(Outer);
+  if (Outer->getName() == "empty") {
+    const auto *Equal = dyn_cast_or_null<BinaryOperator>(orderedExpression(Returned));
+    const auto *Zero = Equal ? dyn_cast_or_null<IntegerLiteral>(orderedExpression(Equal->getRHS())) : nullptr;
+    if (!Equal || Equal->getOpcode() != BO_EQ || !Zero || !Zero->getValue().isZero())
+      return nullptr;
+    Returned = Equal->getLHS();
+  }
+  const auto *Inner = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Returned));
+  const auto *Size = Tree ? orderedTreeMethod(S, SM, Inner, Tree, "size") : nullptr;
+  const auto *Base = Size ? dyn_cast_or_null<MemberExpr>(orderedExpression(Inner->getImplicitObjectArgument())) : nullptr;
+  const auto *Field = Size ? dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Size))) : nullptr;
+  if (!Base || Base->getMemberDecl() != Storage ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Base->getBase())) ||
+      !Size->isConst() || !Field || Field->getMemberDecl() != orderedTreeField(Tree, "__size_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase())))
+    return nullptr;
+  return cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
 }
 
 std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(

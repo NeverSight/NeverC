@@ -1082,6 +1082,106 @@ def restore_monostate_adapter_hash_history(source):
     return restored
 
 
+R19_VARIANT_GUARDED_GET_REGISTERED_SHA256 = '065f3f97fb865e13adcd83f37c7fa7bf47223329894a5fce7da802cbe9f00dc7'
+R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256 = '428d544caff0c79322d8d0a239a9680dc0c01a016e357f8506aebf19a683b702'
+R19_VARIANT_GUARDED_GET_PREVIOUS_REGISTERED_SHA256 = '06eb0fe12a4802e83958fd3f71d749046514ef2892301ad3f1bd8fc3e2bb981a'
+R19_VARIANT_GUARDED_GET_PREVIOUS_MAINTAINED_SHA256 = '1e41b38a7df2478c43bf82959c64a4633b553bc93617880d9ef6d2e9c4a7c462'
+R19_VARIANT_GUARDED_GET_ADDITIONS_SHA256 = '1ee917f25698730b46d72bc1ac21c6d1f1d52429e192e84781668d25fb9291ec'
+R19_VARIANT_GUARDED_GET_MAINTAINED_SIZE = 19930438
+R19_VARIANT_GUARDED_GET_ADDITIONS_SIZE = 7762
+
+
+def restore_variant_guarded_get_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_GUARDED_GET_REGISTERED_SHA256, R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256}
+    stop = R19_VARIANT_GUARDED_GET_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_GUARDED_GET_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_GUARDED_GET_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_VARIANT_GUARDED_GET_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_GUARDED_GET_REGISTERED_SHA256
+             else R19_VARIANT_GUARDED_GET_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256 = '769b880fef30544e4680b9908080551b995f36369ba080d1e5fa14a733b0502c'
+R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256 = 'f19e1177591283d289bfd01e07fb890c63cb715e9c631b27490566f78912a0cc'
+R19_ANY_UNSIGNED_INLINE_PREVIOUS_REGISTERED_SHA256 = '065f3f97fb865e13adcd83f37c7fa7bf47223329894a5fce7da802cbe9f00dc7'
+R19_ANY_UNSIGNED_INLINE_PREVIOUS_MAINTAINED_SHA256 = '428d544caff0c79322d8d0a239a9680dc0c01a016e357f8506aebf19a683b702'
+R19_ANY_UNSIGNED_INLINE_ADDITIONS_SHA256 = '4986068945b6c7858b9d56fb3943596f4ed0fafecbcfffb58521f811ea41f4ca'
+R19_ANY_UNSIGNED_INLINE_MAINTAINED_SIZE = 19938098
+R19_ANY_UNSIGNED_INLINE_ADDITIONS_SIZE = 7660
+
+
+def restore_any_unsigned_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256, R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_UNSIGNED_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_UNSIGNED_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_UNSIGNED_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_UNSIGNED_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256
+             else R19_ANY_UNSIGNED_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256 = 'ca10fe2c6d399699f3abde240483e99e62650288e7eacdaede4afd89e0f4ad16'
+R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256 = '1df1f37351188954c2cd051342565e4e2ee0ec53ede1404d9eeb971f05c29ae4'
+R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_REGISTERED_SHA256 = '769b880fef30544e4680b9908080551b995f36369ba080d1e5fa14a733b0502c'
+R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_MAINTAINED_SHA256 = 'f19e1177591283d289bfd01e07fb890c63cb715e9c631b27490566f78912a0cc'
+R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SHA256 = 'c0f87fd09a818f1c5de6ea9dd292f8f72da942bfb1060fad1b58546b2f541f2f'
+R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SIZE = 19945660
+R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SIZE = 7562
+
+
+def restore_variant_get_early_return_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256, R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256}
+    stop = R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256
+             else R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256 = 'e6e9318724925862ef9c95da3085f26dfd4d5321cc5eb56aeab4fc9b4ebae34e'
+R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256 = 'b9b9b2935d5da5039a8934541b708a06a32b58e0f1070850b729cdc9b9f76a6d'
+R19_ORDERED_EMPTY_OWNER_PREVIOUS_REGISTERED_SHA256 = 'ca10fe2c6d399699f3abde240483e99e62650288e7eacdaede4afd89e0f4ad16'
+R19_ORDERED_EMPTY_OWNER_PREVIOUS_MAINTAINED_SHA256 = '1df1f37351188954c2cd051342565e4e2ee0ec53ede1404d9eeb971f05c29ae4'
+R19_ORDERED_EMPTY_OWNER_ADDITIONS_SHA256 = '27fe7a7bdc1b6488c945fe9e0ab6a2d58547e178610c87e20d3c7766c4362a74'
+R19_ORDERED_EMPTY_OWNER_MAINTAINED_SIZE = 19952811
+R19_ORDERED_EMPTY_OWNER_ADDITIONS_SIZE = 6750
+_R19_ORDERED_EMPTY_OWNER_HISTORICAL_ANY = b'TEST_F(TranslateTest, CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected) {\n  const auto Source = tmpFile("ordered-observer-query-observer-does-not-admit-storage.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'
+_R19_ORDERED_EMPTY_OWNER_ACTIVE_ANY = b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerOriginalMapRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-observer-query-observer-does-not-admit-storage.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n)r19containers");\n  const auto Output = tmpFile("ordered-observer-query-observer-does-not-admit-storage.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-observer-query-observer-does-not-admit-storage" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}'
+
+
+def restore_ordered_empty_owner_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256, R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256}
+    stop = R19_ORDERED_EMPTY_OWNER_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_EMPTY_OWNER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_EMPTY_OWNER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(_R19_ORDERED_EMPTY_OWNER_ACTIVE_ANY) == 1
+    restored = restored.replace(_R19_ORDERED_EMPTY_OWNER_ACTIVE_ANY, _R19_ORDERED_EMPTY_OWNER_HISTORICAL_ANY, 1)
+    prior = (R19_ORDERED_EMPTY_OWNER_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256
+             else R19_ORDERED_EMPTY_OWNER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1256,6 +1356,34 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_GUARDED_GET_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

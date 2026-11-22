@@ -1308,6 +1308,7 @@ enum class UtilityOperation {
   BitsetProxySet, BitsetProxyCopyValue, BitsetProxyFlip, BitsetProxySwap,
   ForwardList,
   List,
+  OrderedContainerObserver,
   PriorityQueue,
   Deque,
   ValarrayScalar,
@@ -3496,7 +3497,7 @@ struct UtilityVariantAlternative {
 };
 std::optional<UtilityVariantAlternative> approvedUtilityVariantGet(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
-    const clang::ASTContext &Context);
+    clang::ASTContext &Context);
 std::optional<UtilityVariantAlternative> approvedUtilityVariantGetIf(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
@@ -3517,6 +3518,8 @@ inline constexpr llvm::StringLiteral UtilityAnyStorage = "nct_any_storage";
 inline constexpr llvm::StringLiteral UtilityAnyWords = "nct_any_words";
 inline constexpr llvm::StringLiteral UtilityAnyInteger = "nct_any_integer";
 inline constexpr unsigned UtilityAnyIntegerTag = 1;
+inline constexpr llvm::StringLiteral UtilityAnyUnsigned = "nct_any_unsigned";
+inline constexpr unsigned UtilityAnyUnsignedTag = 2;
 enum class UtilityAnyOperation { HasValue, Reset };
 struct UtilityAnyCall {
   UtilityAnyOperation Operation;
@@ -3526,6 +3529,7 @@ struct UtilityAnyCall {
 
 struct UtilityAnyIntegerConstruction {
   const clang::CXXRecordDecl *Record;
+  clang::QualType ValueType;
   const clang::Expr *InPlaceTag;
   const clang::Expr *Input;
   clang::QualType Parameter;
@@ -3538,6 +3542,7 @@ std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerMake(
     const clang::ASTContext &Context);
 struct UtilityAnyIntegerEmplacement {
   const clang::CXXRecordDecl *Record;
+  clang::QualType ValueType;
   const clang::MemberExpr *Callee;
   const clang::Expr *Input;
   clang::QualType Parameter;
@@ -4500,6 +4505,18 @@ bool pinnedAssociativeContainerType(const State &S, const clang::SourceManager &
 bool approvedAssociativeContainerMetadataRecord(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
+bool approvedOrderedContainerRuntimeRecord(const State &S,
+    const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+bool approvedOrderedContainerDefaultConstruction(const State &S,
+    const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context, llvm::StringRef *Failure = nullptr);
+bool approvedOrderedContainerDestructor(const State &S,
+    const clang::SourceManager &SM, const clang::CXXDestructorDecl *Destructor,
+    const clang::ASTContext &Context);
+const clang::MemberExpr *approvedOrderedContainerObserver(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 clang::QualType approvedOrderedContainerObserverQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
@@ -4705,6 +4722,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityBitsetProxies;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityForwardLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityLists;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityOrderedContainers;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityPriorityQueues;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityDeques;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityValarrays;

@@ -43,6 +43,26 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_empty_owner_registered = cls.registered
+        cls.ordered_empty_owner_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_empty_owner_original = cls.adapter.restore_original_gtests(cls.ordered_empty_owner_registered,
+                                                                        cls.ordered_empty_owner_suffix)
+        cls.registered = cls.adapter.restore_ordered_empty_owner_history(cls.ordered_empty_owner_registered)
+        cls.variant_get_early_return_registered = cls.registered
+        cls.variant_get_early_return_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_get_early_return_original = cls.adapter.restore_original_gtests(cls.variant_get_early_return_registered,
+                                                                        cls.variant_get_early_return_suffix)
+        cls.registered = cls.adapter.restore_variant_get_early_return_history(cls.variant_get_early_return_registered)
+        cls.any_unsigned_inline_registered = cls.registered
+        cls.any_unsigned_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_unsigned_inline_original = cls.adapter.restore_original_gtests(cls.any_unsigned_inline_registered,
+                                                                        cls.any_unsigned_inline_suffix)
+        cls.registered = cls.adapter.restore_any_unsigned_inline_history(cls.any_unsigned_inline_registered)
+        cls.variant_guarded_get_registered = cls.registered
+        cls.variant_guarded_get_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_guarded_get_original = cls.adapter.restore_original_gtests(cls.variant_guarded_get_registered,
+                                                                        cls.variant_guarded_get_suffix)
+        cls.registered = cls.adapter.restore_variant_guarded_get_history(cls.variant_guarded_get_registered)
         cls.monostate_adapter_hash_registered = cls.registered
         cls.monostate_adapter_hash_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.monostate_adapter_hash_original = cls.adapter.restore_original_gtests(cls.monostate_adapter_hash_registered,
@@ -2203,6 +2223,85 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_monostate_adapter_hash_history(self.monostate_adapter_hash_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.monostate_adapter_hash_registered, self.monostate_adapter_hash_suffix + b' ')
+
+
+    def test_variant_guarded_get_retains_published_bodies(self):
+        self.assertEqual(self.variant_guarded_get_original + self.variant_guarded_get_suffix, self.variant_guarded_get_registered)
+        self.assertEqual(self.adapter.restore_variant_guarded_get_history(self.variant_guarded_get_original),
+                         self.monostate_adapter_hash_original)
+        output, evidence = self.extractor.extract(self.variant_guarded_get_original, ['TranslateTest.CoreV2VariantGuardedGetMutableReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGuardedGetConstReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGuardedGetShortCircuitRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGuardedGetRecheckAfterEmplaceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGuardedGetGuardForOtherObjectRejected', 'TranslateTest.CoreV2VariantGuardedGetGuardForOtherAlternativeRejected', 'TranslateTest.CoreV2VariantGuardedGetChangedAfterGuardRejected', 'TranslateTest.CoreV2VariantGuardedGetFalsePathRejected'])
+        self.assertEqual(evidence['original_test_names'], 8278)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-guarded-get-mutable-reference', output)
+        self.assertIn(b'variant-guarded-get-const-reference', output)
+
+    def test_variant_guarded_get_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_guarded_get_history(self.variant_guarded_get_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_guarded_get_registered, self.variant_guarded_get_suffix + b' ')
+
+
+    def test_any_unsigned_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_unsigned_inline_original + self.any_unsigned_inline_suffix, self.any_unsigned_inline_registered)
+        self.assertEqual(self.adapter.restore_any_unsigned_inline_history(self.any_unsigned_inline_original),
+                         self.variant_guarded_get_original)
+        output, evidence = self.extractor.extract(self.any_unsigned_inline_original, ['TranslateTest.CoreV2AnyUnsignedInlineConstructorAndTypedPointerRunAtBothOptimizations', 'TranslateTest.CoreV2AnyUnsignedInlineInPlaceAndConstValueRunAtBothOptimizations', 'TranslateTest.CoreV2AnyUnsignedInlineFactoryCopyMoveAndResetRunAtBothOptimizations', 'TranslateTest.CoreV2AnyUnsignedInlineChangeIntegerKindRunAtBothOptimizations', 'TranslateTest.CoreV2AnyUnsignedInlineUnprovedSignedValueCastRejected', 'TranslateTest.CoreV2AnyUnsignedInlineUnprovedUnsignedValueCastRejected', 'TranslateTest.CoreV2AnyUnsignedInlineRenamedUnsignedHandlerRejected', 'TranslateTest.CoreV2AnyUnsignedInlineUnsignedLongIsNotUnsignedIntRejected'])
+        self.assertEqual(evidence['original_test_names'], 8286)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-unsigned-inline-constructor-and-typed-pointer', output)
+        self.assertIn(b'any-unsigned-inline-change-integer-kind', output)
+
+    def test_any_unsigned_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_unsigned_inline_history(self.any_unsigned_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_unsigned_inline_registered, self.any_unsigned_inline_suffix + b' ')
+
+
+    def test_variant_get_early_return_retains_published_bodies(self):
+        self.assertEqual(self.variant_get_early_return_original + self.variant_get_early_return_suffix, self.variant_get_early_return_registered)
+        self.assertEqual(self.adapter.restore_variant_get_early_return_history(self.variant_get_early_return_original),
+                         self.any_unsigned_inline_original)
+        output, evidence = self.extractor.extract(self.variant_get_early_return_original, ['TranslateTest.CoreV2VariantGetEarlyReturnReturnsOnDifferentTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGetEarlyReturnReturnsOnDifferentIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGetEarlyReturnCheckedElseBranchRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGetEarlyReturnScopeLocalAfterReturnRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGetEarlyReturnFailingBranchFallsThroughRejected', 'TranslateTest.CoreV2VariantGetEarlyReturnDestroyedIfInitializerRejected', 'TranslateTest.CoreV2VariantGetEarlyReturnInterveningMutationRejected', 'TranslateTest.CoreV2VariantGetEarlyReturnReturnGuardOnOtherObjectRejected'])
+        self.assertEqual(evidence['original_test_names'], 8294)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-get-early-return-returns-on-different-type', output)
+        self.assertIn(b'variant-get-early-return-checked-else-branch', output)
+
+    def test_variant_get_early_return_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_get_early_return_history(self.variant_get_early_return_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_get_early_return_registered, self.variant_get_early_return_suffix + b' ')
+
+
+    def test_ordered_empty_owner_retains_published_bodies(self):
+        self.assertEqual(self.ordered_empty_owner_original + self.ordered_empty_owner_suffix, self.ordered_empty_owner_registered)
+        self.assertEqual(self.adapter.restore_ordered_empty_owner_history(self.ordered_empty_owner_original),
+                         self.variant_get_early_return_original)
+        output, evidence = self.extractor.extract(self.ordered_empty_owner_original, ['TranslateTest.CoreV2OrderedEmptyOwnerMapObserversRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedEmptyOwnerConstMultimapRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedEmptyOwnerSetReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedEmptyOwnerMultisetScopedOwnersRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedEmptyOwnerCustomComparatorRejected', 'TranslateTest.CoreV2OrderedEmptyOwnerDifferentKeyRejected', 'TranslateTest.CoreV2OrderedEmptyOwnerSetInsertRejected', 'TranslateTest.CoreV2OrderedEmptyOwnerMapCopyRejected'])
+        self.assertEqual(evidence['original_test_names'], 8302)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-empty-owner-map-observers', output)
+        self.assertIn(b'ordered-empty-owner-multiset-scoped-owners', output)
+
+        promoted, _ = self.extractor.extract(self.ordered_empty_owner_original,
+            ['TranslateTest.CoreV2OrderedEmptyOwnerOriginalMapRunsAtBothOptimizations'])
+        self.assertIn(b'return values.empty() ? 0 : 1;', promoted)
+        self.assertIn(b'"-O0", "-O2"', promoted)
+        self.assertNotIn(b'CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected',
+                         self.ordered_empty_owner_original)
+
+    def test_ordered_empty_owner_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_empty_owner_history(self.ordered_empty_owner_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_empty_owner_registered, self.ordered_empty_owner_suffix + b' ')
 
 
 if __name__ == '__main__':
