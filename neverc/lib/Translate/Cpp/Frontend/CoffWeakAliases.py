@@ -25,6 +25,10 @@ MAX_ALIASES = 1000000
 MAX_CHAIN = 256
 READ_TIMEOUT = 900
 _CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+_DECIMAL = re.compile(r"[0-9]+")
+_HEX = re.compile(r"0x[0-9A-Fa-f]+")
+_NAMED_DECIMAL = re.compile(r"(.*) \((-?[0-9]+)\)")
+_NAMED_HEX = re.compile(r"(.*) \((0x[0-9A-Fa-f]+)\)")
 
 
 @dataclass
@@ -47,21 +51,20 @@ class Edge:
 
 
 def _integer(value):
-    if not re.fullmatch(r"[0-9]+", value):
+    if not _DECIMAL.fullmatch(value):
         raise ValueError("Invalid COFF decimal field: " + value)
     return int(value)
 
 
 def _named_number(value, hexadecimal=False):
-    number = r"0x[0-9A-Fa-f]+" if hexadecimal else r"-?[0-9]+"
-    match = re.fullmatch(r"(.*) \((" + number + r")\)", value)
+    match = (_NAMED_HEX if hexadecimal else _NAMED_DECIMAL).fullmatch(value)
     if not match:
         raise ValueError("Invalid COFF named numeric field: " + value)
     return match[1], int(match[2], 16 if hexadecimal else 10)
 
 
 def _enum(value):
-    if re.fullmatch(r"0x[0-9A-Fa-f]+", value):
+    if _HEX.fullmatch(value):
         return int(value, 16)
     return _named_number(value, True)[1]
 
@@ -195,7 +198,9 @@ def parse_resolved_aliases(lines, definitions, private_names=(), *, expected_fal
         if len(raw_line) > MAX_LINE:
             raise ValueError("llvm-readobj symbol line exceeds its limit")
         line = raw_line.rstrip("\r\n")
-        if _CONTROL_CHARACTER.search(line):
+        # Printable ASCII cannot contain any of the rejected characters.
+        # Keep the original check for non-ASCII and non-printable text.
+        if not (line.isascii() and line.isprintable()) and _CONTROL_CHARACTER.search(line):
             raise ValueError("Control character in llvm-readobj symbol inventory")
         if not line:
             continue
