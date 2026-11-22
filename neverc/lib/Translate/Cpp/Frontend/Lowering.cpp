@@ -26880,6 +26880,23 @@ class FunctionLowering {
     auto Buckets = hashTableMember(std::move(Place), "nct_unordered_bucket_count", Type, L);
     return hashTableLoadFactor(std::move(Size), std::move(Buckets), L);
   }
+  void insertUnorderedSetList(Expression Place, const UtilityUnorderedTableRecord &Table,
+                              Expression Begin, Expression Length, QualType PointerType, SourceLocation L) {
+    const auto Pointer = type(PointerType, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Position = snapshot(quantity(0, Size, L), L);
+    const auto Check = labelName(), Insert = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", Position, Length, "bool", L), Insert, Done, L);
+    label(Insert, L);
+    auto Key = dereference(binary("+", Begin, Position, Pointer, L), L);
+    unorderedInsertNode(Place, Table, std::move(Key), std::nullopt, false, L);
+    assign(Position, binary("+", Position, one(Size, L), Size, L), L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
   void initializeEmptyHashSet(Expression Place, SourceLocation L) {
     const auto &Context = A.Context;
     for (const auto &[Name, FieldType] :
@@ -29234,7 +29251,8 @@ class FunctionLowering {
       return Result;
     }
     if (Operation == UtilityOperation::UnorderedSetCount ||
-        Operation == UtilityOperation::UnorderedSetClear) {
+        Operation == UtilityOperation::UnorderedSetClear || Operation == UtilityOperation::UnorderedSetEraseKey ||
+        Operation == UtilityOperation::UnorderedSetInsertList) {
       if (approvedUtilityUnorderedSetValueOperation(A.S, A.Sources, Call, A.Context) != Operation)
         reject(L, "unordered set value operation", "The exact selected SDK operation is required.");
       const auto *Method = clang::cast<CXXMethodDecl>(Call->getDirectCallee());
@@ -29247,7 +29265,20 @@ class FunctionLowering {
         releaseUnorderedTable(Place, *Table, false, L);
         return {};
       }
-      auto Key = dereference(snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L), L);
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      auto Operand = dereference(snapshot(argument(Call->getArg(0), Parameter), L), L);
+      if (Operation == UtilityOperation::UnorderedSetInsertList) {
+        const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources, Parameter->getAsCXXRecordDecl(), A.Context);
+        if (!List)
+          reject(L, "unordered set insertion", "The authenticated integer initializer list is unavailable.");
+        auto Begin = snapshot(fieldStorage(Operand, List->Begin, L), L);
+        auto Length = snapshot(fieldStorage(std::move(Operand), List->Size, L), L);
+        insertUnorderedSetList(std::move(Place), *Table, std::move(Begin), std::move(Length), List->Begin->getType(), L);
+        return {};
+      }
+      if (Operation == UtilityOperation::UnorderedSetEraseKey)
+        return unorderedEraseKey(std::move(Place), *Table, std::move(Operand), L);
+      auto Key = std::move(Operand);
       const auto Size = type(A.Context.getSizeType(), L);
       auto Hash = snapshot(cast(Key, Size, L), L);
       return cast(cast(unorderedFindNode(Place, *Table, Key, Hash, L), "bool", L), Size, L);
@@ -39109,22 +39140,11 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     if (const auto Info = approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Carrier = C->getConstructor()->getParamDecl(0)->getType();
       auto List = dereference(snapshot(argument(C->getArg(0), Carrier), L), L);
-      const auto Pointer = type(Info->List.Begin->getType(), L);
-      const auto Size = type(A.Context.getSizeType(), L);
       auto Begin = snapshot(fieldStorage(List, Info->List.Begin, L), L);
       auto Length = snapshot(fieldStorage(std::move(List), Info->List.Size, L), L);
       initializeUnorderedTable(Place, Info->Table, L);
-      auto Position = snapshot(quantity(0, Size, L), L);
-      const auto Check = labelName(), Insert = labelName(), Done = labelName();
-      jump(Check, L);
-      label(Check, L);
-      branch(binary("<", Position, Length, "bool", L), Insert, Done, L);
-      label(Insert, L);
-      auto Key = dereference(binary("+", Begin, Position, Pointer, L), L);
-      unorderedInsertNode(Place, Info->Table, std::move(Key), std::nullopt, false, L);
-      assign(Position, binary("+", Position, one(Size, L), Size, L), L);
-      jump(Check, L);
-      label(Done, L);
+      insertUnorderedSetList(std::move(Place), Info->Table, std::move(Begin), std::move(Length),
+                             Info->List.Begin->getType(), L);
       return;
     }
     if (approvedEmptyHashSetConstruction(A.S, A.Sources, C, A.Context)) {

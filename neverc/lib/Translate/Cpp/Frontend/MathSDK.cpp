@@ -137337,28 +137337,41 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
   const auto *Method = Access ? Access->getMethodDecl() : nullptr;
   const auto Name = Method && Method->getIdentifier() ? Method->getName() : llvm::StringRef();
   const bool Count = Name == "count";
-  if (!Count && Name != "clear")
+  const bool Erase = Name == "erase";
+  const bool Insert = Name == "insert";
+  const bool KeyOperation = Count || Erase;
+  if (!KeyOperation && !Insert && Name != "clear")
     return std::nullopt;
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto *Owner = Method->getParent();
-  const auto Arity = Count ? 1u : 0u;
-  const auto Result = Count ? Context.getSizeType() : Context.VoidTy;
+  const auto Arity = KeyOperation || Insert ? 1u : 0u;
+  const auto Result = KeyOperation ? Context.getSizeType() : Context.VoidTy;
   if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
       Member->getBase()->getType().isVolatileQualified() || !S.owns(SM, Member->getMemberLoc()) ||
       Method->isConst() != Count || Method->isStatic() || Method->isVolatile() || Method->isVirtual() ||
-      Method->getNumParams() != Arity || Call->getNumArgs() != Arity ||
+      Method->getPrimaryTemplate() || Method->getNumParams() != Arity || Call->getNumArgs() != Arity ||
       !Context.hasSameType(Method->getReturnType(), Result) || !Context.hasSameType(Call->getType(), Result) ||
       !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
       !approvedUtilityUnorderedSetStorage(S, SM, Owner, Context) ||
       !orderedPinnedFunction(S, SM, Method, "unordered_set"))
     return std::nullopt;
-  if (Count && (!Context.hasSameType(Method->getParamDecl(0)->getType(),
+  if (KeyOperation && (!Context.hasSameType(Method->getParamDecl(0)->getType(),
                                     Context.getLValueReferenceType(Context.IntTy.withConst())) ||
                 !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy)))
     return std::nullopt;
+  if (Insert) {
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    const auto List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
+    if (Parameter->isReferenceType() || Parameter.hasQualifiers() || !List ||
+        !Context.hasSameType(List->ElementType, Context.IntTy) ||
+        !Context.hasSameType(Call->getArg(0)->getType(), Parameter))
+      return std::nullopt;
+  }
   if (!approvedHashSetBucketSource(S, SM, Method, Owner, Context))
     return std::nullopt;
-  return Count ? UtilityOperation::UnorderedSetCount : UtilityOperation::UnorderedSetClear;
+  if (Count) return UtilityOperation::UnorderedSetCount;
+  if (Erase) return UtilityOperation::UnorderedSetEraseKey;
+  return Insert ? UtilityOperation::UnorderedSetInsertList : UtilityOperation::UnorderedSetClear;
 }
 
 static bool unorderedMapIteratorPinned(const State &S, const SourceManager &SM, const Decl *D) {
