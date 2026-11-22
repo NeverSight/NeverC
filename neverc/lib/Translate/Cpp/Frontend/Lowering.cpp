@@ -29208,11 +29208,14 @@ class FunctionLowering {
       return Result;
     }
     if (Operation == UtilityOperation::EmptyHashSetObserver) {
-      const auto *Member = approvedEmptyHashSetObserver(A.S, A.Sources, Call, A.Context);
-      if (!Member)
+      const auto Info = approvedEmptyHashSetObserver(A.S, A.Sources, Call, A.Context);
+      if (!Info)
         reject(L, "unordered set observer", "The exact selected SDK observer body is required.");
+      const auto *Member = Info->Member;
       const auto Name = Member->getMemberDecl()->getName();
       auto Receiver = lvalue(Member->getBase());
+      if (Info->Maximum)
+        return quantity(*Info->Maximum, type(Call->getType(), L), L);
       if (Name == "max_load_factor")
         return emptyHashSetMember(std::move(Receiver), "nct_unordered_max_load", A.Context.FloatTy, L);
       const auto Type = A.Context.getSizeType();

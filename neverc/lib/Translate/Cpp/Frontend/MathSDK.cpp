@@ -136389,12 +136389,13 @@ bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
   return orderedTreeEndSource(S, SM, EndCall, Tree, End, Context, Failure);
 }
 
-std::optional<uint64_t> orderedMaximum(const State &S, const SourceManager &SM,
-    const CXXMethodDecl *Method, const ASTContext &Context) {
+std::optional<uint64_t> containerNodeMaximum(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const ASTContext &Context,
+    llvm::StringRef Header, llvm::StringRef NodeName) {
   const auto Size = Context.getSizeType();
   const auto Difference = Context.getPointerDiffType();
   const unsigned Bits = Context.getTypeSize(Size);
-  if (!Method->isConst() || Bits != 64 ||
+  if (!Method || !Method->isConst() || Bits != 64 ||
       !Context.hasSameType(Method->getReturnType(), Size))
     return std::nullopt;
   const auto *Min = dyn_cast_or_null<CallExpr>(orderedExpression(orderedReturn(Method)));
@@ -136410,14 +136411,18 @@ std::optional<uint64_t> orderedMaximum(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto Traits = approvedUtilityAllocatorTraitsRecord(S, SM, TraitsMethod->getParent(), Context);
   if (!Traits) return std::nullopt;
-  const auto *Tree = Method->getParent();
+  const auto *Storage = Method->getParent();
   const auto *Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(TraitsCall->getArg(0)));
-  const auto *ReadMethod = orderedTreeMethod(S, SM, Read, Tree, "__node_alloc");
-  const auto *AllocatorField = orderedTreeField(Tree, "__node_alloc_");
+  const auto *ReadMethod = Read ? Read->getMethodDecl() : nullptr;
+  const auto *AllocatorField = orderedTreeField(Storage, "__node_alloc_");
   const auto *ReadField = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(ReadMethod)));
   const auto Allocator = Context.getRecordType(Traits->Allocator.Record);
   const auto AllocatorReference = Context.getLValueReferenceType(Allocator.withConst());
-  if (!ReadMethod || !ReadMethod->isConst() || !orderedReceiver(Read) ||
+  if (!ReadMethod || !ReadMethod->getIdentifier() || ReadMethod->getName() != "__node_alloc" ||
+      !ReadMethod->isConst() || ReadMethod->isStatic() || ReadMethod->isVirtual() ||
+      ReadMethod->getNumParams() || Read->getNumArgs() || !orderedReceiver(Read) ||
+      ReadMethod->getParent()->getCanonicalDecl() != Storage->getCanonicalDecl() ||
+      !orderedPinnedFunction(S, SM, ReadMethod, Header) ||
       !AllocatorField || !ReadField || ReadField->getMemberDecl() != AllocatorField ||
       !isa_and_nonnull<CXXThisExpr>(orderedExpression(ReadField->getBase())) ||
       !Context.hasSameType(AllocatorField->getType(), Allocator) ||
@@ -136442,9 +136447,9 @@ std::optional<uint64_t> orderedMaximum(const State &S, const SourceManager &SM,
   Expr::EvalResult Numerator;
   if (!Divide || Divide->getOpcode() != BO_Div || !Width || Width->getKind() != UETT_SizeOf ||
       !Width->isArgumentType() || !Context.hasSameType(Width->getArgumentType(), Element) ||
-      !Node || Node->getName() != "__tree_node" || Element->isIncompleteType() ||
+      !Node || Node->getName() != NodeName || Element->isIncompleteType() ||
       !approvedStandardSDKDeclaration(S, SM, Node) ||
-      !cstddefOrigin(S, SM, Node->getLocation(), "libcxx", "__tree") ||
+      !cstddefOrigin(S, SM, Node->getLocation(), "libcxx", Header) ||
       !Context.hasSameType(Divide->getLHS()->getType(), Size) ||
       !Divide->getLHS()->EvaluateAsInt(Numerator, Context) ||
       !Numerator.Val.isInt() || static_cast<const llvm::APInt &>(Numerator.Val.getInt()) != AllOnes)
@@ -136550,7 +136555,7 @@ bool approvedOrderedContainerDestructor(const State &S,
          isa_and_nonnull<CXXNullPtrLiteralExpr>(orderedExpression(Condition->getRHS()));
 }
 
-std::optional<UtilityOrderedContainerObserver> approvedOrderedContainerObserver(const State &S,
+std::optional<UtilityContainerObserver> approvedOrderedContainerObserver(const State &S,
     const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   if (approvedOrderedContainerObserverQuery(S, SM, Call, Context).isNull())
     return std::nullopt;
@@ -136574,15 +136579,15 @@ std::optional<UtilityOrderedContainerObserver> approvedOrderedContainerObserver(
     return std::nullopt;
   const auto *Member = cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
   if (Outer->getName() == "max_size") {
-    if (auto Maximum = orderedMaximum(S, SM, Observer, Context))
-      return UtilityOrderedContainerObserver{Member, Maximum};
+    if (auto Maximum = containerNodeMaximum(S, SM, Observer, Context, "__tree", "__tree_node"))
+      return UtilityContainerObserver{Member, Maximum};
     return std::nullopt;
   }
   const auto *Field = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Observer)));
   if (!Field || Field->getMemberDecl() != orderedTreeField(Tree, "__size_") ||
       !isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase())))
     return std::nullopt;
-  return UtilityOrderedContainerObserver{Member, std::nullopt};
+  return UtilityContainerObserver{Member, std::nullopt};
 }
 
 bool approvedEmptyHashSetRecord(const State &S, const SourceManager &SM,
@@ -136927,7 +136932,7 @@ static bool emptyHashLoadFactorSource(const State &S, const SourceManager &SM,
          isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase()));
 }
 
-const MemberExpr *approvedEmptyHashSetObserver(const State &S, const SourceManager &SM,
+std::optional<UtilityContainerObserver> approvedEmptyHashSetObserver(const State &S, const SourceManager &SM,
     const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Outer = Access ? Access->getMethodDecl() : nullptr;
@@ -136939,23 +136944,24 @@ const MemberExpr *approvedEmptyHashSetObserver(const State &S, const SourceManag
       !approvedEmptyHashSetRecord(S, SM, Outer->getParent(), Context) ||
       !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Outer->getParent())) ||
       !orderedPinnedFunction(S, SM, Outer, "unordered_set"))
-    return nullptr;
+    return std::nullopt;
   const auto Name = Outer->getName();
   if (Name != "empty" && Name != "size" && Name != "bucket_count" &&
-      Name != "max_load_factor" && Name != "load_factor")
-    return nullptr;
+      Name != "max_load_factor" && Name != "load_factor" &&
+      Name != "max_size" && Name != "max_bucket_count")
+    return std::nullopt;
   const auto Result = Name == "empty" ? Context.BoolTy
       : (Name == "max_load_factor" || Name == "load_factor") ? Context.FloatTy : Context.getSizeType();
   if (!Context.hasSameType(Call->getType(), Result) ||
       !Context.hasSameType(Outer->getReturnType(), Result) || !Call->isPRValue())
-    return nullptr;
+    return std::nullopt;
   const auto *Storage = orderedTreeField(Outer->getParent(), "__table_");
   const auto *Table = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
   const auto *Ret = orderedReturn(Outer);
   if (Name == "empty") {
     const auto *Compare = dyn_cast_or_null<BinaryOperator>(orderedExpression(Ret));
     const auto *Zero = Compare ? dyn_cast_or_null<IntegerLiteral>(orderedExpression(Compare->getRHS())) : nullptr;
-    if (!Compare || Compare->getOpcode() != BO_EQ || !Zero || !Zero->getValue().isZero()) return nullptr;
+    if (!Compare || Compare->getOpcode() != BO_EQ || !Zero || !Zero->getValue().isZero()) return std::nullopt;
     Ret = Compare->getLHS();
   }
   const auto *Inner = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Ret));
@@ -136963,15 +136969,32 @@ const MemberExpr *approvedEmptyHashSetObserver(const State &S, const SourceManag
   const auto *Receiver = Observe ? dyn_cast_or_null<MemberExpr>(orderedExpression(Inner->getImplicitObjectArgument())) : nullptr;
   if (!Receiver || Receiver->getMemberDecl() != Storage ||
       !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())) || !Observe->isConst())
-    return nullptr;
-  if (Name == "bucket_count")
-    return emptyHashBucketCountSource(S, SM, Observe, Table, Context) ? Member : nullptr;
-  if (Name == "load_factor")
-    return emptyHashLoadFactorSource(S, SM, Observe, Table, Context) ? Member : nullptr;
-  const auto *Value = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Observe)));
-  return Value &&
-         Value->getMemberDecl() == orderedTreeField(Table, Name == "max_load_factor" ? "__max_load_factor_" : "__size_") &&
-         isa_and_nonnull<CXXThisExpr>(orderedExpression(Value->getBase())) ? Member : nullptr;
+    return std::nullopt;
+  if (Name == "max_size" || Name == "max_bucket_count") {
+    if (Name == "max_bucket_count") {
+      const auto *MaxCall = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(orderedReturn(Observe)));
+      Observe = hashTableMethod(S, SM, MaxCall, Table, "max_size");
+      if (!Observe || !orderedReceiver(MaxCall))
+        return std::nullopt;
+    }
+    if (auto Maximum = containerNodeMaximum(S, SM, Observe, Context, "__hash_table", "__hash_node"))
+      return UtilityContainerObserver{Member, Maximum};
+    return std::nullopt;
+  }
+  if (Name == "bucket_count") {
+    if (!emptyHashBucketCountSource(S, SM, Observe, Table, Context))
+      return std::nullopt;
+  } else if (Name == "load_factor") {
+    if (!emptyHashLoadFactorSource(S, SM, Observe, Table, Context))
+      return std::nullopt;
+  } else {
+    const auto *Value = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Observe)));
+    const auto *Field = orderedTreeField(Table, Name == "max_load_factor" ? "__max_load_factor_" : "__size_");
+    if (!Value || Value->getMemberDecl() != Field ||
+        !isa_and_nonnull<CXXThisExpr>(orderedExpression(Value->getBase())))
+      return std::nullopt;
+  }
+  return UtilityContainerObserver{Member, std::nullopt};
 }
 
 std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(
