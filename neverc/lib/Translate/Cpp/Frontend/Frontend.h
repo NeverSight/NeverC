@@ -4514,8 +4514,12 @@ bool approvedOrderedContainerDefaultConstruction(const State &S,
 bool approvedOrderedContainerDestructor(const State &S,
     const clang::SourceManager &SM, const clang::CXXDestructorDecl *Destructor,
     const clang::ASTContext &Context);
-const clang::MemberExpr *approvedOrderedContainerObserver(const State &S,
-    const clang::SourceManager &SM, const clang::CallExpr *Call,
+struct UtilityOrderedContainerObserver {
+  const clang::MemberExpr *Member;
+  std::optional<uint64_t> Maximum;
+};
+std::optional<UtilityOrderedContainerObserver> approvedOrderedContainerObserver(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 clang::QualType approvedOrderedContainerObserverQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,

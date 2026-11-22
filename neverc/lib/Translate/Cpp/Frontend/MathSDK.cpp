@@ -81344,12 +81344,10 @@ static bool utilityWrapperInnerProduct(const State &S, const SourceManager &SM,
                                      *Wrapper2, Context);
 }
 
-// Verify the pinned SDK minimum used to bound a two-range pointer mismatch.
-static bool utilityWrapperMismatchMinimum(const State &S,
-                                          const SourceManager &SM,
-                                          const CallExpr *Call,
-                                          const ASTContext &Context) {
-  const auto Type = Context.getPointerDiffType();
+// Verify the pinned SDK minimum with its default comparator.
+static bool utilityCheckedMinimum(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call, const ASTContext &Context,
+                                  QualType Type) {
   const auto ConstType = Type.withConst();
   const auto Reference = Context.getLValueReferenceType(ConstType);
   auto Same = [&](QualType A, QualType B) {
@@ -81489,6 +81487,11 @@ static bool utilityWrapperMismatchMinimum(const State &S,
                                    Context) &&
          utilityAlgorithmReference(Less->getRHS(), MD->getParamDecl(1),
                                    Context);
+}
+
+static bool utilityWrapperMismatchMinimum(const State &S, const SourceManager &SM,
+                                          const CallExpr *Call, const ASTContext &Context) {
+  return utilityCheckedMinimum(S, SM, Call, Context, Context.getPointerDiffType());
 }
 
 static bool utilityWrapperMismatch(const State &S, const SourceManager &SM,
@@ -136381,6 +136384,89 @@ bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
   return orderedTreeEndSource(S, SM, EndCall, Tree, End, Context, Failure);
 }
 
+std::optional<uint64_t> orderedMaximum(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const ASTContext &Context) {
+  const auto Size = Context.getSizeType();
+  const auto Difference = Context.getPointerDiffType();
+  const unsigned Bits = Context.getTypeSize(Size);
+  if (!Method->isConst() || Bits != 64 ||
+      !Context.hasSameType(Method->getReturnType(), Size))
+    return std::nullopt;
+  const auto *Min = dyn_cast_or_null<CallExpr>(orderedExpression(orderedReturn(Method)));
+  if (!utilityCheckedMinimum(S, SM, Min, Context, Size))
+    return std::nullopt;
+
+  const auto *TraitsCall = dyn_cast_or_null<CallExpr>(orderedExpression(Min->getArg(0)));
+  const auto *TraitsMethod = TraitsCall ? dyn_cast_or_null<CXXMethodDecl>(TraitsCall->getDirectCallee()) : nullptr;
+  if (!TraitsMethod || TraitsMethod->getName() != "max_size" || !TraitsMethod->isStatic() ||
+      TraitsCall->getNumArgs() != 1 || TraitsMethod->getNumParams() != 1 ||
+      !Context.hasSameType(TraitsMethod->getReturnType(), Size) ||
+      !orderedPinnedFunction(S, SM, TraitsMethod, "__memory/allocator_traits.h"))
+    return std::nullopt;
+  const auto Traits = approvedUtilityAllocatorTraitsRecord(S, SM, TraitsMethod->getParent(), Context);
+  if (!Traits) return std::nullopt;
+  const auto *Tree = Method->getParent();
+  const auto *Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(TraitsCall->getArg(0)));
+  const auto *ReadMethod = orderedTreeMethod(S, SM, Read, Tree, "__node_alloc");
+  const auto *AllocatorField = orderedTreeField(Tree, "__node_alloc_");
+  const auto *ReadField = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(ReadMethod)));
+  const auto Allocator = Context.getRecordType(Traits->Allocator.Record);
+  const auto AllocatorReference = Context.getLValueReferenceType(Allocator.withConst());
+  if (!ReadMethod || !ReadMethod->isConst() || !orderedReceiver(Read) ||
+      !AllocatorField || !ReadField || ReadField->getMemberDecl() != AllocatorField ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(ReadField->getBase())) ||
+      !Context.hasSameType(AllocatorField->getType(), Allocator) ||
+      !Context.hasSameType(ReadMethod->getReturnType(), AllocatorReference) ||
+      !Context.hasSameType(TraitsMethod->getParamDecl(0)->getType(), AllocatorReference))
+    return std::nullopt;
+
+  const auto *LeafCall = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(orderedReturn(TraitsMethod)));
+  const auto *Leaf = LeafCall ? LeafCall->getMethodDecl() : nullptr;
+  if (!Leaf || Leaf->getName() != "max_size" || !Leaf->isConst() ||
+      Leaf->isStatic() || Leaf->isVirtual() || Leaf->getNumParams() || LeafCall->getNumArgs() ||
+      Leaf->getParent()->getCanonicalDecl() != Traits->Allocator.Record->getCanonicalDecl() ||
+      !Context.hasSameType(Leaf->getReturnType(), Size) ||
+      !orderedParameter(LeafCall->getImplicitObjectArgument(), TraitsMethod->getParamDecl(0)) ||
+      !orderedPinnedFunction(S, SM, Leaf, "__memory/allocator.h"))
+    return std::nullopt;
+  const auto *Divide = dyn_cast_or_null<BinaryOperator>(orderedExpression(orderedReturn(Leaf)));
+  const auto *Width = Divide ? dyn_cast_or_null<UnaryExprOrTypeTraitExpr>(orderedExpression(Divide->getRHS())) : nullptr;
+  const auto Element = Traits->Allocator.ElementType;
+  const auto *Node = Element->getAsCXXRecordDecl();
+  const auto AllOnes = llvm::APInt::getAllOnes(Bits);
+  Expr::EvalResult Numerator;
+  if (!Divide || Divide->getOpcode() != BO_Div || !Width || Width->getKind() != UETT_SizeOf ||
+      !Width->isArgumentType() || !Context.hasSameType(Width->getArgumentType(), Element) ||
+      !Node || Node->getName() != "__tree_node" || Element->isIncompleteType() ||
+      !approvedStandardSDKDeclaration(S, SM, Node) ||
+      !cstddefOrigin(S, SM, Node->getLocation(), "libcxx", "__tree") ||
+      !Context.hasSameType(Divide->getLHS()->getType(), Size) ||
+      !Divide->getLHS()->EvaluateAsInt(Numerator, Context) ||
+      !Numerator.Val.isInt() || static_cast<const llvm::APInt &>(Numerator.Val.getInt()) != AllOnes)
+    return std::nullopt;
+
+  const auto *LimitCall = dyn_cast_or_null<CallExpr>(orderedExpression(Min->getArg(1)));
+  const auto *Limit = LimitCall ? dyn_cast_or_null<CXXMethodDecl>(LimitCall->getDirectCallee()) : nullptr;
+  const auto *LimitClass = Limit ? dyn_cast<ClassTemplateSpecializationDecl>(Limit->getParent()) : nullptr;
+  const auto SignedMax = llvm::APInt::getSignedMaxValue(Bits);
+  APValue Bound;
+  if (!LimitClass || LimitClass->getName() != "numeric_limits" ||
+      LimitClass->getTemplateArgs().size() != 1 ||
+      LimitClass->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(LimitClass->getTemplateArgs().get(0).getAsType(), Difference) ||
+      Limit->getName() != "max" || !Limit->isStatic() || !Limit->isConstexpr() ||
+      Limit->getNumParams() || LimitCall->getNumArgs() ||
+      !Context.hasSameType(Limit->getReturnType(), Difference) ||
+      Context.getTypeSize(Difference) != Bits ||
+      !orderedPinnedFunction(S, SM, Limit, "limits") ||
+      !LimitCall->isCXX11ConstantExpr(Context, &Bound) ||
+      !Bound.isInt() || static_cast<const llvm::APInt &>(Bound.getInt()) != SignedMax)
+    return std::nullopt;
+  const auto Bytes = Context.getTypeSizeInChars(Element).getQuantity();
+  if (Bytes <= 0) return std::nullopt;
+  return std::min(AllOnes.udiv(llvm::APInt(Bits, Bytes)).getZExtValue(), SignedMax.getZExtValue());
+}
+
 } // namespace
 
 bool approvedOrderedContainerDefaultConstruction(const State &S,
@@ -136459,13 +136545,11 @@ bool approvedOrderedContainerDestructor(const State &S,
          isa_and_nonnull<CXXNullPtrLiteralExpr>(orderedExpression(Condition->getRHS()));
 }
 
-const MemberExpr *approvedOrderedContainerObserver(const State &S,
+std::optional<UtilityOrderedContainerObserver> approvedOrderedContainerObserver(const State &S,
     const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   if (approvedOrderedContainerObserverQuery(S, SM, Call, Context).isNull())
-    return nullptr;
+    return std::nullopt;
   const auto *Outer = cast<CXXMemberCallExpr>(Call)->getMethodDecl();
-  if (!Outer || Outer->getName() == "max_size")
-    return nullptr;
   const auto *Owner = Outer->getParent();
   const auto *Storage = orderedTreeField(Owner, "__tree_");
   const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
@@ -136474,19 +136558,26 @@ const MemberExpr *approvedOrderedContainerObserver(const State &S,
     const auto *Equal = dyn_cast_or_null<BinaryOperator>(orderedExpression(Returned));
     const auto *Zero = Equal ? dyn_cast_or_null<IntegerLiteral>(orderedExpression(Equal->getRHS())) : nullptr;
     if (!Equal || Equal->getOpcode() != BO_EQ || !Zero || !Zero->getValue().isZero())
-      return nullptr;
+      return std::nullopt;
     Returned = Equal->getLHS();
   }
   const auto *Inner = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Returned));
-  const auto *Size = Tree ? orderedTreeMethod(S, SM, Inner, Tree, "size") : nullptr;
-  const auto *Base = Size ? dyn_cast_or_null<MemberExpr>(orderedExpression(Inner->getImplicitObjectArgument())) : nullptr;
-  const auto *Field = Size ? dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Size))) : nullptr;
+  const auto *Observer = Tree ? orderedTreeMethod(S, SM, Inner, Tree, Outer->getName() == "empty" ? "size" : Outer->getName()) : nullptr;
+  const auto *Base = Observer ? dyn_cast_or_null<MemberExpr>(orderedExpression(Inner->getImplicitObjectArgument())) : nullptr;
   if (!Base || Base->getMemberDecl() != Storage ||
-      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Base->getBase())) ||
-      !Size->isConst() || !Field || Field->getMemberDecl() != orderedTreeField(Tree, "__size_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Base->getBase())) || !Observer->isConst())
+    return std::nullopt;
+  const auto *Member = cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  if (Outer->getName() == "max_size") {
+    if (auto Maximum = orderedMaximum(S, SM, Observer, Context))
+      return UtilityOrderedContainerObserver{Member, Maximum};
+    return std::nullopt;
+  }
+  const auto *Field = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Observer)));
+  if (!Field || Field->getMemberDecl() != orderedTreeField(Tree, "__size_") ||
       !isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase())))
-    return nullptr;
-  return cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+    return std::nullopt;
+  return UtilityOrderedContainerObserver{Member, std::nullopt};
 }
 
 std::optional<UtilityUnorderedMapRecord> approvedUtilityUnorderedMapRecord(

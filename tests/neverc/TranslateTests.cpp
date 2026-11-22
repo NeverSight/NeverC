@@ -388030,6 +388030,150 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2OrderedMaxSizeMapRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-max-size-map.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::map<int, int> values;
+  auto limit = values.max_size();
+  return limit <= values.size() || limit > 9223372036854775807ULL;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-max-size-map.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-max-size-map" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMaxSizeConstMultimapRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-max-size-const-multimap.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  const std::map<int, int> unique;
+  const std::multimap<int, int> repeated;
+  return repeated.max_size() == 0 || repeated.max_size() != unique.max_size();
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-max-size-const-multimap.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-max-size-const-multimap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMaxSizeSetReceiverOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-max-size-set-receiver-once.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+const std::set<int>& select(const std::set<int>& values, int& calls) {
+  ++calls;
+  return values;
+}
+int main() {
+  std::set<int> values;
+  int calls = 0;
+  auto limit = select(values, calls).max_size();
+  return calls != 1 || limit <= values.size() || limit > 9223372036854775807ULL;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-max-size-set-receiver-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-max-size-set-receiver-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMaxSizeMultisetRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-max-size-multiset.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+int main() {
+  std::multiset<int> repeated;
+  std::set<int> unique;
+  return repeated.max_size() == 0 || repeated.max_size() != unique.max_size();
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-max-size-multiset.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-max-size-multiset" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMaxSizeDifferentElementRejected) {
+  const auto Source = tmpFile("ordered-max-size-different-element.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+using Values = std::set<short>;
+auto bound(const Values& values) { return values.max_size(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMaxSizeMutableTreesRejected) {
+  const auto Source = tmpFile("ordered-max-size-mutable-trees.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::multimap<int, int> values;
+  values.emplace(1, 2);
+  return values.max_size() == 0;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMaxSizeCustomComparatorRejected) {
+  const auto Source = tmpFile("ordered-max-size-custom-comparator.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+struct Reverse { bool operator()(int a, int b) const { return a > b; } };
+using Values = std::map<int, int, Reverse>;
+auto bound(const Values& values) { return values.max_size(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMaxSizeTemporaryRejected) {
+  const auto Source = tmpFile("ordered-max-size-temporary.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+auto bound() { return std::multiset<int>{}.max_size(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

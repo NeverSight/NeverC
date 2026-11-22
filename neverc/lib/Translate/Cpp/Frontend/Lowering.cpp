@@ -29166,10 +29166,14 @@ class FunctionLowering {
       return Result;
     }
     if (Operation == UtilityOperation::OrderedContainerObserver) {
-      const auto *Member = approvedOrderedContainerObserver(A.S, A.Sources, Call, A.Context);
-      if (!Member)
+      const auto Info = approvedOrderedContainerObserver(A.S, A.Sources, Call, A.Context);
+      if (!Info)
         reject(L, "ordered container observer", "The exact selected SDK observer body is required.");
-      auto Count = orderedContainerMember(lvalue(Member->getBase()), "nct_ordered_size", L);
+      const auto *Member = Info->Member;
+      auto Place = lvalue(Member->getBase());
+      if (Info->Maximum)
+        return quantity(*Info->Maximum, type(Call->getType(), L), L);
+      auto Count = orderedContainerMember(std::move(Place), "nct_ordered_size", L);
       if (Member->getMemberDecl()->getName() == "size")
         return Count;
       return binary("==", std::move(Count), A.zero(A.Context.getSizeType(), L), "bool", L);

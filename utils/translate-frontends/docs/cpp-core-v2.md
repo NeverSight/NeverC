@@ -18072,3 +18072,10 @@ Default integer `map`, `multimap`, `set`, and `multiset` support an empty
 local owner, scoped destruction, and the `size()` and `empty()` observers.
 The generated C23 state holds the embedded end sentinel, a null tree root,
 and a zero size. The observer evaluates its receiver once.
+
+## Ordered container maximum size
+
+The default integer `map`, `multimap`, `set`, and `multiset` also
+support runtime `max_size()`. The bound uses the pinned allocator's
+node size and the target's signed difference limit. The receiver is
+evaluated once.

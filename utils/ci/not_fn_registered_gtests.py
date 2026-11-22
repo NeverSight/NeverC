@@ -1182,6 +1182,30 @@ def restore_ordered_empty_owner_history(source):
     return restored
 
 
+R19_ORDERED_MAX_SIZE_REGISTERED_SHA256 = '9e9ba754f81959ca9b377627825515a8be2f0ad69242ce21ad0b6fa792afed14'
+R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256 = '0a33208d656054ec6265c968c1c3c9ed504da77d0709bb325cc0ecdd9bded1a5'
+R19_ORDERED_MAX_SIZE_PREVIOUS_REGISTERED_SHA256 = 'e6e9318724925862ef9c95da3085f26dfd4d5321cc5eb56aeab4fc9b4ebae34e'
+R19_ORDERED_MAX_SIZE_PREVIOUS_MAINTAINED_SHA256 = 'b9b9b2935d5da5039a8934541b708a06a32b58e0f1070850b729cdc9b9f76a6d'
+R19_ORDERED_MAX_SIZE_ADDITIONS_SHA256 = '024aefb7378f8c3b8f7add085e06de5b606304121d2410204d7e0ffd6cbd6171'
+R19_ORDERED_MAX_SIZE_MAINTAINED_SIZE = 19959336
+R19_ORDERED_MAX_SIZE_ADDITIONS_SIZE = 6525
+
+
+def restore_ordered_max_size_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MAX_SIZE_REGISTERED_SHA256, R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MAX_SIZE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MAX_SIZE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MAX_SIZE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_MAX_SIZE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MAX_SIZE_REGISTERED_SHA256
+             else R19_ORDERED_MAX_SIZE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1384,6 +1408,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MAX_SIZE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
