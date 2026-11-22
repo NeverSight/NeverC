@@ -136870,6 +136870,57 @@ static bool emptyHashBucketCountSource(const State &S, const SourceManager &SM,
          isa_and_nonnull<CXXThisExpr>(orderedExpression(Count->getBase()));
 }
 
+static bool emptyHashLoadFactorSource(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const CXXRecordDecl *Table, const ASTContext &Context) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != 2)
+    return false;
+  const auto *Declaration = dyn_cast<DeclStmt>(Body->body_front());
+  const auto *Count = Declaration && Declaration->isSingleDecl()
+      ? dyn_cast<VarDecl>(Declaration->getSingleDecl()) : nullptr;
+  const auto *BucketCall = Count
+      ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Count->getInit())) : nullptr;
+  const auto *BucketCount = hashTableMethod(S, SM, BucketCall, Table, "bucket_count");
+  if (!Count || !Context.hasSameType(Count->getType(), Context.getSizeType()) ||
+      !BucketCount || !BucketCount->isConst() || !orderedReceiver(BucketCall) ||
+      !emptyHashBucketCountSource(S, SM, BucketCount, Table, Context))
+    return false;
+
+  const auto *Returned = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Choice = Returned
+      ? dyn_cast_or_null<ConditionalOperator>(orderedExpression(Returned->getRetValue())) : nullptr;
+  if (!Choice || !Context.hasSameType(Choice->getType(), Context.FloatTy))
+    return false;
+  const auto ReadsCount = [&](const Expr *Value) {
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(orderedExpression(Value));
+    return Reference && Reference->getDecl() == Count;
+  };
+
+  const auto *Test = dyn_cast_or_null<BinaryOperator>(orderedExpression(Choice->getCond()));
+  const auto *ZeroCount = Test
+      ? dyn_cast_or_null<IntegerLiteral>(orderedExpression(Test->getRHS())) : nullptr;
+  const auto *ZeroLoad = dyn_cast_or_null<FloatingLiteral>(orderedExpression(Choice->getFalseExpr()));
+  const auto *Divide = dyn_cast_or_null<BinaryOperator>(orderedExpression(Choice->getTrueExpr()));
+  if (!Test || Test->getOpcode() != BO_NE || !ReadsCount(Test->getLHS()) ||
+      !ZeroCount || !ZeroCount->getValue().isZero() || !ZeroLoad ||
+      !Context.hasSameType(ZeroLoad->getType(), Context.FloatTy) ||
+      !ZeroLoad->getValue().isZero() || ZeroLoad->getValue().isNegative() ||
+      !Divide || Divide->getOpcode() != BO_Div || !ReadsCount(Divide->getRHS()) ||
+      !Context.hasSameType(Divide->getLHS()->getType(), Context.FloatTy) ||
+      !Context.hasSameType(Divide->getRHS()->getType(), Context.FloatTy))
+    return false;
+
+  const auto *Numerator = dyn_cast_or_null<CStyleCastExpr>(orderedExpression(Divide->getLHS()));
+  const auto *SizeCall = Numerator && Numerator->getCastKind() == CK_IntegralToFloating
+      ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Numerator->getSubExpr())) : nullptr;
+  const auto *Size = hashTableMethod(S, SM, SizeCall, Table, "size");
+  const auto *Field = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Size)));
+  return Size && Size->isConst() && orderedReceiver(SizeCall) && Field &&
+         Context.hasSameType(Size->getReturnType(), Context.getSizeType()) &&
+         Field->getMemberDecl() == orderedTreeField(Table, "__size_") &&
+         isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase()));
+}
+
 const MemberExpr *approvedEmptyHashSetObserver(const State &S, const SourceManager &SM,
     const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -136884,10 +136935,11 @@ const MemberExpr *approvedEmptyHashSetObserver(const State &S, const SourceManag
       !orderedPinnedFunction(S, SM, Outer, "unordered_set"))
     return nullptr;
   const auto Name = Outer->getName();
-  if (Name != "empty" && Name != "size" && Name != "bucket_count" && Name != "max_load_factor")
+  if (Name != "empty" && Name != "size" && Name != "bucket_count" &&
+      Name != "max_load_factor" && Name != "load_factor")
     return nullptr;
   const auto Result = Name == "empty" ? Context.BoolTy
-      : Name == "max_load_factor" ? Context.FloatTy : Context.getSizeType();
+      : (Name == "max_load_factor" || Name == "load_factor") ? Context.FloatTy : Context.getSizeType();
   if (!Context.hasSameType(Call->getType(), Result) ||
       !Context.hasSameType(Outer->getReturnType(), Result) || !Call->isPRValue())
     return nullptr;
@@ -136908,6 +136960,8 @@ const MemberExpr *approvedEmptyHashSetObserver(const State &S, const SourceManag
     return nullptr;
   if (Name == "bucket_count")
     return emptyHashBucketCountSource(S, SM, Observe, Table, Context) ? Member : nullptr;
+  if (Name == "load_factor")
+    return emptyHashLoadFactorSource(S, SM, Observe, Table, Context) ? Member : nullptr;
   const auto *Value = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Observe)));
   return Value &&
          Value->getMemberDecl() == orderedTreeField(Table, Name == "max_load_factor" ? "__max_load_factor_" : "__size_") &&

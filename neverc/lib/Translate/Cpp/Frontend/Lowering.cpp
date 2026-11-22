@@ -1040,19 +1040,24 @@ class FunctionLowering {
     }
     assign(unorderedMapMember(Place, Info, "nct_unordered_max_load", L), one("float", L), L);
   }
-  Expression unorderedMapLoadFactor(Expression Place, const UtilityUnorderedMapRecord &Info,
-                                    SourceLocation L) {
+  Expression hashTableLoadFactor(Expression Size, Expression Buckets, SourceLocation L) {
     auto Result = snapshot(A.zero(A.Context.FloatTy, L), L);
-    auto Count = snapshot(unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L), L);
+    auto Count = snapshot(std::move(Buckets), L);
     const auto Divide = labelName(), Done = labelName();
     branch(binary("!=", Count, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L),
            Divide, Done, L);
     label(Divide, L);
-    assign(Result, binary("/", cast(unorderedMapMember(Place, Info, "nct_unordered_size", L), "float", L),
+    assign(Result, binary("/", cast(std::move(Size), "float", L),
                           cast(Count, "float", L), "float", L), L);
     jump(Done, L);
     label(Done, L);
     return Result;
+  }
+  Expression unorderedMapLoadFactor(Expression Place, const UtilityUnorderedMapRecord &Info,
+                                    SourceLocation L) {
+    auto Size = unorderedMapMember(Place, Info, "nct_unordered_size", L);
+    auto Buckets = unorderedMapMember(Place, Info, "nct_unordered_bucket_count", L);
+    return hashTableLoadFactor(std::move(Size), std::move(Buckets), L);
   }
   void releaseUnorderedMap(Expression Place, const UtilityUnorderedMapRecord &Info,
                             bool ReleaseBuckets, SourceLocation L) {
@@ -29211,6 +29216,13 @@ class FunctionLowering {
       if (Name == "max_load_factor")
         return emptyHashSetMember(std::move(Receiver), "nct_unordered_max_load", A.Context.FloatTy, L);
       const auto Type = A.Context.getSizeType();
+      if (Name == "load_factor") {
+        auto Pointer = snapshot(address(std::move(Receiver), Member->getBase()->getType(), L), L);
+        auto Place = dereference(std::move(Pointer), L);
+        auto Size = emptyHashSetMember(Place, "nct_unordered_size", Type, L);
+        auto Buckets = emptyHashSetMember(std::move(Place), "nct_unordered_bucket_count", Type, L);
+        return hashTableLoadFactor(std::move(Size), std::move(Buckets), L);
+      }
       if (Name == "bucket_count")
         return emptyHashSetMember(std::move(Receiver), "nct_unordered_bucket_count", Type, L);
       auto Count = emptyHashSetMember(std::move(Receiver), "nct_unordered_size", Type, L);
