@@ -123909,8 +123909,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
-  if (approvedUtilityUnorderedMapPolicyQuery(S, SM, Call, Context))
-    return UtilityOperation::UnorderedMapPolicy;
+  if (approvedUtilityUnorderedPolicyQuery(S, SM, Call, Context))
+    return UtilityOperation::UnorderedPolicy;
   if (approvedUtilityUnorderedMapAllocatorQuery(S, SM, Call, Context))
     return UtilityOperation::UnorderedMapGetAllocator;
   if (auto Assignment = approvedUtilityUnorderedMapAssignment(S, SM, Call, Context))
@@ -138062,9 +138062,66 @@ bool approvedUtilityUnorderedMapDefaultArgument(
       !Construction->getNumArgs() && Context.hasSameType(Construction->getType(), Expected);
 }
 
-std::optional<FunctionalObjectRecord> approvedUtilityUnorderedMapPolicyQuery(
+static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  const auto Name = Method && Method->getIdentifier() ? Method->getName() : llvm::StringRef();
+  if (Name != "hash_function" && Name != "key_eq")
+    return std::nullopt;
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto *Owner = Method->getParent();
+  if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
+      !S.owns(SM, Member->getMemberLoc()) || !Method->isConst() || Method->isVolatile() ||
+      Method->isStatic() || Method->isVirtual() || Method->getNumParams() || Call->getNumArgs() ||
+      !Call->isPRValue() || !approvedEmptyHashSetRecord(S, SM, Owner, Context) ||
+      !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
+      !orderedPinnedFunction(S, SM, Method, "unordered_set"))
+    return std::nullopt;
+
+  const bool Hash = Name == "hash_function";
+  const auto Expected = cast<ClassTemplateSpecializationDecl>(Owner)->getTemplateArgs()
+      .get(Hash ? 1 : 2).getAsType();
+  const auto Type = Call->getType();
+  const auto Policy = approvedFunctionalObjectRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+  if (!Policy || !Context.hasSameType(Type, Expected) ||
+      !Context.hasSameType(Type, Method->getReturnType()))
+    return std::nullopt;
+
+  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(orderedReturn(Method)));
+  const auto Construction = functionalObjectConstruction(S, SM, Copy, Type, Context);
+  if (Construction != FunctionalObjectConstruction::CopyOrMove ||
+      !Copy->getConstructor()->isCopyConstructor() ||
+      !Context.hasSameType(Copy->getConstructor()->getParamDecl(0)->getType(),
+                           Context.getLValueReferenceType(Type.withConst())))
+    return std::nullopt;
+
+  const auto *Storage = orderedTreeField(Owner, "__table_");
+  const auto *Table = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Copy->getArg(0)));
+  const auto *ReadPolicy = Table ? hashTableMethod(S, SM, Read, Table, Name) : nullptr;
+  if (!ReadPolicy || !ReadPolicy->isConst() ||
+      !Context.hasSameType(ReadPolicy->getReturnType(), Context.getLValueReferenceType(Type.withConst())))
+    return std::nullopt;
+
+  const auto *Receiver = dyn_cast_or_null<MemberExpr>(orderedExpression(Read->getImplicitObjectArgument()));
+  const auto *Field = orderedTreeField(Table, Hash ? "__hasher_" : "__key_eq_");
+  const auto *Value = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(ReadPolicy)));
+  if (!Receiver || Receiver->getMemberDecl() != Storage ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())) ||
+      !Field || !Context.hasSameType(Field->getType(), Type) || !Value ||
+      Value->getMemberDecl() != Field ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Value->getBase())))
+    return std::nullopt;
+  return Policy;
+}
+
+std::optional<FunctionalObjectRecord> approvedUtilityUnorderedPolicyQuery(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  if (auto Set = approvedEmptyHashSetPolicyQuery(S, SM, Call, Context))
+    return Set;
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Method = Member ? Member->getMethodDecl() : nullptr;
   const auto Name = Method && Method->getIdentifier() ? Method->getName() : llvm::StringRef();

@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_lookup_policies_registered = cls.registered
+        cls.unordered_lookup_policies_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_lookup_policies_original = cls.adapter.restore_original_gtests(cls.unordered_lookup_policies_registered,
+                                                                        cls.unordered_lookup_policies_suffix)
+        cls.registered = cls.adapter.restore_unordered_lookup_policies_history(cls.unordered_lookup_policies_registered)
         cls.unordered_empty_capacity_registered = cls.registered
         cls.unordered_empty_capacity_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_empty_capacity_original = cls.adapter.restore_original_gtests(cls.unordered_empty_capacity_registered,
@@ -2440,6 +2445,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_empty_capacity_history(self.unordered_empty_capacity_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_empty_capacity_registered, self.unordered_empty_capacity_suffix + b' ')
+
+
+    def test_unordered_lookup_policies_retains_published_bodies(self):
+        self.assertEqual(self.unordered_lookup_policies_original + self.unordered_lookup_policies_suffix, self.unordered_lookup_policies_registered)
+        self.assertEqual(self.adapter.restore_unordered_lookup_policies_history(self.unordered_lookup_policies_original),
+                         self.unordered_empty_capacity_original)
+        output, evidence = self.extractor.extract(self.unordered_lookup_policies_original, ['TranslateTest.CoreV2UnorderedLookupPoliciesSetHashValueRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLookupPoliciesMultisetEqualityValueRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLookupPoliciesHashReceiverEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLookupPoliciesEquivalentCopiesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLookupPoliciesCustomHashRejected', 'TranslateTest.CoreV2UnorderedLookupPoliciesCustomEqualityRejected', 'TranslateTest.CoreV2UnorderedLookupPoliciesArrowReceiverRejected', 'TranslateTest.CoreV2UnorderedLookupPoliciesNonemptyOwnerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8358)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-lookup-policies-set-hash-value', output)
+        self.assertIn(b'unordered-lookup-policies-hash-receiver-evaluated-once', output)
+
+    def test_unordered_lookup_policies_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_lookup_policies_history(self.unordered_lookup_policies_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_lookup_policies_registered, self.unordered_lookup_policies_suffix + b' ')
 
 
 if __name__ == '__main__':

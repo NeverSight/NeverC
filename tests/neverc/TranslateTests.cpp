@@ -388963,6 +388963,160 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesSetHashValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-lookup-policies-set-hash-value.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_set<int> values;
+  auto hash = values.hash_function();
+  return hash(-7) != std::hash<int>{}(-7) || hash(9) != std::hash<int>{}(9);
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-lookup-policies-set-hash-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-lookup-policies-set-hash-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesMultisetEqualityValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-lookup-policies-multiset-equality-value.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values;
+  auto same = values.key_eq();
+  return !same(-17, -17) || same(-17, 17) || values.key_eq()(8, 1);
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-lookup-policies-multiset-equality-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-lookup-policies-multiset-equality-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesHashReceiverEvaluatedOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-lookup-policies-hash-receiver-evaluated-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_multiset<int>;
+const Set& read(int& calls, const Set& values) {
+  ++calls;
+  return values;
+}
+int main() {
+  const Set values;
+  int calls = 0;
+  auto hash = read(calls, values).hash_function();
+  return calls != 1 || hash(23) != std::hash<int>{}(23);
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-lookup-policies-hash-receiver-evaluated-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-lookup-policies-hash-receiver-evaluated-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesEquivalentCopiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-lookup-policies-equivalent-copies.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_set<int> values;
+  auto first = values.key_eq();
+  auto second = first;
+  return !second(1, 1) || first(1, 2) || !values.empty();
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-lookup-policies-equivalent-copies.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-lookup-policies-equivalent-copies" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesCustomHashRejected) {
+  const auto Source = tmpFile("unordered-lookup-policies-custom-hash.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long long operator()(int value) const { return value + 1; } };
+int main() {
+  const std::unordered_set<int, Hash> values;
+  return values.hash_function()(0) != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesCustomEqualityRejected) {
+  const auto Source = tmpFile("unordered-lookup-policies-custom-equality.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int first, int second) const { return first == second; } };
+int main() {
+  const std::unordered_multiset<int, std::hash<int>, Equal> values;
+  return !values.key_eq()(1, 1);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesArrowReceiverRejected) {
+  const auto Source = tmpFile("unordered-lookup-policies-arrow-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_set<int> values;
+  const auto* pointer = &values;
+  return !pointer->key_eq()(2, 2);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesNonemptyOwnerRejected) {
+  const auto Source = tmpFile("unordered-lookup-policies-nonempty-owner.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_multiset<int> values{1, 1};
+  return !values.key_eq()(1, 1);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");
