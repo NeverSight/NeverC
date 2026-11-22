@@ -8669,7 +8669,8 @@ static const FunctionDecl *anyPinnedDefinition(const State &S, const SourceManag
 
 static bool supportedAnyInlineInteger(QualType Type, const ASTContext &Context) {
   return !Type.isNull() && (Context.hasSameType(Type, Context.IntTy) ||
-                           Context.hasSameType(Type, Context.UnsignedIntTy));
+                           Context.hasSameType(Type, Context.UnsignedIntTy) ||
+                           Context.hasSameType(Type, Context.BoolTy));
 }
 
 static bool anyAssignmentBody(const State &S, const SourceManager &SM,

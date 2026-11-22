@@ -388174,6 +388174,165 @@ auto bound() { return std::multiset<int>{}.max_size(); }
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2AnyBoolInlineTypedMutablePointerRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-bool-inline-typed-mutable-pointer.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value{true};
+  auto* flag = std::any_cast<bool>(&value);
+  if (!flag || !*flag || std::any_cast<int>(&value)) return 1;
+  *flag = false;
+  const auto& view = value;
+  auto* result = std::any_cast<const bool>(&view);
+  return !result || *result || std::any_cast<unsigned>(&view) != nullptr;
+}
+)r19containers");
+  const auto Output = tmpFile("any-bool-inline-typed-mutable-pointer.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-bool-inline-typed-mutable-pointer" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyBoolInlineFactoryEmplaceResetRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-bool-inline-factory-emplace-reset.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value = std::make_any<bool>();
+  auto* first = std::any_cast<bool>(&value);
+  if (!first || *first) return 1;
+  bool& stored = value.emplace<bool>(true);
+  if (!stored || !value.has_value()) return 2;
+  value.reset();
+  return value.has_value() || std::any_cast<bool>(&value) != nullptr;
+}
+)r19containers");
+  const auto Output = tmpFile("any-bool-inline-factory-emplace-reset.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-bool-inline-factory-emplace-reset" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyBoolInlineCopyMoveAndAssignmentRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-bool-inline-copy-move-and-assignment.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+#include <utility>
+int main() {
+  std::any left{true};
+  std::any right{7u};
+  left.swap(right);
+  std::any transferred(std::move(right));
+  if (right.has_value() || !std::any_cast<unsigned>(&left)) return 1;
+  const auto* first = std::any_cast<bool>(&transferred);
+  if (!first || !*first) return 2;
+  left = false;
+  transferred = left;
+  const auto* copied = std::any_cast<bool>(&transferred);
+  return !copied || *copied || std::any_cast<unsigned>(&left) != nullptr;
+}
+)r19containers");
+  const auto Output = tmpFile("any-bool-inline-copy-move-and-assignment.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-bool-inline-copy-move-and-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyBoolInlineConstantActiveValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-bool-inline-constant-active-value.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  const std::any value{std::in_place_type<bool>, true};
+  return std::any_cast<bool>(value) ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("any-bool-inline-constant-active-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-bool-inline-constant-active-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyBoolInlineValueMismatchRejected) {
+  const auto Source = tmpFile("any-bool-inline-value-mismatch.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  const std::any value{1};
+  return std::any_cast<bool>(value) ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyBoolInlineDynamicValueTagRejected) {
+  const auto Source = tmpFile("any-bool-inline-dynamic-value-tag.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+bool read(const std::any& value) { return std::any_cast<bool>(value); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyBoolInlinePointerPayloadRejected) {
+  const auto Source = tmpFile("any-bool-inline-pointer-payload.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  bool truth = true;
+  const std::any value{&truth};
+  return !value.has_value();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyBoolInlineMutableReferenceCastRejected) {
+  const auto Source = tmpFile("any-bool-inline-mutable-reference-cast.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value{true};
+  bool& result = std::any_cast<bool&>(value);
+  return result ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

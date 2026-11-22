@@ -18079,3 +18079,10 @@ The default integer `map`, `multimap`, `set`, and `multiset` also
 support runtime `max_size()`. The bound uses the pinned allocator's
 node size and the target's signed difference limit. The receiver is
 evaluated once.
+
+## Boolean any payloads
+
+The checked inline any operations preserve bool as a distinct active type.
+Construction, assignment, and emplacement set the active type. Copying and
+moving carry it to the destination, and reset clears it. A matching pointer
+any_cast addresses the bool field. Empty or mismatched pointer casts return null.

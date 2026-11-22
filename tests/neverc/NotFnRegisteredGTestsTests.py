@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.any_bool_inline_registered = cls.registered
+        cls.any_bool_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_bool_inline_original = cls.adapter.restore_original_gtests(cls.any_bool_inline_registered,
+                                                                        cls.any_bool_inline_suffix)
+        cls.registered = cls.adapter.restore_any_bool_inline_history(cls.any_bool_inline_registered)
         cls.ordered_max_size_registered = cls.registered
         cls.ordered_max_size_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.ordered_max_size_original = cls.adapter.restore_original_gtests(cls.ordered_max_size_registered,
@@ -2325,6 +2330,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_ordered_max_size_history(self.ordered_max_size_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.ordered_max_size_registered, self.ordered_max_size_suffix + b' ')
+
+
+    def test_any_bool_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_bool_inline_original + self.any_bool_inline_suffix, self.any_bool_inline_registered)
+        self.assertEqual(self.adapter.restore_any_bool_inline_history(self.any_bool_inline_original),
+                         self.ordered_max_size_original)
+        output, evidence = self.extractor.extract(self.any_bool_inline_original, ['TranslateTest.CoreV2AnyBoolInlineTypedMutablePointerRunAtBothOptimizations', 'TranslateTest.CoreV2AnyBoolInlineFactoryEmplaceResetRunAtBothOptimizations', 'TranslateTest.CoreV2AnyBoolInlineCopyMoveAndAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2AnyBoolInlineConstantActiveValueRunAtBothOptimizations', 'TranslateTest.CoreV2AnyBoolInlineValueMismatchRejected', 'TranslateTest.CoreV2AnyBoolInlineDynamicValueTagRejected', 'TranslateTest.CoreV2AnyBoolInlinePointerPayloadRejected', 'TranslateTest.CoreV2AnyBoolInlineMutableReferenceCastRejected'])
+        self.assertEqual(evidence['original_test_names'], 8318)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-bool-inline-constant-active-value', output)
+        self.assertIn(b'any-bool-inline-typed-mutable-pointer', output)
+
+    def test_any_bool_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_bool_inline_history(self.any_bool_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_bool_inline_registered, self.any_bool_inline_suffix + b' ')
 
 
 if __name__ == '__main__':
