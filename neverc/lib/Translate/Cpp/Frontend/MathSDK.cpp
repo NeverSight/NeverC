@@ -8713,6 +8713,17 @@ std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
       return SignedLong ? UtilityAnyScalar{13, UtilityAnyLong}
                         : UtilityAnyScalar{14, UtilityAnyUnsignedLong};
   }
+  if (Context.hasSameType(Type, Context.WCharTy)) {
+    const auto Bits = Context.getTypeSize(Type);
+    if ((Bits == 16 || Bits == 32) && Context.getTypeAlign(Type) == Bits)
+      return UtilityAnyScalar{15, UtilityAnyWideChar};
+  }
+  if (Context.hasSameType(Type, Context.Char16Ty) &&
+      Context.getTypeSize(Type) == 16 && Context.getTypeAlign(Type) == 16)
+    return UtilityAnyScalar{16, UtilityAnyChar16};
+  if (Context.hasSameType(Type, Context.Char32Ty) &&
+      Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32)
+    return UtilityAnyScalar{17, UtilityAnyChar32};
   return std::nullopt;
 }
 
