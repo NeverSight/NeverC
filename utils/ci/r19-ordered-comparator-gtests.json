@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2OrderedComparatorNonDefaultKeyRejected",
     "TranslateTest.CoreV2OrderedComparatorArrowReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "53b48c911238bafe9c44bfce86ffe29f1eb8ea856f5c3efcb6f2ecf3eb3674a6",
   "maintained_original_sha256": "e181edb71c0c639a568de03643a59c6f0b7d0a14c386cf59b7b59c82c80504e9",
@@ -155,5 +155,10 @@
   "current_registry_count": 8384,
   "current_python_registry_tests": 182,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "ordered-comparator": "174ab453fc961891fb01128046244949bc0f3d22c70e90c197d16e9b65e98170"
+  },
+  "native_reference_authentication_sha256": "d3b0d9158ec486a981be66820346b53d8e78d463d3774e277c13074110ae2871",
+  "source_proof_sha256": "c5466af57efdc110090394721336c6f7a7b9015e447e22d6d0a8141800a2aa5c"
 }
