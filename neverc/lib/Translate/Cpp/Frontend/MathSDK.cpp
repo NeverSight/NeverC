@@ -123915,6 +123915,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::EmptyHashSetObserver;
   if (approvedEmptyHashSetSetMaxLoadFactor(S, SM, Call, Context))
     return UtilityOperation::EmptyHashSetSetMaxLoadFactor;
+  if (auto Bucket = approvedEmptyHashSetBucketOperation(S, SM, Call, Context))
+    return *Bucket;
   if (approvedUtilityPriorityQueueCall(S, SM, Call, Context)) return UtilityOperation::PriorityQueue;
   if (approvedUtilityDequeCall(S, SM, Call, Context)) return UtilityOperation::Deque;
   if (approvedUtilityValarrayCall(S, SM, Call, Context)) return UtilityOperation::ValarrayScalar;
@@ -136866,6 +136868,10 @@ bool approvedEmptyHashSetDestructor(const State &S, const SourceManager &SM,
   if (!Buckets)
     return Fail("The hash table must contain its pinned bucket owner.");
   llvm::StringRef BucketFailure;
+  const auto *Storage = Buckets->getType()->getAsCXXRecordDecl();
+  Storage = Storage ? Storage->getDefinition() : nullptr;
+  if (!Storage || !approvedHashSetBucketSource(S, SM, Storage->getDestructor(), Owner, Context))
+    return Fail("The selected bucket deallocation path must retain its pinned SDK definitions.");
   return emptyHashNullBucketsDestroy(S, SM, Buckets->getType()->getAsCXXRecordDecl(), BucketFailure) ||
          Fail(BucketFailure);
 }
@@ -136958,6 +136964,61 @@ static bool emptyHashLoadFactorSource(const State &S, const SourceManager &SM,
          Context.hasSameType(Size->getReturnType(), Context.getSizeType()) &&
          Field->getMemberDecl() == orderedTreeField(Table, "__size_") &&
          isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase()));
+}
+
+std::optional<UtilityOperation> approvedEmptyHashSetBucketOperation(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Outer = Access ? Access->getMethodDecl() : nullptr;
+  const auto Name = Outer && Outer->getIdentifier() ? Outer->getName() : llvm::StringRef();
+  const bool Lookup = Name == "bucket";
+  const bool Observe = Lookup || Name == "bucket_size";
+  if (!Observe && Name != "rehash" && Name != "reserve")
+    return std::nullopt;
+  const auto *Owner = Outer->getParent();
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto Type = Member ? Member->getBase()->getType() : QualType();
+  const auto Size = Context.getSizeType();
+  const auto Result = Observe ? Size : Context.VoidTy;
+  const auto Parameter = Lookup ? Context.getLValueReferenceType(Context.IntTy.withConst()) : Size;
+  if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
+      Type.isVolatileQualified() || (!Observe && Type.hasQualifiers()) || !S.owns(SM, Member->getMemberLoc()) ||
+      Outer->isConst() != Observe || Outer->isStatic() || Outer->isVirtual() || Outer->isVolatile() ||
+      Outer->getPrimaryTemplate() || Outer->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Context.hasSameType(Outer->getReturnType(), Result) || !Context.hasSameType(Call->getType(), Result) ||
+      !Context.hasSameType(Outer->getParamDecl(0)->getType(), Parameter) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Parameter.getNonReferenceType()) ||
+      Call->getArg(0)->getType().isVolatileQualified() ||
+      !approvedEmptyHashSetRecord(S, SM, Owner, Context) ||
+      !Context.hasSameUnqualifiedType(Type, Context.getRecordType(Owner)) ||
+      !orderedPinnedFunction(S, SM, Outer, "unordered_set"))
+    return std::nullopt;
+
+  const auto *Storage = orderedTreeField(Owner, "__table_");
+  const auto *Table = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Outer->getBody());
+  const auto *BodyResult = Observe ? orderedReturn(Outer)
+      : Body && Body->size() == 1 ? dyn_cast<Expr>(Body->body_front()) : nullptr;
+  const auto *Forward = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(BodyResult));
+  const bool Unique = Owner->getName() == "unordered_set";
+  auto SelectedName = Name;
+  if (!Observe) {
+    if (Name == "rehash")
+      SelectedName = Unique ? "__rehash_unique" : "__rehash_multi";
+    else
+      SelectedName = Unique ? "__reserve_unique" : "__reserve_multi";
+  }
+  const auto *Selected = Table ? hashTableMethod(S, SM, Forward, Table, SelectedName, 1) : nullptr;
+  const auto *Receiver = Selected
+      ? dyn_cast_or_null<MemberExpr>(orderedExpression(Forward->getImplicitObjectArgument())) : nullptr;
+  if (!Receiver || Receiver->getMemberDecl() != Storage ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())) ||
+      !Context.hasSameType(Selected->getReturnType(), Result) || Selected->isConst() != Observe ||
+      !Context.hasSameType(Selected->getParamDecl(0)->getType(), Parameter) ||
+      !orderedParameter(Forward->getArg(0), Outer->getParamDecl(0)) ||
+      !approvedHashSetBucketSource(S, SM, Outer, Owner, Context))
+    return std::nullopt;
+  return Observe ? UtilityOperation::EmptyHashSetBucketObserver : UtilityOperation::EmptyHashSetResizeBuckets;
 }
 
 const MemberExpr *approvedEmptyHashSetSetMaxLoadFactor(const State &S,

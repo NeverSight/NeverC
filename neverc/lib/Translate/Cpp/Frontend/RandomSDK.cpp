@@ -2625,6 +2625,14 @@ approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
       Object, Result, Distance, Selection.MinimumValue, Selection.MaximumValue,
       Index};
 }
+bool approvedHashSetBucketSource(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const CXXRecordDecl *Owner, const ASTContext &Context) {
+  if (!Function || !approvedEmptyHashSetRecord(S, SM, Owner, Context))
+    return false;
+  RandomSelection Selection(S, SM, Context, Owner, Context.getSizeType(), Context.DoubleTy);
+  return Selection.retain(Function);
+}
+
 bool approvedUnorderedMapMethodSource(const State &S, const SourceManager &SM,
     const FunctionDecl *Function, const CXXRecordDecl *Record,
     const ASTContext &Context) {
