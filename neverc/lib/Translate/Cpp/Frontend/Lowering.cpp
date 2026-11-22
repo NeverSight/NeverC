@@ -26824,6 +26824,24 @@ class FunctionLowering {
   }
 
 
+  Expression emptyHashSetMember(Expression Place, llvm::StringRef Name,
+                                QualType FieldType, SourceLocation L) {
+    return Expression{{"kind", "member"}, {"type", type(FieldType, L)}, {"name", Name.str()},
+                      {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+
+  void initializeEmptyHashSet(Expression Place, SourceLocation L) {
+    const auto &Context = A.Context;
+    for (const auto &[Name, FieldType] :
+         {std::pair{"nct_unordered_buckets", Context.VoidPtrTy},
+          std::pair{"nct_unordered_bucket_count", Context.getSizeType()},
+          std::pair{"nct_unordered_first", Context.VoidPtrTy},
+          std::pair{"nct_unordered_size", Context.getSizeType()}})
+      initializeZero(emptyHashSetMember(Place, Name, FieldType, L), FieldType, L);
+    assign(emptyHashSetMember(std::move(Place), "nct_unordered_max_load", Context.FloatTy, L),
+           one("float", L), L);
+  }
+
   Expression orderedContainerMember(Expression Place, llvm::StringRef Name,
                                     SourceLocation L) {
     const auto MemberType = Name == "nct_ordered_size" ? A.Context.getSizeType() : A.Context.VoidPtrTy;
@@ -29164,6 +29182,20 @@ class FunctionLowering {
         return std::move(*Destination);
       }
       return Result;
+    }
+    if (Operation == UtilityOperation::EmptyHashSetObserver) {
+      const auto *Member = approvedEmptyHashSetObserver(A.S, A.Sources, Call, A.Context);
+      if (!Member)
+        reject(L, "unordered set observer", "The exact selected SDK observer body is required.");
+      const auto Name = Member->getMemberDecl()->getName();
+      auto Receiver = lvalue(Member->getBase());
+      if (Name == "max_load_factor")
+        return emptyHashSetMember(std::move(Receiver), "nct_unordered_max_load", A.Context.FloatTy, L);
+      const auto Type = A.Context.getSizeType();
+      auto Count = emptyHashSetMember(std::move(Receiver), "nct_unordered_size", Type, L);
+      if (Name == "size")
+        return Count;
+      return binary("==", std::move(Count), A.zero(Type, L), "bool", L);
     }
     if (Operation == UtilityOperation::OrderedContainerObserver) {
       const auto *Member = approvedOrderedContainerObserver(A.S, A.Sources, Call, A.Context);
@@ -38955,6 +38987,10 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
 
+    if (approvedEmptyHashSetConstruction(A.S, A.Sources, C, A.Context)) {
+      initializeEmptyHashSet(std::move(Place), L);
+      return;
+    }
     if (approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context)) {
       initializeOrderedContainer(std::move(Place), L);
       return;
@@ -40655,6 +40691,11 @@ public:
         approvedUtilityForwardListDestructor(A.S, A.Sources, D, A.Context);
     const bool ListDestructor =
         approvedUtilityListDestructor(A.S, A.Sources, D, A.Context);
+    const bool EmptyHashSetDestructor =
+        approvedEmptyHashSetDestructor(A.S, A.Sources, D, A.Context);
+    if (approvedEmptyHashSetRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !EmptyHashSetDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered set destructor",
+             "The authenticated empty-table destruction chain is required.");
     const bool OrderedContainerDestructor =
         approvedOrderedContainerDestructor(A.S, A.Sources, D, A.Context);
     if (approvedOrderedContainerRuntimeRecord(A.S, A.Sources, DestroyedRecord, A.Context) &&
@@ -40711,7 +40752,7 @@ public:
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered map destructor",
              "The authenticated SDK storage destructor chain is required.");
     if (D && NotFnDestructor == A.VerifiedNotFnDestructions.end() &&
-        !ForwardListDestructor && !ListDestructor && !OrderedContainerDestructor && !PriorityQueueDestructor && !DequeDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
+        !ForwardListDestructor && !ListDestructor && !OrderedContainerDestructor && !EmptyHashSetDestructor && !PriorityQueueDestructor && !DequeDestructor && !ValarrayDestructor && !UniquePtrDestructor && !StringDestructor && !VectorDestructor &&
         !UnorderedMapDestructor && !UnorderedNodeDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
@@ -40857,6 +40898,8 @@ public:
         releaseUnorderedMap(dereference(*ThisPointer, L), *Map, true, L);
       } else if (auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyForwardListStorage(dereference(*ThisPointer, L), Owner->Node, L);
+      } else if (EmptyHashSetDestructor) {
+        // The checked empty table and bucket destruction paths have no effects.
       } else if (approvedOrderedContainerRuntimeRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         // These owners only admit authenticated empty construction and read-only
         // operations. The checked SDK destroy routine has no effect on a null root.
