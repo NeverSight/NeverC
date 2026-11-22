@@ -3523,6 +3523,8 @@ inline constexpr llvm::StringLiteral UtilityAnyUnsigned = "nct_any_unsigned";
 inline constexpr unsigned UtilityAnyUnsignedTag = 2;
 inline constexpr llvm::StringLiteral UtilityAnyBoolean = "nct_any_boolean";
 inline constexpr unsigned UtilityAnyBooleanTag = 3;
+inline constexpr llvm::StringLiteral UtilityAnyFloat = "nct_any_float";
+inline constexpr unsigned UtilityAnyFloatTag = 4;
 enum class UtilityAnyOperation { HasValue, Reset };
 struct UtilityAnyCall {
   UtilityAnyOperation Operation;

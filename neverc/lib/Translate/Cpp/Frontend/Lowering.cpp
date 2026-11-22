@@ -939,29 +939,44 @@ class FunctionLowering {
   Expression anyCarrierTag(Expression Place, SourceLocation L) {
     return anyCarrierField(std::move(Place), UtilityAnyTag, "u64", L);
   }
-  unsigned anyIntegerTag(QualType Payload, SourceLocation L) {
-    if (A.Context.hasSameUnqualifiedType(Payload, A.Context.IntTy))
-      return UtilityAnyIntegerTag;
-    if (A.Context.hasSameUnqualifiedType(Payload, A.Context.UnsignedIntTy))
-      return UtilityAnyUnsignedTag;
-    if (A.Context.hasSameUnqualifiedType(Payload, A.Context.BoolTy))
-      return UtilityAnyBooleanTag;
-    reject(L, "any payload", "The checked int, unsigned int or bool payload is required.");
+  struct AnyScalar {
+    unsigned Tag;
+    llvm::StringLiteral Field;
+  };
+
+  std::optional<AnyScalar> anyScalar(QualType Payload) {
+    const auto &Context = A.Context;
+    if (Context.hasSameUnqualifiedType(Payload, Context.IntTy))
+      return AnyScalar{UtilityAnyIntegerTag, UtilityAnyInteger};
+    if (Context.hasSameUnqualifiedType(Payload, Context.UnsignedIntTy))
+      return AnyScalar{UtilityAnyUnsignedTag, UtilityAnyUnsigned};
+    if (Context.hasSameUnqualifiedType(Payload, Context.BoolTy))
+      return AnyScalar{UtilityAnyBooleanTag, UtilityAnyBoolean};
+    if (Context.hasSameUnqualifiedType(Payload, Context.FloatTy) &&
+        Context.getTypeSize(Payload) == 32 && Context.getTypeAlign(Payload) == 32)
+      return AnyScalar{UtilityAnyFloatTag, UtilityAnyFloat};
+    return std::nullopt;
   }
-  Expression anyIntegerField(Expression Place, const CXXRecordDecl *Record,
-                             QualType Payload, SourceLocation L) {
-    const auto Tag = anyIntegerTag(Payload, L);
-    const auto Field = Tag == UtilityAnyIntegerTag ? UtilityAnyInteger
-        : Tag == UtilityAnyUnsignedTag ? UtilityAnyUnsigned : UtilityAnyBoolean;
+
+  AnyScalar checkedAnyScalar(QualType Payload, SourceLocation L) {
+    if (auto Scalar = anyScalar(Payload))
+      return *Scalar;
+    reject(L, "any payload", "A checked int, unsigned int, bool or float payload is required.");
+  }
+
+  Expression anyScalarField(Expression Place, const CXXRecordDecl *Record,
+                            QualType Payload, AnyScalar Scalar, SourceLocation L) {
     auto Storage = anyCarrierField(std::move(Place), UtilityAnyStorage,
                                    A.anyStorageType(Record), L);
-    return anyCarrierField(std::move(Storage), Field, type(Payload.getUnqualifiedType(), L), L);
+    return anyCarrierField(std::move(Storage), Scalar.Field, type(Payload.getUnqualifiedType(), L), L);
   }
-  Expression storeAnyInteger(Expression Place, const CXXRecordDecl *Record,
-                             QualType Payload, Expression Value, SourceLocation L) {
-    auto Slot = anyIntegerField(Place, Record, Payload, L);
+
+  Expression storeAnyScalar(Expression Place, const CXXRecordDecl *Record,
+                            QualType Payload, Expression Value, SourceLocation L) {
+    auto Scalar = checkedAnyScalar(Payload, L);
+    auto Slot = anyScalarField(Place, Record, Payload, Scalar, L);
     assign(Slot, std::move(Value), L);
-    assign(anyCarrierTag(std::move(Place), L), quantity(anyIntegerTag(Payload, L), "u64", L), L);
+    assign(anyCarrierTag(std::move(Place), L), quantity(Scalar.Tag, "u64", L), L);
     return Slot;
   }
   Expression anyCheckedPointerCast(const CallExpr *Call, const CXXRecordDecl *Record,
@@ -969,9 +984,8 @@ class FunctionLowering {
     const auto *Input = Call->getArg(0);
     auto Pointer = snapshot(expression(Input), L);
     const auto Pointee = Call->getType()->getPointeeType();
-    if (!A.Context.hasSameUnqualifiedType(Pointee, A.Context.IntTy) &&
-        !A.Context.hasSameUnqualifiedType(Pointee, A.Context.UnsignedIntTy) &&
-        !A.Context.hasSameUnqualifiedType(Pointee, A.Context.BoolTy))
+    const auto Scalar = anyScalar(Pointee);
+    if (!Scalar)
       return A.zero(Call->getType(), L);
     auto Result = temporary(type(Call->getType(), L), L);
     assign(Result, A.zero(Call->getType(), L), L);
@@ -980,10 +994,11 @@ class FunctionLowering {
     label(Check, L);
     auto Place = dereference(std::move(Pointer), L);
     auto Active = binary("==", anyCarrierTag(Place, L),
-                         quantity(anyIntegerTag(Pointee, L), "u64", L), "bool", L);
+                         quantity(Scalar->Tag, "u64", L), "bool", L);
     branch(std::move(Active), Present, End, L);
     label(Present, L);
-    assign(Result, address(anyIntegerField(std::move(Place), Record, Pointee, L), Pointee, L), L);
+    auto Slot = anyScalarField(std::move(Place), Record, Pointee, *Scalar, L);
+    assign(Result, address(std::move(Slot), Pointee, L), L);
     jump(End, L);
     label(End, L);
     return Result;
@@ -32712,11 +32727,12 @@ class FunctionLowering {
         if (Place.getString("type") != type(Call->getType(), L))
           reject(L, "any factory result", "Call and result destination types differ.");
         initializeZero(Place, Call->getType(), L);
-        storeAnyInteger(Place, Made->Record, Made->ValueType, std::move(Value), L);
+        storeAnyScalar(Place, Made->Record, Made->ValueType, std::move(Value), L);
         return Place;
       }
       if (const auto *Any = approvedUtilityAnyActiveValueCast(A.S, A.Sources, Call, A.Context)) {
-        auto Slot = anyIntegerField(lvalue(Call->getArg(0)), Any, Call->getType(), L);
+        const auto Payload = Call->getType();
+        auto Slot = anyScalarField(lvalue(Call->getArg(0)), Any, Payload, checkedAnyScalar(Payload, L), L);
         return Call->isLValue() ? std::move(Slot) : snapshot(std::move(Slot), L);
       }
       if (const auto *Any = approvedUtilityAnyPointerCast(A.S, A.Sources, Call, A.Context))
@@ -32742,7 +32758,7 @@ class FunctionLowering {
         auto Receiver = dereference(Left, L);
         auto Source = dereference(Right, L);
         if (Value) {
-          storeAnyInteger(Receiver, Any->Record, Any->Parameter.getNonReferenceType(),
+          storeAnyScalar(Receiver, Any->Record, Any->Parameter.getNonReferenceType(),
                           snapshot(std::move(Source), L), L);
         } else if (Any->Operation == UtilityAnyTransferOperation::Move) {
           // The SDK moves through a temporary and then swaps into the original.
@@ -32776,7 +32792,7 @@ class FunctionLowering {
         assign(anyCarrierTag(Place, L), quantity(0, "u64", L), L);
         auto Value = Emplace->Input ? snapshot(dereference(std::move(Input), L), L)
                                     : A.zero(Emplace->ValueType, L);
-        return storeAnyInteger(std::move(Place), Emplace->Record, Emplace->ValueType, std::move(Value), L);
+        return storeAnyScalar(std::move(Place), Emplace->Record, Emplace->ValueType, std::move(Value), L);
       }
       if (const auto Any = approvedUtilityAnyCall(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Any->Callee->getBase();
@@ -38878,7 +38894,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
           ? snapshot(dereference(argument(Integer->Input, Integer->Parameter), L), L)
           : A.zero(Integer->ValueType, L);
       initializeZero(Place, T, L);
-      storeAnyInteger(std::move(Place), Integer->Record, Integer->ValueType, std::move(Value), L);
+      storeAnyScalar(std::move(Place), Integer->Record, Integer->ValueType, std::move(Value), L);
       return;
     }
     if (approvedUtilityAnyConstruction(A.S, A.Sources, C, A.Context)) {
