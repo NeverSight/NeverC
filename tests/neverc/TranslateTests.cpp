@@ -387178,6 +387178,171 @@ int main() { std::map<int, int> values; return values.empty() ? 0 : 1; }
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2MonostateAdapterHashDirectInvokeRunAtBothOptimizations) {
+  const auto Source = tmpFile("monostate-adapter-hash-direct-invoke.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <variant>
+using M = std::monostate;
+using H = std::hash<M>;
+int hasher_calls, value_calls;
+const H& get_hasher(const H& h) { ++hasher_calls; return h; }
+const M& get_value(const M& m) { ++value_calls; return m; }
+int main() {
+  const H h{};
+  const M m{};
+  if (std::invoke(H{}, m) != 66740831) return 1;
+  if (std::invoke(get_hasher(h), get_value(m)) != 66740831) return 2;
+  return hasher_calls != 1 || value_calls != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("monostate-adapter-hash-direct-invoke.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("monostate-adapter-hash-direct-invoke" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MonostateAdapterHashTupleOfReferencesRunAtBothOptimizations) {
+  const auto Source = tmpFile("monostate-adapter-hash-tuple-of-references.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <tuple>
+#include <variant>
+using M = std::monostate;
+using Args = std::tuple<const M&>;
+int calls;
+const M& borrow(const M& m) { ++calls; return m; }
+int main() {
+  const M m{};
+  const Args args = std::tie(borrow(m));
+  return std::apply(std::hash<M>{}, args) != 66740831 || calls != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("monostate-adapter-hash-tuple-of-references.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("monostate-adapter-hash-tuple-of-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MonostateAdapterHashReferenceWrapperCallRunAtBothOptimizations) {
+  const auto Source = tmpFile("monostate-adapter-hash-reference-wrapper-call.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <variant>
+using M = std::monostate;
+using H = std::hash<M>;
+int calls;
+const M& borrow(const M& m) { ++calls; return m; }
+int main() {
+  H h{};
+  const M m{};
+  auto ref = std::ref(h);
+  auto cref = std::cref(h);
+  return ref(borrow(m)) != 66740831 || cref(borrow(m)) != 66740831 ||
+         calls != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("monostate-adapter-hash-reference-wrapper-call.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("monostate-adapter-hash-reference-wrapper-call" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MonostateAdapterHashWrappedHasherThroughInvokeRunAtBothOptimizations) {
+  const auto Source = tmpFile("monostate-adapter-hash-wrapped-hasher-through-invoke.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <variant>
+using M = std::monostate;
+using H = std::hash<M>;
+int calls;
+const M& borrow(const M& m) { ++calls; return m; }
+int main() {
+  const H h{};
+  const M m{};
+  auto ref = std::cref(h);
+  return std::invoke(ref, borrow(m)) != 66740831 || calls != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("monostate-adapter-hash-wrapped-hasher-through-invoke.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("monostate-adapter-hash-wrapped-hasher-through-invoke" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MonostateAdapterHashSourceConversionRejected) {
+  const auto Source = tmpFile("monostate-adapter-hash-source-conversion.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <variant>
+struct Source { operator std::monostate() const { return {}; } };
+int main() { return std::invoke(std::hash<std::monostate>{}, Source{}) != 66740831; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2MonostateAdapterHashRenamedSdkMonostateRejected) {
+  const auto Source = tmpFile("monostate-adapter-hash-renamed-sdk-monostate.cpp");
+  writeFile(Source, R"r19containers(#define monostate changed_monostate
+#include <variant>
+#undef monostate
+#include <functional>
+int main() {
+  std::changed_monostate m{};
+  return std::invoke(std::hash<std::changed_monostate>{}, m) != 66740831;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2MonostateAdapterHashMemberAddressThroughInvokeRejected) {
+  const auto Source = tmpFile("monostate-adapter-hash-member-address-through-invoke.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <variant>
+using M = std::monostate;
+using H = std::hash<M>;
+int main() {
+  const H h{};
+  const M m{};
+  auto pointer = &H::operator();
+  return std::invoke(pointer, h, m) != 66740831;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

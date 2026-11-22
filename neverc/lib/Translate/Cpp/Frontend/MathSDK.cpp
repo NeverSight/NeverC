@@ -3569,10 +3569,19 @@ const Expr *approvedStringHashViewCopyArgument(
   return Copy->getArg(0);
 }
 
+static std::optional<UtilityMonostateHash> approvedMonostateHashImpl(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool RequireOwnedReference);
+
 static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference,
     const CXXMethodDecl *SelectedMethod) {
+  if (Call && !RequireOwnedReference)
+    if (const auto Hash = approvedMonostateHashImpl(S, SM, Call, Context, false))
+      return FunctionalOperationInfo{FunctionalOperation::Hash,
+          Hash->Value->getType(), {}, Context.getSizeType(), Context.getSizeType(),
+          Hash->Result};
   if (Call)
     if (auto UniqueHash = uniqueHashCallImpl(
             S, SM, Call, Context, true, RequireOwnedReference))
@@ -7206,12 +7215,18 @@ std::optional<bool> approvedUtilityMonostateComparison(const State &S,
   return Expected;
 }
 
-std::optional<UtilityMonostateHash> approvedUtilityMonostateHash(const State &S,
-    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+static std::optional<UtilityMonostateHash> approvedMonostateHashImpl(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool RequireOwnedReference) {
   const auto *Op = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method = Op ? dyn_cast_or_null<CXXMethodDecl>(Op->getDirectCallee()) : nullptr;
   if (!S.coreV2() || !Method || Op->getOperator() != OO_Call || Op->getNumArgs() != 2 ||
-      !S.owns(SM, Op->getOperatorLoc()) || Method->getNumParams() != 1 ||
+      Method->getNumParams() != 1 || !Call->isPRValue() ||
+      !Context.hasSameType(Call->getType(), Context.getSizeType()) ||
+      (RequireOwnedReference
+           ? !S.owns(SM, Op->getOperatorLoc())
+           : Context.getTypeSize(Context.VoidPtrTy) != 64 ||
+                 !cstddefOrigin(S, SM, Op->getOperatorLoc(), "libcxx", "__type_traits/invoke.h")) ||
       Method->isStatic() || !Method->isConst() || Method->isVolatile() ||
       Method->isVariadic() || Method->isDeleted() || Method->isInvalidDecl() ||
       Method->getRefQualifier() != RQ_None ||
@@ -7243,6 +7258,11 @@ std::optional<UtilityMonostateHash> approvedUtilityMonostateHash(const State &S,
   if (!Literal || Literal->getValue() != 66740831)
     return std::nullopt;
   return UtilityMonostateHash{Receiver, Operand, Literal->getValue().getZExtValue()};
+}
+
+std::optional<UtilityMonostateHash> approvedUtilityMonostateHash(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  return approvedMonostateHashImpl(S, SM, Call, Context, true);
 }
 
 static const DeclRefExpr *variantReference(const Expr *E) {
@@ -10847,7 +10867,9 @@ static bool utilityTupleReferenceValue(const State &S, const SourceManager &SM,
              S, SM, Referent->getAsCXXRecordDecl(), Context)))
       return true;
   }
-  return supportedFunctionalReferenceValue(S, SM, Context, Type) ||
+  return (Context.getTypeSize(Context.VoidPtrTy) == 64 &&
+          approvedUtilityMonostateMetadata(S, SM, Type->getAsCXXRecordDecl(), Context)) ||
+         supportedFunctionalReferenceValue(S, SM, Context, Type) ||
          approvedUtilityUniquePtrLayout(
              S, SM, Type->getAsCXXRecordDecl(), Context).has_value() ||
          approvedUtilityStringRecord(
@@ -61511,6 +61533,11 @@ static std::optional<StringHashObjectInfo> stringHashForwardedCall(
 static bool functionalObjectArgumentConversion(
     const ASTContext &Context, const FunctionalOperationInfo &Operation,
     QualType From, QualType To) {
+  if (Operation.ConstantResult)
+    return !From.isVolatileQualified() && !From.isRestrictQualified() &&
+           From.getAddressSpace() == LangAS::Default &&
+           Context.hasSameUnqualifiedType(From, Operation.LeftType) &&
+           Context.hasSameUnqualifiedType(To, Operation.LeftType);
   const bool ExactFunctionPointerHash =
       Operation.Operation == FunctionalOperation::Hash &&
       Operation.LeftType->isFunctionPointerType() &&

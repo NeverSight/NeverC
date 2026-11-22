@@ -1058,6 +1058,30 @@ def restore_ordered_observer_query_history(source):
     return restored
 
 
+R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256 = '06eb0fe12a4802e83958fd3f71d749046514ef2892301ad3f1bd8fc3e2bb981a'
+R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256 = '1e41b38a7df2478c43bf82959c64a4633b553bc93617880d9ef6d2e9c4a7c462'
+R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_REGISTERED_SHA256 = 'f4e563671fa504ae4b0530dc0fa5cd213df7ad32c8965cc6b0d7119c555a4854'
+R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_MAINTAINED_SHA256 = '1a39c3d2d7c96ed5470131a21ef92d8b098fe9d56ecb012ed91cd0ecc9d540d7'
+R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SHA256 = '7b84537fdbfae74175a05adb404d77b1bd74229952fd93d0d837ef0c7af92af3'
+R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SIZE = 19922676
+R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SIZE = 7106
+
+
+def restore_monostate_adapter_hash_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256, R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256}
+    stop = R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SIZE
+    start = stop - R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_REGISTERED_SHA256 if digest == R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256
+             else R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1225,6 +1249,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

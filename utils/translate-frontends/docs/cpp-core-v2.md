@@ -18032,3 +18032,10 @@ The pinned integer `map`, `multimap`, `set` and `multiset` types admit
 `bool` and their nonthrowing specification. These queries use unevaluated
 lvalue receivers. Runtime construction and container operations still
 require separate support.
+
+## Monostate hashing through invocation adapters
+
+The selected `std::hash<std::monostate>` operation can be called by checked
+`std::invoke`, `std::apply` with a tuple of references, or an admitted
+`std::reference_wrapper`. The adapter preserves the pinned hash value and
+evaluates the forwarded arguments once.

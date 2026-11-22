@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.monostate_adapter_hash_registered = cls.registered
+        cls.monostate_adapter_hash_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.monostate_adapter_hash_original = cls.adapter.restore_original_gtests(cls.monostate_adapter_hash_registered,
+                                                                        cls.monostate_adapter_hash_suffix)
+        cls.registered = cls.adapter.restore_monostate_adapter_hash_history(cls.monostate_adapter_hash_registered)
         cls.ordered_observer_query_registered = cls.registered
         cls.ordered_observer_query_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.ordered_observer_query_original = cls.adapter.restore_original_gtests(cls.ordered_observer_query_registered,
@@ -2180,6 +2185,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_ordered_observer_query_history(self.ordered_observer_query_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.ordered_observer_query_registered, self.ordered_observer_query_suffix + b' ')
+
+
+    def test_monostate_adapter_hash_retains_published_bodies(self):
+        self.assertEqual(self.monostate_adapter_hash_original + self.monostate_adapter_hash_suffix, self.monostate_adapter_hash_registered)
+        self.assertEqual(self.adapter.restore_monostate_adapter_hash_history(self.monostate_adapter_hash_original),
+                         self.ordered_observer_query_original)
+        output, evidence = self.extractor.extract(self.monostate_adapter_hash_original, ['TranslateTest.CoreV2MonostateAdapterHashDirectInvokeRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateAdapterHashTupleOfReferencesRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateAdapterHashReferenceWrapperCallRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateAdapterHashWrappedHasherThroughInvokeRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateAdapterHashSourceConversionRejected', 'TranslateTest.CoreV2MonostateAdapterHashRenamedSdkMonostateRejected', 'TranslateTest.CoreV2MonostateAdapterHashMemberAddressThroughInvokeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8270)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'monostate-adapter-hash-direct-invoke', output)
+        self.assertIn(b'monostate-adapter-hash-tuple-of-references', output)
+
+    def test_monostate_adapter_hash_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_monostate_adapter_hash_history(self.monostate_adapter_hash_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.monostate_adapter_hash_registered, self.monostate_adapter_hash_suffix + b' ')
 
 
 if __name__ == '__main__':
