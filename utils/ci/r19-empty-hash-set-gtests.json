@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2EmptyHashSetCopyRejected",
     "TranslateTest.CoreV2EmptyHashSetLoadFactorSetterRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "5a11ec42863f8163b0bbc9ccd2394433bff0c33ae95e5d66534a82c224916271",
   "maintained_original_sha256": "4ea24098e82989877d78a96781e0fcd959889139da7c31491c27a2eceb946f60",
@@ -155,5 +155,10 @@
   "current_registry_count": 8326,
   "current_python_registry_tests": 168,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "empty-hash-set": "b3fef4bdda12b49db1748acb274e7da527db10974eb3e7286a2e2ef5b3590aa3"
+  },
+  "native_reference_authentication_sha256": "89c64201ecd11e7351be755dabc11ce2c231421d7cc75892f2a44d578e9445cd",
+  "source_proof_sha256": "0328f4adda17071488ed1ec6950190efcd245bc50f6a0916ac984922d13d0715"
 }
