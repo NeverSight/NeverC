@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_modifiers_registered = cls.registered
+        cls.unordered_set_modifiers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_modifiers_original = cls.adapter.restore_original_gtests(cls.unordered_set_modifiers_registered,
+                                                                        cls.unordered_set_modifiers_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_modifiers_history(cls.unordered_set_modifiers_registered)
         cls.unordered_set_values_registered = cls.registered
         cls.unordered_set_values_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_values_original = cls.adapter.restore_original_gtests(cls.unordered_set_values_registered,
@@ -2578,6 +2583,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_values_history(self.unordered_set_values_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_values_registered, self.unordered_set_values_suffix + b' ')
+
+
+    def test_unordered_set_modifiers_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_modifiers_original + self.unordered_set_modifiers_suffix, self.unordered_set_modifiers_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_modifiers_history(self.unordered_set_modifiers_original),
+                         self.unordered_set_values_original)
+        output, evidence = self.extractor.extract(self.unordered_set_modifiers_original, ['TranslateTest.CoreV2UnorderedSetModifiersEraseCollisionsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetModifiersReceiverBeforeModifierArgumentsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetModifiersInsertAfterClearRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetModifiersEraseReleasesOneNodeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetModifiersDifferentKeyRejected', 'TranslateTest.CoreV2UnorderedSetModifiersAlternateHashRejected', 'TranslateTest.CoreV2UnorderedSetModifiersMultiKeyEraseRejected', 'TranslateTest.CoreV2UnorderedSetModifiersPointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8408)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-modifiers-erase-collisions', output)
+        self.assertIn(b'unordered-set-modifiers-erase-releases-one-node', output)
+
+    def test_unordered_set_modifiers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_modifiers_history(self.unordered_set_modifiers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_modifiers_registered, self.unordered_set_modifiers_suffix + b' ')
 
 
 if __name__ == '__main__':

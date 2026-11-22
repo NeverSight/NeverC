@@ -1315,6 +1315,8 @@ enum class UtilityOperation {
   EmptyHashSetBucketObserver,
   UnorderedSetCount,
   UnorderedSetClear,
+  UnorderedSetEraseKey,
+  UnorderedSetInsertList,
   PriorityQueue,
   Deque,
   ValarrayScalar,

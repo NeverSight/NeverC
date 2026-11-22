@@ -18159,3 +18159,11 @@ initializer_list<int>. Duplicate keys share one element. The selected
 count() and clear() calls use the checked node storage. Reserve and rehash
 preserve elements and update bucket membership. Clear releases all nodes
 and retains the allocated bucket capacity.
+
+## Integer unordered-set modifiers
+
+The checked default unordered_set<int> accepts insert(initializer_list<int>)
+and erase(const int&). List insertion preserves each distinct key and existing
+elements. Key erasure releases the matching node and returns one for a
+removed key or zero for a missing key. The receiver is evaluated before the
+argument expressions.
