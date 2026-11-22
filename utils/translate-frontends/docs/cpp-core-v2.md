@@ -18094,3 +18094,11 @@ construction and scoped destruction. Their checked empty, size, bucket_count,
 and max_load_factor observers evaluate the receiver once. The generated C23
 state holds a null first node and bucket pointer, zero counts, and a load
 factor of one.
+
+## Float any payloads
+
+The checked inline any representation carries float as a distinct type.
+Value and in-place construction, emplacement, assignment, copying, moving,
+and reset follow the selected float storage lifetime. A matching pointer
+any_cast addresses the float field. An immutable local initializer can also
+prove a matching value or const-reference cast.

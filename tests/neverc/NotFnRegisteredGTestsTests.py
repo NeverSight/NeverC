@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.any_float_inline_registered = cls.registered
+        cls.any_float_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_float_inline_original = cls.adapter.restore_original_gtests(cls.any_float_inline_registered,
+                                                                        cls.any_float_inline_suffix)
+        cls.registered = cls.adapter.restore_any_float_inline_history(cls.any_float_inline_registered)
         cls.empty_hash_set_registered = cls.registered
         cls.empty_hash_set_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.empty_hash_set_original = cls.adapter.restore_original_gtests(cls.empty_hash_set_registered,
@@ -2371,6 +2376,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_empty_hash_set_history(self.empty_hash_set_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.empty_hash_set_registered, self.empty_hash_set_suffix + b' ')
+
+
+    def test_any_float_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_float_inline_original + self.any_float_inline_suffix, self.any_float_inline_registered)
+        self.assertEqual(self.adapter.restore_any_float_inline_history(self.any_float_inline_original),
+                         self.empty_hash_set_original)
+        output, evidence = self.extractor.extract(self.any_float_inline_original, ['TranslateTest.CoreV2AnyFloatInlinePointerWriteRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFloatInlineImmutableValueRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFloatInlineFactoryEmplaceResetRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFloatInlineCopyMoveAndAssignRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFloatInlineLongDoubleOwnerRejected', 'TranslateTest.CoreV2AnyFloatInlineMutableReferenceRejected', 'TranslateTest.CoreV2AnyFloatInlineUnknownActiveValueRejected', 'TranslateTest.CoreV2AnyFloatInlineMismatchedImmutableValueRejected'])
+        self.assertEqual(evidence['original_test_names'], 8334)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-float-inline-immutable-value', output)
+        self.assertIn(b'any-float-inline-pointer-write', output)
+
+    def test_any_float_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_float_inline_history(self.any_float_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_float_inline_registered, self.any_float_inline_suffix + b' ')
 
 
 if __name__ == '__main__':

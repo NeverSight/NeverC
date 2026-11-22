@@ -388488,6 +388488,166 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2AnyFloatInlinePointerWriteRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-float-inline-pointer-write.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value{1.25f};
+  float* slot = std::any_cast<float>(&value);
+  if (!slot || *slot != 1.25f || std::any_cast<double>(&value)) return 1;
+  *slot = 2.5f;
+  const std::any* view = &value;
+  const float* saved = std::any_cast<float>(view);
+  return !saved || *saved != 2.5f || std::any_cast<bool>(&value);
+}
+)r19containers");
+  const auto Output = tmpFile("any-float-inline-pointer-write.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-float-inline-pointer-write" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyFloatInlineImmutableValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-float-inline-immutable-value.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  const std::any value(std::in_place_type<float>, 1.5f);
+  float copied = std::any_cast<float>(value);
+  const float& viewed = std::any_cast<const float&>(value);
+  return copied != 1.5f || viewed != copied;
+}
+)r19containers");
+  const auto Output = tmpFile("any-float-inline-immutable-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-float-inline-immutable-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyFloatInlineFactoryEmplaceResetRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-float-inline-factory-emplace-reset.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  auto value = std::make_any<float>(3.25f);
+  auto* first = std::any_cast<float>(&value);
+  if (!first || *first != 3.25f) return 1;
+  value.emplace<unsigned int>(7u);
+  if (std::any_cast<float>(&value)) return 2;
+  float& second = value.emplace<float>(-0.5f);
+  if (second != -0.5f || std::any_cast<unsigned int>(&value)) return 3;
+  value.reset();
+  return value.has_value() || std::any_cast<float>(&value) != nullptr;
+}
+)r19containers");
+  const auto Output = tmpFile("any-float-inline-factory-emplace-reset.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-float-inline-factory-emplace-reset" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyFloatInlineCopyMoveAndAssignRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-float-inline-copy-move-and-assign.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any source{4.75f};
+  std::any copy = source;
+  std::any moved = static_cast<std::any&&>(copy);
+  std::any target{false};
+  target = moved;
+  auto* a = std::any_cast<float>(&source);
+  auto* b = std::any_cast<float>(&target);
+  if (!a || !b || *a != 4.75f || *b != 4.75f) return 1;
+  target = true;
+  auto* flag = std::any_cast<bool>(&target);
+  return !flag || !*flag || std::any_cast<float>(&target) != nullptr;
+}
+)r19containers");
+  const auto Output = tmpFile("any-float-inline-copy-move-and-assign.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-float-inline-copy-move-and-assign" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyFloatInlineLongDoubleOwnerRejected) {
+  const auto Source = tmpFile("any-float-inline-long-double-owner.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  auto value = std::make_any<long double>(1.0L);
+  return !value.has_value();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyFloatInlineMutableReferenceRejected) {
+  const auto Source = tmpFile("any-float-inline-mutable-reference.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+float edit() {
+  std::any value{1.5f};
+  return ++std::any_cast<float&>(value);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyFloatInlineUnknownActiveValueRejected) {
+  const auto Source = tmpFile("any-float-inline-unknown-active-value.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+float read(const std::any& value) { return std::any_cast<float>(value); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyFloatInlineMismatchedImmutableValueRejected) {
+  const auto Source = tmpFile("any-float-inline-mismatched-immutable-value.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+float read() {
+  const std::any value{1u};
+  return std::any_cast<float>(value);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");
