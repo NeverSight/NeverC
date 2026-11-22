@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -136991,8 +136992,10 @@ std::optional<UtilityOperation> approvedEmptyHashSetBucketOperation(const State 
       Call->getArg(0)->getType().isVolatileQualified() ||
       !approvedEmptyHashSetRecord(S, SM, Owner, Context) ||
       !Context.hasSameUnqualifiedType(Type, Context.getRecordType(Owner)) ||
-      !orderedPinnedFunction(S, SM, Outer, "unordered_set"))
+      !orderedPinnedFunction(S, SM, Outer, "unordered_set")) {
+    llvm::errs() << "BUCKET_PROOF public declaration: " << Name << "\n";
     return std::nullopt;
+  }
 
   const auto *Storage = orderedTreeField(Owner, "__table_");
   const auto *Table = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
@@ -137015,9 +137018,18 @@ std::optional<UtilityOperation> approvedEmptyHashSetBucketOperation(const State 
       !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())) ||
       !Context.hasSameType(Selected->getReturnType(), Result) || Selected->isConst() != Observe ||
       !Context.hasSameType(Selected->getParamDecl(0)->getType(), Parameter) ||
-      !orderedParameter(Forward->getArg(0), Outer->getParamDecl(0)) ||
-      !approvedHashSetBucketSource(S, SM, Outer, Owner, Context))
+      !orderedParameter(Forward->getArg(0), Outer->getParamDecl(0))) {
+    llvm::errs() << "BUCKET_PROOF wrapper: " << Name << " selected=" << SelectedName
+                 << " body=" << (Body ? Body->size() : 0)
+                 << " stmt=" << (BodyResult ? BodyResult->getStmtClassName() : "none")
+                 << " table=" << bool(Table) << " forward=" << bool(Forward)
+                 << " method=" << bool(Selected) << " receiver=" << bool(Receiver) << "\n";
     return std::nullopt;
+  }
+  if (!approvedHashSetBucketSource(S, SM, Outer, Owner, Context)) {
+    llvm::errs() << "BUCKET_PROOF dependencies: " << Name << "\n";
+    return std::nullopt;
+  }
   return Observe ? UtilityOperation::EmptyHashSetBucketObserver : UtilityOperation::EmptyHashSetResizeBuckets;
 }
 
