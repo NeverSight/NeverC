@@ -1053,6 +1053,15 @@ class FunctionLowering {
     label(Done, L);
     return Result;
   }
+  void storeHashLoadLimit(Expression Slot, Expression Value, Expression Current, SourceLocation L) {
+    const auto Clamp = labelName(), Ready = labelName();
+    branch(binary("<", Value, Current, "bool", L), Clamp, Ready, L);
+    label(Clamp, L);
+    assign(Value, Current, L);
+    jump(Ready, L);
+    label(Ready, L);
+    assign(std::move(Slot), std::move(Value), L);
+  }
   Expression unorderedMapLoadFactor(Expression Place, const UtilityUnorderedMapRecord &Info,
                                     SourceLocation L) {
     auto Size = unorderedMapMember(Place, Info, "nct_unordered_size", L);
@@ -26848,6 +26857,12 @@ class FunctionLowering {
   }
 
 
+  Expression emptyHashSetLoadFactor(Expression Place, SourceLocation L) {
+    const auto Type = A.Context.getSizeType();
+    auto Size = emptyHashSetMember(Place, "nct_unordered_size", Type, L);
+    auto Buckets = emptyHashSetMember(std::move(Place), "nct_unordered_bucket_count", Type, L);
+    return hashTableLoadFactor(std::move(Size), std::move(Buckets), L);
+  }
   Expression emptyHashSetMember(Expression Place, llvm::StringRef Name,
                                 QualType FieldType, SourceLocation L) {
     return Expression{{"kind", "member"}, {"type", type(FieldType, L)}, {"name", Name.str()},
@@ -29207,6 +29222,20 @@ class FunctionLowering {
       }
       return Result;
     }
+    if (Operation == UtilityOperation::EmptyHashSetSetMaxLoadFactor) {
+      const auto *Member = approvedEmptyHashSetSetMaxLoadFactor(A.S, A.Sources, Call, A.Context);
+      if (!Member)
+        reject(L, "unordered set load limit", "The exact selected SDK setter body is required.");
+      const auto *Method = clang::cast<CXXMethodDecl>(Member->getMemberDecl());
+      const auto *Receiver = Member->getBase();
+      auto Pointer = snapshot(address(lvalue(Receiver), Receiver->getType(), L), L);
+      auto Value = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+      auto Place = dereference(std::move(Pointer), L);
+      auto Current = emptyHashSetLoadFactor(Place, L);
+      auto Slot = emptyHashSetMember(std::move(Place), "nct_unordered_max_load", A.Context.FloatTy, L);
+      storeHashLoadLimit(std::move(Slot), std::move(Value), std::move(Current), L);
+      return {};
+    }
     if (Operation == UtilityOperation::EmptyHashSetObserver) {
       const auto Info = approvedEmptyHashSetObserver(A.S, A.Sources, Call, A.Context);
       if (!Info)
@@ -29222,9 +29251,7 @@ class FunctionLowering {
       if (Name == "load_factor") {
         auto Pointer = snapshot(address(std::move(Receiver), Member->getBase()->getType(), L), L);
         auto Place = dereference(std::move(Pointer), L);
-        auto Size = emptyHashSetMember(Place, "nct_unordered_size", Type, L);
-        auto Buckets = emptyHashSetMember(std::move(Place), "nct_unordered_bucket_count", Type, L);
-        return hashTableLoadFactor(std::move(Size), std::move(Buckets), L);
+        return emptyHashSetLoadFactor(std::move(Place), L);
       }
       if (Name == "bucket_count")
         return emptyHashSetMember(std::move(Receiver), "nct_unordered_bucket_count", Type, L);
@@ -29616,13 +29643,8 @@ class FunctionLowering {
       if (Operation == UtilityOperation::UnorderedMapSetMaxLoadFactor) {
         auto Value = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
         auto Current = unorderedMapLoadFactor(Place, *Info, L);
-        const auto Clamp = labelName(), Ready = labelName();
-        branch(binary("<", Value, Current, "bool", L), Clamp, Ready, L);
-        label(Clamp, L);
-        assign(Value, Current, L);
-        jump(Ready, L);
-        label(Ready, L);
-        assign(unorderedMapMember(Place, *Info, "nct_unordered_max_load", L), Value, L);
+        auto Slot = unorderedMapMember(Place, *Info, "nct_unordered_max_load", L);
+        storeHashLoadLimit(std::move(Slot), std::move(Value), std::move(Current), L);
         return {};
       }
       auto Value = unorderedMapMember(Place, *Info,

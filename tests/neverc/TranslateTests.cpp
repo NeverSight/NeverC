@@ -388473,7 +388473,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRejected) {
+TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRunAtBothOptimizations) {
   const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() {
@@ -388482,10 +388482,17 @@ int main() {
   return values.max_load_factor() != 2.0f;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("empty-hash-set-load-factor-setter.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("empty-hash-set-load-factor-setter" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2AnyFloatInlinePointerWriteRunAtBothOptimizations) {
@@ -389109,6 +389116,169 @@ TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesNonemptyOwnerRejected) {
 int main() {
   const std::unordered_multiset<int> values{1, 1};
   return !values.key_eq()(1, 1);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLoadLimitSetUpdateRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-load-limit-set-update.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values;
+  if (values.max_load_factor() != 1.0f) return 1;
+  values.max_load_factor(2);
+  return values.max_load_factor() != 2.0f || values.load_factor() != 0.0f;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-load-limit-set-update.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-load-limit-set-update" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLoadLimitMultisetUpdateRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-load-limit-multiset-update.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values;
+  values.max_load_factor(2.0f);
+  values.max_load_factor(0.5f);
+  return values.max_load_factor() != 0.5f || values.bucket_count() != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-load-limit-multiset-update.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-load-limit-multiset-update" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLoadLimitReceiverBeforeArgumentRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-load-limit-receiver-before-argument.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_set<int>;
+Set& observe(Set& values, int& trace) {
+  trace = trace * 10 + 1;
+  return values;
+}
+float requested(int& trace) {
+  trace = trace * 10 + 2;
+  return 1.75f;
+}
+int main() {
+  Set values;
+  int trace = 0;
+  observe(values, trace).max_load_factor(requested(trace));
+  return trace != 12 || values.max_load_factor() != 1.75f;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-load-limit-receiver-before-argument.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-load-limit-receiver-before-argument" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLoadLimitIndependentEmptyOwnersRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-load-limit-independent-empty-owners.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> first, second;
+  first.max_load_factor(1.25f);
+  const auto& view = first;
+  return view.max_load_factor() != 1.25f || second.max_load_factor() != 1.0f;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-load-limit-independent-empty-owners.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-load-limit-independent-empty-owners" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLoadLimitCustomHashRejected) {
+  const auto Source = tmpFile("unordered-load-limit-custom-hash.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long long operator()(int value) const { return value; } };
+int main() {
+  std::unordered_set<int, Hash> values;
+  values.max_load_factor(3.0f);
+  return values.max_load_factor() != 3.0f;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLoadLimitNonIntKeyRejected) {
+  const auto Source = tmpFile("unordered-load-limit-non-int-key.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<long> values;
+  values.max_load_factor(3.0f);
+  return values.max_load_factor() != 3.0f;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLoadLimitArrowReceiverRejected) {
+  const auto Source = tmpFile("unordered-load-limit-arrow-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values;
+  auto* pointer = &values;
+  pointer->max_load_factor(3.0f);
+  return values.max_load_factor() != 3.0f;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedLoadLimitNonemptyOwnerRejected) {
+  const auto Source = tmpFile("unordered-load-limit-nonempty-owner.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{3, 3};
+  values.max_load_factor(3.0f);
+  return values.max_load_factor() != 3.0f;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

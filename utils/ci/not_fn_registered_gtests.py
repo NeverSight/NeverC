@@ -1350,6 +1350,32 @@ def restore_unordered_lookup_policies_history(source):
     return restored
 
 
+R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256 = 'e2ba79603249f8a30c053f06becbce4d9b6a09d95fd9980551acf3759916984b'
+R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256 = 'fae0fb9ccf2cc94269c627dfff161db7092c3ae45dbf081309e168a8158fd5da'
+R19_UNORDERED_LOAD_LIMIT_PREVIOUS_REGISTERED_SHA256 = 'e543cb1c290298ca024848985498bb44c08cfa2e81e4738ba83e05d7b89c65e2'
+R19_UNORDERED_LOAD_LIMIT_PREVIOUS_MAINTAINED_SHA256 = 'b4a0dd37f0dde5f034dd8c52c3474b2bd571f0766befa55fbe257312e8ccb2a5'
+R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SHA256 = '05c22dee8bbe32346ff946746f00d569136678472bc66fe4b33539eef12ef324'
+R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SIZE = 20009494
+R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SIZE = 7201
+
+
+def restore_unordered_load_limit_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256, R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRunAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-load-factor-setter.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-load-factor-setter" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRunAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-load-factor-setter.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-load-factor-setter" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\n', b'TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRejected) {\n  const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    prior = (R19_UNORDERED_LOAD_LIMIT_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256
+             else R19_UNORDERED_LOAD_LIMIT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1601,6 +1627,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

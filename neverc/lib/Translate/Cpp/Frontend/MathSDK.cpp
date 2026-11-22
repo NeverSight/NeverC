@@ -81347,10 +81347,12 @@ static bool utilityWrapperInnerProduct(const State &S, const SourceManager &SM,
                                      *Wrapper2, Context);
 }
 
-// Verify the pinned SDK minimum with its default comparator.
-static bool utilityCheckedMinimum(const State &S, const SourceManager &SM,
+// Verify the pinned SDK extremum with its default comparator.
+static bool utilityCheckedExtremum(const State &S, const SourceManager &SM,
                                   const CallExpr *Call, const ASTContext &Context,
-                                  QualType Type) {
+                                  QualType Type, bool Maximum) {
+  const auto Name = Maximum ? "max" : "min";
+  const auto Header = Maximum ? "__algorithm/max.h" : "__algorithm/min.h";
   const auto ConstType = Type.withConst();
   const auto Reference = Context.getLValueReferenceType(ConstType);
   auto Same = [&](QualType A, QualType B) {
@@ -81364,7 +81366,7 @@ static bool utilityCheckedMinimum(const State &S, const SourceManager &SM,
   auto Function = [&](const FunctionDecl *F, llvm::ArrayRef<QualType> Arguments,
                       llvm::ArrayRef<QualType> Parameters) {
     const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
-    if (!utilitySwapSDKFunction(S, SM, F, "min", "__algorithm/min.h") ||
+    if (!utilitySwapSDKFunction(S, SM, F, Name, Header) ||
         !Same(F->getReturnType(), Reference) || !A ||
         A->size() != Arguments.size() || F->getNumParams() != Parameters.size())
       return false;
@@ -81463,9 +81465,9 @@ static bool utilityCheckedMinimum(const State &S, const SourceManager &SM,
       !utilityAlgorithmSDKReference(S, SM, Invoke, Method) ||
       !utilityAlgorithmReference(Invoke->getArg(0), D->getParamDecl(2),
                                  Context) ||
-      !utilityAlgorithmReference(Invoke->getArg(1), D->getParamDecl(1),
+      !utilityAlgorithmReference(Invoke->getArg(1), D->getParamDecl(Maximum ? 0 : 1),
                                  Context) ||
-      !utilityAlgorithmReference(Invoke->getArg(2), D->getParamDecl(0),
+      !utilityAlgorithmReference(Invoke->getArg(2), D->getParamDecl(Maximum ? 1 : 0),
                                  Context) ||
       !utilityAlgorithmReference(Conditional->getTrueExpr(), D->getParamDecl(1),
                                  Context) ||
@@ -81490,6 +81492,12 @@ static bool utilityCheckedMinimum(const State &S, const SourceManager &SM,
                                    Context) &&
          utilityAlgorithmReference(Less->getRHS(), MD->getParamDecl(1),
                                    Context);
+}
+
+static bool utilityCheckedMinimum(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call, const ASTContext &Context,
+                                  QualType Type) {
+  return utilityCheckedExtremum(S, SM, Call, Context, Type, false);
 }
 
 static bool utilityWrapperMismatchMinimum(const State &S, const SourceManager &SM,
@@ -123887,6 +123895,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::OrderedContainerObserver;
   if (approvedEmptyHashSetObserver(S, SM, Call, Context))
     return UtilityOperation::EmptyHashSetObserver;
+  if (approvedEmptyHashSetSetMaxLoadFactor(S, SM, Call, Context))
+    return UtilityOperation::EmptyHashSetSetMaxLoadFactor;
   if (approvedUtilityPriorityQueueCall(S, SM, Call, Context)) return UtilityOperation::PriorityQueue;
   if (approvedUtilityDequeCall(S, SM, Call, Context)) return UtilityOperation::Deque;
   if (approvedUtilityValarrayCall(S, SM, Call, Context)) return UtilityOperation::ValarrayScalar;
@@ -136930,6 +136940,76 @@ static bool emptyHashLoadFactorSource(const State &S, const SourceManager &SM,
          Context.hasSameType(Size->getReturnType(), Context.getSizeType()) &&
          Field->getMemberDecl() == orderedTreeField(Table, "__size_") &&
          isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase()));
+}
+
+const MemberExpr *approvedEmptyHashSetSetMaxLoadFactor(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Outer = Access ? Access->getMethodDecl() : nullptr;
+  const bool Setter = Outer && Outer->getIdentifier() && Outer->getName() == "max_load_factor" &&
+      Outer->getNumParams() == 1 && Call->getNumArgs() == 1;
+  if (!Setter) return nullptr;
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto *Owner = Outer->getParent();
+  const auto Float = Context.FloatTy;
+  if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
+      Member->getBase()->getType().hasQualifiers() || !S.owns(SM, Member->getMemberLoc()) ||
+      Outer->isConst() || Outer->isVolatile() || Outer->isStatic() || Outer->isVirtual() ||
+      !Outer->getReturnType()->isVoidType() || !Call->getType()->isVoidType() ||
+      !Context.hasSameType(Outer->getParamDecl(0)->getType(), Float) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Float) ||
+      !approvedEmptyHashSetRecord(S, SM, Owner, Context) ||
+      !Context.hasSameType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
+      !orderedPinnedFunction(S, SM, Outer, "unordered_set"))
+    return nullptr;
+
+  const auto *TableField = orderedTreeField(Owner, "__table_");
+  const auto *Table = TableField ? TableField->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *OuterBody = dyn_cast_or_null<CompoundStmt>(Outer->getBody());
+  const auto *CallSetter = OuterBody && OuterBody->size() == 1
+      ? dyn_cast<CXXMemberCallExpr>(OuterBody->body_front()) : nullptr;
+  const auto *Inner = Table ? hashTableMethod(S, SM, CallSetter, Table, "max_load_factor", 1) : nullptr;
+  const auto *Receiver = Inner
+      ? dyn_cast_or_null<MemberExpr>(orderedExpression(CallSetter->getImplicitObjectArgument())) : nullptr;
+  if (!Inner || Inner->isConst() || !Inner->getReturnType()->isVoidType() ||
+      !Context.hasSameType(Inner->getParamDecl(0)->getType(), Float) ||
+      !orderedParameter(CallSetter->getArg(0), Outer->getParamDecl(0)) ||
+      !Receiver || Receiver->getMemberDecl() != TableField ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())))
+    return nullptr;
+
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Inner->getBody());
+  if (!Body || Body->size() != 2)
+    return nullptr;
+  const auto *Guard = dyn_cast_or_null<CStyleCastExpr>(orderedExpression(dyn_cast<Expr>(Body->body_front())));
+  const auto *Zero = Guard ? dyn_cast_or_null<IntegerLiteral>(orderedExpression(Guard->getSubExpr())) : nullptr;
+  if (!Guard || Guard->getCastKind() != CK_ToVoid || !Zero || !Zero->getValue().isZero())
+    return nullptr;
+  const auto *Write = orderedExpression(dyn_cast<Expr>(Body->body_back()));
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Write))
+    Write = orderedExpression(Cleanup->getSubExpr());
+  const auto *Assignment = dyn_cast_or_null<BinaryOperator>(Write);
+  if (!Assignment || Assignment->getOpcode() != BO_Assign ||
+      !Context.hasSameType(Assignment->getType(), Float))
+    return nullptr;
+  const auto *GetLimit = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Assignment->getLHS()));
+  const auto *Limit = hashTableMethod(S, SM, GetLimit, Table, "max_load_factor");
+  const auto *Stored = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Limit)));
+  const auto *LimitField = orderedTreeField(Table, "__max_load_factor_");
+  if (!Limit || Limit->isConst() || !orderedReceiver(GetLimit) ||
+      !Context.hasSameType(Limit->getReturnType(), Context.getLValueReferenceType(Float)) ||
+      !LimitField || !Stored || Stored->getMemberDecl() != LimitField ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Stored->getBase())))
+    return nullptr;
+
+  const auto *Max = dyn_cast_or_null<CallExpr>(orderedExpression(Assignment->getRHS()));
+  if (!utilityCheckedExtremum(S, SM, Max, Context, Float, true) ||
+      !orderedParameter(Max->getArg(0), Inner->getParamDecl(0)))
+    return nullptr;
+  const auto *GetLoad = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Max->getArg(1)));
+  const auto *Load = hashTableMethod(S, SM, GetLoad, Table, "load_factor");
+  return Load && Load->isConst() && orderedReceiver(GetLoad) &&
+      emptyHashLoadFactorSource(S, SM, Load, Table, Context) ? Member : nullptr;
 }
 
 std::optional<UtilityContainerObserver> approvedEmptyHashSetObserver(const State &S, const SourceManager &SM,

@@ -18122,3 +18122,10 @@ and difference-type limits.
 The admitted default integer unordered set and multiset support the const
 hash_function() and key_eq() observers. The selected calls copy the stateless
 SDK function objects and evaluate the source receiver once.
+
+## Unordered load limits
+
+The admitted default integer unordered set and multiset support the
+max_load_factor(float) setter with a positive requested limit. The
+translation evaluates the receiver and argument once, in member-call order,
+and retains the selected table's clamp against its current load.

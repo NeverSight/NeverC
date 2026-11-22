@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_load_limit_registered = cls.registered
+        cls.unordered_load_limit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_load_limit_original = cls.adapter.restore_original_gtests(cls.unordered_load_limit_registered,
+                                                                        cls.unordered_load_limit_suffix)
+        cls.registered = cls.adapter.restore_unordered_load_limit_history(cls.unordered_load_limit_registered)
         cls.unordered_lookup_policies_registered = cls.registered
         cls.unordered_lookup_policies_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_lookup_policies_original = cls.adapter.restore_original_gtests(cls.unordered_lookup_policies_registered,
@@ -2463,6 +2468,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_lookup_policies_history(self.unordered_lookup_policies_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_lookup_policies_registered, self.unordered_lookup_policies_suffix + b' ')
+
+
+    def test_unordered_load_limit_retains_published_bodies(self):
+        self.assertEqual(self.unordered_load_limit_original + self.unordered_load_limit_suffix, self.unordered_load_limit_registered)
+        self.assertEqual(self.adapter.restore_unordered_load_limit_history(self.unordered_load_limit_original),
+                         self.unordered_lookup_policies_original)
+        output, evidence = self.extractor.extract(self.unordered_load_limit_original, ['TranslateTest.CoreV2UnorderedLoadLimitSetUpdateRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLoadLimitMultisetUpdateRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLoadLimitReceiverBeforeArgumentRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLoadLimitIndependentEmptyOwnersRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLoadLimitCustomHashRejected', 'TranslateTest.CoreV2UnorderedLoadLimitNonIntKeyRejected', 'TranslateTest.CoreV2UnorderedLoadLimitArrowReceiverRejected', 'TranslateTest.CoreV2UnorderedLoadLimitNonemptyOwnerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8366)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-load-limit-set-update', output)
+        self.assertIn(b'unordered-load-limit-receiver-before-argument', output)
+
+    def test_unordered_load_limit_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_load_limit_history(self.unordered_load_limit_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_load_limit_registered, self.unordered_load_limit_suffix + b' ')
 
 
 if __name__ == '__main__':
