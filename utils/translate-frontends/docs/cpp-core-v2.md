@@ -18167,3 +18167,10 @@ and erase(const int&). List insertion preserves each distinct key and existing
 elements. Key erasure releases the matching node and returns one for a
 removed key or zero for a missing key. The receiver is evaluated before the
 argument expressions.
+
+## Inline char and short any payloads
+
+The checked inline any representation stores char, signed char, unsigned char,
+short and unsigned short using their own tags and target types. The supported
+scalar constructors, assignment, emplacement, move, swap, reset and casts
+preserve payload width, signedness and type identity.

@@ -953,5 +953,5 @@
     "variant-in-place-runtime": "bd90cf05c8c2a12d4d00b5759d5195f30114f5f455e69bb3142e391e6e176475"
   },
   "native_reference_authentication_sha256": "7252dc627daa9c512c414f006584a89ad165af708373991926d444d7e11d3bcf",
-  "source_proof_sha256": "709ef6d55a95bae91dad1deb61f363a54d0d714510c45f19fa254afded17a8c3"
+  "source_proof_sha256": "b09df63e9979a3cb5a7da0ef36df092fffeeaadfc697087209604d8fbe08e6ab"
 }

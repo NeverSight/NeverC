@@ -390148,6 +390148,158 @@ int main() { std::unordered_set<int> values; auto* ptr = &values; ptr->insert({1
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2AnyNarrowInlineDistinctCharTagsRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-narrow-inline-distinct-char-tags.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value = static_cast<char>(39);
+  auto* plain = std::any_cast<char>(&value);
+  if (!plain || *plain != 39 || std::any_cast<signed char>(&value) || std::any_cast<unsigned char>(&value)) return 1;
+  value = static_cast<signed char>(-17);
+  auto* signed_value = std::any_cast<signed char>(&value);
+  if (!signed_value || *signed_value != -17 || std::any_cast<char>(&value)) return 2;
+  value = static_cast<unsigned char>(247);
+  auto* unsigned_value = std::any_cast<unsigned char>(&value);
+  return !unsigned_value || *unsigned_value != 247 || std::any_cast<signed char>(&value);
+}
+)r19containers");
+  const auto Output = tmpFile("any-narrow-inline-distinct-char-tags.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-narrow-inline-distinct-char-tags" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyNarrowInlineShortLifecycleRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-narrow-inline-short-lifecycle.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+#include <utility>
+int main() {
+  auto original = std::make_any<short>(static_cast<short>(-32071));
+  auto copy = original;
+  std::any moved = std::move(copy);
+  const auto& read = moved;
+  auto* short_value = std::any_cast<short>(&read);
+  if (copy.has_value() || !short_value || *short_value != -32071 || std::any_cast<int>(&read)) return 1;
+  original.emplace<unsigned short>(static_cast<unsigned short>(65000));
+  original.swap(moved);
+  auto* wide = std::any_cast<unsigned short>(&moved);
+  auto* narrow = std::any_cast<short>(&original);
+  return !wide || *wide != 65000 || !narrow || *narrow != -32071 || std::any_cast<short>(&moved);
+}
+)r19containers");
+  const auto Output = tmpFile("any-narrow-inline-short-lifecycle.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-narrow-inline-short-lifecycle" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyNarrowInlineSignedNarrowValueCastsRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-narrow-inline-signed-narrow-value-casts.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any byte(static_cast<signed char>(-103));
+  std::any word(static_cast<short>(-31249));
+  return std::any_cast<signed char>(byte) != -103 || std::any_cast<short>(word) != -31249;
+}
+)r19containers");
+  const auto Output = tmpFile("any-narrow-inline-signed-narrow-value-casts.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-narrow-inline-signed-narrow-value-casts" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyNarrowInlineUnsignedNarrowReferenceAndResetRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-narrow-inline-unsigned-narrow-reference-and-reset.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value;
+  auto& word = value.emplace<unsigned short>(static_cast<unsigned short>(62000));
+  word += 31;
+  const auto* read = std::any_cast<unsigned short>(&value);
+  if (!read || *read != 62031 || std::any_cast<unsigned int>(&value)) return 1;
+  value.reset();
+  return value.has_value() || std::any_cast<unsigned short>(&value);
+}
+)r19containers");
+  const auto Output = tmpFile("any-narrow-inline-unsigned-narrow-reference-and-reset.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-narrow-inline-unsigned-narrow-reference-and-reset" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyNarrowInlineUnicodePayloadRejected) {
+  const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() { std::any value = u'x'; return !value.has_value(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyNarrowInlineDifferentSmallRecordRejected) {
+  const auto Source = tmpFile("any-narrow-inline-different-small-record.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+struct Tiny { unsigned char value; };
+int main() { std::any value = Tiny{1}; return !value.has_value(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyNarrowInlineMutableNarrowValueCastRejected) {
+  const auto Source = tmpFile("any-narrow-inline-mutable-narrow-value-cast.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() { std::any value = static_cast<short>(7); return std::any_cast<short&>(value); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyNarrowInlineNarrowTagMismatchValueCastRejected) {
+  const auto Source = tmpFile("any-narrow-inline-narrow-tag-mismatch-value-cast.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() { std::any value = static_cast<unsigned char>(7); return std::any_cast<char>(value); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

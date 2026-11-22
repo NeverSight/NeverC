@@ -1502,6 +1502,30 @@ def restore_unordered_set_modifiers_history(source):
     return restored
 
 
+R19_ANY_NARROW_INLINE_REGISTERED_SHA256 = 'ef55f1aa18a14070806d8cde459ca4e9427c524342219dba308bf6426224817d'
+R19_ANY_NARROW_INLINE_MAINTAINED_SHA256 = 'd54d1ec315de5daf79db5c01d8e1dbd53a914fd11baf2c5b4388ee32201de29f'
+R19_ANY_NARROW_INLINE_PREVIOUS_REGISTERED_SHA256 = '8fca807d05848ed6283028b3d950abab65aef92ca1275e35c6a8a62d0e59dbff'
+R19_ANY_NARROW_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'cd98c424f8e06373e80d1dc167574d4a61c2e2a23934bdd4e8987316cc6bf647'
+R19_ANY_NARROW_INLINE_ADDITIONS_SHA256 = '9312425fba7830689e0d339cd2bf3229727956f09d6ddd42d2756087c7361934'
+R19_ANY_NARROW_INLINE_MAINTAINED_SIZE = 20057859
+R19_ANY_NARROW_INLINE_ADDITIONS_SIZE = 7782
+
+
+def restore_any_narrow_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_NARROW_INLINE_REGISTERED_SHA256, R19_ANY_NARROW_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_NARROW_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_NARROW_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_NARROW_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_NARROW_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_NARROW_INLINE_REGISTERED_SHA256
+             else R19_ANY_NARROW_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1795,6 +1819,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_NARROW_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_NARROW_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_NARROW_INLINE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
