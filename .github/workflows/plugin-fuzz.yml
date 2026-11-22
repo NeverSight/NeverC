@@ -18,13 +18,6 @@ on:
         default: "120"
   schedule:
     - cron: "0 6 * * *"
-  pull_request:
-    paths:
-      - "fuzz/plugin/**"
-      - "neverc/lib/Plugin/**"
-      - "neverc/lib/DynCode/**"
-      - "neverc/include/neverc/Plugin/**"
-      - ".github/workflows/plugin-fuzz.yml"
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).

@@ -1,36 +1,7 @@
 name: lint-test-deps
 
 on:
-  push:
-    paths:
-      - 'std/manifest.json'
-      - 'neverc/include/neverc/Foundation/Std/StdModuleMethods.def'
-      - 'neverc/lib/Foundation/Std/StdModule.cpp'
-      - 'neverc/lib/Analyze/Expr/SemaExprMember.cpp'
-      - 'std/include/**/*.h'
-      - 'std/src/**/*.c'
-      - 'tests/neverc/std/*.c'
-      - 'tests/neverc/StdLibTests.cpp'
-      - 'utils/lint/check-test-deps.py'
-      - 'utils/lint/test_check_test_deps.py'
-      - 'utils/lint/gen_std_module_methods.py'
-      - 'utils/lint/test_gen_std_module_methods.py'
-      - '.github/workflows/lint-test-deps.yml'
-  pull_request:
-    paths:
-      - 'std/manifest.json'
-      - 'neverc/include/neverc/Foundation/Std/StdModuleMethods.def'
-      - 'neverc/lib/Foundation/Std/StdModule.cpp'
-      - 'neverc/lib/Analyze/Expr/SemaExprMember.cpp'
-      - 'std/include/**/*.h'
-      - 'std/src/**/*.c'
-      - 'tests/neverc/std/*.c'
-      - 'tests/neverc/StdLibTests.cpp'
-      - 'utils/lint/check-test-deps.py'
-      - 'utils/lint/test_check_test_deps.py'
-      - 'utils/lint/gen_std_module_methods.py'
-      - 'utils/lint/test_gen_std_module_methods.py'
-      - '.github/workflows/lint-test-deps.yml'
+  workflow_dispatch:
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).

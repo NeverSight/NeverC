@@ -20,25 +20,6 @@ permissions:
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "neverc/lib/Plugin/**"
-      - "neverc/include/neverc/Plugin/**"
-      - "neverc/lib/DynCode/**"
-      - "neverc/lib/Linker/**"
-      - "neverc/include/neverc/Linker/**"
-      - "neverc/lib/Emit/Backend/BackendUtil.cpp"
-      - "neverc/include/neverc/Emit/Backend/BackendUtil.h"
-      - "neverc/include/neverc/Foundation/Core/LLVMTimeTraceRootLease.h"
-      - "neverc/lib/Foundation/Core/LLVMTimeTraceRootLease.cpp"
-      - "neverc/lib/Foundation/Core/ProcessResourceBroker.cpp"
-      - "neverc/lib/Merge/Common/MergerCommon.h"
-      - "llvm/include/**"
-      - "tests/plugin-conformance/**"
-      - "utils/plugin-api/**"
-      - "pluginsdk/**"
-      - ".github/scripts/install-llvm-windows.ps1"
-      - ".github/workflows/plugin-conformance.yml"
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).

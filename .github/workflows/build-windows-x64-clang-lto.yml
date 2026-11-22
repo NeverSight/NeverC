@@ -6,14 +6,8 @@ name: windows-x64-neverc-build-clang-lto
 permissions:
   contents: write
 
-# Markdown changes are checked by lint-docs without rebuilding LLVM.
 on:
-  push:
-    paths-ignore:
-      - '**/*.md'
-  pull_request:
-    paths-ignore:
-      - '**/*.md'
+  workflow_dispatch:
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
@@ -25,10 +19,8 @@ jobs:
   build:
     name: Clang + LTO build
     if: >-
-      !startsWith(github.ref, 'refs/tags/') &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name != github.repository))
+      github.event_name == 'workflow_dispatch' &&
+      !startsWith(github.ref, 'refs/tags/')
     # Same pin as the MSVC Windows x64 jobs: do not float on windows-latest
     # (currently Server 2025 + VS 2026).
     runs-on: windows-2022

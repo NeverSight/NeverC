@@ -4,24 +4,6 @@ permissions:
   contents: read
 
 on:
-  push:
-    paths:
-      - 'std/include/neverc/std/net/**'
-      - 'std/src/net/**'
-      - 'tests/neverc/NetworkProtocolFuzzer.cpp'
-      - 'tests/neverc/NetworkProtocolFuzzAdapters.c'
-      - 'tests/neverc/network-protocol-corpus/**'
-      - 'tests/neverc/CMakeLists.txt'
-      - '.github/workflows/network-protocol-fuzz.yml'
-  pull_request:
-    paths:
-      - 'std/include/neverc/std/net/**'
-      - 'std/src/net/**'
-      - 'tests/neverc/NetworkProtocolFuzzer.cpp'
-      - 'tests/neverc/NetworkProtocolFuzzAdapters.c'
-      - 'tests/neverc/network-protocol-corpus/**'
-      - 'tests/neverc/CMakeLists.txt'
-      - '.github/workflows/network-protocol-fuzz.yml'
   schedule:
     - cron: '0 8 * * *'
   workflow_dispatch:

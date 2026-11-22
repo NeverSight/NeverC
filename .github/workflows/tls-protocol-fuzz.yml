@@ -4,24 +4,6 @@ permissions:
   contents: read
 
 on:
-  push:
-    paths:
-      - 'std/include/neverc/std/crypto/tls.h'
-      - 'std/include/neverc/std/crypto/x509.h'
-      - 'std/src/crypto/**'
-      - 'std/src/math/big/**'
-      - 'tests/neverc/TlsProtocolFuzzer.cpp'
-      - 'tests/neverc/CMakeLists.txt'
-      - '.github/workflows/tls-protocol-fuzz.yml'
-  pull_request:
-    paths:
-      - 'std/include/neverc/std/crypto/tls.h'
-      - 'std/include/neverc/std/crypto/x509.h'
-      - 'std/src/crypto/**'
-      - 'std/src/math/big/**'
-      - 'tests/neverc/TlsProtocolFuzzer.cpp'
-      - 'tests/neverc/CMakeLists.txt'
-      - '.github/workflows/tls-protocol-fuzz.yml'
   schedule:
     - cron: '30 7 * * *'
   workflow_dispatch:

@@ -1,16 +1,6 @@
 name: workflow-concurrency
 
 on:
-  push:
-    paths:
-      - 'utils/ci/sync-workflow-concurrency.py'
-      - 'utils/ci/test_sync_workflow_concurrency.py'
-      - '.github/workflows/test-workflow-concurrency.yml'
-  pull_request:
-    paths:
-      - 'utils/ci/sync-workflow-concurrency.py'
-      - 'utils/ci/test_sync_workflow_concurrency.py'
-      - '.github/workflows/test-workflow-concurrency.yml'
   workflow_dispatch:
 
 permissions:

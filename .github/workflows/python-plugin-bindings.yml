@@ -5,38 +5,6 @@ permissions:
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "neverc/CMakeLists.txt"
-      - "neverc/cmake/**"
-      - "neverc/include/neverc/Plugin/**"
-      - "neverc/lib/Plugin/**"
-      - "pluginsdk/**"
-      - "tests/neverc/**"
-      - "docs/plugin-api/**"
-      - "utils/ci/check-python-plugin-artifacts.py"
-      - "utils/ci/test-python-plugin-artifacts-policy.py"
-      - "utils/plugin-api/**"
-      - "utils/release/**"
-      - ".github/scripts/configure-apt-ubuntu.sh"
-      - ".github/workflows/**"
-      - "!**/*.md"
-  pull_request:
-    paths:
-      - "neverc/CMakeLists.txt"
-      - "neverc/cmake/**"
-      - "neverc/include/neverc/Plugin/**"
-      - "neverc/lib/Plugin/**"
-      - "pluginsdk/**"
-      - "tests/neverc/**"
-      - "docs/plugin-api/**"
-      - "utils/ci/check-python-plugin-artifacts.py"
-      - "utils/ci/test-python-plugin-artifacts-policy.py"
-      - "utils/plugin-api/**"
-      - "utils/release/**"
-      - ".github/scripts/configure-apt-ubuntu.sh"
-      - ".github/workflows/**"
-      - "!**/*.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

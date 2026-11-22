@@ -20,39 +20,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "30 6 * * *"
-  pull_request:
-    paths:
-      - "neverc/lib/Plugin/**"
-      - "neverc/lib/DynCode/**"
-      - "neverc/lib/Linker/**"
-      - "neverc/include/neverc/Linker/**"
-      - "neverc/include/neverc/Plugin/**"
-      - "neverc/include/neverc/Foundation/Core/ProcessResourceBroker.h"
-      - "neverc/include/neverc/Foundation/Core/LLVMTimeTraceRootLease.h"
-      - "neverc/lib/Foundation/Core/LLVMTimeTraceRootLease.cpp"
-      - "neverc/lib/Foundation/Core/ProcessResourceBroker.cpp"
-      - "neverc/lib/Foundation/Core/ProcessResourceBrokerInternal.h"
-      - "neverc/lib/Foundation/CMakeLists.txt"
-      - "llvm/include/llvm/Support/thread.h"
-      - "llvm/lib/CSupport/Threading.c"
-      - "llvm/lib/CSupport/BLAKE3/**"
-      - "llvm/lib/CSupport/include/csupport/lthreading.h"
-      - "neverc/include/neverc/Emit/Backend/ParallelCodeGenMerge.h"
-      - "neverc/lib/Emit/Backend/ParallelCodeGenMerge*"
-      - "neverc/lib/Emit/CMakeLists.txt"
-      - "tests/neverc/ConcurrentLTOOptionIsolationTests.cpp"
-      - "tests/neverc/ParallelCodeGenCacheTests.cpp"
-      - "tests/neverc/PluginFrontendTimeTraceInteropTests.cpp"
-      - "tests/neverc/PluginLLVMOptionOrdinaryErrorTests.cpp"
-      - "tests/neverc/PluginLinkContextTests.cpp"
-      - "tests/neverc/PluginLinkTimeTraceConcurrencyTests.cpp"
-      - "tests/neverc/PluginParallelLinkTests.cpp"
-      - "tests/neverc/ProcessResourceBudgetTests.cpp"
-      - "tests/neverc/SupportThreadTests.cpp"
-      - "tests/neverc/CMakeLists.txt"
-      - "tests/plugin-conformance/**"
-      - ".github/workflows/plugin-sanitizers.yml"
-      - ".github/plugin-sanitizers.lsan"
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).

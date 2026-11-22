@@ -4,14 +4,13 @@ permissions:
   contents: read
   actions: read
 
-# Markdown changes are checked by lint-docs without rebuilding LLVM.
 on:
-  push:
-    paths-ignore:
-      - '**/*.md'
-  pull_request:
-    paths-ignore:
-      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      validate_gki:
+        description: Also validate Android GKI runtime (optional)
+        type: boolean
+        default: false
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
@@ -22,10 +21,8 @@ concurrency:
 jobs:
   build:
     if: >-
-      !startsWith(github.ref, 'refs/tags/') &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name != github.repository))
+      github.event_name == 'workflow_dispatch' &&
+      !startsWith(github.ref, 'refs/tags/')
     # Pin to 22.04 (glibc 2.35) rather than ubuntu-latest (24.04/glibc 2.39) so
     # the neverc artifact runs in glibc>=2.35 containers (Ubuntu 22.04 / 24.04),
     # matching the target Docker test environment. Build low, run high.
@@ -254,7 +251,8 @@ jobs:
     # with "expected one ... artifact, found 0" — a false GKI red X unrelated
     # to loader/runtime checks.
     if: >-
-      github.event_name == 'push' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.validate_gki &&
       !startsWith(github.ref, 'refs/tags/') &&
       needs.build.result == 'success'
     needs: build

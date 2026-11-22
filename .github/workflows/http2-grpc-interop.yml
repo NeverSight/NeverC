@@ -4,26 +4,6 @@ permissions:
   contents: read
 
 on:
-  push:
-    paths:
-      - 'std/include/neverc/std/net/grpc.h'
-      - 'std/include/neverc/std/net/http/http2.h'
-      - 'std/src/net/grpc/**'
-      - 'std/src/net/http/http2/**'
-      - 'tests/neverc/std/h2_grpc_interop_server.c'
-      - 'tests/neverc/interop/go-grpc/**'
-      - 'utils/ci/run-http2-grpc-interop.sh'
-      - '.github/workflows/http2-grpc-interop.yml'
-  pull_request:
-    paths:
-      - 'std/include/neverc/std/net/grpc.h'
-      - 'std/include/neverc/std/net/http/http2.h'
-      - 'std/src/net/grpc/**'
-      - 'std/src/net/http/http2/**'
-      - 'tests/neverc/std/h2_grpc_interop_server.c'
-      - 'tests/neverc/interop/go-grpc/**'
-      - 'utils/ci/run-http2-grpc-interop.sh'
-      - '.github/workflows/http2-grpc-interop.yml'
   schedule:
     - cron: '0 9 * * *'
   workflow_dispatch:
