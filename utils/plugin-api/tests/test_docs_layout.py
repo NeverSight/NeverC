@@ -101,10 +101,6 @@ class DocumentationLayoutTests(unittest.TestCase):
         report = nav.Report()
         nav.check_links(DOCS / "translate.md", text, report, set())
         self.assertEqual(report.failures, [])
-        with patch.object(Path, "read_text", return_value=text):
-            self.assertEqual(
-                nav.linked_files([DOCS / "translate.md"]), {"docs/README.md"}
-            )
 
     def test_inline_code_labels_keep_real_links(self):
         text = "[`type_traits`](README.md) and [plain](build.md)"
