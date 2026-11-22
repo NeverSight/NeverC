@@ -719,7 +719,7 @@ public:
              Context.hasSameType(Destructor->getDestroyedType(), Context.DoubleTy) ||
              Context.hasSameType(Destructor->getDestroyedType(), Context.FloatTy))) ||
            (File->Path == "__memory/construct_at.h" && Generator->getIdentifier() &&
-            Generator->getName() == "unordered_set" &&
+            (Generator->getName() == "unordered_set" || Generator->getName() == "unordered_multiset") &&
             Context.hasSameType(Destructor->getDestroyedType(), Context.IntTy))) &&
           Context.hasSameUnqualifiedType(Destructor->getDestroyedType(),
               Destructor->getBase()->getType()->getPointeeType()))

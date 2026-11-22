@@ -31,6 +31,14 @@
       "source_sha256": "0e0622d95993de087ed2850db140e579db8e4f4f6a8959b2744e2ad414d1b1d3",
       "original_case_source_sha256": "0e0622d95993de087ed2850db140e579db8e4f4f6a8959b2744e2ad414d1b1d3",
       "gtest_body_sha256": "ac24fb10238179d4f831d77b29f4f81999e06a6d62d5d07a41d689f89dcb413a"
+    },
+    {
+      "name": "unordered-empty-capacity-nonempty-owner",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetNonemptyMaxSizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb",
+      "original_case_source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb",
+      "gtest_body_sha256": "1e3b24875640d6c49a9a04c558691f9406f1187c71738b4c56ee823dc4d3cae0"
     }
   ],
   "negative_cases": [
@@ -57,14 +65,6 @@
       "source_sha256": "ef89b1775b5c94bcbe0242b039a33e5a73872a7804e572f78132ea04bd45e5e6",
       "original_case_source_sha256": "ef89b1775b5c94bcbe0242b039a33e5a73872a7804e572f78132ea04bd45e5e6",
       "gtest_body_sha256": "de3a184a8ad9acf906933a27d52f32a6ad5abecf65445c941dd2853231cb3432"
-    },
-    {
-      "name": "unordered-empty-capacity-nonempty-owner",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyCapacityNonemptyOwnerRejected",
-      "expected": "reject",
-      "source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb",
-      "original_case_source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb",
-      "gtest_body_sha256": "ff1ad91bfb2c35f84b50836c1997f94e7017911d25cdf8345f06837a3bd81c2b"
     }
   ],
   "source_cases": [
@@ -101,6 +101,14 @@
       "source_sha256": "0e0622d95993de087ed2850db140e579db8e4f4f6a8959b2744e2ad414d1b1d3"
     },
     {
+      "name": "unordered-empty-capacity-nonempty-owner",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n",
+      "source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb"
+    },
+    {
       "name": "unordered-empty-capacity-custom-hash",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -123,14 +131,6 @@
       "kind": "source-body-guard",
       "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return pointer->max_bucket_count() == 0;\n}\n",
       "source_sha256": "ef89b1775b5c94bcbe0242b039a33e5a73872a7804e572f78132ea04bd45e5e6"
-    },
-    {
-      "name": "unordered-empty-capacity-nonempty-owner",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "kind": "source-body-guard",
-      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n",
-      "source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb"
     }
   ],
   "new_gtest_names": [
@@ -138,10 +138,10 @@
     "TranslateTest.CoreV2UnorderedEmptyCapacityMultisetMaxBucketsRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedEmptyCapacitySingleReceiverEvaluationRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedEmptyCapacityNestedMultisetRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetNonemptyMaxSizeRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedEmptyCapacityCustomHashRejected",
     "TranslateTest.CoreV2UnorderedEmptyCapacityNonIntKeyRejected",
-    "TranslateTest.CoreV2UnorderedEmptyCapacityArrowReceiverRejected",
-    "TranslateTest.CoreV2UnorderedEmptyCapacityNonemptyOwnerRejected"
+    "TranslateTest.CoreV2UnorderedEmptyCapacityArrowReceiverRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8350,
   "current_python_registry_tests": 174,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
-    "unordered-empty-capacity": "0446aea757fd87d3b273bff57e5facec4230938419deb59350d2ac5199a83ba8"
+    "unordered-empty-capacity": "0446aea757fd87d3b273bff57e5facec4230938419deb59350d2ac5199a83ba8",
+    "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a"
   },
-  "native_reference_authentication_sha256": "a68ee1c0f7dc8ade8cf9553df13e7e3e6c3b03cb0aacd1ce6747fc35d3d1de80",
-  "source_proof_sha256": "6d452f539f91f94ba34c5f9fc4216a83b4b09ffff30d3dccaf12b4b669a64974"
+  "native_reference_authentication_sha256": "2a2965205bcbb77832b56591cd57fc27c08f83f86dadf624e676ae268f0bfbc5",
+  "source_proof_sha256": "2312ae55606ec6c65b966e9071aea288eaa72ec5c8f30732bf612b2c3b8682de"
 }

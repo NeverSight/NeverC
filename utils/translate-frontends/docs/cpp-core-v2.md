@@ -18182,3 +18182,10 @@ their own tags and target widths on LP64 and LLP64. Construction, assignment,
 emplacement, type checks and the admitted casts preserve signedness and type
 identity. The original unsigned-long program retains its exit status at both
 optimization levels.
+
+## Nonempty integer unordered multisets
+
+Default std::unordered_multiset<int> accepts the checked nonempty initializer
+list. It keeps an entry for each duplicate, preserves count across rehash,
+and releases all stored entries on clear or destruction. The original
+nonempty-bucket program retains its exit status at both optimization levels.

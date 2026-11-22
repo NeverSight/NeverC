@@ -136936,8 +136936,7 @@ bool approvedEmptyHashSetDestructor(const State &S, const SourceManager &SM,
   Storage = Storage ? Storage->getDefinition() : nullptr;
   if (!Storage || !approvedHashSetBucketSource(S, SM, Storage->getDestructor(), Owner, Context))
     return Fail("The selected bucket deallocation path must retain its pinned SDK definitions.");
-  if (Owner->getName() == "unordered_set" &&
-      !approvedHashSetBucketSource(S, SM, Drop, Owner, Context))
+  if (!approvedHashSetBucketSource(S, SM, Drop, Owner, Context))
     return Fail("The selected integer node deallocation paths must retain their pinned SDK definitions.");
   return emptyHashNullBucketsDestroy(S, SM, Buckets->getType()->getAsCXXRecordDecl(), BucketFailure) ||
          Fail(BucketFailure);
@@ -137340,7 +137339,8 @@ std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedMapRecord(
 std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetStorage(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context) {
-  if (!Record || !Record->getIdentifier() || Record->getName() != "unordered_set")
+  if (!Record || !Record->getIdentifier() ||
+      (Record->getName() != "unordered_set" && Record->getName() != "unordered_multiset"))
     return std::nullopt;
   return approvedUnorderedStorage(S, SM, Record, Context, false, {});
 }
@@ -137406,6 +137406,8 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
     return std::nullopt;
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto *Owner = Method->getParent();
+  if ((Erase || Insert) && Owner->getIdentifier() && Owner->getName() == "unordered_multiset")
+    return std::nullopt;
   const auto Arity = KeyOperation || Insert ? 1u : 0u;
   const auto Result = KeyOperation ? Context.getSizeType() : Context.VoidTy;
   if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
