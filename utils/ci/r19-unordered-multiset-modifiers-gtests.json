@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedMultisetModifiersCustomAllowsDifferentKeyEqualityRejected",
     "TranslateTest.CoreV2UnorderedMultisetModifiersPointerReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "c13d9870eab687c556a18fcda21b3a45f9d89f3b23965ef64e714acc0b549c44",
   "maintained_original_sha256": "f891e8b10a7cd8b1272be7479bd65840ddbc3b601441bb84318e260497b7cdad",
@@ -155,5 +155,10 @@
   "current_registry_count": 8448,
   "current_python_registry_tests": 198,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-multiset-modifiers": "87f5a2245acb0d951864f9f620aff7b28a13afd5df682e759791b30e75b19fc5"
+  },
+  "native_reference_authentication_sha256": "3998b6cf998a39cb55a083b7f4eefaae1f30d1b11d2f7b1d27d167c2b3bfc55a",
+  "source_proof_sha256": "716ef038588e3a461530021bd19bac9c4f0a005a77ffa7ad5cf4219adaa59f13"
 }

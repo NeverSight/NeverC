@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetIteratorEraseCustomHashRangeRejected",
     "TranslateTest.CoreV2UnorderedSetIteratorEraseCustomEqualityPositionRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "724deef07eb49b8fd2a84f1c9a9e074ca4bffafa652bcd041dcf0cfebc1a8217",
   "maintained_original_sha256": "6d3886e9bdf1e29f2b9152a585312e5875beb45ef1616cf7c519cba7e76ae0b2",
@@ -155,5 +155,10 @@
   "current_registry_count": 8472,
   "current_python_registry_tests": 204,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-iterator-erase": "e7e652bcbe34dd0b5ed551d05a91af67d4425ed3658347c90256756a7314b210"
+  },
+  "native_reference_authentication_sha256": "100041503026e15fe90c32ae30fd8f489dd21b584dbbb15a6c19fe7dacd21009",
+  "source_proof_sha256": "716ef038588e3a461530021bd19bac9c4f0a005a77ffa7ad5cf4219adaa59f13"
 }

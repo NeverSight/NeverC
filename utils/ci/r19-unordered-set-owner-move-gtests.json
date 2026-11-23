@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetOwnerMoveCustomPolicyAssignmentRejected",
     "TranslateTest.CoreV2UnorderedSetOwnerMoveMultisetMoveWithExplicitAllocatorRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "544d50088e1e4062a33c132ff8abb4e60c2f5d88f1f9c3d498ed68d92dffdd40",
   "maintained_original_sha256": "91ca47fa646e424eed96bb7914230e20deb00af9f7afee5efc04af1e71492b9e",
@@ -155,5 +155,10 @@
   "current_registry_count": 8528,
   "current_python_registry_tests": 218,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-owner-move": "8a7e21d000e3b16b9b8bccbfb356d5944f37d144ba4c21e3d294770dea698672"
+  },
+  "native_reference_authentication_sha256": "bd65753e4959693ca411d12417acb3f7f6ddf848151f15cc573df4608d0dbdc8",
+  "source_proof_sha256": "716ef038588e3a461530021bd19bac9c4f0a005a77ffa7ad5cf4219adaa59f13"
 }
