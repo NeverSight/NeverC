@@ -4459,6 +4459,9 @@ struct UtilityUnorderedSetListConstruction {
 std::optional<UtilityUnorderedSetListConstruction> approvedUtilityUnorderedSetListConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
+std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetRangeConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
 std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);

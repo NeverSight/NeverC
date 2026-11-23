@@ -18261,3 +18261,11 @@ Default integer unordered sets and multisets accept half-open insertion
 ranges whose endpoints are both plain `int*` or both `const int*`. The
 receiver and endpoints are evaluated once. Unique sets skip duplicate
 keys and multisets retain their multiplicities.
+
+## Integer unordered set pointer-range construction
+
+Default integer unordered sets and multisets can be constructed from
+two matching raw integer pointers. Either both pointers address
+`int` or both address `const int`. Construction starts with the default
+bucket state, evaluates each endpoint once, and inserts the half-open
+range using the container's duplicate-key rules.

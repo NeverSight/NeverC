@@ -392252,6 +392252,148 @@ int main() { const int data[] = {3, 3}; std::unordered_multiset<int> bag; auto* 
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetPointerConstructionUniqueRangeConstructionDeduplicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-pointer-construction-unique-range-construction-deduplicates.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  int data[] = {4, 12, 4, -3, 20, 12};
+  const std::unordered_set<int> set(data, data + 6);
+  return set.size() != 4 || set.count(4) != 1 || set.count(-3) != 1 || set.count(20) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-pointer-construction-unique-range-construction-deduplicates.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-pointer-construction-unique-range-construction-deduplicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetPointerConstructionMultisetConstructionRetainsDuplicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-pointer-construction-multiset-construction-retains-duplicates.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const int data[] = {6, 6, 14, 6, -2};
+  std::unordered_multiset<int> bag(data, data + 5);
+  return bag.size() != 5 || bag.count(6) != 3 || bag.count(14) != 1 || bag.count(-2) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-pointer-construction-multiset-construction-retains-duplicates.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-pointer-construction-multiset-construction-retains-duplicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetPointerConstructionEmptyRangeUsesEmptyDefaultStateRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-pointer-construction-empty-range-uses-empty-default-state.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  int data[] = {1, 2};
+  std::unordered_set<int> set(data + 1, data + 1);
+  std::unordered_multiset<int> bag(data, data);
+  return !set.empty() || !bag.empty() || set.bucket_count() != 0 || bag.bucket_count() != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-pointer-construction-empty-range-uses-empty-default-state.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-pointer-construction-empty-range-uses-empty-default-state" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetPointerConstructionRangeArgumentsAreEvaluatedOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-pointer-construction-range-arguments-are-evaluated-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int first_calls, last_calls;
+const int data[] = {9, -7, 9};
+const int* first() { ++first_calls; return data; }
+const int* last() { ++last_calls; return data + 3; }
+int main() {
+  std::unordered_multiset<int> bag(first(), last());
+  return first_calls != 1 || last_calls != 1 || bag.size() != 3 || bag.count(9) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-pointer-construction-range-arguments-are-evaluated-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-pointer-construction-range-arguments-are-evaluated-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetPointerConstructionExplicitBucketCountAndPoliciesRejected) {
+  const auto Source = tmpFile("unordered-set-pointer-construction-explicit-bucket-count-and-policies.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  int data[] = {1, 2};
+  std::unordered_set<int> set(data, data + 2, 31, std::hash<int>{}, std::equal_to<int>{});
+  return set.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetPointerConstructionConvertedShortRangeRejected) {
+  const auto Source = tmpFile("unordered-set-pointer-construction-converted-short-range.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { short data[] = {1, 2}; std::unordered_multiset<int> bag(data, data + 2); return bag.empty(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetPointerConstructionCustomHashRangeRejected) {
+  const auto Source = tmpFile("unordered-set-pointer-construction-custom-hash-range.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int value) const { return static_cast<unsigned long>(value); } };
+int main() { int data[] = {1, 2}; std::unordered_set<int, Hash> set(data, data + 2); return set.empty(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetPointerConstructionClassIteratorRangeRejected) {
+  const auto Source = tmpFile("unordered-set-pointer-construction-class-iterator-range.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <unordered_set>
+int main() { std::list<int> data{1, 2}; std::unordered_multiset<int> bag(data.begin(), data.end()); return bag.empty(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

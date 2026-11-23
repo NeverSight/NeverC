@@ -801,3 +801,10 @@ The combined compiler passes 3,720 source requests across six 64-bit targets
 and 724 formal tests on Linux x86-64. All 395 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Integer unordered set pointer-range construction
+
+The combined compiler passes 3,768 source requests across six 64-bit targets
+and 732 formal tests on Linux x86-64. All 399 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

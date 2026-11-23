@@ -27035,6 +27035,19 @@ class FunctionLowering {
     auto Buckets = hashTableMember(std::move(Place), "nct_unordered_bucket_count", Type, L);
     return hashTableLoadFactor(std::move(Size), std::move(Buckets), L);
   }
+  void insertUnorderedSetPointerRange(Expression Place, const UtilityUnorderedTableRecord &Table,
+      Expression Cursor, Expression End, QualType Pointer, SourceLocation L) {
+    const auto Check = labelName(), Insert = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Cursor, End, "bool", L), Insert, Done, L);
+    label(Insert, L);
+    unorderedInsertNode(Place, Table, dereference(Cursor, L), std::nullopt, false, L);
+    assign(Cursor, binary("+", Cursor, one(type(A.Context.getPointerDiffType(), L), L), type(Pointer, L), L), L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
   void insertUnorderedSetList(Expression Place, const UtilityUnorderedTableRecord &Table,
                               Expression Begin, Expression Length, QualType PointerType, SourceLocation L) {
     const auto Pointer = type(PointerType, L);
@@ -29548,15 +29561,7 @@ class FunctionLowering {
       if (Operation == UtilityOperation::UnorderedSetInsertRange) {
         auto Cursor = snapshot(argument(Call->getArg(0), Parameter), L);
         auto End = snapshot(argument(Call->getArg(1), Parameter), L);
-        const auto Check = labelName(), Insert = labelName(), Done = labelName();
-        jump(Check, L);
-        label(Check, L);
-        branch(binary("!=", Cursor, End, "bool", L), Insert, Done, L);
-        label(Insert, L);
-        unorderedInsertNode(Place, *Table, dereference(Cursor, L), std::nullopt, false, L);
-        assign(Cursor, binary("+", Cursor, one(type(A.Context.getPointerDiffType(), L), L), type(Parameter, L), L), L);
-        jump(Check, L);
-        label(Done, L);
+        insertUnorderedSetPointerRange(std::move(Place), *Table, std::move(Cursor), std::move(End), Parameter, L);
         return {};
       }
       auto Operand = dereference(snapshot(argument(Call->getArg(0), Parameter), L), L);
@@ -39428,6 +39433,14 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
 
+    if (const auto Table = approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Pointer = C->getConstructor()->getParamDecl(0)->getType();
+      auto First = snapshot(argument(C->getArg(0), Pointer), L);
+      auto Last = snapshot(argument(C->getArg(1), Pointer), L);
+      initializeUnorderedTable(Place, *Table, L);
+      insertUnorderedSetPointerRange(std::move(Place), *Table, std::move(First), std::move(Last), Pointer, L);
+      return;
+    }
     if (const auto Info = approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Carrier = C->getConstructor()->getParamDecl(0)->getType();
       auto List = dereference(snapshot(argument(C->getArg(0), Carrier), L), L);

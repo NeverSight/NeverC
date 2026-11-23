@@ -1842,6 +1842,30 @@ def restore_unordered_set_pointer_range_history(source):
     return restored
 
 
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_REGISTERED_SHA256 = '9cb7ceb21565984eeb74ecb04de81d829a7d4044e642eac1474b7bf9eb3196da'
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SHA256 = '83193b7e67658eecd8f05e1f39207b4c07eea93fabaf11c3fdfaa4259719510a'
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_PREVIOUS_REGISTERED_SHA256 = '47d55896696dc2a7f80d29c0cf075f63e4e251eef3aab7eacad4ef14e1358fbb'
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_PREVIOUS_MAINTAINED_SHA256 = '0a65cf385c60ea9997fa815565a9cb56465fffddae54c41396bf63707b83fc46'
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_ADDITIONS_SHA256 = '1b53c7878d8a6dc1923865ed46ea4be8faafd4fdb1d81130854324174c175a2c'
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SIZE = 20166319
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_ADDITIONS_SIZE = 7868
+
+
+def restore_unordered_set_pointer_construction_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_POINTER_CONSTRUCTION_REGISTERED_SHA256, R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_POINTER_CONSTRUCTION_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_POINTER_CONSTRUCTION_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_POINTER_CONSTRUCTION_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_POINTER_CONSTRUCTION_REGISTERED_SHA256
+             else R19_UNORDERED_SET_POINTER_CONSTRUCTION_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2226,6 +2250,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_POINTER_CONSTRUCTION_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
