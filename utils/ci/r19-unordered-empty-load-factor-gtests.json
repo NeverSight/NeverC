@@ -101,6 +101,14 @@
       "source_sha256": "6290ae7fdabee8be22e4212b7d9b1f2ce8a9e2d268dc21ec7e73768d338a557d"
     },
     {
+      "name": "unordered-empty-load-factor-rehash",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n",
+      "source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f"
+    },
+    {
       "name": "unordered-empty-load-factor-custom-hash",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -115,14 +123,6 @@
       "kind": "source-body-guard",
       "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<unsigned int> value;\n  return value.load_factor() != 0.0f;\n}\n",
       "source_sha256": "77a5fe5d75f7d10ee19cf28315b79297661fecbea14058f8028f136c3ef5544b"
-    },
-    {
-      "name": "unordered-empty-load-factor-rehash",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "kind": "cpp17-operation",
-      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n",
-      "source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f"
     },
     {
       "name": "unordered-empty-load-factor-pointer-receiver",
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorDifferentKeyRejected",
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorPointerReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "e51e579798e32927a56469df5fc72fa5e15a7309fdc3a1aa4c1dafbb227aa931",
   "maintained_original_sha256": "b981812e100743864d81cd802d9b0d314b60e59b2362aff71f6a635b11e0cee5",
@@ -155,5 +155,11 @@
   "current_registry_count": 8342,
   "current_python_registry_tests": 172,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-bucket-storage": "2eba369d4578e9e03c506e68fc1b71004f3614f6d7fbf879a0fdcf3b8acaef76",
+    "unordered-empty-load-factor": "f69568b5562b19312bee40cfd8fb3134b5bf56aae1ab760b9c696fbae531892e"
+  },
+  "native_reference_authentication_sha256": "b999e488ab8cbf1c2cd5e2daaae20f1306088dc6484040481826be3166a40304",
+  "source_proof_sha256": "89096235432b37de63263bcfe93599289220a4c8787b2c65842014910e845447"
 }

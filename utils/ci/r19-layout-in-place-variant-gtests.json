@@ -255,6 +255,14 @@
       "source_sha256": "93791407fcfbf902c10f9a186055d37fa3726aa39a1166db3738704dc046fcb5",
       "original_case_source_sha256": "93791407fcfbf902c10f9a186055d37fa3726aa39a1166db3738704dc046fcb5",
       "gtest_body_sha256": "8125eebd37c83a57f3f752ea4b318258cf4c9ccd9a39165e7695b3b2894f4c09"
+    },
+    {
+      "name": "any-layout-runtime-construction",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "original_case_source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "gtest_body_sha256": "439acaabe9d4aec876f102c4d551ba25c13319b61ba0de0d836955351bfce5c7"
     }
   ],
   "negative_cases": [
@@ -281,14 +289,6 @@
       "source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
       "original_case_source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
       "gtest_body_sha256": "13b3f15901461b080b4c298532d43864515a132a41af9ed067aa842f5120afda"
-    },
-    {
-      "name": "any-layout-runtime-construction",
-      "formal_test_name": "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected",
-      "expected": "reject",
-      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
-      "original_case_source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
-      "gtest_body_sha256": "3adf6e457e78ddfb8770de5f6febb1d5fd7edbc370dfe53785f0844d06c6e3ba"
     },
     {
       "name": "any-layout-unevaluated-object",
@@ -468,10 +468,10 @@
     "TranslateTest.CoreV2VariantTypeConstructionValueInitializePointerRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantTypeConstructionEmptyAlternativeRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantTypeConstructionZeroIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantMonostateSourceRedeclarationRejected",
     "TranslateTest.CoreV2VariantMonostateVolatileLayoutRejected",
     "TranslateTest.CoreV2AnyLayoutVolatileTypeRejected",
-    "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected",
     "TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected",
     "TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected",
     "TranslateTest.CoreV2AssociativeMapCustomTypeOrPolicyRejected",
@@ -749,6 +749,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "any-layout-runtime-construction",
+      "source": "#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n",
+      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "variant-monostate-source-redeclaration",
       "source": "#include <variant>\n_LIBCPP_BEGIN_NAMESPACE_STD\nstruct monostate;\n_LIBCPP_END_NAMESPACE_STD\nusing V = std::variant<std::monostate, int>;\nint main() { return sizeof(V) == 0; }\n",
       "source_sha256": "dbbbe7f8e323793aca965ec0869fb6c63bb16dc1508eeb952bcebba76171280f",
@@ -768,14 +776,6 @@
       "name": "any-layout-volatile-type",
       "source": "#include <any>\nint main() { return sizeof(volatile std::any) == 0; }\n",
       "source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
-      "public_header": "any",
-      "expected": "reject",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "any-layout-runtime-construction",
-      "source": "#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n",
-      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
       "public_header": "any",
       "expected": "reject",
       "kind": "source-body-guard"
@@ -933,7 +933,7 @@
     "variant-monostate-variant-layout",
     "variant-monostate-volatile-layout"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "8746852cd5a814adfd86f59ec98a95dffb6c493af46f699f40a1822674f12c29",
   "maintained_original_sha256": "71ea495d9ecd713746a7e5fca2acf69633b5b264ff17437bc0252078575cc947",
@@ -945,5 +945,13 @@
   "current_registry_count": 8097,
   "current_python_registry_tests": 120,
   "native_reference_selected_executions": 64,
-  "planned_generated_c23_executions": 64
+  "planned_generated_c23_executions": 64,
+  "native_reference_proofs": {
+    "any-layout": "d89e6931c9771241a94eaf5f31750e55821fa0ad1d094572d74c24deb800234a",
+    "associative-metadata": "c2b4b1e86ecb64c73bdaec0c5c07756cbad3a260c465a48f1a9676bcdbc13572",
+    "monostate-layout": "bf435677f94f07928028e6b92e80db3e9b2a9e6b6d6d34849af06d12675501d6",
+    "variant-in-place-runtime": "bd90cf05c8c2a12d4d00b5759d5195f30114f5f455e69bb3142e391e6e176475"
+  },
+  "native_reference_authentication_sha256": "7252dc627daa9c512c414f006584a89ad165af708373991926d444d7e11d3bcf",
+  "source_proof_sha256": "89096235432b37de63263bcfe93599289220a4c8787b2c65842014910e845447"
 }
