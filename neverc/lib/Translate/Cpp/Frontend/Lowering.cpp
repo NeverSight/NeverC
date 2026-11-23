@@ -1910,7 +1910,7 @@ class FunctionLowering {
     jump(Done, L);
     label(Done, L);
   }
-  void unorderedMoveMap(Expression Place, Expression Source,
+  void unorderedMoveTable(Expression Place, Expression Source,
       const UtilityUnorderedTableRecord &Info, bool Assignment, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     if (Assignment) {
@@ -1935,7 +1935,7 @@ class FunctionLowering {
     assign(unorderedTableMember(Place, Info, "nct_unordered_bucket_count", L),
         unorderedTableMember(Source, Info, "nct_unordered_bucket_count", L), L);
     assign(unorderedTableMember(Source, Info, "nct_unordered_bucket_count", L), quantity(0, Size, L), L);
-    // The SDK leaves the source load limit unchanged and transfers even reserved empty maps.
+    // The SDK leaves the source load limit unchanged and transfers even reserved empty tables.
     for (const auto *Name : {"nct_unordered_size", "nct_unordered_max_load", "nct_unordered_first"})
       assign(unorderedTableMember(Place, Info, Name, L), unorderedTableMember(Source, Info, Name, L), L);
     const auto Reset = labelName(), Done = labelName();
@@ -29736,14 +29736,16 @@ class FunctionLowering {
       return Result;
     }
     if (Operation == UtilityOperation::UnorderedMapCopyAssign ||
-        Operation == UtilityOperation::UnorderedMapMoveAssign) {
+        Operation == UtilityOperation::UnorderedTableMoveAssign) {
       const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
       const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
       const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
       const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
       const unsigned Offset = Operator ? 1 : 0;
-      const auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
-      if (!Info) reject(L, "unordered map assignment", "The authenticated storage layout is unavailable.");
+      auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
+      if (!Info && Operation == UtilityOperation::UnorderedTableMoveAssign)
+        Info = approvedUtilityUnorderedSetStorage(A.S, A.Sources, Method->getParent(), A.Context);
+      if (!Info) reject(L, "unordered table assignment", "The authenticated storage layout is unavailable.");
       std::optional<Expression> SourceAddress;
       // Assignment notation evaluates its right operand before its left in C++17.
       if (Operator)
@@ -29753,8 +29755,8 @@ class FunctionLowering {
       if (!SourceAddress)
         SourceAddress = snapshot(argument(Call->getArg(Offset), Method->getParamDecl(0)->getType()), L);
       auto Place = dereference(Receiver, L), Source = dereference(*SourceAddress, L);
-      if (Operation == UtilityOperation::UnorderedMapMoveAssign) {
-        unorderedMoveMap(Place, Source, *Info, true, L);
+      if (Operation == UtilityOperation::UnorderedTableMoveAssign) {
+        unorderedMoveTable(Place, Source, *Info, true, L);
       } else {
         const auto Copy = labelName(), Done = labelName();
         branch(binary("!=", cast(Receiver, type(A.Context.VoidPtrTy, L), L),
@@ -39297,7 +39299,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
           argument(C->getArg(1), C->getConstructor()->getParamDecl(1)->getType());
         auto Source = dereference(SourceAddress, L);
         if (*Kind == UtilityUnorderedMapConstructionKind::Move)
-          unorderedMoveMap(Place, Source, *Info, false, L);
+          unorderedMoveTable(Place, Source, *Info, false, L);
         else {
           initializeUnorderedTable(Place, *Info, L);
           assign(unorderedTableMember(Place, *Info, "nct_unordered_max_load", L),
@@ -39433,6 +39435,11 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
 
+    if (const auto Table = approvedUtilityUnorderedSetMoveConstruction(A.S, A.Sources, C, A.Context)) {
+      auto Source = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
+      unorderedMoveTable(std::move(Place), dereference(Source, L), *Table, false, L);
+      return;
+    }
     if (const auto Table = approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Pointer = C->getConstructor()->getParamDecl(0)->getType();
       auto First = snapshot(argument(C->getArg(0), Pointer), L);

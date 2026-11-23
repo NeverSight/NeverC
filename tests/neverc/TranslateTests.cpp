@@ -392394,6 +392394,188 @@ int main() { std::list<int> data{1, 2}; std::unordered_multiset<int> bag(data.be
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveUniqueConstructionTransfersNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-owner-move-unique-construction-transfers-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_set<int> source{3, -7, 22};
+  source.rehash(19);
+  source.max_load_factor(2.0f);
+  const auto buckets = source.bucket_count();
+  const int* key = &*source.find(-7);
+  std::unordered_set<int> target(std::move(source));
+  if (!source.empty() || source.bucket_count() != 0 || source.max_load_factor() != 2.0f)
+    return 1;
+  source.insert(44);
+  return target.size() != 3 || target.bucket_count() != buckets || target.max_load_factor() != 2.0f ||
+         &*target.find(-7) != key || source.count(44) != 1 || target.count(44) != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-owner-move-unique-construction-transfers-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-owner-move-unique-construction-transfers-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveEmptyMultisetConstructionKeepsReservationRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-owner-move-empty-multiset-construction-keeps-reservation.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_multiset<int> source;
+  source.rehash(23);
+  source.max_load_factor(3.0f);
+  const auto buckets = source.bucket_count();
+  std::unordered_multiset<int> target(std::move(source));
+  target.insert({2, 2, 5});
+  return target.bucket_count() != buckets || target.count(2) != 2 ||
+         target.max_load_factor() != 3.0f || !source.empty() || source.bucket_count() != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-owner-move-empty-multiset-construction-keeps-reservation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-owner-move-empty-multiset-construction-keeps-reservation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveMultisetAssignmentTransfersDuplicatesAndReturnsReceiverRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-owner-move-multiset-assignment-transfers-duplicates-and-returns-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+using Bag = std::unordered_multiset<int>;
+int trace;
+Bag& left(Bag& item) { trace = trace * 10 + 2; return item; }
+Bag&& right(Bag& item) { trace = trace * 10 + 1; return std::move(item); }
+int main() {
+  Bag source{3, 3, 9, 3};
+  Bag target{71, 71};
+  const int* key = &*source.find(9);
+  Bag& result = (left(target) = right(source));
+  return trace != 12 || &result != &target || target.size() != 4 || target.count(3) != 3 ||
+         target.count(71) != 0 || &*target.find(9) != key || !source.empty();
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-owner-move-multiset-assignment-transfers-duplicates-and-returns-receiver.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-owner-move-multiset-assignment-transfers-duplicates-and-returns-receiver" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveQualifiedAssignmentKeepsEmptySourceBucketsRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-owner-move-qualified-assignment-keeps-empty-source-buckets.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_set<int> source;
+  source.rehash(29);
+  const auto buckets = source.bucket_count();
+  std::unordered_set<int> target{4, 8, 12};
+  auto* receiver = &target;
+  auto& result = receiver->operator=(std::move(source));
+  return &result != &target || !target.empty() || target.bucket_count() != buckets ||
+         !source.empty() || source.bucket_count() != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-owner-move-qualified-assignment-keeps-empty-source-buckets.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-owner-move-qualified-assignment-keeps-empty-source-buckets" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveExplicitAllocatorConstructionRejected) {
+  const auto Source = tmpFile("unordered-set-owner-move-explicit-allocator-construction.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_set<int> source{1};
+  std::unordered_set<int> target(std::move(source), std::allocator<int>{});
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveOtherKeyConstructionRejected) {
+  const auto Source = tmpFile("unordered-set-owner-move-other-key-construction.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_multiset<unsigned> source;
+  std::unordered_multiset<unsigned> target(std::move(source));
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveCustomPolicyAssignmentRejected) {
+  const auto Source = tmpFile("unordered-set-owner-move-custom-policy-assignment.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+struct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };
+int main() {
+  std::unordered_set<int, Hash> a, b;
+  a = std::move(b);
+  return a.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveMultisetMoveWithExplicitAllocatorRejected) {
+  const auto Source = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_multiset<int> a{8, 8};
+  std::unordered_multiset<int> b(std::move(a), std::allocator<int>{});
+  return b.size() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

@@ -18269,3 +18269,11 @@ two matching raw integer pointers. Either both pointers address
 `int` or both address `const int`. Construction starts with the default
 bucket state, evaluates each endpoint once, and inserts the half-open
 range using the container's duplicate-key rules.
+
+## Integer unordered set ownership moves
+
+Default integer unordered sets and multisets support move construction
+and move assignment. The destination takes the bucket storage, nodes and
+load limit while preserving element addresses. Move assignment releases
+the old destination storage and returns the destination by reference.
+The moved-from owner is empty and can accept subsequent insertions.

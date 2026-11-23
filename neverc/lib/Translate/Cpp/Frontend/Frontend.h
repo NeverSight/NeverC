@@ -1112,7 +1112,7 @@ enum class UtilityOperation {
   UnorderedMapEqualRange,
   UnorderedMapInsertRange,
   UnorderedMapCopyAssign,
-  UnorderedMapMoveAssign,
+  UnorderedTableMoveAssign,
   UnorderedMapGetAllocator,
   AssociativePolicy,
   UnorderedIteratorDereference,
@@ -4459,6 +4459,9 @@ struct UtilityUnorderedSetListConstruction {
 std::optional<UtilityUnorderedSetListConstruction> approvedUtilityUnorderedSetListConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
+std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetMoveConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
 std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetRangeConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
@@ -4552,7 +4555,7 @@ enum class UtilityOperation;
 bool approvedUnorderedMapMethodSource(const State &S, const clang::SourceManager &SM,
     const clang::FunctionDecl *Function, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
-std::optional<UtilityOperation> approvedUtilityUnorderedMapAssignment(
+std::optional<UtilityOperation> approvedUtilityUnorderedTableAssignment(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UtilityUnorderedMapRangeConstruction {

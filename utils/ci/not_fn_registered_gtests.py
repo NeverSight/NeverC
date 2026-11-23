@@ -1866,6 +1866,30 @@ def restore_unordered_set_pointer_construction_history(source):
     return restored
 
 
+R19_UNORDERED_SET_OWNER_MOVE_REGISTERED_SHA256 = '544d50088e1e4062a33c132ff8abb4e60c2f5d88f1f9c3d498ed68d92dffdd40'
+R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SHA256 = '91ca47fa646e424eed96bb7914230e20deb00af9f7afee5efc04af1e71492b9e'
+R19_UNORDERED_SET_OWNER_MOVE_PREVIOUS_REGISTERED_SHA256 = '9cb7ceb21565984eeb74ecb04de81d829a7d4044e642eac1474b7bf9eb3196da'
+R19_UNORDERED_SET_OWNER_MOVE_PREVIOUS_MAINTAINED_SHA256 = '83193b7e67658eecd8f05e1f39207b4c07eea93fabaf11c3fdfaa4259719510a'
+R19_UNORDERED_SET_OWNER_MOVE_ADDITIONS_SHA256 = '8f3355132d7a0e4f7f46d7b0be509f8db706f648e8f11c66b34098ada0c02813'
+R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SIZE = 20175243
+R19_UNORDERED_SET_OWNER_MOVE_ADDITIONS_SIZE = 8924
+
+
+def restore_unordered_set_owner_move_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_OWNER_MOVE_REGISTERED_SHA256, R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_OWNER_MOVE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_OWNER_MOVE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_OWNER_MOVE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_OWNER_MOVE_REGISTERED_SHA256
+             else R19_UNORDERED_SET_OWNER_MOVE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2257,6 +2281,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_OWNER_MOVE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

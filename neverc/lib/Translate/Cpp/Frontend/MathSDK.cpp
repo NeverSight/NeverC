@@ -124018,7 +124018,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::AssociativePolicy;
   if (approvedUtilityUnorderedMapAllocatorQuery(S, SM, Call, Context))
     return UtilityOperation::UnorderedMapGetAllocator;
-  if (auto Assignment = approvedUtilityUnorderedMapAssignment(S, SM, Call, Context))
+  if (auto Assignment = approvedUtilityUnorderedTableAssignment(S, SM, Call, Context))
     return Assignment;
   if (approvedUtilityUnorderedMapRangeInsertion(S, SM, Call, Context))
     return UtilityOperation::UnorderedMapInsertRange;
@@ -138045,6 +138045,27 @@ std::optional<UtilityUnorderedMapRangeConstruction> approvedUtilityUnorderedMapR
   return UtilityUnorderedMapRangeConstruction{*Input, Inputs, BucketIndex};
 }
 
+std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetMoveConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  const auto *Selected = Construction ? Construction->getConstructor() : nullptr;
+  const auto *Ctor = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition()) : nullptr;
+  if (!Ctor || !Ctor->isMoveConstructor() || Ctor->getNumParams() != 1 ||
+      Construction->getNumArgs() != 1 || !S.owns(SM, Construction->getExprLoc()) ||
+      Construction->isTypeDependent() || Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      !unorderedMapPublicMethod(S, SM, Ctor, "unordered_set"))
+    return std::nullopt;
+  const auto *Owner = Ctor->getParent();
+  const auto Type = Context.getRecordType(Owner);
+  if (!Context.hasSameType(Ctor->getParamDecl(0)->getType(), Context.getRValueReferenceType(Type)) ||
+      !Context.hasSameType(Construction->getArg(0)->getType(), Type) ||
+      !approvedHashSetBucketSource(S, SM, Ctor, Owner, Context))
+    return std::nullopt;
+  return approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+}
+
 std::optional<UtilityUnorderedMapConstructionKind>
 approvedUtilityUnorderedMapConstruction(const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const ASTContext &Context) {
@@ -138655,7 +138676,7 @@ std::optional<UtilityUnorderedMapRangeInsertion> approvedUtilityUnorderedMapRang
   return Input;
 }
 
-std::optional<UtilityOperation> approvedUtilityUnorderedMapAssignment(
+std::optional<UtilityOperation> approvedUtilityUnorderedTableAssignment(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
@@ -138671,14 +138692,20 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapAssignment(
       !Method->isOverloadedOperator() || Method->getOverloadedOperator() != OO_Equal ||
       Method->isConst() || Method->getNumParams() != 1 ||
       Call->getNumArgs() != 1 + Offset || !Call->isLValue() ||
-      (!Method->isCopyAssignmentOperator() && !Method->isMoveAssignmentOperator()) ||
-      !unorderedMapPublicMethod(S, SM, Method)) return std::nullopt;
-  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
-  if (!Map) return std::nullopt;
+      (!Method->isCopyAssignmentOperator() && !Method->isMoveAssignmentOperator()))
+    return std::nullopt;
+  const bool Move = Method->isMoveAssignmentOperator();
+  const auto *Owner = Method->getParent();
+  if (!Owner->getIdentifier()) return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  if ((Header != "unordered_map" && (Header != "unordered_set" || !Move)) ||
+      !unorderedMapPublicMethod(S, SM, Method, Header)) return std::nullopt;
+  const auto Table = Header == "unordered_map" ? approvedUtilityUnorderedMapRecord(S, SM, Owner, Context)
+      : approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  if (!Table) return std::nullopt;
   auto ObjectType = Object->getType();
   if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
-  const auto RecordType = Context.getRecordType(Map->Record);
-  const bool Move = Method->isMoveAssignmentOperator();
+  const auto RecordType = Context.getRecordType(Table->Record);
   const auto Parameter = Move ? Context.getRValueReferenceType(RecordType)
       : Context.getLValueReferenceType(RecordType.withConst());
   if (ObjectType.hasQualifiers() || !Context.hasSameType(ObjectType, RecordType) ||
@@ -138686,9 +138713,10 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapAssignment(
       !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(RecordType)) ||
       !Context.hasSameType(Call->getType(), RecordType) ||
       !Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(), RecordType) ||
-      !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context))
+      !(Table->HasMappedValue ? approvedUnorderedMapMethodSource(S, SM, Method, Owner, Context)
+                              : approvedHashSetBucketSource(S, SM, Method, Owner, Context)))
     return std::nullopt;
-  return Move ? UtilityOperation::UnorderedMapMoveAssign : UtilityOperation::UnorderedMapCopyAssign;
+  return Move ? UtilityOperation::UnorderedTableMoveAssign : UtilityOperation::UnorderedMapCopyAssign;
 }
 
 std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedMapAllocatorQuery(

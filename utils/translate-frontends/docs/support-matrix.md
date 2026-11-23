@@ -808,3 +808,10 @@ The combined compiler passes 3,768 source requests across six 64-bit targets
 and 732 formal tests on Linux x86-64. All 399 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Integer unordered set ownership moves
+
+The combined compiler passes 3,816 source requests across six 64-bit targets
+and 740 formal tests on Linux x86-64. All 403 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.
