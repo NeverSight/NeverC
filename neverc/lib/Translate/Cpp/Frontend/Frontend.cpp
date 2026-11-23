@@ -18804,6 +18804,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedEmptyHashSetConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
@@ -21512,6 +21513,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             approvedEmptyHashSetConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
+            approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
@@ -24315,6 +24317,7 @@ public:
            approvedEmptyHashSetConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -31485,6 +31488,7 @@ public:
                    approvedEmptyHashSetConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||

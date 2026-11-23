@@ -18319,3 +18319,11 @@ node and keeps equivalent keys together.
 Default integer sets and multisets return their pinned allocator, hash
 and equality objects. Calls through a pointer evaluate the receiver
 once. The returned allocator can allocate and release integer storage.
+
+## Integer unordered set bucket and allocator constructors
+
+Default integer sets and multisets accept a requested bucket count and
+explicit instances of the pinned hash, equality and allocator types.
+An allocator may also be supplied for an empty, copied or moved table.
+A copy owns independent nodes. A move with the default allocator
+transfers node ownership and preserves element addresses.

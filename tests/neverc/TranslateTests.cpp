@@ -392525,7 +392525,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveExplicitAllocatorConstructionRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalAllocatorMoveRunsAtBothOptimizations) {
   const auto Source = tmpFile("unordered-set-owner-move-explicit-allocator-construction.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 #include <utility>
@@ -392535,10 +392535,17 @@ int main() {
   return target.empty();
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-set-owner-move-explicit-allocator-construction.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-owner-move-explicit-allocator-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveOtherKeyConstructionRejected) {
@@ -392574,7 +392581,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveMultisetMoveWithExplicitAllocatorRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalAllocatorMoveRunsAtBothOptimizations) {
   const auto Source = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 #include <utility>
@@ -392584,10 +392591,17 @@ int main() {
   return b.size() != 2;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedSetOwnerCopyUniqueConstSourceOwnsDistinctNodesRunAtBothOptimizations) {
@@ -392694,7 +392708,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedSetOwnerCopyExplicitAllocatorCopyRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalAllocatorCopyRunsAtBothOptimizations) {
   const auto Source = tmpFile("unordered-set-owner-copy-explicit-allocator-copy.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() {
@@ -392703,10 +392717,17 @@ int main() {
   return copy.empty();
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-set-owner-copy-explicit-allocator-copy.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-owner-copy-explicit-allocator-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedSetOwnerCopyOtherKeyCopyRejected) {
@@ -392740,7 +392761,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedSetOwnerCopyExplicitAllocatorMultisetCopyRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalAllocatorCopyRunsAtBothOptimizations) {
   const auto Source = tmpFile("unordered-set-owner-copy-explicit-allocator-multiset-copy.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() {
@@ -392749,10 +392770,17 @@ int main() {
   return copy.count(8) != 2;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-set-owner-copy-explicit-allocator-multiset-copy.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-owner-copy-explicit-allocator-multiset-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentUniqueCopyAssignmentReusesDestinationBucketsRunAtBothOptimizations) {
@@ -393655,6 +393683,212 @@ int main() {
   auto allocator = values.get_allocator();
   auto* storage = allocator.allocate(1);
   allocator.deallocate(storage, 1);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionSetBucketCountDefaultPoliciesEvaluateCountOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-storage-construction-set-bucket-count-default-policies-evaluate-count-once.cpp");
+  writeFile(Source, R"r19containers(#include <cstddef>
+#include <unordered_set>
+std::size_t buckets(int& calls) { ++calls; return 17; }
+int main() {
+  int calls = 0;
+  std::unordered_set<int> values(buckets(calls));
+  return calls != 1 || !values.empty() || values.bucket_count() < 17 || values.max_load_factor() != 1.0f;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-storage-construction-set-bucket-count-default-policies-evaluate-count-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-storage-construction-set-bucket-count-default-policies-evaluate-count-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionMultisetExplicitHashEqualAndAllocatorBucketConstructionRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-storage-construction-multiset-explicit-hash-equal-and-allocator-bucket-construction.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::hash<int> hash;
+  const std::equal_to<int> equal;
+  const std::allocator<int> allocator;
+  std::unordered_multiset<int> values(13u, hash, equal, allocator);
+  values.insert(2);
+  values.insert(2);
+  return values.size() != 2 || values.count(2) != 2 || values.bucket_count() < 13;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-storage-construction-multiset-explicit-hash-equal-and-allocator-bucket-construction.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-storage-construction-multiset-explicit-hash-equal-and-allocator-bucket-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionSetBucketDelegationWithDefaultAllocatorEvaluatesArgumentOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-storage-construction-set-bucket-delegation-with-default-allocator-evaluates-argument-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Alloc = std::allocator<int>;
+const Alloc& observe(const Alloc& allocator, int& calls) { ++calls; return allocator; }
+int main() {
+  const Alloc allocator;
+  int calls = 0;
+  std::unordered_set<int> values(11u, observe(allocator, calls));
+  return calls != 1 || !values.empty() || values.bucket_count() < 11;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-storage-construction-set-bucket-delegation-with-default-allocator-evaluates-argument-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-storage-construction-set-bucket-delegation-with-default-allocator-evaluates-argument-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionMultisetAllocatorOnlyStartsEmptyAndOwnsInsertedKeysRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-storage-construction-multiset-allocator-only-starts-empty-and-owns-inserted-keys.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::allocator<int> allocator;
+  std::unordered_multiset<int> values(allocator);
+  if (!values.empty()) return 1;
+  values.insert(7);
+  return values.count(7) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-storage-construction-multiset-allocator-only-starts-empty-and-owns-inserted-keys.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-storage-construction-multiset-allocator-only-starts-empty-and-owns-inserted-keys" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionSetCopyWithDefaultAllocatorOwnsADistinctNodeRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-storage-construction-set-copy-with-default-allocator-owns-a-distinct-node.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::allocator<int> allocator;
+  const std::unordered_set<int> source{17, 23};
+  std::unordered_set<int> copy(source, allocator);
+  return copy.size() != 2 || &*copy.find(17) == &*source.find(17) || copy.count(23) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-storage-construction-set-copy-with-default-allocator-owns-a-distinct-node.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-storage-construction-set-copy-with-default-allocator-owns-a-distinct-node" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionMultisetMoveWithEqualDefaultAllocatorRetainsNodeAddressRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-storage-construction-multiset-move-with-equal-default-allocator-retains-node-address.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  const std::allocator<int> allocator;
+  std::unordered_multiset<int> source{31, 31, 5};
+  const int* address = &*source.find(5);
+  std::unordered_multiset<int> moved(std::move(source), allocator);
+  return !source.empty() || moved.count(31) != 2 || &*moved.find(5) != address;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-storage-construction-multiset-move-with-equal-default-allocator-retains-node-address.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-storage-construction-multiset-move-with-equal-default-allocator-retains-node-address" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionSetCustomHashBucketConstructionRejected) {
+  const auto Source = tmpFile("unordered-set-storage-construction-set-custom-hash-bucket-construction.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };
+int main() {
+  std::unordered_set<int, Hash> values(11u);
+  return values.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionMultisetCustomEqualityBucketConstructionRejected) {
+  const auto Source = tmpFile("unordered-set-storage-construction-multiset-custom-equality-bucket-construction.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int first, int second) const { return first == second; } };
+int main() {
+  std::unordered_multiset<int, std::hash<int>, Equal> values(11u);
+  return values.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionUnapprovedKeyAllocatorConstructionRejected) {
+  const auto Source = tmpFile("unordered-set-storage-construction-unapproved-key-allocator-construction.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::allocator<long> allocator;
+  std::unordered_set<long> values(allocator);
+  return values.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionUnapprovedKeyBucketConstructionRejected) {
+  const auto Source = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<unsigned> values(7u, std::hash<unsigned>{}, std::equal_to<unsigned>{});
+  return values.empty();
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

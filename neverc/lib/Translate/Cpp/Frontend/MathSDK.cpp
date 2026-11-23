@@ -59052,7 +59052,7 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       bitsetLiteralTextArgument(S, SM, Default, M, Index, Context))
     return true;
   if (valarrayResizeDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
-  if (approvedUtilityUnorderedMapDefaultArgument(S, SM, Default, Function, Index, Context))
+  if (approvedUtilityUnorderedTableDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
   if (approvedScalarRealDistributionDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
@@ -138067,14 +138067,62 @@ std::optional<UtilityUnorderedMapRangeConstruction> approvedUtilityUnorderedMapR
   return UtilityUnorderedMapRangeConstruction{*Input, Inputs, BucketIndex};
 }
 
+static bool unorderedSetConstructionPolicy(const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const UtilityUnorderedTableRecord &Table,
+    unsigned Index, unsigned Policy, const ASTContext &Context) {
+  const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Table.Record)->getTemplateArgs();
+  const auto Type = Arguments.get(Policy).getAsType();
+  const auto Argument = Construction->getArg(Index)->getType();
+  if (Argument.isVolatileQualified() || Argument.isRestrictQualified() ||
+      Argument.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(Argument, Type) ||
+      !Context.hasSameType(Construction->getConstructor()->getParamDecl(Index)->getType(),
+                           Context.getLValueReferenceType(Type.withConst())))
+    return false;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  return Policy == 3 ? bool(approvedUtilityAllocatorRecord(S, SM, Record, Context))
+                     : bool(approvedFunctionalObjectRecord(S, SM, Record, Context));
+}
+
+std::optional<UtilityUnorderedSetStorageConstruction> approvedUtilityUnorderedSetStorageConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
+  const unsigned Count = Construction ? Construction->getNumArgs() : 0;
+  if (!Ctor || Count < 1 || Count > 4 || Ctor->getNumParams() != Count ||
+      Ctor->getPrimaryTemplate() || Ctor->isCopyConstructor() || Ctor->isMoveConstructor() ||
+      !S.owns(SM, Construction->getExprLoc()) || Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      !unorderedMapPublicMethod(S, SM, Ctor, "unordered_set"))
+    return std::nullopt;
+  const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Ctor->getParent(), Context);
+  if (!Table) return std::nullopt;
+  auto Policy = [&](unsigned Index, unsigned TypeIndex) {
+    return unorderedSetConstructionPolicy(S, SM, Construction, *Table, Index, TypeIndex, Context);
+  };
+  if (Count == 1) {
+    if (!Policy(0, 3)) return std::nullopt;
+  } else if (!Context.hasSameType(Ctor->getParamDecl(0)->getType(), Context.getSizeType()) ||
+             !Context.hasSameType(Construction->getArg(0)->getType(), Context.getSizeType()) ||
+             !((Count == 2 && Policy(1, 3)) ||
+               (Count == 3 && Policy(1, 1) && (Policy(2, 2) || Policy(2, 3))) ||
+               (Count == 4 && Policy(1, 1) && Policy(2, 2) && Policy(3, 3)))) {
+    return std::nullopt;
+  }
+  if (!approvedHashSetBucketSource(S, SM, Ctor, Table->Record, Context))
+    return std::nullopt;
+  return UtilityUnorderedSetStorageConstruction{*Table, Count > 1};
+}
+
 std::optional<UtilityUnorderedSetOwnershipConstruction> approvedUtilityUnorderedSetOwnershipConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
   const auto *Selected = Construction ? Construction->getConstructor() : nullptr;
   const auto *Ctor = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition()) : nullptr;
-  if (!Ctor || (!Ctor->isCopyConstructor() && !Ctor->isMoveConstructor()) ||
-      Ctor->getNumParams() != 1 ||
-      Construction->getNumArgs() != 1 || !S.owns(SM, Construction->getExprLoc()) ||
+  const unsigned Count = Construction ? Construction->getNumArgs() : 0;
+  if (!Ctor || (!Ctor->isCopyOrMoveConstructor() && Count != 2) ||
+      Count < 1 || Count > 2 || Ctor->getNumParams() != Count ||
+      !S.owns(SM, Construction->getExprLoc()) ||
       Construction->isTypeDependent() || Construction->isValueDependent() ||
       Construction->isInstantiationDependent() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
@@ -138082,15 +138130,17 @@ std::optional<UtilityUnorderedSetOwnershipConstruction> approvedUtilityUnordered
     return std::nullopt;
   const auto *Owner = Ctor->getParent();
   const auto Type = Context.getRecordType(Owner);
-  const bool Move = Ctor->isMoveConstructor();
-  const auto Parameter = Move ? Context.getRValueReferenceType(Type)
-                              : Context.getLValueReferenceType(Type.withConst());
+  const auto Parameter = Ctor->getParamDecl(0)->getType();
+  const bool Move = Context.hasSameType(Parameter, Context.getRValueReferenceType(Type));
   const auto Argument = Construction->getArg(0)->getType();
-  if (!Context.hasSameType(Ctor->getParamDecl(0)->getType(), Parameter) ||
+  if ((!Move && !Context.hasSameType(Parameter, Context.getLValueReferenceType(Type.withConst()))) ||
+      Argument.isVolatileQualified() || Argument.isRestrictQualified() ||
+      Argument.getAddressSpace() != LangAS::Default ||
       !(Move ? Context.hasSameType(Argument, Type) : Context.hasSameUnqualifiedType(Argument, Type)))
     return std::nullopt;
   const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
-  if (!Table || !approvedHashSetBucketSource(S, SM, Ctor, Owner, Context))
+  if (!Table || (Count == 2 && !unorderedSetConstructionPolicy(S, SM, Construction, *Table, 1, 3, Context)) ||
+      !approvedHashSetBucketSource(S, SM, Ctor, Owner, Context))
     return std::nullopt;
   return UtilityUnorderedSetOwnershipConstruction{*Table, Move};
 }
@@ -138789,28 +138839,33 @@ std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedTableAllocatorQuer
   return Allocator;
 }
 
-bool approvedUtilityUnorderedMapDefaultArgument(
+bool approvedUtilityUnorderedTableDefaultArgument(
     const State &S, const SourceManager &SM, const CXXDefaultArgExpr *Default,
     const FunctionDecl *Function, unsigned Index, ASTContext &Context) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
   const auto *Parameter = Default ? Default->getParam() : nullptr;
   const auto *Owner = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
-  const auto Map = Constructor ? approvedUtilityUnorderedMapRecord(
-      S, SM, Constructor->getParent(), Context) : std::nullopt;
-  if (!Map || !Default || !Parameter || !Owner || !Constructor->getNumParams() ||
+  const auto *Record = Constructor ? Constructor->getParent() : nullptr;
+  const auto Header = Record && Record->getIdentifier() ? associativeContainerHeader(Record->getName()) : "";
+  if (Header != "unordered_map" && Header != "unordered_set") return false;
+  const auto Table = Header == "unordered_map" ? approvedUtilityUnorderedMapRecord(S, SM, Record, Context)
+      : approvedUtilityUnorderedSetStorage(S, SM, Record, Context);
+  if (!Table || !Default || !Parameter || !Owner || !Constructor->getNumParams() ||
       Index >= Constructor->getNumParams() || Parameter != Constructor->getParamDecl(Index) ||
       Parameter->getFunctionScopeIndex() != Index ||
       Owner->getCanonicalDecl() != Constructor->getCanonicalDecl() ||
-      !unorderedMapPublicMethod(S, SM, Constructor) ||
-      !approvedUnorderedMapMethodSource(S, SM, Constructor, Map->Record, Context))
+      !unorderedMapPublicMethod(S, SM, Constructor, Header) ||
+      !(Table->HasMappedValue ? approvedUnorderedMapMethodSource(S, SM, Constructor, Table->Record, Context)
+                              : approvedHashSetBucketSource(S, SM, Constructor, Table->Record, Context)))
     return false;
   unsigned CountIndex = 0;
   if (!Context.hasSameType(Constructor->getParamDecl(0)->getType(), Context.getSizeType())) {
+    if (!Table->HasMappedValue) return false;
     const auto First = Constructor->getParamDecl(0)->getType();
     const auto *Record = First->getAsCXXRecordDecl();
     const bool List = Record && Record->getName() == "initializer_list";
     if ((!List && !Constructor->getPrimaryTemplate()) ||
-        !unorderedMapRangeParameter(S, SM, *Map, First, List, Context)) return false;
+        !unorderedMapRangeParameter(S, SM, *Table, First, List, Context)) return false;
     CountIndex = List ? 1 : 2;
     if (!List && (Constructor->getNumParams() < 2 ||
         !Context.hasSameType(Constructor->getParamDecl(1)->getType(), First))) return false;
@@ -138819,15 +138874,16 @@ bool approvedUtilityUnorderedMapDefaultArgument(
       Index > CountIndex + 2 ||
       !Context.hasSameType(Constructor->getParamDecl(CountIndex)->getType(), Context.getSizeType()))
     return false;
-  const auto *Specialization = cast<ClassTemplateSpecializationDecl>(Map->Record);
+  const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Table->Record)->getTemplateArgs();
+  const unsigned Hasher = Table->HasMappedValue ? 2 : 1;
   for (unsigned I = 1; I <= 2; ++I) {
-    const auto Type = Specialization->getTemplateArgs().get(I + 1).getAsType();
+    const auto Type = Arguments.get(Hasher + I - 1).getAsType();
     if (!Context.hasSameType(Constructor->getParamDecl(CountIndex + I)->getType(),
             Context.getLValueReferenceType(Type.withConst())) ||
         !approvedFunctionalObjectRecord(S, SM, Type->getAsCXXRecordDecl(), Context)) return false;
   }
   const auto *Init = selectedDefaultArgument(Default, Context);
-  if (!Init || !cstddefOrigin(S, SM, Init->getExprLoc(), "libcxx", "unordered_map")) return false;
+  if (!Init || !cstddefOrigin(S, SM, Init->getExprLoc(), "libcxx", Header)) return false;
   const Expr *Value = Init->IgnoreParenImpCasts();
   if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Value))
     Value = Temporary->getSubExpr()->IgnoreParenImpCasts();
@@ -138838,7 +138894,7 @@ bool approvedUtilityUnorderedMapDefaultArgument(
   const auto *Construction = dyn_cast<CXXConstructExpr>(Value);
   const auto Kind = Construction ? approvedFunctionalObjectConstruction(
       S, SM, Construction, Context) : std::nullopt;
-  const auto Expected = Specialization->getTemplateArgs().get(Index - CountIndex + 1).getAsType();
+  const auto Expected = Arguments.get(Hasher + Index - CountIndex - 1).getAsType();
   return Kind && *Kind == FunctionalObjectConstruction::Default &&
       !Construction->getNumArgs() && Context.hasSameType(Construction->getType(), Expected);
 }
