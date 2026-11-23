@@ -27073,6 +27073,20 @@ class FunctionLowering {
     auto Buckets = hashTableMember(std::move(Place), "nct_unordered_bucket_count", Type, L);
     return hashTableLoadFactor(std::move(Size), std::move(Buckets), L);
   }
+  void initializeUnorderedSetStorage(Expression Place, const UtilityUnorderedTableRecord &Table,
+      const CXXConstructExpr *Construction, unsigned Inputs, bool HasBucketCount, SourceLocation L) {
+    const auto *Ctor = Construction->getConstructor();
+    std::optional<Expression> Buckets;
+    if (HasBucketCount) {
+      Buckets = snapshot(argument(Construction->getArg(Inputs), Ctor->getParamDecl(Inputs)->getType()), L);
+      ++Inputs;
+    }
+    for (unsigned I = Inputs; I < Construction->getNumArgs(); ++I)
+      argument(Construction->getArg(I), Ctor->getParamDecl(I)->getType());
+    initializeUnorderedTable(Place, Table, L);
+    if (Buckets) unorderedRehash(std::move(Place), Table, std::move(*Buckets), L);
+  }
+
   void insertUnorderedSetRange(Expression Place, const UtilityUnorderedTableRecord &Table,
       Expression Cursor, Expression End, QualType Input, SourceLocation L) {
     std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
@@ -29477,8 +29491,8 @@ class FunctionLowering {
         reject(L, "unordered set equal range", "The exact integer table and iterator pair layouts are required.");
       const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
       const auto *Method = Member->getMethodDecl();
-      const auto *Receiver = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts())->getBase();
-      auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
+      const auto *Reference = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts());
+      auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
       auto Key = dereference(snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L), L);
       auto Hash = snapshot(cast(Key, type(A.Context.getSizeType(), L), L), L);
       auto First = snapshot(unorderedFindNode(Place, Info->Table, Key, Hash, L), L);
@@ -29502,8 +29516,8 @@ class FunctionLowering {
         reject(L, "unordered set iterator erase", "The exact integer iterator and storage layouts are required.");
       const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
       const auto *Method = Member->getMethodDecl();
-      const auto *Receiver = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts())->getBase();
-      auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
+      const auto *Reference = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts());
+      auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
       auto Position = [&](unsigned Index) {
         auto Argument = snapshot(argument(Call->getArg(Index), Method->getParamDecl(Index)->getType()), L);
         return snapshot(unorderedIteratorNode(dereference(Argument, L), Info->Iterator, L), L);
@@ -29537,8 +29551,8 @@ class FunctionLowering {
         reject(L, "unordered set insertion", "The exact integer value and iterator layout are required.");
       const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
       const auto *Method = Member->getMethodDecl();
-      const auto *Receiver = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts())->getBase();
-      auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
+      const auto *Reference = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts());
+      auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
       std::optional<Expression> Hint;
       const unsigned KeyIndex = Info->Hinted ? 1 : 0;
       if (Info->Hinted) {
@@ -29576,8 +29590,8 @@ class FunctionLowering {
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
       if (!Table || !Iterator || Iterator->Owner.HasMappedValue)
         reject(L, "unordered set iterator", "The authenticated integer iterator layout is required.");
-      const auto *Receiver = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts())->getBase();
-      auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
+      const auto *Reference = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts());
+      auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
       if (Iterator->Local) {
         auto Bucket = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
         return unorderedMakeBucketIterator(Place, *Table, *Iterator, std::move(Bucket),
@@ -29604,8 +29618,8 @@ class FunctionLowering {
       const auto Table = approvedUtilityUnorderedSetStorage(A.S, A.Sources, Method->getParent(), A.Context);
       if (!Table)
         reject(L, "unordered set storage", "The authenticated integer node layout is unavailable.");
-      const auto *Receiver = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts())->getBase();
-      auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
+      const auto *Reference = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+      auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
       if (Operation == UtilityOperation::UnorderedSetClear) {
         releaseUnorderedTable(Place, *Table, false, L);
         return {};
@@ -39485,17 +39499,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
 
 
     if (const auto Info = approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, C, A.Context)) {
-      const auto *Ctor = C->getConstructor();
-      std::optional<Expression> Buckets;
-      unsigned I = 0;
-      if (Info->HasBucketCount) {
-        Buckets = snapshot(argument(C->getArg(0), Ctor->getParamDecl(0)->getType()), L);
-        I = 1;
-      }
-      for (; I < C->getNumArgs(); ++I)
-        argument(C->getArg(I), Ctor->getParamDecl(I)->getType());
-      initializeUnorderedTable(Place, Info->Table, L);
-      if (Buckets) unorderedRehash(Place, Info->Table, *Buckets, L);
+      initializeUnorderedSetStorage(std::move(Place), Info->Table, C, 0, Info->HasBucketCount, L);
       return;
     }
     if (const auto Info = approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context)) {
@@ -39510,12 +39514,12 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         unorderedCopyConstruction(std::move(Place), std::move(Source), Info->Table, L);
       return;
     }
-    if (const auto Table = approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context)) {
+    if (const auto Info = approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Pointer = C->getConstructor()->getParamDecl(0)->getType();
       auto First = snapshot(argument(C->getArg(0), Pointer), L);
       auto Last = snapshot(argument(C->getArg(1), Pointer), L);
-      initializeUnorderedTable(Place, *Table, L);
-      insertUnorderedSetRange(std::move(Place), *Table, std::move(First), std::move(Last), Pointer, L);
+      initializeUnorderedSetStorage(Place, Info->Table, C, 2, Info->HasBucketCount, L);
+      insertUnorderedSetRange(std::move(Place), Info->Table, std::move(First), std::move(Last), Pointer, L);
       return;
     }
     if (const auto Info = approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, C, A.Context)) {
@@ -39523,7 +39527,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       auto List = dereference(snapshot(argument(C->getArg(0), Carrier), L), L);
       auto Begin = snapshot(fieldStorage(List, Info->List.Begin, L), L);
       auto Length = snapshot(fieldStorage(std::move(List), Info->List.Size, L), L);
-      initializeUnorderedTable(Place, Info->Table, L);
+      initializeUnorderedSetStorage(Place, Info->Table, C, 1, Info->HasBucketCount, L);
       insertUnorderedSetList(std::move(Place), Info->Table, std::move(Begin), std::move(Length),
                              Info->List.Begin->getType(), L);
       return;
