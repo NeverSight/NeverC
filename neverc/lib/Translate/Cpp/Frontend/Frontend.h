@@ -4459,7 +4459,11 @@ struct UtilityUnorderedSetListConstruction {
 std::optional<UtilityUnorderedSetListConstruction> approvedUtilityUnorderedSetListConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
-std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetMoveConstruction(
+struct UtilityUnorderedSetOwnershipConstruction {
+  UtilityUnorderedTableRecord Table;
+  bool Move;
+};
+std::optional<UtilityUnorderedSetOwnershipConstruction> approvedUtilityUnorderedSetOwnershipConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
 std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetRangeConstruction(

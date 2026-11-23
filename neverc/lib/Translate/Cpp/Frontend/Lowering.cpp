@@ -1829,7 +1829,7 @@ class FunctionLowering {
     jump(Done, L);
     label(Done, L);
   }
-  void unorderedCopyMap(Expression Place, Expression Source,
+  void unorderedCopyTable(Expression Place, Expression Source,
       const UtilityUnorderedTableRecord &Info, bool Assignment, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     const auto NodePointer = type(Info.NodePointerType, L);
@@ -1890,12 +1890,21 @@ class FunctionLowering {
       assign(unorderedNodeNext(Node, Info, L), A.zero(Info.NodePointerType, L), L);
       unorderedAppendCopiedNode(Place, Info, Node, L);
     } else {
-      unorderedInsertNode(Place, Info, unorderedNodeKey(Current, Info, L),
-          unorderedNodeValue(Current, Info, L), false, L);
+      std::optional<Expression> Mapped;
+      if (Info.HasMappedValue) Mapped = unorderedNodeValue(Current, Info, L);
+      unorderedInsertNode(Place, Info, unorderedNodeKey(Current, Info, L), std::move(Mapped), false, L);
     }
     assign(Current, unorderedNodeNext(Current, Info, L), L);
     jump(Check, L);
     label(Done, L);
+  }
+  void unorderedCopyConstruction(Expression Place, Expression Source,
+      const UtilityUnorderedTableRecord &Info, SourceLocation L) {
+    initializeUnorderedTable(Place, Info, L);
+    assign(unorderedTableMember(Place, Info, "nct_unordered_max_load", L),
+        unorderedTableMember(Source, Info, "nct_unordered_max_load", L), L);
+    unorderedRehash(Place, Info, unorderedTableMember(Source, Info, "nct_unordered_bucket_count", L), L);
+    unorderedCopyTable(Place, Source, Info, false, L);
   }
   void unorderedRepairSentinel(Expression Place, const UtilityUnorderedTableRecord &Info,
                                 SourceLocation L) {
@@ -29762,7 +29771,7 @@ class FunctionLowering {
         branch(binary("!=", cast(Receiver, type(A.Context.VoidPtrTy, L), L),
             cast(*SourceAddress, type(A.Context.VoidPtrTy, L), L), "bool", L), Copy, Done, L);
         label(Copy, L);
-        unorderedCopyMap(Place, Source, *Info, true, L);
+        unorderedCopyTable(Place, Source, *Info, true, L);
         jump(Done, L);
         label(Done, L);
       }
@@ -39300,13 +39309,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         auto Source = dereference(SourceAddress, L);
         if (*Kind == UtilityUnorderedMapConstructionKind::Move)
           unorderedMoveTable(Place, Source, *Info, false, L);
-        else {
-          initializeUnorderedTable(Place, *Info, L);
-          assign(unorderedTableMember(Place, *Info, "nct_unordered_max_load", L),
-              unorderedTableMember(Source, *Info, "nct_unordered_max_load", L), L);
-          unorderedRehash(Place, *Info, unorderedTableMember(Source, *Info, "nct_unordered_bucket_count", L), L);
-          unorderedCopyMap(Place, Source, *Info, false, L);
-        }
+        else
+          unorderedCopyConstruction(Place, Source, *Info, L);
       }
       return;
     }
@@ -39435,9 +39439,12 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
 
-    if (const auto Table = approvedUtilityUnorderedSetMoveConstruction(A.S, A.Sources, C, A.Context)) {
-      auto Source = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
-      unorderedMoveTable(std::move(Place), dereference(Source, L), *Table, false, L);
+    if (const auto Info = approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context)) {
+      auto Source = dereference(snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L), L);
+      if (Info->Move)
+        unorderedMoveTable(std::move(Place), std::move(Source), Info->Table, false, L);
+      else
+        unorderedCopyConstruction(std::move(Place), std::move(Source), Info->Table, L);
       return;
     }
     if (const auto Table = approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context)) {

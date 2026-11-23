@@ -138045,12 +138045,13 @@ std::optional<UtilityUnorderedMapRangeConstruction> approvedUtilityUnorderedMapR
   return UtilityUnorderedMapRangeConstruction{*Input, Inputs, BucketIndex};
 }
 
-std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetMoveConstruction(
+std::optional<UtilityUnorderedSetOwnershipConstruction> approvedUtilityUnorderedSetOwnershipConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
   const auto *Selected = Construction ? Construction->getConstructor() : nullptr;
   const auto *Ctor = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition()) : nullptr;
-  if (!Ctor || !Ctor->isMoveConstructor() || Ctor->getNumParams() != 1 ||
+  if (!Ctor || (!Ctor->isCopyConstructor() && !Ctor->isMoveConstructor()) ||
+      Ctor->getNumParams() != 1 ||
       Construction->getNumArgs() != 1 || !S.owns(SM, Construction->getExprLoc()) ||
       Construction->isTypeDependent() || Construction->isValueDependent() ||
       Construction->isInstantiationDependent() ||
@@ -138059,11 +138060,17 @@ std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetMoveConstr
     return std::nullopt;
   const auto *Owner = Ctor->getParent();
   const auto Type = Context.getRecordType(Owner);
-  if (!Context.hasSameType(Ctor->getParamDecl(0)->getType(), Context.getRValueReferenceType(Type)) ||
-      !Context.hasSameType(Construction->getArg(0)->getType(), Type) ||
-      !approvedHashSetBucketSource(S, SM, Ctor, Owner, Context))
+  const bool Move = Ctor->isMoveConstructor();
+  const auto Parameter = Move ? Context.getRValueReferenceType(Type)
+                              : Context.getLValueReferenceType(Type.withConst());
+  const auto Argument = Construction->getArg(0)->getType();
+  if (!Context.hasSameType(Ctor->getParamDecl(0)->getType(), Parameter) ||
+      !(Move ? Context.hasSameType(Argument, Type) : Context.hasSameUnqualifiedType(Argument, Type)))
     return std::nullopt;
-  return approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  if (!Table || !approvedHashSetBucketSource(S, SM, Ctor, Owner, Context))
+    return std::nullopt;
+  return UtilityUnorderedSetOwnershipConstruction{*Table, Move};
 }
 
 std::optional<UtilityUnorderedMapConstructionKind>
