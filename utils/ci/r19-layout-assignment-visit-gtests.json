@@ -157,30 +157,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "variant-value-assignment-volatile-operand",
-      "source": "#include <variant>\nint f() {\n  std::variant<int, long> value;\n  volatile long operand = 17;\n  value = operand;\n  return value.index();\n}\n",
-      "expected": "reject",
-      "source_sha256": "fddeb02c5e6de75db9e8abe3669ce443386ece19ba1daf4464b169db0a90d43e",
-      "public_header": "variant",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "variant-value-assignment-user-defined-conversion",
-      "source": "#include <variant>\nstruct Input { operator int() const { return 17; } };\nint f() {\n  std::variant<int, long> value;\n  value = Input{};\n  return value.index();\n}\n",
-      "expected": "reject",
-      "source_sha256": "b91b21583cc87315fb4a78710f55686bb58dac83c995734e009e3c8a42fcdceb",
-      "public_header": "variant",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "variant-value-assignment-nontrivial-alternative",
-      "source": "#include <variant>\nstruct Payload {\n  int data;\n  Payload(int value) : data(value) {}\n  ~Payload() { data = 0; }\n};\nint f() {\n  std::variant<int, Payload> value;\n  value = Payload(17);\n  return value.index();\n}\n",
-      "expected": "reject",
-      "source_sha256": "a236b50dff3690dc72b0261b6e2cd2a12645170dc85435d157e6ac630cbf1d93",
-      "public_header": "variant",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "variant-zero-visit-function",
       "source": "#include <variant>\nint visitor() { return 11; }\nint main() { return std::visit(visitor) != 11; }\n",
       "source_sha256": "1c3b0d01b72c34e44683de59ea2d332867e4729d380a9512d214718e26f933ba",
@@ -211,6 +187,30 @@
       "expected": "accept",
       "public_header": "variant",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-value-assignment-volatile-operand",
+      "source": "#include <variant>\nint f() {\n  std::variant<int, long> value;\n  volatile long operand = 17;\n  value = operand;\n  return value.index();\n}\n",
+      "expected": "reject",
+      "source_sha256": "fddeb02c5e6de75db9e8abe3669ce443386ece19ba1daf4464b169db0a90d43e",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-value-assignment-user-defined-conversion",
+      "source": "#include <variant>\nstruct Input { operator int() const { return 17; } };\nint f() {\n  std::variant<int, long> value;\n  value = Input{};\n  return value.index();\n}\n",
+      "expected": "reject",
+      "source_sha256": "b91b21583cc87315fb4a78710f55686bb58dac83c995734e009e3c8a42fcdceb",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-value-assignment-nontrivial-alternative",
+      "source": "#include <variant>\nstruct Payload {\n  int data;\n  Payload(int value) : data(value) {}\n  ~Payload() { data = 0; }\n};\nint f() {\n  std::variant<int, Payload> value;\n  value = Payload(17);\n  return value.index();\n}\n",
+      "expected": "reject",
+      "source_sha256": "a236b50dff3690dc72b0261b6e2cd2a12645170dc85435d157e6ac630cbf1d93",
+      "public_header": "variant",
+      "kind": "source-body-guard"
     },
     {
       "name": "variant-zero-visit-renamed-value-wrapper",
@@ -245,7 +245,7 @@
     "TranslateTest.CoreV2VariantZeroVisitRenamedValueWrapperRejected",
     "TranslateTest.CoreV2VariantZeroVisitRenamedTableProjectionRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "c0ece43741e31ff8cf62cfcd5e14dcc65196029af1ea9517cd73376f05be7d2a",
   "maintained_original_sha256": "cb1e66caf89902b5ff655e287f1bc206b3dfee1f5e39c0c2a62c306577373851",
@@ -257,5 +257,11 @@
   "current_registry_count": 8172,
   "current_python_registry_tests": 128,
   "native_reference_selected_executions": 18,
-  "planned_generated_c23_executions": 18
+  "planned_generated_c23_executions": 18,
+  "native_reference_proofs": {
+    "variant-value-assignment": "b87c42a509b0ef796575186d0f488a158b88e9f574d8d53a0704eb3aacfe9c5d",
+    "variant-zero-visit": "42145c597f00a14b609476b99e821860cd8f438b004fad4818b538f39ae19fa7"
+  },
+  "native_reference_authentication_sha256": "eba50ad64defb0e070d6f1c14e3fb23926c74905fa941d605644890162745da7",
+  "source_proof_sha256": "401177e1c1b2da747364e995f1b24dbd880182e1dd721328c363d9e9f9dda5a3"
 }
