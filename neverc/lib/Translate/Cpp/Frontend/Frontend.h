@@ -1314,6 +1314,7 @@ enum class UtilityOperation {
   EmptyHashSetResizeBuckets,
   EmptyHashSetBucketObserver,
   UnorderedSetCount,
+  UnorderedSetSwap,
   UnorderedSetClear,
   UnorderedSetEraseKey,
   UnorderedSetInsertList,
@@ -5161,11 +5162,11 @@ std::optional<UnorderedNodeInsertResult> unorderedResultConstruction(
 std::optional<UnorderedResultCall> unorderedResultCall(
     const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-struct UnorderedMapNonmemberCall {
-  UtilityUnorderedTableRecord Map;
+struct UnorderedTableNonmemberCall {
+  UtilityUnorderedTableRecord Table;
   bool Swap, NotEqual;
 };
-std::optional<UnorderedMapNonmemberCall> unorderedMapNonmemberCall(
+std::optional<UnorderedTableNonmemberCall> unorderedTableNonmemberCall(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 enum class UnorderedIteratorTraversalKind { Advance, Distance, Next };

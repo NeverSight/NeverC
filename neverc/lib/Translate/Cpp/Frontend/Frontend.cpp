@@ -19283,7 +19283,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (Result.isNull() &&
             (unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context) ||
-             unorderedMapNonmemberCall(A.S, A.Sources, Call, A.Context) ||
+             unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context) ||
              unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
              unorderedMapListAssignment(A.S, A.Sources, Call, A.Context) ||
              unorderedMapMerge(A.S, A.Sources, Call, A.Context) ||
@@ -21029,7 +21029,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
         }
         if (unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context) ||
-             unorderedMapNonmemberCall(A.S, A.Sources, Call, A.Context) ||
+             unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context) ||
              unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
              unorderedMapListAssignment(A.S, A.Sources, Call, A.Context) ||
              unorderedMapMerge(A.S, A.Sources, Call, A.Context) ||
@@ -30263,7 +30263,7 @@ public:
           const bool Utility =
               unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context).has_value() ||
-             unorderedMapNonmemberCall(A.S, A.Sources, Call, A.Context).has_value() ||
+             unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedResultCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedMapListAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedMapMerge(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -31069,7 +31069,7 @@ public:
       if (A.S.coreV2() &&
           (unorderedGenericSwapCall(A.S, A.Sources, C, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, C, A.Context) ||
-             unorderedMapNonmemberCall(A.S, A.Sources, C, A.Context) ||
+             unorderedTableNonmemberCall(A.S, A.Sources, C, A.Context) ||
              unorderedResultCall(A.S, A.Sources, C, A.Context) ||
              unorderedMapListAssignment(A.S, A.Sources, C, A.Context) ||
              unorderedMapMerge(A.S, A.Sources, C, A.Context) ||

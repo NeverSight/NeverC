@@ -137424,12 +137424,13 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
   const bool Count = Name == "count";
   const bool Erase = Name == "erase";
   const bool Insert = Name == "insert";
+  const bool Swap = Name == "swap";
   const bool KeyOperation = Count || Erase;
-  if (!KeyOperation && !Insert && Name != "clear")
+  if (!KeyOperation && !Insert && !Swap && Name != "clear")
     return std::nullopt;
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto *Owner = Method->getParent();
-  const auto Arity = KeyOperation || Insert ? 1u : 0u;
+  const auto Arity = KeyOperation || Insert || Swap ? 1u : 0u;
   const auto Result = KeyOperation ? Context.getSizeType() : Context.VoidTy;
   if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
       Member->getBase()->getType().isVolatileQualified() || !S.owns(SM, Member->getMemberLoc()) ||
@@ -137452,10 +137453,19 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
         !Context.hasSameType(Call->getArg(0)->getType(), Parameter))
       return std::nullopt;
   }
+  if (Swap) {
+    const auto Type = Context.getRecordType(Owner);
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    if (!Prototype || !Prototype->isNothrow() ||
+        !Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getLValueReferenceType(Type)) ||
+        !Context.hasSameType(Call->getArg(0)->getType(), Type) || !Call->getArg(0)->isLValue())
+      return std::nullopt;
+  }
   if (!approvedHashSetBucketSource(S, SM, Method, Owner, Context))
     return std::nullopt;
   if (Count) return UtilityOperation::UnorderedSetCount;
   if (Erase) return UtilityOperation::UnorderedSetEraseKey;
+  if (Swap) return UtilityOperation::UnorderedSetSwap;
   return Insert ? UtilityOperation::UnorderedSetInsertList : UtilityOperation::UnorderedSetClear;
 }
 
@@ -139321,7 +139331,7 @@ std::optional<UnorderedResultCall> unorderedResultCall(
   return UnorderedResultCall{*Info,Object,Offset,false,bool(Operator)};
 }
 
-std::optional<UnorderedMapNonmemberCall> unorderedMapNonmemberCall(
+std::optional<UnorderedTableNonmemberCall> unorderedTableNonmemberCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -139334,10 +139344,11 @@ std::optional<UnorderedMapNonmemberCall> unorderedMapNonmemberCall(
   if (!Swap && (!Function->isOverloadedOperator() ||
       (Function->getOverloadedOperator() != OO_EqualEqual &&
        Function->getOverloadedOperator() != OO_ExclaimEqual))) return std::nullopt;
-  const auto Map = approvedUtilityUnorderedMapRecord(
-      S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
-  if (!Map) return std::nullopt;
-  const auto Type = Context.getRecordType(Map->Record);
+  const auto *Record = Call->getArg(0)->getType()->getAsCXXRecordDecl();
+  auto Table = approvedUtilityUnorderedMapRecord(S, SM, Record, Context);
+  if (!Table) Table = approvedUtilityUnorderedSetStorage(S, SM, Record, Context);
+  if (!Table) return std::nullopt;
+  const auto Type = Context.getRecordType(Table->Record);
   const auto Reference = Context.getLValueReferenceType(Swap ? Type : Context.getConstType(Type));
   for (unsigned I = 0; I != 2; ++I) {
     const auto Input = Call->getArg(I)->getType();
@@ -139351,17 +139362,19 @@ std::optional<UnorderedMapNonmemberCall> unorderedMapNonmemberCall(
     return std::nullopt;
   const auto *Primary = Function->getPrimaryTemplate();
   const auto *Arguments = Function->getTemplateSpecializationArgs();
-  const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(Map->Record);
-  if (!Primary || !Arguments || Arguments->size() != 5 || !Specialization ||
-      Specialization->getTemplateArgs().size() != 5) return std::nullopt;
-  for (unsigned I = 0; I != 5; ++I)
+  const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(Table->Record);
+  const unsigned PolicyTypes = Table->HasMappedValue ? 5 : 4;
+  if (!Primary || !Arguments || Arguments->size() != PolicyTypes || !Specialization ||
+      Specialization->getTemplateArgs().size() != PolicyTypes) return std::nullopt;
+  for (unsigned I = 0; I != PolicyTypes; ++I)
     if (Arguments->get(I).getKind() != TemplateArgument::Type ||
         Specialization->getTemplateArgs().get(I).getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments->get(I).getAsType(),
                             Specialization->getTemplateArgs().get(I).getAsType())) return std::nullopt;
   auto Pinned = [&](const Decl *D) {
     const auto File = D ? S.sdkFile(SM, D->getLocation()) : std::nullopt;
-    return File && File->Root == "libcxx" && File->Path == "unordered_map" &&
+    const auto Header = Table->HasMappedValue ? "unordered_map" : "unordered_set";
+    return File && File->Root == "libcxx" && File->Path == Header &&
         !S.owns(SM, D->getLocation()) && approvedStandardSDKDeclaration(S, SM, D);
   };
   for (const auto *D : Function->redecls()) if (!Pinned(D)) return std::nullopt;
@@ -139369,8 +139382,11 @@ std::optional<UnorderedMapNonmemberCall> unorderedMapNonmemberCall(
     if (!Pinned(D)) return std::nullopt;
     for (const auto *Pattern : D->getTemplatedDecl()->redecls()) if (!Pinned(Pattern)) return std::nullopt;
   }
-  if (!approvedUnorderedMapMethodSource(S, SM, Function, Map->Record, Context)) return std::nullopt;
-  return UnorderedMapNonmemberCall{*Map, Swap,
+  const bool SourceApproved = Table->HasMappedValue
+      ? approvedUnorderedMapMethodSource(S, SM, Function, Table->Record, Context)
+      : approvedHashSetBucketSource(S, SM, Function, Table->Record, Context);
+  if (!SourceApproved) return std::nullopt;
+  return UnorderedTableNonmemberCall{*Table, Swap,
       !Swap && Function->getOverloadedOperator() == OO_ExclaimEqual};
 }
 
