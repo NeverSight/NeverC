@@ -4441,7 +4441,7 @@ bool approvedCstddefNull(const State &S, const clang::SourceManager &SM,
                         const clang::Expr *Expression);
 struct UtilityUnorderedTableRecord {
   const clang::CXXRecordDecl *Record;
-  clang::QualType BucketPointerType, NodePointerType, NodeType;
+  clang::QualType BucketPointerType, NodePointerType, NodeType, KeyType;
   uint64_t NodeBytes, ValueOffsetBytes;
   bool HasMappedValue = true;
 };
