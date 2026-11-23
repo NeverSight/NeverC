@@ -2274,38 +2274,38 @@ class FunctionLowering {
     return Place;
   }
 
-  Expression unorderedMapListAssignmentOperation(const CallExpr *Call,
-      const UnorderedMapListAssignment &Info) {
+  Expression unorderedTableListAssignmentOperation(const CallExpr *Call,
+      const UnorderedTableListAssignment &Info) {
     auto L = Call->getExprLoc();
-    const auto &Map = Info.Input.Map;
+    const auto &Table = Info.Table;
     std::optional<Expression> List;
     if (Info.RightBeforeLeft) List = snapshot(expression(Call->getArg(Info.Offset)), L);
     auto Receiver = snapshot(Info.Object->getType()->isPointerType() ? expression(Info.Object)
         : address(lvalue(Info.Object), Info.Object->getType(), L), L);
     if (!List) List = snapshot(expression(Call->getArg(Info.Offset)), L);
     auto Place = dereference(Receiver, L);
-    const auto Size = type(A.Context.getSizeType(), L), NodePointer = type(Map.NodePointerType, L);
-    auto Current = snapshot(fieldStorage(*List, Info.Input.List->Begin, L), L);
-    auto Length = snapshot(fieldStorage(*List, Info.Input.List->Size, L), L);
+    const auto Size = type(A.Context.getSizeType(), L), NodePointer = type(Table.NodePointerType, L);
+    auto Current = snapshot(fieldStorage(*List, Info.List.Begin, L), L);
+    auto Length = snapshot(fieldStorage(*List, Info.List.Size, L), L);
     auto End = snapshot(Current, L);
     const auto Nonempty = labelName(), Captured = labelName();
     branch(binary("!=", Length, quantity(0, Size, L), "bool", L), Nonempty, Captured, L);
     label(Nonempty, L);
-    assign(End, binary("+", Current, Length, type(Info.Input.List->Begin->getType(), L), L), L);
+    assign(End, binary("+", Current, Length, type(Info.List.Begin->getType(), L), L), L);
     jump(Captured, L);label(Captured, L);
-    auto Cache = snapshot(unorderedTableMember(Place, Map, "nct_unordered_first", L), L);
-    auto Buckets = snapshot(unorderedTableMember(Place, Map, "nct_unordered_buckets", L), L);
-    auto Count = snapshot(unorderedTableMember(Place, Map, "nct_unordered_bucket_count", L), L);
+    auto Cache = snapshot(unorderedTableMember(Place, Table, "nct_unordered_first", L), L);
+    auto Buckets = snapshot(unorderedTableMember(Place, Table, "nct_unordered_buckets", L), L);
+    auto Count = snapshot(unorderedTableMember(Place, Table, "nct_unordered_bucket_count", L), L);
     auto Index = snapshot(quantity(0, Size, L), L);
     const auto ClearCheck = labelName(), Clear = labelName(), Detached = labelName();
     jump(ClearCheck, L);label(ClearCheck, L);
     branch(binary("<", Index, Count, "bool", L), Clear, Detached, L);
     label(Clear, L);
-    assign(index(Buckets, Index, NodePointer, L), A.zero(Map.NodePointerType, L), L);
+    assign(index(Buckets, Index, NodePointer, L), A.zero(Table.NodePointerType, L), L);
     assign(Index, binary("+", Index, one(Size, L), Size, L), L);
     jump(ClearCheck, L);label(Detached, L);
-    assign(unorderedTableMember(Place, Map, "nct_unordered_first", L), A.zero(Map.NodePointerType, L), L);
-    assign(unorderedTableMember(Place, Map, "nct_unordered_size", L), quantity(0, Size, L), L);
+    assign(unorderedTableMember(Place, Table, "nct_unordered_first", L), A.zero(Table.NodePointerType, L), L);
+    assign(unorderedTableMember(Place, Table, "nct_unordered_size", L), quantity(0, Size, L), L);
     const auto CheckCache = labelName(), CheckInput = labelName(), Reuse = labelName();
     const auto ReleaseCheck = labelName(), Release = labelName(), InsertCheck = labelName();
     const auto Insert = labelName(), Done = labelName();
@@ -2315,28 +2315,32 @@ class FunctionLowering {
     branch(binary("!=", Current, End, "bool", L), Reuse, ReleaseCheck, L);
     label(Reuse, L);
     auto Element = dereference(Current, L);
-    assign(unorderedNodeKey(Cache, Map, L), fieldStorage(Element, Info.Input.Pair.First, L), L);
-    assign(unorderedNodeValue(Cache, Map, L), fieldStorage(Element, Info.Input.Pair.Second, L), L);
-    auto Next = snapshot(unorderedNodeNext(Cache, Map, L), L);
+    assign(unorderedNodeKey(Cache, Table, L), Info.Pair ? fieldStorage(Element, Info.Pair->First, L) : Element, L);
+    if (Info.Pair)
+      assign(unorderedNodeValue(Cache, Table, L), fieldStorage(Element, Info.Pair->Second, L), L);
+    auto Next = snapshot(unorderedNodeNext(Cache, Table, L), L);
     // Release rejected cache candidates. The pinned SDK drops their ownership
     // here on duplicate keys; retaining that leak would violate final cleanup.
-    unorderedInsertNode(Place, Map, unorderedNodeKey(Cache, Map, L), std::nullopt, false, L, Cache);
+    unorderedInsertNode(Place, Table, unorderedNodeKey(Cache, Table, L), std::nullopt, false, L, Cache);
     assign(Cache, Next, L);
-    assign(Current, binary("+", Current, one(Size, L), type(Info.Input.List->Begin->getType(), L), L), L);
+    assign(Current, binary("+", Current, one(Size, L), type(Info.List.Begin->getType(), L), L), L);
     jump(CheckCache, L);
     label(ReleaseCheck, L);
     branch(cast(Cache, "bool", L), Release, InsertCheck, L);
     label(Release, L);
-    auto Remaining = snapshot(unorderedNodeNext(Cache, Map, L), L);
-    unorderedHeapRelease(Cache, Map.NodeType, quantity(Map.NodeBytes, Size, L), L);
+    auto Remaining = snapshot(unorderedNodeNext(Cache, Table, L), L);
+    unorderedHeapRelease(Cache, Table.NodeType, quantity(Table.NodeBytes, Size, L), L);
     assign(Cache, Remaining, L);jump(ReleaseCheck, L);
     label(InsertCheck, L);
     branch(binary("!=", Current, End, "bool", L), Insert, Done, L);
     label(Insert, L);
-    auto Value = dereference(Current, L);
-    unorderedInsertNode(Place, Map, fieldStorage(Value, Info.Input.Pair.First, L),
-        fieldStorage(Value, Info.Input.Pair.Second, L), false, L);
-    assign(Current, binary("+", Current, one(Size, L), type(Info.Input.List->Begin->getType(), L), L), L);
+    auto ElementValue = dereference(Current, L);
+    std::optional<Expression> Mapped;
+    if (Info.Pair) Mapped = fieldStorage(ElementValue, Info.Pair->Second, L);
+    unorderedInsertNode(Place, Table,
+        Info.Pair ? fieldStorage(ElementValue, Info.Pair->First, L) : ElementValue,
+        std::move(Mapped), false, L);
+    assign(Current, binary("+", Current, one(Size, L), type(Info.List.Begin->getType(), L), L), L);
     jump(InsertCheck, L);label(Done, L);
     return Place;
   }
@@ -33497,8 +33501,8 @@ class FunctionLowering {
         return unorderedTableNonmemberOperation(Call, *Info);
       if (auto Info = unorderedResultCall(A.S, A.Sources, Call, A.Context))
         return unorderedResultOperation(Call, *Info);
-      if (auto Info = unorderedMapListAssignment(A.S, A.Sources, Call, A.Context))
-        return unorderedMapListAssignmentOperation(Call, *Info);
+      if (auto Info = unorderedTableListAssignment(A.S, A.Sources, Call, A.Context))
+        return unorderedTableListAssignmentOperation(Call, *Info);
       if (auto Info = unorderedMapMerge(A.S, A.Sources, Call, A.Context))
         return unorderedMapMergeOperation(Call, *Info);
       if (auto Info = unorderedNodeCall(A.S, A.Sources, Call, A.Context))

@@ -392925,6 +392925,177 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetListAssignmentUniqueListAssignmentKeepsBucketsAndLoadFactorRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-list-assignment-unique-list-assignment-keeps-buckets-and-load-factor.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values{-2, -4, -6, -8};
+  values.rehash(31);
+  values.max_load_factor(2.0f);
+  const auto buckets = values.bucket_count();
+  auto& result = (values = {3, 34, 3, 7, 34, 5});
+  return &result != &values || values.size() != 4 || values.count(-2) != 0 ||
+         values.count(3) != 1 || values.count(34) != 1 || values.count(5) != 1 ||
+         values.bucket_count() != buckets || values.max_load_factor() != 2.0f;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-list-assignment-unique-list-assignment-keeps-buckets-and-load-factor.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-list-assignment-unique-list-assignment-keeps-buckets-and-load-factor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetListAssignmentMultiListAssignmentGroupsCollidingDuplicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-list-assignment-multi-list-assignment-groups-colliding-duplicates.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{-1, -3};
+  values.rehash(2);
+  values.max_load_factor(4.0f);
+  values = {9, 7, 9, 5, 7, 9};
+  auto group = values.equal_range(9);
+  int count = 0;
+  for (auto it = group.first; it != group.second; ++it) {
+    if (*it != 9) return 1;
+    ++count;
+  }
+  return values.size() != 6 || values.count(7) != 2 || values.count(-1) != 0 ||
+         values.count(5) != 1 || count != 3 || values.bucket_count() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-list-assignment-multi-list-assignment-groups-colliding-duplicates.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-list-assignment-multi-list-assignment-groups-colliding-duplicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetListAssignmentExplicitEmptyListAssignmentClearsReservedStorageRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-list-assignment-explicit-empty-list-assignment-clears-reserved-storage.cpp");
+  writeFile(Source, R"r19containers(#include <initializer_list>
+#include <unordered_set>
+int main() {
+  std::unordered_set<int> values{11, 23};
+  values.rehash(31);
+  auto* receiver = &values;
+  auto& result = receiver->operator=(std::initializer_list<int>{});
+  return &result != &values || !values.empty() || values.bucket_count() != 31;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-list-assignment-explicit-empty-list-assignment-clears-reserved-storage.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-list-assignment-explicit-empty-list-assignment-clears-reserved-storage" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetListAssignmentListAssignmentEvaluatesBracedInputBeforeReceiverRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-list-assignment-list-assignment-evaluates-braced-input-before-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_set<int>;
+int trace;
+int input(int n) { trace = trace * 10 + n; return n; }
+Set& receiver(Set& set) { trace = trace * 10 + 3; return set; }
+int main() {
+  Set values;
+  receiver(values) = {input(1), input(2)};
+  return trace != 123 || values.size() != 2 || values.count(1) != 1 || values.count(2) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-list-assignment-list-assignment-evaluates-braced-input-before-receiver.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-list-assignment-list-assignment-evaluates-braced-input-before-receiver" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetListAssignmentCustomHashListAssignmentRejected) {
+  const auto Source = tmpFile("unordered-set-list-assignment-custom-hash-list-assignment.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int value) const { return static_cast<unsigned>(value); } };
+int main() {
+  std::unordered_set<int, Hash> values;
+  values = {2, 2};
+  return values.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetListAssignmentCustomEqualityMultiListAssignmentRejected) {
+  const auto Source = tmpFile("unordered-set-list-assignment-custom-equality-multi-list-assignment.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int left, int right) const { return left == right; } };
+int main() {
+  std::unordered_multiset<int, std::hash<int>, Equal> values;
+  values = {3, 3};
+  return values.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetListAssignmentLongKeyListAssignmentRejected) {
+  const auto Source = tmpFile("unordered-set-list-assignment-long-key-list-assignment.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<long> values;
+  values = {4L, 4L};
+  return values.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetListAssignmentShortKeyMultiListAssignmentRejected) {
+  const auto Source = tmpFile("unordered-set-list-assignment-short-key-multi-list-assignment.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<short> values;
+  values = {5, 5};
+  return values.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_list_assignment_registered = cls.registered
+        cls.unordered_set_list_assignment_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_list_assignment_original = cls.adapter.restore_original_gtests(cls.unordered_set_list_assignment_registered,
+                                                                        cls.unordered_set_list_assignment_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_list_assignment_history(cls.unordered_set_list_assignment_registered)
         cls.unordered_set_copy_assignment_registered = cls.registered
         cls.unordered_set_copy_assignment_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_copy_assignment_original = cls.adapter.restore_original_gtests(cls.unordered_set_copy_assignment_registered,
@@ -2992,6 +2997,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_copy_assignment_history(self.unordered_set_copy_assignment_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_copy_assignment_registered, self.unordered_set_copy_assignment_suffix + b' ')
+
+
+    def test_unordered_set_list_assignment_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_list_assignment_original + self.unordered_set_list_assignment_suffix, self.unordered_set_list_assignment_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_list_assignment_history(self.unordered_set_list_assignment_original),
+                         self.unordered_set_copy_assignment_original)
+        output, evidence = self.extractor.extract(self.unordered_set_list_assignment_original, ['TranslateTest.CoreV2UnorderedSetListAssignmentUniqueListAssignmentKeepsBucketsAndLoadFactorRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetListAssignmentMultiListAssignmentGroupsCollidingDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetListAssignmentExplicitEmptyListAssignmentClearsReservedStorageRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetListAssignmentListAssignmentEvaluatesBracedInputBeforeReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetListAssignmentCustomHashListAssignmentRejected', 'TranslateTest.CoreV2UnorderedSetListAssignmentCustomEqualityMultiListAssignmentRejected', 'TranslateTest.CoreV2UnorderedSetListAssignmentLongKeyListAssignmentRejected', 'TranslateTest.CoreV2UnorderedSetListAssignmentShortKeyMultiListAssignmentRejected'])
+        self.assertEqual(evidence['original_test_names'], 8552)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-list-assignment-unique-list-assignment-keeps-buckets-and-load-factor', output)
+        self.assertIn(b'unordered-set-list-assignment-multi-list-assignment-groups-colliding-duplicates', output)
+
+    def test_unordered_set_list_assignment_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_list_assignment_history(self.unordered_set_list_assignment_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_list_assignment_registered, self.unordered_set_list_assignment_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -18292,3 +18292,10 @@ owner reference and return the destination by reference. The operation
 reuses suitable destination storage, adopts the source load limit and
 preserves equivalent-key groups. Assignment to an alias of the same
 owner preserves its nodes.
+
+## Integer unordered set initializer-list assignment
+
+Assigning an initializer list to a default integer set or multiset
+replaces its keys and returns the same owner by reference. A unique set
+retains one instance of each key. A multiset retains every occurrence.
+The operation reuses suitable bucket storage and keeps the load limit.
