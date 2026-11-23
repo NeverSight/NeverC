@@ -124016,8 +124016,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (approvedUtilityAssociativePolicyQuery(S, SM, Call, Context))
     return UtilityOperation::AssociativePolicy;
-  if (approvedUtilityUnorderedMapAllocatorQuery(S, SM, Call, Context))
-    return UtilityOperation::UnorderedMapGetAllocator;
+  if (approvedUtilityUnorderedTableAllocatorQuery(S, SM, Call, Context))
+    return UtilityOperation::UnorderedTableGetAllocator;
   if (auto Assignment = approvedUtilityUnorderedTableAssignment(S, SM, Call, Context))
     return Assignment;
   if (approvedUtilityUnorderedMapRangeInsertion(S, SM, Call, Context))
@@ -138748,7 +138748,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedTableAssignment(
   return Move ? UtilityOperation::UnorderedTableMoveAssign : UtilityOperation::UnorderedTableCopyAssign;
 }
 
-std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedMapAllocatorQuery(
+std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedTableAllocatorQuery(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -138759,21 +138759,32 @@ std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedMapAllocatorQuery(
   if (!Method || !Method->getIdentifier() || Method->getName() != "get_allocator" ||
       !Method->isConst() || Method->getNumParams() || Call->getNumArgs() ||
       !Prototype || !Prototype->isNothrow() || !Object || !Reference ||
-      !S.owns(SM, Reference->getExprLoc()) || !Call->isPRValue() ||
-      !unorderedMapPublicMethod(S, SM, Method)) return std::nullopt;
-  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
-  const auto Allocator = approvedUtilityAllocatorRecord(S, SM,
-      Call->getType()->getAsCXXRecordDecl(), Context);
-  if (!Map || !Allocator || !Context.hasSameType(Call->getType(), Method->getReturnType()))
+      !S.owns(SM, Reference->getExprLoc()) || !Call->isPRValue())
     return std::nullopt;
-  const auto Expected = cast<ClassTemplateSpecializationDecl>(Map->Record)->getTemplateArgs().get(4).getAsType();
+  const auto *Owner = Method->getParent();
+  if (!Owner->getIdentifier()) return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  if ((Header != "unordered_map" && Header != "unordered_set") ||
+      !unorderedMapPublicMethod(S, SM, Method, Header))
+    return std::nullopt;
+  const auto Table = Header == "unordered_map" ? approvedUtilityUnorderedMapRecord(S, SM, Owner, Context)
+      : approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  if (!Table || !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return std::nullopt;
   auto ObjectType = Object->getType();
   if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
+  const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Table->Record)->getTemplateArgs();
+  const unsigned AllocatorIndex = Table->HasMappedValue ? 4 : 3;
   if (ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
       ObjectType.getAddressSpace() != LangAS::Default ||
-      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Map->Record)) ||
-      !Context.hasSameType(Call->getType(), Expected) ||
-      !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context))
+      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Table->Record)) ||
+      Arguments.size() != AllocatorIndex + 1 || Arguments.get(AllocatorIndex).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Call->getType(), Arguments.get(AllocatorIndex).getAsType()))
+    return std::nullopt;
+  const auto Allocator = approvedUtilityAllocatorRecord(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+  if (!Allocator ||
+      !(Table->HasMappedValue ? approvedUnorderedMapMethodSource(S, SM, Method, Table->Record, Context)
+                              : approvedHashSetBucketSource(S, SM, Method, Table->Record, Context)))
     return std::nullopt;
   return Allocator;
 }
@@ -138940,12 +138951,20 @@ static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
     return std::nullopt;
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto *Owner = Method->getParent();
-  if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
+  if (!Member || (!Member->isArrow() && !Member->getBase()->isLValue()) ||
       !S.owns(SM, Member->getMemberLoc()) || !Method->isConst() || Method->isVolatile() ||
       Method->isStatic() || Method->isVirtual() || Method->getNumParams() || Call->getNumArgs() ||
       !Call->isPRValue() || !approvedEmptyHashSetRecord(S, SM, Owner, Context) ||
-      !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
       !orderedPinnedFunction(S, SM, Method, "unordered_set"))
+    return std::nullopt;
+  auto ObjectType = Member->getBase()->getType();
+  if (Member->isArrow()) {
+    if (!ObjectType->isPointerType()) return std::nullopt;
+    ObjectType = ObjectType->getPointeeType();
+  }
+  if (ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
+      ObjectType.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Owner)))
     return std::nullopt;
 
   const bool Hash = Name == "hash_function";

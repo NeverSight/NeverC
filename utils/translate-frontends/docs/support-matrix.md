@@ -850,3 +850,10 @@ The combined compiler passes 4,068 source requests across six 64-bit targets
 and 782 formal tests on Linux x86-64. All 426 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Integer unordered set allocator and policy observers
+
+The combined compiler passes 4,116 source requests across six 64-bit targets
+and 790 formal tests on Linux x86-64. All 431 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

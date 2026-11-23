@@ -18313,3 +18313,9 @@ Default integer unordered sets and multisets transfer nodes between
 containers while preserving element addresses. A unique destination
 leaves duplicate keys in the source. A multiset accepts every source
 node and keeps equivalent keys together.
+
+## Integer unordered set allocator and policy observers
+
+Default integer sets and multisets return their pinned allocator, hash
+and equality objects. Calls through a pointer evaluate the receiver
+once. The returned allocator can allocate and release integer storage.

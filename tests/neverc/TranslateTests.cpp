@@ -389122,7 +389122,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesArrowReceiverRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalArrowObserverRunsAtBothOptimizations) {
   const auto Source = tmpFile("unordered-lookup-policies-arrow-receiver.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() {
@@ -389131,10 +389131,17 @@ int main() {
   return !pointer->key_eq()(2, 2);
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-lookup-policies-arrow-receiver.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-lookup-policies-arrow-receiver" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyEqualityRunAtBothOptimizations) {
@@ -393483,6 +393490,171 @@ int main() {
   std::unordered_multiset<long> target;
   target.merge(source);
   return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetObserversSetAllocatorAllocatesAndReleasesIntegerStorageRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-observers-set-allocator-allocates-and-releases-integer-storage.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_set<int> values{9, 17};
+  auto allocator = values.get_allocator();
+  auto* storage = allocator.allocate(1);
+  const bool allocated = storage != nullptr;
+  allocator.deallocate(storage, 1);
+  return !allocated || values.count(9) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-observers-set-allocator-allocates-and-releases-integer-storage.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-observers-set-allocator-allocates-and-releases-integer-storage" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetObserversMultisetAllocatorEvaluatesArrowReceiverOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-observers-multiset-allocator-evaluates-arrow-receiver-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_multiset<int>;
+const Set* observe(const Set& values, int& calls) { ++calls; return &values; }
+int main() {
+  const Set values{5, 5};
+  int calls = 0;
+  auto allocator = observe(values, calls)->get_allocator();
+  auto* storage = allocator.allocate(2);
+  const bool allocated = storage != nullptr;
+  allocator.deallocate(storage, 2);
+  return !allocated || calls != 1 || values.count(5) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-observers-multiset-allocator-evaluates-arrow-receiver-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-observers-multiset-allocator-evaluates-arrow-receiver-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetObserversHashFunctionOnArrowReceiverUsesPinnedSignedHashRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-observers-hash-function-on-arrow-receiver-uses-pinned-signed-hash.cpp");
+  writeFile(Source, R"r19containers(#include <cstddef>
+#include <unordered_set>
+int main() {
+  const std::unordered_set<int> values{-9, 7};
+  const auto* receiver = &values;
+  const auto hash = receiver->hash_function();
+  return hash(-9) != static_cast<std::size_t>(-9) || hash(7) != 7u || values.count(-9) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-observers-hash-function-on-arrow-receiver-uses-pinned-signed-hash.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-observers-hash-function-on-arrow-receiver-uses-pinned-signed-hash" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetObserversKeyEqualityOnArrowReceiverComparesDefaultIntegerKeysRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-observers-key-equality-on-arrow-receiver-compares-default-integer-keys.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_multiset<int> values{3, 3, -1};
+  const auto* receiver = &values;
+  const auto equal = receiver->key_eq();
+  return !equal(-1, -1) || equal(-1, 3) || values.count(3) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-observers-key-equality-on-arrow-receiver-compares-default-integer-keys.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-observers-key-equality-on-arrow-receiver-compares-default-integer-keys" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetObserversCustomHashArrowObserverRejected) {
+  const auto Source = tmpFile("unordered-set-observers-custom-hash-arrow-observer.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };
+int main() {
+  const std::unordered_set<int, Hash> values;
+  const auto* receiver = &values;
+  return receiver->hash_function()(7) != 7u;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetObserversCustomEqualityArrowObserverRejected) {
+  const auto Source = tmpFile("unordered-set-observers-custom-equality-arrow-observer.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int left, int right) const { return left == right; } };
+int main() {
+  const std::unordered_multiset<int, std::hash<int>, Equal> values;
+  const auto* receiver = &values;
+  return receiver->key_eq()(1, 2);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetObserversDifferentKeyAllocatorObserverRejected) {
+  const auto Source = tmpFile("unordered-set-observers-different-key-allocator-observer.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_set<long> values;
+  auto allocator = values.get_allocator();
+  auto* storage = allocator.allocate(1);
+  allocator.deallocate(storage, 1);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetObserversCustomHashAllocatorObserverRejected) {
+  const auto Source = tmpFile("unordered-set-observers-custom-hash-allocator-observer.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };
+int main() {
+  const std::unordered_multiset<int, Hash> values;
+  auto allocator = values.get_allocator();
+  auto* storage = allocator.allocate(1);
+  allocator.deallocate(storage, 1);
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

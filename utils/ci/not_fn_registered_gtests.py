@@ -2012,6 +2012,32 @@ def restore_unordered_set_merge_history(source):
     return restored
 
 
+R19_UNORDERED_SET_OBSERVERS_REGISTERED_SHA256 = '1e10f7c7f4c2d93d41b5887a77f1541a19d4db26ee6cd9109456360b22156161'
+R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SHA256 = '600ae75bd4b6ceaa0e9a445adcf96712e00f83a9b504fee7d470953c3aa95f47'
+R19_UNORDERED_SET_OBSERVERS_PREVIOUS_REGISTERED_SHA256 = '0dcef4d73fc664809450ee55b14a93869663ba24d56f9c87350e5353882e736c'
+R19_UNORDERED_SET_OBSERVERS_PREVIOUS_MAINTAINED_SHA256 = '856be15f1897ef27455fdd7d98857ddb130215430a02e637bc383507a3f1e382'
+R19_UNORDERED_SET_OBSERVERS_ADDITIONS_SHA256 = '69419c8aaa9cf3523ee4cf4743b7051fcdeed68456a6c3346beaeaf100244c57'
+R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SIZE = 20230189
+R19_UNORDERED_SET_OBSERVERS_ADDITIONS_SIZE = 8455
+
+
+def restore_unordered_set_observers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_OBSERVERS_REGISTERED_SHA256, R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_OBSERVERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_OBSERVERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalArrowObserverRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-lookup-policies-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return !pointer->key_eq()(2, 2);\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-lookup-policies-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-lookup-policies-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalArrowObserverRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-lookup-policies-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return !pointer->key_eq()(2, 2);\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-lookup-policies-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-lookup-policies-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesArrowReceiverRejected) {\n  const auto Source = tmpFile("unordered-lookup-policies-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return !pointer->key_eq()(2, 2);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_OBSERVERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_OBSERVERS_REGISTERED_SHA256
+             else R19_UNORDERED_SET_OBSERVERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2445,6 +2471,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_MERGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_OBSERVERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
