@@ -110,15 +110,17 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     return Name == "unordered_map" || Name == "unordered_multimap";
   }
 
-  bool isUnorderedSetElement(QualType Type) const {
+  bool isAssociativeSetElement(QualType Type) const {
     if (!SDKGenerator || !Generator->getIdentifier()) return false;
     const auto Name = Generator->getName();
-    if (Name != "unordered_set" && Name != "unordered_multiset") return false;
+    const bool Ordered = Name == "set";
+    if (!Ordered && Name != "unordered_set" && Name != "unordered_multiset") return false;
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Generator);
-    if (!Owner || Owner->getTemplateArgs().size() != 4 ||
+    if (!Owner || Owner->getTemplateArgs().size() != (Ordered ? 3u : 4u) ||
         Owner->getTemplateArgs().get(0).getKind() != TemplateArgument::Type) return false;
     const auto Key = Owner->getTemplateArgs().get(0).getAsType();
-    return (Context.hasSameType(Key, Context.IntTy) || Context.hasSameType(Key, Context.UnsignedIntTy)) &&
+    return (Context.hasSameType(Key, Context.IntTy) ||
+            (!Ordered && Context.hasSameType(Key, Context.UnsignedIntTy))) &&
            Context.hasSameType(Type, Key);
   }
 
@@ -737,7 +739,7 @@ public:
              Context.hasSameType(Destructor->getDestroyedType(), Context.DoubleTy) ||
              Context.hasSameType(Destructor->getDestroyedType(), Context.FloatTy))) ||
            (File->Path == "__memory/construct_at.h" &&
-            isUnorderedSetElement(Destructor->getDestroyedType()))) &&
+            isAssociativeSetElement(Destructor->getDestroyedType()))) &&
           Context.hasSameUnqualifiedType(Destructor->getDestroyedType(),
               Destructor->getBase()->getType()->getPointeeType()))
         return true;
@@ -2652,6 +2654,14 @@ approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
       Object, Result, Distance, Selection.MinimumValue, Selection.MaximumValue,
       Index};
 }
+bool approvedOrderedSetSelectedBody(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!Function || !approvedUtilityOrderedSetStorage(S, SM, Record, Context))
+    return false;
+  RandomSelection Selection(S, SM, Context, Record, Context.getSizeType(), Context.DoubleTy);
+  return Selection.retain(Function);
+}
+
 bool approvedHashSetBucketSource(const State &S, const SourceManager &SM,
     const FunctionDecl *Function, const CXXRecordDecl *Owner, const ASTContext &Context) {
   if (!Function || !approvedEmptyHashSetRecord(S, SM, Owner, Context))

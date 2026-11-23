@@ -13922,6 +13922,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
                  approvedEmptyHashSetRecord(S, Sources, D, Context)) {
         if (RequiredUtilityEmptyHashSets.insert(D->getCanonicalDecl()).second)
           Records.push_back(const_cast<CXXRecordDecl *>(D->getDefinition()));
+      } else if (const auto *Iterator = approvedOrderedSetIteratorRecord(S, Sources, D, Context)) {
+        if (RequiredUtilityOrderedSetIterators.insert(Iterator->getCanonicalDecl()).second)
+          Records.push_back(const_cast<CXXRecordDecl *>(Iterator));
       } else if (RequiredUtilityOrderedContainers.count(D->getCanonicalDecl()) ||
                  approvedOrderedContainerRuntimeRecord(S, Sources, D, Context)) {
         if (RequiredUtilityOrderedContainers.insert(D->getCanonicalDecl()).second)
@@ -14805,7 +14808,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Context.VoidPtrTy, L));
       Args.push_back(zero(Context.VoidPtrTy, L));
       Args.push_back(zero(Context.getSizeType(), L));
-    } else if (approvedUtilityListIteratorRecord(S, Sources, R, Context)) {
+    } else if (approvedUtilityListIteratorRecord(S, Sources, R, Context) ||
+               approvedOrderedSetIteratorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.VoidPtrTy, L));
     } else if (approvedUtilityPriorityQueueRecord(S, Sources, R, Context)) {
       for (unsigned I = 0; I != 3; ++I)
@@ -18806,6 +18810,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
          (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
@@ -21515,6 +21520,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, Construction, A.Context) ||
+            approvedOrderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context).has_value()) ||
@@ -24319,6 +24325,7 @@ public:
            approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedOrderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -31490,6 +31497,7 @@ public:
                    approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
                    (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
@@ -31736,6 +31744,7 @@ static void orderCoreV2Records(Adapter &A) {
         A.RequiredUtilityEmptyHashSets.count(R->getCanonicalDecl());
     const auto UtilityList = approvedUtilityListRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityListIterator = approvedUtilityListIteratorRecord(A.S, A.Sources, R, A.Context);
+    const bool UtilityOrderedSetIterator = A.RequiredUtilityOrderedSetIterators.count(R->getCanonicalDecl());
     const auto UtilityForwardList = approvedUtilityForwardListRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityForwardIterator = approvedUtilityForwardListIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedIterator =
@@ -31780,7 +31789,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityReverse || UtilityTuple ||
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
-                                   UtilityString || UtilityOrderedContainer || UtilityEmptyHashSet ||
+                                   UtilityString || UtilityOrderedContainer || UtilityOrderedSetIterator || UtilityEmptyHashSet ||
                                    UtilityForwardList || UtilityForwardIterator || UtilityList || UtilityListIterator || UtilityPriorityQueue || UtilityDeque || UtilityDequeIterator || UtilityValarray || UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
                                    UnorderedNode || UnorderedResult ||
                                    UtilityDefaultDelete || UtilityAllocator
@@ -31835,6 +31844,8 @@ static void orderCoreV2Records(Adapter &A) {
       DependencyTypes.emplace_back(A.Context.VoidPtrTy, R->getLocation());
       DependencyTypes.emplace_back(A.Context.getSizeType(), R->getLocation());
       DependencyTypes.emplace_back(A.Context.FloatTy, R->getLocation());
+    } else if (UtilityOrderedSetIterator) {
+      DependencyTypes.emplace_back(A.Context.VoidPtrTy, R->getLocation());
     } else if (UtilityOrderedContainer) {
       DependencyTypes.emplace_back(A.Context.VoidPtrTy, R->getLocation());
       DependencyTypes.emplace_back(A.Context.getSizeType(), R->getLocation());
@@ -32154,6 +32165,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
         RequiredUtilityEmptyHashSets.count(R->getCanonicalDecl());
     const auto UtilityList = approvedUtilityListRecord(S, Sources, R, Context);
     const auto UtilityListIterator = approvedUtilityListIteratorRecord(S, Sources, R, Context);
+    const bool UtilityOrderedSetIterator = RequiredUtilityOrderedSetIterators.count(R->getCanonicalDecl());
     const auto UtilityForwardList = approvedUtilityForwardListRecord(S, Sources, R, Context);
     const auto UtilityForwardIterator = approvedUtilityForwardListIteratorRecord(S, Sources, R, Context);
     const auto UtilityUnorderedIterator =
@@ -32201,7 +32213,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                !FunctionalReference && !UtilityReverse &&
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
-                               !UtilityUniquePtr && !UtilityString && !UtilityOrderedContainer && !UtilityEmptyHashSet &&
+                               !UtilityUniquePtr && !UtilityString && !UtilityOrderedContainer && !UtilityOrderedSetIterator && !UtilityEmptyHashSet &&
                                !UtilityForwardList && !UtilityForwardIterator && !UtilityList && !UtilityListIterator && !UtilityPriorityQueue && !UtilityDeque && !UtilityDequeIterator && !UtilityValarray && !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
                                !UnorderedNode && !UnorderedResult &&
                                !UtilityDefaultDelete &&
@@ -32264,6 +32276,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       for (const char *Name : {"nct_list_prev", "nct_list_next"})
         Fields.push_back(json::Object{{"name", Name}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
       Fields.push_back(json::Object{{"name", "nct_list_size"}, {"type", type(Context.getSizeType(), R->getLocation())}});
+    } else if (UtilityOrderedSetIterator) {
+      Fields.push_back(json::Object{{"name", "nct_ordered_iterator"}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
     } else if (UtilityListIterator) {
       Fields.push_back(json::Object{{"name", "nct_list_iterator"}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
 
@@ -32402,7 +32416,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
           Offsets.push_back(Offset);
       } else if (UtilityList || UtilityOrderedContainer) {
         Offsets.push_back(uint64_t(0)); Offsets.push_back(uint64_t(64)); Offsets.push_back(uint64_t(128));
-      } else if (UtilityListIterator) {
+      } else if (UtilityListIterator || UtilityOrderedSetIterator) {
         Offsets.push_back(uint64_t(0));
 
       } else if (UtilityPriorityQueue) {
