@@ -102,12 +102,12 @@
       "source_sha256": "54451026be84468ecc2a711ce5a8f10705c9ba2b733f37358723f120baf85f10"
     },
     {
-      "name": "empty-hash-set-custom-hash",
-      "expected": "reject",
-      "kind": "source-body-guard",
+      "name": "empty-hash-set-load-factor-setter",
+      "expected": "accept",
+      "kind": "cpp17-operation",
       "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nstruct CustomHash { unsigned long long operator()(int value) const { return value; } };\nint main() {\n  std::unordered_set<int, CustomHash> values;\n  return values.empty();\n}\n",
-      "source_sha256": "f3346ace2c07a0a9d34796f271c18678af3500e261c24b82ab38bb49be828154"
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n",
+      "source_sha256": "a3774d5b106e29c0d41fab1c4b7fc7b3f2d2fb9ff2d26f65d1a8db2f548f043a"
     },
     {
       "name": "empty-hash-set-insert",
@@ -126,12 +126,12 @@
       "source_sha256": "74cd6170c3bddf906d4b1057d6b5717a846d8d6f611d435daba4491a70049dd6"
     },
     {
-      "name": "empty-hash-set-load-factor-setter",
-      "expected": "accept",
-      "kind": "cpp17-operation",
+      "name": "empty-hash-set-custom-hash",
+      "expected": "reject",
+      "kind": "source-body-guard",
       "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n",
-      "source_sha256": "a3774d5b106e29c0d41fab1c4b7fc7b3f2d2fb9ff2d26f65d1a8db2f548f043a"
+      "source": "#include <unordered_set>\nstruct CustomHash { unsigned long long operator()(int value) const { return value; } };\nint main() {\n  std::unordered_set<int, CustomHash> values;\n  return values.empty();\n}\n",
+      "source_sha256": "f3346ace2c07a0a9d34796f271c18678af3500e261c24b82ab38bb49be828154"
     }
   ],
   "new_gtest_names": [
@@ -144,7 +144,7 @@
     "TranslateTest.CoreV2UnorderedSetOriginalEmptyCopyRunsAtBothOptimizations",
     "TranslateTest.CoreV2EmptyHashSetCustomHashRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "5a11ec42863f8163b0bbc9ccd2394433bff0c33ae95e5d66534a82c224916271",
   "maintained_original_sha256": "4ea24098e82989877d78a96781e0fcd959889139da7c31491c27a2eceb946f60",
@@ -156,5 +156,13 @@
   "current_registry_count": 8326,
   "current_python_registry_tests": 168,
   "native_reference_selected_executions": 14,
-  "planned_generated_c23_executions": 14
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "empty-hash-set": "b3fef4bdda12b49db1748acb274e7da527db10974eb3e7286a2e2ef5b3590aa3",
+    "unordered-load-limit": "cf08b856927fb069603fc071cb47b80a911713f33e0efcb864a91376445426b0",
+    "unordered-set-owner-copy": "9d4b27a82684c5b4c9119f2c2570a7396aa2569d48ac850aece4ad5edf3de3b6",
+    "unordered-set-scalar-insertion": "4005a929cf17d6233da104ca6dcc0bf4caafeba088eeac323738f4dd1b58424c"
+  },
+  "native_reference_authentication_sha256": "aa33b9a0ea263eaab420444618169b5caf96851df3623051706ece35c9dbaac3",
+  "source_proof_sha256": "28624d7abae9b69e56d642e8c9d7f94dbf4b718f79eed21ef69b1ec5f7c402fb"
 }
