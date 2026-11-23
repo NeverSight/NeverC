@@ -47,6 +47,15 @@
       "source_sha256": "1152f62bede0d08e7d49b0c4cb9ab7fd8a4d848a45d0bcf7700f9d9ceea4c8fa",
       "original_case_source_sha256": "1152f62bede0d08e7d49b0c4cb9ab7fd8a4d848a45d0bcf7700f9d9ceea4c8fa",
       "gtest_body_sha256": "ff028ef15f06d73906f56ab262695fd1c79e7b4f7000f74af0e916e2de61408c"
+    },
+    {
+      "name": "empty-hash-set-copy",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalEmptyCopyRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "74cd6170c3bddf906d4b1057d6b5717a846d8d6f611d435daba4491a70049dd6",
+      "original_case_source_sha256": "74cd6170c3bddf906d4b1057d6b5717a846d8d6f611d435daba4491a70049dd6",
+      "gtest_body_sha256": "d4fe438806156ce256766470826def5c7857c895687d778af0c417d1d999533d",
+      "expected_exit_code": 1
     }
   ],
   "negative_cases": [
@@ -57,14 +66,6 @@
       "source_sha256": "f3346ace2c07a0a9d34796f271c18678af3500e261c24b82ab38bb49be828154",
       "original_case_source_sha256": "f3346ace2c07a0a9d34796f271c18678af3500e261c24b82ab38bb49be828154",
       "gtest_body_sha256": "f006dac9addb94264d01701cee1ef6f72106bc23eaeb1208dc788c8781dbfb3e"
-    },
-    {
-      "name": "empty-hash-set-copy",
-      "formal_test_name": "TranslateTest.CoreV2EmptyHashSetCopyRejected",
-      "expected": "reject",
-      "source_sha256": "74cd6170c3bddf906d4b1057d6b5717a846d8d6f611d435daba4491a70049dd6",
-      "original_case_source_sha256": "74cd6170c3bddf906d4b1057d6b5717a846d8d6f611d435daba4491a70049dd6",
-      "gtest_body_sha256": "b79d126e9e571229e12d3dfcdd1c2e047b33ce3ccd283e9c9d79189ef4d68b58"
     }
   ],
   "source_cases": [
@@ -117,20 +118,20 @@
       "source_sha256": "1152f62bede0d08e7d49b0c4cb9ab7fd8a4d848a45d0bcf7700f9d9ceea4c8fa"
     },
     {
+      "name": "empty-hash-set-copy",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> source;\n  std::unordered_multiset<int> copy(source);\n  return copy.empty();\n}\n",
+      "source_sha256": "74cd6170c3bddf906d4b1057d6b5717a846d8d6f611d435daba4491a70049dd6"
+    },
+    {
       "name": "empty-hash-set-custom-hash",
       "expected": "reject",
       "kind": "source-body-guard",
       "public_header": "unordered_set",
       "source": "#include <unordered_set>\nstruct CustomHash { unsigned long long operator()(int value) const { return value; } };\nint main() {\n  std::unordered_set<int, CustomHash> values;\n  return values.empty();\n}\n",
       "source_sha256": "f3346ace2c07a0a9d34796f271c18678af3500e261c24b82ab38bb49be828154"
-    },
-    {
-      "name": "empty-hash-set-copy",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> source;\n  std::unordered_multiset<int> copy(source);\n  return copy.empty();\n}\n",
-      "source_sha256": "74cd6170c3bddf906d4b1057d6b5717a846d8d6f611d435daba4491a70049dd6"
     }
   ],
   "new_gtest_names": [
@@ -140,8 +141,8 @@
     "TranslateTest.CoreV2EmptyHashSetScopedMultisetRunAtBothOptimizations",
     "TranslateTest.CoreV2EmptyHashSetLoadFactorSetterRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetOriginalScalarInsertRunAtBothOptimizations",
-    "TranslateTest.CoreV2EmptyHashSetCustomHashRejected",
-    "TranslateTest.CoreV2EmptyHashSetCopyRejected"
+    "TranslateTest.CoreV2UnorderedSetOriginalEmptyCopyRunsAtBothOptimizations",
+    "TranslateTest.CoreV2EmptyHashSetCustomHashRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -154,13 +155,14 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8326,
   "current_python_registry_tests": 168,
-  "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12,
+  "native_reference_selected_executions": 14,
+  "planned_generated_c23_executions": 14,
   "native_reference_proofs": {
     "empty-hash-set": "b3fef4bdda12b49db1748acb274e7da527db10974eb3e7286a2e2ef5b3590aa3",
     "unordered-load-limit": "cf08b856927fb069603fc071cb47b80a911713f33e0efcb864a91376445426b0",
+    "unordered-set-owner-copy": "9d4b27a82684c5b4c9119f2c2570a7396aa2569d48ac850aece4ad5edf3de3b6",
     "unordered-set-scalar-insertion": "4005a929cf17d6233da104ca6dcc0bf4caafeba088eeac323738f4dd1b58424c"
   },
-  "native_reference_authentication_sha256": "9a06af1390252197cc49ea6dff0c9571e6d60c3cb9b4dfbfae79461225784547",
-  "source_proof_sha256": "89096235432b37de63263bcfe93599289220a4c8787b2c65842014910e845447"
+  "native_reference_authentication_sha256": "aa33b9a0ea263eaab420444618169b5caf96851df3623051706ece35c9dbaac3",
+  "source_proof_sha256": "bec18414a5e55e472ae1df8fad5f44c65b033aa2685ec1d921b6ce3d0e554299"
 }

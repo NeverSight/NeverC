@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_owner_copy_registered = cls.registered
+        cls.unordered_set_owner_copy_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_owner_copy_original = cls.adapter.restore_original_gtests(cls.unordered_set_owner_copy_registered,
+                                                                        cls.unordered_set_owner_copy_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_owner_copy_history(cls.unordered_set_owner_copy_registered)
         cls.unordered_set_owner_move_registered = cls.registered
         cls.unordered_set_owner_move_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_owner_move_original = cls.adapter.restore_original_gtests(cls.unordered_set_owner_move_registered,
@@ -2946,6 +2951,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_owner_move_history(self.unordered_set_owner_move_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_owner_move_registered, self.unordered_set_owner_move_suffix + b' ')
+
+
+    def test_unordered_set_owner_copy_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_owner_copy_original + self.unordered_set_owner_copy_suffix, self.unordered_set_owner_copy_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_owner_copy_history(self.unordered_set_owner_copy_original),
+                         self.unordered_set_owner_move_original)
+        output, evidence = self.extractor.extract(self.unordered_set_owner_copy_original, ['TranslateTest.CoreV2UnorderedSetOwnerCopyUniqueConstSourceOwnsDistinctNodesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerCopyMultisetCopyPreservesCountsAndIndependentEraseRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerCopyReservedEmptyCopyKeepsBucketPolicyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerCopyReferenceProducingSourceEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerCopyExplicitAllocatorCopyRejected', 'TranslateTest.CoreV2UnorderedSetOwnerCopyOtherKeyCopyRejected', 'TranslateTest.CoreV2UnorderedSetOwnerCopyCustomEqualityCopyRejected', 'TranslateTest.CoreV2UnorderedSetOwnerCopyExplicitAllocatorMultisetCopyRejected'])
+        self.assertEqual(evidence['original_test_names'], 8536)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-owner-copy-unique-const-source-owns-distinct-nodes', output)
+        self.assertIn(b'unordered-set-owner-copy-multiset-copy-preserves-counts-and-independent-erase', output)
+
+    def test_unordered_set_owner_copy_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_owner_copy_history(self.unordered_set_owner_copy_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_owner_copy_registered, self.unordered_set_owner_copy_suffix + b' ')
 
 
 if __name__ == '__main__':

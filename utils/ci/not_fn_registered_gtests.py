@@ -1890,6 +1890,32 @@ def restore_unordered_set_owner_move_history(source):
     return restored
 
 
+R19_UNORDERED_SET_OWNER_COPY_REGISTERED_SHA256 = '9d45502a38f1ee189fb816f0ffaa6f9a83d66b4c2e00792e08094a09ebf71090'
+R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SHA256 = 'b5861e602fe2e117514cbc02fbff1737609071bd6aa6d4452161039c5c032491'
+R19_UNORDERED_SET_OWNER_COPY_PREVIOUS_REGISTERED_SHA256 = '544d50088e1e4062a33c132ff8abb4e60c2f5d88f1f9c3d498ed68d92dffdd40'
+R19_UNORDERED_SET_OWNER_COPY_PREVIOUS_MAINTAINED_SHA256 = '91ca47fa646e424eed96bb7914230e20deb00af9f7afee5efc04af1e71492b9e'
+R19_UNORDERED_SET_OWNER_COPY_ADDITIONS_SHA256 = '55d07c1030c870815058551aa354e120a1f54c6209e054c870f24fc702bdb188'
+R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SIZE = 20183772
+R19_UNORDERED_SET_OWNER_COPY_ADDITIONS_SIZE = 8166
+
+
+def restore_unordered_set_owner_copy_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_OWNER_COPY_REGISTERED_SHA256, R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_OWNER_COPY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_OWNER_COPY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalEmptyCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> source;\n  std::unordered_multiset<int> copy(source);\n  return copy.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalEmptyCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> source;\n  std::unordered_multiset<int> copy(source);\n  return copy.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2EmptyHashSetCopyRejected) {\n  const auto Source = tmpFile("empty-hash-set-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> source;\n  std::unordered_multiset<int> copy(source);\n  return copy.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_OWNER_COPY_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_OWNER_COPY_REGISTERED_SHA256
+             else R19_UNORDERED_SET_OWNER_COPY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2288,6 +2314,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_OWNER_COPY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

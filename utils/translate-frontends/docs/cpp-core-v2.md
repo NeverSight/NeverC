@@ -18277,3 +18277,10 @@ and move assignment. The destination takes the bucket storage, nodes and
 load limit while preserving element addresses. Move assignment releases
 the old destination storage and returns the destination by reference.
 The moved-from owner is empty and can accept subsequent insertions.
+
+## Integer unordered set copy construction
+
+Default integer unordered sets and multisets copy from an exact const
+owner reference. The new table preserves the source bucket count, load
+limit and key multiplicities. It owns independent nodes that survive
+changes to the source.
