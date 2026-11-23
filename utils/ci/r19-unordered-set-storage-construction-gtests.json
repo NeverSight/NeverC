@@ -177,7 +177,7 @@
     "TranslateTest.CoreV2UnorderedSetStorageConstructionUnapprovedKeyAllocatorConstructionRejected",
     "TranslateTest.CoreV2UnorderedSetStorageConstructionUnapprovedKeyBucketConstructionRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "f5e26a202434cdb9bd8355501131c4a429f332a1562877587e07556f9f6a48d4",
   "maintained_original_sha256": "8ee172c3bf7dae6f0e65cce5d6c44e5bfda3406278f19ccffadfbdeacbc69edc",
@@ -189,5 +189,10 @@
   "current_registry_count": 8588,
   "current_python_registry_tests": 232,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-set-storage-construction": "9005a76d9532e4c4a9e301c517dd51fa24734609763fb1008eea27c3ed872306"
+  },
+  "native_reference_authentication_sha256": "1d4b6713261b3dc4eb0099788bfc9e31c6bc8d02812d497e26df03e4e0861e9d",
+  "source_proof_sha256": "667073ddb54c987cfa24c67fd70448c08aacbb946c713942b7eb2065972d8a7f"
 }
