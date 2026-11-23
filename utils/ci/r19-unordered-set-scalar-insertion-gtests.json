@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetScalarInsertionDifferentKeyTypeRejected",
     "TranslateTest.CoreV2UnorderedSetScalarInsertionPointerReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "8ce9d74ac0d9d4d1810ff9e409a535692b199d5e8c705fa190c864aa4448adff",
   "maintained_original_sha256": "c5ff82c8dc13eb2e50d661a576629adc82e54a54d6485bf6441f491dacaeac06",
@@ -155,5 +155,10 @@
   "current_registry_count": 8464,
   "current_python_registry_tests": 202,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-scalar-insertion": "4005a929cf17d6233da104ca6dcc0bf4caafeba088eeac323738f4dd1b58424c"
+  },
+  "native_reference_authentication_sha256": "bb4ef6ef614fc430b4119ccebbad4bb3ca4da90a4c0af17f6c9b8b7e8108ea4c",
+  "source_proof_sha256": "0e4804cf5372f1150e2afdf5c5e3ab567327d795328d91707651ddf9aeddfe3f"
 }

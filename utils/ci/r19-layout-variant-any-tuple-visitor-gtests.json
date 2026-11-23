@@ -143,30 +143,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "any-in-place-other-payload-guard",
-      "expected": "accept",
-      "source": "#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n",
-      "source_sha256": "07758950c63a906f0c0c2baa32c8cb5447133f329b80545bce742f1b543c21e5",
-      "public_header": "any",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "any-emplace-other-payload-guard",
-      "expected": "accept",
-      "source": "#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n",
-      "source_sha256": "a4603165b552041b4480b85c007fb027daed03f2e778ecc60b00debd40b9ea47",
-      "public_header": "any",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "any-in-place-renamed-handler-installation-guard",
-      "expected": "reject",
-      "source": "#define __create changed_handler_installation\n#include <any>\n#undef __create\nbool f() {\n  std::any a(std::in_place_type<int>, 51);\n  return a.has_value();\n}\n",
-      "source_sha256": "113ef97af3a3f2391a0c72247491e8e021cc0e8c1744d52073be61da6d319377",
-      "public_header": "any",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "variant-owned-visit-const-borrow",
       "expected": "accept",
       "source": "#include <variant>\nstruct Visitor {\n  int weight;\n  int operator()(int x) const & { return x * weight; }\n};\nint main() {\n  const Visitor call{7};\n  std::variant<short, int> input(std::in_place_index<0>, short(3));\n  if (std::visit(call, input) != 21)\n    return 1;\n  input.emplace<1>(5);\n  return std::visit(call, input) != 35;\n}\n",
@@ -189,6 +165,30 @@
       "public_header": "variant",
       "kind": "cpp17-operation",
       "source_sha256": "c8e47a489d6ea602891ec497733e37742ea11387d6f8ffca13d488f530c50191"
+    },
+    {
+      "name": "any-in-place-other-payload-guard",
+      "expected": "accept",
+      "source": "#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n",
+      "source_sha256": "07758950c63a906f0c0c2baa32c8cb5447133f329b80545bce742f1b543c21e5",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-emplace-other-payload-guard",
+      "expected": "accept",
+      "source": "#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n",
+      "source_sha256": "a4603165b552041b4480b85c007fb027daed03f2e778ecc60b00debd40b9ea47",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-in-place-renamed-handler-installation-guard",
+      "expected": "reject",
+      "source": "#define __create changed_handler_installation\n#include <any>\n#undef __create\nbool f() {\n  std::any a(std::in_place_type<int>, 51);\n  return a.has_value();\n}\n",
+      "source_sha256": "113ef97af3a3f2391a0c72247491e8e021cc0e8c1744d52073be61da6d319377",
+      "public_header": "any",
+      "kind": "source-body-guard"
     },
     {
       "name": "variant-owned-visit-renamed-invoke",
@@ -230,7 +230,7 @@
     "TranslateTest.CoreV2VariantOwnedVisitRenamedDispatchRejected",
     "TranslateTest.CoreV2VariantOwnedVisitRenamedIndexRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "deabe4c6550212f7d333e33ed273465783a9844e1e11013128dfea59982657cf",
   "maintained_original_sha256": "91d19f5afd022ffacdcb11a0d764e6bb0e308db2d969cc51cf1cd3156953bba3",
@@ -242,5 +242,11 @@
   "current_registry_count": 8206,
   "current_python_registry_tests": 138,
   "native_reference_selected_executions": 14,
-  "planned_generated_c23_executions": 14
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "any-in-place": "6df3ff5f32a6aefd59d674e4995f1ee301617c2c173aa9cd61844737a6f88398",
+    "named-variant-visitor": "1a713942339b83425f91551689666ba5bca925776c2376e4f0430ee3da059c29"
+  },
+  "native_reference_authentication_sha256": "d11ee7a140d27204c569b076b43821ebe3deff92876cb3dc6a2ede1d2dcc0fae",
+  "source_proof_sha256": "0e4804cf5372f1150e2afdf5c5e3ab567327d795328d91707651ddf9aeddfe3f"
 }

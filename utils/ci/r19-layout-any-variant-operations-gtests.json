@@ -120,7 +120,7 @@
       "source": "#include <variant>\nint main() {\n  std::monostate a{};\n  std::monostate b;\n  return !(a == b) || a != b || a < b || a > b || !(a <= b) || !(a >= b);\n}\n",
       "source_sha256": "3cfb2f5234f5a297c03957241896bc84b1355deea1ead81221d4281278f39cb2",
       "expected": "accept",
-      "kind": "variant-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "monostate-comparison-operand-effects",
@@ -128,7 +128,7 @@
       "source": "#include <variant>\nstd::monostate touch(int& count) { ++count; return {}; }\nint main() {\n  int left = 0, right = 0;\n  bool equal = touch(left) == touch(right);\n  bool unequal = touch(left) != touch(right);\n  return !equal || unequal || left != 2 || right != 2;\n}\n",
       "source_sha256": "8790f93ccbb8476d16c27cf9391bcfe90eda43a8c2d81b6b5d1987152d860bc0",
       "expected": "accept",
-      "kind": "variant-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "monostate-comparison-explicit-function",
@@ -136,7 +136,7 @@
       "source": "#include <variant>\nint main() {\n  std::variant<int, std::monostate> value(std::in_place_index<1>);\n  const std::monostate* mono = std::get_if<1>(&value);\n  if (!mono)\n    return 1;\n  std::monostate second(*mono);\n  return !std::operator==(*mono, second) || std::operator<(*mono, second);\n}\n",
       "source_sha256": "dcd1b534a5a6052c3124ec746bce753ab256746cd096ed81d05ff0a0b5788f45",
       "expected": "accept",
-      "kind": "variant-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "variant-emplace-index-and-reference",
@@ -144,7 +144,7 @@
       "expected": "accept",
       "source_sha256": "6a318398478c220cf1e68ce636bab5cd3d0f696996f90bc328eae5c53f40b0d9",
       "public_header": "variant",
-      "kind": "variant-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "variant-emplace-type-and-repeated-value",
@@ -152,7 +152,7 @@
       "expected": "accept",
       "source_sha256": "e8fe5df45180a5ead0513da21aa5ab6cdb7835da5b70076a3ccc625f2ad2c468",
       "public_header": "variant",
-      "kind": "variant-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "variant-emplace-pointer-zero",
@@ -160,7 +160,7 @@
       "expected": "accept",
       "source_sha256": "67c9e995cdcdeef8090a1787ab348a833b8e0eca7f05199bdd1f3d8e841fadc1",
       "public_header": "variant",
-      "kind": "variant-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "variant-emplace-empty-alternative",
@@ -168,7 +168,7 @@
       "expected": "accept",
       "source_sha256": "c2c7827398eb664d05385be6b9f07787a44a1e7ec75786ee02229a6e08e89d87",
       "public_header": "variant",
-      "kind": "variant-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "variant-emplace-receiver-before-input",
@@ -176,7 +176,7 @@
       "expected": "accept",
       "source_sha256": "05fa05e4845281edf3b73ac858b9da0d60cc1992055bd01567fd194f729755c0",
       "public_header": "variant",
-      "kind": "variant-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "monostate-comparison-sdk-address",
@@ -215,7 +215,7 @@
     "monostate": "35cc2a2baae539d454b9e69a82943e347022b13b7b7e8711de606e4ba71f6349",
     "emplace": "045b6a1d0e909b660887eb3a4468d17fde699f85044ca376953e1b3d91e4057b"
   },
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "1bcc99ed140d9088d8457efa5df774a84d4ef7c58dc4032b7d3a555e187f2c8d",
   "maintained_original_sha256": "8cb9ba423920483c71e8c728341a619b5661dfe1bf808c84d11b68f378ec7d66",
@@ -227,5 +227,11 @@
   "current_registry_count": 8131,
   "current_python_registry_tests": 124,
   "native_reference_selected_executions": 16,
-  "planned_generated_c23_executions": 16
+  "planned_generated_c23_executions": 16,
+  "native_reference_proofs": {
+    "variant-emplace": "bddc20233aa23c63eb2b1118c8c8cb0cd0e84e2143022de934cd26e9da7c7d06",
+    "variant-monostate": "8667d3acb39d6c128cfef45c419d722b98a60057a681a1601dc544aa41c18161"
+  },
+  "native_reference_authentication_sha256": "274314d32fb7d7f9eadd6f44b8392b311919b0579d697e04747256f3e9c1f49f",
+  "source_proof_sha256": "0e4804cf5372f1150e2afdf5c5e3ab567327d795328d91707651ddf9aeddfe3f"
 }
