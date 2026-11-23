@@ -2419,12 +2419,10 @@ class FunctionLowering {
     auto Source = dereference(Input, L);
     auto Place = dereference(Receiver, L);
     const auto Check = labelName(), Transfer = labelName(), Done = labelName();
-    if (!Info.HasMappedValue) {
-      const auto Begin = labelName();
-      branch(binary("==", cast(Receiver, "ptr:void", L), cast(Input, "ptr:void", L), "bool", L),
-          Done, Begin, L);
-      label(Begin, L);
-    }
+    const auto Begin = labelName();
+    branch(binary("==", cast(Receiver, "ptr:void", L), cast(Input, "ptr:void", L), "bool", L),
+        Done, Begin, L);
+    label(Begin, L);
     auto Cursor = snapshot(unorderedTableMember(Source, Info, "nct_unordered_first", L), L);
     jump(Check, L); label(Check, L);
     branch(cast(Cursor, "bool", L), Transfer, Done, L);
@@ -29908,7 +29906,9 @@ class FunctionLowering {
       const auto Advance = labelName(), Ready = labelName();
       branch(cast(First, "bool", L), Advance, Ready, L);
       label(Advance, L);
-      assign(Last, unorderedNodeNext(First, Info->Map, L), L);
+      auto Tail = unorderedAllowsEquivalentKeys(Info->Map)
+          ? unorderedEquivalentGroupTail(First, Info->Map, L) : First;
+      assign(Last, unorderedNodeNext(std::move(Tail), Info->Map, L), L);
       jump(Ready, L);
       label(Ready, L);
       auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
@@ -29962,8 +29962,18 @@ class FunctionLowering {
       auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
           : address(lvalue(Object), Object->getType(), L), L);
       auto Place = dereference(Receiver, L);
-      if (Info->Offset)
-        argument(Call->getArg(0), Method->getParamDecl(0)->getType());
+      std::optional<Expression> Hint;
+      if (Info->Offset) {
+        const auto Parameter = Method->getParamDecl(0)->getType();
+        auto Position = argument(Call->getArg(0), Parameter);
+        if (unorderedAllowsEquivalentKeys(Info->Map)) {
+          const auto Iterator = approvedUtilityUnorderedMapIteratorRecord(
+              A.S, A.Sources, Parameter->getAsCXXRecordDecl(), A.Context);
+          if (!Iterator)
+            reject(L, "unordered map insertion", "The authenticated hint layout is unavailable.");
+          Hint = snapshot(unorderedIteratorNode(dereference(std::move(Position), L), *Iterator, L), L);
+        }
+      }
       Expression Key;
       std::optional<Expression> Mapped, PreparedNode;
       if (Info->Kind == UnorderedMapInsertionKind::Piecewise) {
@@ -30014,7 +30024,8 @@ class FunctionLowering {
           Mapped = dereference(Reference, L);
         }
       }
-      auto Result = unorderedInsertNode(Place, Info->Map, Key, Mapped, Info->AssignExisting, L, PreparedNode);
+      auto Result = unorderedInsertNode(Place, Info->Map, Key, Mapped, Info->AssignExisting, L,
+          std::move(PreparedNode), false, std::nullopt, std::move(Hint));
       if (!Info->ResultPair)
         return unorderedMakeIterator(Result.Node, Info->Iterator, std::move(Destination), L);
       auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
@@ -30071,8 +30082,10 @@ class FunctionLowering {
       auto Node = snapshot(unorderedIteratorNode(dereference(First, L), *Input, L), L);
       auto Remove = [&] {
         auto Next = snapshot(unorderedNodeNext(Node, *Map, L), L);
-        unorderedEraseKey(Place, *Map, unorderedNodeKey(Node, *Map, L), L);
-        assign(Node, Next, L);
+        unorderedUnlinkNode(Place, *Map, Node, L);
+        const auto Size = type(A.Context.getSizeType(), L);
+        unorderedHeapRelease(Node, Map->NodeType, quantity(Map->NodeBytes, Size, L), L);
+        assign(Node, std::move(Next), L);
       };
       if (Operation == UtilityOperation::UnorderedMapEraseRange) {
         auto Last = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
