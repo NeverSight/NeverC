@@ -621,6 +621,1103 @@ def restore_variant_metadata_layout_history(source):
     return restored
 
 
+R19_VARIANT_SCALAR_REGISTERED_SHA256 = '08b0ce98b80e83b85d6aea6acc547f7e087c561d69d1c97c5d6fc9ed2aee3abc'
+R19_VARIANT_SCALAR_MAINTAINED_SHA256 = '2a750a4f20ba6f0674466279aa069b55d0dc71afd4062fc701b22cf286e7c49b'
+R19_VARIANT_SCALAR_PREVIOUS_REGISTERED_SHA256 = '37e42c15db2bcd9a9d39b25b1ee8af5407e13fe5419eb392fb2672120813a706'
+R19_VARIANT_SCALAR_PREVIOUS_MAINTAINED_SHA256 = 'e51b392c0556e228dc98fa264fa5fc80232273c8bf68b4645b4f1c78b9cd1951'
+_R19_VARIANT_SCALAR_ADDITIONS = b'TEST_F(TranslateTest, CoreV2VariantObjectsDefaultRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-default.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, double> value;\n  return value.index() != 0 || value.valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-default.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-default" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsSecondRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-second.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, double> value = 2.5;\n  return value.index() != 1 || value.valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-second.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-second" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsThirdLvalueRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-third-lvalue.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  int value = 7;\n  const std::variant<char, double, int> item = value;\n  return item.index() != 2 || item.valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-third-lvalue.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-third-lvalue" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsCopyRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-copy.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, double> source = 3.0;\n  const std::variant<int, double> copy = source;\n  return copy.index() != 1 || copy.valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsDefaultPointerRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-default-pointer.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int*, bool> value{};\n  return (&value)->index() != 0 || (&value)->valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-default-pointer.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-default-pointer" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsRefAndSideEffectRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-ref-and-side-effect.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nusing Choice = std::variant<int, double>;\nint attempts;\nconst Choice& once(const Choice& choice) { ++attempts; return choice; }\nextern "C" int check() {\n  Choice choice = 4.0;\n  return once(choice).index() != 1 || attempts != 1 ||\n         once(choice).valueless_by_exception() || attempts != 2;\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-ref-and-side-effect.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-ref-and-side-effect" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsTemporaryRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-temporary.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  return std::variant<int, double>(1).index() != 0 ||\n         std::variant<int, double>(2.5).valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-temporary.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-temporary" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsGetIfAliasRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-get-if-alias.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, double> value = 3;\n  auto *first = std::get_if<0>(&value);\n  if (!first || std::get_if<1>(&value) || *first != 3) return 1;\n  *first = 11;\n  auto *again = std::get_if<int>(&value);\n  return again != first || *again != 11;\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-get-if-alias.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-get-if-alias" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsGetIfConstRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-get-if-const.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  using Choice = std::variant<int, double>;\n  const Choice value = 2.5;\n  const auto *p = std::get_if<double>(&value);\n  const Choice *empty = nullptr;\n  return !p || *p != 2.5 || std::get_if<0>(&value) ||\n         std::get_if<1>(empty) || std::get_if<int>(empty);\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-get-if-const.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-get-if-const" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsGetIfDuplicateRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-get-if-duplicate.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, int> value;\n  const auto *p = std::get_if<0>(&value);\n  return !p || *p != 0 || std::get_if<1>(&value);\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-get-if-duplicate.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-get-if-duplicate" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsGetIfCopyAndEvaluateOnceRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-get-if-copy-and-evaluate-once.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nusing Choice = std::variant<char, double, int>;\nint attempts;\nChoice *once(Choice *owner) { ++attempts; return owner; }\nextern "C" int check() {\n  Choice value = 42;\n  Choice copy = value;\n  auto *p = std::get_if<2>(once(&copy));\n  if (!p || *p != 42 || attempts != 1) return 2;\n  *p = 19;\n  auto *original = std::get_if<2>(&value);\n  return !original || original == p || *original != 42 || *p != 19;\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-get-if-copy-and-evaluate-once.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-get-if-copy-and-evaluate-once" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsClassAlternativeRejected) {\n  const auto Source = tmpFile("variant-objects-class-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nstruct Payload { int field; };\nextern "C" int check() { std::variant<Payload, int> value; return int(value.index()); }\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstAlternativeRejected) {\n  const auto Source = tmpFile("variant-objects-const-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<const int, double> value;\n  return int(value.index());\n}\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsAlteredDiscriminantRejected) {\n  const auto Source = tmpFile("variant-objects-altered-discriminant.cpp");\n  writeFile(Source, R"r19variantsclr(#define __index renamed_variant_discriminant\n#include <variant>\n#undef __index\nextern "C" int check() { std::variant<int, double> value; return int(value.index()); }\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsUnprovedConversionRejected) {\n  const auto Source = tmpFile("variant-objects-unproved-conversion.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  short original = 7;\n  std::variant<int, double> value = original;\n  return int(value.index());\n}\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsUncheckedGetRejected) {\n  const auto Source = tmpFile("variant-objects-unchecked-get.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, double> value;\n  return std::get<0>(value);\n}\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsHoldsConstRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-holds-const.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  const std::variant<int, double> value = 3.0;\n  return !std::holds_alternative<double>(value) || std::holds_alternative<int>(value);\n}\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-holds-const.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-holds-const" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsCopyChangingAlternativeRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-copy-changing-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  std::variant<int, double> first = 3;\n  const std::variant<int, double> second = 9.0;\n  auto& receiver = (first = second);\n  auto* payload = std::get_if<1>(&first);\n  return &receiver != &first || !payload || *payload != 9.0 || std::get_if<0>(&first);\n}\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-copy-changing-alternative.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-copy-changing-alternative" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsMoveAndSelfAssignmentRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-move-and-self-assignment.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  using V = std::variant<int, double>;\n  V original = 6;\n  V copy = 3.0;\n  copy = static_cast<V&&>(original);\n  copy = copy;\n  auto* result = std::get_if<int>(&copy);\n  return !result || *result != 6 || !std::holds_alternative<int>(original);\n}\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-move-and-self-assignment.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-move-and-self-assignment" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstGetByIndexRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-const-get-by-index.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  const std::variant<int, double> value{5};\n  const auto &item = std::get<0>(value);\n  return item != 5;\n}\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-const-get-by-index.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-const-get-by-index" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstGetByTypeRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-const-get-by-type.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  const std::variant<int, double> value{2.5};\n  return std::get<double>(value) != 2.5;\n}\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-const-get-by-type.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-const-get-by-type" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstGetInactiveRejected) {\n  const auto Source = tmpFile("variant-objects-const-get-inactive.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  const std::variant<int, double> value{2.5};\n  return std::get<0>(value);\n}\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstGetMutableAliasRejected) {\n  const auto Source = tmpFile("variant-objects-const-get-mutable-alias.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  std::variant<int, double> value{3};\n  const auto &alias = value;\n  value = std::variant<int, double>{2.5};\n  return std::get<0>(alias);\n}\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstGetAlteredHelperRejected) {\n  const auto Source = tmpFile("variant-objects-const-get-altered-helper.cpp");\n  writeFile(Source, R"r19variantsclr(#define __generic_get replaced_generic_get\n#include <variant>\n#undef __generic_get\nint main() {\n  const std::variant<int, double> value{7};\n  return std::get<int>(value);\n}\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsGetIfReplacedAddressBodyRejected) {\n  const auto Source = tmpFile("variant-objects-get-if-replaced-address-body.cpp");\n  writeFile(Source, R"r19variantsclr(#define __builtin_addressof(x) (&(x))\n#include <variant>\n#undef __builtin_addressof\nint main() {\n  std::variant<int, double> value = 3;\n  const int *item = std::get_if<0>(&value);\n  return !item || *item != 3;\n}\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n'
+
+_R19_VARIANT_SCALAR_HISTORICAL_CONSTRUCTION_CHECK = b'TEST_F(TranslateTest, CoreV2VariantMetadataRuntimeValueRejected) {\n  const auto Source = tmpFile("variant-metadata-runtime-value.cpp");\n  writeFile(Source, R"r19variant(#include <variant>\nusing V = std::variant<int,double>;\nint main(){V value(7);return value.index();}\n)r19variant");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'
+_R19_VARIANT_SCALAR_CURRENT_CONSTRUCTION_CHECK = b'TEST_F(TranslateTest, CoreV2VariantMetadataRuntimeValueRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-metadata-runtime-value.cpp");\n  writeFile(Source, R"r19variant(#include <variant>\nusing V = std::variant<int,double>;\nint main(){V value(7);return value.index();}\n)r19variant");\n  const auto Output = tmpFile("variant-metadata-runtime-value.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-metadata-runtime-value" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}'
+
+
+def restore_variant_scalar_history(source):
+    """Remove only the exact variant scalar variant layer for historical checks."""
+    digest = hashlib.sha256(source).hexdigest()
+    assert digest in {R19_VARIANT_SCALAR_REGISTERED_SHA256,R19_VARIANT_SCALAR_MAINTAINED_SHA256}
+    assert source.count(_R19_VARIANT_SCALAR_ADDITIONS) == 1
+    restored = source.replace(_R19_VARIANT_SCALAR_ADDITIONS,b'',1)
+    assert restored.count(_R19_VARIANT_SCALAR_CURRENT_CONSTRUCTION_CHECK) == 1
+    restored = restored.replace(_R19_VARIANT_SCALAR_CURRENT_CONSTRUCTION_CHECK,
+                                _R19_VARIANT_SCALAR_HISTORICAL_CONSTRUCTION_CHECK,1)
+    expected = (R19_VARIANT_SCALAR_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_SCALAR_REGISTERED_SHA256
+                else R19_VARIANT_SCALAR_PREVIOUS_MAINTAINED_SHA256)
+    assert hashlib.sha256(restored).hexdigest() == expected
+    return restored
+
+
+R19_LAYOUT_IN_PLACE_REGISTERED_SHA256 = '8746852cd5a814adfd86f59ec98a95dffb6c493af46f699f40a1822674f12c29'
+R19_LAYOUT_IN_PLACE_MAINTAINED_SHA256 = '71ea495d9ecd713746a7e5fca2acf69633b5b264ff17437bc0252078575cc947'
+R19_LAYOUT_IN_PLACE_PREVIOUS_REGISTERED_SHA256 = '08b0ce98b80e83b85d6aea6acc547f7e087c561d69d1c97c5d6fc9ed2aee3abc'
+R19_LAYOUT_IN_PLACE_PREVIOUS_MAINTAINED_SHA256 = '2a750a4f20ba6f0674466279aa069b55d0dc71afd4062fc701b22cf286e7c49b'
+R19_LAYOUT_IN_PLACE_ADDITIONS_SHA256 = '153c055616258a5ba3fb04530d323b35a6c56ccf8f999b5da19b89ece90a7906'
+R19_LAYOUT_IN_PLACE_MAINTAINED_SIZE = 19749773
+R19_LAYOUT_IN_PLACE_ADDITIONS_SIZE = 46892
+
+
+def restore_layout_in_place_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_IN_PLACE_REGISTERED_SHA256, R19_LAYOUT_IN_PLACE_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_IN_PLACE_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_IN_PLACE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_IN_PLACE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_IN_PLACE_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_IN_PLACE_REGISTERED_SHA256
+             else R19_LAYOUT_IN_PLACE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_IN_PLACE_ANY_REGISTERED_SHA256 = 'f92c06c48a9fad4a28afc4a157985a18624fd4ddfb17d0869e3e925d8dfa908a'
+R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SHA256 = '20c9f075f5b6d3a2f1394438f689368c7f2da1a75286dce1704b219e87e6d5df'
+R19_LAYOUT_IN_PLACE_ANY_PREVIOUS_REGISTERED_SHA256 = '8746852cd5a814adfd86f59ec98a95dffb6c493af46f699f40a1822674f12c29'
+R19_LAYOUT_IN_PLACE_ANY_PREVIOUS_MAINTAINED_SHA256 = '71ea495d9ecd713746a7e5fca2acf69633b5b264ff17437bc0252078575cc947'
+R19_LAYOUT_IN_PLACE_ANY_ADDITIONS_SHA256 = '74fc845c2634683190671c621230d151f225588420254e57c08558248b746b9b'
+R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SIZE = 19770200
+R19_LAYOUT_IN_PLACE_ANY_ADDITIONS_SIZE = 20427
+
+
+def restore_layout_in_place_any_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_IN_PLACE_ANY_REGISTERED_SHA256, R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_IN_PLACE_ANY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_IN_PLACE_ANY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_IN_PLACE_ANY_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_IN_PLACE_ANY_REGISTERED_SHA256
+             else R19_LAYOUT_IN_PLACE_ANY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_OPERATIONS_REGISTERED_SHA256 = '1bcc99ed140d9088d8457efa5df774a84d4ef7c58dc4032b7d3a555e187f2c8d'
+R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SHA256 = '8cb9ba423920483c71e8c728341a619b5661dfe1bf808c84d11b68f378ec7d66'
+R19_LAYOUT_VARIANT_OPERATIONS_PREVIOUS_REGISTERED_SHA256 = 'f92c06c48a9fad4a28afc4a157985a18624fd4ddfb17d0869e3e925d8dfa908a'
+R19_LAYOUT_VARIANT_OPERATIONS_PREVIOUS_MAINTAINED_SHA256 = '20c9f075f5b6d3a2f1394438f689368c7f2da1a75286dce1704b219e87e6d5df'
+R19_LAYOUT_VARIANT_OPERATIONS_ADDITIONS_SHA256 = 'de48477b214c90cbd8a0c25eaa30e4843e7ca89159952fc5f358b73d4113f47e'
+R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SIZE = 19781676
+R19_LAYOUT_VARIANT_OPERATIONS_ADDITIONS_SIZE = 11476
+
+
+def restore_layout_variant_operations_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_OPERATIONS_REGISTERED_SHA256, R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_OPERATIONS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_OPERATIONS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_OPERATIONS_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_OPERATIONS_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_OPERATIONS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_ADAPTER_REGISTERED_SHA256 = 'd9e5439542354d4ab90c5d134fc6ff826c42b0870d915cc42218f328f931621e'
+R19_LAYOUT_ADAPTER_MAINTAINED_SHA256 = '2d1d01058bae252d865258eddeecdba869624a3ef3d75fef98d09054936dd508'
+R19_LAYOUT_ADAPTER_PREVIOUS_REGISTERED_SHA256 = '1bcc99ed140d9088d8457efa5df774a84d4ef7c58dc4032b7d3a555e187f2c8d'
+R19_LAYOUT_ADAPTER_PREVIOUS_MAINTAINED_SHA256 = '8cb9ba423920483c71e8c728341a619b5661dfe1bf808c84d11b68f378ec7d66'
+R19_LAYOUT_ADAPTER_ADDITIONS_SHA256 = 'e84cc8a750c5e4a8757838321ae0a0b9c2bb5346cc86604450c10a949eeeb997'
+R19_LAYOUT_ADAPTER_MAINTAINED_SIZE = 19806142
+R19_LAYOUT_ADAPTER_ADDITIONS_SIZE = 24466
+
+
+def restore_layout_adapter_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_ADAPTER_REGISTERED_SHA256, R19_LAYOUT_ADAPTER_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_ADAPTER_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_ADAPTER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_ADAPTER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_ADAPTER_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_ADAPTER_REGISTERED_SHA256
+             else R19_LAYOUT_ADAPTER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256 = 'c0ece43741e31ff8cf62cfcd5e14dcc65196029af1ea9517cd73376f05be7d2a'
+R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256 = 'cb1e66caf89902b5ff655e287f1bc206b3dfee1f5e39c0c2a62c306577373851'
+R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_REGISTERED_SHA256 = 'd9e5439542354d4ab90c5d134fc6ff826c42b0870d915cc42218f328f931621e'
+R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_MAINTAINED_SHA256 = '2d1d01058bae252d865258eddeecdba869624a3ef3d75fef98d09054936dd508'
+R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SHA256 = 'ab6e3a1624ab304fe9399cb343784529b5f5eef9e7591b52bf6b190c7062a0c0'
+R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SIZE = 19819964
+R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SIZE = 13822
+
+
+def restore_layout_assignment_visit_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256, R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256
+             else R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256 = 'fcbc81253fb41e0c9b020802fd03dc380d00ff8ea776fcfeb60ee4df2eb1e280'
+R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256 = '76e71d65563703e0372a79fc12bfa65883aea738411972f16dc3d06ba863072f'
+R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_REGISTERED_SHA256 = 'c0ece43741e31ff8cf62cfcd5e14dcc65196029af1ea9517cd73376f05be7d2a'
+R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_MAINTAINED_SHA256 = 'cb1e66caf89902b5ff655e287f1bc206b3dfee1f5e39c0c2a62c306577373851'
+R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SHA256 = '4bb2809b6b9a90c600dea7ca2c5281496393cd3614b38015158baa19c0e58702'
+R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SIZE = 19826922
+R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SIZE = 6958
+
+
+def restore_layout_integral_visit_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256, R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256
+             else R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_ANY_INTEGER_REGISTERED_SHA256 = 'e1d1a69ba0d36883041061e29d4f6b1a52580f9c20e28da26728138c17b24bb4'
+R19_LAYOUT_ANY_INTEGER_MAINTAINED_SHA256 = 'a440054763014f0dc34b4964cfd525447e5a4df69d6ba2ca69f9eab19e5c8346'
+R19_LAYOUT_ANY_INTEGER_PREVIOUS_REGISTERED_SHA256 = 'fcbc81253fb41e0c9b020802fd03dc380d00ff8ea776fcfeb60ee4df2eb1e280'
+R19_LAYOUT_ANY_INTEGER_PREVIOUS_MAINTAINED_SHA256 = '76e71d65563703e0372a79fc12bfa65883aea738411972f16dc3d06ba863072f'
+R19_LAYOUT_ANY_INTEGER_ADDITIONS_SHA256 = '522e821c64dcd228dc7ffe85abd21e78478e89a4c94b772e12d57b6caa1cb0a5'
+R19_LAYOUT_ANY_INTEGER_MAINTAINED_SIZE = 19833335
+R19_LAYOUT_ANY_INTEGER_ADDITIONS_SIZE = 6040
+_R19_LAYOUT_ANY_INTEGER_HISTORICAL_ANY = b'TEST_F(TranslateTest, CoreV2AnyLayoutRuntimeConstructionRejected) {\n  const auto Source = tmpFile("any-layout-runtime-construction.cpp");\n  writeFile(Source, R"r19any(#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n)r19any");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'
+_R19_LAYOUT_ANY_INTEGER_ACTIVE_ANY = b'TEST_F(TranslateTest, CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations) {\n  const auto Source = tmpFile("any-layout-runtime-construction.cpp");\n  writeFile(Source, R"r19any(#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n)r19any");\n  const auto Output = tmpFile("any-layout-runtime-construction.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-layout-runtime-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}'
+
+
+def restore_layout_any_integer_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_ANY_INTEGER_REGISTERED_SHA256, R19_LAYOUT_ANY_INTEGER_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_ANY_INTEGER_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_ANY_INTEGER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_ANY_INTEGER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(_R19_LAYOUT_ANY_INTEGER_ACTIVE_ANY) == 1
+    restored = restored.replace(_R19_LAYOUT_ANY_INTEGER_ACTIVE_ANY, _R19_LAYOUT_ANY_INTEGER_HISTORICAL_ANY, 1)
+    prior = (R19_LAYOUT_ANY_INTEGER_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_ANY_INTEGER_REGISTERED_SHA256
+             else R19_LAYOUT_ANY_INTEGER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_TWO_VARIANT_ANY_REGISTERED_SHA256 = 'db4b815bb0310f32f1577df59ad0601008e7339bc4805d1c7b2cedf55bf554f0'
+R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SHA256 = '5ea4dd16eb081c1ae850c9041998ca7c81b9520eb9e68cdfd75b76fe06c7c215'
+R19_LAYOUT_TWO_VARIANT_ANY_PREVIOUS_REGISTERED_SHA256 = 'e1d1a69ba0d36883041061e29d4f6b1a52580f9c20e28da26728138c17b24bb4'
+R19_LAYOUT_TWO_VARIANT_ANY_PREVIOUS_MAINTAINED_SHA256 = 'a440054763014f0dc34b4964cfd525447e5a4df69d6ba2ca69f9eab19e5c8346'
+R19_LAYOUT_TWO_VARIANT_ANY_ADDITIONS_SHA256 = 'eca518f72471b4562df3760a8ead2c92fd95171581d1456f87ebc348fa684f9c'
+R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SIZE = 19839470
+R19_LAYOUT_TWO_VARIANT_ANY_ADDITIONS_SIZE = 6135
+
+
+def restore_layout_two_variant_any_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_TWO_VARIANT_ANY_REGISTERED_SHA256, R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_TWO_VARIANT_ANY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_TWO_VARIANT_ANY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_TWO_VARIANT_ANY_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_TWO_VARIANT_ANY_REGISTERED_SHA256
+             else R19_LAYOUT_TWO_VARIANT_ANY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_REGISTERED_SHA256 = '6a2d17db32fb8ea7bfa8f228b1403969b32513e75ccc20158e3413f0026fad27'
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SHA256 = 'b41ccc064da285dc98be686407bd95e978596261c5baf6b23b57afb6f9716dd4'
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_PREVIOUS_REGISTERED_SHA256 = 'db4b815bb0310f32f1577df59ad0601008e7339bc4805d1c7b2cedf55bf554f0'
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_PREVIOUS_MAINTAINED_SHA256 = '5ea4dd16eb081c1ae850c9041998ca7c81b9520eb9e68cdfd75b76fe06c7c215'
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_ADDITIONS_SHA256 = '71dfdfbd9a5edc195c4d8c51ea52571adef15d2d0105c3a8398e87954486876e'
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SIZE = 19844611
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_ADDITIONS_SIZE = 5141
+
+
+def restore_layout_two_variant_any_tuple_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_REGISTERED_SHA256, R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_REGISTERED_SHA256
+             else R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256 = 'deabe4c6550212f7d333e33ed273465783a9844e1e11013128dfea59982657cf'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256 = '91d19f5afd022ffacdcb11a0d764e6bb0e308db2d969cc51cf1cd3156953bba3'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_REGISTERED_SHA256 = '6a2d17db32fb8ea7bfa8f228b1403969b32513e75ccc20158e3413f0026fad27'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_MAINTAINED_SHA256 = 'b41ccc064da285dc98be686407bd95e978596261c5baf6b23b57afb6f9716dd4'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SHA256 = 'abb41738dce4328b7ae6d722da943fdac67229ec64f7275066781737069b3611'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SIZE = 19857124
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SIZE = 12513
+
+
+def restore_layout_variant_any_tuple_visitor_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256, R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_REGISTERED_SHA256 = '561406c89101beb582fd1d4cc65016e90c9ce40fa582d1ca2380e9ce49526a29'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SHA256 = 'bb50602a198d000bfebf68c70354d6deac438fcee8db75a6e2c28e12703fc1d0'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_PREVIOUS_REGISTERED_SHA256 = 'deabe4c6550212f7d333e33ed273465783a9844e1e11013128dfea59982657cf'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_PREVIOUS_MAINTAINED_SHA256 = '91d19f5afd022ffacdcb11a0d764e6bb0e308db2d969cc51cf1cd3156953bba3'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_ADDITIONS_SHA256 = 'c2e977d87f34ff6cd2ebb3941147efb169acd4db1e120f73b5471c3994ccd8e6'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SIZE = 19879102
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_ADDITIONS_SIZE = 21978
+
+
+def restore_layout_variant_any_allocator_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_ANY_ALLOCATOR_REGISTERED_SHA256, R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_ANY_ALLOCATOR_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_ANY_ALLOCATOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_ANY_ALLOCATOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256 = '7f86edcd2554ebcbbfd63c7e218c8e3366058bca3ecb5b935c52d040ef1a8e5a'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256 = 'bbdd93fd3a492641167ec5618c88f5dd8fff5115e940b8737487acab8ef4c73e'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_REGISTERED_SHA256 = '561406c89101beb582fd1d4cc65016e90c9ce40fa582d1ca2380e9ce49526a29'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_MAINTAINED_SHA256 = 'bb50602a198d000bfebf68c70354d6deac438fcee8db75a6e2c28e12703fc1d0'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SHA256 = '967b37256a428da51b8f210d856f4a71dcb56f7b1f3f055631b7da48a7c594c5'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SIZE = 19884957
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SIZE = 5855
+
+
+def restore_layout_variant_any_allocator_equality_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256, R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_ORDERING_REGISTERED_SHA256 = 'f4438c626036d992e46581f28d2eb2660ec440254ae2e7e70a3badcc0a478224'
+R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SHA256 = 'd46e00876290437ca25e5bb20bee825ac7fefe03bd6447d02e060695381d35f9'
+R19_LAYOUT_VARIANT_ORDERING_PREVIOUS_REGISTERED_SHA256 = '7f86edcd2554ebcbbfd63c7e218c8e3366058bca3ecb5b935c52d040ef1a8e5a'
+R19_LAYOUT_VARIANT_ORDERING_PREVIOUS_MAINTAINED_SHA256 = 'bbdd93fd3a492641167ec5618c88f5dd8fff5115e940b8737487acab8ef4c73e'
+R19_LAYOUT_VARIANT_ORDERING_ADDITIONS_SHA256 = '749bfbc5f17e080532ba5de1f382fad8ec68ccae1f91e10483e3a3dfe995c34f'
+R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SIZE = 19890723
+R19_LAYOUT_VARIANT_ORDERING_ADDITIONS_SIZE = 5766
+
+
+def restore_layout_variant_ordering_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_ORDERING_REGISTERED_SHA256, R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_ORDERING_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_ORDERING_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_ORDERING_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_ORDERING_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_ORDERING_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256 = 'a3158aff714f9c7210acd778f40955583603c761d9a34cd95890a2cf28b231e4'
+R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256 = '079938a41465897ea07a93d6707738c9173278fee37980e4ee3757da699028eb'
+R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_REGISTERED_SHA256 = 'f4438c626036d992e46581f28d2eb2660ec440254ae2e7e70a3badcc0a478224'
+R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_MAINTAINED_SHA256 = 'd46e00876290437ca25e5bb20bee825ac7fefe03bd6447d02e060695381d35f9'
+R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SHA256 = '6af947ba58429524c02e6522bc0ee513f361e4dcbe4f32c304ef4ddea760d1cb'
+R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SIZE = 19894941
+R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SIZE = 4218
+
+
+def restore_layout_variant_monostate_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256, R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_REGISTERED_SHA256 = '531796afa63bd5b199baacccad91f1fb86b4a0c16a7e182437a6d779b75b5dbc'
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SHA256 = '044375f31196b86b6225261c611c6f8100a8ec7ab0219709cfffe35e44d6daed'
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_PREVIOUS_REGISTERED_SHA256 = 'a3158aff714f9c7210acd778f40955583603c761d9a34cd95890a2cf28b231e4'
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_PREVIOUS_MAINTAINED_SHA256 = '079938a41465897ea07a93d6707738c9173278fee37980e4ee3757da699028eb'
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_ADDITIONS_SHA256 = '3a8eb2e50273b9ac5b233d00aeaa8ec9219f8597de40e6400441441f6ea2e31f'
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SIZE = 19898549
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_ADDITIONS_SIZE = 3608
+
+
+def restore_layout_variant_monostate_hash_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_MONOSTATE_HASH_REGISTERED_SHA256, R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_MONOSTATE_HASH_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_MONOSTATE_HASH_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_MONOSTATE_HASH_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_MONOSTATE_HASH_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_MONOSTATE_HASH_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_REGISTERED_SHA256 = '4cf479ebbca2e01ad687d823ed65a5638d39ea7b27eb4cafd53442c3fea7b77c'
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SHA256 = '4ebe1755104459f128be4ab723a1898ac57af93ceffb33a885f9cbd46f924d69'
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_PREVIOUS_REGISTERED_SHA256 = '531796afa63bd5b199baacccad91f1fb86b4a0c16a7e182437a6d779b75b5dbc'
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_PREVIOUS_MAINTAINED_SHA256 = '044375f31196b86b6225261c611c6f8100a8ec7ab0219709cfffe35e44d6daed'
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_ADDITIONS_SHA256 = 'eddb200f2cf44fa31e5d0947ac2c6fc9863b00a496e014cb53744108d4dbd1fe'
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SIZE = 19907420
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_ADDITIONS_SIZE = 8871
+
+
+def restore_layout_variant_visit_alternatives_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_REGISTERED_SHA256, R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_OBSERVER_QUERY_REGISTERED_SHA256 = 'f4e563671fa504ae4b0530dc0fa5cd213df7ad32c8965cc6b0d7119c555a4854'
+R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SHA256 = '1a39c3d2d7c96ed5470131a21ef92d8b098fe9d56ecb012ed91cd0ecc9d540d7'
+R19_ORDERED_OBSERVER_QUERY_PREVIOUS_REGISTERED_SHA256 = '4cf479ebbca2e01ad687d823ed65a5638d39ea7b27eb4cafd53442c3fea7b77c'
+R19_ORDERED_OBSERVER_QUERY_PREVIOUS_MAINTAINED_SHA256 = '4ebe1755104459f128be4ab723a1898ac57af93ceffb33a885f9cbd46f924d69'
+R19_ORDERED_OBSERVER_QUERY_ADDITIONS_SHA256 = '4332d277eac4376ad035adda4f95a1e43ca83fa09310bbf1154ed14f2b0980d2'
+R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SIZE = 19915570
+R19_ORDERED_OBSERVER_QUERY_ADDITIONS_SIZE = 8150
+
+
+def restore_ordered_observer_query_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_OBSERVER_QUERY_REGISTERED_SHA256, R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SHA256}
+    stop = R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_OBSERVER_QUERY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_OBSERVER_QUERY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_OBSERVER_QUERY_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_OBSERVER_QUERY_REGISTERED_SHA256
+             else R19_ORDERED_OBSERVER_QUERY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256 = '06eb0fe12a4802e83958fd3f71d749046514ef2892301ad3f1bd8fc3e2bb981a'
+R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256 = '1e41b38a7df2478c43bf82959c64a4633b553bc93617880d9ef6d2e9c4a7c462'
+R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_REGISTERED_SHA256 = 'f4e563671fa504ae4b0530dc0fa5cd213df7ad32c8965cc6b0d7119c555a4854'
+R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_MAINTAINED_SHA256 = '1a39c3d2d7c96ed5470131a21ef92d8b098fe9d56ecb012ed91cd0ecc9d540d7'
+R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SHA256 = '7b84537fdbfae74175a05adb404d77b1bd74229952fd93d0d837ef0c7af92af3'
+R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SIZE = 19922676
+R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SIZE = 7106
+
+
+def restore_monostate_adapter_hash_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256, R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256}
+    stop = R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SIZE
+    start = stop - R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_REGISTERED_SHA256 if digest == R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256
+             else R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_GUARDED_GET_REGISTERED_SHA256 = '065f3f97fb865e13adcd83f37c7fa7bf47223329894a5fce7da802cbe9f00dc7'
+R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256 = '428d544caff0c79322d8d0a239a9680dc0c01a016e357f8506aebf19a683b702'
+R19_VARIANT_GUARDED_GET_PREVIOUS_REGISTERED_SHA256 = '06eb0fe12a4802e83958fd3f71d749046514ef2892301ad3f1bd8fc3e2bb981a'
+R19_VARIANT_GUARDED_GET_PREVIOUS_MAINTAINED_SHA256 = '1e41b38a7df2478c43bf82959c64a4633b553bc93617880d9ef6d2e9c4a7c462'
+R19_VARIANT_GUARDED_GET_ADDITIONS_SHA256 = '1ee917f25698730b46d72bc1ac21c6d1f1d52429e192e84781668d25fb9291ec'
+R19_VARIANT_GUARDED_GET_MAINTAINED_SIZE = 19930438
+R19_VARIANT_GUARDED_GET_ADDITIONS_SIZE = 7762
+
+
+def restore_variant_guarded_get_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_GUARDED_GET_REGISTERED_SHA256, R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256}
+    stop = R19_VARIANT_GUARDED_GET_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_GUARDED_GET_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_GUARDED_GET_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_VARIANT_GUARDED_GET_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_GUARDED_GET_REGISTERED_SHA256
+             else R19_VARIANT_GUARDED_GET_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256 = '769b880fef30544e4680b9908080551b995f36369ba080d1e5fa14a733b0502c'
+R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256 = 'f19e1177591283d289bfd01e07fb890c63cb715e9c631b27490566f78912a0cc'
+R19_ANY_UNSIGNED_INLINE_PREVIOUS_REGISTERED_SHA256 = '065f3f97fb865e13adcd83f37c7fa7bf47223329894a5fce7da802cbe9f00dc7'
+R19_ANY_UNSIGNED_INLINE_PREVIOUS_MAINTAINED_SHA256 = '428d544caff0c79322d8d0a239a9680dc0c01a016e357f8506aebf19a683b702'
+R19_ANY_UNSIGNED_INLINE_ADDITIONS_SHA256 = '4986068945b6c7858b9d56fb3943596f4ed0fafecbcfffb58521f811ea41f4ca'
+R19_ANY_UNSIGNED_INLINE_MAINTAINED_SIZE = 19938098
+R19_ANY_UNSIGNED_INLINE_ADDITIONS_SIZE = 7660
+
+
+def restore_any_unsigned_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256, R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_UNSIGNED_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_UNSIGNED_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_UNSIGNED_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_UNSIGNED_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256
+             else R19_ANY_UNSIGNED_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256 = 'ca10fe2c6d399699f3abde240483e99e62650288e7eacdaede4afd89e0f4ad16'
+R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256 = '1df1f37351188954c2cd051342565e4e2ee0ec53ede1404d9eeb971f05c29ae4'
+R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_REGISTERED_SHA256 = '769b880fef30544e4680b9908080551b995f36369ba080d1e5fa14a733b0502c'
+R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_MAINTAINED_SHA256 = 'f19e1177591283d289bfd01e07fb890c63cb715e9c631b27490566f78912a0cc'
+R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SHA256 = 'c0f87fd09a818f1c5de6ea9dd292f8f72da942bfb1060fad1b58546b2f541f2f'
+R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SIZE = 19945660
+R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SIZE = 7562
+
+
+def restore_variant_get_early_return_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256, R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256}
+    stop = R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256
+             else R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256 = 'e6e9318724925862ef9c95da3085f26dfd4d5321cc5eb56aeab4fc9b4ebae34e'
+R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256 = 'b9b9b2935d5da5039a8934541b708a06a32b58e0f1070850b729cdc9b9f76a6d'
+R19_ORDERED_EMPTY_OWNER_PREVIOUS_REGISTERED_SHA256 = 'ca10fe2c6d399699f3abde240483e99e62650288e7eacdaede4afd89e0f4ad16'
+R19_ORDERED_EMPTY_OWNER_PREVIOUS_MAINTAINED_SHA256 = '1df1f37351188954c2cd051342565e4e2ee0ec53ede1404d9eeb971f05c29ae4'
+R19_ORDERED_EMPTY_OWNER_ADDITIONS_SHA256 = '27fe7a7bdc1b6488c945fe9e0ab6a2d58547e178610c87e20d3c7766c4362a74'
+R19_ORDERED_EMPTY_OWNER_MAINTAINED_SIZE = 19952811
+R19_ORDERED_EMPTY_OWNER_ADDITIONS_SIZE = 6750
+_R19_ORDERED_EMPTY_OWNER_HISTORICAL_ANY = b'TEST_F(TranslateTest, CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected) {\n  const auto Source = tmpFile("ordered-observer-query-observer-does-not-admit-storage.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'
+_R19_ORDERED_EMPTY_OWNER_ACTIVE_ANY = b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerOriginalMapRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-observer-query-observer-does-not-admit-storage.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n)r19containers");\n  const auto Output = tmpFile("ordered-observer-query-observer-does-not-admit-storage.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-observer-query-observer-does-not-admit-storage" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}'
+
+
+def restore_ordered_empty_owner_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256, R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256}
+    stop = R19_ORDERED_EMPTY_OWNER_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_EMPTY_OWNER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_EMPTY_OWNER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(_R19_ORDERED_EMPTY_OWNER_ACTIVE_ANY) == 1
+    restored = restored.replace(_R19_ORDERED_EMPTY_OWNER_ACTIVE_ANY, _R19_ORDERED_EMPTY_OWNER_HISTORICAL_ANY, 1)
+    prior = (R19_ORDERED_EMPTY_OWNER_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256
+             else R19_ORDERED_EMPTY_OWNER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_MAX_SIZE_REGISTERED_SHA256 = '9e9ba754f81959ca9b377627825515a8be2f0ad69242ce21ad0b6fa792afed14'
+R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256 = '0a33208d656054ec6265c968c1c3c9ed504da77d0709bb325cc0ecdd9bded1a5'
+R19_ORDERED_MAX_SIZE_PREVIOUS_REGISTERED_SHA256 = 'e6e9318724925862ef9c95da3085f26dfd4d5321cc5eb56aeab4fc9b4ebae34e'
+R19_ORDERED_MAX_SIZE_PREVIOUS_MAINTAINED_SHA256 = 'b9b9b2935d5da5039a8934541b708a06a32b58e0f1070850b729cdc9b9f76a6d'
+R19_ORDERED_MAX_SIZE_ADDITIONS_SHA256 = '024aefb7378f8c3b8f7add085e06de5b606304121d2410204d7e0ffd6cbd6171'
+R19_ORDERED_MAX_SIZE_MAINTAINED_SIZE = 19959336
+R19_ORDERED_MAX_SIZE_ADDITIONS_SIZE = 6525
+
+
+def restore_ordered_max_size_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MAX_SIZE_REGISTERED_SHA256, R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MAX_SIZE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MAX_SIZE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MAX_SIZE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_MAX_SIZE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MAX_SIZE_REGISTERED_SHA256
+             else R19_ORDERED_MAX_SIZE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_BOOL_INLINE_REGISTERED_SHA256 = '4d1378b02f329e006c80ba4071c984fe15eb83298fc0d4658a244e7413b23acf'
+R19_ANY_BOOL_INLINE_MAINTAINED_SHA256 = 'bdf19d17388b4157ca9e10e6b4454c833104e8a331a09b0924694c19718d994e'
+R19_ANY_BOOL_INLINE_PREVIOUS_REGISTERED_SHA256 = '9e9ba754f81959ca9b377627825515a8be2f0ad69242ce21ad0b6fa792afed14'
+R19_ANY_BOOL_INLINE_PREVIOUS_MAINTAINED_SHA256 = '0a33208d656054ec6265c968c1c3c9ed504da77d0709bb325cc0ecdd9bded1a5'
+R19_ANY_BOOL_INLINE_ADDITIONS_SHA256 = '7e566a52d4f168b19b4146880cac674a0a154b8fdb4622dd043bf2110f5094e8'
+R19_ANY_BOOL_INLINE_MAINTAINED_SIZE = 19966426
+R19_ANY_BOOL_INLINE_ADDITIONS_SIZE = 7090
+
+
+def restore_any_bool_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_BOOL_INLINE_REGISTERED_SHA256, R19_ANY_BOOL_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_BOOL_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_BOOL_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_BOOL_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_BOOL_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_BOOL_INLINE_REGISTERED_SHA256
+             else R19_ANY_BOOL_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_EMPTY_HASH_SET_REGISTERED_SHA256 = '5a11ec42863f8163b0bbc9ccd2394433bff0c33ae95e5d66534a82c224916271'
+R19_EMPTY_HASH_SET_MAINTAINED_SHA256 = '4ea24098e82989877d78a96781e0fcd959889139da7c31491c27a2eceb946f60'
+R19_EMPTY_HASH_SET_PREVIOUS_REGISTERED_SHA256 = '4d1378b02f329e006c80ba4071c984fe15eb83298fc0d4658a244e7413b23acf'
+R19_EMPTY_HASH_SET_PREVIOUS_MAINTAINED_SHA256 = 'bdf19d17388b4157ca9e10e6b4454c833104e8a331a09b0924694c19718d994e'
+R19_EMPTY_HASH_SET_ADDITIONS_SHA256 = 'e9b2eb4bf538e2b99d4bcab6ed4891d5832cefc7a5b279968bf8ee2e25f714f4'
+R19_EMPTY_HASH_SET_MAINTAINED_SIZE = 19973147
+R19_EMPTY_HASH_SET_ADDITIONS_SIZE = 6721
+
+
+def restore_empty_hash_set_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_EMPTY_HASH_SET_REGISTERED_SHA256, R19_EMPTY_HASH_SET_MAINTAINED_SHA256}
+    stop = R19_EMPTY_HASH_SET_MAINTAINED_SIZE
+    start = stop - R19_EMPTY_HASH_SET_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_EMPTY_HASH_SET_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_EMPTY_HASH_SET_PREVIOUS_REGISTERED_SHA256 if digest == R19_EMPTY_HASH_SET_REGISTERED_SHA256
+             else R19_EMPTY_HASH_SET_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_FLOAT_INLINE_REGISTERED_SHA256 = 'c36266a7928342a5d83595fd908886b67fb1cbb2748be1f9299b981d25b866b2'
+R19_ANY_FLOAT_INLINE_MAINTAINED_SHA256 = '5ef4d0491c68e82841467b5fd534a89ec5330e0220fc1c33babab7cf342c9e37'
+R19_ANY_FLOAT_INLINE_PREVIOUS_REGISTERED_SHA256 = '5a11ec42863f8163b0bbc9ccd2394433bff0c33ae95e5d66534a82c224916271'
+R19_ANY_FLOAT_INLINE_PREVIOUS_MAINTAINED_SHA256 = '4ea24098e82989877d78a96781e0fcd959889139da7c31491c27a2eceb946f60'
+R19_ANY_FLOAT_INLINE_ADDITIONS_SHA256 = 'd9d9cb8318a61a232cb4b02b3d64bcc29e0ef7c8bdb9d421fd73c78bf5433ebf'
+R19_ANY_FLOAT_INLINE_MAINTAINED_SIZE = 19980381
+R19_ANY_FLOAT_INLINE_ADDITIONS_SIZE = 7234
+
+
+def restore_any_float_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_FLOAT_INLINE_REGISTERED_SHA256, R19_ANY_FLOAT_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_FLOAT_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_FLOAT_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_FLOAT_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_FLOAT_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_FLOAT_INLINE_REGISTERED_SHA256
+             else R19_ANY_FLOAT_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_EMPTY_LOAD_FACTOR_REGISTERED_SHA256 = 'e51e579798e32927a56469df5fc72fa5e15a7309fdc3a1aa4c1dafbb227aa931'
+R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SHA256 = 'b981812e100743864d81cd802d9b0d314b60e59b2362aff71f6a635b11e0cee5'
+R19_UNORDERED_EMPTY_LOAD_FACTOR_PREVIOUS_REGISTERED_SHA256 = 'c36266a7928342a5d83595fd908886b67fb1cbb2748be1f9299b981d25b866b2'
+R19_UNORDERED_EMPTY_LOAD_FACTOR_PREVIOUS_MAINTAINED_SHA256 = '5ef4d0491c68e82841467b5fd534a89ec5330e0220fc1c33babab7cf342c9e37'
+R19_UNORDERED_EMPTY_LOAD_FACTOR_ADDITIONS_SHA256 = '8556474470e194113489e4a96a761aed378a62ccc644cde59062ded1b70de0a0'
+R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SIZE = 19987535
+R19_UNORDERED_EMPTY_LOAD_FACTOR_ADDITIONS_SIZE = 7154
+
+
+def restore_unordered_empty_load_factor_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_EMPTY_LOAD_FACTOR_REGISTERED_SHA256, R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_EMPTY_LOAD_FACTOR_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_EMPTY_LOAD_FACTOR_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_EMPTY_LOAD_FACTOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_EMPTY_LOAD_FACTOR_REGISTERED_SHA256
+             else R19_UNORDERED_EMPTY_LOAD_FACTOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256 = '98711dd3c7fd92123632d787bbdddbb3df8ba8df23761125b202ed7e00895b96'
+R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256 = '97626e342214f6eef8bd21ec028281d4bc2319f8749140a006b1e99559bf70d6'
+R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_REGISTERED_SHA256 = 'e51e579798e32927a56469df5fc72fa5e15a7309fdc3a1aa4c1dafbb227aa931'
+R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_MAINTAINED_SHA256 = 'b981812e100743864d81cd802d9b0d314b60e59b2362aff71f6a635b11e0cee5'
+R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SHA256 = '4cbc0afbfab57e80bc5e3707156418dcd63f336ec689b9edc9ce2c007a6d2c55'
+R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SIZE = 19994747
+R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SIZE = 7212
+
+
+def restore_unordered_empty_capacity_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256, R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256
+             else R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_LOOKUP_POLICIES_REGISTERED_SHA256 = 'e543cb1c290298ca024848985498bb44c08cfa2e81e4738ba83e05d7b89c65e2'
+R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SHA256 = 'b4a0dd37f0dde5f034dd8c52c3474b2bd571f0766befa55fbe257312e8ccb2a5'
+R19_UNORDERED_LOOKUP_POLICIES_PREVIOUS_REGISTERED_SHA256 = '98711dd3c7fd92123632d787bbdddbb3df8ba8df23761125b202ed7e00895b96'
+R19_UNORDERED_LOOKUP_POLICIES_PREVIOUS_MAINTAINED_SHA256 = '97626e342214f6eef8bd21ec028281d4bc2319f8749140a006b1e99559bf70d6'
+R19_UNORDERED_LOOKUP_POLICIES_ADDITIONS_SHA256 = '959986011e3a3f3efd5dbe566207077ac0f9e387a75064c61d598172ae284abd'
+R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SIZE = 20001916
+R19_UNORDERED_LOOKUP_POLICIES_ADDITIONS_SIZE = 7169
+
+
+def restore_unordered_lookup_policies_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_LOOKUP_POLICIES_REGISTERED_SHA256, R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_LOOKUP_POLICIES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_LOOKUP_POLICIES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_LOOKUP_POLICIES_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_LOOKUP_POLICIES_REGISTERED_SHA256
+             else R19_UNORDERED_LOOKUP_POLICIES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256 = 'e2ba79603249f8a30c053f06becbce4d9b6a09d95fd9980551acf3759916984b'
+R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256 = 'fae0fb9ccf2cc94269c627dfff161db7092c3ae45dbf081309e168a8158fd5da'
+R19_UNORDERED_LOAD_LIMIT_PREVIOUS_REGISTERED_SHA256 = 'e543cb1c290298ca024848985498bb44c08cfa2e81e4738ba83e05d7b89c65e2'
+R19_UNORDERED_LOAD_LIMIT_PREVIOUS_MAINTAINED_SHA256 = 'b4a0dd37f0dde5f034dd8c52c3474b2bd571f0766befa55fbe257312e8ccb2a5'
+R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SHA256 = '05c22dee8bbe32346ff946746f00d569136678472bc66fe4b33539eef12ef324'
+R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SIZE = 20009494
+R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SIZE = 7201
+
+
+def restore_unordered_load_limit_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256, R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRunAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-load-factor-setter.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-load-factor-setter" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRunAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-load-factor-setter.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-load-factor-setter" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\n', b'TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRejected) {\n  const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    prior = (R19_UNORDERED_LOAD_LIMIT_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256
+             else R19_UNORDERED_LOAD_LIMIT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_WIDE_INLINE_REGISTERED_SHA256 = '4607f566f60f7230b06677c26a599e1b6c77cd087d7f9e840ad243d584495f13'
+R19_ANY_WIDE_INLINE_MAINTAINED_SHA256 = '92d39572e7134da39264c7046fee2ab75315632ce43552ac1d04cf7473a88896'
+R19_ANY_WIDE_INLINE_PREVIOUS_REGISTERED_SHA256 = 'e2ba79603249f8a30c053f06becbce4d9b6a09d95fd9980551acf3759916984b'
+R19_ANY_WIDE_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'fae0fb9ccf2cc94269c627dfff161db7092c3ae45dbf081309e168a8158fd5da'
+R19_ANY_WIDE_INLINE_ADDITIONS_SHA256 = '14dc9f69750cee57d516c6014a3e0a9eddf84c7058db8c81ee893ac0149c1a45'
+R19_ANY_WIDE_INLINE_MAINTAINED_SIZE = 20019248
+R19_ANY_WIDE_INLINE_ADDITIONS_SIZE = 10027
+
+
+def restore_any_wide_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_WIDE_INLINE_REGISTERED_SHA256, R19_ANY_WIDE_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_WIDE_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_WIDE_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_WIDE_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyDoubleConstructionAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-unsupported-floating-value.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint f() {\n  std::any value(1.0);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyDoubleConstructionAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-unsupported-floating-value.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint f() {\n  std::any value(1.0);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n', b'TEST_F(TranslateTest, CoreV2AnyIntUnsupportedFloatingValueRejected) {\n  const auto Source = tmpFile("any-int-unsupported-floating-value.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint f() {\n  std::any value(1.0);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyInPlaceDefaultDoubleAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyInPlaceDefaultDoubleAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n', b'TEST_F(TranslateTest, CoreV2AnyInPlaceOtherPayloadGuardRejected) {\n  const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    prior = (R19_ANY_WIDE_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_WIDE_INLINE_REGISTERED_SHA256
+             else R19_ANY_WIDE_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_COMPARATOR_REGISTERED_SHA256 = '53b48c911238bafe9c44bfce86ffe29f1eb8ea856f5c3efcb6f2ecf3eb3674a6'
+R19_ORDERED_COMPARATOR_MAINTAINED_SHA256 = 'e181edb71c0c639a568de03643a59c6f0b7d0a14c386cf59b7b59c82c80504e9'
+R19_ORDERED_COMPARATOR_PREVIOUS_REGISTERED_SHA256 = '4607f566f60f7230b06677c26a599e1b6c77cd087d7f9e840ad243d584495f13'
+R19_ORDERED_COMPARATOR_PREVIOUS_MAINTAINED_SHA256 = '92d39572e7134da39264c7046fee2ab75315632ce43552ac1d04cf7473a88896'
+R19_ORDERED_COMPARATOR_ADDITIONS_SHA256 = 'b6da59ba68d60123ecf7251d0ff0e694abee2b2919d81bb49dc50b2e8a42a596'
+R19_ORDERED_COMPARATOR_MAINTAINED_SIZE = 20026002
+R19_ORDERED_COMPARATOR_ADDITIONS_SIZE = 6754
+
+
+def restore_ordered_comparator_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_COMPARATOR_REGISTERED_SHA256, R19_ORDERED_COMPARATOR_MAINTAINED_SHA256}
+    stop = R19_ORDERED_COMPARATOR_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_COMPARATOR_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_COMPARATOR_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_COMPARATOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_COMPARATOR_REGISTERED_SHA256
+             else R19_ORDERED_COMPARATOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_BUCKET_STORAGE_REGISTERED_SHA256 = '5d4e1f88637adc033ff73d27435f3bf5030c1be26f50b17a2e6b3b1047d615a8'
+R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SHA256 = '7d57c282e737021daad1b73c5869c5a3658f65dbded610460e5e703148810ffc'
+R19_UNORDERED_BUCKET_STORAGE_PREVIOUS_REGISTERED_SHA256 = '53b48c911238bafe9c44bfce86ffe29f1eb8ea856f5c3efcb6f2ecf3eb3674a6'
+R19_UNORDERED_BUCKET_STORAGE_PREVIOUS_MAINTAINED_SHA256 = 'e181edb71c0c639a568de03643a59c6f0b7d0a14c386cf59b7b59c82c80504e9'
+R19_UNORDERED_BUCKET_STORAGE_ADDITIONS_SHA256 = 'c9296557b1f70f181f3c4443ab4789d05e10806a6883a217b6be691a0c8d6455'
+R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SIZE = 20034570
+R19_UNORDERED_BUCKET_STORAGE_ADDITIONS_SIZE = 8189
+
+
+def restore_unordered_bucket_storage_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_BUCKET_STORAGE_REGISTERED_SHA256, R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_BUCKET_STORAGE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_BUCKET_STORAGE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorRehashRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-load-factor-rehash.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-load-factor-rehash.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-load-factor-rehash" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorRehashRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-load-factor-rehash.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-load-factor-rehash.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-load-factor-rehash" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\n', b'TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorRehashRejected) {\n  const auto Source = tmpFile("unordered-empty-load-factor-rehash.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    prior = (R19_UNORDERED_BUCKET_STORAGE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_BUCKET_STORAGE_REGISTERED_SHA256
+             else R19_UNORDERED_BUCKET_STORAGE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_VALUES_REGISTERED_SHA256 = 'e9da8191611d0215f09b996e8c05fcf447898711abc672233f3b3225586bb3e1'
+R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256 = '484fbd59e4e3d7eac40f457d31331f446f1e9e29d217bc4d262945e25b091f7a'
+R19_UNORDERED_SET_VALUES_PREVIOUS_REGISTERED_SHA256 = '5d4e1f88637adc033ff73d27435f3bf5030c1be26f50b17a2e6b3b1047d615a8'
+R19_UNORDERED_SET_VALUES_PREVIOUS_MAINTAINED_SHA256 = '7d57c282e737021daad1b73c5869c5a3658f65dbded610460e5e703148810ffc'
+R19_UNORDERED_SET_VALUES_ADDITIONS_SHA256 = '444877a2d5a8628c9c877a9207e0eb83e28b682065c958dfd6120857202fd270'
+R19_UNORDERED_SET_VALUES_MAINTAINED_SIZE = 20041878
+R19_UNORDERED_SET_VALUES_ADDITIONS_SIZE = 7308
+
+
+def restore_unordered_set_values_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_VALUES_REGISTERED_SHA256, R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_VALUES_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_VALUES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_VALUES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_VALUES_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_VALUES_REGISTERED_SHA256
+             else R19_UNORDERED_SET_VALUES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_MODIFIERS_REGISTERED_SHA256 = '8fca807d05848ed6283028b3d950abab65aef92ca1275e35c6a8a62d0e59dbff'
+R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SHA256 = 'cd98c424f8e06373e80d1dc167574d4a61c2e2a23934bdd4e8987316cc6bf647'
+R19_UNORDERED_SET_MODIFIERS_PREVIOUS_REGISTERED_SHA256 = 'e9da8191611d0215f09b996e8c05fcf447898711abc672233f3b3225586bb3e1'
+R19_UNORDERED_SET_MODIFIERS_PREVIOUS_MAINTAINED_SHA256 = '484fbd59e4e3d7eac40f457d31331f446f1e9e29d217bc4d262945e25b091f7a'
+R19_UNORDERED_SET_MODIFIERS_ADDITIONS_SHA256 = '84f64570ee3e524d6f9d9f0cb9339398e80028692a6c2463f598f20de941c2e9'
+R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SIZE = 20050077
+R19_UNORDERED_SET_MODIFIERS_ADDITIONS_SIZE = 8199
+
+
+def restore_unordered_set_modifiers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_MODIFIERS_REGISTERED_SHA256, R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_MODIFIERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_MODIFIERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_MODIFIERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_MODIFIERS_REGISTERED_SHA256
+             else R19_UNORDERED_SET_MODIFIERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_NARROW_INLINE_REGISTERED_SHA256 = 'ef55f1aa18a14070806d8cde459ca4e9427c524342219dba308bf6426224817d'
+R19_ANY_NARROW_INLINE_MAINTAINED_SHA256 = 'd54d1ec315de5daf79db5c01d8e1dbd53a914fd11baf2c5b4388ee32201de29f'
+R19_ANY_NARROW_INLINE_PREVIOUS_REGISTERED_SHA256 = '8fca807d05848ed6283028b3d950abab65aef92ca1275e35c6a8a62d0e59dbff'
+R19_ANY_NARROW_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'cd98c424f8e06373e80d1dc167574d4a61c2e2a23934bdd4e8987316cc6bf647'
+R19_ANY_NARROW_INLINE_ADDITIONS_SHA256 = '9312425fba7830689e0d339cd2bf3229727956f09d6ddd42d2756087c7361934'
+R19_ANY_NARROW_INLINE_MAINTAINED_SIZE = 20057859
+R19_ANY_NARROW_INLINE_ADDITIONS_SIZE = 7782
+
+
+def restore_any_narrow_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_NARROW_INLINE_REGISTERED_SHA256, R19_ANY_NARROW_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_NARROW_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_NARROW_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_NARROW_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_NARROW_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_NARROW_INLINE_REGISTERED_SHA256
+             else R19_ANY_NARROW_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_LONG_INLINE_REGISTERED_SHA256 = '53e99dffe80159aa038982885bbfee7f1754826e1bdee52379334e31896f7e8b'
+R19_ANY_LONG_INLINE_MAINTAINED_SHA256 = 'af6ac408f8952c76df507ba8cd681bc37e8caac5a6d4929a123187b498967475'
+R19_ANY_LONG_INLINE_PREVIOUS_REGISTERED_SHA256 = 'ef55f1aa18a14070806d8cde459ca4e9427c524342219dba308bf6426224817d'
+R19_ANY_LONG_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'd54d1ec315de5daf79db5c01d8e1dbd53a914fd11baf2c5b4388ee32201de29f'
+R19_ANY_LONG_INLINE_ADDITIONS_SHA256 = '310b7fbda9aa36467d8cf73495c2ea0283679083ad8978fe9e0f68d0c52b83a4'
+R19_ANY_LONG_INLINE_MAINTAINED_SIZE = 20065545
+R19_ANY_LONG_INLINE_ADDITIONS_SIZE = 7575
+
+
+def restore_any_long_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_LONG_INLINE_REGISTERED_SHA256, R19_ANY_LONG_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_LONG_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_LONG_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_LONG_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyUnsignedLongMakeRetainsValueAtBothOptimizations) {\n  const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n)r19containers");\n  const auto Output = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyUnsignedLongMakeRetainsValueAtBothOptimizations) {\n  const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n)r19containers");\n  const auto Output = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyUnsignedInlineUnsignedLongIsNotUnsignedIntRejected) {\n  const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyAssignLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-assign-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a, long n) { a = n; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyAssignLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-assign-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a, long n) { a = n; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2AnyIntAssignOtherPayloadGuardRejected) {\n  const auto Source = tmpFile("any-int-assign-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a, long n) { a = n; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyEmplaceLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyEmplaceLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2AnyEmplaceOtherPayloadGuardRejected) {\n  const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ANY_LONG_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_LONG_INLINE_REGISTERED_SHA256
+             else R19_ANY_LONG_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_MULTISET_VALUES_REGISTERED_SHA256 = '24bb1e294e6faaee5194ef7e04ca3ead5b385fc723756b36c9d6b1c7ca383c2d'
+R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SHA256 = 'f59b6b5c51fc70f851268ca84fd1accdf137b796b27c95213ac5e10418af5741'
+R19_UNORDERED_MULTISET_VALUES_PREVIOUS_REGISTERED_SHA256 = '53e99dffe80159aa038982885bbfee7f1754826e1bdee52379334e31896f7e8b'
+R19_UNORDERED_MULTISET_VALUES_PREVIOUS_MAINTAINED_SHA256 = 'af6ac408f8952c76df507ba8cd681bc37e8caac5a6d4929a123187b498967475'
+R19_UNORDERED_MULTISET_VALUES_ADDITIONS_SHA256 = 'da93212cae6c988316a65856b0b0cf01175634ed6e404b813616262408d8ad93'
+R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SIZE = 20075552
+R19_UNORDERED_MULTISET_VALUES_ADDITIONS_SIZE = 8072
+
+
+def restore_unordered_multiset_values_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_MULTISET_VALUES_REGISTERED_SHA256, R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_MULTISET_VALUES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_MULTISET_VALUES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetRetainsDuplicateKeysRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-values-multiple-key-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; return values.size() != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-values-multiple-key-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-values-multiple-key-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetRetainsDuplicateKeysRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-values-multiple-key-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; return values.size() != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-values-multiple-key-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-values-multiple-key-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetValuesMultipleKeyOwnerRejected) {\n  const auto Source = tmpFile("unordered-set-values-multiple-key-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; return values.size() != 2; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyRehashRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-bucket-storage-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 3}; values.rehash(4); return values.size(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-bucket-storage-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-bucket-storage-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 2) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyRehashRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-bucket-storage-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 3}; values.rehash(4); return values.size(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-bucket-storage-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-bucket-storage-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 2) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedBucketStorageNonemptyOwnerRejected) {\n  const auto Source = tmpFile("unordered-bucket-storage-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 3}; values.rehash(4); return values.size(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyLoadLimitRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-load-limit-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 3};\n  values.max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-load-limit-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-load-limit-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyLoadLimitRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-load-limit-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 3};\n  values.max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-load-limit-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-load-limit-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedLoadLimitNonemptyOwnerRejected) {\n  const auto Source = tmpFile("unordered-load-limit-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 3};\n  values.max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyEqualityRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-lookup-policies-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{1, 1};\n  return !values.key_eq()(1, 1);\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-lookup-policies-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-lookup-policies-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyEqualityRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-lookup-policies-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{1, 1};\n  return !values.key_eq()(1, 1);\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-lookup-policies-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-lookup-policies-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesNonemptyOwnerRejected) {\n  const auto Source = tmpFile("unordered-lookup-policies-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{1, 1};\n  return !values.key_eq()(1, 1);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyMaxSizeRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-capacity-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-capacity-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-capacity-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyMaxSizeRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-capacity-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-capacity-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-capacity-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacityNonemptyOwnerRejected) {\n  const auto Source = tmpFile("unordered-empty-capacity-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_MULTISET_VALUES_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_MULTISET_VALUES_REGISTERED_SHA256
+             else R19_UNORDERED_MULTISET_VALUES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256 = '5ba3080e5918927829a030a7f3cb2dd589f335815d504ac9fec0e7a0f41b0163'
+R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256 = '77b784892333c39f8a9d1f795615d22e645480038b1ffaefc9e900856402aad2'
+R19_ANY_CHARACTER_INLINE_PREVIOUS_REGISTERED_SHA256 = '24bb1e294e6faaee5194ef7e04ca3ead5b385fc723756b36c9d6b1c7ca383c2d'
+R19_ANY_CHARACTER_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'f59b6b5c51fc70f851268ca84fd1accdf137b796b27c95213ac5e10418af5741'
+R19_ANY_CHARACTER_INLINE_ADDITIONS_SHA256 = '700dc6061ae5b7b89620910958d37a8cb1029581e59ba7bb27e4d044e3dce52f'
+R19_ANY_CHARACTER_INLINE_MAINTAINED_SIZE = 20083154
+R19_ANY_CHARACTER_INLINE_ADDITIONS_SIZE = 7225
+
+
+def restore_any_character_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256, R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_CHARACTER_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_CHARACTER_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_CHARACTER_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyChar16OriginalConstructionRunAtBothOptimizations) {\n  const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'x\'; return !value.has_value(); }\n)r19containers");\n  const auto Output = tmpFile("any-narrow-inline-unicode-payload.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-narrow-inline-unicode-payload" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyChar16OriginalConstructionRunAtBothOptimizations) {\n  const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'x\'; return !value.has_value(); }\n)r19containers");\n  const auto Output = tmpFile("any-narrow-inline-unicode-payload.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-narrow-inline-unicode-payload" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyNarrowInlineUnicodePayloadRejected) {\n  const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'x\'; return !value.has_value(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ANY_CHARACTER_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256
+             else R19_ANY_CHARACTER_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256 = 'c13d9870eab687c556a18fcda21b3a45f9d89f3b23965ef64e714acc0b549c44'
+R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256 = 'f891e8b10a7cd8b1272be7479bd65840ddbc3b601441bb84318e260497b7cdad'
+R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_REGISTERED_SHA256 = '5ba3080e5918927829a030a7f3cb2dd589f335815d504ac9fec0e7a0f41b0163'
+R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_MAINTAINED_SHA256 = '77b784892333c39f8a9d1f795615d22e645480038b1ffaefc9e900856402aad2'
+R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SHA256 = 'a14efab83449d7b9371a24014a5872d22cacb40b79826b08572b27cb78c9617c'
+R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SIZE = 20093077
+R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SIZE = 9533
+
+
+def restore_unordered_multiset_modifiers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256, R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetEraseOriginalEmptyRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-modifiers-multi-key-erase.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-modifiers-multi-key-erase.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-modifiers-multi-key-erase" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetEraseOriginalEmptyRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-modifiers-multi-key-erase.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-modifiers-multi-key-erase.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-modifiers-multi-key-erase" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetModifiersMultiKeyEraseRejected) {\n  const auto Source = tmpFile("unordered-set-modifiers-multi-key-erase.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256
+             else R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_GLOBAL_ITERATORS_REGISTERED_SHA256 = '2e9d95851ee84e83c378685f8e976bd2b1e10f762966d0ab2ef61c0ebf78d182'
+R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SHA256 = 'ba8bed2d85cd298d5366b5b93516e4f955509abde146b71335c934aa9c50bc87'
+R19_UNORDERED_SET_GLOBAL_ITERATORS_PREVIOUS_REGISTERED_SHA256 = 'c13d9870eab687c556a18fcda21b3a45f9d89f3b23965ef64e714acc0b549c44'
+R19_UNORDERED_SET_GLOBAL_ITERATORS_PREVIOUS_MAINTAINED_SHA256 = 'f891e8b10a7cd8b1272be7479bd65840ddbc3b601441bb84318e260497b7cdad'
+R19_UNORDERED_SET_GLOBAL_ITERATORS_ADDITIONS_SHA256 = 'e1ccc3fefe3572034c2d35c4f979529d7355b6c91c670434c21fac00bf57f7be'
+R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SIZE = 20100525
+R19_UNORDERED_SET_GLOBAL_ITERATORS_ADDITIONS_SIZE = 7448
+
+
+def restore_unordered_set_global_iterators_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_GLOBAL_ITERATORS_REGISTERED_SHA256, R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_GLOBAL_ITERATORS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_GLOBAL_ITERATORS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_GLOBAL_ITERATORS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_GLOBAL_ITERATORS_REGISTERED_SHA256
+             else R19_UNORDERED_SET_GLOBAL_ITERATORS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_SCALAR_INSERTION_REGISTERED_SHA256 = '8ce9d74ac0d9d4d1810ff9e409a535692b199d5e8c705fa190c864aa4448adff'
+R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SHA256 = 'c5ff82c8dc13eb2e50d661a576629adc82e54a54d6485bf6441f491dacaeac06'
+R19_UNORDERED_SET_SCALAR_INSERTION_PREVIOUS_REGISTERED_SHA256 = '2e9d95851ee84e83c378685f8e976bd2b1e10f762966d0ab2ef61c0ebf78d182'
+R19_UNORDERED_SET_SCALAR_INSERTION_PREVIOUS_MAINTAINED_SHA256 = 'ba8bed2d85cd298d5366b5b93516e4f955509abde146b71335c934aa9c50bc87'
+R19_UNORDERED_SET_SCALAR_INSERTION_ADDITIONS_SHA256 = '21f97636ebd5af52db6513e7af8924f2caacc569828f3cbc67157c9d892a27d7'
+R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SIZE = 20109153
+R19_UNORDERED_SET_SCALAR_INSERTION_ADDITIONS_SIZE = 7870
+
+
+def restore_unordered_set_scalar_insertion_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_SCALAR_INSERTION_REGISTERED_SHA256, R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_SCALAR_INSERTION_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_SCALAR_INSERTION_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalScalarInsertRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multiset-values-scalar-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; values.insert(2); return values.size() != 3; }\n)r19containers");\n  const auto Output = tmpFile("unordered-multiset-values-scalar-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multiset-values-scalar-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalScalarInsertRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multiset-values-scalar-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; values.insert(2); return values.size() != 3; }\n)r19containers");\n  const auto Output = tmpFile("unordered-multiset-values-scalar-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multiset-values-scalar-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedMultisetValuesScalarInsertRejected) {\n  const auto Source = tmpFile("unordered-multiset-values-scalar-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; values.insert(2); return values.size() != 3; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalScalarInsertRunAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.insert(1);\n  return values.size() != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalScalarInsertRunAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.insert(1);\n  return values.size() != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2EmptyHashSetInsertRejected) {\n  const auto Source = tmpFile("empty-hash-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.insert(1);\n  return values.size() != 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_SCALAR_INSERTION_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_SCALAR_INSERTION_REGISTERED_SHA256
+             else R19_UNORDERED_SET_SCALAR_INSERTION_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_ITERATOR_ERASE_REGISTERED_SHA256 = '724deef07eb49b8fd2a84f1c9a9e074ca4bffafa652bcd041dcf0cfebc1a8217'
+R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SHA256 = '6d3886e9bdf1e29f2b9152a585312e5875beb45ef1616cf7c519cba7e76ae0b2'
+R19_UNORDERED_SET_ITERATOR_ERASE_PREVIOUS_REGISTERED_SHA256 = '8ce9d74ac0d9d4d1810ff9e409a535692b199d5e8c705fa190c864aa4448adff'
+R19_UNORDERED_SET_ITERATOR_ERASE_PREVIOUS_MAINTAINED_SHA256 = 'c5ff82c8dc13eb2e50d661a576629adc82e54a54d6485bf6441f491dacaeac06'
+R19_UNORDERED_SET_ITERATOR_ERASE_ADDITIONS_SHA256 = '2aac7ca5ebcbca7fc518c757b5df71aaa592dfbf4bbe87fde30b1aa6553b9e70'
+R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SIZE = 20117155
+R19_UNORDERED_SET_ITERATOR_ERASE_ADDITIONS_SIZE = 8002
+
+
+def restore_unordered_set_iterator_erase_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_ITERATOR_ERASE_REGISTERED_SHA256, R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_ITERATOR_ERASE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_ITERATOR_ERASE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_ITERATOR_ERASE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_ITERATOR_ERASE_REGISTERED_SHA256
+             else R19_UNORDERED_SET_ITERATOR_ERASE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -663,6 +1760,314 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
+    if source_digest == R19_VARIANT_SCALAR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_SCALAR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_SCALAR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_IN_PLACE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_IN_PLACE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_IN_PLACE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_IN_PLACE_ANY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_OPERATIONS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_ADAPTER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_ADAPTER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_ADAPTER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_ANY_INTEGER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_ANY_INTEGER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_ANY_INTEGER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_TWO_VARIANT_ANY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_ORDERING_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_MONOSTATE_HASH_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_OBSERVER_QUERY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_GUARDED_GET_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MAX_SIZE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_BOOL_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_BOOL_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_BOOL_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_EMPTY_HASH_SET_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_EMPTY_HASH_SET_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_EMPTY_HASH_SET_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_FLOAT_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_FLOAT_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_FLOAT_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_EMPTY_LOAD_FACTOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_LOOKUP_POLICIES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_WIDE_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_WIDE_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_WIDE_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_COMPARATOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_COMPARATOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_COMPARATOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_BUCKET_STORAGE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_VALUES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_MODIFIERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_NARROW_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_NARROW_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_NARROW_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_LONG_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_LONG_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_LONG_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_MULTISET_VALUES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_GLOBAL_ITERATORS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_SCALAR_INSERTION_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_ITERATOR_ERASE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SHA256
+        return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
     if source_digest == R19_VARIANT_METADATA_LAYOUT_REGISTERED_SHA256:
