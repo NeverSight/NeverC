@@ -12924,13 +12924,20 @@ bool Adapter::nativeHeapABI() const {
 }
 
 std::string Adapter::nativeHeapImport(const FunctionDecl *F, SourceLocation L) {
-  if (!S.coreV2() || !nativeHeapDeclaration(F) || F->getDefinition())
+  const auto Heap = nativeHeapDeclaration(F);
+  if (!S.coreV2() || !Heap || F->getDefinition())
     return {};
-  for (const auto *Declaration : F->redecls())
-    if (!S.owns(Sources, Declaration->getLocation()) ||
-        nativeHeapDeclaration(Declaration) != nativeHeapDeclaration(F) ||
+  for (const auto *Declaration : F->redecls()) {
+    const auto Location = Declaration->getLocation();
+    const bool Predefined = S.NativeHeapPredefines.isValid() &&
+        Location.isValid() && Location.isFileID() &&
+        Sources.getFileID(Location) == S.NativeHeapPredefines &&
+        (Heap == Builtin::BImalloc || Heap == Builtin::BIfree);
+    if ((!S.owns(Sources, Location) && !Predefined) ||
+        nativeHeapDeclaration(Declaration) != Heap ||
         !supportedDeclarationAttributes(Declaration))
       return {};
+  }
   if (!nativeHeapABI()) {
     reject(L, "native heap ABI", "Native heap declarations require a checked hosted C ABI and native size_t layout.", "TR0204");
     throw Failure{};
@@ -13922,6 +13929,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
                  approvedEmptyHashSetRecord(S, Sources, D, Context)) {
         if (RequiredUtilityEmptyHashSets.insert(D->getCanonicalDecl()).second)
           Records.push_back(const_cast<CXXRecordDecl *>(D->getDefinition()));
+      } else if (const auto *Iterator = approvedOrderedSetIteratorRecord(S, Sources, D, Context)) {
+        if (RequiredUtilityOrderedSetIterators.insert(Iterator->getCanonicalDecl()).second)
+          Records.push_back(const_cast<CXXRecordDecl *>(Iterator));
       } else if (RequiredUtilityOrderedContainers.count(D->getCanonicalDecl()) ||
                  approvedOrderedContainerRuntimeRecord(S, Sources, D, Context)) {
         if (RequiredUtilityOrderedContainers.insert(D->getCanonicalDecl()).second)
@@ -14805,7 +14815,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Context.VoidPtrTy, L));
       Args.push_back(zero(Context.VoidPtrTy, L));
       Args.push_back(zero(Context.getSizeType(), L));
-    } else if (approvedUtilityListIteratorRecord(S, Sources, R, Context)) {
+    } else if (approvedUtilityListIteratorRecord(S, Sources, R, Context) ||
+               approvedOrderedSetIteratorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.VoidPtrTy, L));
     } else if (approvedUtilityPriorityQueueRecord(S, Sources, R, Context)) {
       for (unsigned I = 0; I != 3; ++I)
@@ -18806,6 +18817,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
          (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
@@ -21515,6 +21527,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, Construction, A.Context) ||
+            approvedOrderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context).has_value()) ||
@@ -24319,6 +24332,7 @@ public:
            approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedOrderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -31385,6 +31399,11 @@ public:
         return true;
       if (A.S.coreV2() && UtilityAllocatorAssignment)
         return true;
+      if (!A.nativeHeapImport(F, L).empty()) {
+        if (!directFunctionReference(C) || C->getNumArgs() != F->getNumParams())
+          A.reject(L, "native heap call", "A checked direct call with exact arguments is required.");
+        return true; // RAV still checks every source argument and callee leaf.
+      }
       // An SDK declaration can get its name from a macro spelled outside the SDK.
       // Its expansion site must not route an unrecognized call to generic lowering.
       if (A.S.coreV2() && F &&
@@ -31396,11 +31415,6 @@ public:
                  "direct lowering; this call has none.",
                  "TR0203");
         return true;
-      }
-      if (!A.nativeHeapImport(F, L).empty()) {
-        if (!directFunctionReference(C) || C->getNumArgs() != F->getNumParams())
-          A.reject(L, "native heap call", "A checked direct call with exact arguments is required.");
-        return true; // RAV still checks every source argument and callee leaf.
       }
       const bool GeneratedAssignment = A.S.coreV2() && defaultedAssignment(Method);
       if (GeneratedAssignment) {
@@ -31490,6 +31504,7 @@ public:
                    approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
                    (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
@@ -31736,6 +31751,7 @@ static void orderCoreV2Records(Adapter &A) {
         A.RequiredUtilityEmptyHashSets.count(R->getCanonicalDecl());
     const auto UtilityList = approvedUtilityListRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityListIterator = approvedUtilityListIteratorRecord(A.S, A.Sources, R, A.Context);
+    const bool UtilityOrderedSetIterator = A.RequiredUtilityOrderedSetIterators.count(R->getCanonicalDecl());
     const auto UtilityForwardList = approvedUtilityForwardListRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityForwardIterator = approvedUtilityForwardListIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedIterator =
@@ -31780,7 +31796,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityReverse || UtilityTuple ||
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
-                                   UtilityString || UtilityOrderedContainer || UtilityEmptyHashSet ||
+                                   UtilityString || UtilityOrderedContainer || UtilityOrderedSetIterator || UtilityEmptyHashSet ||
                                    UtilityForwardList || UtilityForwardIterator || UtilityList || UtilityListIterator || UtilityPriorityQueue || UtilityDeque || UtilityDequeIterator || UtilityValarray || UtilityBitset || UtilityVector || UtilityUnorderedMap || UtilityUnorderedIterator ||
                                    UnorderedNode || UnorderedResult ||
                                    UtilityDefaultDelete || UtilityAllocator
@@ -31835,6 +31851,8 @@ static void orderCoreV2Records(Adapter &A) {
       DependencyTypes.emplace_back(A.Context.VoidPtrTy, R->getLocation());
       DependencyTypes.emplace_back(A.Context.getSizeType(), R->getLocation());
       DependencyTypes.emplace_back(A.Context.FloatTy, R->getLocation());
+    } else if (UtilityOrderedSetIterator) {
+      DependencyTypes.emplace_back(A.Context.VoidPtrTy, R->getLocation());
     } else if (UtilityOrderedContainer) {
       DependencyTypes.emplace_back(A.Context.VoidPtrTy, R->getLocation());
       DependencyTypes.emplace_back(A.Context.getSizeType(), R->getLocation());
@@ -32154,6 +32172,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
         RequiredUtilityEmptyHashSets.count(R->getCanonicalDecl());
     const auto UtilityList = approvedUtilityListRecord(S, Sources, R, Context);
     const auto UtilityListIterator = approvedUtilityListIteratorRecord(S, Sources, R, Context);
+    const bool UtilityOrderedSetIterator = RequiredUtilityOrderedSetIterators.count(R->getCanonicalDecl());
     const auto UtilityForwardList = approvedUtilityForwardListRecord(S, Sources, R, Context);
     const auto UtilityForwardIterator = approvedUtilityForwardListIteratorRecord(S, Sources, R, Context);
     const auto UtilityUnorderedIterator =
@@ -32201,7 +32220,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                                !FunctionalReference && !UtilityReverse &&
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
-                               !UtilityUniquePtr && !UtilityString && !UtilityOrderedContainer && !UtilityEmptyHashSet &&
+                               !UtilityUniquePtr && !UtilityString && !UtilityOrderedContainer && !UtilityOrderedSetIterator && !UtilityEmptyHashSet &&
                                !UtilityForwardList && !UtilityForwardIterator && !UtilityList && !UtilityListIterator && !UtilityPriorityQueue && !UtilityDeque && !UtilityDequeIterator && !UtilityValarray && !UtilityBitset && !UtilityVector && !UtilityUnorderedMap && !UtilityUnorderedIterator &&
                                !UnorderedNode && !UnorderedResult &&
                                !UtilityDefaultDelete &&
@@ -32264,6 +32283,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
       for (const char *Name : {"nct_list_prev", "nct_list_next"})
         Fields.push_back(json::Object{{"name", Name}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
       Fields.push_back(json::Object{{"name", "nct_list_size"}, {"type", type(Context.getSizeType(), R->getLocation())}});
+    } else if (UtilityOrderedSetIterator) {
+      Fields.push_back(json::Object{{"name", "nct_ordered_iterator"}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
     } else if (UtilityListIterator) {
       Fields.push_back(json::Object{{"name", "nct_list_iterator"}, {"type", type(Context.VoidPtrTy, R->getLocation())}});
 
@@ -32402,7 +32423,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
           Offsets.push_back(Offset);
       } else if (UtilityList || UtilityOrderedContainer) {
         Offsets.push_back(uint64_t(0)); Offsets.push_back(uint64_t(64)); Offsets.push_back(uint64_t(128));
-      } else if (UtilityListIterator) {
+      } else if (UtilityListIterator || UtilityOrderedSetIterator) {
         Offsets.push_back(uint64_t(0));
 
       } else if (UtilityPriorityQueue) {
@@ -32687,6 +32708,21 @@ class PreprocessorPolicy : public PPCallbacks {
   Preprocessor &PP;
   std::set<unsigned> Checked;
   std::set<std::string> OncePragmas;
+  bool NeedsNativeHeapPredefines = false;
+
+  bool isDirectCStdlibInclude(const Token &Directive) const {
+    const auto &Lang = PP.getLangOpts();
+    const auto Open = Lexer::findNextToken(Directive.getLocation(), SM, Lang);
+    if (!Open || Open->isNot(tok::less))
+      return false;
+    const auto Header = Lexer::findNextToken(Open->getLocation(), SM, Lang);
+    if (!Header || Header->isNot(tok::raw_identifier) ||
+        Lexer::getSpelling(*Header, SM, Lang) != "cstdlib")
+      return false;
+    const auto Close = Lexer::findNextToken(Header->getLocation(), SM, Lang);
+    return Close && Close->is(tok::greater);
+  }
+
   void reject(SourceLocation L, llvm::StringRef What,
               llvm::StringRef Reason =
                   "Unsupported or environment-sensitive preprocessing.",
@@ -32737,6 +32773,7 @@ public:
             Name != "numeric" && Name != "random" && Name != "initializer_list" &&
             Name != "optional" && Name != "memory" && Name != "new" &&
             Name != "functional" && Name != "ratio" && Name != "cstring" &&
+            Name != "cstdlib" &&
             Name != "string_view" && Name != "string" && Name != "vector" &&
             Name != "unordered_map" && Name != "deque" && Name != "list" &&
              Name != "forward_list" && Name != "map" && Name != "set" &&
@@ -32750,7 +32787,7 @@ public:
                "#include <algorithm>, #include <numeric>, #include <random>, "
                "#include <initializer_list>, #include <optional> and "
                "#include <memory>, #include <new> and #include <functional> "
-               "and #include <ratio>, #include <cstring> and "
+               "and #include <ratio>, #include <cstring>, #include <cstdlib> and "
                "#include <string_view>, #include <string> and #include "
                "<vector>, <unordered_map>, <deque>, <list>, <forward_list>, "
                "<map>, <set>, <unordered_set>, <queue>, <stack>, <variant>, "
@@ -32867,6 +32904,15 @@ public:
       AfterHash = false;
     }
   }
+  void addNativeHeapPredefines() const {
+    if (!NeedsNativeHeapPredefines)
+      return;
+    // The pinned <cstdlib> aliases these declarations. Put the signatures in
+    // Clang's own predefines before user macros can affect them.
+    PP.setPredefines(PP.getPredefines() +
+        "\nextern \"C\" { void *malloc(__SIZE_TYPE__); void free(void *); }\n");
+  }
+
   void checkDirectives(Preprocessor &PP, FileID FID = FileID()) {
     if (FID.isInvalid())
       FID = SM.getMainFileID();
@@ -32890,6 +32936,9 @@ public:
         continue;
       }
       auto Text = Lexer::getSpelling(T, SM, PP.getLangOpts());
+      if (AfterHash && Text == "include" && S.coreV2() && S.sdk() &&
+          !NeedsNativeHeapPredefines)
+        NeedsNativeHeapPredefines = isDirectCStdlibInclude(T);
       if (AfterHash && S.project() && Text == "pragma") {
         auto L = T.getLocation();
         Token Kind;
@@ -33688,6 +33737,8 @@ public:
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
+    if (S.coreV2() && S.SDKDependencies.count({"libcxx", "cstdlib"}))
+      S.NativeHeapPredefines = CI.getPreprocessor().getPredefinesFileID();
     if (!activateBindSource(C.getSourceManager()))
       return;
     if (BindSources == BindSourceStatus::AwaitingHeader) {
@@ -33844,6 +33895,7 @@ public:
     Policy->checkDirectives(CI.getPreprocessor());
     if (!S.Diagnostics.empty())
       return nullptr;
+    Policy->addNativeHeapPredefines();
     if (S.project()) {
       auto &SM = CI.getSourceManager();
       auto &Lang = CI.getLangOpts();
