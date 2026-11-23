@@ -137416,6 +137416,60 @@ std::optional<UtilityUnorderedSetListConstruction> approvedUtilityUnorderedSetLi
   return UtilityUnorderedSetListConstruction{*Table, *List};
 }
 
+static bool unorderedIntegerPointer(QualType Type, const ASTContext &Context) {
+  const auto *Pointer = Type->getAs<PointerType>();
+  if (!Pointer || Type.hasQualifiers()) return false;
+  const auto Element = Pointer->getPointeeType();
+  return !Element.isVolatileQualified() && Element.getAddressSpace() == LangAS::Default &&
+         Context.hasSameUnqualifiedType(Element, Context.IntTy);
+}
+
+std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetRangeConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  const auto *Selected = Construction ? Construction->getConstructor() : nullptr;
+  const auto *Ctor = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition()) : nullptr;
+  if (!Ctor || !S.owns(SM, Construction->getExprLoc()) ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Construction->getNumArgs() != 2 || Ctor->getNumParams() != 2 || Ctor->getNumCtorInitializers() != 1 ||
+      !orderedPinnedFunction(S, SM, Ctor, "unordered_set"))
+    return std::nullopt;
+  const auto *Primary = Ctor->getPrimaryTemplate();
+  const auto *Arguments = Ctor->getTemplateSpecializationArgs();
+  if (!Primary || !orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), "unordered_set") ||
+      !Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Iterator = Arguments->get(0).getAsType();
+  if (!unorderedIntegerPointer(Iterator, Context)) return std::nullopt;
+  const auto *Owner = Ctor->getParent();
+  const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  const auto *Init = *Ctor->init_begin();
+  if (!Table || !Init->isMemberInitializer() ||
+      Init->getMember() != orderedTreeField(Owner, "__table_") ||
+      !emptyHashTableSource(S, SM, Init->getInit()))
+    return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
+  const auto *Range = Body && Body->size() == 1 ? dyn_cast_or_null<CXXMemberCallExpr>(
+      orderedExpression(dyn_cast<Expr>(Body->body_front()))) : nullptr;
+  const auto *Insert = Range ? Range->getMethodDecl() : nullptr;
+  if (!Insert || !Insert->getIdentifier() || Insert->getName() != "insert" ||
+      Insert->getParent()->getCanonicalDecl() != Owner->getCanonicalDecl() ||
+      !Insert->getPrimaryTemplate() || Insert->getNumParams() != 2 || Range->getNumArgs() != 2 ||
+      !Insert->getReturnType()->isVoidType() || !orderedReceiver(Range) ||
+      !orderedPinnedFunction(S, SM, Insert, "unordered_set"))
+    return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Parameter = Ctor->getParamDecl(I);
+    if (!Context.hasSameType(Parameter->getType(), Iterator) ||
+        !Context.hasSameType(Construction->getArg(I)->getType(), Iterator) ||
+        !Context.hasSameType(Insert->getParamDecl(I)->getType(), Iterator) ||
+        !orderedParameter(Range->getArg(I), Parameter))
+      return std::nullopt;
+  }
+  if (!approvedHashSetBucketSource(S, SM, Ctor, Owner, Context)) return std::nullopt;
+  return Table;
+}
+
 std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -137454,12 +137508,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
         !Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type)
       return std::nullopt;
     const auto Iterator = Arguments->get(0).getAsType();
-    const auto *Pointer = Iterator->getAs<PointerType>();
-    if (!Pointer || Iterator.hasQualifiers() ||
-        !Context.hasSameUnqualifiedType(Pointer->getPointeeType(), Context.IntTy) ||
-        Pointer->getPointeeType().isVolatileQualified() ||
-        Pointer->getPointeeType().getAddressSpace() != LangAS::Default)
-      return std::nullopt;
+    if (!unorderedIntegerPointer(Iterator, Context)) return std::nullopt;
     for (unsigned Index : {0u, 1u})
       if (!Context.hasSameType(Method->getParamDecl(Index)->getType(), Iterator) ||
           !Context.hasSameType(Call->getArg(Index)->getType(), Iterator))
