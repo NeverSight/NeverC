@@ -27054,15 +27054,30 @@ class FunctionLowering {
     auto Buckets = hashTableMember(std::move(Place), "nct_unordered_bucket_count", Type, L);
     return hashTableLoadFactor(std::move(Size), std::move(Buckets), L);
   }
-  void insertUnorderedSetPointerRange(Expression Place, const UtilityUnorderedTableRecord &Table,
-      Expression Cursor, Expression End, QualType Pointer, SourceLocation L) {
+  void insertUnorderedSetRange(Expression Place, const UtilityUnorderedTableRecord &Table,
+      Expression Cursor, Expression End, QualType Input, SourceLocation L) {
+    std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
+    std::optional<Expression> First;
+    if (!Input->isPointerType()) {
+      Iterator = approvedUtilityUnorderedIteratorRecord(A.S, A.Sources, Input->getAsCXXRecordDecl(), A.Context);
+      if (!Iterator || !Iterator->Const || Iterator->Owner.HasMappedValue ||
+          !A.Context.hasSameType(Iterator->Owner.NodeType, Table.NodeType))
+        reject(L, "unordered set iterator range", "The authenticated integer iterator is unavailable.");
+      First = dereference(Cursor, L);
+      Cursor = snapshot(unorderedIteratorNode(*First, *Iterator, L), L);
+      End = snapshot(unorderedIteratorNode(dereference(End, L), *Iterator, L), L);
+    }
     const auto Check = labelName(), Insert = labelName(), Done = labelName();
     jump(Check, L);
     label(Check, L);
     branch(binary("!=", Cursor, End, "bool", L), Insert, Done, L);
     label(Insert, L);
-    unorderedInsertNode(Place, Table, dereference(Cursor, L), std::nullopt, false, L);
-    assign(Cursor, binary("+", Cursor, one(type(A.Context.getPointerDiffType(), L), L), type(Pointer, L), L), L);
+    auto Key = Iterator ? dereference(unorderedIteratorValue(Cursor, *Iterator, L), L)
+                        : dereference(Cursor, L);
+    unorderedInsertNode(Place, Table, std::move(Key), std::nullopt, false, L);
+    auto Next = Iterator ? unorderedAdvanceIterator(Cursor, *Iterator, *First, L)
+                         : binary("+", Cursor, one(type(A.Context.getPointerDiffType(), L), L), type(Input, L), L);
+    assign(Cursor, std::move(Next), L);
     jump(Check, L);
     label(Done, L);
   }
@@ -29580,7 +29595,7 @@ class FunctionLowering {
       if (Operation == UtilityOperation::UnorderedSetInsertRange) {
         auto Cursor = snapshot(argument(Call->getArg(0), Parameter), L);
         auto End = snapshot(argument(Call->getArg(1), Parameter), L);
-        insertUnorderedSetPointerRange(std::move(Place), *Table, std::move(Cursor), std::move(End), Parameter, L);
+        insertUnorderedSetRange(std::move(Place), *Table, std::move(Cursor), std::move(End), Parameter, L);
         return {};
       }
       auto Operand = dereference(snapshot(argument(Call->getArg(0), Parameter), L), L);
@@ -39462,7 +39477,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       auto First = snapshot(argument(C->getArg(0), Pointer), L);
       auto Last = snapshot(argument(C->getArg(1), Pointer), L);
       initializeUnorderedTable(Place, *Table, L);
-      insertUnorderedSetPointerRange(std::move(Place), *Table, std::move(First), std::move(Last), Pointer, L);
+      insertUnorderedSetRange(std::move(Place), *Table, std::move(First), std::move(Last), Pointer, L);
       return;
     }
     if (const auto Info = approvedUtilityUnorderedSetListConstruction(A.S, A.Sources, C, A.Context)) {

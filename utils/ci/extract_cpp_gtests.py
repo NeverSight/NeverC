@@ -68,7 +68,9 @@ def body_end(source, opening):
 def extract(source, selected_names):
     pattern = re.compile(rb'(?m)^TEST_F\(\s*(\w+)\s*,\s*(\w+)\s*\)\s*\{')
     matches = list(pattern.finditer(source))
-    if sha(source) == '376aa6cafedc4544350af55c4762116affe6ffb8a1e3283ac406b8c9db064275':
+    if sha(source) == '128ff7799af546d360def0abcb3e0ba34a382cd3629da0794750c8e444e5434c':
+        expected_count = 8562
+    elif sha(source) == '376aa6cafedc4544350af55c4762116affe6ffb8a1e3283ac406b8c9db064275':
         expected_count = 8552
     elif sha(source) == '59f5c6dc6377471051c60a473bcf81661b95045dc16b598e1c5d0fa55d2ddf79':
         expected_count = 8544

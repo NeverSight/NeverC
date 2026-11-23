@@ -18299,3 +18299,10 @@ Assigning an initializer list to a default integer set or multiset
 replaces its keys and returns the same owner by reference. A unique set
 retains one instance of each key. A multiset retains every occurrence.
 The operation reuses suitable bucket storage and keeps the load limit.
+
+## Integer unordered set iterator ranges
+
+Default integer sets and multisets can construct from and insert an
+authenticated range of global or bucket-local iterators. Unique sets
+deduplicate keys and multisets retain every occurrence. The translator
+checks that both endpoints belong to the same live range.

@@ -393096,6 +393096,224 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorRangeUniqueInsertsConstMultisetIteratorRangeRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-iterator-range-unique-inserts-const-multiset-iterator-range.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_multiset<int> source{13, 3, 13, 5, 13, 5, 7};
+  std::unordered_set<int> target{19, 5};
+  target.insert(source.cbegin(), source.cend());
+  return target.size() != 5 || target.count(13) != 1 || target.count(3) != 1 ||
+         target.count(7) != 1 || target.count(19) != 1 || source.count(13) != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-iterator-range-unique-inserts-const-multiset-iterator-range.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-iterator-range-unique-inserts-const-multiset-iterator-range" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorRangeMultiInsertsOneElementFromAGlobalIteratorRangeRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-iterator-range-multi-inserts-one-element-from-a-global-iterator-range.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> source{11, 13};
+  std::unordered_multiset<int> target{11, 13, 13};
+  auto first = source.begin();
+  const auto key = *first;
+  const auto old_count = target.count(key);
+  auto stop = first;
+  ++stop;
+  target.insert(first, stop);
+  return target.size() != 4 || target.count(key) != old_count + 1 || source.size() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-iterator-range-multi-inserts-one-element-from-a-global-iterator-range.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-iterator-range-multi-inserts-one-element-from-a-global-iterator-range" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorRangeMultiInsertsOneLocalBucketWithDuplicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-iterator-range-multi-inserts-one-local-bucket-with-duplicates.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> source;
+  source.rehash(2);
+  source.max_load_factor(4.0f);
+  source.insert({3, 3, 7, 8});
+  const auto bucket = source.bucket(3);
+  std::unordered_multiset<int> target{3};
+  target.insert(source.cbegin(bucket), source.cend(bucket));
+  return target.size() != 4 || target.count(3) != 3 || target.count(7) != 1 || target.count(8) != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-iterator-range-multi-inserts-one-local-bucket-with-duplicates.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-iterator-range-multi-inserts-one-local-bucket-with-duplicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorRangeUniqueConstructsFromMultisetGlobalIteratorsRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-iterator-range-unique-constructs-from-multiset-global-iterators.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_multiset<int> source{3, 3, 7, -5, 7, 19};
+  std::unordered_set<int> target(source.begin(), source.end());
+  return target.size() != 4 || target.count(3) != 1 || target.count(7) != 1 ||
+         target.count(-5) != 1 || target.count(19) != 1 || target.count(0) != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-iterator-range-unique-constructs-from-multiset-global-iterators.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-iterator-range-unique-constructs-from-multiset-global-iterators" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorRangeMultiConstructsFromLocalIteratorsRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-iterator-range-multi-constructs-from-local-iterators.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> source;
+  source.rehash(2);
+  source.max_load_factor(4.0f);
+  source.insert({23, 23, 27, 24});
+  const auto bucket = source.bucket(23);
+  std::unordered_multiset<int> target(source.begin(bucket), source.end(bucket));
+  return target.size() != 3 || target.count(23) != 2 || target.count(27) != 1 || target.count(24) != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-iterator-range-multi-constructs-from-local-iterators.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-iterator-range-multi-constructs-from-local-iterators" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorRangeEqualNonnullEndpointsFormAnEmptyIteratorRangeRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-iterator-range-equal-nonnull-endpoints-form-an-empty-iterator-range.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_set<int> source{5};
+  const auto position = source.cbegin();
+  std::unordered_set<int> target{7};
+  target.insert(position, position);
+  std::unordered_multiset<int> constructed(position, position);
+  return !constructed.empty() || target.size() != 1 || target.count(7) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-iterator-range-equal-nonnull-endpoints-form-an-empty-iterator-range.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-iterator-range-equal-nonnull-endpoints-form-an-empty-iterator-range" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorRangeUnrelatedVectorIteratorInsertionRejected) {
+  const auto Source = tmpFile("unordered-set-iterator-range-unrelated-vector-iterator-insertion.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <vector>
+int main() {
+  const std::vector<int> source{3, 5};
+  std::unordered_set<int> target;
+  target.insert(source.begin(), source.end());
+  return target.count(3) != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorRangeUnrelatedListIteratorConstructionRejected) {
+  const auto Source = tmpFile("unordered-set-iterator-range-unrelated-list-iterator-construction.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <unordered_set>
+int main() {
+  const std::list<int> source{3, 3, 5};
+  std::unordered_multiset<int> target(source.cbegin(), source.cend());
+  return target.count(3) != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorRangeUnsignedKeyIteratorInsertionRejected) {
+  const auto Source = tmpFile("unordered-set-iterator-range-unsigned-key-iterator-insertion.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_set<unsigned> source{5u, 7u};
+  std::unordered_set<int> target;
+  target.insert(source.begin(), source.end());
+  return target.count(5) != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorRangeCustomHashIteratorConstructionRejected) {
+  const auto Source = tmpFile("unordered-set-iterator-range-custom-hash-iterator-construction.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int value) const { return static_cast<unsigned>(value); } };
+int main() {
+  const std::unordered_set<int> source{1, 2};
+  std::unordered_set<int, Hash> target(source.begin(), source.end());
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");
