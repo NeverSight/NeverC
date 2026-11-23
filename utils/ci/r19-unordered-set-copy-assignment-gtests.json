@@ -102,6 +102,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-set-copy-assignment-unsigned-key-copy-assignment",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<unsigned> source, target;\n  target = source;\n  return target.empty();\n}\n",
+      "source_sha256": "e451444fd676f9c16dc66b0b845d7ff0b3a11df0d8326e9558459f02fcf18a9a",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-set-copy-assignment-custom-hash-copy-assignment",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -116,14 +124,6 @@
       "source": "#include <unordered_set>\nstruct Equal { bool operator()(int left, int right) const { return left == right; } };\nint main() {\n  std::unordered_multiset<int, std::hash<int>, Equal> source, target;\n  target = source;\n  return target.empty();\n}\n",
       "source_sha256": "4b07f3291f46da2571d9ab9d657b128c2e4c2d0660a5686a882ca757af334bd3",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-set-copy-assignment-unsigned-key-copy-assignment",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<unsigned> source, target;\n  target = source;\n  return target.empty();\n}\n",
-      "source_sha256": "e451444fd676f9c16dc66b0b845d7ff0b3a11df0d8326e9558459f02fcf18a9a",
-      "kind": "cpp17-operation"
     },
     {
       "name": "unordered-set-copy-assignment-long-key-multiset-copy-assignment",
@@ -144,7 +144,7 @@
     "TranslateTest.CoreV2UnorderedSetCopyAssignmentCustomEqualityMultisetCopyAssignmentRejected",
     "TranslateTest.CoreV2UnorderedSetCopyAssignmentLongKeyMultisetCopyAssignmentRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "54aaee4bebce2af63c700ce4c26fc46b08f3e84bc307853ac6083e08fbe2e4ce",
   "maintained_original_sha256": "59f5c6dc6377471051c60a473bcf81661b95045dc16b598e1c5d0fa55d2ddf79",
@@ -156,5 +156,11 @@
   "current_registry_count": 8544,
   "current_python_registry_tests": 222,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-copy-assignment": "e91a1a21f5edeb00b8006068a510e9dc712ea228512c765fc300385a7291bf8e",
+    "unordered-set-unsigned-key": "386554228d60e28dfaaacf0f35307fd7086e06dd9e16bf3dfab9938df15f803e"
+  },
+  "native_reference_authentication_sha256": "3c7af621e42d942af8cc040a189e7fbf1c16614a7f0ad9f8eb49ed0414ec2b2c",
+  "source_proof_sha256": "f53f1845135bc7a688700422f1154afeda25c270e5072c3705106a7385792a4e"
 }
