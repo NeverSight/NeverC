@@ -126,7 +126,7 @@
     "TranslateTest.CoreV2VariantIntegralVisitRenamedBaseSelectionRejected",
     "TranslateTest.CoreV2VariantIntegralVisitGenericVisitorRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "fcbc81253fb41e0c9b020802fd03dc380d00ff8ea776fcfeb60ee4df2eb1e280",
   "maintained_original_sha256": "76e71d65563703e0372a79fc12bfa65883aea738411972f16dc3d06ba863072f",
@@ -138,5 +138,10 @@
   "current_registry_count": 8179,
   "current_python_registry_tests": 130,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "variant-integral-visit": "bd45782085be7d08da7a309116b883a77206bb029dddc9d5dc88463aa4762f58"
+  },
+  "native_reference_authentication_sha256": "521b9380c0de1ff1c348aa06ba306dde764c1d5d49c6f9f0a8bf702f3ca99762",
+  "source_proof_sha256": "01b0ff628d8e4f8cc91578b8f8fe9f41a0df20b81c3282087b40bef3b37e8f64"
 }
