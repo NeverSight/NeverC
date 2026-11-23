@@ -27,10 +27,10 @@ try:
     report['source_sha256']={name:sha(root/name) for name in files}
     sdk=root/'neverc/lib/Translate/Cpp/SDK';catalog=json.loads((sdk/'catalog.json').read_text())
     report['sdk_catalog_sha256']=sha(sdk/'catalog.json')
-    assert report['sdk_catalog_sha256']=='1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
-    headers=catalog['headers']+catalog['metadata'];assert len(headers)==665
+    assert report['sdk_catalog_sha256']=='b4a7b597150882cd93285481cc060d2eab6949b5c8d50b7ce234579cc814bd77'
+    headers=catalog['headers']+catalog['metadata'];assert len(headers)==687
     for row in headers:assert sha(sdk/row['root']/row['path'])==row['sha256']
-    report['sdk_files_verified']=665
+    report['sdk_files_verified']=687
     clangxx=Path('/usr/bin/clang++-20')
     assert run([clangxx,'--version'],'clang-version')==0
     assert 'clang version 20.1.8' in (out/'clang-version.log').read_text()
@@ -44,19 +44,29 @@ try:
              '-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS']
     report['native_flags']=list(map(str,flags))
     plan=json.loads((root/'utils/ci/cpp-bind-call-arguments-native40-plan.json').read_text());report['plan']=plan
-    assert len(plan['cases'])==72 and plan['required_native_programs']==144
+    assert plan['sdk_catalog_sha256']==report['sdk_catalog_sha256']
+    assert len(plan['sdk_input_sha256'])==695
+    for name,identity in plan['sdk_input_sha256'].items():assert sha(sdk/name)==identity
+    report['exact_sdk_input_sha256']=plan['sdk_input_sha256']
+    report['sdk_inputs_verified']=695
+    assert len(plan['cases'])==5 and plan['required_native_programs']==10
     assert plan['fixture_group']=='bind-call-arguments-native40' and plan['preparation_only'] is False
     assert plan['execution_binding_required'] is True
     assert re.fullmatch('[0-9a-f]{40}', plan['source_repair_commit'])
     assert plan['clean_source_basis']==plan['source_repair_commit']
     if plan.get('source_syntax_validation_pending', False):
         assert plan['post_merge_validation'] is True
-        assert plan['actual_same_source_six_report_sha256'] is None
-        assert plan['actual_same_source_six_proof_sha256'] is None
+        assert plan['actual_current_sdk_baseline750_report_sha256'] is None
+        assert plan['actual_current_sdk_baseline750_proof_sha256'] is None
     else:
-        for field in ['actual_same_source_six_report_sha256', 'actual_same_source_six_proof_sha256']:
+        for field in ['actual_current_sdk_baseline750_report_sha256', 'actual_current_sdk_baseline750_proof_sha256']:
             assert re.fullmatch('[0-9a-f]{64}', plan[field])
+    nonzero_exits = {case['name']: (case['source_sha256'], case['expected_exit_code'])
+                     for case in plan['cases'] if 'expected_exit_code' in case}
+    assert nonzero_exits == {'sdk-r19-native-unordered-set-scalar-insertion-insert-with-hint': ('9093f70f4ab2740954e61520008f406ca8a0f0ccf6f1dbf41185f3046faf4c69', 0)}
     for case in plan['cases']:
+        expected_exit = case.get('expected_exit_code', 0)
+        assert type(expected_exit) is int and 0 <= expected_exit <= 255
         folder=out/case['name'];folder.mkdir();source=folder/'input.cpp'
         source.write_text(case['source']);assert sha(source)==case['source_sha256']
         modes=[]
@@ -64,7 +74,7 @@ try:
             program=folder/('native'+mode)
             built=run(flags+[mode,source,'-o',program],case['name']+'/'+mode+'-build')
             executed=run([program],case['name']+'/'+mode+'-run') if built==0 else None
-            record=dict(mode=mode,build_returncode=built,run_returncode=executed,passed=built==0 and executed==0)
+            record=dict(mode=mode,build_returncode=built,run_returncode=executed,passed=built==0 and executed==expected_exit)
             if built==0:
                 data=program.read_bytes();assert data[:6]==b'\x7fELF\x02\x01' and data[18:20]==b'\x3e\x00'
                 record.update(binary_sha256=sha(program),binary_bytes=len(data),elf_header_hex=data[:64].hex())
@@ -72,7 +82,7 @@ try:
         report['cases'].append(dict(name=case['name'],source_sha256=sha(source),modes=modes))
         save()
     report['completed']=True
-    report['passed']=len(report['cases'])==72 and all(m['passed'] for c in report['cases'] for m in c['modes'])
+    report['passed']=len(report['cases'])==5 and all(m['passed'] for c in report['cases'] for m in c['modes'])
     save()
 except Exception:
     report['error']=traceback.format_exc();save();print(report['error'],flush=True)
