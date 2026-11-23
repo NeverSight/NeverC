@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_multimap_iteration_and_transfer_registered = cls.registered
+        cls.unordered_multimap_iteration_and_transfer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_multimap_iteration_and_transfer_original = cls.adapter.restore_original_gtests(cls.unordered_multimap_iteration_and_transfer_registered,
+                                                                        cls.unordered_multimap_iteration_and_transfer_suffix)
+        cls.registered = cls.adapter.restore_unordered_multimap_iteration_and_transfer_history(cls.unordered_multimap_iteration_and_transfer_registered)
         cls.unordered_multimap_owners_registered = cls.registered
         cls.unordered_multimap_owners_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_multimap_owners_original = cls.adapter.restore_original_gtests(cls.unordered_multimap_owners_registered,
@@ -3199,6 +3204,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_multimap_owners_history(self.unordered_multimap_owners_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_multimap_owners_registered, self.unordered_multimap_owners_suffix + b' ')
+
+
+    def test_unordered_multimap_iteration_and_transfer_retains_published_bodies(self):
+        self.assertEqual(self.unordered_multimap_iteration_and_transfer_original + self.unordered_multimap_iteration_and_transfer_suffix, self.unordered_multimap_iteration_and_transfer_registered)
+        self.assertEqual(self.adapter.restore_unordered_multimap_iteration_and_transfer_history(self.unordered_multimap_iteration_and_transfer_original),
+                         self.unordered_multimap_owners_original)
+        output, evidence = self.extractor.extract(self.unordered_multimap_iteration_and_transfer_original, ['TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorFindAndTraverseWithUniqueOwnerInSameTranslationRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorConstEqualRangeReachesTheEndOfTheGroupRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorErasePositionAndRangeUnlinkOnlySelectedNodesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorLocalConstIterationSeesTheMatchingBucketRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierEmplaceAndInsertReturnTheNewEquivalentNodeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierHintedInsertionKeepsEquivalentKeysContiguousRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierIteratorInputConvertsBetweenCompatibleMappedOwnersRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeIntoMultiPreservesPayloadAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeIntoUniqueLeavesEquivalentUntransferredNodesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorCustomPolicyIteratorRejected', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorOtherMappedTypeIteratorRejected', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeFromUserHashPolicyRejected'])
+        self.assertEqual(evidence['original_test_names'], 8643)
+        self.assertEqual(evidence['selected_count'], 12)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-multimap-iteration-and-transfer-iterator-find-and-traverse-with-unique-owner-in-same-translation', output)
+        self.assertIn(b'unordered-multimap-iteration-and-transfer-modifier-merge-into-unique-leaves-equivalent-untransferred-nodes', output)
+
+    def test_unordered_multimap_iteration_and_transfer_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_multimap_iteration_and_transfer_history(self.unordered_multimap_iteration_and_transfer_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_multimap_iteration_and_transfer_registered, self.unordered_multimap_iteration_and_transfer_suffix + b' ')
 
 
 if __name__ == '__main__':

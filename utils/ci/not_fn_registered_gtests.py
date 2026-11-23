@@ -2200,6 +2200,30 @@ def restore_unordered_multimap_owners_history(source):
     return restored
 
 
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_REGISTERED_SHA256 = '5154f39ad36ff5cf9458d53e32b1e84016330df198e3af32b5efdac45ec7d06b'
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SHA256 = 'ad6cdfb5806a10416b5bec0e8a1c2d7f4e700c8a7bd317d057ae676eb7e52e68'
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_PREVIOUS_REGISTERED_SHA256 = '1e0bbf4c8f5a577626fcbd4167012527fe20826396391e8d4a58c24c8f278168'
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_PREVIOUS_MAINTAINED_SHA256 = 'a302000f528d3c79c9d2169d56f19ecc664d4c5245e897a333bb2f561a1c0f64'
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_ADDITIONS_SHA256 = 'd78e0499107254043987dd063506ed8ddaf05b64bb10ffbf48a8b54f595adc67'
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SIZE = 20315890
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_ADDITIONS_SIZE = 16052
+
+
+def restore_unordered_multimap_iteration_and_transfer_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_REGISTERED_SHA256, R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_REGISTERED_SHA256
+             else R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2675,6 +2699,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

@@ -137718,18 +137718,23 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIter
       Pointer->getPointeeType().hasQualifiers()) return std::nullopt;
   const auto NodeType = Pointer->getPointeeType();
   std::optional<UtilityUnorderedTableRecord> Owner;
-  const auto Name = DeclarationName(&Context.Idents.get("unordered_map"));
-  for (const auto *D : Outer->getDeclContext()->lookup(Name)) {
-    const auto *Template = dyn_cast<ClassTemplateDecl>(D);
-    if (!Template) continue;
-    for (const auto *Map : Template->specializations()) {
-      if (!approvedUnorderedMapMetadataRecord(S, SM, Map, Context)) continue;
-      auto Info = approvedUtilityUnorderedMapRecord(S, SM, Map, Context, Complete);
-      if (!Info || !Context.hasSameType(Info->NodeType, NodeType)) continue;
-      if (Owner && Owner->Record->getCanonicalDecl() != Info->Record->getCanonicalDecl())
-        return std::nullopt;
-      Owner = Info;
+  // Both default mapped owners expose iterators over the same pinned node.
+  // Prefer the unique owner when both are instantiated. Member operations
+  // separately authenticate the receiver and the exact iterator node type.
+  for (const auto Name : {"unordered_map", "unordered_multimap"}) {
+    for (const auto *D : Outer->getDeclContext()->lookup(DeclarationName(&Context.Idents.get(Name)))) {
+      const auto *Template = dyn_cast<ClassTemplateDecl>(D);
+      if (!Template) continue;
+      for (const auto *Map : Template->specializations()) {
+        if (!approvedUnorderedMapMetadataRecord(S, SM, Map, Context)) continue;
+        auto Info = approvedUtilityUnorderedMapRecord(S, SM, Map, Context, Complete);
+        if (!Info || !Context.hasSameType(Info->NodeType, NodeType)) continue;
+        if (Owner && Owner->Record->getCanonicalDecl() != Info->Record->getCanonicalDecl())
+          return std::nullopt;
+        Owner = Info;
+      }
     }
+    if (Owner) break;
   }
   if (!Owner) return std::nullopt;
   for (const auto Type : {Context.getRecordType(Outer), InnerType})
@@ -138085,7 +138090,7 @@ static std::optional<UtilityUnorderedMapRangeInsertion> unorderedMapRangeParamet
   } else {
     Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM,
         Parameter->getAsCXXRecordDecl(), Context);
-    if (!Iterator || Iterator->Owner.Record->getCanonicalDecl() != Map.Record->getCanonicalDecl())
+    if (!Iterator || !Context.hasSameType(Iterator->Owner.NodeType, Map.NodeType))
       return std::nullopt;
     Element = Iterator->Const ? Context.getConstType(Iterator->ValueType) : Iterator->ValueType;
     Pointer = Iterator->Owner.NodePointerType;Kind = UnorderedMapRangeKind::Iterator;
@@ -138345,7 +138350,7 @@ approvedUtilityUnorderedMapIteratorConstruction(const State &S, const SourceMana
   const auto Other = approvedUtilityUnorderedMapIteratorRecord(S, SM,
       Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
   return Other && !Other->Const && Other->Local == Info->Local &&
-      Other->Owner.Record->getCanonicalDecl() == Info->Owner.Record->getCanonicalDecl() &&
+      Context.hasSameType(Other->Owner.NodeType, Info->Owner.NodeType) &&
       Context.hasSameType(C->getParamDecl(0)->getType(), Context.getRecordType(Other->Record))
       ? std::optional<UtilityUnorderedMapIteratorConstruction>(UtilityUnorderedMapIteratorConstruction::Converting)
       : std::nullopt;
@@ -138484,7 +138489,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
   if (const auto Iterator = approvedUtilityUnorderedMapIteratorRecord(
           S, SM, Result->getAsCXXRecordDecl(), Context);
       Iterator && Call->isPRValue() && !Result.hasQualifiers() &&
-      Iterator->Owner.Record->getCanonicalDecl() == Info->Record->getCanonicalDecl() &&
+      Context.hasSameType(Iterator->Owner.NodeType, Info->NodeType) &&
       Iterator->Const == Method->isConst()) {
     if ((!Iterator->Local && !Method->getNumParams() && Prototype->isNothrow()) ||
         (Iterator->Local && Method->getNumParams() == 1 &&
@@ -138507,8 +138512,8 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
         const auto Parameter = Method->getParamDecl(I)->getType();
         const auto Input = approvedUtilityUnorderedMapIteratorRecord(
             S, SM, Parameter->getAsCXXRecordDecl(), Context);
-        if (!Input || Parameter.hasQualifiers() ||
-            Input->Owner.Record->getCanonicalDecl() != Info->Record->getCanonicalDecl() ||
+        if (!Input || Input->Local || Parameter.hasQualifiers() ||
+            !Context.hasSameType(Input->Owner.NodeType, Info->NodeType) ||
             !Context.hasSameType(Call->getArg(Offset + I)->getType(), Parameter) ||
             (Method->getNumParams() == 2 && !Input->Const))
           Valid = false;
@@ -138657,14 +138662,16 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
   if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
   if (ObjectType.hasQualifiers() ||
       !Context.hasSameType(ObjectType, Context.getRecordType(Map->Record))) return std::nullopt;
+  const bool Multi = Map->Record->getName() == "unordered_multimap";
+  if (Multi && (Name == "try_emplace" || Name == "insert_or_assign")) return std::nullopt;
   unsigned Offset = 0;
   if (Method->getNumParams()) {
     const auto Parameter = Method->getParamDecl(0)->getType();
     const auto Hint = approvedUtilityUnorderedMapIteratorRecord(
         S, SM, Parameter->getAsCXXRecordDecl(), Context);
     if (Hint) {
-      if (!Hint->Const || Parameter.hasQualifiers() ||
-          Hint->Owner.Record->getCanonicalDecl() != Map->Record->getCanonicalDecl() ||
+      if (!Hint->Const || Hint->Local || Parameter.hasQualifiers() ||
+          !Context.hasSameType(Hint->Owner.NodeType, Map->NodeType) ||
           !Context.hasSameType(Call->getArg(0)->getType(), Parameter)) return std::nullopt;
       Offset = 1;
     }
@@ -138742,17 +138749,17 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
   std::optional<UtilityPairRecord> ResultPair;
   const auto Result = Method->getReturnType();
   auto Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM, Result->getAsCXXRecordDecl(), Context);
-  if (Offset) {
-    if (!Iterator || Iterator->Const ||
-        Iterator->Owner.Record->getCanonicalDecl() != Map->Record->getCanonicalDecl()) return std::nullopt;
+  if (Offset || Multi) {
+    if (!Iterator || Iterator->Const || Iterator->Local ||
+        !Context.hasSameType(Iterator->Owner.NodeType, Map->NodeType)) return std::nullopt;
   } else {
     ResultPair = approvedUtilityPairRecord(S, SM, Result->getAsCXXRecordDecl(), Context);
     if (!ResultPair || !Context.hasSameType(ResultPair->Second->getType(), Context.BoolTy))
       return std::nullopt;
     Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM,
         ResultPair->First->getType()->getAsCXXRecordDecl(), Context);
-    if (!Iterator || Iterator->Const ||
-        Iterator->Owner.Record->getCanonicalDecl() != Map->Record->getCanonicalDecl()) return std::nullopt;
+    if (!Iterator || Iterator->Const || Iterator->Local ||
+        !Context.hasSameType(Iterator->Owner.NodeType, Map->NodeType)) return std::nullopt;
   }
   if (!approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
   return UtilityUnorderedMapInsertion{*Map, *Iterator, ResultPair, Argument, Kind,
@@ -138782,8 +138789,8 @@ std::optional<UtilityUnorderedMapEqualRange> approvedUtilityUnorderedMapEqualRan
     return std::nullopt;
   const auto Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM,
       Pair->First->getType()->getAsCXXRecordDecl(), Context);
-  if (!Iterator || Iterator->Const != Method->isConst() ||
-      Iterator->Owner.Record->getCanonicalDecl() != Map->Record->getCanonicalDecl())
+  if (!Iterator || Iterator->Local || Iterator->Const != Method->isConst() ||
+      !Context.hasSameType(Iterator->Owner.NodeType, Map->NodeType))
     return std::nullopt;
   auto ObjectType = Object->getType();
   if (ObjectType->isPointerType()) ObjectType = ObjectType->getPointeeType();
@@ -139559,8 +139566,9 @@ std::optional<UtilityUnorderedTableRecord> unorderedTableMerge(
   const auto *InputRecord = InputType->getAsCXXRecordDecl();
   if (Table->HasMappedValue) {
     const auto Source = approvedUtilityUnorderedMapRecord(S, SM, InputRecord, Context);
-    if (!Source || !Context.hasSameType(InputType, Type) ||
-        Source->Record->getCanonicalDecl() != Table->Record->getCanonicalDecl() ||
+    if (!Source || !Context.hasSameType(Source->NodeType, Table->NodeType) ||
+        (Parameter->isLValueReferenceType() ? !Call->getArg(0)->isLValue()
+                                           : !Call->getArg(0)->isXValue()) ||
         !approvedUnorderedMapMethodSource(S, SM, Method, Table->Record, Context))
       return std::nullopt;
     return Table;

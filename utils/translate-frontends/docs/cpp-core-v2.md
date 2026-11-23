@@ -18354,3 +18354,10 @@ The pinned default integer unordered_multimap owns separate nodes for
 each key and mapped value. It supports list construction and assignment,
 copy and move ownership, per-key count and erase, and bucket storage.
 Equality checks the multiplicity of each key and mapped value.
+
+## Default integer unordered_multimap iterators and transfer
+
+Default integer unordered_multimap supports global and bucket iteration,
+single-value and iterator-range insertion, and transfer with default
+integer unordered_map and unordered_multimap. Merge preserves nodes and
+their mapped values, including keys duplicated in a multimap.

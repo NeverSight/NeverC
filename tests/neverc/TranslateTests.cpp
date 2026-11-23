@@ -394969,6 +394969,291 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferIteratorFindAndTraverseWithUniqueOwnerInSameTranslationRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-iterator-find-and-traverse-with-unique-owner-in-same-translation.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_map<int, int> unique{{4, 17}};
+  std::unordered_multimap<int, int> multi{{4, 3}, {4, 9}, {7, 30}};
+  auto first = multi.find(4);
+  if (first == multi.end() || unique.begin()->second != 17) return 1;
+  first->second += 2;
+  int sum = 0;
+  for (const auto& pair : multi) sum += pair.second;
+  return sum != 44 || multi.find(9) != multi.end() || multi.count(4) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-iterator-find-and-traverse-with-unique-owner-in-same-translation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-iterator-find-and-traverse-with-unique-owner-in-same-translation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferIteratorConstEqualRangeReachesTheEndOfTheGroupRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-iterator-const-equal-range-reaches-the-end-of-the-group.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  const std::unordered_multimap<int, int> values{{-1, 2}, {3, 9}, {-1, 5}, {-1, 8}};
+  auto group = values.equal_range(-1);
+  int count = 0, sum = 0;
+  for (auto it = group.first; it != group.second; ++it) {
+    if (it->first != -1) return 1;
+    ++count;
+    sum += it->second;
+  }
+  auto missing = values.equal_range(77);
+  return count != 3 || sum != 15 || missing.first != values.cend() || missing.second != values.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-iterator-const-equal-range-reaches-the-end-of-the-group.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-iterator-const-equal-range-reaches-the-end-of-the-group" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferIteratorErasePositionAndRangeUnlinkOnlySelectedNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-iterator-erase-position-and-range-unlink-only-selected-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_multimap<int, int> values{{4, 2}, {4, 3}, {9, 17}, {4, 8}};
+  auto group = values.equal_range(4);
+  std::unordered_multimap<int, int>::const_iterator first = group.first;
+  auto next = values.erase(first);
+  if (next == group.second || next->first != 4 || values.count(4) != 2) return 1;
+  const auto after = values.erase(next, group.second);
+  return after != group.second || values.count(4) || values.size() != 1 || values.begin()->second != 17;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-iterator-erase-position-and-range-unlink-only-selected-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-iterator-erase-position-and-range-unlink-only-selected-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferIteratorLocalConstIterationSeesTheMatchingBucketRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-iterator-local-const-iteration-sees-the-matching-bucket.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_multimap<int, int> values{{3, 5}, {3, 12}, {8, 7}};
+  values.rehash(16);
+  const auto index = values.bucket(3);
+  const auto& view = values;
+  int count = 0, sum = 0;
+  for (auto it = view.cbegin(index); it != view.cend(index); it++) {
+    if (it->first != 3) return 1;
+    ++count;
+    sum += it->second;
+  }
+  return count != 2 || view.bucket_size(index) != 2 || sum != 17;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-iterator-local-const-iteration-sees-the-matching-bucket.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-iterator-local-const-iteration-sees-the-matching-bucket" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferIteratorCustomPolicyIteratorRejected) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-iterator-custom-policy-iterator.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+struct Hash { unsigned operator()(int key) const { return static_cast<unsigned>(key); } };
+int main() {
+  std::unordered_multimap<int, int, Hash> values{{3, 5}};
+  return values.find(3)->second;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferIteratorOtherMappedTypeIteratorRejected) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  const std::unordered_multimap<int, long> values{{3, 5L}};
+  return values.begin()->second == 5L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferModifierEmplaceAndInsertReturnTheNewEquivalentNodeRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-modifier-emplace-and-insert-return-the-new-equivalent-node.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+#include <utility>
+int main() {
+  std::unordered_multimap<int, int> values{{5, 13}};
+  values.reserve(12);
+  auto first = values.emplace(5, 8);
+  const std::pair<const int, int> input(5, 21);
+  auto second = values.insert(input);
+  return first == second || first->first != 5 || first->second != 8 ||
+         second->second != 21 || values.count(5) != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-modifier-emplace-and-insert-return-the-new-equivalent-node.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-modifier-emplace-and-insert-return-the-new-equivalent-node" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferModifierHintedInsertionKeepsEquivalentKeysContiguousRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-modifier-hinted-insertion-keeps-equivalent-keys-contiguous.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_multimap<int, int> values{{5, 2}, {5, 3}, {3, 11}};
+  auto next = values.emplace_hint(values.find(5), 5, 7);
+  const auto group = values.equal_range(5);
+  int sum = 0, count = 0;
+  for (auto it = group.first; it != group.second; ++it) { sum += it->second; ++count; }
+  return next->first != 5 || next->second != 7 || sum != 12 || count != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-modifier-hinted-insertion-keeps-equivalent-keys-contiguous.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-modifier-hinted-insertion-keeps-equivalent-keys-contiguous" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferModifierIteratorInputConvertsBetweenCompatibleMappedOwnersRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-modifier-iterator-input-converts-between-compatible-mapped-owners.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_map<int, int> source{{5, 2}, {3, 13}};
+  std::unordered_multimap<int, int> values{{5, 3}};
+  values.insert(source.cbegin(), source.cend());
+  return values.count(5) != 2 || values.count(3) != 1 ||
+         values.find(3)->second != 13 || source.size() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-modifier-iterator-input-converts-between-compatible-mapped-owners.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-modifier-iterator-input-converts-between-compatible-mapped-owners" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferModifierMergeIntoMultiPreservesPayloadAddressesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-modifier-merge-into-multi-preserves-payload-addresses.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_map<int, int> source{{5, 13}, {6, 21}};
+  std::unordered_multimap<int, int> target{{5, 3}, {5, 8}};
+  const int* payload = &source.find(6)->second;
+  target.merge(source);
+  return !source.empty() || target.count(5) != 3 || target.size() != 4 ||
+         &target.find(6)->second != payload;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-modifier-merge-into-multi-preserves-payload-addresses.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-modifier-merge-into-multi-preserves-payload-addresses" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferModifierMergeIntoUniqueLeavesEquivalentUntransferredNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-modifier-merge-into-unique-leaves-equivalent-untransferred-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+#include <utility>
+int main() {
+  std::unordered_multimap<int, int> source{{3, 13}, {3, 21}, {5, 8}, {5, 7}};
+  std::unordered_map<int, int> target{{5, 100}};
+  target.merge(std::move(source));
+  return target.size() != 2 || target.find(5)->second != 100 ||
+         source.size() != 3 || source.count(3) != 1 || source.count(5) != 2 ||
+         target.find(3)->second + source.find(3)->second != 34;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-modifier-merge-into-unique-leaves-equivalent-untransferred-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-modifier-merge-into-unique-leaves-equivalent-untransferred-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferModifierMergeFromUserHashPolicyRejected) {
+  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-modifier-merge-from-user-hash-policy.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+struct Hash { unsigned operator()(int key) const { return static_cast<unsigned>(key); } };
+int main() {
+  std::unordered_map<int, int, Hash> source;
+  std::unordered_multimap<int, int> target;
+  target.merge(source);
+  return target.size();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");
