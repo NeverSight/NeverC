@@ -4455,6 +4455,7 @@ std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetStorage(
 struct UtilityUnorderedSetListConstruction {
   UtilityUnorderedTableRecord Table;
   UtilityInitializerListRecord List;
+  bool HasBucketCount;
 };
 std::optional<UtilityUnorderedSetListConstruction> approvedUtilityUnorderedSetListConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
@@ -4473,7 +4474,7 @@ struct UtilityUnorderedSetOwnershipConstruction {
 std::optional<UtilityUnorderedSetOwnershipConstruction> approvedUtilityUnorderedSetOwnershipConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
-std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetRangeConstruction(
+std::optional<UtilityUnorderedSetStorageConstruction> approvedUtilityUnorderedSetRangeConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
 std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
