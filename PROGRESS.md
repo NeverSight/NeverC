@@ -1,5 +1,11 @@
 # NeverC Progress
 
+## Current snapshot — 2026-11-23T01:05:00Z
+
+- Reviewed source: [52787bfb](https://github.com/NeverSight/NeverC/commit/52787bfb3902fc8a5caf8896cf4c17a3a5021ca1). Scope: C++ translation of unordered multiset insert-list and erase-by-key, including collision chains, node sequencing, rehash, and freeing. No new confirmed bug or source change; this is not a full translator audit.
+- GitHub search snapshot: 10 open ordinary issues, 0 open PRs; 3 PRs opened and 6 merged since 2026-11-22T01:00:00Z; no ordinary issues returned in the interval update query. Key changes include COFF audit acceleration [#32](https://github.com/NeverSight/NeverC/pull/32) and workflow/docs maintenance [#33](https://github.com/NeverSight/NeverC/pull/33) and [#34](https://github.com/NeverSight/NeverC/pull/34). No exact-head workflow check was found; published support-matrix claims are not independent execution evidence.
+- Next: run the existing multiset modifier cases (5 accepted, 3 rejected); on native Windows x64 verify the production-size COFF audit with LTO off and the downstream Python lifecycle; then run the existing native-width type-identity fixtures. Require exact source and actual outcomes. Native Windows coverage remains unconfirmed.
+
 ## Current snapshot — 2026-11-21T01:07:56Z
 
 - Reviewed dev: [b9a1ecedc752b63a8328704b14aa78bd32ea3c69](https://github.com/NeverSight/NeverC/commit/b9a1ecedc752b63a8328704b14aa78bd32ea3c69). GitHub reports 1,316 commits ahead of the source in the previous in-tree [October 24 snapshot](https://github.com/NeverSight/NeverC/compare/54737387a0b8374b6bd6649d45835925278fa738...b9a1ecedc752b63a8328704b14aa78bd32ea3c69); the changed-path list reached the connector's 300-entry cap, not a total.
@@ -1649,3 +1655,8 @@ Inventoried 45 incoming commits / 132 net changed paths, excluding prior report 
 ## Daily log — 2026-11-21T01:07:56Z
 
 Bounded static check of TranslateIR and variant source changes. No source changes or execution. Distinguished full ARM64 build failure from scoped install passes; proposed only this documentation update via a draft PR.
+
+
+## Daily log — 2026-11-23T01:05:00Z
+
+Bounded static review of unordered multiset modifier lowering and documented support. No source change or execution. Full-size Windows COFF and native-width correctness remain open verification items.
