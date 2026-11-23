@@ -2499,8 +2499,13 @@ class FunctionLowering {
     std::optional<Expression> Hint;
     if (Info.Offset) {
       if (unorderedAllowsEquivalentKeys(Info.Map)) {
-        auto Argument = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
-        Hint = snapshot(unorderedIteratorNode(dereference(Argument, L), *Info.Iterator, L), L);
+        const auto Parameter = Method->getParamDecl(0)->getType();
+        const auto Iterator = approvedUtilityUnorderedIteratorRecord(
+            A.S, A.Sources, Parameter->getAsCXXRecordDecl(), A.Context);
+        if (!Iterator)
+          reject(L, "unordered node insertion", "The exact checked hint layout is required.");
+        auto Argument = snapshot(argument(Call->getArg(0), Parameter), L);
+        Hint = snapshot(unorderedIteratorNode(dereference(Argument, L), *Iterator, L), L);
       } else {
         expression(Call->getArg(0));
       }
@@ -29781,9 +29786,13 @@ class FunctionLowering {
       if (!Info)
         reject(L, "ordered container observer", "The exact selected SDK observer body is required.");
       const auto *Member = Info->Member;
-      auto Place = lvalue(Member->getBase());
-      if (Info->Maximum)
+      const auto *Receiver = Member->getBase();
+      if (Info->Maximum) {
+        if (Member->isArrow()) expression(Receiver);
+        else lvalue(Receiver);
         return quantity(*Info->Maximum, type(Call->getType(), L), L);
+      }
+      auto Place = Member->isArrow() ? dereference(expression(Receiver), L) : lvalue(Receiver);
       auto Count = orderedContainerMember(std::move(Place), "nct_ordered_size", L);
       if (Member->getMemberDecl()->getName() == "size")
         return Count;

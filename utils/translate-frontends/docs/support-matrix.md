@@ -899,3 +899,10 @@ The combined compiler passes 4,506 source requests across six 64-bit targets
 and 855 formal tests on Linux x86-64. All 496 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Mapped node handles and ordered pointer observers
+
+The combined compiler passes 4,554 source requests across six 64-bit targets
+and 863 formal tests on Linux x86-64. All 503 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

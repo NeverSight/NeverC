@@ -389713,7 +389713,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2OrderedComparatorArrowReceiverRejected) {
+TEST_F(TranslateTest, CoreV2OrderedComparatorOriginalArrowReceiverRunsAtBothOptimizations) {
   const auto Source = tmpFile("ordered-comparator-arrow-receiver.cpp");
   writeFile(Source, R"r19containers(#include <map>
 int main() {
@@ -389723,10 +389723,17 @@ int main() {
   return !cmp(1, 2);
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("ordered-comparator-arrow-receiver.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-comparator-arrow-receiver" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedBucketStorageUniqueRehashRunAtBothOptimizations) {
@@ -395246,6 +395253,192 @@ int main() {
   std::unordered_multimap<int, int> target;
   target.merge(source);
   return target.size();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapNodeHandlesExtractIteratorAndReinsertMutatedMappedValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-node-handles-extract-iterator-and-reinsert-mutated-mapped-value.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+#include <utility>
+int main() {
+  std::unordered_multimap<int, int> values{{3, 5}, {3, 9}, {6, 12}};
+  auto where = values.find(3);
+  const int* address = &where->second;
+  auto node = values.extract(where);
+  if (node.empty() || values.count(3) != 1) return 1;
+  node.key() = 6;
+  node.mapped() = 17;
+  const auto inserted = values.insert(std::move(node));
+  return !node.empty() || inserted->first != 6 || inserted->second != 17 ||
+         &inserted->second != address || values.count(6) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-node-handles-extract-iterator-and-reinsert-mutated-mapped-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-node-handles-extract-iterator-and-reinsert-mutated-mapped-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapNodeHandlesRejectedUniqueInsertionReturnsHandleForMultimapRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-node-handles-rejected-unique-insertion-returns-handle-for-multimap.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+#include <utility>
+int main() {
+  std::unordered_multimap<int, int> source{{3, 17}, {3, 22}};
+  std::unordered_map<int, int> unique{{3, 5}};
+  auto node = source.extract(3);
+  const auto payload = node.mapped();
+  auto rejected = unique.insert(std::move(node));
+  if (rejected.inserted || rejected.position->second != 5 ||
+      rejected.node.empty() || rejected.node.key() != 3 || rejected.node.mapped() != payload) return 1;
+  auto inserted = source.insert(source.find(3), std::move(rejected.node));
+  return !rejected.node.empty() || inserted->second != payload || source.count(3) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-node-handles-rejected-unique-insertion-returns-handle-for-multimap.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-node-handles-rejected-unique-insertion-returns-handle-for-multimap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapNodeHandlesEmptyExtractionAndInsertionReturnEndRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-node-handles-empty-extraction-and-insertion-return-end.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+#include <utility>
+int main() {
+  std::unordered_multimap<int, int> values{{3, 11}};
+  auto absent = values.extract(9);
+  const auto inserted = values.insert(std::move(absent));
+  return bool(absent) || inserted != values.end() || values.count(3) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-node-handles-empty-extraction-and-insertion-return-end.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-node-handles-empty-extraction-and-insertion-return-end" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapNodeHandlesMappedNodeWithUnapprovedValueTypeRejected) {
+  const auto Source = tmpFile("unordered-multimap-node-handles-mapped-node-with-unapproved-value-type.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_multimap<int, long> values{{3, 11L}};
+  auto node = values.extract(3);
+  return node.mapped() != 11L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedPointerObserversMapSizeEmptyAndMaximumRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-pointer-observers-map-size-empty-and-maximum.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+using Table = std::map<int, int>;
+const Table* observe(const Table& values, unsigned& calls) { ++calls; return &values; }
+int main() {
+  const Table values;
+  unsigned calls = 0;
+  const auto maximum = observe(values, calls)->max_size();
+  const auto* pointer = &values;
+  return calls != 1 || maximum != values.max_size() || !pointer->empty() || pointer->size() != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-pointer-observers-map-size-empty-and-maximum.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-pointer-observers-map-size-empty-and-maximum" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedPointerObserversMultimapPointerKeyComparatorEvaluatesReceiverRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-pointer-observers-multimap-pointer-key-comparator-evaluates-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+using Table = std::multimap<int, int>;
+const Table* observe(const Table& values, unsigned& calls) { ++calls; return &values; }
+int main() {
+  const Table values;
+  unsigned calls = 0;
+  auto compare = observe(values, calls)->key_comp();
+  return calls != 1 || !compare(-2, 7) || compare(7, -2);
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-pointer-observers-multimap-pointer-key-comparator-evaluates-receiver.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-pointer-observers-multimap-pointer-key-comparator-evaluates-receiver" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedPointerObserversMultisetPointerValueComparatorRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-pointer-observers-multiset-pointer-value-comparator.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+int main() {
+  const std::multiset<int> values;
+  const auto* pointer = &values;
+  return !pointer->value_comp()(3, 7) || pointer->key_comp()(3, 3) || !pointer->empty();
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-pointer-observers-multiset-pointer-value-comparator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-pointer-observers-multiset-pointer-value-comparator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedPointerObserversCustomOrderedComparePointerRejected) {
+  const auto Source = tmpFile("ordered-pointer-observers-custom-ordered-compare-pointer.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+struct Greater { bool operator()(int a, int b) const { return a > b; } };
+int main() {
+  const std::map<int, int, Greater> values;
+  return (&values)->key_comp()(1, 2);
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.associative_node_and_observer_registered = cls.registered
+        cls.associative_node_and_observer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.associative_node_and_observer_original = cls.adapter.restore_original_gtests(cls.associative_node_and_observer_registered,
+                                                                        cls.associative_node_and_observer_suffix)
+        cls.registered = cls.adapter.restore_associative_node_and_observer_history(cls.associative_node_and_observer_registered)
         cls.unordered_multimap_iteration_and_transfer_registered = cls.registered
         cls.unordered_multimap_iteration_and_transfer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_multimap_iteration_and_transfer_original = cls.adapter.restore_original_gtests(cls.unordered_multimap_iteration_and_transfer_registered,
@@ -3222,6 +3227,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_multimap_iteration_and_transfer_history(self.unordered_multimap_iteration_and_transfer_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_multimap_iteration_and_transfer_registered, self.unordered_multimap_iteration_and_transfer_suffix + b' ')
+
+
+    def test_associative_node_and_observer_retains_published_bodies(self):
+        self.assertEqual(self.associative_node_and_observer_original + self.associative_node_and_observer_suffix, self.associative_node_and_observer_registered)
+        self.assertEqual(self.adapter.restore_associative_node_and_observer_history(self.associative_node_and_observer_original),
+                         self.unordered_multimap_iteration_and_transfer_original)
+        output, evidence = self.extractor.extract(self.associative_node_and_observer_original, ['TranslateTest.CoreV2UnorderedMultimapNodeHandlesExtractIteratorAndReinsertMutatedMappedValueRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapNodeHandlesRejectedUniqueInsertionReturnsHandleForMultimapRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapNodeHandlesEmptyExtractionAndInsertionReturnEndRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedPointerObserversMapSizeEmptyAndMaximumRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedPointerObserversMultimapPointerKeyComparatorEvaluatesReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedPointerObserversMultisetPointerValueComparatorRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapNodeHandlesMappedNodeWithUnapprovedValueTypeRejected', 'TranslateTest.CoreV2OrderedPointerObserversCustomOrderedComparePointerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8651)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-multimap-node-handles-extract-iterator-and-reinsert-mutated-mapped-value', output)
+        self.assertIn(b'ordered-pointer-observers-multiset-pointer-value-comparator', output)
+
+    def test_associative_node_and_observer_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_associative_node_and_observer_history(self.associative_node_and_observer_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.associative_node_and_observer_registered, self.associative_node_and_observer_suffix + b' ')
 
 
 if __name__ == '__main__':

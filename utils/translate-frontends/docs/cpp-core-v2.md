@@ -18361,3 +18361,10 @@ Default integer unordered_multimap supports global and bucket iteration,
 single-value and iterator-range insertion, and transfer with default
 integer unordered_map and unordered_multimap. Merge preserves nodes and
 their mapped values, including keys duplicated in a multimap.
+
+## Mapped node handles and ordered pointer observers
+
+The checked default integer unordered_multimap supports extracting a
+node, updating its key and mapped value, and reinserting or transferring
+the same node. The default integer ordered associative observers use the
+same source and layout checks through pointer receivers.

@@ -31,6 +31,14 @@
       "source_sha256": "ffe743350b55e78a5ac9d5b5fd39e96e6c5157082ff91cbd8d4b884fc4d196d2",
       "original_case_source_sha256": "ffe743350b55e78a5ac9d5b5fd39e96e6c5157082ff91cbd8d4b884fc4d196d2",
       "gtest_body_sha256": "2a61651d77bc2f0336127bd3f94341b3edfcbce6ccb2fe2fab225d23edf5b4ad"
+    },
+    {
+      "name": "ordered-comparator-arrow-receiver",
+      "formal_test_name": "TranslateTest.CoreV2OrderedComparatorOriginalArrowReceiverRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
+      "original_case_source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
+      "gtest_body_sha256": "fca9d155a9e100efd585e03bdd183b57a7ab5532931a1120cb859b5254fe3087"
     }
   ],
   "negative_cases": [
@@ -57,14 +65,6 @@
       "source_sha256": "a8d1e710d5f17789de27ee5b0e26d9453fa21c1f940388f9f59c6ad2d9e780b7",
       "original_case_source_sha256": "a8d1e710d5f17789de27ee5b0e26d9453fa21c1f940388f9f59c6ad2d9e780b7",
       "gtest_body_sha256": "7601210f7a41b67dafb6a72238415da36abf8da1295270cf894bed7e3af4d1d4"
-    },
-    {
-      "name": "ordered-comparator-arrow-receiver",
-      "formal_test_name": "TranslateTest.CoreV2OrderedComparatorArrowReceiverRejected",
-      "expected": "reject",
-      "source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
-      "original_case_source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
-      "gtest_body_sha256": "d7bc63d6ce38e0a8a5f0873764e573919149fd1f76086f949411beb80f67d86d"
     }
   ],
   "source_cases": [
@@ -101,6 +101,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-comparator-arrow-receiver",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n",
+      "source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-comparator-custom-comparator",
       "expected": "reject",
       "public_header": "set",
@@ -123,14 +131,6 @@
       "source": "#include <set>\nint main() {\n  std::multiset<long> values;\n  return !values.value_comp()(0L, 1L);\n}\n",
       "source_sha256": "a8d1e710d5f17789de27ee5b0e26d9453fa21c1f940388f9f59c6ad2d9e780b7",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-comparator-arrow-receiver",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n",
-      "source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
-      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -138,10 +138,10 @@
     "TranslateTest.CoreV2OrderedComparatorMultisetConstValueRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedComparatorMapKeyWrapperRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedComparatorMultimapKeyWrapperRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedComparatorOriginalArrowReceiverRunsAtBothOptimizations",
     "TranslateTest.CoreV2OrderedComparatorCustomComparatorRejected",
     "TranslateTest.CoreV2OrderedComparatorMapValueComparatorRejected",
-    "TranslateTest.CoreV2OrderedComparatorNonDefaultKeyRejected",
-    "TranslateTest.CoreV2OrderedComparatorArrowReceiverRejected"
+    "TranslateTest.CoreV2OrderedComparatorNonDefaultKeyRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8384,
   "current_python_registry_tests": 182,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
+    "associative-node-and-observer": "01a51550b23988021155c9e25097f908e2e9eaa0e96593d5ac4a97c116f7a759",
     "ordered-comparator": "174ab453fc961891fb01128046244949bc0f3d22c70e90c197d16e9b65e98170"
   },
-  "native_reference_authentication_sha256": "d3b0d9158ec486a981be66820346b53d8e78d463d3774e277c13074110ae2871",
-  "source_proof_sha256": "c3e01e9e855dbc3167c5e37c4a4303d05ef1363654847a81a2e015e649e9c503"
+  "native_reference_authentication_sha256": "f82c4343e4cee7bf11647c515f0acf1de40279b295de3e2400b0032d338fb65f",
+  "source_proof_sha256": "8b3da04751f24082701ae3147326dafe41cf9ce9f2783e0b2ad31409e41d4fb3"
 }

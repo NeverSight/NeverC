@@ -2224,6 +2224,32 @@ def restore_unordered_multimap_iteration_and_transfer_history(source):
     return restored
 
 
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_REGISTERED_SHA256 = 'a2e8418b1982b3a0c7696e11137caf0e7a8aa7e01dbb12bd86f4bb35d003ee49'
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SHA256 = '92b5b5e9b171ff0c9f887fe4669f900809ff206624fc5e08df2c516d5dd33175'
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_PREVIOUS_REGISTERED_SHA256 = '5154f39ad36ff5cf9458d53e32b1e84016330df198e3af32b5efdac45ec7d06b'
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_PREVIOUS_MAINTAINED_SHA256 = 'ad6cdfb5806a10416b5bec0e8a1c2d7f4e700c8a7bd317d057ae676eb7e52e68'
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_ADDITIONS_SHA256 = 'bb67d9eb2555bffb133700ef2df17da6e4aa706e54ee93e965ca98915f71be3f'
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SIZE = 20326000
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_ADDITIONS_SIZE = 9724
+
+
+def restore_associative_node_and_observer_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ASSOCIATIVE_NODE_AND_OBSERVER_REGISTERED_SHA256, R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SHA256}
+    stop = R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SIZE
+    start = stop - R19_ASSOCIATIVE_NODE_AND_OBSERVER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ASSOCIATIVE_NODE_AND_OBSERVER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedComparatorOriginalArrowReceiverRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-comparator-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-comparator-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-comparator-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedComparatorOriginalArrowReceiverRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-comparator-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-comparator-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-comparator-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedComparatorArrowReceiverRejected) {\n  const auto Source = tmpFile("ordered-comparator-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ASSOCIATIVE_NODE_AND_OBSERVER_PREVIOUS_REGISTERED_SHA256 if digest == R19_ASSOCIATIVE_NODE_AND_OBSERVER_REGISTERED_SHA256
+             else R19_ASSOCIATIVE_NODE_AND_OBSERVER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2706,6 +2732,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ASSOCIATIVE_NODE_AND_OBSERVER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
