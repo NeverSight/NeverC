@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_pointer_range_registered = cls.registered
+        cls.unordered_set_pointer_range_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_pointer_range_original = cls.adapter.restore_original_gtests(cls.unordered_set_pointer_range_registered,
+                                                                        cls.unordered_set_pointer_range_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_pointer_range_history(cls.unordered_set_pointer_range_registered)
         cls.unordered_set_equality_swap_registered = cls.registered
         cls.unordered_set_equality_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_equality_swap_original = cls.adapter.restore_original_gtests(cls.unordered_set_equality_swap_registered,
@@ -2877,6 +2882,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_equality_swap_history(self.unordered_set_equality_swap_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_equality_swap_registered, self.unordered_set_equality_swap_suffix + b' ')
+
+
+    def test_unordered_set_pointer_range_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_pointer_range_original + self.unordered_set_pointer_range_suffix, self.unordered_set_pointer_range_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_pointer_range_history(self.unordered_set_pointer_range_original),
+                         self.unordered_set_equality_swap_original)
+        output, evidence = self.extractor.extract(self.unordered_set_pointer_range_original, ['TranslateTest.CoreV2UnorderedSetPointerRangeUniqueRangeInsertsDistinctKeysRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerRangeMultisetConstRangeRetainsCountsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerRangeEmptyRangeKeepsBucketsAndValuesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerRangeReceiverAndBothEndpointsEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerRangeConvertedLongRangeRejected', 'TranslateTest.CoreV2UnorderedSetPointerRangeClassIteratorRangeRejected', 'TranslateTest.CoreV2UnorderedSetPointerRangeCustomPolicyRangeRejected', 'TranslateTest.CoreV2UnorderedSetPointerRangePointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8512)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-pointer-range-unique-range-inserts-distinct-keys', output)
+        self.assertIn(b'unordered-set-pointer-range-multiset-const-range-retains-counts', output)
+
+    def test_unordered_set_pointer_range_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_pointer_range_history(self.unordered_set_pointer_range_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_pointer_range_registered, self.unordered_set_pointer_range_suffix + b' ')
 
 
 if __name__ == '__main__':

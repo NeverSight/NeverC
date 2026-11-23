@@ -29530,6 +29530,7 @@ class FunctionLowering {
     if (Operation == UtilityOperation::UnorderedSetCount ||
         Operation == UtilityOperation::UnorderedSetClear || Operation == UtilityOperation::UnorderedSetEraseKey ||
         Operation == UtilityOperation::UnorderedSetInsertList ||
+        Operation == UtilityOperation::UnorderedSetInsertRange ||
         Operation == UtilityOperation::UnorderedSetSwap) {
       if (approvedUtilityUnorderedSetValueOperation(A.S, A.Sources, Call, A.Context) != Operation)
         reject(L, "unordered set value operation", "The exact selected SDK operation is required.");
@@ -29544,6 +29545,20 @@ class FunctionLowering {
         return {};
       }
       const auto Parameter = Method->getParamDecl(0)->getType();
+      if (Operation == UtilityOperation::UnorderedSetInsertRange) {
+        auto Cursor = snapshot(argument(Call->getArg(0), Parameter), L);
+        auto End = snapshot(argument(Call->getArg(1), Parameter), L);
+        const auto Check = labelName(), Insert = labelName(), Done = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Cursor, End, "bool", L), Insert, Done, L);
+        label(Insert, L);
+        unorderedInsertNode(Place, *Table, dereference(Cursor, L), std::nullopt, false, L);
+        assign(Cursor, binary("+", Cursor, one(type(A.Context.getPointerDiffType(), L), L), type(Parameter, L), L), L);
+        jump(Check, L);
+        label(Done, L);
+        return {};
+      }
       auto Operand = dereference(snapshot(argument(Call->getArg(0), Parameter), L), L);
       if (Operation == UtilityOperation::UnorderedSetSwap) {
         unorderedSwap(std::move(Place), std::move(Operand), *Table, L);

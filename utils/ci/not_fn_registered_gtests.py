@@ -1818,6 +1818,30 @@ def restore_unordered_set_equality_swap_history(source):
     return restored
 
 
+R19_UNORDERED_SET_POINTER_RANGE_REGISTERED_SHA256 = '47d55896696dc2a7f80d29c0cf075f63e4e251eef3aab7eacad4ef14e1358fbb'
+R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SHA256 = '0a65cf385c60ea9997fa815565a9cb56465fffddae54c41396bf63707b83fc46'
+R19_UNORDERED_SET_POINTER_RANGE_PREVIOUS_REGISTERED_SHA256 = '2614bbc404b932230aeb5f74db66e01f5b8cda8797e86e17b714d84395165ea3'
+R19_UNORDERED_SET_POINTER_RANGE_PREVIOUS_MAINTAINED_SHA256 = 'a57a30b29ed03d9a47ce06015d225f01c1b486230d130ab63fc8ec3d3b1116a0'
+R19_UNORDERED_SET_POINTER_RANGE_ADDITIONS_SHA256 = 'da56487e6c10494a4d57396ffc33d90a1f179c4f798f4a76c9d0088e332f8696'
+R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SIZE = 20158451
+R19_UNORDERED_SET_POINTER_RANGE_ADDITIONS_SIZE = 7896
+
+
+def restore_unordered_set_pointer_range_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_POINTER_RANGE_REGISTERED_SHA256, R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_POINTER_RANGE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_POINTER_RANGE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_POINTER_RANGE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_POINTER_RANGE_REGISTERED_SHA256
+             else R19_UNORDERED_SET_POINTER_RANGE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2195,6 +2219,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_POINTER_RANGE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

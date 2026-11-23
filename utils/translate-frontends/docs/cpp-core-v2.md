@@ -18254,3 +18254,10 @@ Default integer unordered sets compare by key and multisets compare by key
 multiplicity. Both support equality and inequality in C++17. Member and
 nonmember swap exchange the bucket storage and load limits while preserving
 element addresses. The first bucket's predecessor is updated for each owner.
+
+## Integer unordered set pointer-range insertion
+
+Default integer unordered sets and multisets accept half-open insertion
+ranges whose endpoints are both plain `int*` or both `const int*`. The
+receiver and endpoints are evaluated once. Unique sets skip duplicate
+keys and multisets retain their multiplicities.
