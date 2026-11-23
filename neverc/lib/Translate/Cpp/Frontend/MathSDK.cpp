@@ -137424,6 +137424,15 @@ static bool unorderedIntegerPointer(QualType Type, const ASTContext &Context) {
          Context.hasSameUnqualifiedType(Element, Context.IntTy);
 }
 
+static bool unorderedSetRangeIterator(const State &S, const SourceManager &SM,
+    QualType Type, const UtilityUnorderedTableRecord &Table, const ASTContext &Context) {
+  if (Type.hasQualifiers() || Type->isReferenceType()) return false;
+  const auto It = approvedUtilityUnorderedIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+  return It && It->Const && !It->Owner.HasMappedValue &&
+      Context.hasSameType(Type, Context.getRecordType(It->Record)) &&
+      Context.hasSameType(It->Owner.NodeType, Table.NodeType);
+}
+
 std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetRangeConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
@@ -137440,11 +137449,14 @@ std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetRangeConst
       !Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type)
     return std::nullopt;
   const auto Iterator = Arguments->get(0).getAsType();
-  if (!unorderedIntegerPointer(Iterator, Context)) return std::nullopt;
   const auto *Owner = Ctor->getParent();
   const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  if (!Table) return std::nullopt;
+  const bool Pointer = unorderedIntegerPointer(Iterator, Context);
+  if (!Pointer && !unorderedSetRangeIterator(S, SM, Iterator, *Table, Context))
+    return std::nullopt;
   const auto *Init = *Ctor->init_begin();
-  if (!Table || !Init->isMemberInitializer() ||
+  if (!Init->isMemberInitializer() ||
       Init->getMember() != orderedTreeField(Owner, "__table_") ||
       !emptyHashTableSource(S, SM, Init->getInit()))
     return std::nullopt;
@@ -137462,8 +137474,15 @@ std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedSetRangeConst
     const auto *Parameter = Ctor->getParamDecl(I);
     if (!Context.hasSameType(Parameter->getType(), Iterator) ||
         !Context.hasSameType(Construction->getArg(I)->getType(), Iterator) ||
-        !Context.hasSameType(Insert->getParamDecl(I)->getType(), Iterator) ||
-        !orderedParameter(Range->getArg(I), Parameter))
+        !Context.hasSameType(Insert->getParamDecl(I)->getType(), Iterator))
+      return std::nullopt;
+    const auto *Endpoint = Range->getArg(I);
+    if (orderedParameter(Endpoint, Parameter)) continue;
+    const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Endpoint));
+    if (Pointer || !Copy || !Copy->getConstructor() || !Copy->getConstructor()->isCopyConstructor() ||
+        approvedUtilityUnorderedMapIteratorConstruction(S, SM, Copy, Context) !=
+            UtilityUnorderedMapIteratorConstruction::CopyOrMove ||
+        !orderedParameter(Copy->getArg(0), Parameter))
       return std::nullopt;
   }
   if (!approvedHashSetBucketSource(S, SM, Ctor, Owner, Context)) return std::nullopt;
@@ -137495,9 +137514,10 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
       Call->getNumArgs() != Arity ||
       !Context.hasSameType(Method->getReturnType(), Result) || !Context.hasSameType(Call->getType(), Result) ||
       !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
-      !approvedUtilityUnorderedSetStorage(S, SM, Owner, Context) ||
       !orderedPinnedFunction(S, SM, Method, "unordered_set"))
     return std::nullopt;
+  const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  if (!Table) return std::nullopt;
   if (KeyOperation && (!Context.hasSameType(Method->getParamDecl(0)->getType(),
                                     Context.getLValueReferenceType(Context.IntTy.withConst())) ||
                 !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy)))
@@ -137508,7 +137528,9 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
         !Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type)
       return std::nullopt;
     const auto Iterator = Arguments->get(0).getAsType();
-    if (!unorderedIntegerPointer(Iterator, Context)) return std::nullopt;
+    if (!unorderedIntegerPointer(Iterator, Context) &&
+        !unorderedSetRangeIterator(S, SM, Iterator, *Table, Context))
+      return std::nullopt;
     for (unsigned Index : {0u, 1u})
       if (!Context.hasSameType(Method->getParamDecl(Index)->getType(), Iterator) ||
           !Context.hasSameType(Call->getArg(Index)->getType(), Iterator))
