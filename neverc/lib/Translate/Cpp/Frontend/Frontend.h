@@ -4459,6 +4459,13 @@ struct UtilityUnorderedSetListConstruction {
 std::optional<UtilityUnorderedSetListConstruction> approvedUtilityUnorderedSetListConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
+struct UtilityUnorderedSetStorageConstruction {
+  UtilityUnorderedTableRecord Table;
+  bool HasBucketCount;
+};
+std::optional<UtilityUnorderedSetStorageConstruction> approvedUtilityUnorderedSetStorageConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
 struct UtilityUnorderedSetOwnershipConstruction {
   UtilityUnorderedTableRecord Table;
   bool Move;
@@ -4571,7 +4578,7 @@ std::optional<UtilityUnorderedMapRangeConstruction>
 approvedUtilityUnorderedMapRangeConstruction(const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
 enum class UtilityUnorderedMapConstructionKind { Default, Allocator, Copy, Move, Buckets, Range };
-bool approvedUtilityUnorderedMapDefaultArgument(
+bool approvedUtilityUnorderedTableDefaultArgument(
     const State &S, const clang::SourceManager &SM, const clang::CXXDefaultArgExpr *Default,
     const clang::FunctionDecl *Function, unsigned Index, clang::ASTContext &Context);
 std::optional<FunctionalObjectRecord> approvedUtilityAssociativePolicyQuery(

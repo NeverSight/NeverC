@@ -39470,8 +39470,26 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     }
 
 
+    if (const auto Info = approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto *Ctor = C->getConstructor();
+      std::optional<Expression> Buckets;
+      unsigned I = 0;
+      if (Info->HasBucketCount) {
+        Buckets = snapshot(argument(C->getArg(0), Ctor->getParamDecl(0)->getType()), L);
+        I = 1;
+      }
+      for (; I < C->getNumArgs(); ++I)
+        argument(C->getArg(I), Ctor->getParamDecl(I)->getType());
+      initializeUnorderedTable(Place, Info->Table, L);
+      if (Buckets) unorderedRehash(Place, Info->Table, *Buckets, L);
+      return;
+    }
     if (const auto Info = approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context)) {
-      auto Source = dereference(snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L), L);
+      const auto *Ctor = C->getConstructor();
+      auto SourceAddress = snapshot(argument(C->getArg(0), Ctor->getParamDecl(0)->getType()), L);
+      if (C->getNumArgs() == 2)
+        argument(C->getArg(1), Ctor->getParamDecl(1)->getType());
+      auto Source = dereference(SourceAddress, L);
       if (Info->Move)
         unorderedMoveTable(std::move(Place), std::move(Source), Info->Table, false, L);
       else
