@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2OrderedMaxSizeCustomComparatorRejected",
     "TranslateTest.CoreV2OrderedMaxSizeTemporaryRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "9e9ba754f81959ca9b377627825515a8be2f0ad69242ce21ad0b6fa792afed14",
   "maintained_original_sha256": "0a33208d656054ec6265c968c1c3c9ed504da77d0709bb325cc0ecdd9bded1a5",
@@ -155,5 +155,10 @@
   "current_registry_count": 8310,
   "current_python_registry_tests": 164,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "ordered-max-size": "0257406ff4ac820ff77fd499e186f7b6155c6c64872fa7558815e570f890e880"
+  },
+  "native_reference_authentication_sha256": "26127295df9e4157a0852df724f8b514c78f5f4e33ba7653e3ef3f0ea346a74f",
+  "source_proof_sha256": "54b15a6912c631ca57c72e15f7f35d4528dc541606dd32b564cfb33458c89769"
 }
