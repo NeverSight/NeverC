@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_unsigned_key_registered = cls.registered
+        cls.unordered_set_unsigned_key_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_unsigned_key_original = cls.adapter.restore_original_gtests(cls.unordered_set_unsigned_key_registered,
+                                                                        cls.unordered_set_unsigned_key_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_unsigned_key_history(cls.unordered_set_unsigned_key_registered)
         cls.associative_node_and_observer_registered = cls.registered
         cls.associative_node_and_observer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.associative_node_and_observer_original = cls.adapter.restore_original_gtests(cls.associative_node_and_observer_registered,
@@ -3245,6 +3250,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_associative_node_and_observer_history(self.associative_node_and_observer_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.associative_node_and_observer_registered, self.associative_node_and_observer_suffix + b' ')
+
+
+    def test_unordered_set_unsigned_key_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_unsigned_key_original + self.unordered_set_unsigned_key_suffix, self.unordered_set_unsigned_key_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_unsigned_key_history(self.unordered_set_unsigned_key_original),
+                         self.associative_node_and_observer_original)
+        output, evidence = self.extractor.extract(self.unordered_set_unsigned_key_original, ['TranslateTest.CoreV2UnorderedSetUnsignedKeyLargeKeyBucketAndLocalIteratorRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetUnsignedKeyBucketedRangesAndCopyUseUnsignedKeyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetUnsignedKeyNodeTransferRetainsUnsignedPayloadAndAddressRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetUnsignedKeyAlternateUnsignedHashRemainsUnsupportedRejected'])
+        self.assertEqual(evidence['original_test_names'], 8655)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-unsigned-key-large-key-bucket-and-local-iterator', output)
+        self.assertIn(b'unordered-set-unsigned-key-node-transfer-retains-unsigned-payload-and-address', output)
+
+    def test_unordered_set_unsigned_key_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_unsigned_key_history(self.unordered_set_unsigned_key_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_unsigned_key_registered, self.unordered_set_unsigned_key_suffix + b' ')
 
 
 if __name__ == '__main__':

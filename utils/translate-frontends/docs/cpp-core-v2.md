@@ -18368,3 +18368,9 @@ The checked default integer unordered_multimap supports extracting a
 node, updating its key and mapped value, and reinserting or transferring
 the same node. The default integer ordered associative observers use the
 same source and layout checks through pointer receivers.
+
+## Unsigned keys in default hash sets
+
+Default unordered_set<unsigned int> and unordered_multiset<unsigned int>
+use the checked unsigned representation for keys, hashing, iterators and
+node transfers on the supported 64-bit targets.

@@ -1,0 +1,96 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-unsigned-key-large-key-bucket-and-local-iterator",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetUnsignedKeyLargeKeyBucketAndLocalIteratorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b2a585dae4f8e78c16675941608d34003b0d2635062c2e90fb153588a23543c4",
+      "original_case_source_sha256": "b2a585dae4f8e78c16675941608d34003b0d2635062c2e90fb153588a23543c4",
+      "gtest_body_sha256": "e7b47489fd07695c44989e342bb6a217cad4375fd7a7de558adc2c129d711829"
+    },
+    {
+      "name": "unordered-set-unsigned-key-bucketed-ranges-and-copy-use-unsigned-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetUnsignedKeyBucketedRangesAndCopyUseUnsignedKeyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3384488a91a9fb803386648166c1053e47ae168e911cb68aaffd633b8d73727d",
+      "original_case_source_sha256": "3384488a91a9fb803386648166c1053e47ae168e911cb68aaffd633b8d73727d",
+      "gtest_body_sha256": "68dcd445136e81fe935973c1dac9b1db29593dcc7b71caf35c60c3b0335f85db"
+    },
+    {
+      "name": "unordered-set-unsigned-key-node-transfer-retains-unsigned-payload-and-address",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetUnsignedKeyNodeTransferRetainsUnsignedPayloadAndAddressRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4e502253c76f2ac7d8f8cc5f3a2e1e998edcdca95d823b9a7dd30190145d4343",
+      "original_case_source_sha256": "4e502253c76f2ac7d8f8cc5f3a2e1e998edcdca95d823b9a7dd30190145d4343",
+      "gtest_body_sha256": "bfb7e8931644d18196bc649b8282d16120649ffa7c87b1cdaee5cb6a184a2600"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-unsigned-key-alternate-unsigned-hash-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetUnsignedKeyAlternateUnsignedHashRemainsUnsupportedRejected",
+      "expected": "reject",
+      "source_sha256": "4315c00ae4f32bb3a05f6c7d27993d2f8568202a4b79f170d97ee973b9a8ac7b",
+      "original_case_source_sha256": "4315c00ae4f32bb3a05f6c7d27993d2f8568202a4b79f170d97ee973b9a8ac7b",
+      "gtest_body_sha256": "ce6c874c612395194ffdda08a820985389a4f9b76369339404eafb3cda4971da"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-unsigned-key-large-key-bucket-and-local-iterator",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  constexpr unsigned high = ~0u;\n  std::unordered_set<unsigned> values{high, 2u};\n  values.rehash(7);\n  const auto bucket = values.bucket(high);\n  const auto* receiver = &values;\n  if (bucket != high % values.bucket_count() || receiver->hash_function()(high) != high ||\n      receiver->bucket_size(bucket) != 1u) return 1;\n  auto where = receiver->cbegin(bucket);\n  return where == receiver->cend(bucket) || *where != high || ++where != receiver->cend(bucket);\n}\n",
+      "source_sha256": "b2a585dae4f8e78c16675941608d34003b0d2635062c2e90fb153588a23543c4",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-unsigned-key-bucketed-ranges-and-copy-use-unsigned-key",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  constexpr unsigned high = ~0u;\n  const unsigned input[] = {high, 1u, high};\n  std::unordered_multiset<unsigned> source(input, input + 3, 7);\n  std::unordered_multiset<unsigned> target;\n  target = source;\n  auto range = target.equal_range(high);\n  if (range.first == target.end() || *range.first != high || ++range.first == range.second) return 1;\n  const auto original = target.size();\n  if (target.erase(high) != 2 || target.size() + 2 != original || source.count(high) != 2) return 1;\n  target = {2u, high};\n  return target.count(high) != 1 || *target.emplace(0u) != 0u;\n}\n",
+      "source_sha256": "3384488a91a9fb803386648166c1053e47ae168e911cb68aaffd633b8d73727d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-unsigned-key-node-transfer-retains-unsigned-payload-and-address",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  constexpr unsigned high = ~0u;\n  std::unordered_set<unsigned> source{1u};\n  auto where = source.find(1u);\n  const auto* address = &*where;\n  auto node = source.extract(where);\n  node.value() = high;\n  std::unordered_multiset<unsigned> target{high};\n  auto inserted = target.insert(std::move(node));\n  return !node.empty() || !source.empty() || &*inserted != address ||\n         *inserted != high || target.count(high) != 2;\n}\n",
+      "source_sha256": "4e502253c76f2ac7d8f8cc5f3a2e1e998edcdca95d823b9a7dd30190145d4343",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-unsigned-key-alternate-unsigned-hash-remains-unsupported",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(unsigned n) const { return n & 1u; } };\nint main() {\n  std::unordered_set<unsigned, Hash> values{4u};\n  return values.count(4u) != 1;\n}\n",
+      "source_sha256": "4315c00ae4f32bb3a05f6c7d27993d2f8568202a4b79f170d97ee973b9a8ac7b",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetUnsignedKeyLargeKeyBucketAndLocalIteratorRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetUnsignedKeyBucketedRangesAndCopyUseUnsignedKeyRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetUnsignedKeyNodeTransferRetainsUnsignedPayloadAndAddressRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetUnsignedKeyAlternateUnsignedHashRemainsUnsupportedRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "a5ddd1fe6e53f82facecbd1237242b0926e8170a3a5aa4c6dae75302b9027724",
+  "maintained_original_sha256": "b537c8295007d1c8b9bef82c985bc3b7db2f5701d9b9b24e3650c6a0d456962e",
+  "previous_registered_source_sha256": "a2e8418b1982b3a0c7696e11137caf0e7a8aa7e01dbb12bd86f4bb35d003ee49",
+  "previous_maintained_original_sha256": "92b5b5e9b171ff0c9f887fe4669f900809ff206624fc5e08df2c516d5dd33175",
+  "restorer_sha256": "df47fe23309c14da8d1ea29077e0faac0735cb25c0205d0f1b70503dada22287",
+  "extractor_sha256": "692f21952f0983150e0058832b995376e84456ca9bb064865b195e152acb232d",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8655,
+  "current_python_registry_tests": 246,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "unordered-set-unsigned-key": "386554228d60e28dfaaacf0f35307fd7086e06dd9e16bf3dfab9938df15f803e"
+  },
+  "native_reference_authentication_sha256": "b50c790b71c3ef5cf58ea26b38ef18f865f34be936537b8881a439a1504fe7b1",
+  "source_proof_sha256": "f53f1845135bc7a688700422f1154afeda25c270e5072c3705106a7385792a4e"
+}

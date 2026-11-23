@@ -110,6 +110,18 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     return Name == "unordered_map" || Name == "unordered_multimap";
   }
 
+  bool isUnorderedSetElement(QualType Type) const {
+    if (!SDKGenerator || !Generator->getIdentifier()) return false;
+    const auto Name = Generator->getName();
+    if (Name != "unordered_set" && Name != "unordered_multiset") return false;
+    const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Generator);
+    if (!Owner || Owner->getTemplateArgs().size() != 4 ||
+        Owner->getTemplateArgs().get(0).getKind() != TemplateArgument::Type) return false;
+    const auto Key = Owner->getTemplateArgs().get(0).getAsType();
+    return (Context.hasSameType(Key, Context.IntTy) || Context.hasSameType(Key, Context.UnsignedIntTy)) &&
+           Context.hasSameType(Type, Key);
+  }
+
   bool isUnorderedTableOwner() const {
     if (!SDKGenerator || !Generator->getIdentifier())
       return false;
@@ -724,9 +736,8 @@ public:
               Context.getTypeSize(Destructor->getDestroyedType()) == 32) ||
              Context.hasSameType(Destructor->getDestroyedType(), Context.DoubleTy) ||
              Context.hasSameType(Destructor->getDestroyedType(), Context.FloatTy))) ||
-           (File->Path == "__memory/construct_at.h" && Generator->getIdentifier() &&
-            (Generator->getName() == "unordered_set" || Generator->getName() == "unordered_multiset") &&
-            Context.hasSameType(Destructor->getDestroyedType(), Context.IntTy))) &&
+           (File->Path == "__memory/construct_at.h" &&
+            isUnorderedSetElement(Destructor->getDestroyedType()))) &&
           Context.hasSameUnqualifiedType(Destructor->getDestroyedType(),
               Destructor->getBase()->getType()->getPointeeType()))
         return true;

@@ -47,17 +47,17 @@
       "source_sha256": "39551d658ab9fa413e5b004fb1be2ab945477b93450c09d83cd1e60b99f8e367",
       "original_case_source_sha256": "39551d658ab9fa413e5b004fb1be2ab945477b93450c09d83cd1e60b99f8e367",
       "gtest_body_sha256": "e40963dcb865045d9486fcd00b064715957ac889ff36e1c4b7944d33f735545f"
+    },
+    {
+      "name": "unordered-multiset-values-different-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetOriginalUnsignedValues",
+      "expected": "accept",
+      "source_sha256": "a86421399157821e18623760b72eb326fd379ed7024128e3d765ae37ac7c41cc",
+      "original_case_source_sha256": "a86421399157821e18623760b72eb326fd379ed7024128e3d765ae37ac7c41cc",
+      "gtest_body_sha256": "a394491dc4c41e812628df8f2ecf9b8ca2ca16a4f7653f412eec95aa42d2d733"
     }
   ],
   "negative_cases": [
-    {
-      "name": "unordered-multiset-values-different-key",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetValuesDifferentKeyRejected",
-      "expected": "reject",
-      "source_sha256": "a86421399157821e18623760b72eb326fd379ed7024128e3d765ae37ac7c41cc",
-      "original_case_source_sha256": "a86421399157821e18623760b72eb326fd379ed7024128e3d765ae37ac7c41cc",
-      "gtest_body_sha256": "cbfb95fba9a03f126e23826bc457c464202fae7ef350a890f7f07662215c0507"
-    },
     {
       "name": "unordered-multiset-values-alternate-hash",
       "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetValuesAlternateHashRejected",
@@ -118,11 +118,11 @@
     },
     {
       "name": "unordered-multiset-values-different-key",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "unordered_set",
       "source": "#include <unordered_set>\nint main() { std::unordered_multiset<unsigned> values{1u, 1u}; return values.count(1u) != 2; }\n",
       "source_sha256": "a86421399157821e18623760b72eb326fd379ed7024128e3d765ae37ac7c41cc",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "unordered-multiset-values-alternate-hash",
@@ -140,7 +140,7 @@
     "TranslateTest.CoreV2UnorderedMultisetValuesConstCountEvaluatesReceiverOnceRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedMultisetOriginalScalarInsertRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetOriginalPointerMultisetCountRunsAtBothOptimizations",
-    "TranslateTest.CoreV2UnorderedMultisetValuesDifferentKeyRejected",
+    "TranslateTest.CoreV2UnorderedMultisetOriginalUnsignedValues",
     "TranslateTest.CoreV2UnorderedMultisetValuesAlternateHashRejected"
   ],
   "source_proof_gate_pending": false,
@@ -154,13 +154,14 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8432,
   "current_python_registry_tests": 194,
-  "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12,
+  "native_reference_selected_executions": 14,
+  "planned_generated_c23_executions": 14,
   "native_reference_proofs": {
     "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a",
     "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
-    "unordered-set-scalar-insertion": "4005a929cf17d6233da104ca6dcc0bf4caafeba088eeac323738f4dd1b58424c"
+    "unordered-set-scalar-insertion": "4005a929cf17d6233da104ca6dcc0bf4caafeba088eeac323738f4dd1b58424c",
+    "unordered-set-unsigned-key": "386554228d60e28dfaaacf0f35307fd7086e06dd9e16bf3dfab9938df15f803e"
   },
-  "native_reference_authentication_sha256": "fdc50a6da27ead9d2970ae9a9b477d3c66c4561914aa441a8074a3afd784aaa4",
-  "source_proof_sha256": "8b3da04751f24082701ae3147326dafe41cf9ce9f2783e0b2ad31409e41d4fb3"
+  "native_reference_authentication_sha256": "37408a3d424a21feabe8f64f13399d752a3033d176eedbaf1be4a8708f9262eb",
+  "source_proof_sha256": "f53f1845135bc7a688700422f1154afeda25c270e5072c3705106a7385792a4e"
 }

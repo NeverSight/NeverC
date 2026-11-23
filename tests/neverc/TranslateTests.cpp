@@ -388780,7 +388780,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorDifferentKeyRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedLoadFactor) {
   const auto Source = tmpFile("unordered-empty-load-factor-different-key.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() {
@@ -388788,10 +388788,17 @@ int main() {
   return value.load_factor() != 0.0f;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-empty-load-factor-different-key.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-empty-load-factor-different-key" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorRehashRunAtBothOptimizations) {
@@ -390696,15 +390703,22 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedMultisetValuesDifferentKeyRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalUnsignedValues) {
   const auto Source = tmpFile("unordered-multiset-values-different-key.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() { std::unordered_multiset<unsigned> values{1u, 1u}; return values.count(1u) != 2; }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-multiset-values-different-key.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multiset-values-different-key" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedMultisetValuesAlternateHashRejected) {
@@ -392674,7 +392688,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveOtherKeyConstructionRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedMoveConstruction) {
   const auto Source = tmpFile("unordered-set-owner-move-other-key-construction.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 #include <utility>
@@ -392684,10 +392698,17 @@ int main() {
   return target.empty();
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-set-owner-move-other-key-construction.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-owner-move-other-key-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveCustomPolicyAssignmentRejected) {
@@ -393056,7 +393077,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentUnsignedKeyCopyAssignmentRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedCopyAssignment) {
   const auto Source = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() {
@@ -393065,10 +393086,17 @@ int main() {
   return target.empty();
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentLongKeyMultisetCopyAssignmentRejected) {
@@ -394009,7 +394037,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionUnapprovedKeyBucketConstructionRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedBucketConstruction) {
   const auto Source = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() {
@@ -394017,10 +394045,17 @@ int main() {
   return values.empty();
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesUniqueExtractsKeyAndMutatesDetachedValueRunAtBothOptimizations) {
@@ -394185,7 +394220,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesOtherKeyDefaultNodeHandleRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedEmptyNodeHandle) {
   const auto Source = tmpFile("unordered-set-node-handles-other-key-default-node-handle.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() {
@@ -394193,10 +394228,17 @@ int main() {
   return empty.empty();
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-set-node-handles-other-key-default-node-handle.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-other-key-default-node-handle" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesUniqueDuplicateReturnsOwningNodeForRetryRunAtBothOptimizations) {
@@ -395439,6 +395481,109 @@ struct Greater { bool operator()(int a, int b) const { return a > b; } };
 int main() {
   const std::map<int, int, Greater> values;
   return (&values)->key_comp()(1, 2);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetUnsignedKeyLargeKeyBucketAndLocalIteratorRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-unsigned-key-large-key-bucket-and-local-iterator.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  constexpr unsigned high = ~0u;
+  std::unordered_set<unsigned> values{high, 2u};
+  values.rehash(7);
+  const auto bucket = values.bucket(high);
+  const auto* receiver = &values;
+  if (bucket != high % values.bucket_count() || receiver->hash_function()(high) != high ||
+      receiver->bucket_size(bucket) != 1u) return 1;
+  auto where = receiver->cbegin(bucket);
+  return where == receiver->cend(bucket) || *where != high || ++where != receiver->cend(bucket);
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-unsigned-key-large-key-bucket-and-local-iterator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-unsigned-key-large-key-bucket-and-local-iterator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetUnsignedKeyBucketedRangesAndCopyUseUnsignedKeyRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-unsigned-key-bucketed-ranges-and-copy-use-unsigned-key.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  constexpr unsigned high = ~0u;
+  const unsigned input[] = {high, 1u, high};
+  std::unordered_multiset<unsigned> source(input, input + 3, 7);
+  std::unordered_multiset<unsigned> target;
+  target = source;
+  auto range = target.equal_range(high);
+  if (range.first == target.end() || *range.first != high || ++range.first == range.second) return 1;
+  const auto original = target.size();
+  if (target.erase(high) != 2 || target.size() + 2 != original || source.count(high) != 2) return 1;
+  target = {2u, high};
+  return target.count(high) != 1 || *target.emplace(0u) != 0u;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-unsigned-key-bucketed-ranges-and-copy-use-unsigned-key.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-unsigned-key-bucketed-ranges-and-copy-use-unsigned-key" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetUnsignedKeyNodeTransferRetainsUnsignedPayloadAndAddressRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-unsigned-key-node-transfer-retains-unsigned-payload-and-address.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  constexpr unsigned high = ~0u;
+  std::unordered_set<unsigned> source{1u};
+  auto where = source.find(1u);
+  const auto* address = &*where;
+  auto node = source.extract(where);
+  node.value() = high;
+  std::unordered_multiset<unsigned> target{high};
+  auto inserted = target.insert(std::move(node));
+  return !node.empty() || !source.empty() || &*inserted != address ||
+         *inserted != high || target.count(high) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-unsigned-key-node-transfer-retains-unsigned-payload-and-address.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-unsigned-key-node-transfer-retains-unsigned-payload-and-address" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetUnsignedKeyAlternateUnsignedHashRemainsUnsupportedRejected) {
+  const auto Source = tmpFile("unordered-set-unsigned-key-alternate-unsigned-hash-remains-unsupported.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(unsigned n) const { return n & 1u; } };
+int main() {
+  std::unordered_set<unsigned, Hash> values{4u};
+  return values.count(4u) != 1;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
