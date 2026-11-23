@@ -18232,3 +18232,10 @@ Default integer unordered sets and multisets support mutable and const
 `equal_range`. A unique match spans one node and a multiset match spans
 the consecutive group of equivalent keys. A missing key returns two end
 iterators.
+
+## Integer unordered set bucket iterators
+
+Default integer unordered sets and multisets support bucket-local
+`begin`, `end`, `cbegin` and `cend`. The iterators yield const element
+references, advance through colliding groups in the selected bucket, and
+compare equal at that bucket's end.

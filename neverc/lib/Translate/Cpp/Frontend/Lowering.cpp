@@ -1155,6 +1155,25 @@ class FunctionLowering {
     return Place;
   }
 
+  Expression unorderedMakeBucketIterator(Expression Place, const UtilityUnorderedTableRecord &Table,
+      const UtilityUnorderedMapIteratorRecord &Iterator, Expression Bucket, bool Begin,
+      std::optional<Expression> Destination, SourceLocation L) {
+    auto Count = snapshot(unorderedTableMember(Place, Table, "nct_unordered_bucket_count", L), L);
+    auto Node = snapshot(A.zero(Table.NodePointerType, L), L);
+    if (Begin) {
+      auto Previous = snapshot(index(unorderedTableMember(Place, Table, "nct_unordered_buckets", L),
+          Bucket, type(Table.NodePointerType, L), L), L);
+      const auto First = labelName(), Ready = labelName();
+      branch(cast(Previous, "bool", L), First, Ready, L);
+      label(First, L);
+      assign(Node, unorderedNodeNext(Previous, Table, L), L);
+      jump(Ready, L);
+      label(Ready, L);
+    }
+    return unorderedMakeIterator(std::move(Node), Iterator, std::move(Destination), L,
+                                 std::move(Bucket), std::move(Count));
+  }
+
   Expression unorderedAdvanceIterator(Expression Node,
       const UtilityUnorderedMapIteratorRecord &Info, Expression Place, SourceLocation L) {
     auto Next = snapshot(unorderedNodeNext(Node, Info.Owner, L), L);
@@ -29424,6 +29443,11 @@ class FunctionLowering {
         reject(L, "unordered set iterator", "The authenticated integer iterator layout is required.");
       const auto *Receiver = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts())->getBase();
       auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
+      if (Iterator->Local) {
+        auto Bucket = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        return unorderedMakeBucketIterator(Place, *Table, *Iterator, std::move(Bucket),
+            Operation == UtilityOperation::UnorderedSetBegin, std::move(Destination), L);
+      }
       auto Node = A.zero(Table->NodePointerType, L);
       if (Operation == UtilityOperation::UnorderedSetBegin)
         Node = unorderedTableMember(Place, *Table, "nct_unordered_first", L);
@@ -29804,17 +29828,8 @@ class FunctionLowering {
       auto Place = dereference(Receiver, L);
       if (Iterator->Local) {
         auto Bucket = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
-        auto Count = snapshot(unorderedTableMember(Place, *Map, "nct_unordered_bucket_count", L), L);
-        auto Node = snapshot(A.zero(Map->NodePointerType, L), L);
-        if (Operation == UtilityOperation::UnorderedMapBegin) {
-          auto Previous = snapshot(index(unorderedTableMember(Place, *Map, "nct_unordered_buckets", L),
-              Bucket, type(Map->NodePointerType, L), L), L);
-          const auto First = labelName(), Ready = labelName();
-          branch(cast(Previous, "bool", L), First, Ready, L);
-          label(First, L);assign(Node, unorderedNodeNext(Previous, *Map, L), L);jump(Ready, L);
-          label(Ready, L);
-        }
-        return unorderedMakeIterator(Node, *Iterator, std::move(Destination), L, Bucket, Count);
+        return unorderedMakeBucketIterator(Place, *Map, *Iterator, std::move(Bucket),
+            Operation == UtilityOperation::UnorderedMapBegin, std::move(Destination), L);
       }
       Expression Node;
       if (Operation == UtilityOperation::UnorderedMapEnd) {

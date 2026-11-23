@@ -31,17 +31,18 @@
       "source_sha256": "7642ceef9a81872d03d7f5eb808a30110ffd116be6960e71f0bca25dad5cd0f5",
       "original_case_source_sha256": "7642ceef9a81872d03d7f5eb808a30110ffd116be6960e71f0bca25dad5cd0f5",
       "gtest_body_sha256": "f820a2321e7cb75cc9289d8a65f4192c0b808cb0a9bf632e28acabcd12de82be"
+    },
+    {
+      "name": "unordered-set-global-iterators-local-bucket-iterator",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalLocalBucketRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "96f268c4b57416dc1acff5ff7962dddac94c7c5c9c1d46a94d46a4d3b52b371b",
+      "original_case_source_sha256": "96f268c4b57416dc1acff5ff7962dddac94c7c5c9c1d46a94d46a4d3b52b371b",
+      "gtest_body_sha256": "1145465d419a91b63a66d7c5b4570943b8e2fb12227c2fe814bfa5db33a03b95",
+      "expected_exit_code": 1
     }
   ],
   "negative_cases": [
-    {
-      "name": "unordered-set-global-iterators-local-bucket-iterator",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedSetGlobalIteratorsLocalBucketIteratorRejected",
-      "expected": "reject",
-      "source_sha256": "96f268c4b57416dc1acff5ff7962dddac94c7c5c9c1d46a94d46a4d3b52b371b",
-      "original_case_source_sha256": "96f268c4b57416dc1acff5ff7962dddac94c7c5c9c1d46a94d46a4d3b52b371b",
-      "gtest_body_sha256": "e31533e72ee7925bb8ca422249f7cfa57ad5c24b58613b61dff00303c59c00b2"
-    },
     {
       "name": "unordered-set-global-iterators-different-key-iterator",
       "formal_test_name": "TranslateTest.CoreV2UnorderedSetGlobalIteratorsDifferentKeyIteratorRejected",
@@ -102,11 +103,11 @@
     },
     {
       "name": "unordered-set-global-iterators-local-bucket-iterator",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "unordered_set",
       "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; return values.begin(0) == values.end(0); }\n",
       "source_sha256": "96f268c4b57416dc1acff5ff7962dddac94c7c5c9c1d46a94d46a4d3b52b371b",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "unordered-set-global-iterators-different-key-iterator",
@@ -138,7 +139,7 @@
     "TranslateTest.CoreV2UnorderedSetGlobalIteratorsConstFindAndMissingRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetGlobalIteratorsDuplicateTraversalRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetGlobalIteratorsEndpointsEvaluateReceiverOnceRunAtBothOptimizations",
-    "TranslateTest.CoreV2UnorderedSetGlobalIteratorsLocalBucketIteratorRejected",
+    "TranslateTest.CoreV2UnorderedSetOriginalLocalBucketRunsAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetGlobalIteratorsDifferentKeyIteratorRejected",
     "TranslateTest.CoreV2UnorderedSetGlobalIteratorsCustomHashFindRejected",
     "TranslateTest.CoreV2UnorderedSetGlobalIteratorsFindPointerReceiverRejected"
@@ -154,11 +155,11 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8456,
   "current_python_registry_tests": 200,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
     "unordered-set-global-iterators": "afcbdc3a7849047999c80e5b066ec1ef15d1bb5064d73de25a8fd9f8f07b967d"
   },
   "native_reference_authentication_sha256": "ba17148652fd15e23ff6c9831ccc16d902309f0f9381eef8522752c1f01ab214",
-  "source_proof_sha256": "79ebb6a4f53a342e82258bf905e7b8894a49ad8ca5efe0ca3fe522a489a9dff2"
+  "source_proof_sha256": "e64d19cfae03c3a2cf7dfd0e1d27ac59f4d87a9d78130b1ebe204b8a755dcd94"
 }

@@ -1742,6 +1742,32 @@ def restore_unordered_set_equal_range_history(source):
     return restored
 
 
+R19_UNORDERED_SET_LOCAL_ITERATORS_REGISTERED_SHA256 = '0ef88a0571d525b7d64559b6af9a40ca1b7c8753b94cf130f6ec3397ed438b62'
+R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SHA256 = '7103b1330261f496dad389a54d80f8d6be1864a02ae967b62c2fb4e32b06340a'
+R19_UNORDERED_SET_LOCAL_ITERATORS_PREVIOUS_REGISTERED_SHA256 = 'fc919f87ffd1377e6fd0ec40841c2af74e64e685ab55f68163b58e3e78a1e9c9'
+R19_UNORDERED_SET_LOCAL_ITERATORS_PREVIOUS_MAINTAINED_SHA256 = '44fc110f1f40d86b7d188fe484d1a166c7da73e98f76edcd001d249395538cbf'
+R19_UNORDERED_SET_LOCAL_ITERATORS_ADDITIONS_SHA256 = 'cb09a16ca3f68f32fe3448ce3b4baa38d45a5b6fea6bf33dcc2b985dc21ed7e1'
+R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SIZE = 20133580
+R19_UNORDERED_SET_LOCAL_ITERATORS_ADDITIONS_SIZE = 8012
+
+
+def restore_unordered_set_local_iterators_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_LOCAL_ITERATORS_REGISTERED_SHA256, R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_LOCAL_ITERATORS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_LOCAL_ITERATORS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalLocalBucketRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-global-iterators-local-bucket-iterator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; return values.begin(0) == values.end(0); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-global-iterators-local-bucket-iterator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-global-iterators-local-bucket-iterator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalLocalBucketRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-global-iterators-local-bucket-iterator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; return values.begin(0) == values.end(0); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-global-iterators-local-bucket-iterator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-global-iterators-local-bucket-iterator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsLocalBucketIteratorRejected) {\n  const auto Source = tmpFile("unordered-set-global-iterators-local-bucket-iterator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; return values.begin(0) == values.end(0); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_LOCAL_ITERATORS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_LOCAL_ITERATORS_REGISTERED_SHA256
+             else R19_UNORDERED_SET_LOCAL_ITERATORS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2098,6 +2124,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_EQUAL_RANGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_LOCAL_ITERATORS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

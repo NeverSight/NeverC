@@ -1,0 +1,164 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-local-iterators-bucket-boundary-keeps-collisions",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetLocalIteratorsBucketBoundaryKeepsCollisionsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "17ec0244c13141c32c8d587a868e6d9457908bf64bf9d78ba4df0650252711cc",
+      "original_case_source_sha256": "17ec0244c13141c32c8d587a868e6d9457908bf64bf9d78ba4df0650252711cc",
+      "gtest_body_sha256": "0d0c820a5698e25269fff32968d1428c6499f504f79b027fd182c98a37333486"
+    },
+    {
+      "name": "unordered-set-local-iterators-const-bucket-iteration-sees-duplicates",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetLocalIteratorsConstBucketIterationSeesDuplicatesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e4ce593df87c7fdaab98ffa0af1117e64395476b11f87a85d88dc2f07f4fddb6",
+      "original_case_source_sha256": "e4ce593df87c7fdaab98ffa0af1117e64395476b11f87a85d88dc2f07f4fddb6",
+      "gtest_body_sha256": "fc40dd6a18376f9e2e6ed7908c3c8836ec258d9abe47dee9de0f0aee5490a4a9"
+    },
+    {
+      "name": "unordered-set-local-iterators-empty-bucket-and-copied-local-end",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetLocalIteratorsEmptyBucketAndCopiedLocalEndRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bac4de44fd8f5ca42577cbba368b7e4565ef40a900454595f6335ad20a873fb9",
+      "original_case_source_sha256": "bac4de44fd8f5ca42577cbba368b7e4565ef40a900454595f6335ad20a873fb9",
+      "gtest_body_sha256": "5643af0008d279c2a1e56a2fb19471fb60139b6deba2661d019c1a4f6b1c3436"
+    },
+    {
+      "name": "unordered-set-local-iterators-receiver-and-bucket-evaluated-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetLocalIteratorsReceiverAndBucketEvaluatedOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "34713cf8d8273c56c3ce444e543fbc08d7036586ffc903ce1927a9d138aa6d88",
+      "original_case_source_sha256": "34713cf8d8273c56c3ce444e543fbc08d7036586ffc903ce1927a9d138aa6d88",
+      "gtest_body_sha256": "d94de34b4859124fc4d2c6c278eafc2a8da99235fc69bdb7307d9cc66a47d580"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-local-iterators-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetLocalIteratorsPointerReceiverRejected",
+      "expected": "reject",
+      "source_sha256": "d414f18aa9bfe4a79b96786c57df5116491efbe0d242afdaca7fc7a9e22fbada",
+      "original_case_source_sha256": "d414f18aa9bfe4a79b96786c57df5116491efbe0d242afdaca7fc7a9e22fbada",
+      "gtest_body_sha256": "b05149a7bdaeb3f9fd7743f98bfad2ada24339484f98dc640cadec9aa3102b8b"
+    },
+    {
+      "name": "unordered-set-local-iterators-different-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetLocalIteratorsDifferentKeyRejected",
+      "expected": "reject",
+      "source_sha256": "ce3c02ffd34adc6bcc40b54414f526fdd41fbfdf8eb6a7881bbcc9b69d69fd38",
+      "original_case_source_sha256": "ce3c02ffd34adc6bcc40b54414f526fdd41fbfdf8eb6a7881bbcc9b69d69fd38",
+      "gtest_body_sha256": "e4f2ecdb9f34c196d709b68019905dd91562f99446faa61679430a76573ad615"
+    },
+    {
+      "name": "unordered-set-local-iterators-custom-hash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomHashRejected",
+      "expected": "reject",
+      "source_sha256": "2ce478e30c814b02d4445bd382e0bbed9f510f16c02e1a12666e1ca6f9602538",
+      "original_case_source_sha256": "2ce478e30c814b02d4445bd382e0bbed9f510f16c02e1a12666e1ca6f9602538",
+      "gtest_body_sha256": "5166300c3c579bcb0b26514f716f6cea971572c7ab400ce34fec8c15e5626e88"
+    },
+    {
+      "name": "unordered-set-local-iterators-custom-equality",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomEqualityRejected",
+      "expected": "reject",
+      "source_sha256": "738b5f6c0782c25a40e0136f4443fd212b18a7825a6e670e2e1e6ae54c011923",
+      "original_case_source_sha256": "738b5f6c0782c25a40e0136f4443fd212b18a7825a6e670e2e1e6ae54c011923",
+      "gtest_body_sha256": "6d4d3f9f6fd7eba6916f55125760ceb3a7f80b6da8969d9b4b92ec815bd01d2a"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-local-iterators-bucket-boundary-keeps-collisions",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{0, 8, 1, 16, 17};\n  values.rehash(8);\n  const auto bucket = values.bucket(8);\n  unsigned visited = 0;\n  int sum = 0;\n  for (auto it = values.begin(bucket); it != values.end(bucket); ++it) {\n    sum += *it;\n    ++visited;\n  }\n  return visited != 3 || sum != 24 || values.bucket_size(bucket) != 3;\n}\n",
+      "source_sha256": "17ec0244c13141c32c8d587a868e6d9457908bf64bf9d78ba4df0650252711cc",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-local-iterators-const-bucket-iteration-sees-duplicates",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{4, 12, 4, 12, 4, 7};\n  values.rehash(8);\n  const auto& read = values;\n  const auto bucket = read.bucket(4);\n  int visited = 0, fours = 0;\n  for (auto it = read.cbegin(bucket); it != read.cend(bucket);) {\n    const int key = *it++;\n    if (key != 4 && key != 12) return 1;\n    fours += key == 4;\n    ++visited;\n  }\n  return visited != 5 || fours != 3;\n}\n",
+      "source_sha256": "e4ce593df87c7fdaab98ffa0af1117e64395476b11f87a85d88dc2f07f4fddb6",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-local-iterators-empty-bucket-and-copied-local-end",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{1, 3};\n  values.rehash(8);\n  const auto& read = values;\n  auto end = read.end(2);\n  auto copy = end;\n  return copy != read.begin(2) || end != read.cend(2);\n}\n",
+      "source_sha256": "bac4de44fd8f5ca42577cbba368b7e4565ef40a900454595f6335ad20a873fb9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-local-iterators-receiver-and-bucket-evaluated-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nint trace;\nconst Set& receiver(const Set& values) { trace = trace * 10 + 1; return values; }\nunsigned bucket() { trace = trace * 10 + 2; return 2; }\nint main() {\n  Set values{1};\n  values.rehash(8);\n  auto it = receiver(values).cbegin(bucket());\n  return trace != 12 || it != values.cend(2);\n}\n",
+      "source_sha256": "34713cf8d8273c56c3ce444e543fbc08d7036586ffc903ce1927a9d138aa6d88",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-local-iterators-pointer-receiver",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values{3}; auto* p = &values; return p->begin(0) != p->end(0); }\n",
+      "source_sha256": "d414f18aa9bfe4a79b96786c57df5116491efbe0d242afdaca7fc7a9e22fbada",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-local-iterators-different-key",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<long> values{3L}; return values.begin(0) != values.end(0); }\n",
+      "source_sha256": "ce3c02ffd34adc6bcc40b54414f526fdd41fbfdf8eb6a7881bbcc9b69d69fd38",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-local-iterators-custom-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int k) const { return static_cast<unsigned long>(k); } };\nint main() { std::unordered_multiset<int, Hash> values{3,3}; return values.begin(0) != values.end(0); }\n",
+      "source_sha256": "2ce478e30c814b02d4445bd382e0bbed9f510f16c02e1a12666e1ca6f9602538",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-local-iterators-custom-equality",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int a, int b) const { return a == b; } };\nint main() {\n  std::unordered_multiset<int, std::hash<int>, Equal> values{1, 1};\n  const auto bucket = values.bucket(1);\n  return values.cbegin(bucket) == values.cend(bucket);\n}\n",
+      "source_sha256": "738b5f6c0782c25a40e0136f4443fd212b18a7825a6e670e2e1e6ae54c011923",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetLocalIteratorsBucketBoundaryKeepsCollisionsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetLocalIteratorsConstBucketIterationSeesDuplicatesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetLocalIteratorsEmptyBucketAndCopiedLocalEndRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetLocalIteratorsReceiverAndBucketEvaluatedOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetLocalIteratorsPointerReceiverRejected",
+    "TranslateTest.CoreV2UnorderedSetLocalIteratorsDifferentKeyRejected",
+    "TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomHashRejected",
+    "TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomEqualityRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "0ef88a0571d525b7d64559b6af9a40ca1b7c8753b94cf130f6ec3397ed438b62",
+  "maintained_original_sha256": "7103b1330261f496dad389a54d80f8d6be1864a02ae967b62c2fb4e32b06340a",
+  "previous_registered_source_sha256": "fc919f87ffd1377e6fd0ec40841c2af74e64e685ab55f68163b58e3e78a1e9c9",
+  "previous_maintained_original_sha256": "44fc110f1f40d86b7d188fe484d1a166c7da73e98f76edcd001d249395538cbf",
+  "restorer_sha256": "6bfa5beff602aba1764303d193483b36ec1bdac123249cf8d0311e9c162bedf3",
+  "extractor_sha256": "dfc349e0afd978e65f1551fc7e6969baffb9dbaa23c2a25f7a1535a2db7709a9",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8488,
+  "current_python_registry_tests": 208,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-local-iterators": "cbdcc10947c84bcb12d21f3bc773303f4bd31ce6e8f2e951d2f4e6ece6951e83"
+  },
+  "native_reference_authentication_sha256": "690625b182db586cf83a95f716d5a89bf66c3ff8aa201bb9038087751c9cf618",
+  "source_proof_sha256": "e64d19cfae03c3a2cf7dfd0e1d27ac59f4d87a9d78130b1ebe204b8a755dcd94"
+}

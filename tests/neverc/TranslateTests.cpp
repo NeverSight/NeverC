@@ -391109,15 +391109,22 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsLocalBucketIteratorRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalLocalBucketRunsAtBothOptimizations) {
   const auto Source = tmpFile("unordered-set-global-iterators-local-bucket-iterator.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() { std::unordered_set<int> values{5}; return values.begin(0) == values.end(0); }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-set-global-iterators-local-bucket-iterator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-global-iterators-local-bucket-iterator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsDifferentKeyIteratorRejected) {
@@ -391604,6 +391611,168 @@ TEST_F(TranslateTest, CoreV2UnorderedSetEqualRangePointerReceiverRejected) {
   const auto Source = tmpFile("unordered-set-equal-range-pointer-receiver.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() { std::unordered_multiset<int> values{2, 2}; auto* p=&values; return p->equal_range(2).first == values.end(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetLocalIteratorsBucketBoundaryKeepsCollisionsRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-local-iterators-bucket-boundary-keeps-collisions.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values{0, 8, 1, 16, 17};
+  values.rehash(8);
+  const auto bucket = values.bucket(8);
+  unsigned visited = 0;
+  int sum = 0;
+  for (auto it = values.begin(bucket); it != values.end(bucket); ++it) {
+    sum += *it;
+    ++visited;
+  }
+  return visited != 3 || sum != 24 || values.bucket_size(bucket) != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-local-iterators-bucket-boundary-keeps-collisions.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-local-iterators-bucket-boundary-keeps-collisions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetLocalIteratorsConstBucketIterationSeesDuplicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-local-iterators-const-bucket-iteration-sees-duplicates.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{4, 12, 4, 12, 4, 7};
+  values.rehash(8);
+  const auto& read = values;
+  const auto bucket = read.bucket(4);
+  int visited = 0, fours = 0;
+  for (auto it = read.cbegin(bucket); it != read.cend(bucket);) {
+    const int key = *it++;
+    if (key != 4 && key != 12) return 1;
+    fours += key == 4;
+    ++visited;
+  }
+  return visited != 5 || fours != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-local-iterators-const-bucket-iteration-sees-duplicates.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-local-iterators-const-bucket-iteration-sees-duplicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetLocalIteratorsEmptyBucketAndCopiedLocalEndRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-local-iterators-empty-bucket-and-copied-local-end.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values{1, 3};
+  values.rehash(8);
+  const auto& read = values;
+  auto end = read.end(2);
+  auto copy = end;
+  return copy != read.begin(2) || end != read.cend(2);
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-local-iterators-empty-bucket-and-copied-local-end.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-local-iterators-empty-bucket-and-copied-local-end" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetLocalIteratorsReceiverAndBucketEvaluatedOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-local-iterators-receiver-and-bucket-evaluated-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_set<int>;
+int trace;
+const Set& receiver(const Set& values) { trace = trace * 10 + 1; return values; }
+unsigned bucket() { trace = trace * 10 + 2; return 2; }
+int main() {
+  Set values{1};
+  values.rehash(8);
+  auto it = receiver(values).cbegin(bucket());
+  return trace != 12 || it != values.cend(2);
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-local-iterators-receiver-and-bucket-evaluated-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-local-iterators-receiver-and-bucket-evaluated-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetLocalIteratorsPointerReceiverRejected) {
+  const auto Source = tmpFile("unordered-set-local-iterators-pointer-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<int> values{3}; auto* p = &values; return p->begin(0) != p->end(0); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetLocalIteratorsDifferentKeyRejected) {
+  const auto Source = tmpFile("unordered-set-local-iterators-different-key.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<long> values{3L}; return values.begin(0) != values.end(0); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetLocalIteratorsCustomHashRejected) {
+  const auto Source = tmpFile("unordered-set-local-iterators-custom-hash.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int k) const { return static_cast<unsigned long>(k); } };
+int main() { std::unordered_multiset<int, Hash> values{3,3}; return values.begin(0) != values.end(0); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetLocalIteratorsCustomEqualityRejected) {
+  const auto Source = tmpFile("unordered-set-local-iterators-custom-equality.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int a, int b) const { return a == b; } };
+int main() {
+  std::unordered_multiset<int, std::hash<int>, Equal> values{1, 1};
+  const auto bucket = values.bucket(1);
+  return values.cbegin(bucket) == values.cend(bucket);
+}
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
   ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;

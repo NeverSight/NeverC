@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_local_iterators_registered = cls.registered
+        cls.unordered_set_local_iterators_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_local_iterators_original = cls.adapter.restore_original_gtests(cls.unordered_set_local_iterators_registered,
+                                                                        cls.unordered_set_local_iterators_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_local_iterators_history(cls.unordered_set_local_iterators_registered)
         cls.unordered_set_equal_range_registered = cls.registered
         cls.unordered_set_equal_range_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_equal_range_original = cls.adapter.restore_original_gtests(cls.unordered_set_equal_range_registered,
@@ -2808,6 +2813,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_equal_range_history(self.unordered_set_equal_range_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_equal_range_registered, self.unordered_set_equal_range_suffix + b' ')
+
+
+    def test_unordered_set_local_iterators_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_local_iterators_original + self.unordered_set_local_iterators_suffix, self.unordered_set_local_iterators_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_local_iterators_history(self.unordered_set_local_iterators_original),
+                         self.unordered_set_equal_range_original)
+        output, evidence = self.extractor.extract(self.unordered_set_local_iterators_original, ['TranslateTest.CoreV2UnorderedSetLocalIteratorsBucketBoundaryKeepsCollisionsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsConstBucketIterationSeesDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsEmptyBucketAndCopiedLocalEndRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsReceiverAndBucketEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsPointerReceiverRejected', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsDifferentKeyRejected', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomHashRejected', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomEqualityRejected'])
+        self.assertEqual(evidence['original_test_names'], 8488)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-local-iterators-bucket-boundary-keeps-collisions', output)
+        self.assertIn(b'unordered-set-local-iterators-const-bucket-iteration-sees-duplicates', output)
+
+    def test_unordered_set_local_iterators_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_local_iterators_history(self.unordered_set_local_iterators_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_local_iterators_registered, self.unordered_set_local_iterators_suffix + b' ')
 
 
 if __name__ == '__main__':
