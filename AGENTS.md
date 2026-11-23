@@ -6,6 +6,7 @@ Keep repository-wide context small. Read the document that matches the task:
 - Use `docs/dyncode-compiler.md` and its focused design documents for DynCode pipeline changes.
 - Use `docs/plugin-api.md` for public plugin ABI or phase-hook work.
 - Use `docs/release-builds.md` and `release.md` when changing packaging or release workflows.
+- Use `.agents/skills/neverc-workflow-trust/SKILL.md` when changing a GitHub workflow, action pin, or workflow trigger. A workflow that runs in this repository is the file on the trusted branch. A fork must not be able to replace that file or the actions it runs.
 - Use `development.md` only for x86 privileged-intrinsic lowering and generated intrinsic or instruction tables.
 - Use `docs/roadmap.md` only when scoping planned product work.
 

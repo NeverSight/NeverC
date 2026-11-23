@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install dependencies
         run: |
@@ -28,7 +28,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y clang nghttp2-client netcat-openbsd ripgrep
 
       - name: Install current Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: 'stable'
           cache-dependency-path: tests/neverc/interop/go-grpc/go.sum

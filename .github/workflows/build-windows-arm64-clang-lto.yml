@@ -31,7 +31,7 @@ jobs:
       SCCACHE_IDLE_TIMEOUT: "0"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up CPython 3.12.10 for official artifacts
         id: python
@@ -63,7 +63,7 @@ jobs:
         run: bash ./.github/scripts/resolve-llvm-version.sh
 
       - name: Cache LLVM toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: C:\LLVM
           key: llvm-${{ env.LLVM_VER }}-win64
@@ -73,7 +73,7 @@ jobs:
         run: ./.github/scripts/install-llvm-windows.ps1
 
       - name: Setup MSVC (native arm64)
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           arch: arm64
 
@@ -106,7 +106,7 @@ jobs:
 
       # ── sccache ──────────────────────────────────────────────
       - name: Setup sccache
-        uses: mozilla/sccache-action@v0.0.7
+        uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
 
       - name: Verify sccache
         shell: bash
@@ -212,7 +212,7 @@ jobs:
             --archive windows-arm64-neverc-clang-lto.zip
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-arm64-neverc-clang-lto
           path: windows-arm64-neverc-clang-lto.zip
@@ -232,7 +232,7 @@ jobs:
             --archive windows-arm64-neverc-clang-lto-compiler.zip
 
       - name: Upload Compiler Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-arm64-neverc-clang-lto-compiler
           path: windows-arm64-neverc-clang-lto-compiler.zip
@@ -241,7 +241,7 @@ jobs:
         run: 7z a windows-arm64-neverc-clang-lto-runtime.zip install/runtime
 
       - name: Upload Runtime Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-arm64-neverc-clang-lto-runtime
           path: windows-arm64-neverc-clang-lto-runtime.zip
@@ -252,7 +252,7 @@ jobs:
 
       - name: Upload PDB Artifact
         if: hashFiles('windows-arm64-neverc-clang-lto-pdb.zip') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-arm64-neverc-clang-lto-pdb
           path: windows-arm64-neverc-clang-lto-pdb.zip

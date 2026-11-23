@@ -23,5 +23,7 @@ jobs:
           python-version: '3.12'
       - name: Test workflow trigger recognition and preservation
         run: python -I -B utils/ci/test_sync_workflow_concurrency.py
+      - name: Test workflow trust against fork replacement
+        run: python -I -B utils/ci/test_workflow_trust.py
       - name: Validate workflow syntax
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/test-workflow-concurrency.yml

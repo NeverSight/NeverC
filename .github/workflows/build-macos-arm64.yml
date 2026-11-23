@@ -43,7 +43,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: neverc
 
@@ -54,7 +54,7 @@ jobs:
           python-version: "3.12.10"
 
       - name: Select latest stable Xcode SDK
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: latest-stable
 
@@ -117,7 +117,7 @@ jobs:
 
       - name: Upload native platform recovery evidence
         if: ${{ !cancelled() && steps.cpp_ci_recovery.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cpp-ci-recovery-macos-${{ github.sha }}
           path: ${{ runner.temp }}/cpp-ci-recovery
@@ -152,7 +152,7 @@ jobs:
 
       - name: Upload selected pair verification evidence
         if: ${{ always() && steps.cpp_pair_gate.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cpp-pair-selected-${{ github.sha }}
           path: ${{ runner.temp }}/cpp-pair-selected
@@ -175,7 +175,7 @@ jobs:
             --archive macos-arm64-neverc.zip
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: macos-arm64-neverc
           path: macos-arm64-neverc.zip
@@ -193,7 +193,7 @@ jobs:
             --archive macos-arm64-neverc-compiler.zip
 
       - name: Upload Compiler Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: macos-arm64-neverc-compiler
           path: macos-arm64-neverc-compiler.zip
@@ -202,7 +202,7 @@ jobs:
         run: 7z a macos-arm64-neverc-runtime.zip install/runtime
 
       - name: Upload Runtime Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: macos-arm64-neverc-runtime
           path: macos-arm64-neverc-runtime.zip

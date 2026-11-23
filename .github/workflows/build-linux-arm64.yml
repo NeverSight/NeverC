@@ -30,7 +30,7 @@ jobs:
       LLVM_APT_VER: '22'
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         path: neverc
 
@@ -99,7 +99,7 @@ jobs:
     - name: Preserve Linux ARM64 install dependency baseline
       continue-on-error: true
       timeout-minutes: 3
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: linux-arm64-install-baseline-${{ github.run_attempt }}
         path: ${{ runner.temp }}/Linux-arm64-install-baseline.txt
@@ -144,7 +144,7 @@ jobs:
       if: ${{ failure() && steps.arm64_install_dependencies.outcome == 'failure' }}
       continue-on-error: true
       timeout-minutes: 3
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: linux-arm64-install-failure-${{ github.run_attempt }}
         path: ${{ runner.temp }}/Linux-arm64-install-failure.txt
@@ -166,7 +166,7 @@ jobs:
           --archive linux-arm64-neverc.zip
 
     - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: linux-arm64-neverc
         path: linux-arm64-neverc.zip
@@ -184,7 +184,7 @@ jobs:
           --archive linux-arm64-neverc-compiler.zip
 
     - name: Upload Compiler Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: linux-arm64-neverc-compiler
         path: linux-arm64-neverc-compiler.zip
@@ -193,7 +193,7 @@ jobs:
       run: 7z a linux-arm64-neverc-runtime.zip install/runtime
 
     - name: Upload Runtime Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: linux-arm64-neverc-runtime
         path: linux-arm64-neverc-runtime.zip

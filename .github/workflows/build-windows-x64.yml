@@ -30,7 +30,7 @@ jobs:
       NEVERC_PCG_STRICT: "1"
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         path: neverc
 
@@ -56,7 +56,7 @@ jobs:
         Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-x86_64\bin"
 
     - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
     - name: Build neverc
       shell: bash
@@ -86,7 +86,7 @@ jobs:
 
     - name: Upload native platform recovery evidence
       if: ${{ !cancelled() && steps.cpp_ci_recovery.outcome != 'skipped' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-ci-recovery-windows-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-ci-recovery
@@ -119,7 +119,7 @@ jobs:
           --archive windows-x64-neverc.zip
 
     - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-x64-neverc
         path: windows-x64-neverc.zip
@@ -139,7 +139,7 @@ jobs:
           --archive windows-x64-neverc-compiler.zip
 
     - name: Upload Compiler Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-x64-neverc-compiler
         path: windows-x64-neverc-compiler.zip
@@ -148,7 +148,7 @@ jobs:
       run: 7z a windows-x64-neverc-runtime.zip install/runtime
 
     - name: Upload Runtime Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-x64-neverc-runtime
         path: windows-x64-neverc-runtime.zip
@@ -162,7 +162,7 @@ jobs:
       run: 7z a windows-x64-neverc-pdb.zip ./build/bin/*.pdb
 
     - name: Upload PDB Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-x64-neverc-pdb
         path: windows-x64-neverc-pdb.zip

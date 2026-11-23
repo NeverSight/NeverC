@@ -29,7 +29,7 @@ jobs:
       NEVERC_PCG_STRICT: "1"
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         path: neverc
 
@@ -56,7 +56,7 @@ jobs:
         choco install 7zip -y
 
     - name: Setup MSVC (native arm64)
-      uses: ilammy/msvc-dev-cmd@v1
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
       with:
         arch: arm64
 
@@ -105,7 +105,7 @@ jobs:
           --archive windows-arm64-neverc.zip
 
     - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-arm64-neverc
         path: windows-arm64-neverc.zip
@@ -125,7 +125,7 @@ jobs:
           --archive windows-arm64-neverc-compiler.zip
 
     - name: Upload Compiler Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-arm64-neverc-compiler
         path: windows-arm64-neverc-compiler.zip
@@ -134,7 +134,7 @@ jobs:
       run: 7z a windows-arm64-neverc-runtime.zip install/runtime
 
     - name: Upload Runtime Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-arm64-neverc-runtime
         path: windows-arm64-neverc-runtime.zip
@@ -148,7 +148,7 @@ jobs:
       run: 7z a windows-arm64-neverc-pdb.zip ./build/bin/*.pdb
 
     - name: Upload PDB Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-arm64-neverc-pdb
         path: windows-arm64-neverc-pdb.zip
