@@ -1669,7 +1669,7 @@ class FunctionLowering {
     if (Multi) {
       // The selected multiset operation constructs its node before hashing the stored key.
       assign(Hash, cast(unorderedNodeKey(Node, Info, L), Size, L), L);
-      assign(unorderedNodeHash(Node, L), Hash, L);
+      if (!MergeTransfer) assign(unorderedNodeHash(Node, L), Hash, L);
       assign(OldCount, unorderedTableMember(Place, Info, "nct_unordered_bucket_count", L), L);
     }
     auto NewSize = snapshot(binary("+", unorderedTableMember(Place, Info, "nct_unordered_size", L), one(Size, L), Size, L), L);
@@ -2345,18 +2345,24 @@ class FunctionLowering {
     return Place;
   }
 
-  Expression unorderedMapMergeOperation(const CallExpr *Call,
+  Expression unorderedTableMergeOperation(const CallExpr *Call,
       const UtilityUnorderedTableRecord &Info) {
     auto L = Call->getExprLoc();
     const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
     const auto *Object = Member->getImplicitObjectArgument();
     auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
         : address(lvalue(Object), Object->getType(), L), L);
-    auto Source = dereference(snapshot(argument(Call->getArg(0),
-        Member->getMethodDecl()->getParamDecl(0)->getType()), L), L);
+    auto Input = snapshot(argument(Call->getArg(0), Member->getMethodDecl()->getParamDecl(0)->getType()), L);
+    auto Source = dereference(Input, L);
     auto Place = dereference(Receiver, L);
-    auto Cursor = snapshot(unorderedTableMember(Source, Info, "nct_unordered_first", L), L);
     const auto Check = labelName(), Transfer = labelName(), Done = labelName();
+    if (!Info.HasMappedValue) {
+      const auto Begin = labelName();
+      branch(binary("==", cast(Receiver, "ptr:void", L), cast(Input, "ptr:void", L), "bool", L),
+          Done, Begin, L);
+      label(Begin, L);
+    }
+    auto Cursor = snapshot(unorderedTableMember(Source, Info, "nct_unordered_first", L), L);
     jump(Check, L); label(Check, L);
     branch(cast(Cursor, "bool", L), Transfer, Done, L);
     label(Transfer, L);
@@ -33518,8 +33524,8 @@ class FunctionLowering {
         return unorderedResultOperation(Call, *Info);
       if (auto Info = unorderedTableListAssignment(A.S, A.Sources, Call, A.Context))
         return unorderedTableListAssignmentOperation(Call, *Info);
-      if (auto Info = unorderedMapMerge(A.S, A.Sources, Call, A.Context))
-        return unorderedMapMergeOperation(Call, *Info);
+      if (auto Info = unorderedTableMerge(A.S, A.Sources, Call, A.Context))
+        return unorderedTableMergeOperation(Call, *Info);
       if (auto Info = unorderedNodeCall(A.S, A.Sources, Call, A.Context))
         return unorderedNodeOperation(Call, *Info, std::move(Destination));
       if (auto Info = unorderedNodeTransfer(A.S, A.Sources, Call, A.Context))
