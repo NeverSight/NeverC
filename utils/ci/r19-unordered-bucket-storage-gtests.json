@@ -40,6 +40,14 @@
       "original_case_source_sha256": "2e0d0a3d61c0353fd836c5b75fed78535ad0102253fe6d83774167f740d5b2e4",
       "gtest_body_sha256": "7b02c0fbfcffc8214fa4ecdab8d9d6fa10fb4b8f7c93c99bcaec3eb419cb391f",
       "expected_exit_code": 2
+    },
+    {
+      "name": "unordered-bucket-storage-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerReserveRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "12650de0b3574ce5b512e67accf107d4c2107bd6296ef4677a56e919b090ee09",
+      "original_case_source_sha256": "12650de0b3574ce5b512e67accf107d4c2107bd6296ef4677a56e919b090ee09",
+      "gtest_body_sha256": "da61053c786076c5c8cd18f633792fc07b028efd3420af4ef55326de004e8f65"
     }
   ],
   "negative_cases": [
@@ -58,14 +66,6 @@
       "source_sha256": "9271ef2c810f27cb6b3feb5760247ddcc3eeb041b32ad93a4ed517b3f51d40c8",
       "original_case_source_sha256": "9271ef2c810f27cb6b3feb5760247ddcc3eeb041b32ad93a4ed517b3f51d40c8",
       "gtest_body_sha256": "4eca3310f30bf590a9887dd006c2abd5f209f904b391902c22bc1368784f7c80"
-    },
-    {
-      "name": "unordered-bucket-storage-pointer-receiver",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedBucketStoragePointerReceiverRejected",
-      "expected": "reject",
-      "source_sha256": "12650de0b3574ce5b512e67accf107d4c2107bd6296ef4677a56e919b090ee09",
-      "original_case_source_sha256": "12650de0b3574ce5b512e67accf107d4c2107bd6296ef4677a56e919b090ee09",
-      "gtest_body_sha256": "a3f2d5983b72aff756e32923055affe26f285a904b641b1eb31860f8859cf897"
     }
   ],
   "source_cases": [
@@ -110,6 +110,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-bucket-storage-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->reserve(4); return values.size(); }\n",
+      "source_sha256": "12650de0b3574ce5b512e67accf107d4c2107bd6296ef4677a56e919b090ee09",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-bucket-storage-custom-hasher",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -124,14 +132,6 @@
       "source": "#include <unordered_set>\nint main() { std::unordered_multiset<long> values; values.reserve(4); return values.size(); }\n",
       "source_sha256": "9271ef2c810f27cb6b3feb5760247ddcc3eeb041b32ad93a4ed517b3f51d40c8",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-bucket-storage-pointer-receiver",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->reserve(4); return values.size(); }\n",
-      "source_sha256": "12650de0b3574ce5b512e67accf107d4c2107bd6296ef4677a56e919b090ee09",
-      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -140,9 +140,9 @@
     "TranslateTest.CoreV2UnorderedBucketStorageResizeArgumentsOnceRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedBucketStorageBucketAllocationAndReleaseRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedMultisetNonemptyRehashRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerReserveRunsAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedBucketStorageCustomHasherRejected",
-    "TranslateTest.CoreV2UnorderedBucketStorageDifferentKeyRejected",
-    "TranslateTest.CoreV2UnorderedBucketStoragePointerReceiverRejected"
+    "TranslateTest.CoreV2UnorderedBucketStorageDifferentKeyRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -155,12 +155,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8392,
   "current_python_registry_tests": 184,
-  "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
   "native_reference_proofs": {
     "unordered-bucket-storage": "2eba369d4578e9e03c506e68fc1b71004f3614f6d7fbf879a0fdcf3b8acaef76",
-    "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a"
+    "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a",
+    "unordered-set-bucket-receivers": "1a0de477baf71caf287cb98e07a1017a3c2a3df8497717c62c00fa1dfc95ed03"
   },
-  "native_reference_authentication_sha256": "c0d00c96f8b35177e191241664e3fda38c5183b09d5a49be9a66241fb3c31a39",
-  "source_proof_sha256": "667073ddb54c987cfa24c67fd70448c08aacbb946c713942b7eb2065972d8a7f"
+  "native_reference_authentication_sha256": "cb83fcdc0a086c446cec3cb56220498293bfe97611002c71472c9e44db29c634",
+  "source_proof_sha256": "334ee0dafd8ed3cfca299b31ad68a1401564d6e963cd06bcb0a402b1d82b697d"
 }

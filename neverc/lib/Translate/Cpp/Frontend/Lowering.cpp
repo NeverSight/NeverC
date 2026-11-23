@@ -1209,6 +1209,11 @@ class FunctionLowering {
     return unorderedNodeField(std::move(Node), A.Context.getSizeType(),
         A.Context.getTypeSizeInChars(A.Context.VoidPtrTy).getQuantity(), L);
   }
+  Expression unorderedSetReceiverPointer(const MemberExpr *Member, SourceLocation L) {
+    const auto *Base = Member->getBase();
+    return Member->isArrow() ? expression(Base) : address(lvalue(Base), Base->getType(), L);
+  }
+
   Expression unorderedNodeKey(Expression Node, const UtilityUnorderedTableRecord &Info,
                                SourceLocation L) {
     return unorderedNodeField(std::move(Node), A.Context.IntTy, Info.ValueOffsetBytes, L);
@@ -29642,8 +29647,7 @@ class FunctionLowering {
       if (!Member || approvedEmptyHashSetBucketOperation(A.S, A.Sources, Call, A.Context) != Operation)
         reject(L, "unordered set bucket storage", "The exact selected SDK bucket operation is required.");
       const auto *Method = clang::cast<CXXMethodDecl>(Member->getMemberDecl());
-      const auto *Receiver = Member->getBase();
-      auto Pointer = snapshot(address(lvalue(Receiver), Receiver->getType(), L), L);
+      auto Pointer = snapshot(unorderedSetReceiverPointer(Member, L), L);
       auto Count = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
       auto Place = dereference(std::move(Pointer), L);
       const auto Table = approvedUtilityUnorderedSetStorage(A.S, A.Sources, Method->getParent(), A.Context);
@@ -29667,8 +29671,7 @@ class FunctionLowering {
       if (!Member)
         reject(L, "unordered set load limit", "The exact selected SDK setter body is required.");
       const auto *Method = clang::cast<CXXMethodDecl>(Member->getMemberDecl());
-      const auto *Receiver = Member->getBase();
-      auto Pointer = snapshot(address(lvalue(Receiver), Receiver->getType(), L), L);
+      auto Pointer = snapshot(unorderedSetReceiverPointer(Member, L), L);
       auto Value = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
       auto Place = dereference(std::move(Pointer), L);
       auto Current = emptyHashSetLoadFactor(Place, L);
@@ -29682,17 +29685,20 @@ class FunctionLowering {
         reject(L, "unordered set observer", "The exact selected SDK observer body is required.");
       const auto *Member = Info->Member;
       const auto Name = Member->getMemberDecl()->getName();
-      auto Receiver = lvalue(Member->getBase());
-      if (Info->Maximum)
+      if (Info->Maximum) {
+        if (Member->isArrow()) expression(Member->getBase());
+        else lvalue(Member->getBase());
         return quantity(*Info->Maximum, type(Call->getType(), L), L);
+      }
+      if (Name == "load_factor") {
+        auto Pointer = snapshot(unorderedSetReceiverPointer(Member, L), L);
+        return emptyHashSetLoadFactor(dereference(std::move(Pointer), L), L);
+      }
+      auto Receiver = Member->isArrow() ? dereference(expression(Member->getBase()), L)
+                                        : lvalue(Member->getBase());
       if (Name == "max_load_factor")
         return hashTableMember(std::move(Receiver), "nct_unordered_max_load", A.Context.FloatTy, L);
       const auto Type = A.Context.getSizeType();
-      if (Name == "load_factor") {
-        auto Pointer = snapshot(address(std::move(Receiver), Member->getBase()->getType(), L), L);
-        auto Place = dereference(std::move(Pointer), L);
-        return emptyHashSetLoadFactor(std::move(Place), L);
-      }
       if (Name == "bucket_count")
         return hashTableMember(std::move(Receiver), "nct_unordered_bucket_count", Type, L);
       auto Count = hashTableMember(std::move(Receiver), "nct_unordered_size", Type, L);

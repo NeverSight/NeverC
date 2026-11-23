@@ -137055,6 +137055,21 @@ static bool emptyHashLoadFactorSource(const State &S, const SourceManager &SM,
          isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase()));
 }
 
+static QualType unorderedSetReceiverType(const MemberExpr *Member) {
+  if (!Member) return {};
+  const auto *Base = Member->getBase();
+  auto Type = Base->getType();
+  if (Member->isArrow()) {
+    if (!Type->isPointerType()) return {};
+    Type = Type->getPointeeType();
+  } else if (!Base->isLValue()) {
+    return {};
+  }
+  if (Type.isVolatileQualified() || Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
+    return {};
+  return Type;
+}
+
 std::optional<UtilityOperation> approvedEmptyHashSetBucketOperation(const State &S,
     const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -137066,12 +137081,11 @@ std::optional<UtilityOperation> approvedEmptyHashSetBucketOperation(const State 
     return std::nullopt;
   const auto *Owner = Outer->getParent();
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
-  const auto Type = Member ? Member->getBase()->getType() : QualType();
+  const auto Type = unorderedSetReceiverType(Member);
   const auto Size = Context.getSizeType();
   const auto Result = Observe ? Size : Context.VoidTy;
   const auto Parameter = Lookup ? Context.getLValueReferenceType(Context.IntTy.withConst()) : Size;
-  if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
-      Type.isVolatileQualified() || (!Observe && Type.hasQualifiers()) || !S.owns(SM, Member->getMemberLoc()) ||
+  if (Type.isNull() || (!Observe && Type.isConstQualified()) || !S.owns(SM, Member->getMemberLoc()) ||
       Outer->isConst() != Observe || Outer->isStatic() || Outer->isVirtual() || Outer->isVolatile() ||
       Outer->getPrimaryTemplate() || Outer->getNumParams() != 1 || Call->getNumArgs() != 1 ||
       !Context.hasSameType(Outer->getReturnType(), Result) || !Context.hasSameType(Call->getType(), Result) ||
@@ -137120,14 +137134,14 @@ const MemberExpr *approvedEmptyHashSetSetMaxLoadFactor(const State &S,
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto *Owner = Outer->getParent();
   const auto Float = Context.FloatTy;
-  if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
-      Member->getBase()->getType().hasQualifiers() || !S.owns(SM, Member->getMemberLoc()) ||
+  const auto Type = unorderedSetReceiverType(Member);
+  if (Type.isNull() || Type.isConstQualified() || !S.owns(SM, Member->getMemberLoc()) ||
       Outer->isConst() || Outer->isVolatile() || Outer->isStatic() || Outer->isVirtual() ||
       !Outer->getReturnType()->isVoidType() || !Call->getType()->isVoidType() ||
       !Context.hasSameType(Outer->getParamDecl(0)->getType(), Float) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Float) ||
       !approvedEmptyHashSetRecord(S, SM, Owner, Context) ||
-      !Context.hasSameType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
+      !Context.hasSameType(Type, Context.getRecordType(Owner)) ||
       !orderedPinnedFunction(S, SM, Outer, "unordered_set"))
     return nullptr;
 
@@ -137185,12 +137199,12 @@ std::optional<UtilityContainerObserver> approvedEmptyHashSetObserver(const State
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Outer = Access ? Access->getMethodDecl() : nullptr;
   const auto *Member = Outer ? dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
-  if (!Member || Member->isArrow() || !S.owns(SM, Member->getMemberLoc()) ||
+  const auto Type = unorderedSetReceiverType(Member);
+  if (Type.isNull() || !S.owns(SM, Member->getMemberLoc()) ||
       !Outer->getIdentifier() || !Outer->isConst() || Outer->isVolatile() ||
       Outer->isStatic() || Outer->isVirtual() || Outer->getNumParams() || Call->getNumArgs() ||
-      !Member->getBase()->isLValue() ||
       !approvedEmptyHashSetRecord(S, SM, Outer->getParent(), Context) ||
-      !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Outer->getParent())) ||
+      !Context.hasSameUnqualifiedType(Type, Context.getRecordType(Outer->getParent())) ||
       !orderedPinnedFunction(S, SM, Outer, "unordered_set"))
     return std::nullopt;
   const auto Name = Outer->getName();

@@ -18334,3 +18334,9 @@ Default integer unordered sets and multisets can extract nodes by key
 or iterator, access the detached value and reinsert a node. Unique
 insertion returns any uninserted node with its result. Multiset
 insertion retains equivalent keys and supports a position hint.
+
+## Pointer receivers for integer unordered bucket operations
+
+The default integer set and multiset support pointer receivers for
+capacity and bucket queries, reserve, rehash and load-factor operations.
+The receiver is evaluated once and each query uses the current table.

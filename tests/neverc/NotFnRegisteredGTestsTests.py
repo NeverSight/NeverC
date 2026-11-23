@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_bucket_receivers_registered = cls.registered
+        cls.unordered_set_bucket_receivers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_bucket_receivers_original = cls.adapter.restore_original_gtests(cls.unordered_set_bucket_receivers_registered,
+                                                                        cls.unordered_set_bucket_receivers_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_bucket_receivers_history(cls.unordered_set_bucket_receivers_registered)
         cls.unordered_set_node_handles_registered = cls.registered
         cls.unordered_set_node_handles_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_node_handles_original = cls.adapter.restore_original_gtests(cls.unordered_set_node_handles_registered,
@@ -3130,6 +3135,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_node_handles_history(self.unordered_set_node_handles_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_node_handles_registered, self.unordered_set_node_handles_suffix + b' ')
+
+
+    def test_unordered_set_bucket_receivers_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_bucket_receivers_original + self.unordered_set_bucket_receivers_suffix, self.unordered_set_bucket_receivers_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_bucket_receivers_history(self.unordered_set_bucket_receivers_original),
+                         self.unordered_set_node_handles_original)
+        output, evidence = self.extractor.extract(self.unordered_set_bucket_receivers_original, ['TranslateTest.CoreV2UnorderedSetBucketReceiversCapacityConstantsEvaluateTheConstPointerReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetBucketReceiversPointerCapacityAndLoadObserversUseTheLiveTableRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetBucketReceiversPointerReserveAndRehashEvaluateTheReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetBucketReceiversPointerBucketAndSizeFindAnEquivalentKeyGroupRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetBucketReceiversPointerSetterPreservesTheLiveLoadLimitRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetBucketReceiversOtherKeyPointerCapacityObserverRejected', 'TranslateTest.CoreV2UnorderedSetBucketReceiversCustomHashPointerRehashRejected', 'TranslateTest.CoreV2UnorderedSetBucketReceiversCustomEqualityPointerLoadLimitRejected'])
+        self.assertEqual(evidence['original_test_names'], 8611)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-bucket-receivers-capacity-constants-evaluate-the-const-pointer-receiver', output)
+        self.assertIn(b'unordered-set-bucket-receivers-pointer-setter-preserves-the-live-load-limit', output)
+
+    def test_unordered_set_bucket_receivers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_bucket_receivers_history(self.unordered_set_bucket_receivers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_bucket_receivers_registered, self.unordered_set_bucket_receivers_suffix + b' ')
 
 
 if __name__ == '__main__':
