@@ -31,17 +31,17 @@
       "source_sha256": "2132d5ee6afb636ff9934b1134135ad02b4f1bf9515a3b5a6f1331c234c364d6",
       "original_case_source_sha256": "2132d5ee6afb636ff9934b1134135ad02b4f1bf9515a3b5a6f1331c234c364d6",
       "gtest_body_sha256": "b377bfa04f7f611962382f38a303c776059b314a4eec443a8aba30c7fa0cc4a4"
+    },
+    {
+      "name": "any-narrow-inline-unicode-payload",
+      "formal_test_name": "TranslateTest.CoreV2AnyChar16OriginalConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7f9d9369b48c2dd3da8def061fa4c1c41c59b33f89462e7b504836c6a1edc1f1",
+      "original_case_source_sha256": "7f9d9369b48c2dd3da8def061fa4c1c41c59b33f89462e7b504836c6a1edc1f1",
+      "gtest_body_sha256": "bf327051afcad6b27a065df81c903a045dd179eaaf1378c7c73d0b9533658876"
     }
   ],
   "negative_cases": [
-    {
-      "name": "any-narrow-inline-unicode-payload",
-      "formal_test_name": "TranslateTest.CoreV2AnyNarrowInlineUnicodePayloadRejected",
-      "expected": "reject",
-      "source_sha256": "7f9d9369b48c2dd3da8def061fa4c1c41c59b33f89462e7b504836c6a1edc1f1",
-      "original_case_source_sha256": "7f9d9369b48c2dd3da8def061fa4c1c41c59b33f89462e7b504836c6a1edc1f1",
-      "gtest_body_sha256": "db946b58b0dc0a360a167371ef46ae99560a20dab63f5950195ef3553dd83bd7"
-    },
     {
       "name": "any-narrow-inline-different-small-record",
       "formal_test_name": "TranslateTest.CoreV2AnyNarrowInlineDifferentSmallRecordRejected",
@@ -102,11 +102,11 @@
     },
     {
       "name": "any-narrow-inline-unicode-payload",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "any",
       "source": "#include <any>\nint main() { std::any value = u'x'; return !value.has_value(); }\n",
       "source_sha256": "7f9d9369b48c2dd3da8def061fa4c1c41c59b33f89462e7b504836c6a1edc1f1",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-narrow-inline-different-small-record",
@@ -138,7 +138,7 @@
     "TranslateTest.CoreV2AnyNarrowInlineShortLifecycleRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyNarrowInlineSignedNarrowValueCastsRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyNarrowInlineUnsignedNarrowReferenceAndResetRunAtBothOptimizations",
-    "TranslateTest.CoreV2AnyNarrowInlineUnicodePayloadRejected",
+    "TranslateTest.CoreV2AnyChar16OriginalConstructionRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyNarrowInlineDifferentSmallRecordRejected",
     "TranslateTest.CoreV2AnyNarrowInlineMutableNarrowValueCastRejected",
     "TranslateTest.CoreV2AnyNarrowInlineNarrowTagMismatchValueCastRejected"
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8416,
   "current_python_registry_tests": 190,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
+    "any-character-inline": "1f4c35b6952538c886237a85a4416b7aa1bd6cbd838d1ff00d93b6bc6e5aa66b",
     "any-narrow-inline": "df17f805c449d1ac70296f02c861816b6a5e80e1f00ada8f49692432544e490d"
   },
-  "native_reference_authentication_sha256": "3153b6847735d3c40cf50a78f8a8a6b744816f97124dfb2f6a6742d40523e94c",
-  "source_proof_sha256": "2312ae55606ec6c65b966e9071aea288eaa72ec5c8f30732bf612b2c3b8682de"
+  "native_reference_authentication_sha256": "0ae997369c006e1ba5711bacaf0413a1bbc7ea22673d857f159226aaa0d3fc59",
+  "source_proof_sha256": "0c0fce84092d0bf2a8651b2e08718c986be049b796715d19863afe48ebd2d0c7"
 }

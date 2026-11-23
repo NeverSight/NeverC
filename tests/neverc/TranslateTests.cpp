@@ -390293,15 +390293,22 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AnyNarrowInlineUnicodePayloadRejected) {
+TEST_F(TranslateTest, CoreV2AnyChar16OriginalConstructionRunAtBothOptimizations) {
   const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");
   writeFile(Source, R"r19containers(#include <any>
 int main() { std::any value = u'x'; return !value.has_value(); }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("any-narrow-inline-unicode-payload.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-narrow-inline-unicode-payload" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2AnyNarrowInlineDifferentSmallRecordRejected) {
@@ -390650,6 +390657,148 @@ TEST_F(TranslateTest, CoreV2UnorderedMultisetValuesArrowCountRejected) {
   const auto Source = tmpFile("unordered-multiset-values-arrow-count.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() { std::unordered_multiset<int> values{1, 1}; auto* p = &values; return p->count(1) != 2; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyCharacterInlineWideTagDistinctFromIntegersRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-character-inline-wide-tag-distinct-from-integers.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value = L'G';
+  const auto* read = std::any_cast<wchar_t>(&value);
+  return !read || *read != L'G' || std::any_cast<int>(&value) ||
+      std::any_cast<unsigned short>(&value) || std::any_cast<char16_t>(&value);
+}
+)r19containers");
+  const auto Output = tmpFile("any-character-inline-wide-tag-distinct-from-integers.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-character-inline-wide-tag-distinct-from-integers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyCharacterInlineUtfTagTransitionRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-character-inline-utf-tag-transition.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  std::any value = u'\u03A9';
+  const auto* short_code = std::any_cast<char16_t>(&value);
+  if (!short_code || *short_code != u'\u03A9' || std::any_cast<char32_t>(&value)) return 1;
+  value = U'\U0001F30F';
+  const auto* wide_code = std::any_cast<char32_t>(&value);
+  return !wide_code || *wide_code != U'\U0001F30F' || std::any_cast<char16_t>(&value) ||
+      std::any_cast<unsigned int>(&value);
+}
+)r19containers");
+  const auto Output = tmpFile("any-character-inline-utf-tag-transition.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-character-inline-utf-tag-transition" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyCharacterInlineUtfPayloadCopyAndSwapRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-character-inline-utf-payload-copy-and-swap.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  auto input = std::make_any<char16_t>(u'X');
+  std::any copy(input);
+  input.emplace<char32_t>(U'Y');
+  input.swap(copy);
+  const auto* short_code = std::any_cast<char16_t>(&input);
+  const auto* wide_code = std::any_cast<char32_t>(&copy);
+  return !short_code || *short_code != u'X' || !wide_code || *wide_code != U'Y';
+}
+)r19containers");
+  const auto Output = tmpFile("any-character-inline-utf-payload-copy-and-swap.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-character-inline-utf-payload-copy-and-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyCharacterInlineClosedWideAndUtfValueCastsRunAtBothOptimizations) {
+  const auto Source = tmpFile("any-character-inline-closed-wide-and-utf-value-casts.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() {
+  const std::any a = L'A';
+  std::any b = U'B';
+  return std::any_cast<wchar_t>(a) != L'A' || std::any_cast<char32_t>(b) != U'B';
+}
+)r19containers");
+  const auto Output = tmpFile("any-character-inline-closed-wide-and-utf-value-casts.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("any-character-inline-closed-wide-and-utf-value-casts" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AnyCharacterInlineMutableUtfReferenceRejected) {
+  const auto Source = tmpFile("any-character-inline-mutable-utf-reference.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() { std::any value = u'A'; return std::any_cast<char16_t&>(value) != u'A'; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyCharacterInlineWrongUtfValueKindRejected) {
+  const auto Source = tmpFile("any-character-inline-wrong-utf-value-kind.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() { const std::any value = U'A'; return std::any_cast<char16_t>(value) != u'A'; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyCharacterInlineAggregateWithUtfMemberRejected) {
+  const auto Source = tmpFile("any-character-inline-aggregate-with-utf-member.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+struct Code { char16_t value; };
+int main() { std::any value = Code{u'A'}; return !value.has_value(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AnyCharacterInlineVolatileUtfPointerRejected) {
+  const auto Source = tmpFile("any-character-inline-volatile-utf-pointer.cpp");
+  writeFile(Source, R"r19containers(#include <any>
+int main() { std::any value = U'A'; return !std::any_cast<volatile char32_t>(&value); }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
   ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;

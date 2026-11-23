@@ -3542,6 +3542,9 @@ inline constexpr llvm::StringLiteral UtilityAnyShort = "nct_any_short";
 inline constexpr llvm::StringLiteral UtilityAnyUnsignedShort = "nct_any_unsigned_short";
 inline constexpr llvm::StringLiteral UtilityAnyLong = "nct_any_long";
 inline constexpr llvm::StringLiteral UtilityAnyUnsignedLong = "nct_any_unsigned_long";
+inline constexpr llvm::StringLiteral UtilityAnyWideChar = "nct_any_wide_char";
+inline constexpr llvm::StringLiteral UtilityAnyChar16 = "nct_any_char16";
+inline constexpr llvm::StringLiteral UtilityAnyChar32 = "nct_any_char32";
 
 struct UtilityAnyScalar {
   unsigned Tag;

@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.any_character_inline_registered = cls.registered
+        cls.any_character_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_character_inline_original = cls.adapter.restore_original_gtests(cls.any_character_inline_registered,
+                                                                        cls.any_character_inline_suffix)
+        cls.registered = cls.adapter.restore_any_character_inline_history(cls.any_character_inline_registered)
         cls.unordered_multiset_values_registered = cls.registered
         cls.unordered_multiset_values_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_multiset_values_original = cls.adapter.restore_original_gtests(cls.unordered_multiset_values_registered,
@@ -2670,6 +2675,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_multiset_values_history(self.unordered_multiset_values_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_multiset_values_registered, self.unordered_multiset_values_suffix + b' ')
+
+
+    def test_any_character_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_character_inline_original + self.any_character_inline_suffix, self.any_character_inline_registered)
+        self.assertEqual(self.adapter.restore_any_character_inline_history(self.any_character_inline_original),
+                         self.unordered_multiset_values_original)
+        output, evidence = self.extractor.extract(self.any_character_inline_original, ['TranslateTest.CoreV2AnyCharacterInlineWideTagDistinctFromIntegersRunAtBothOptimizations', 'TranslateTest.CoreV2AnyCharacterInlineUtfTagTransitionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyCharacterInlineUtfPayloadCopyAndSwapRunAtBothOptimizations', 'TranslateTest.CoreV2AnyCharacterInlineClosedWideAndUtfValueCastsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyCharacterInlineMutableUtfReferenceRejected', 'TranslateTest.CoreV2AnyCharacterInlineWrongUtfValueKindRejected', 'TranslateTest.CoreV2AnyCharacterInlineAggregateWithUtfMemberRejected', 'TranslateTest.CoreV2AnyCharacterInlineVolatileUtfPointerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8440)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-character-inline-utf-tag-transition', output)
+        self.assertIn(b'any-character-inline-wide-tag-distinct-from-integers', output)
+
+    def test_any_character_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_character_inline_history(self.any_character_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_character_inline_registered, self.any_character_inline_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -18189,3 +18189,10 @@ Default std::unordered_multiset<int> accepts the checked nonempty initializer
 list. It keeps an entry for each duplicate, preserves count across rehash,
 and releases all stored entries on clear or destruction. The original
 nonempty-bucket program retains its exit status at both optimization levels.
+
+## Inline wide-character any payloads
+
+The checked inline any representation preserves distinct wchar_t, char16_t
+and char32_t tags and the target's 16-bit or 32-bit wchar_t width. The
+registered UTF construction and typed-cast programs match the native
+reference at both optimization levels.

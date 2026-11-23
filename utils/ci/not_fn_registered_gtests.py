@@ -1590,6 +1590,32 @@ def restore_unordered_multiset_values_history(source):
     return restored
 
 
+R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256 = '5ba3080e5918927829a030a7f3cb2dd589f335815d504ac9fec0e7a0f41b0163'
+R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256 = '77b784892333c39f8a9d1f795615d22e645480038b1ffaefc9e900856402aad2'
+R19_ANY_CHARACTER_INLINE_PREVIOUS_REGISTERED_SHA256 = '24bb1e294e6faaee5194ef7e04ca3ead5b385fc723756b36c9d6b1c7ca383c2d'
+R19_ANY_CHARACTER_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'f59b6b5c51fc70f851268ca84fd1accdf137b796b27c95213ac5e10418af5741'
+R19_ANY_CHARACTER_INLINE_ADDITIONS_SHA256 = '700dc6061ae5b7b89620910958d37a8cb1029581e59ba7bb27e4d044e3dce52f'
+R19_ANY_CHARACTER_INLINE_MAINTAINED_SIZE = 20083154
+R19_ANY_CHARACTER_INLINE_ADDITIONS_SIZE = 7225
+
+
+def restore_any_character_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256, R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_CHARACTER_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_CHARACTER_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_CHARACTER_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyChar16OriginalConstructionRunAtBothOptimizations) {\n  const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'x\'; return !value.has_value(); }\n)r19containers");\n  const auto Output = tmpFile("any-narrow-inline-unicode-payload.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-narrow-inline-unicode-payload" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyChar16OriginalConstructionRunAtBothOptimizations) {\n  const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'x\'; return !value.has_value(); }\n)r19containers");\n  const auto Output = tmpFile("any-narrow-inline-unicode-payload.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-narrow-inline-unicode-payload" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyNarrowInlineUnicodePayloadRejected) {\n  const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'x\'; return !value.has_value(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ANY_CHARACTER_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256
+             else R19_ANY_CHARACTER_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1904,6 +1930,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
