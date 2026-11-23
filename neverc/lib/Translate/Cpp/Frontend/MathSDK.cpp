@@ -137711,16 +137711,45 @@ std::optional<UtilityUnorderedSetInsertion> approvedUtilityUnorderedSetInsertion
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Method = Access ? Access->getMethodDecl() : nullptr;
-  if (!Method || !Method->getIdentifier() || Method->getName() != "insert" ||
+  if (!Method || !Method->getIdentifier() ||
       Method->isConst() || Method->isVolatile() || Method->isStatic() || Method->isVirtual() ||
-      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      Method->getNumParams() != Call->getNumArgs() ||
       !Call->isPRValue() || !Context.hasSameType(Call->getType(), Method->getReturnType()))
     return std::nullopt;
-  const auto Param = Method->getParamDecl(0)->getType();
-  if ((!Context.hasSameType(Param, Context.getLValueReferenceType(Context.IntTy.withConst())) &&
-       !Context.hasSameType(Param, Context.getRValueReferenceType(Context.IntTy))) ||
-      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy))
+  const auto Name = Method->getName();
+  const bool Insert = Name == "insert";
+  const bool Hinted = Name == "emplace_hint" || (Insert && Method->getNumParams() == 2);
+  const auto *Primary = Method->getPrimaryTemplate();
+  if (Insert ? Primary != nullptr : (!Primary || (Name != "emplace" && Name != "emplace_hint")))
     return std::nullopt;
+  const unsigned KeyIndex = Hinted ? 1 : 0;
+  const bool HasKey = Method->getNumParams() == KeyIndex + 1;
+  if (!HasKey && (Insert || Method->getNumParams() != KeyIndex))
+    return std::nullopt;
+  if (Primary) {
+    const auto *Arguments = Method->getTemplateSpecializationArgs();
+    if (!orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), "unordered_set") ||
+        !Arguments || Arguments->size() != 1)
+      return std::nullopt;
+    const auto &Pack = Arguments->get(0);
+    if (Pack.getKind() != TemplateArgument::Pack || Pack.pack_size() != unsigned(HasKey))
+      return std::nullopt;
+    if (HasKey && (Pack.pack_begin()->getKind() != TemplateArgument::Type ||
+                   !Context.hasSameUnqualifiedType(
+                       Pack.pack_begin()->getAsType().getNonReferenceType(), Context.IntTy)))
+      return std::nullopt;
+  }
+  if (HasKey) {
+    const auto Param = Method->getParamDecl(KeyIndex)->getType();
+    const auto Value = Param.getNonReferenceType();
+    if (!Context.hasSameUnqualifiedType(Call->getArg(KeyIndex)->getType(), Context.IntTy) ||
+        !Param->isReferenceType() || Value.isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(Value, Context.IntTy))
+      return std::nullopt;
+    if (Insert && !Context.hasSameType(Param, Context.getLValueReferenceType(Context.IntTy.withConst())) &&
+        !Context.hasSameType(Param, Context.getRValueReferenceType(Context.IntTy)))
+      return std::nullopt;
+  }
   const auto *Owner = Method->getParent();
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
@@ -137731,7 +137760,7 @@ std::optional<UtilityUnorderedSetInsertion> approvedUtilityUnorderedSetInsertion
     return std::nullopt;
   auto IteratorType = Call->getType();
   std::optional<UtilityPairRecord> Pair;
-  if (Owner->getName() == "unordered_set") {
+  if (!Hinted && Owner->getName() == "unordered_set") {
     Pair = approvedUtilityPairRecord(S, SM, IteratorType->getAsCXXRecordDecl(), Context);
     if (!Pair || !Pair->Record->hasTrivialDestructor() ||
         !Context.hasSameType(Pair->Second->getType(), Context.BoolTy))
@@ -137740,11 +137769,15 @@ std::optional<UtilityUnorderedSetInsertion> approvedUtilityUnorderedSetInsertion
   }
   const auto Iterator = approvedUtilityUnorderedSetIteratorRecord(
       S, SM, IteratorType->getAsCXXRecordDecl(), Context, {});
-  if (!Iterator || !Context.hasSameType(IteratorType, Context.getRecordType(Iterator->Record)) ||
+  if (!Iterator || Iterator->Local ||
+      !Context.hasSameType(IteratorType, Context.getRecordType(Iterator->Record)) ||
       !Context.hasSameType(Iterator->Owner.NodeType, Table->NodeType) ||
       !approvedHashSetBucketSource(S, SM, Method, Owner, Context))
     return std::nullopt;
-  return UtilityUnorderedSetInsertion{*Table, *Iterator, Pair};
+  if (Hinted && (!Context.hasSameType(Method->getParamDecl(0)->getType(), IteratorType) ||
+                 !Context.hasSameType(Call->getArg(0)->getType(), IteratorType)))
+    return std::nullopt;
+  return UtilityUnorderedSetInsertion{*Table, *Iterator, Pair, Hinted, !HasKey};
 }
 
 std::optional<UtilityUnorderedSetIteratorErase> approvedUtilityUnorderedSetIteratorErase(
