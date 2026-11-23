@@ -29336,6 +29336,30 @@ class FunctionLowering {
       }
       return Result;
     }
+    if (Operation == UtilityOperation::UnorderedSetEqualRange) {
+      const auto Info = approvedUtilityUnorderedSetEqualRange(A.S, A.Sources, Call, A.Context);
+      if (!Info)
+        reject(L, "unordered set equal range", "The exact integer table and iterator pair layouts are required.");
+      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Method = Member->getMethodDecl();
+      const auto *Receiver = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts())->getBase();
+      auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
+      auto Key = dereference(snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L), L);
+      auto Hash = snapshot(cast(Key, type(A.Context.getSizeType(), L), L), L);
+      auto First = snapshot(unorderedFindNode(Place, Info->Table, Key, Hash, L), L);
+      auto Last = snapshot(First, L);
+      const auto Found = labelName(), Done = labelName();
+      branch(cast(First, "bool", L), Found, Done, L);
+      label(Found, L);
+      auto Tail = unorderedMultiSet(Info->Table) ? unorderedEquivalentGroupTail(First, Info->Table, L) : First;
+      assign(Last, unorderedNodeNext(std::move(Tail), Info->Table, L), L);
+      jump(Done, L);
+      label(Done, L);
+      auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      unorderedMakeIterator(std::move(First), Info->Iterator, fieldStorage(Output, Info->Pair.First, L), L);
+      unorderedMakeIterator(std::move(Last), Info->Iterator, fieldStorage(Output, Info->Pair.Second, L), L);
+      return Output;
+    }
     if (Operation == UtilityOperation::UnorderedSetErasePosition ||
         Operation == UtilityOperation::UnorderedSetEraseRange) {
       const auto Info = approvedUtilityUnorderedSetIteratorErase(A.S, A.Sources, Call, A.Context);

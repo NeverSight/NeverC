@@ -766,3 +766,10 @@ The combined compiler passes 3,480 source requests across six 64-bit targets
 and 684 formal tests on Linux x86-64. All 373 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Integer unordered set equal_range
+
+The combined compiler passes 3,528 source requests across six 64-bit targets
+and 692 formal tests on Linux x86-64. All 377 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

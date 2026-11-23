@@ -391455,6 +391455,162 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualRangeUniqueRangeHasOneElementRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-equal-range-unique-range-has-one-element.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values{2, 4, -7};
+  auto range = values.equal_range(-7);
+  if (range.first != values.find(-7) || range.first == range.second || *range.first != -7) return 1;
+  auto successor = range.first;
+  ++successor;
+  return successor != range.second;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-equal-range-unique-range-has-one-element.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-equal-range-unique-range-has-one-element" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualRangeAbsentKeyHasTwoEndpointsRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-equal-range-absent-key-has-two-endpoints.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_set<int> empty;
+  const std::unordered_multiset<int> values{1, 1, 4};
+  const auto none = empty.equal_range(1);
+  auto missing = values.equal_range(2);
+  return none.first != empty.cend() || none.second != empty.cend() ||
+      missing.first != values.cend() || missing.second != values.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-equal-range-absent-key-has-two-endpoints.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-equal-range-absent-key-has-two-endpoints" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualRangeDuplicateRangePreservesCollidingGroupsRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-equal-range-duplicate-range-preserves-colliding-groups.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{3, 11, 3, 19, 3, 11};
+  values.rehash(8);
+  const auto& read = values;
+  auto range = read.equal_range(3);
+  unsigned seen = 0;
+  for (auto it = range.first; it != range.second; ++it) {
+    if (*it != 3) return 1;
+    ++seen;
+  }
+  return seen != 3 || values.count(11) != 2 || values.count(19) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-equal-range-duplicate-range-preserves-colliding-groups.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-equal-range-duplicate-range-preserves-colliding-groups" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualRangeReceiverAndKeyEvaluatedOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-equal-range-receiver-and-key-evaluated-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Bag = std::unordered_multiset<int>;
+int trace;
+const Bag& receiver(const Bag& values) { trace = trace * 10 + 1; return values; }
+int key() { trace = trace * 10 + 2; return 6; }
+int main() {
+  const Bag values{6, 6};
+  auto range = receiver(values).equal_range(key());
+  if (trace != 12 || range.first == range.second) return 1;
+  auto it = range.first;
+  ++it;
+  if (it == range.second || *it != 6) return 2;
+  ++it;
+  return it != range.second;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-equal-range-receiver-and-key-evaluated-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-equal-range-receiver-and-key-evaluated-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualRangeDifferentKeyRejected) {
+  const auto Source = tmpFile("unordered-set-equal-range-different-key.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<long> values{2}; return values.equal_range(2).first == values.end(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualRangeCustomHashRejected) {
+  const auto Source = tmpFile("unordered-set-equal-range-custom-hash.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int k) const { return static_cast<unsigned long>(k); } };
+int main() { std::unordered_set<int, Hash> values{2}; return values.equal_range(2).first == values.end(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualRangeCustomEqualityRejected) {
+  const auto Source = tmpFile("unordered-set-equal-range-custom-equality.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int a,int b) const { return a == b; } };
+int main() { std::unordered_multiset<int, std::hash<int>, Equal> values{2, 2}; return values.equal_range(2).first == values.end(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualRangePointerReceiverRejected) {
+  const auto Source = tmpFile("unordered-set-equal-range-pointer-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_multiset<int> values{2, 2}; auto* p=&values; return p->equal_range(2).first == values.end(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

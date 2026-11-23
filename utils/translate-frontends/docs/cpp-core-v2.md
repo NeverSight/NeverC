@@ -18225,3 +18225,10 @@ Default integer unordered sets and multisets erase the selected node or
 each node in the half-open range. Position erasure returns the next
 iterator and preserves other equivalent keys. Range erasure returns
 the original end of the range and handles an empty range.
+
+## Integer unordered set equivalent ranges
+
+Default integer unordered sets and multisets support mutable and const
+`equal_range`. A unique match spans one node and a multiset match spans
+the consecutive group of equivalent keys. A missing key returns two end
+iterators.
