@@ -1389,8 +1389,9 @@ class FunctionLowering {
     return Fresh;
   }
 
-  static bool unorderedMultiSet(const UtilityUnorderedTableRecord &Info) {
-    return !Info.HasMappedValue && Info.Record->getName() == "unordered_multiset";
+  static bool unorderedAllowsEquivalentKeys(const UtilityUnorderedTableRecord &Info) {
+    const auto Name = Info.Record->getName();
+    return Name == "unordered_multiset" || Name == "unordered_multimap";
   }
 
   Expression unorderedEquivalentGroupTail(Expression First, const UtilityUnorderedTableRecord &Info,
@@ -1448,7 +1449,7 @@ class FunctionLowering {
     assign(LastHash, Hash, L);
     jump(Step, L);
     label(Relink, L);
-    auto Tail = unorderedMultiSet(Info) ? unorderedEquivalentGroupTail(Node, Info, L) : Node;
+    auto Tail = unorderedAllowsEquivalentKeys(Info) ? unorderedEquivalentGroupTail(Node, Info, L) : Node;
     assign(unorderedNodeNext(Previous, Info, L), unorderedNodeNext(Tail, Info, L), L);
     assign(unorderedNodeNext(Tail, Info, L), unorderedNodeNext(Head, Info, L), L);
     assign(unorderedNodeNext(Head, Info, L), Node, L);
@@ -1646,7 +1647,7 @@ class FunctionLowering {
     // before pair construction, so reread the referent when constructing the key.
     const auto Size = type(A.Context.getSizeType(), L);
     const auto NodePointer = type(Info.NodePointerType, L);
-    const bool Multi = unorderedMultiSet(Info);
+    const bool Multi = unorderedAllowsEquivalentKeys(Info);
     auto Hash = snapshot(Multi ? quantity(0, Size, L) : cast(Key, Size, L), L);
     if (PreparedNode && !MergeTransfer) assign(unorderedNodeHash(*PreparedNode, L), Hash, L);
     auto OldCount = snapshot(Multi ? quantity(0, Size, L) :
@@ -1760,7 +1761,7 @@ class FunctionLowering {
 
   void unorderedInsertCopiedNode(Expression Place, const UtilityUnorderedTableRecord &Info,
       Expression Node, SourceLocation L) {
-    if (unorderedMultiSet(Info)) {
+    if (unorderedAllowsEquivalentKeys(Info)) {
       unorderedInsertNode(std::move(Place), Info, unorderedNodeKey(Node, Info, L), std::nullopt, false, L, Node);
       return;
     }
@@ -2017,7 +2018,7 @@ class FunctionLowering {
   Expression unorderedEraseKey(Expression Place, const UtilityUnorderedTableRecord &Info,
                                  Expression Key, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
-    const bool Multi = unorderedMultiSet(Info);
+    const bool Multi = unorderedAllowsEquivalentKeys(Info);
     auto Hash = snapshot(cast(Key, Size, L), L);
     auto Node = snapshot(unorderedFindNode(Place, Info, Key, Hash, L), L);
     auto Result = snapshot(quantity(0, Size, L), L);
@@ -2201,6 +2202,53 @@ class FunctionLowering {
     return {std::move(Node), std::move(Result)};
   }
 
+  Expression unorderedMappedValueCount(Expression First, Expression Last, Expression Value,
+      const UtilityUnorderedTableRecord &Table, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Current = snapshot(std::move(First), L);
+    auto Count = snapshot(A.zero(A.Context.getSizeType(), L), L);
+    const auto Check = labelName(), Match = labelName(), Increment = labelName(),
+               Advance = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Current, std::move(Last), "bool", L), Match, Done, L);
+    label(Match, L);
+    branch(binary("==", unorderedNodeValue(Current, Table, L), std::move(Value), "bool", L),
+           Increment, Advance, L);
+    label(Increment, L);
+    assign(Count, binary("+", Count, one(Size, L), Size, L), L);
+    jump(Advance, L);
+    label(Advance, L);
+    assign(Current, unorderedNodeNext(Current, Table, L), L);
+    jump(Check, L);
+    label(Done, L);
+    return Count;
+  }
+
+  Expression unorderedMappedGroupEqual(Expression Left, Expression LeftEnd,
+      Expression Right, Expression RightEnd, const UtilityUnorderedTableRecord &Table, SourceLocation L) {
+    auto Current = snapshot(Left, L);
+    auto Equal = snapshot(boolean(true, L), L);
+    const auto Check = labelName(), Compare = labelName(), Advance = labelName(),
+               Different = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Current, LeftEnd, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    auto Value = snapshot(unorderedNodeValue(Current, Table, L), L);
+    auto LeftCount = unorderedMappedValueCount(Left, LeftEnd, Value, Table, L);
+    auto RightCount = unorderedMappedValueCount(Right, RightEnd, Value, Table, L);
+    branch(binary("==", std::move(LeftCount), std::move(RightCount), "bool", L), Advance, Different, L);
+    label(Advance, L);
+    assign(Current, unorderedNodeNext(Current, Table, L), L);
+    jump(Check, L);
+    label(Different, L);
+    assign(Equal, boolean(false, L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Equal;
+  }
+
   Expression unorderedTableNonmemberOperation(const CallExpr *Call,
       const UnorderedTableNonmemberCall &Info) {
     const auto L = Call->getExprLoc();
@@ -2228,13 +2276,23 @@ class FunctionLowering {
     auto Key = snapshot(unorderedNodeKey(Node, Info.Table, L), L);
     auto Other = unorderedFindNode(Right, Info.Table, Key,
         cast(Key, type(A.Context.getSizeType(), L), L), L);
-    if (unorderedMultiSet(Info.Table)) {
+    if (unorderedAllowsEquivalentKeys(Info.Table)) {
       branch(cast(Other, "bool", L), Compare, Done, L);
       label(Compare, L);
       auto LeftGroup = unorderedCountGroup(Node, Info.Table, Key, L);
       auto RightGroup = unorderedCountGroup(Other, Info.Table, Key, L);
-      assign(Node, std::move(LeftGroup.After), L);
-      branch(binary("==", std::move(LeftGroup.Size), std::move(RightGroup.Size), "bool", L), Check, Done, L);
+      auto EqualSize = binary("==", std::move(LeftGroup.Size), std::move(RightGroup.Size), "bool", L);
+      if (Info.Table.HasMappedValue) {
+        const auto Values = labelName();
+        branch(std::move(EqualSize), Values, Done, L);
+        label(Values, L);
+        auto SameValues = unorderedMappedGroupEqual(Node, LeftGroup.After, Other, RightGroup.After, Info.Table, L);
+        assign(Node, std::move(LeftGroup.After), L);
+        branch(std::move(SameValues), Check, Done, L);
+      } else {
+        assign(Node, std::move(LeftGroup.After), L);
+        branch(std::move(EqualSize), Check, Done, L);
+      }
     } else {
       branch(cast(Other, "bool", L), Info.Table.HasMappedValue ? Compare : Advance, Done, L);
       if (Info.Table.HasMappedValue) {
@@ -2442,7 +2500,7 @@ class FunctionLowering {
     }
     std::optional<Expression> Hint;
     if (Info.Offset) {
-      if (unorderedMultiSet(Info.Map)) {
+      if (unorderedAllowsEquivalentKeys(Info.Map)) {
         auto Argument = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
         Hint = snapshot(unorderedIteratorNode(dereference(Argument, L), *Info.Iterator, L), L);
       } else {
@@ -29500,7 +29558,7 @@ class FunctionLowering {
       const auto Found = labelName(), Done = labelName();
       branch(cast(First, "bool", L), Found, Done, L);
       label(Found, L);
-      auto Tail = unorderedMultiSet(Info->Table) ? unorderedEquivalentGroupTail(First, Info->Table, L) : First;
+      auto Tail = unorderedAllowsEquivalentKeys(Info->Table) ? unorderedEquivalentGroupTail(First, Info->Table, L) : First;
       assign(Last, unorderedNodeNext(std::move(Tail), Info->Table, L), L);
       jump(Done, L);
       label(Done, L);
@@ -29563,7 +29621,7 @@ class FunctionLowering {
           : dereference(snapshot(argument(Call->getArg(KeyIndex), Method->getParamDecl(KeyIndex)->getType()), L), L);
       const auto &Table = Info->Table;
       std::optional<Expression> Prepared;
-      if (Info->ValueInitialized && !unorderedMultiSet(Table)) {
+      if (Info->ValueInitialized && !unorderedAllowsEquivalentKeys(Table)) {
         // The pinned no-argument unique emplacement constructs a node before duplicate lookup.
         const auto Size = type(A.Context.getSizeType(), L);
         auto Node = snapshot(cast(unorderedHeapAllocate(Table.NodeType,
@@ -29651,7 +29709,7 @@ class FunctionLowering {
       const auto Size = type(A.Context.getSizeType(), L);
       auto Hash = snapshot(cast(Key, Size, L), L);
       auto First = unorderedFindNode(Place, *Table, Key, Hash, L);
-      if (!unorderedMultiSet(*Table))
+      if (!unorderedAllowsEquivalentKeys(*Table))
         return cast(cast(std::move(First), "bool", L), Size, L);
       return unorderedCountGroup(std::move(First), *Table, std::move(Key), L).Size;
     }
@@ -30154,8 +30212,12 @@ class FunctionLowering {
       auto Hash = snapshot(cast(Key, Size, L), L);
       if (Operation == UtilityOperation::UnorderedMapBucket)
         return unorderedConstrainHash(Hash, unorderedTableMember(Place, *Info, "nct_unordered_bucket_count", L), L);
-      if (Operation == UtilityOperation::UnorderedMapCount)
-        return cast(cast(unorderedFindNode(Place, *Info, Key, Hash, L), "bool", L), Size, L);
+      if (Operation == UtilityOperation::UnorderedMapCount) {
+        auto First = unorderedFindNode(Place, *Info, Key, Hash, L);
+        if (unorderedAllowsEquivalentKeys(*Info))
+          return unorderedCountGroup(std::move(First), *Info, std::move(Key), L).Size;
+        return cast(cast(std::move(First), "bool", L), Size, L);
+      }
       reject(L, "unordered map operation", "The authenticated operation has no lowering.");
     }
     if (Operation >= UtilityOperation::RandomEngineGenerate &&
