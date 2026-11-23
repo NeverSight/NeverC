@@ -137417,8 +137417,6 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
     return std::nullopt;
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto *Owner = Method->getParent();
-  if ((Erase || Insert) && Owner->getIdentifier() && Owner->getName() == "unordered_multiset")
-    return std::nullopt;
   const auto Arity = KeyOperation || Insert ? 1u : 0u;
   const auto Result = KeyOperation ? Context.getSizeType() : Context.VoidTy;
   if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||

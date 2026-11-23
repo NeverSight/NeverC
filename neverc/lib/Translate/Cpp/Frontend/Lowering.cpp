@@ -1959,17 +1959,29 @@ class FunctionLowering {
   Expression unorderedEraseKey(Expression Place, const UtilityUnorderedTableRecord &Info,
                                  Expression Key, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
-    const auto Pointer = type(Info.NodePointerType, L);
+    const bool Multi = unorderedMultiSet(Info);
     auto Hash = snapshot(cast(Key, Size, L), L);
     auto Node = snapshot(unorderedFindNode(Place, Info, Key, Hash, L), L);
     auto Result = snapshot(quantity(0, Size, L), L);
     const auto Remove = labelName(), Done = labelName();
     branch(cast(Node, "bool", L), Remove, Done, L);
     label(Remove, L);
+    // The pinned multi-key erase advances its iterator before unlink and delete.
+    Expression Next;
+    if (Multi) Next = snapshot(unorderedNodeNext(Node, Info, L), L);
     unorderedUnlinkNode(Place, Info, Node, L);
     unorderedHeapRelease(Node, Info.NodeType, quantity(Info.NodeBytes, Size, L), L);
-    assign(Result, one(Size, L), L);
-    jump(Done, L);
+    if (Multi) {
+      assign(Result, binary("+", Result, one(Size, L), Size, L), L);
+      assign(Node, std::move(Next), L);
+      const auto Match = labelName();
+      branch(cast(Node, "bool", L), Match, Done, L);
+      label(Match, L);
+      branch(binary("==", unorderedNodeKey(Node, Info, L), Key, "bool", L), Remove, Done, L);
+    } else {
+      assign(Result, one(Size, L), L);
+      jump(Done, L);
+    }
     label(Done, L);
     return Result;
   }

@@ -31,6 +31,14 @@
       "source_sha256": "7a2d31f3fdccd86229e195c6416243f1d72f7894dfd348cb8386b3cc56d49de8",
       "original_case_source_sha256": "7a2d31f3fdccd86229e195c6416243f1d72f7894dfd348cb8386b3cc56d49de8",
       "gtest_body_sha256": "a297817b16ef52b031d47b5a98469fc32c57d848f768dec68063c3766805ea26"
+    },
+    {
+      "name": "unordered-set-modifiers-multi-key-erase",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetEraseOriginalEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b8895dd2b686c3329b7a67d2a84426af80eea6f2c5fdedbf1e432029e0b9bcc9",
+      "original_case_source_sha256": "b8895dd2b686c3329b7a67d2a84426af80eea6f2c5fdedbf1e432029e0b9bcc9",
+      "gtest_body_sha256": "864e2141bdc825305279d684c7e238ea27aa73fc25a94a5882be286e6ed051ff"
     }
   ],
   "negative_cases": [
@@ -49,14 +57,6 @@
       "source_sha256": "9c4f74de3efccd319e2decba3d43fe7088732cdf4f7b0859d944aec7d2a951e3",
       "original_case_source_sha256": "9c4f74de3efccd319e2decba3d43fe7088732cdf4f7b0859d944aec7d2a951e3",
       "gtest_body_sha256": "e75a992b14f7bcc8134b4d76f24c9c11ebde4f056654dc53374da0858fb9d084"
-    },
-    {
-      "name": "unordered-set-modifiers-multi-key-erase",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedSetModifiersMultiKeyEraseRejected",
-      "expected": "reject",
-      "source_sha256": "b8895dd2b686c3329b7a67d2a84426af80eea6f2c5fdedbf1e432029e0b9bcc9",
-      "original_case_source_sha256": "b8895dd2b686c3329b7a67d2a84426af80eea6f2c5fdedbf1e432029e0b9bcc9",
-      "gtest_body_sha256": "8d1500eeb6463fd214799eaa2d065dec1573a30d31f1eb07166e8f7ae13a3ba3"
     },
     {
       "name": "unordered-set-modifiers-pointer-receiver",
@@ -101,6 +101,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-set-modifiers-multi-key-erase",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n",
+      "source_sha256": "b8895dd2b686c3329b7a67d2a84426af80eea6f2c5fdedbf1e432029e0b9bcc9",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-set-modifiers-different-key",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -117,14 +125,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "unordered-set-modifiers-multi-key-erase",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n",
-      "source_sha256": "b8895dd2b686c3329b7a67d2a84426af80eea6f2c5fdedbf1e432029e0b9bcc9",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "unordered-set-modifiers-pointer-receiver",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -138,9 +138,9 @@
     "TranslateTest.CoreV2UnorderedSetModifiersReceiverBeforeModifierArgumentsRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetModifiersInsertAfterClearRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetModifiersEraseReleasesOneNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetEraseOriginalEmptyRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetModifiersDifferentKeyRejected",
     "TranslateTest.CoreV2UnorderedSetModifiersAlternateHashRejected",
-    "TranslateTest.CoreV2UnorderedSetModifiersMultiKeyEraseRejected",
     "TranslateTest.CoreV2UnorderedSetModifiersPointerReceiverRejected"
   ],
   "source_proof_gate_pending": false,
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8408,
   "current_python_registry_tests": 188,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
+    "unordered-multiset-modifiers": "87f5a2245acb0d951864f9f620aff7b28a13afd5df682e759791b30e75b19fc5",
     "unordered-set-modifiers": "b89c96549b850abe840ee118aa25f35ccb2fc963833469caebf4a1e34d10cf63"
   },
-  "native_reference_authentication_sha256": "1f2fff8190bb5e061a0dc1155973d33404750628da01bebf60010b67e68de3dd",
-  "source_proof_sha256": "0c0fce84092d0bf2a8651b2e08718c986be049b796715d19863afe48ebd2d0c7"
+  "native_reference_authentication_sha256": "cf5bfa6ce5f7e960a8b580e786856c60b9fe373731c4cde439fec92446e09069",
+  "source_proof_sha256": "719e4dd0b75fe2fa2f80fba561c84b470e95ff033a995e254b0bd163d646a687"
 }

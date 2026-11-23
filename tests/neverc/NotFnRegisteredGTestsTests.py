@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_multiset_modifiers_registered = cls.registered
+        cls.unordered_multiset_modifiers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_multiset_modifiers_original = cls.adapter.restore_original_gtests(cls.unordered_multiset_modifiers_registered,
+                                                                        cls.unordered_multiset_modifiers_suffix)
+        cls.registered = cls.adapter.restore_unordered_multiset_modifiers_history(cls.unordered_multiset_modifiers_registered)
         cls.any_character_inline_registered = cls.registered
         cls.any_character_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.any_character_inline_original = cls.adapter.restore_original_gtests(cls.any_character_inline_registered,
@@ -2693,6 +2698,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_any_character_inline_history(self.any_character_inline_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.any_character_inline_registered, self.any_character_inline_suffix + b' ')
+
+
+    def test_unordered_multiset_modifiers_retains_published_bodies(self):
+        self.assertEqual(self.unordered_multiset_modifiers_original + self.unordered_multiset_modifiers_suffix, self.unordered_multiset_modifiers_registered)
+        self.assertEqual(self.adapter.restore_unordered_multiset_modifiers_history(self.unordered_multiset_modifiers_original),
+                         self.any_character_inline_original)
+        output, evidence = self.extractor.extract(self.unordered_multiset_modifiers_original, ['TranslateTest.CoreV2UnorderedMultisetModifiersInsertListRetainsEachDuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetModifiersEraseRepairsCollidingBucketPredecessorsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetModifiersRehashAfterErasingGroupsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetModifiersReceiverAndListSequencedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetModifiersEraseOneFreePerDuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetModifiersDifferentKeyListRejected', 'TranslateTest.CoreV2UnorderedMultisetModifiersCustomAllowsDifferentKeyEqualityRejected', 'TranslateTest.CoreV2UnorderedMultisetModifiersPointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8448)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-multiset-modifiers-insert-list-retains-each-duplicate', output)
+        self.assertIn(b'unordered-multiset-modifiers-erase-one-free-per-duplicate', output)
+
+    def test_unordered_multiset_modifiers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_multiset_modifiers_history(self.unordered_multiset_modifiers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_multiset_modifiers_registered, self.unordered_multiset_modifiers_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -738,3 +738,10 @@ The combined compiler passes 3,288 source requests across six 64-bit targets
 and 652 formal tests on Linux x86-64. All 353 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Integer unordered multiset modifiers
+
+The combined compiler passes 3,336 source requests across six 64-bit targets
+and 660 formal tests on Linux x86-64. All 359 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

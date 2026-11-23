@@ -1616,6 +1616,32 @@ def restore_any_character_inline_history(source):
     return restored
 
 
+R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256 = 'c13d9870eab687c556a18fcda21b3a45f9d89f3b23965ef64e714acc0b549c44'
+R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256 = 'f891e8b10a7cd8b1272be7479bd65840ddbc3b601441bb84318e260497b7cdad'
+R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_REGISTERED_SHA256 = '5ba3080e5918927829a030a7f3cb2dd589f335815d504ac9fec0e7a0f41b0163'
+R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_MAINTAINED_SHA256 = '77b784892333c39f8a9d1f795615d22e645480038b1ffaefc9e900856402aad2'
+R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SHA256 = 'a14efab83449d7b9371a24014a5872d22cacb40b79826b08572b27cb78c9617c'
+R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SIZE = 20093077
+R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SIZE = 9533
+
+
+def restore_unordered_multiset_modifiers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256, R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetEraseOriginalEmptyRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-modifiers-multi-key-erase.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-modifiers-multi-key-erase.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-modifiers-multi-key-erase" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetEraseOriginalEmptyRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-modifiers-multi-key-erase.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-modifiers-multi-key-erase.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-modifiers-multi-key-erase" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetModifiersMultiKeyEraseRejected) {\n  const auto Source = tmpFile("unordered-set-modifiers-multi-key-erase.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256
+             else R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -1937,6 +1963,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

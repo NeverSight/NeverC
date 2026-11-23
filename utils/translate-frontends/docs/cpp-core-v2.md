@@ -18196,3 +18196,10 @@ The checked inline any representation preserves distinct wchar_t, char16_t
 and char32_t tags and the target's 16-bit or 32-bit wchar_t width. The
 registered UTF construction and typed-cast programs match the native
 reference at both optimization levels.
+
+## Integer unordered multiset modifiers
+
+Default std::unordered_multiset<int> inserts each value from the checked
+initializer list. Erasing a key removes every equivalent node, returns the
+removed count, and preserves the other keys sharing the bucket. The
+original empty erase program returns zero at both optimization levels.
