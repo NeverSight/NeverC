@@ -394822,6 +394822,153 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedMultimapOwnersDefaultConstructionAndCapacityRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-owners-default-construction-and-capacity.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_multimap<int, int> values;
+  auto* receiver = &values;
+  receiver->reserve(11);
+  return !receiver->empty() || values.size() != 0 || values.bucket_count() < 11 || values.count(-1) != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-owners-default-construction-and-capacity.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-owners-default-construction-and-capacity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapOwnersListKeepsAllEquivalentKeysAndRemovesTheGroupRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-owners-list-keeps-all-equivalent-keys-and-removes-the-group.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_multimap<int, int> values{{1, 8}, {1, 13}, {3, 3}, {1, 21}};
+  if (values.size() != 4 || values.count(1) != 3 || values.count(3) != 1) return 1;
+  return values.erase(1) != 3 || values.size() != 1 || values.count(1) != 0 || values.count(3) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-owners-list-keeps-all-equivalent-keys-and-removes-the-group.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-owners-list-keeps-all-equivalent-keys-and-removes-the-group" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapOwnersCopyOwnsDistinctNodesAfterSourceClearRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-owners-copy-owns-distinct-nodes-after-source-clear.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  using Map = std::unordered_multimap<int, int>;
+  Map source{{-4, 13}, {-4, 14}, {6, 7}};
+  source.max_load_factor(2.0f);
+  source.rehash(17);
+  Map copy(source);
+  source.clear();
+  return !source.empty() || copy.count(-4) != 2 || copy.count(6) != 1 ||
+         copy.bucket_count() < 17 || copy.max_load_factor() != 2.0f;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-owners-copy-owns-distinct-nodes-after-source-clear.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-owners-copy-owns-distinct-nodes-after-source-clear" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapOwnersBucketSizePreservesDuplicateMultiplicityAfterRehashRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-owners-bucket-size-preserves-duplicate-multiplicity-after-rehash.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_multimap<int, int> pairs{{3, 13}, {3, 5}, {7, 8}};
+  pairs.rehash(16);
+  const auto bucket = pairs.bucket(3);
+  return bucket >= pairs.bucket_count() || pairs.bucket_size(bucket) != 2 || pairs.count(7) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-owners-bucket-size-preserves-duplicate-multiplicity-after-rehash.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-owners-bucket-size-preserves-duplicate-multiplicity-after-rehash" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapOwnersCustomHashOwnerRejected) {
+  const auto Source = tmpFile("unordered-multimap-owners-custom-hash-owner.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+struct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };
+int main() {
+  std::unordered_multimap<int, int, Hash> pairs;
+  return pairs.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRejected) {
+  const auto Source = tmpFile("unordered-multimap-owners-unapproved-mapped-type.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  std::unordered_multimap<int, long> pairs;
+  return pairs.count(1);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedMultimapOwnersComparisonRequiresMappedValueMultiplicitiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-multimap-owners-comparison-requires-mapped-value-multiplicities.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_map>
+int main() {
+  const std::unordered_multimap<int, int> left{{1, 3}, {1, 5}, {1, 5}, {7, 9}};
+  const std::unordered_multimap<int, int> permuted{{7, 9}, {1, 5}, {1, 3}, {1, 5}};
+  const std::unordered_multimap<int, int> different{{1, 3}, {1, 3}, {1, 5}, {7, 9}};
+  return left != permuted || left == different;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-multimap-owners-comparison-requires-mapped-value-multiplicities.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multimap-owners-comparison-requires-mapped-value-multiplicities" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

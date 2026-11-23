@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_multimap_owners_registered = cls.registered
+        cls.unordered_multimap_owners_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_multimap_owners_original = cls.adapter.restore_original_gtests(cls.unordered_multimap_owners_registered,
+                                                                        cls.unordered_multimap_owners_suffix)
+        cls.registered = cls.adapter.restore_unordered_multimap_owners_history(cls.unordered_multimap_owners_registered)
         cls.unordered_set_member_receivers_registered = cls.registered
         cls.unordered_set_member_receivers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_member_receivers_original = cls.adapter.restore_original_gtests(cls.unordered_set_member_receivers_registered,
@@ -3176,6 +3181,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_member_receivers_history(self.unordered_set_member_receivers_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_member_receivers_registered, self.unordered_set_member_receivers_suffix + b' ')
+
+
+    def test_unordered_multimap_owners_retains_published_bodies(self):
+        self.assertEqual(self.unordered_multimap_owners_original + self.unordered_multimap_owners_suffix, self.unordered_multimap_owners_registered)
+        self.assertEqual(self.adapter.restore_unordered_multimap_owners_history(self.unordered_multimap_owners_original),
+                         self.unordered_set_member_receivers_original)
+        output, evidence = self.extractor.extract(self.unordered_multimap_owners_original, ['TranslateTest.CoreV2UnorderedMultimapOwnersDefaultConstructionAndCapacityRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapOwnersListKeepsAllEquivalentKeysAndRemovesTheGroupRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapOwnersCopyOwnsDistinctNodesAfterSourceClearRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapOwnersBucketSizePreservesDuplicateMultiplicityAfterRehashRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapOwnersComparisonRequiresMappedValueMultiplicitiesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapOwnersCustomHashOwnerRejected', 'TranslateTest.CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8631)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-multimap-owners-default-construction-and-capacity', output)
+        self.assertIn(b'unordered-multimap-owners-comparison-requires-mapped-value-multiplicities', output)
+
+    def test_unordered_multimap_owners_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_multimap_owners_history(self.unordered_multimap_owners_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_multimap_owners_registered, self.unordered_multimap_owners_suffix + b' ')
 
 
 if __name__ == '__main__':

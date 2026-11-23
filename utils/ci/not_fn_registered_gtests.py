@@ -2176,6 +2176,30 @@ def restore_unordered_set_member_receivers_history(source):
     return restored
 
 
+R19_UNORDERED_MULTIMAP_OWNERS_REGISTERED_SHA256 = '1e0bbf4c8f5a577626fcbd4167012527fe20826396391e8d4a58c24c8f278168'
+R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SHA256 = 'a302000f528d3c79c9d2169d56f19ecc664d4c5245e897a333bb2f561a1c0f64'
+R19_UNORDERED_MULTIMAP_OWNERS_PREVIOUS_REGISTERED_SHA256 = 'af259a5994e7dedc5dedb4eef6e5ebc2abbe2266e62574ce2498fc3edc51ae8e'
+R19_UNORDERED_MULTIMAP_OWNERS_PREVIOUS_MAINTAINED_SHA256 = '518897789c68d3c75c2040ed9f914fde53c7dee14830d0891ba1f5c465b1ac89'
+R19_UNORDERED_MULTIMAP_OWNERS_ADDITIONS_SHA256 = '2d60d7ffbed36f66fd2cc10b078e8d311bb6435db11f502d534d198ae517ac6b'
+R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SIZE = 20299838
+R19_UNORDERED_MULTIMAP_OWNERS_ADDITIONS_SIZE = 7861
+
+
+def restore_unordered_multimap_owners_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_MULTIMAP_OWNERS_REGISTERED_SHA256, R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_MULTIMAP_OWNERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_MULTIMAP_OWNERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_MULTIMAP_OWNERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_MULTIMAP_OWNERS_REGISTERED_SHA256
+             else R19_UNORDERED_MULTIMAP_OWNERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2644,6 +2668,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_MEMBER_RECEIVERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_MULTIMAP_OWNERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

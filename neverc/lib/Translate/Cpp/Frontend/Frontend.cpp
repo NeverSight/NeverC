@@ -17802,7 +17802,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     } else if (Name == "array") {
       DefinitionPath = "array";
       ForwardPath = "__fwd/array.h";
-    } else if (Name == "unordered_map") {
+    } else if (Name == "unordered_map" || Name == "unordered_multimap") {
       DefinitionPath = "unordered_map";
       ForwardPath = "__hash_table";
     }

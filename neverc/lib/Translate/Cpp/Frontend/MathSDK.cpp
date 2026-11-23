@@ -135944,9 +135944,10 @@ static const ClassTemplateSpecializationDecl *associativeTypeIdentity(
 
 bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
     const CXXRecordDecl *Record, const ASTContext &Context) {
-  if (!S.coreV2()) return false;
-  const auto *Map = associativeTypeIdentity(S, SM, Record, "unordered_map", "unordered_map",
-                                    "__hash_table", 5);
+  if (!S.coreV2() || !Record || !Record->getIdentifier()) return false;
+  const auto Name = Record->getName();
+  if (Name != "unordered_map" && Name != "unordered_multimap") return false;
+  const auto *Map = associativeTypeIdentity(S, SM, Record, Name, "unordered_map", "__hash_table", 5);
   if (!Map || (Map->getSpecializationKind() != TSK_ImplicitInstantiation &&
                Map->getSpecializationKind() != TSK_Undeclared)) return false;
   const auto &Arguments = Map->getTemplateArgs();
@@ -135974,6 +135975,8 @@ static llvm::StringRef associativeContainerHeader(llvm::StringRef Name) {
     return "set";
   if (Name == "unordered_multiset")
     return "unordered_set";
+  if (Name == "unordered_multimap")
+    return "unordered_map";
   return Name;
 }
 

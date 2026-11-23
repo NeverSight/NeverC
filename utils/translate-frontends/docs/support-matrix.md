@@ -885,3 +885,10 @@ The combined compiler passes 4,392 source requests across six 64-bit targets
 and 836 formal tests on Linux x86-64. All 482 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Default integer unordered_multimap ownership
+
+The combined compiler passes 4,434 source requests across six 64-bit targets
+and 843 formal tests on Linux x86-64. All 487 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

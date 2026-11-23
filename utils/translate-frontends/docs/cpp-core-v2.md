@@ -18347,3 +18347,10 @@ The default integer set and multiset accept pointer receivers for lookup,
 iteration, insertion, erasure, emplacement and swap. Their range and
 initializer-list constructors accept a requested bucket count and the
 pinned default hash, equality and allocator types.
+
+## Default integer unordered_multimap ownership
+
+The pinned default integer unordered_multimap owns separate nodes for
+each key and mapped value. It supports list construction and assignment,
+copy and move ownership, per-key count and erase, and bucket storage.
+Equality checks the multiplicity of each key and mapped value.

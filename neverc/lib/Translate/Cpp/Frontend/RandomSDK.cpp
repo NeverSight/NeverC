@@ -104,11 +104,17 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       return false;
     }
   }
+  bool isUnorderedMappedOwner() const {
+    if (!SDKGenerator || !Generator->getIdentifier()) return false;
+    const auto Name = Generator->getName();
+    return Name == "unordered_map" || Name == "unordered_multimap";
+  }
+
   bool isUnorderedTableOwner() const {
     if (!SDKGenerator || !Generator->getIdentifier())
       return false;
     const auto Name = Generator->getName();
-    return Name == "unordered_map" || Name == "unordered_set" || Name == "unordered_multiset";
+    return isUnorderedMappedOwner() || Name == "unordered_set" || Name == "unordered_multiset";
   }
 
   bool engineIntrinsic(const FunctionDecl *F, SourceLocation Location) const {
@@ -132,7 +138,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     }
     if (F->getBuiltinID() == Builtin::BI__builtin_launder) {
       const auto Site = S.sdkFile(SM, Location);
-      if (!SDKGenerator || Generator->getName() != "unordered_map" || !Site ||
+      if (!isUnorderedMappedOwner() || !Site ||
           Site->Root != "libcxx" || Site->Path != "__new/launder.h" ||
           F->isVariadic() || F->getNumParams() != 1 ||
           !Context.hasSameType(F->getReturnType(), Context.VoidPtrTy) ||
@@ -572,7 +578,7 @@ public:
     if (const auto *Builtin = dyn_cast<BuiltinTemplateDecl>(D))
       return Builtin->isImplicit() && Builtin->getLocation().isInvalid() &&
              (Builtin->getBuiltinTemplateKind() == BTK__builtin_common_type ||
-              (SDKGenerator && Generator->getName() == "unordered_map" &&
+              (isUnorderedMappedOwner() &&
                Builtin->getBuiltinTemplateKind() == BTK__type_pack_element));
     if (++Nodes > 4096 || !origin(D))
       return false;
