@@ -139316,32 +139316,55 @@ std::optional<UtilityUnorderedTableRecord> unorderedMapMerge(
   return Source && Source->Record->getCanonicalDecl() == Map->Record->getCanonicalDecl() ? Map : std::nullopt;
 }
 
-std::optional<UnorderedMapListAssignment> unorderedMapListAssignment(
+std::optional<UnorderedTableListAssignment> unorderedTableListAssignment(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
   const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
-  const Expr *Object = Member ? Member->getImplicitObjectArgument() :
-      Operator && Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
+  const Expr *Object = Member ? Member->getImplicitObjectArgument()
+      : Operator && Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
+  const auto Site = Reference ? Reference->getExprLoc()
+      : Operator ? Operator->getOperatorLoc() : SourceLocation();
   const unsigned Offset = Operator ? 1 : 0;
-  if (!Method || !Object || !Method->isOverloadedOperator() ||
+  if (!Method || !Object || !S.owns(SM, Site) || !Method->isOverloadedOperator() ||
       Method->getOverloadedOperator() != OO_Equal || Method->isConst() ||
-      !unorderedMapPublicMethod(S, SM, Method) || Method->getNumParams() != 1 ||
-      Call->getNumArgs() != Offset + 1 || !Call->isLValue() ||
-      !S.owns(SM, Reference ? Reference->getExprLoc() : Operator ? Operator->getOperatorLoc() : SourceLocation())) return std::nullopt;
-  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
-  if (!Map || !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
-  auto Receiver = Object->getType();if (Receiver->isPointerType()) Receiver = Receiver->getPointeeType();
-  const auto Type = Context.getRecordType(Map->Record), Parameter = Method->getParamDecl(0)->getType();
-  if (Receiver.hasQualifiers() || !Context.hasSameType(Receiver, Type) ||
+      Method->getNumParams() != 1 || Call->getNumArgs() != Offset + 1 || !Call->isLValue())
+    return std::nullopt;
+  const auto *Owner = Method->getParent();
+  if (!Owner->getIdentifier()) return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  if ((Header != "unordered_map" && Header != "unordered_set") ||
+      !unorderedMapPublicMethod(S, SM, Method, Header))
+    return std::nullopt;
+  const auto Table = Header == "unordered_map" ? approvedUtilityUnorderedMapRecord(S, SM, Owner, Context)
+      : approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  if (!Table) return std::nullopt;
+  auto Receiver = Object->getType();
+  if (Receiver->isPointerType()) Receiver = Receiver->getPointeeType();
+  const auto Type = Context.getRecordType(Table->Record);
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (Receiver.hasQualifiers() || Parameter.hasQualifiers() || Parameter->isReferenceType() ||
+      !Context.hasSameType(Receiver, Type) ||
       !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type)) ||
       !Context.hasSameType(Call->getType(), Type) ||
-      !Context.hasSameType(Call->getArg(Offset)->getType(), Parameter)) return std::nullopt;
-  const auto Input = unorderedMapRangeParameter(S, SM, *Map, Parameter, true, Context);
-  if (!Input || !Input->List || !Input->Pair.First->getType().isConstQualified()) return std::nullopt;
-  return UnorderedMapListAssignment{*Input,Object,Offset,bool(Operator)};
+      !Context.hasSameType(Call->getArg(Offset)->getType(), Parameter))
+    return std::nullopt;
+
+  if (Table->HasMappedValue) {
+    const auto Input = unorderedMapRangeParameter(S, SM, *Table, Parameter, true, Context);
+    if (!Input || !Input->List || !Input->Pair.First->getType().isConstQualified() ||
+        !approvedUnorderedMapMethodSource(S, SM, Method, Table->Record, Context))
+      return std::nullopt;
+    return UnorderedTableListAssignment{*Table, *Input->List, Input->Pair, Object, Offset, bool(Operator)};
+  }
+
+  const auto List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
+  if (!List || !Context.hasSameType(List->ElementType, Context.IntTy) ||
+      !approvedHashSetBucketSource(S, SM, Method, Table->Record, Context))
+    return std::nullopt;
+  return UnorderedTableListAssignment{*Table, *List, std::nullopt, Object, Offset, bool(Operator)};
 }
 
 static bool unorderedResultMethod(const State &S, const SourceManager &SM,

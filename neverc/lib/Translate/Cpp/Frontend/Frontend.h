@@ -5152,13 +5152,15 @@ bool unorderedNodeBaseCast(const State &S, const clang::SourceManager &SM,
 std::optional<UtilityUnorderedTableRecord> unorderedMapMerge(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-struct UnorderedMapListAssignment {
-  UtilityUnorderedMapRangeInsertion Input;
+struct UnorderedTableListAssignment {
+  UtilityUnorderedTableRecord Table;
+  UtilityInitializerListRecord List;
+  std::optional<UtilityPairRecord> Pair;
   const clang::Expr *Object;
   unsigned Offset;
   bool RightBeforeLeft;
 };
-std::optional<UnorderedMapListAssignment> unorderedMapListAssignment(
+std::optional<UnorderedTableListAssignment> unorderedTableListAssignment(
     const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UnorderedResultCall {
