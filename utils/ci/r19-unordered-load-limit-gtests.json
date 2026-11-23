@@ -101,6 +101,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-load-limit-nonempty-owner",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 3};\n  values.max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n",
+      "source_sha256": "33b62ef8595172aba90633913b72d61208a804b8a9c900e602b7acc3c4b4ea15",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-load-limit-custom-hash",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -123,14 +131,6 @@
       "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  auto* pointer = &values;\n  pointer->max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n",
       "source_sha256": "59ae7d8003e93827cc2c3e6a1c77f3a8e02fd7d551c2928d79470a63c80e60b2",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-load-limit-nonempty-owner",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 3};\n  values.max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n",
-      "source_sha256": "33b62ef8595172aba90633913b72d61208a804b8a9c900e602b7acc3c4b4ea15",
-      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedLoadLimitNonIntKeyRejected",
     "TranslateTest.CoreV2UnorderedLoadLimitArrowReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "e2ba79603249f8a30c053f06becbce4d9b6a09d95fd9980551acf3759916984b",
   "maintained_original_sha256": "fae0fb9ccf2cc94269c627dfff161db7092c3ae45dbf081309e168a8158fd5da",
@@ -155,5 +155,11 @@
   "current_registry_count": 8366,
   "current_python_registry_tests": 178,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-load-limit": "cf08b856927fb069603fc071cb47b80a911713f33e0efcb864a91376445426b0",
+    "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a"
+  },
+  "native_reference_authentication_sha256": "9eabe78fc624aeedd3d894e6bf0b417b2312725c416c9c9d4bfcd08e28a52acc",
+  "source_proof_sha256": "80c8a74646ada7424f880c8eadc0b918044fb58527081a6d925769d0ed641161"
 }

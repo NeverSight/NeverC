@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2AnyBoolInlinePointerPayloadRejected",
     "TranslateTest.CoreV2AnyBoolInlineMutableReferenceCastRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "4d1378b02f329e006c80ba4071c984fe15eb83298fc0d4658a244e7413b23acf",
   "maintained_original_sha256": "bdf19d17388b4157ca9e10e6b4454c833104e8a331a09b0924694c19718d994e",
@@ -155,5 +155,10 @@
   "current_registry_count": 8318,
   "current_python_registry_tests": 166,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "any-bool-inline": "044bf8aa978cbd0f4b8836a804d995d7647cbd9684e816714ade71c239445bb0"
+  },
+  "native_reference_authentication_sha256": "e2d4a827bfe967b428eb21229b16f9bc3df1fae499d0b6af0c8f2effcee7ce65",
+  "source_proof_sha256": "80c8a74646ada7424f880c8eadc0b918044fb58527081a6d925769d0ed641161"
 }
