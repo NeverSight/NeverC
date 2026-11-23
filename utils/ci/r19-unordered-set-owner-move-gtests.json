@@ -109,6 +109,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-set-owner-move-multiset-move-with-explicit-allocator",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_multiset<int> a{8, 8};\n  std::unordered_multiset<int> b(std::move(a), std::allocator<int>{});\n  return b.size() != 2;\n}\n",
+      "source_sha256": "adac95dbcd22fd740ace68583e03c38008e19d4a8b589dcd74d7c73cb50b0a9b",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-set-owner-move-other-key-construction",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -123,14 +131,6 @@
       "source": "#include <unordered_set>\n#include <utility>\nstruct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_set<int, Hash> a, b;\n  a = std::move(b);\n  return a.empty();\n}\n",
       "source_sha256": "f25d146db4ea2d7c84168061c0534b9f118293d73298f651bd59caf322729cf2",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-set-owner-move-multiset-move-with-explicit-allocator",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_multiset<int> a{8, 8};\n  std::unordered_multiset<int> b(std::move(a), std::allocator<int>{});\n  return b.size() != 2;\n}\n",
-      "source_sha256": "adac95dbcd22fd740ace68583e03c38008e19d4a8b589dcd74d7c73cb50b0a9b",
-      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetOwnerMoveOtherKeyConstructionRejected",
     "TranslateTest.CoreV2UnorderedSetOwnerMoveCustomPolicyAssignmentRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "544d50088e1e4062a33c132ff8abb4e60c2f5d88f1f9c3d498ed68d92dffdd40",
   "maintained_original_sha256": "91ca47fa646e424eed96bb7914230e20deb00af9f7afee5efc04af1e71492b9e",
@@ -155,5 +155,11 @@
   "current_registry_count": 8528,
   "current_python_registry_tests": 218,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-set-owner-move": "8a7e21d000e3b16b9b8bccbfb356d5944f37d144ba4c21e3d294770dea698672",
+    "unordered-set-storage-construction": "9005a76d9532e4c4a9e301c517dd51fa24734609763fb1008eea27c3ed872306"
+  },
+  "native_reference_authentication_sha256": "c14f414e0db6c2e67231ead0db15d54ef34f9af631c2ed30a039c612a6f786b8",
+  "source_proof_sha256": "c3e01e9e855dbc3167c5e37c4a4303d05ef1363654847a81a2e015e649e9c503"
 }

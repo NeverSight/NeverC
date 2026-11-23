@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetObserversDifferentKeyAllocatorObserverRejected",
     "TranslateTest.CoreV2UnorderedSetObserversCustomHashAllocatorObserverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "1e10f7c7f4c2d93d41b5887a77f1541a19d4db26ee6cd9109456360b22156161",
   "maintained_original_sha256": "600ae75bd4b6ceaa0e9a445adcf96712e00f83a9b504fee7d470953c3aa95f47",
@@ -155,5 +155,10 @@
   "current_registry_count": 8578,
   "current_python_registry_tests": 230,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-observers": "a93e369e9d2f8cb54124b54338a0bf8171892b19d76140656f1e015db976896e"
+  },
+  "native_reference_authentication_sha256": "3b57c288af20ead359dc0402d2a6f10123636354f7a4bc1903cecfb2b368efea",
+  "source_proof_sha256": "c3e01e9e855dbc3167c5e37c4a4303d05ef1363654847a81a2e015e649e9c503"
 }
