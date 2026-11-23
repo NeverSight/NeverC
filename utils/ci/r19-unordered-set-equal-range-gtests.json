@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetEqualRangeCustomEqualityRejected",
     "TranslateTest.CoreV2UnorderedSetEqualRangePointerReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "fc919f87ffd1377e6fd0ec40841c2af74e64e685ab55f68163b58e3e78a1e9c9",
   "maintained_original_sha256": "44fc110f1f40d86b7d188fe484d1a166c7da73e98f76edcd001d249395538cbf",
@@ -155,5 +155,10 @@
   "current_registry_count": 8480,
   "current_python_registry_tests": 206,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-equal-range": "342eaf29b76136b7028c5b2aabc4bd691ce5a883be92ddea17a052fec67325bf"
+  },
+  "native_reference_authentication_sha256": "d69cdd6841178ed5b5537d8e2624cfe48b847ef100f77e9628f5bb1560d3108e",
+  "source_proof_sha256": "f2d2c5bea15cb62960d356ba415f7aa0c5d89b3f618b762397ccc31f3ce44d00"
 }

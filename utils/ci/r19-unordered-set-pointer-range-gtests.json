@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetPointerRangeCustomPolicyRangeRejected",
     "TranslateTest.CoreV2UnorderedSetPointerRangePointerReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "47d55896696dc2a7f80d29c0cf075f63e4e251eef3aab7eacad4ef14e1358fbb",
   "maintained_original_sha256": "0a65cf385c60ea9997fa815565a9cb56465fffddae54c41396bf63707b83fc46",
@@ -155,5 +155,10 @@
   "current_registry_count": 8512,
   "current_python_registry_tests": 214,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-pointer-range": "15b9aedc554160d61bf802f609d42876d6f5a6df1125db6f029af2d2a81966b7"
+  },
+  "native_reference_authentication_sha256": "f03f27aaeeba2a2e5e4a8f7561ec55ec8bb66f039a09aca163f08c872b2e5c5c",
+  "source_proof_sha256": "f2d2c5bea15cb62960d356ba415f7aa0c5d89b3f618b762397ccc31f3ce44d00"
 }
